@@ -26,7 +26,7 @@ export function MainLayout({ children }: MainLayoutProps) {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar */}
         <div className={cn(
-          'hidden lg:block transition-all duration-300',
+          'hidden lg:block h-full transition-all duration-300',
           leftSidebarOpen ? 'w-64' : 'w-16'
         )}>
           <LeftSidebar 

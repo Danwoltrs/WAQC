@@ -36,7 +36,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (session?.user) {
         setUser(session.user)
-        await fetchProfile(session.user.id)
+        try {
+          await fetchProfile(session.user.id)
+        } catch (error) {
+          console.error('Failed to fetch profile during session setup:', error)
+          setLoading(false)
+        }
       } else {
         setLoading(false)
       }
@@ -50,7 +55,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } = supabase.auth.onAuthStateChange(async (event, session) => {
       if (session?.user) {
         setUser(session.user)
-        await fetchProfile(session.user.id)
+        try {
+          await fetchProfile(session.user.id)
+        } catch (error) {
+          console.error('Failed to fetch profile during auth state change:', error)
+          setLoading(false)
+        }
       } else {
         setUser(null)
         setProfile(null)
@@ -62,8 +72,91 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.unsubscribe()
   }, [])
 
-  const fetchProfile = async (userId: string) => {
+  const createUserProfile = async (userId: string) => {
     try {
+      // Get user data from auth
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) {
+        setLoading(false)
+        return
+      }
+
+      // Check if this is a global admin email
+      const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(user.email || '')
+      const isWolthersUser = user.email?.endsWith('@wolthers.com') || false
+      
+      // Create profile with basic information
+      const { data: newProfile, error: createError } = await supabase
+        .from('profiles')
+        .insert({
+          id: userId,
+          email: user.email || '',
+          full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User',
+          qc_enabled: isGlobalAdmin || isWolthersUser, // Enable for admins and Wolthers users
+          qc_role: isGlobalAdmin ? 'global_admin' : 'lab_personnel',
+          is_global_admin: isGlobalAdmin,
+          laboratory_id: null,
+          qc_permissions: []
+        })
+        .select()
+        .single()
+
+      if (createError) {
+        // Check if profile already exists (duplicate key error)
+        if (createError.code === '23505') {
+          console.log('Profile already exists, fetching existing profile')
+          await fetchProfile(userId)
+          return
+        }
+        console.error('Error creating profile:', {
+          error: createError,
+          code: createError?.code,
+          message: createError?.message,
+          details: createError?.details
+        })
+        setLoading(false)
+        return
+      }
+
+      console.log('Profile created successfully:', newProfile)
+      
+      // Log access request creation for non-admin Wolthers users
+      if (isWolthersUser && !isGlobalAdmin) {
+        console.log('Access request will be created automatically for @wolthers.com user:', user.email)
+      }
+      
+      // Now fetch the created profile
+      await fetchProfile(userId)
+    } catch (error) {
+      console.error('Error in createUserProfile:', error)
+      setLoading(false)
+    }
+  }
+
+  const fetchProfile = async (userId: string) => {
+    if (!userId) {
+      console.error('No userId provided to fetchProfile')
+      setLoading(false)
+      return
+    }
+
+    try {
+      console.log('Fetching profile for user:', userId)
+      
+      // Test basic database connectivity first
+      const { data: testData, error: testError } = await supabase
+        .from('profiles')
+        .select('count')
+        .limit(1)
+      
+      if (testError) {
+        console.error('Database connectivity test failed:', testError)
+        setLoading(false)
+        return
+      }
+      
+      console.log('Database connectivity test passed')
+      
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
@@ -71,36 +164,69 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .single()
 
       if (error) {
-        console.error('Error fetching profile:', error)
-        setLoading(false)
+        // If profile doesn't exist, try to create one
+        if (error.code === 'PGRST116' || error.message?.includes('No rows returned') || error.message?.includes('JSON object requested, multiple (or no) rows returned')) {
+          console.log('Profile not found, creating new profile for user')
+          await createUserProfile(userId)
+          return
+        }
+        
+        console.error('Error fetching profile:', {
+          code: error?.code,
+          message: error?.message,
+          userId: userId
+        })
         return
       }
 
       if (profileData) {
-        // Only proceed if QC is enabled for this user
-        if (!profileData.qc_enabled || !profileData.qc_role) {
+        // Check if QC is enabled for this user
+        if (!profileData.qc_enabled) {
           console.log('QC not enabled for this user')
+          // For existing users, we'll show them a message instead of blocking completely
+          setProfile(profileData)
           setLoading(false)
           return
         }
-
-        setProfile(profileData)
-        
-        // Get laboratory info to determine permissions
-        let laboratoryType: string | undefined
-        if (profileData.laboratory_id) {
-          const { data: labData } = await supabase
-            .from('laboratories')
-            .select('type')
-            .eq('id', profileData.laboratory_id)
-            .single()
-          
-          laboratoryType = labData?.type
-        }
-
-        const userPermissions = getUserPermissions(profileData.qc_role, laboratoryType)
-        setPermissions(userPermissions)
+      } else {
+        console.log('No profile data returned, creating new profile')
+        await createUserProfile(userId)
+        return
       }
+
+      // Ensure user has a QC role, default to lab_personnel if missing
+      if (!profileData.qc_role) {
+        console.log('User missing QC role, setting default')
+        const { error: updateError } = await supabase
+          .from('profiles')
+          .update({ qc_role: 'lab_personnel' })
+          .eq('id', userId)
+        
+        if (updateError) {
+          console.error('Error setting default QC role:', updateError)
+        } else {
+          // Refetch the profile with updated role
+          await fetchProfile(userId)
+          return
+        }
+      }
+
+      setProfile(profileData)
+      
+      // Get laboratory info to determine permissions
+      let laboratoryType: string | undefined
+      if (profileData.laboratory_id) {
+        const { data: labData } = await supabase
+          .from('laboratories')
+          .select('type')
+          .eq('id', profileData.laboratory_id)
+          .single()
+        
+        laboratoryType = labData?.type
+      }
+
+      const userPermissions = getUserPermissions(profileData.qc_role, laboratoryType)
+      setPermissions(userPermissions)
     } catch (error) {
       console.error('Error in fetchProfile:', error)
     } finally {

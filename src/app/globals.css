@@ -6,6 +6,7 @@
 
 @layer base {
   :root {
+    /* Light Mode - Lab Clean Interface */
     --background: 0 0% 100%;
     --foreground: 0 0% 0%;
     --card: 0 0% 97.6%;
@@ -17,36 +18,37 @@
     --secondary: 0 0% 96.1%;
     --secondary-foreground: 0 0% 9%;
     --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
+    --muted-foreground: 0 0% 40%;
     --accent: 0 0% 96.1%;
     --accent-foreground: 0 0% 9%;
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 89.8%;
+    --border: 0 0% 90%;
     --input: 0 0% 89.8%;
     --ring: 0 0% 3.9%;
     --radius: 20px;
   }
 
   .dark {
-    --background: 0 0% 16.5%;
+    /* Dark Mode - Lab Professional Interface */
+    --background: 0 0% 16.5%; /* #2A2A2A */
     --foreground: 0 0% 100%;
-    --card: 0 0% 16.5% / 0.04;
+    --card: 0 0% 18%; /* Slightly lighter than background */
     --card-foreground: 0 0% 100%;
     --popover: 0 0% 16.5%;
     --popover-foreground: 0 0% 100%;
     --primary: 0 0% 98%;
     --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
+    --secondary: 0 0% 20%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --accent: 0 0% 14.9%;
+    --muted: 0 0% 20%;
+    --muted-foreground: 0 0% 60%; /* rgba(255, 255, 255, 0.4) */
+    --accent: 0 0% 22%;
     --accent-foreground: 0 0% 98%;
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
-    --border: 0 0% 100% / 0.15;
-    --input: 0 0% 14.9%;
+    --border: 0 0% 25%; /* rgba(255, 255, 255, 0.15) */
+    --input: 0 0% 20%;
     --ring: 0 0% 83.1%;
   }
 }
@@ -60,26 +62,26 @@
   }
 }
 
-/* Custom CSS Variables for Wolthers Theme */
+/* Lab Theme Utilities */
 :root {
-  --wolthers-purple: #ADADFB;
-  --wolthers-blue: #A0BCE8;
-  --wolthers-cyan: #6BE6D3;
-  --wolthers-sky: #7DBBFF;
-  --wolthers-violet: #B899EB;
-  --wolthers-green: #71DD8C;
+  /* Clean lab accent colors for charts and data visualization only */
+  --lab-purple: #ADADFB;
+  --lab-blue: #A0BCE8;
+  --lab-cyan: #6BE6D3;
+  --lab-sky: #7DBBFF;
+  --lab-violet: #B899EB;
+  --lab-green: #71DD8C;
 }
 
-.dark {
-  --background: #2A2A2A;
-  --card: rgba(255, 255, 255, 0.04);
-  --muted-foreground: rgba(255, 255, 255, 0.4);
-  --border: rgba(255, 255, 255, 0.15);
+/* Additional lab-specific styling */
+.lab-card {
+  @apply bg-card border border-border rounded-[20px] p-6;
 }
 
-.light {
-  --background: #FFFFFF;
-  --card: #F9F9FA;
-  --muted-foreground: rgba(0, 0, 0, 0.4);
-  --border: rgba(0, 0, 0, 0.1);
+.lab-icon {
+  @apply text-muted-foreground transition-colors;
+}
+
+.lab-icon:hover {
+  @apply text-foreground;
 }

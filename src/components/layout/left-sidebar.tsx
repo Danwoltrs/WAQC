@@ -119,7 +119,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
 
   return (
     <aside className={cn(
-      'border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300',
+      'h-full border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300',
       isOpen ? 'w-64' : 'w-16'
     )}>
       <div className="flex flex-col h-full">
