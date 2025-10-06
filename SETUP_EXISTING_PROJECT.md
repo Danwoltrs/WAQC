@@ -198,24 +198,44 @@ WHERE qc_enabled = true; -- QC access
 
 ### Common Issues
 
-1. **"QC not enabled for this user" message**
+1. **ERROR: column "role" does not exist**
+   
+   This happens if your existing profiles table has different column names. Run the fix migration:
+   ```sql
+   -- Copy and paste the entire contents of:
+   -- database/migrations/002_fix_column_references.sql
+   ```
+
+2. **"QC not enabled for this user" message**
    ```sql
    -- Enable QC for the user
    UPDATE profiles SET qc_enabled = true, qc_role = 'lab_personnel' WHERE email = 'user@email.com';
    ```
 
-2. **Permission denied errors**
+3. **Permission denied errors**
    ```sql
    -- Check RLS policies are working
    SELECT * FROM laboratories; -- Should only show user's lab or all labs for global users
    ```
 
-3. **Missing laboratory assignment**
+4. **Missing laboratory assignment**
    ```sql
    -- Assign user to Santos HQ
    UPDATE profiles 
    SET laboratory_id = '550e8400-e29b-41d4-a716-446655440001' 
    WHERE email = 'user@email.com';
+   ```
+
+5. **Column already exists errors**
+   
+   If you get "column already exists" errors, the migration detected your existing table structure. This is normal and the migration will continue.
+
+6. **Function errors after migration**
+   
+   If helper functions fail, run the fix migration:
+   ```sql
+   -- This will recreate functions with proper error handling
+   -- database/migrations/002_fix_column_references.sql
    ```
 
 ## Next Steps
