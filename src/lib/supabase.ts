@@ -41,36 +41,44 @@ export type StorageConfiguration = {
 export type Database = {
   public: {
     Tables: {
-      // User profiles with role information
+      // Extended profiles table (integrates with existing travel system)
       profiles: {
         Row: {
           id: string
           email: string
           full_name: string
-          role: UserRole
+          // QC-specific fields
+          qc_role?: UserRole
           laboratory_id?: string
-          permissions: string[]
+          qc_permissions?: string[]
+          qc_enabled?: boolean
           created_at: string
           updated_at: string
+          // May have other travel-related fields
+          [key: string]: any
         }
         Insert: {
           id: string
           email: string
           full_name: string
-          role: UserRole
+          qc_role?: UserRole
           laboratory_id?: string
-          permissions?: string[]
+          qc_permissions?: string[]
+          qc_enabled?: boolean
           created_at?: string
           updated_at?: string
+          [key: string]: any
         }
         Update: {
           id?: string
           email?: string
           full_name?: string
-          role?: UserRole
+          qc_role?: UserRole
           laboratory_id?: string
-          permissions?: string[]
+          qc_permissions?: string[]
+          qc_enabled?: boolean
           updated_at?: string
+          [key: string]: any
         }
       }
       
@@ -318,7 +326,7 @@ export type Database = {
         }
       }
       
-      // Clients
+      // Extended clients table (integrates with existing travel system)
       clients: {
         Row: {
           id: string
@@ -326,9 +334,13 @@ export type Database = {
           email: string
           company: string
           address: string
-          default_quality_specs: string[]
+          // QC-specific fields
+          default_quality_specs?: string[]
+          qc_enabled?: boolean
           created_at: string
           updated_at: string
+          // May have other travel-related fields
+          [key: string]: any
         }
         Insert: {
           id?: string
@@ -337,8 +349,10 @@ export type Database = {
           company: string
           address: string
           default_quality_specs?: string[]
+          qc_enabled?: boolean
           created_at?: string
           updated_at?: string
+          [key: string]: any
         }
         Update: {
           name?: string
@@ -346,7 +360,9 @@ export type Database = {
           company?: string
           address?: string
           default_quality_specs?: string[]
+          qc_enabled?: boolean
           updated_at?: string
+          [key: string]: any
         }
       }
     }

@@ -77,6 +77,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       if (profileData) {
+        // Only proceed if QC is enabled for this user
+        if (!profileData.qc_enabled || !profileData.qc_role) {
+          console.log('QC not enabled for this user')
+          setLoading(false)
+          return
+        }
+
         setProfile(profileData)
         
         // Get laboratory info to determine permissions
@@ -91,7 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           laboratoryType = labData?.type
         }
 
-        const userPermissions = getUserPermissions(profileData.role, laboratoryType)
+        const userPermissions = getUserPermissions(profileData.qc_role, laboratoryType)
         setPermissions(userPermissions)
       }
     } catch (error) {

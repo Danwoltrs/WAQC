@@ -1,7 +1,8 @@
--- Wolthers Coffee QC System - Initial Database Schema
--- This file creates all the necessary tables and policies for the system
+-- Wolthers Coffee QC System - Database Migration for Existing Project
+-- This migration adds QC functionality to the existing wolthers-travels Supabase project
+-- Run this in your existing Supabase project SQL editor
 
--- Enable necessary extensions
+-- Enable necessary extensions (if not already enabled)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- Create custom types
@@ -70,17 +71,32 @@ CREATE TABLE IF NOT EXISTS laboratories (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create user profiles table (extends auth.users)
-CREATE TABLE IF NOT EXISTS profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT NOT NULL,
-    full_name TEXT NOT NULL,
-    role user_role NOT NULL DEFAULT 'lab_personnel',
-    laboratory_id UUID REFERENCES laboratories(id),
-    permissions TEXT[] DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Extend existing profiles table (if it exists) or create new one
+-- Check if profiles table exists, if not create it, if yes add QC columns
+DO $$
+BEGIN
+    -- Check if profiles table exists
+    IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'profiles') THEN
+        -- Add QC-specific columns to existing profiles table
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS qc_role user_role DEFAULT 'lab_personnel';
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS laboratory_id UUID REFERENCES laboratories(id);
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS qc_permissions TEXT[] DEFAULT '{}';
+        ALTER TABLE profiles ADD COLUMN IF NOT EXISTS qc_enabled BOOLEAN DEFAULT false;
+    ELSE
+        -- Create profiles table if it doesn't exist
+        CREATE TABLE profiles (
+            id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+            email TEXT NOT NULL,
+            full_name TEXT NOT NULL,
+            qc_role user_role NOT NULL DEFAULT 'lab_personnel',
+            laboratory_id UUID REFERENCES laboratories(id),
+            qc_permissions TEXT[] DEFAULT '{}',
+            qc_enabled BOOLEAN DEFAULT false,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+    END IF;
+END $$;
 
 -- Create quality templates table (master recipes)
 CREATE TABLE IF NOT EXISTS quality_templates (
@@ -95,17 +111,29 @@ CREATE TABLE IF NOT EXISTS quality_templates (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- Create clients table
-CREATE TABLE IF NOT EXISTS clients (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    company TEXT NOT NULL,
-    address TEXT NOT NULL,
-    default_quality_specs UUID[] DEFAULT '{}',
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
+-- Extend existing clients table or create if it doesn't exist
+DO $$
+BEGIN
+    -- Check if clients table exists
+    IF EXISTS (SELECT FROM information_schema.tables WHERE table_name = 'clients') THEN
+        -- Add QC-specific columns to existing clients table
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS default_quality_specs UUID[] DEFAULT '{}';
+        ALTER TABLE clients ADD COLUMN IF NOT EXISTS qc_enabled BOOLEAN DEFAULT false;
+    ELSE
+        -- Create clients table if it doesn't exist (fallback)
+        CREATE TABLE clients (
+            id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+            name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            company TEXT NOT NULL,
+            address TEXT NOT NULL,
+            default_quality_specs UUID[] DEFAULT '{}',
+            qc_enabled BOOLEAN DEFAULT false,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        );
+    END IF;
+END $$;
 
 -- Create client-specific quality configurations
 CREATE TABLE IF NOT EXISTS client_qualities (
@@ -230,96 +258,101 @@ ALTER TABLE cupping_sessions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE cupping_scores ENABLE ROW LEVEL SECURITY;
 ALTER TABLE certificates ENABLE ROW LEVEL SECURITY;
 
--- Helper function to get user role
-CREATE OR REPLACE FUNCTION get_user_role(user_id UUID)
+-- Helper function to get user QC role
+CREATE OR REPLACE FUNCTION get_user_qc_role(user_id UUID)
 RETURNS user_role AS $$
 BEGIN
-    RETURN (SELECT role FROM profiles WHERE id = user_id);
+    RETURN (SELECT qc_role FROM profiles WHERE id = user_id AND qc_enabled = true);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 -- Helper function to get user laboratory
-CREATE OR REPLACE FUNCTION get_user_laboratory(user_id UUID)
+CREATE OR REPLACE FUNCTION get_user_qc_laboratory(user_id UUID)
 RETURNS UUID AS $$
 BEGIN
-    RETURN (SELECT laboratory_id FROM profiles WHERE id = user_id);
+    RETURN (SELECT laboratory_id FROM profiles WHERE id = user_id AND qc_enabled = true);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Helper function to check if user has global access
-CREATE OR REPLACE FUNCTION has_global_access(user_id UUID)
+-- Helper function to check if user has global QC access
+CREATE OR REPLACE FUNCTION has_global_qc_access(user_id UUID)
 RETURNS BOOLEAN AS $$
 BEGIN
-    RETURN (SELECT role IN ('santos_hq_finance', 'global_finance_admin', 'global_quality_admin', 'global_admin') 
-            FROM profiles WHERE id = user_id);
+    RETURN (SELECT qc_role IN ('santos_hq_finance', 'global_finance_admin', 'global_quality_admin', 'global_admin') 
+            FROM profiles WHERE id = user_id AND qc_enabled = true);
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- Profiles policies
-CREATE POLICY "Users can view their own profile" ON profiles
-    FOR SELECT USING (auth.uid() = id);
+-- Helper function to check if user can create labs
+CREATE OR REPLACE FUNCTION can_create_laboratories(user_id UUID)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN (SELECT qc_role IN ('global_admin', 'global_quality_admin') 
+            FROM profiles WHERE id = user_id AND qc_enabled = true);
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
 
-CREATE POLICY "Global admins can view all profiles" ON profiles
-    FOR SELECT USING (has_global_access(auth.uid()));
-
-CREATE POLICY "Lab managers can view lab profiles" ON profiles
-    FOR SELECT USING (
-        get_user_laboratory(auth.uid()) = laboratory_id AND
-        get_user_role(auth.uid()) IN ('lab_finance_manager', 'lab_quality_manager')
-    );
+-- QC-specific RLS policies (only for QC-enabled users)
 
 -- Laboratories policies
-CREATE POLICY "Users can view their own laboratory" ON laboratories
-    FOR SELECT USING (id = get_user_laboratory(auth.uid()));
+CREATE POLICY "QC users can view their own laboratory" ON laboratories
+    FOR SELECT USING (id = get_user_qc_laboratory(auth.uid()));
 
-CREATE POLICY "Global users can view all laboratories" ON laboratories
-    FOR SELECT USING (has_global_access(auth.uid()));
+CREATE POLICY "Global QC users can view all laboratories" ON laboratories
+    FOR SELECT USING (has_global_qc_access(auth.uid()));
+
+CREATE POLICY "Global admins can create laboratories" ON laboratories
+    FOR INSERT WITH CHECK (can_create_laboratories(auth.uid()));
+
+CREATE POLICY "Global admins can update laboratories" ON laboratories
+    FOR UPDATE USING (can_create_laboratories(auth.uid()));
 
 -- Samples policies
-CREATE POLICY "Users can view lab samples" ON samples
+CREATE POLICY "QC users can view lab samples" ON samples
     FOR SELECT USING (
-        laboratory_id = get_user_laboratory(auth.uid()) OR
-        has_global_access(auth.uid())
+        laboratory_id = get_user_qc_laboratory(auth.uid()) OR
+        has_global_qc_access(auth.uid())
     );
 
-CREATE POLICY "Lab personnel can insert samples" ON samples
+CREATE POLICY "QC personnel can insert samples" ON samples
     FOR INSERT WITH CHECK (
-        laboratory_id = get_user_laboratory(auth.uid()) AND
-        get_user_role(auth.uid()) IN ('lab_personnel', 'lab_quality_manager', 'global_quality_admin', 'global_admin')
+        laboratory_id = get_user_qc_laboratory(auth.uid()) AND
+        get_user_qc_role(auth.uid()) IN ('lab_personnel', 'lab_quality_manager', 'global_quality_admin', 'global_admin')
     );
 
-CREATE POLICY "Lab personnel can update lab samples" ON samples
+CREATE POLICY "QC personnel can update lab samples" ON samples
     FOR UPDATE USING (
-        laboratory_id = get_user_laboratory(auth.uid()) AND
-        get_user_role(auth.uid()) IN ('lab_personnel', 'lab_quality_manager', 'global_quality_admin', 'global_admin')
+        laboratory_id = get_user_qc_laboratory(auth.uid()) AND
+        get_user_qc_role(auth.uid()) IN ('lab_personnel', 'lab_quality_manager', 'global_quality_admin', 'global_admin')
     );
 
 -- Quality assessments policies
-CREATE POLICY "Users can view assessments for lab samples" ON quality_assessments
+CREATE POLICY "QC users can view assessments for lab samples" ON quality_assessments
     FOR SELECT USING (
         EXISTS (
             SELECT 1 FROM samples 
             WHERE samples.id = sample_id AND (
-                samples.laboratory_id = get_user_laboratory(auth.uid()) OR
-                has_global_access(auth.uid())
+                samples.laboratory_id = get_user_qc_laboratory(auth.uid()) OR
+                has_global_qc_access(auth.uid())
             )
         )
     );
 
--- Client policies (for client dashboard access)
-CREATE POLICY "Clients can view their own data" ON clients
+-- Quality templates policies
+CREATE POLICY "QC users can view quality templates" ON quality_templates
     FOR SELECT USING (
-        get_user_role(auth.uid()) = 'client' OR
-        has_global_access(auth.uid()) OR
-        get_user_role(auth.uid()) IN ('lab_personnel', 'lab_quality_manager', 'lab_finance_manager')
+        get_user_qc_role(auth.uid()) IN ('lab_quality_manager', 'global_quality_admin', 'global_admin') OR
+        has_global_qc_access(auth.uid())
     );
 
--- Insert default laboratories
+CREATE POLICY "Quality managers can create templates" ON quality_templates
+    FOR INSERT WITH CHECK (
+        get_user_qc_role(auth.uid()) IN ('lab_quality_manager', 'global_quality_admin', 'global_admin')
+    );
+
+-- Insert only Santos HQ laboratory (other labs will be created via admin wizard)
 INSERT INTO laboratories (id, name, location, type, address, storage_config) VALUES
-    ('550e8400-e29b-41d4-a716-446655440001', 'Santos HQ', 'Santos, Brazil', 'hq', 'Santos Port, Brazil', '{"shelves": 20, "columns_per_shelf": 10, "rows_per_shelf": 8, "tins_per_position": 1, "naming_pattern": "SH-{shelf:02d}-{col:02d}-{row:02d}", "total_positions": 1600}'),
-    ('550e8400-e29b-41d4-a716-446655440002', 'Buenaventura Lab', 'Buenaventura, Colombia', 'regional', 'Buenaventura Port, Colombia', '{"shelves": 12, "columns_per_shelf": 8, "rows_per_shelf": 6, "tins_per_position": 1, "naming_pattern": "BV-{shelf:02d}-{col:02d}-{row:02d}", "total_positions": 576}'),
-    ('550e8400-e29b-41d4-a716-446655440003', 'Guatemala City Lab', 'Guatemala City, Guatemala', 'regional', 'Guatemala City, Guatemala', '{"shelves": 15, "columns_per_shelf": 8, "rows_per_shelf": 6, "tins_per_position": 1, "naming_pattern": "GT-{shelf:02d}-{col:02d}-{row:02d}", "total_positions": 720}'),
-    ('550e8400-e29b-41d4-a716-446655440004', 'Peru Lab', 'Lima, Peru', 'third_party', 'Lima, Peru', '{"shelves": 10, "columns_per_shelf": 6, "rows_per_shelf": 5, "tins_per_position": 1, "naming_pattern": "PE-{shelf:02d}-{col:02d}-{row:02d}", "total_positions": 300}')
+    ('550e8400-e29b-41d4-a716-446655440001', 'Santos HQ', 'Santos, Brazil', 'hq', 'Santos Port, Brazil', '{"shelves": 20, "columns_per_shelf": 10, "rows_per_shelf": 8, "tins_per_position": 1, "naming_pattern": "SH-{shelf:02d}-{col:02d}-{row:02d}", "total_positions": 1600}')
 ON CONFLICT (id) DO NOTHING;
 
 -- Insert default quality templates
