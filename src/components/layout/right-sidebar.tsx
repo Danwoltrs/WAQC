@@ -153,7 +153,7 @@ export function RightSidebar() {
                 </p>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Clock className="h-3 w-3" />
-                  {formatTimeAgo(notification.timestamp)}
+                  <span suppressHydrationWarning>{formatTimeAgo(notification.timestamp)}</span>
                 </div>
               </div>
             </div>

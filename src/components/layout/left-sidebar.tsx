@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -16,13 +16,17 @@ import {
   Crown,
   DollarSign,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
+  Award
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/components/providers/auth-provider'
 import { hasPermission } from '@/lib/auth'
 import { cn } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
 
 interface NavItem {
   title: string
@@ -30,6 +34,7 @@ interface NavItem {
   icon: React.ComponentType<{ className?: string }>
   permission?: string
   badge?: string
+  submenu?: NavItem[]
 }
 
 const navigation: NavItem[] = [
@@ -37,6 +42,20 @@ const navigation: NavItem[] = [
     title: 'Dashboard',
     href: '/',
     icon: Home,
+    submenu: [
+      {
+        title: 'Overview',
+        href: '/dashboard/metrics/overview',
+        icon: BarChart3,
+        permission: 'view_lab_dashboard',
+      },
+      {
+        title: 'Supplier Review',
+        href: '/dashboard/metrics/supplier-review',
+        icon: Award,
+        permission: 'view_lab_dashboard',
+      },
+    ],
   },
   {
     title: 'Samples',
@@ -104,7 +123,61 @@ interface LeftSidebarProps {
 
 export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   const pathname = usePathname()
-  const { permissions } = useAuth()
+  const { permissions, profile } = useAuth()
+  const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0)
+  const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['/']))
+
+  // Auto-expand Dashboard submenu when on a submenu page
+  useEffect(() => {
+    const dashboardItem = navigation.find(item => item.href === '/')
+    if (dashboardItem?.submenu) {
+      const isOnSubmenuPage = dashboardItem.submenu.some(subItem =>
+        pathname.startsWith(subItem.href)
+      )
+      if (isOnSubmenuPage) {
+        setExpandedMenus(prev => new Set(prev).add('/'))
+      }
+    }
+  }, [pathname])
+
+  // Fetch pending access requests count
+  useEffect(() => {
+    const fetchPendingRequests = async () => {
+      if (!profile?.is_global_admin && !hasPermission(permissions, 'manage_users')) {
+        return
+      }
+
+      try {
+        const { count, error } = await supabase
+          .from('access_requests')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending')
+
+        if (!error && count !== null) {
+          setPendingRequestsCount(count)
+        }
+      } catch (error) {
+        console.error('Error fetching pending requests count:', error)
+      }
+    }
+
+    fetchPendingRequests()
+
+    // Set up real-time subscription for access requests
+    const channel = supabase
+      .channel('access_requests_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'access_requests' },
+        () => {
+          fetchPendingRequests()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [profile, permissions])
 
   const filterNavByPermissions = (nav: NavItem[]) => {
     return nav.filter(item => !item.permission || hasPermission(permissions, item.permission))
@@ -115,6 +188,31 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
       return pathname === '/'
     }
     return pathname.startsWith(href)
+  }
+
+  const toggleSubmenu = (href: string) => {
+    setExpandedMenus(prev => {
+      const newSet = new Set(prev)
+      if (newSet.has(href)) {
+        newSet.delete(href)
+      } else {
+        newSet.add(href)
+      }
+      return newSet
+    })
+  }
+
+  const isSubmenuActive = (submenu?: NavItem[]) => {
+    if (!submenu) return false
+    return submenu.some(item => isActive(item.href))
+  }
+
+  // Add badge to Users nav item
+  const getNavItemWithBadge = (item: NavItem): NavItem => {
+    if (item.href === '/users' && pendingRequestsCount > 0) {
+      return { ...item, badge: String(pendingRequestsCount) }
+    }
+    return item
   }
 
   return (
@@ -142,31 +240,93 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
             {filterNavByPermissions(navigation).map((item) => {
               const Icon = item.icon
               const active = isActive(item.href)
-              
+              const hasSubmenu = item.submenu && item.submenu.length > 0
+              const submenuExpanded = expandedMenus.has(item.href)
+              const submenuActive = isSubmenuActive(item.submenu)
+              const filteredSubmenu = hasSubmenu
+                ? item.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
+                : []
+
               return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                    active 
-                      ? 'bg-accent text-accent-foreground' 
-                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-                    !isOpen && 'justify-center'
-                  )}
-                >
-                  <Icon className="h-4 w-4 flex-shrink-0" />
-                  {isOpen && (
-                    <>
-                      <span className="truncate">{item.title}</span>
-                      {item.badge && (
-                        <span className="ml-auto text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
-                          {item.badge}
-                        </span>
+                <div key={item.href}>
+                  {/* Main nav item */}
+                  {hasSubmenu && filteredSubmenu.length > 0 ? (
+                    <div
+                      className={cn(
+                        'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
+                        active || submenuActive
+                          ? 'bg-accent text-accent-foreground'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                       )}
-                    </>
+                    >
+                      <Link href={item.href} className="flex items-center gap-3 flex-1 min-w-0">
+                        <Icon className="h-4 w-4 flex-shrink-0" />
+                        {isOpen && <span className="truncate">{item.title}</span>}
+                      </Link>
+                      {isOpen && (
+                        <button
+                          onClick={() => toggleSubmenu(item.href)}
+                          className="p-1 hover:bg-accent/50 rounded transition-colors"
+                        >
+                          {submenuExpanded ? (
+                            <ChevronUp className="h-4 w-4 flex-shrink-0" />
+                          ) : (
+                            <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                          )}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <Link
+                      href={item.href}
+                      className={cn(
+                        'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
+                        active
+                          ? 'bg-accent text-accent-foreground'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                        !isOpen && 'justify-center'
+                      )}
+                    >
+                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      {isOpen && (
+                        <>
+                          <span className="truncate">{item.title}</span>
+                          {item.badge && (
+                            <span className="ml-auto text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
+                              {item.badge}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </Link>
                   )}
-                </Link>
+
+                  {/* Submenu items */}
+                  {hasSubmenu && submenuExpanded && isOpen && filteredSubmenu.length > 0 && (
+                    <div className="ml-4 mt-1 space-y-1 border-l-2 border-border pl-2">
+                      {filteredSubmenu.map((subItem) => {
+                        const SubIcon = subItem.icon
+                        const subActive = isActive(subItem.href)
+
+                        return (
+                          <Link
+                            key={subItem.href}
+                            href={subItem.href}
+                            className={cn(
+                              'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
+                              subActive
+                                ? 'bg-accent text-accent-foreground'
+                                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                            )}
+                          >
+                            <SubIcon className="h-4 w-4 flex-shrink-0" />
+                            <span className="truncate">{subItem.title}</span>
+                          </Link>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
               )
             })}
           </div>
@@ -182,28 +342,34 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                   </h3>
                 )}
                 {filterNavByPermissions(managementNav).map((item) => {
-                  const Icon = item.icon
-                  const active = isActive(item.href)
-                  
+                  const itemWithBadge = getNavItemWithBadge(item)
+                  const Icon = itemWithBadge.icon
+                  const active = isActive(itemWithBadge.href)
+
                   return (
                     <Link
-                      key={item.href}
-                      href={item.href}
+                      key={itemWithBadge.href}
+                      href={itemWithBadge.href}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                        active 
-                          ? 'bg-accent text-accent-foreground' 
+                        active
+                          ? 'bg-accent text-accent-foreground'
                           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
                         !isOpen && 'justify-center'
                       )}
                     >
-                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      <div className="relative">
+                        <Icon className="h-4 w-4 flex-shrink-0" />
+                        {!isOpen && itemWithBadge.badge && (
+                          <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
+                        )}
+                      </div>
                       {isOpen && (
                         <>
-                          <span className="truncate">{item.title}</span>
-                          {item.badge && (
-                            <span className="ml-auto text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
-                              {item.badge}
+                          <span className="truncate">{itemWithBadge.title}</span>
+                          {itemWithBadge.badge && (
+                            <span className="ml-auto text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">
+                              {itemWithBadge.badge}
                             </span>
                           )}
                         </>
