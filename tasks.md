@@ -617,16 +617,32 @@ Comprehensive task tracking for the Wolthers Coffee Quality Control System devel
 - [x] Added React keys to all list items
 - [x] Fixed hydration mismatches with suppressHydrationWarning
 
+**Completed Today (Continued - October 7, 2025):**
+- [x] Created custom SampleTin icon component (SVG)
+- [x] Fixed bottom ellipse overlap in SampleTin icon
+- [x] Integrated custom icon across dashboard, sidebar, and metrics pages
+- [x] Removed unused metrics API route (causing build errors)
+- [x] Fixed TypeScript errors in supply-chain-sankey component
+- [x] Configured Vercel environment variables for production deployment
+- [x] **Built PerformanceLeaderboard component** - Supplier quarterly rankings with full analytics
+- [x] **Built SupplierReviewDashboard page** - Quarterly/yearly performance view
+- [x] **Implemented PSS vs SS breakdown** - Pre-shipment vs sealed sample metrics
+- [x] **Built CertificateStatistics page** - Comprehensive analytics with 4 chart types
+- [x] Added medal icons for top 3 performers (gold, silver, bronze)
+- [x] Implemented supplier anonymization for non-global users
+- [x] Added time period selectors (week, month, quarter, year)
+- [x] Created summary cards for all certificate metrics
+- [x] Built pie chart for status distribution
+- [x] Built line chart for certificates over time
+- [x] Built bar charts for top roasters and importers
+- [x] Implemented role-based lab filtering across all metrics pages
+
 **Still Pending:**
-- [ ] Build PerformanceLeaderboard component for supplier rankings
-- [ ] Build SupplierReviewDashboard page with quarterly performance
-- [ ] Implement PSS vs SS breakdown visualization
-- [ ] Build CertificateStatistics page with totals and distribution charts
-- [ ] Implement detailed data tables for certificates
 - [ ] Add PDF export functionality with Brazil flag branding
-- [ ] Implement Dunkin-style green theme for exports
-- [ ] Add date range filters (This Week, This Month, Custom)
+- [ ] Implement Dunkin-style green theme for PDF exports
 - [ ] Build Excel export for certificate data
+- [ ] Fix Microsoft OAuth endless loop on qc.wolthers.com production
+- [ ] Add detailed data tables for certificates (with sorting/filtering)
 
 ---
 

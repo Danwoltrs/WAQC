@@ -6,9 +6,30 @@ import type { Database } from '@/lib/supabase'
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
+  const next = requestUrl.searchParams.get('next') || '/'
+  const error = requestUrl.searchParams.get('error')
+  const errorDescription = requestUrl.searchParams.get('error_description')
 
-  if (code) {
+  // Handle OAuth errors
+  if (error) {
+    console.error('OAuth error:', error, errorDescription)
+    return NextResponse.redirect(
+      `${requestUrl.origin}/login?error=${encodeURIComponent(errorDescription || error)}`
+    )
+  }
+
+  // If no code, redirect to login
+  if (!code) {
+    console.error('No code provided in OAuth callback')
+    return NextResponse.redirect(`${requestUrl.origin}/login`)
+  }
+
+  try {
     const cookieStore = await cookies()
+
+    // Create response to set cookies properly
+    const response = NextResponse.redirect(`${requestUrl.origin}${next}`)
+
     const supabase = createServerClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -18,23 +39,50 @@ export async function GET(request: NextRequest) {
             return cookieStore.get(name)?.value
           },
           set(name: string, value: string, options: any) {
-            cookieStore.set({ name, value, ...options })
+            try {
+              cookieStore.set({ name, value, ...options })
+              response.cookies.set({ name, value, ...options })
+            } catch (error) {
+              // Handle cookie setting errors in production
+              console.error('Error setting cookie:', name, error)
+            }
           },
           remove(name: string, options: any) {
-            cookieStore.set({ name, value: '', ...options })
+            try {
+              cookieStore.set({ name, value: '', ...options })
+              response.cookies.set({ name, value: '', ...options })
+            } catch (error) {
+              console.error('Error removing cookie:', name, error)
+            }
           },
         },
       }
     )
-    
-    try {
-      await supabase.auth.exchangeCodeForSession(code)
-    } catch (error) {
-      console.error('Error exchanging code for session:', error)
-      return NextResponse.redirect(`${requestUrl.origin}/auth/error`)
-    }
-  }
 
-  // URL to redirect to after sign in process completes
-  return NextResponse.redirect(`${requestUrl.origin}/`)
+    // Exchange code for session
+    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (exchangeError) {
+      console.error('Error exchanging code for session:', exchangeError)
+      return NextResponse.redirect(
+        `${requestUrl.origin}/login?error=${encodeURIComponent(exchangeError.message)}`
+      )
+    }
+
+    if (!data.session) {
+      console.error('No session returned after code exchange')
+      return NextResponse.redirect(
+        `${requestUrl.origin}/login?error=No+session+created`
+      )
+    }
+
+    console.log('Successfully created session for user:', data.user?.id)
+    return response
+
+  } catch (error) {
+    console.error('Unexpected error in OAuth callback:', error)
+    return NextResponse.redirect(
+      `${requestUrl.origin}/login?error=${encodeURIComponent('Authentication failed')}`
+    )
+  }
 }
