@@ -209,3 +209,7 @@ The primary goal is to build a robust, intuitive, and aesthetically pleasing app
 * OCR accuracy testing with real sample sleeve images.  
 * Load testing for real-time cupping sessions.  
 * Cross-browser compatibility testing.
+
+## Task Master AI Instructions
+**Import Task Master's development workflow commands and guidelines, treat as if import is in the main CLAUDE.md file.**
+@./.taskmaster/CLAUDE.md

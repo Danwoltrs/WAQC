@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -21,15 +21,18 @@ export function AccessRequestsManager() {
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
 
+  useEffect(() => {
+    if (profile?.is_global_admin || profile?.email === 'anderson@wolthers.com') {
+      fetchRequests()
+      fetchLaboratories()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile])
+
   // Only show if user is anderson@wolthers.com or global admin
   if (!profile?.is_global_admin && profile?.email !== 'anderson@wolthers.com') {
     return null
   }
-
-  useEffect(() => {
-    fetchRequests()
-    fetchLaboratories()
-  }, [])
 
   const fetchRequests = async () => {
     try {
@@ -288,7 +291,7 @@ function RequestCard({
   onReject: (request: AccessRequest, reason?: string) => void
   actionLoading: string | null
   getRoleDisplayName: (role: string) => string
-  getStatusBadge: (status: string) => JSX.Element
+  getStatusBadge: (status: string) => React.JSX.Element
 }) {
   const [selectedRole, setSelectedRole] = useState<string>('')
   const [selectedLab, setSelectedLab] = useState<string>('')

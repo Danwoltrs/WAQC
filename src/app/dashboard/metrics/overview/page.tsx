@@ -5,7 +5,8 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { SupplyChainSankey } from '@/components/metrics/supply-chain-sankey'
 import { MetricsFilters, FilterState } from '@/components/metrics/metrics-filters'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { TrendingUp, Package, CheckCircle, XCircle } from 'lucide-react'
+import { TrendingUp, CheckCircle, XCircle } from 'lucide-react'
+import { SampleTin } from '@/components/icons/sample-tin'
 
 export default function OverviewDashboard() {
   const [filters, setFilters] = useState<FilterState>({
@@ -43,7 +44,7 @@ export default function OverviewDashboard() {
             </CardHeader>
             <CardContent>
               <div className="flex items-center gap-2">
-                <Package className="h-5 w-5 text-muted-foreground" />
+                <SampleTin className="h-5 w-5 text-muted-foreground" />
                 <p className="text-2xl font-bold">2,460</p>
               </div>
               <p className="text-xs text-muted-foreground mt-1">

@@ -81,7 +81,53 @@ export type Database = {
           [key: string]: any
         }
       }
-      
+
+      // Access requests for QC system
+      access_requests: {
+        Row: {
+          id: string
+          user_id: string
+          status: 'pending' | 'approved' | 'rejected'
+          requested_role?: UserRole
+          requested_laboratory_id?: string
+          justification?: string
+          approved_role?: UserRole
+          approved_laboratory_id?: string
+          rejection_reason?: string
+          processed_at?: string
+          processed_by?: string
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          status?: 'pending' | 'approved' | 'rejected'
+          requested_role?: UserRole
+          requested_laboratory_id?: string
+          justification?: string
+          approved_role?: UserRole
+          approved_laboratory_id?: string
+          rejection_reason?: string
+          processed_at?: string
+          processed_by?: string
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          status?: 'pending' | 'approved' | 'rejected'
+          requested_role?: UserRole
+          requested_laboratory_id?: string
+          justification?: string
+          approved_role?: UserRole
+          approved_laboratory_id?: string
+          rejection_reason?: string
+          processed_at?: string
+          processed_by?: string
+          updated_at?: string
+        }
+      }
+
       // Laboratories configuration
       laboratories: {
         Row: Laboratory

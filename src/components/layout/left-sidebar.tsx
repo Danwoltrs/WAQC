@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Home,
-  Package,
   FlaskConical,
   Coffee,
   FileText,
@@ -21,6 +20,7 @@ import {
   ChevronUp,
   Award
 } from 'lucide-react'
+import { SampleTin } from '@/components/icons/sample-tin'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -60,7 +60,7 @@ const navigation: NavItem[] = [
   {
     title: 'Samples',
     href: '/samples',
-    icon: Package,
+    icon: SampleTin,
     permission: 'view_samples',
   },
   {

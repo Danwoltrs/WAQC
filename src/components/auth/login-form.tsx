@@ -69,21 +69,27 @@ export function LoginForm() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
-      <Card 
-        className="w-full max-w-sm shadow-lg border-0" 
-        style={{ backgroundColor: '#FAFAFA' }}
+      <Card
+        className="w-full max-w-sm shadow-lg border-0 bg-card"
       >
         <CardHeader className="space-y-3 text-center pb-4">
           <div className="mx-auto h-24 w-48 flex items-center justify-center mb-2">
+            <Image
+              src="/images/logos/wolthers-logo-off-white.svg"
+              alt="Wolthers Coffee Logo"
+              width={192}
+              height={72}
+              className="h-20 w-auto hidden dark:block"
+            />
             <Image
               src="/images/logos/wolthers-logo-green.svg"
               alt="Wolthers Coffee Logo"
               width={192}
               height={72}
-              className="h-20 w-auto"
+              className="h-20 w-auto dark:hidden"
             />
           </div>
-          <p className="text-xs" style={{ color: 'rgba(0, 0, 0, 0.4)' }}>
+          <p className="text-xs text-muted-foreground">
             Sign in to access the quality control system
           </p>
         </CardHeader>
@@ -104,8 +110,7 @@ export function LoginForm() {
                 onChange={(e) => setEmail(e.target.value)}
                 onKeyDown={handleEmailEnter}
                 required
-                className="h-10 bg-white border-gray-300 placeholder:text-gray-400 placeholder:font-light"
-                style={{ color: '#000000' }}
+                className="h-10 bg-background placeholder:font-light"
               />
             ) : (
               <div className="space-y-3">
@@ -113,8 +118,7 @@ export function LoginForm() {
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="h-10 bg-white border-gray-300"
-                  style={{ color: '#000000' }}
+                  className="h-10 bg-background"
                   readOnly
                 />
                 <Input
@@ -123,15 +127,13 @@ export function LoginForm() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-10 bg-white border-gray-300 placeholder:text-gray-400 placeholder:font-light"
-                  style={{ color: '#000000' }}
+                  className="h-10 bg-background placeholder:font-light"
                   autoFocus
                 />
                 <Button
                   type="submit"
                   className="w-full h-10 font-medium"
                   disabled={loading}
-                  style={{ color: '#2E5A47' }}
                 >
                   {loading ? 'Signing in...' : 'Sign In'}
                 </Button>
@@ -141,11 +143,11 @@ export function LoginForm() {
 
           <div className="relative">
             <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-gray-300"></div>
+              <div className="w-full border-t border-border"></div>
             </div>
             <div className="relative flex justify-center text-xs">
-              <span className="px-3" style={{ backgroundColor: '#FAFAFA', color: 'rgba(0, 0, 0, 0.4)' }}>
-                OR CONTINUE WITH
+              <span className="px-3 bg-card text-muted-foreground">
+                OR
               </span>
             </div>
           </div>
@@ -154,8 +156,7 @@ export function LoginForm() {
             variant="outline"
             onClick={handleMicrosoftLogin}
             disabled={loading}
-            className="w-full h-10 font-medium bg-white border-gray-300 hover:bg-gray-50"
-            style={{ color: '#333333' }}
+            className="w-full h-10 font-medium"
           >
             <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
               <path
@@ -178,8 +179,8 @@ export function LoginForm() {
             Continue with Microsoft
           </Button>
 
-          <p className="text-xs text-center" style={{ color: 'rgba(0, 0, 0, 0.4)' }}>
-            Don't have an account? Contact your administrator for access.
+          <p className="text-xs text-center text-muted-foreground">
+            Don&apos;t have an account? Contact your administrator for access.
           </p>
         </CardContent>
       </Card>

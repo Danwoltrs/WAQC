@@ -7,8 +7,8 @@ export const getUserPermissions = (qcRole: UserRole, laboratoryType?: string): s
     lab_quality_manager: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs', 'view_lab_quality_metrics'],
     santos_hq_finance: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard'],
     global_finance_admin: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard', 'manage_global_finance'],
-    global_quality_admin: ['view_samples', 'create_samples', 'conduct_assessments', 'view_global_quality', 'view_all_labs', 'manage_global_quality_specs', 'create_laboratories'],
-    global_admin: ['*'], // All permissions including create_laboratories
+    global_quality_admin: ['view_samples', 'create_samples', 'conduct_assessments', 'view_global_quality', 'view_all_labs', 'manage_global_quality_specs', 'create_laboratories', 'manage_users'],
+    global_admin: ['*'], // All permissions including manage_users
     client: ['view_own_samples', 'download_certificates', 'view_client_dashboard'],
     supplier: ['view_performance_metrics', 'view_supplier_dashboard'],
     buyer: ['view_supply_chain', 'view_buyer_dashboard', 'view_sankey_charts']

@@ -2,74 +2,152 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/components/providers/auth-provider'
-import { supabase } from '@/lib/supabase'
+import { supabase, type Database } from '@/lib/supabase'
 import { LoginForm } from '@/components/auth/login-form'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Package, FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar } from 'lucide-react'
-import { AccessRequestsManager } from '@/components/admin/access-requests-manager'
+import { FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar, CheckCircle2, XCircle } from 'lucide-react'
+import { SampleTin } from '@/components/icons/sample-tin'
+
+interface Sample {
+  id: string
+  tracking_number: string
+  origin: string
+  buyer: string | null
+  quality_name: string | null
+  status: string
+  created_at: string
+}
 
 function DashboardContent() {
   const { profile } = useAuth()
-
-  // Mock dashboard data - replace with real data
-  const stats = [
-    { title: 'Active Samples', value: '24', change: '+12%', icon: Package, color: 'lab-icon' },
-    { title: 'Pending Assessments', value: '8', change: '-3%', icon: FlaskConical, color: 'lab-icon' },
-    { title: 'Certificates Generated', value: '156', change: '+8%', icon: FileText, color: 'lab-icon' },
-    { title: 'Total Users', value: '12', change: '+2', icon: Users, color: 'lab-icon' },
-  ]
-
-  // Sample data organized by status
-  const samplesByStatus = {
-    inProgress: [
-      { id: 'QC-2025-001', origin: 'Colombian Huila', client: 'Roaster ABC', status: 'In Progress', cuppingTable: 'Table A' },
-      { id: 'QC-2025-004', origin: 'Guatemalan Antigua', client: 'Premium Coffee', status: 'In Progress', cuppingTable: 'Table B' },
-      { id: 'QC-2025-007', origin: 'Costa Rican Tarrazú', client: 'Artisan Roasters', status: 'In Progress', cuppingTable: 'Table A' },
-    ],
-    underReview: [
-      { id: 'QC-2025-003', origin: 'Ethiopian Yirgacheffe', client: 'Specialty Ltd', status: 'Under Review', completedAt: new Date() },
-      { id: 'QC-2025-005', origin: 'Kenyan AA', client: 'Coffee Masters', status: 'Under Review', completedAt: new Date() },
-    ],
-    approved: [
-      { id: 'QC-2025-002', origin: 'Brazilian Cerrado', client: 'Coffee Co.', status: 'Approved', approvedAt: new Date(Date.now() - 24 * 60 * 60 * 1000) },
-      { id: 'QC-2025-006', origin: 'Honduran SHG', client: 'Local Roastery', status: 'Approved', approvedAt: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000) },
-    ],
-    rejected: [
-      { id: 'QC-2025-008', origin: 'Nicaraguan Matagalpa', client: 'Budget Coffee', status: 'Rejected', rejectedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000) },
-    ]
-  }
-
+  const [samples, setSamples] = useState<Sample[]>([])
+  const [loading, setLoading] = useState(true)
   const [approvedFilter, setApprovedFilter] = useState('week')
   const [rejectedFilter, setRejectedFilter] = useState('week')
 
-  const getStatusColor = (status: string) => {
-    switch (status.toLowerCase()) {
-      case 'approved': return 'bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 font-medium px-3 py-1.5'
-      case 'in progress': return 'bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800 font-medium px-3 py-1.5'
-      case 'under review': return 'bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 font-medium px-3 py-1.5'
-      default: return 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 font-medium px-3 py-1.5'
+  useEffect(() => {
+    fetchSamples()
+  }, [profile])
+
+  const fetchSamples = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('samples')
+        .select('*')
+        .order('created_at', { ascending: false })
+
+      if (error) throw error
+      setSamples(data || [])
+    } catch (error) {
+      console.error('Error fetching samples:', error)
+    } finally {
+      setLoading(false)
     }
   }
 
-  // Check if user is anderson@wolthers.com or global admin for access requests management
-  const showAccessManager = profile?.is_global_admin || profile?.email === 'anderson@wolthers.com'
+  // Organize samples by status
+  const samplesByStatus = {
+    inProgress: samples.filter(s => s.status === 'in_progress').map(s => ({
+      id: s.tracking_number,
+      origin: s.origin,
+      client: s.buyer,
+      quality: s.quality_name || 'Standard',
+    })),
+    underReview: samples.filter(s => s.status === 'under_review').map(s => ({
+      id: s.tracking_number,
+      origin: s.origin,
+      client: s.buyer,
+      quality: s.quality_name || 'Standard',
+    })),
+    approved: samples.filter(s => s.status === 'approved').map(s => ({
+      id: s.tracking_number,
+      origin: s.origin,
+      client: s.buyer,
+      quality: s.quality_name || 'Standard',
+    })),
+    rejected: samples.filter(s => s.status === 'rejected').map(s => ({
+      id: s.tracking_number,
+      origin: s.origin,
+      client: s.buyer,
+      quality: s.quality_name || 'Standard',
+    })),
+  }
+
+  // Calculate stats from real data
+  const totalSamples = samples.length
+  const approvedSamples = samples.filter(s => s.status === 'approved').length
+  const rejectedSamples = samples.filter(s => s.status === 'rejected').length
+  const completedSamples = approvedSamples + rejectedSamples
+  const approvalRate = completedSamples > 0 ? Math.round((approvedSamples / completedSamples) * 100) : 0
+
+  // Calculate weekly activity (samples created per day)
+  const weeklyActivity = (() => {
+    const today = new Date()
+    const dayNames = ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT']
+    const counts = [0, 0, 0, 0, 0, 0, 0]
+
+    samples.forEach(sample => {
+      const sampleDate = new Date(sample.created_at)
+      const dayOfWeek = sampleDate.getDay()
+      counts[dayOfWeek]++
+    })
+
+    // Get current day of week (0 = Sunday, 6 = Saturday)
+    const currentDay = today.getDay()
+
+    // Arrange days starting from Monday of current week
+    const monday = (currentDay + 6) % 7 // Convert to Monday-based (0 = Monday)
+    const weekDays = []
+    for (let i = 1; i <= 5; i++) { // Mon to Fri
+      const dayIndex = i
+      weekDays.push({
+        name: dayNames[dayIndex],
+        count: counts[dayIndex]
+      })
+    }
+
+    return weekDays
+  })()
+
+  const maxWeeklyCount = Math.max(...weeklyActivity.map(d => d.count), 1)
+
+  // Calculate average processing time
+  const processingTimes = samples
+    .filter(s => s.status === 'approved' || s.status === 'rejected')
+    .map(s => {
+      const created = new Date(s.created_at)
+      const now = new Date()
+      return (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24) // days
+    })
+  const avgProcessingTime = processingTimes.length > 0
+    ? (processingTimes.reduce((a, b) => a + b, 0) / processingTimes.length).toFixed(1)
+    : '0.0'
+
+  const stats = [
+    { title: 'Active Samples', value: samples.filter(s => s.status === 'in_progress' || s.status === 'under_review').length.toString(), change: '+12%', icon: SampleTin, color: 'lab-icon' },
+    { title: 'Pending Assessments', value: samples.filter(s => s.status === 'under_review').length.toString(), change: '-3%', icon: FlaskConical, color: 'lab-icon' },
+    { title: 'Certificates Generated', value: approvedSamples.toString(), change: '+8%', icon: FileText, color: 'lab-icon' },
+    { title: 'Total Users', value: '12', change: '+2', icon: Users, color: 'lab-icon' },
+  ]
+
+  if (loading) {
+    return (
+      <div className="p-6 flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="p-6 space-y-6">
-      {/* Access Requests Manager - Only for anderson@wolthers.com or global admins */}
-      {showAccessManager && (
-        <AccessRequestsManager />
-      )}
-
       {/* Welcome header */}
       <div className="space-y-3">
         <h1 className="text-3xl font-bold tracking-tight">
           Welcome back, {profile?.full_name || 'User'}
         </h1>
         <p className="text-lg text-muted-foreground">
-          Here's what's happening in your laboratory today.
+          Here&apos;s what&apos;s happening in your laboratory today.
         </p>
       </div>
 
@@ -123,31 +201,29 @@ function DashboardContent() {
         {samplesByStatus.inProgress.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <FlaskConical className="h-6 w-6 text-blue-600" />
+              <FlaskConical className="h-5 w-5 text-muted-foreground" />
               <h2 className="text-xl font-bold">Cupping Table - In Progress</h2>
-              <span className="bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 px-3 py-1 rounded-full text-sm font-medium">
-                {samplesByStatus.inProgress.length} samples
+              <span className="text-sm text-muted-foreground">
+                {samplesByStatus.inProgress.length} {samplesByStatus.inProgress.length === 1 ? 'sample' : 'samples'}
               </span>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {samplesByStatus.inProgress.map((sample) => (
-                <Card key={sample.id} className="hover:shadow-md transition-all duration-200 cursor-pointer border-l-4 border-l-blue-500">
-                  <CardContent className="p-4">
-                    <div className="space-y-2">
-                      <div className="flex justify-between items-start">
-                        <p className="font-bold text-lg text-blue-600">{sample.id}</p>
-                        <Badge className="bg-blue-50 dark:bg-blue-950 text-blue-700 dark:text-blue-300 text-xs">
-                          {sample.cuppingTable}
-                        </Badge>
-                      </div>
-                      <p className="font-medium">{sample.origin}</p>
-                      <p className="text-sm text-muted-foreground">{sample.client}</p>
+            <Card className="p-6">
+              <div className="flex flex-wrap gap-4">
+                {samplesByStatus.inProgress.map((sample, index) => (
+                  <div key={sample.id} className="flex items-center">
+                    <div className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors">
+                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-1">{sample.id}</p>
+                      <p className="text-sm text-foreground">{sample.origin}</p>
+                      {sample.client && <p className="text-xs text-muted-foreground">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">{sample.quality}</p>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-            <hr className="border-border" />
+                    {index < samplesByStatus.inProgress.length - 1 && (
+                      <div className="h-16 w-px bg-border mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         )}
 
@@ -155,38 +231,29 @@ function DashboardContent() {
         {samplesByStatus.underReview.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <Calendar className="h-6 w-6 text-amber-600" />
+              <Calendar className="h-5 w-5 text-muted-foreground" />
               <h2 className="text-xl font-bold">Under Review</h2>
-              <span className="bg-amber-100 dark:bg-amber-900 text-amber-800 dark:text-amber-200 px-3 py-1 rounded-full text-sm font-medium">
-                {samplesByStatus.underReview.length} samples
+              <span className="text-sm text-muted-foreground">
+                {samplesByStatus.underReview.length} {samplesByStatus.underReview.length === 1 ? 'sample' : 'samples'}
               </span>
             </div>
-            <div className="space-y-2">
-              {samplesByStatus.underReview.map((sample, index) => (
-                <div key={sample.id}>
-                  <Card className="hover:shadow-md transition-all duration-200 cursor-pointer border-l-4 border-l-amber-500">
-                    <CardContent className="p-4">
-                      <div className="flex justify-between items-center">
-                        <div className="space-y-1">
-                          <p className="font-bold text-lg text-amber-600">{sample.id}</p>
-                          <p className="font-medium">{sample.origin}</p>
-                          <p className="text-sm text-muted-foreground">{sample.client}</p>
-                        </div>
-                        <div className="text-right">
-                          <Badge className="bg-amber-50 dark:bg-amber-950 text-amber-700 dark:text-amber-300">
-                            Awaiting Review
-                          </Badge>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                  {index < samplesByStatus.underReview.length - 1 && (
-                    <hr className="border-border/30 my-2" />
-                  )}
-                </div>
-              ))}
-            </div>
-            <hr className="border-border" />
+            <Card className="p-6">
+              <div className="flex flex-wrap gap-4">
+                {samplesByStatus.underReview.map((sample, index) => (
+                  <div key={sample.id} className="flex items-center">
+                    <div className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors">
+                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-1">{sample.id}</p>
+                      <p className="text-sm text-foreground">{sample.origin}</p>
+                      {sample.client && <p className="text-xs text-muted-foreground">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">{sample.quality}</p>
+                    </div>
+                    {index < samplesByStatus.underReview.length - 1 && (
+                      <div className="h-16 w-px bg-border mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         )}
 
@@ -194,12 +261,12 @@ function DashboardContent() {
         {samplesByStatus.approved.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <Package className="h-6 w-6 text-emerald-600" />
+              <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
               <h2 className="text-xl font-bold">Approved Samples</h2>
               <div className="flex items-center gap-2 ml-auto">
                 <Filter className="h-4 w-4 text-muted-foreground" />
-                <select 
-                  value={approvedFilter} 
+                <select
+                  value={approvedFilter}
                   onChange={(e) => setApprovedFilter(e.target.value)}
                   className="bg-background border border-border rounded px-2 py-1 text-sm"
                 >
@@ -209,23 +276,23 @@ function DashboardContent() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {samplesByStatus.approved.map((sample) => (
-                <Card key={sample.id} className="hover:shadow-md transition-all duration-200 cursor-pointer border-l-4 border-l-emerald-500">
-                  <CardContent className="p-4">
-                    <div className="space-y-2">
-                      <p className="font-bold text-emerald-600">{sample.id}</p>
-                      <p className="text-sm font-medium">{sample.origin}</p>
-                      <p className="text-xs text-muted-foreground">{sample.client}</p>
-                      <Badge className="bg-emerald-50 dark:bg-emerald-950 text-emerald-700 dark:text-emerald-300 text-xs">
-                        Approved
-                      </Badge>
+            <Card className="p-6">
+              <div className="flex flex-wrap gap-4">
+                {samplesByStatus.approved.map((sample, index) => (
+                  <div key={sample.id} className="flex items-center">
+                    <div className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors">
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1">{sample.id}</p>
+                      <p className="text-sm text-foreground">{sample.origin}</p>
+                      {sample.client && <p className="text-xs text-muted-foreground">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">{sample.quality}</p>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-            <hr className="border-border" />
+                    {index < samplesByStatus.approved.length - 1 && (
+                      <div className="h-16 w-px bg-border mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         )}
 
@@ -233,12 +300,12 @@ function DashboardContent() {
         {samplesByStatus.rejected.length > 0 && (
           <div className="space-y-4">
             <div className="flex items-center gap-3">
-              <FileText className="h-6 w-6 text-red-600" />
+              <XCircle className="h-5 w-5 text-muted-foreground" />
               <h2 className="text-xl font-bold">Rejected Samples</h2>
               <div className="flex items-center gap-2 ml-auto">
                 <Filter className="h-4 w-4 text-muted-foreground" />
-                <select 
-                  value={rejectedFilter} 
+                <select
+                  value={rejectedFilter}
                   onChange={(e) => setRejectedFilter(e.target.value)}
                   className="bg-background border border-border rounded px-2 py-1 text-sm"
                 >
@@ -248,22 +315,23 @@ function DashboardContent() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              {samplesByStatus.rejected.map((sample) => (
-                <Card key={sample.id} className="hover:shadow-md transition-all duration-200 cursor-pointer border-l-4 border-l-red-500">
-                  <CardContent className="p-4">
-                    <div className="space-y-2">
-                      <p className="font-bold text-red-600">{sample.id}</p>
-                      <p className="text-sm font-medium">{sample.origin}</p>
-                      <p className="text-xs text-muted-foreground">{sample.client}</p>
-                      <Badge className="bg-red-50 dark:bg-red-950 text-red-700 dark:text-red-300 text-xs">
-                        Rejected
-                      </Badge>
+            <Card className="p-6">
+              <div className="flex flex-wrap gap-4">
+                {samplesByStatus.rejected.map((sample, index) => (
+                  <div key={sample.id} className="flex items-center">
+                    <div className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors">
+                      <p className="font-bold text-red-600 dark:text-red-400 mb-1">{sample.id}</p>
+                      <p className="text-sm text-foreground">{sample.origin}</p>
+                      {sample.client && <p className="text-xs text-muted-foreground">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground mt-1">{sample.quality}</p>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                    {index < samplesByStatus.rejected.length - 1 && (
+                      <div className="h-16 w-px bg-border mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         )}
       </div>
@@ -280,41 +348,18 @@ function DashboardContent() {
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground">MON</span>
-                <div className="flex-1 mx-3 bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{width: '75%'}}></div>
+              {weeklyActivity.map((day) => (
+                <div key={day.name} className="flex justify-between items-center">
+                  <span className="text-sm font-medium text-muted-foreground">{day.name}</span>
+                  <div className="flex-1 mx-3 bg-muted rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-primary h-full rounded-full"
+                      style={{width: `${(day.count / maxWeeklyCount) * 100}%`}}
+                    ></div>
+                  </div>
+                  <span className="text-sm font-bold">{day.count}</span>
                 </div>
-                <span className="text-sm font-bold">15</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground">TUE</span>
-                <div className="flex-1 mx-3 bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{width: '90%'}}></div>
-                </div>
-                <span className="text-sm font-bold">18</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground">WED</span>
-                <div className="flex-1 mx-3 bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{width: '60%'}}></div>
-                </div>
-                <span className="text-sm font-bold">12</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground">THU</span>
-                <div className="flex-1 mx-3 bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{width: '100%'}}></div>
-                </div>
-                <span className="text-sm font-bold">20</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm font-medium text-muted-foreground">FRI</span>
-                <div className="flex-1 mx-3 bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{width: '45%'}}></div>
-                </div>
-                <span className="text-sm font-bold">9</span>
-              </div>
+              ))}
             </div>
           </CardContent>
         </Card>
@@ -341,19 +386,19 @@ function DashboardContent() {
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium">Approval Rate</span>
-                  <span className="text-lg font-bold">92%</span>
+                  <span className="text-lg font-bold">{approvalRate}%</span>
                 </div>
                 <div className="bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-blue-500 h-full rounded-full" style={{width: '92%'}}></div>
+                  <div className="bg-blue-500 h-full rounded-full" style={{width: `${approvalRate}%`}}></div>
                 </div>
               </div>
               <div>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm font-medium">Processing Time</span>
-                  <span className="text-lg font-bold">2.4d</span>
+                  <span className="text-lg font-bold">{avgProcessingTime}d</span>
                 </div>
                 <div className="bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-amber-500 h-full rounded-full" style={{width: '68%'}}></div>
+                  <div className="bg-amber-500 h-full rounded-full" style={{width: `${Math.min((parseFloat(avgProcessingTime) / 5) * 100, 100)}%`}}></div>
                 </div>
               </div>
             </div>
@@ -365,9 +410,11 @@ function DashboardContent() {
   )
 }
 
+type AccessRequest = Database['public']['Tables']['access_requests']['Row']
+
 function QCAccessMessage() {
   const { user, profile } = useAuth()
-  const [accessRequest, setAccessRequest] = useState(null)
+  const [accessRequest, setAccessRequest] = useState<AccessRequest | null>(null)
   const [loading, setLoading] = useState(true)
   const isWolthersUser = user?.email?.endsWith('@wolthers.com')
   
@@ -438,7 +485,7 @@ function QCAccessMessage() {
               </div>
             ) : (
               <p className="text-sm">
-                Your account exists in our system, but QC access hasn't been enabled yet.
+                Your account exists in our system, but QC access hasn&apos;t been enabled yet.
               </p>
             )}
           </div>
@@ -449,7 +496,7 @@ function QCAccessMessage() {
                 <h4 className="font-medium text-sm">What happens next:</h4>
                 <ul className="text-xs text-muted-foreground space-y-1">
                   <li>• Anderson will review your request</li>
-                  <li>• You'll receive an email when approved</li>
+                  <li>• You&apos;ll receive an email when approved</li>
                   <li>• Your role and lab assignment will be configured</li>
                 </ul>
               </div>
@@ -459,7 +506,7 @@ function QCAccessMessage() {
                 <ul className="text-xs text-muted-foreground space-y-1">
                   <li>• Contact your system administrator</li>
                   <li>• Request QC role assignment</li>
-                  <li>• Specify which laboratory you'll be working with</li>
+                  <li>• Specify which laboratory you&apos;ll be working with</li>
                 </ul>
               </div>
             )}
