@@ -185,7 +185,7 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
         .slice(0, 100) // Limit to top 100 flows to prevent overcrowding
 
       // Transform flow data to Sankey format
-      const sankeyData = transformToSankeyData(flows, profile.qc_role, user.id)
+      const sankeyData = transformToSankeyData(flows, profile.qc_role || 'lab_personnel', user.id)
       setData(sankeyData)
     } catch (err) {
       console.error('Error fetching Sankey data:', err)
