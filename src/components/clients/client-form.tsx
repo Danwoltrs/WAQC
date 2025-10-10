@@ -502,7 +502,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
               <Label htmlFor="pricing_model">Pricing Model</Label>
               <Select
                 value={formData.pricing_model || 'per_sample'}
-                onValueChange={(value: 'per_sample' | 'per_pound') =>
+                onValueChange={(value: 'per_sample' | 'per_pound' | 'complimentary') =>
                   setFormData({ ...formData, pricing_model: value })
                 }
               >
@@ -512,9 +512,19 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                 <SelectContent>
                   <SelectItem value="per_sample">Per Sample (Flat Fee)</SelectItem>
                   <SelectItem value="per_pound">Per Pound (¢/lb)</SelectItem>
+                  <SelectItem value="complimentary">Complimentary (Included in Other Services)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
+
+            {formData.pricing_model === 'complimentary' && (
+              <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                <p className="text-sm text-blue-900 dark:text-blue-100">
+                  QC services are provided at no additional charge. This is typically used when services
+                  are included as part of intermediation or other business arrangements.
+                </p>
+              </div>
+            )}
 
             {formData.pricing_model === 'per_sample' && (
               <div className="space-y-2">

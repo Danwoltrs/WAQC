@@ -430,7 +430,7 @@ export type Database = {
           phone?: string
           client_types?: string[]
           // Pricing fields
-          pricing_model?: 'per_sample' | 'per_pound'
+          pricing_model?: 'per_sample' | 'per_pound' | 'complimentary' | 'complimentary'
           price_per_sample?: number
           price_per_pound_cents?: number
           currency?: string
@@ -464,7 +464,7 @@ export type Database = {
           fantasy_name?: string
           phone?: string
           client_types?: string[]
-          pricing_model?: 'per_sample' | 'per_pound'
+          pricing_model?: 'per_sample' | 'per_pound' | 'complimentary'
           price_per_sample?: number
           price_per_pound_cents?: number
           currency?: string
@@ -494,7 +494,7 @@ export type Database = {
           fantasy_name?: string
           phone?: string
           client_types?: string[]
-          pricing_model?: 'per_sample' | 'per_pound'
+          pricing_model?: 'per_sample' | 'per_pound' | 'complimentary'
           price_per_sample?: number
           price_per_pound_cents?: number
           currency?: string
