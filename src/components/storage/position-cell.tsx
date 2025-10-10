@@ -38,6 +38,11 @@ export function PositionCell({
   cellSize = 64,
   canManage = false
 }: PositionCellProps) {
+  // Calculate font sizes based on cell size
+  const fontSize = Math.max(10, Math.floor(cellSize / 6))
+  const smallFontSize = Math.max(8, Math.floor(cellSize / 10))
+  const iconSize = Math.max(12, Math.floor(cellSize / 6))
+
   if (!position) {
     return (
       <div
@@ -103,11 +108,6 @@ export function PositionCell({
   }
 
   const colorClass = getColorClass()
-
-  // Calculate font sizes based on cell size
-  const fontSize = Math.max(10, Math.floor(cellSize / 6))
-  const smallFontSize = Math.max(8, Math.floor(cellSize / 10))
-  const iconSize = Math.max(12, Math.floor(cellSize / 6))
 
   return (
     <button
