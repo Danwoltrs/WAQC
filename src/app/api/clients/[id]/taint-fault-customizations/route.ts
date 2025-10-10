@@ -254,7 +254,7 @@ export async function PATCH(
     // Update customization
     const { data: customization, error: updateError } = await supabase
       .from('client_taint_fault_customizations')
-      .update(updateData)
+      .update(updateData as any)
       .eq('id', body.customization_id)
       .eq('client_id', clientId)
       .select(`
