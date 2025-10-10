@@ -197,17 +197,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Ensure user has a QC role, default to lab_personnel if missing
       if (!profileData.qc_role) {
         console.log('User missing QC role, setting default')
-        const { error: updateError } = await supabase
+        const { data: updatedProfile, error: updateError } = await supabase
           .from('profiles')
           .update({ qc_role: 'lab_personnel' })
           .eq('id', userId)
-        
+          .select()
+          .single()
+
         if (updateError) {
           console.error('Error setting default QC role:', updateError)
-        } else {
-          // Refetch the profile with updated role
-          await fetchProfile(userId)
+          // Continue with the profile as-is rather than infinite loop
+          setProfile(profileData)
+          setPermissions(getUserPermissions('lab_personnel', undefined))
+          setLoading(false)
           return
+        } else if (updatedProfile) {
+          // Use the updated profile directly instead of recursive call
+          profileData = updatedProfile
         }
       }
 
