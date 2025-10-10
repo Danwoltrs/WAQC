@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-// import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
-// type DefectDefinitionInsert = Database['public']['Tables']['defect_definitions']['Insert']
-type DefectDefinitionInsert = any // Temporary: Types need to be regenerated to include defect_definitions
+type DefectDefinitionInsert = Database['public']['Tables']['defect_definitions']['Insert']
 
 /**
  * GET /api/clients/[id]/defect-definitions
@@ -56,7 +55,7 @@ export async function GET(
     }
 
     if (category) {
-      query = query.eq('category', category)
+      query = query.eq('category', category as Database['public']['Enums']['defect_category'])
     }
 
     if (is_active === 'true') {
@@ -90,7 +89,7 @@ export async function GET(
     }
 
     if (category) {
-      globalQuery = globalQuery.eq('category', category)
+      globalQuery = globalQuery.eq('category', category as Database['public']['Enums']['defect_category'])
     }
 
     if (is_active === 'true') {

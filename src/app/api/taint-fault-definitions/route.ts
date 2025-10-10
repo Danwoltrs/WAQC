@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-// import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
-// type TaintFaultDefinition = Database['public']['Tables']['taint_fault_definitions']['Row']
-// type TaintFaultDefinitionInsert = Database['public']['Tables']['taint_fault_definitions']['Insert']
-type TaintFaultDefinition = any // Temporary: Types need to be regenerated
-type TaintFaultDefinitionInsert = any // Temporary: Types need to be regenerated
+type TaintFaultDefinition = Database['public']['Tables']['taint_fault_definitions']['Row']
+type TaintFaultDefinitionInsert = Database['public']['Tables']['taint_fault_definitions']['Insert']
 
 /**
  * GET /api/taint-fault-definitions

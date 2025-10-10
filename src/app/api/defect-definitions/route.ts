@@ -1,11 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-// import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
-// type DefectDefinition = Database['public']['Tables']['defect_definitions']['Row']
-// type DefectDefinitionInsert = Database['public']['Tables']['defect_definitions']['Insert']
-type DefectDefinition = any // Temporary: Types need to be regenerated
-type DefectDefinitionInsert = any // Temporary: Types need to be regenerated
+type DefectDefinition = Database['public']['Tables']['defect_definitions']['Row']
+type DefectDefinitionInsert = Database['public']['Tables']['defect_definitions']['Insert']
 
 /**
  * GET /api/defect-definitions
@@ -158,7 +156,6 @@ export async function POST(request: NextRequest) {
     // Insert defect definition
     const { data: definition, error: insertError } = await supabase
       .from('defect_definitions')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert(definitionData)
       .select()
       .single()
