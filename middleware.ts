@@ -55,7 +55,11 @@ export async function middleware(request: NextRequest) {
   )
 
   // Refresh session if expired - required for Server Components
-  await supabase.auth.getSession()
+  // Use getUser() instead of getSession() to validate the JWT and refresh if needed
+  const { data: { user }, error } = await supabase.auth.getUser()
+
+  // If there's an auth error or no user, allow the request to proceed
+  // (the API routes will handle authorization)
 
   return response
 }

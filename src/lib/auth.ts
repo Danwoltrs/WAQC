@@ -4,11 +4,11 @@ export const getUserPermissions = (qcRole: UserRole, laboratoryType?: string): s
   const basePermissions: Record<UserRole, string[]> = {
     lab_personnel: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard'],
     lab_finance_manager: ['view_samples', 'view_lab_finance', 'generate_invoices', 'view_lab_dashboard'],
-    lab_quality_manager: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs', 'view_lab_quality_metrics'],
+    lab_quality_manager: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs', 'view_lab_quality_metrics', 'manage_own_lab'],
     santos_hq_finance: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard'],
     global_finance_admin: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard', 'manage_global_finance'],
-    global_quality_admin: ['view_samples', 'create_samples', 'conduct_assessments', 'view_global_quality', 'view_all_labs', 'manage_global_quality_specs', 'create_laboratories', 'manage_users'],
-    global_admin: ['*'], // All permissions including manage_users
+    global_quality_admin: ['view_samples', 'create_samples', 'conduct_assessments', 'view_global_quality', 'view_all_labs', 'manage_global_quality_specs', 'manage_laboratories', 'manage_users'],
+    global_admin: ['*'], // All permissions including manage_users and manage_laboratories
     client: ['view_own_samples', 'download_certificates', 'view_client_dashboard'],
     supplier: ['view_performance_metrics', 'view_supplier_dashboard'],
     buyer: ['view_supply_chain', 'view_buyer_dashboard', 'view_sankey_charts']

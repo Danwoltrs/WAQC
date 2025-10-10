@@ -1,9 +1,10 @@
-import { createClient } from '@supabase/supabase-js'
+import { createBrowserClient } from '@supabase/ssr'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey)
+// Use SSR-compatible browser client that stores auth in cookies
+export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
 
 // User roles for the coffee QC system
 export type UserRole = 
@@ -210,6 +211,19 @@ export type Database = {
           supplier: string
           status: 'received' | 'in_progress' | 'under_review' | 'approved' | 'rejected'
           storage_position?: string
+          // Phase 2 fields
+          wolthers_contract_nr?: string
+          exporter_contract_nr?: string
+          buyer_contract_nr?: string
+          roaster_contract_nr?: string
+          ico_number?: string
+          container_nr?: string
+          sample_type?: 'pss' | 'ss' | 'type'
+          bags_quantity_mt?: number
+          bag_count?: number
+          processing_method?: string
+          workflow_stage?: string
+          assigned_to?: string
           created_at: string
           updated_at: string
         }
@@ -223,6 +237,19 @@ export type Database = {
           supplier: string
           status?: 'received' | 'in_progress' | 'under_review' | 'approved' | 'rejected'
           storage_position?: string
+          // Phase 2 fields
+          wolthers_contract_nr?: string
+          exporter_contract_nr?: string
+          buyer_contract_nr?: string
+          roaster_contract_nr?: string
+          ico_number?: string
+          container_nr?: string
+          sample_type?: 'pss' | 'ss' | 'type'
+          bags_quantity_mt?: number
+          bag_count?: number
+          processing_method?: string
+          workflow_stage?: string
+          assigned_to?: string
           created_at?: string
           updated_at?: string
         }
@@ -235,6 +262,19 @@ export type Database = {
           supplier?: string
           status?: 'received' | 'in_progress' | 'under_review' | 'approved' | 'rejected'
           storage_position?: string
+          // Phase 2 fields
+          wolthers_contract_nr?: string
+          exporter_contract_nr?: string
+          buyer_contract_nr?: string
+          roaster_contract_nr?: string
+          ico_number?: string
+          container_nr?: string
+          sample_type?: 'pss' | 'ss' | 'type'
+          bags_quantity_mt?: number
+          bag_count?: number
+          processing_method?: string
+          workflow_stage?: string
+          assigned_to?: string
           updated_at?: string
         }
       }

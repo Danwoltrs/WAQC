@@ -128,7 +128,7 @@ export default function SupplierReviewPage() {
               <div className="space-y-4 text-sm text-muted-foreground">
                 <div>
                   <p className="font-semibold text-foreground mb-1">PSS (Pre-Shipment Sample)</p>
-                  <p>Samples sent before shipping for pre-approval. Typically show supplier's best quality.</p>
+                  <p>Samples sent before shipping for pre-approval. Typically show supplier&apos;s best quality.</p>
                 </div>
                 <div>
                   <p className="font-semibold text-foreground mb-1">SS (Sealed Sample)</p>

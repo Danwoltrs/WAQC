@@ -8,6 +8,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar, CheckCircle2, XCircle } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
+import { CuppingBowl } from '@/components/icons/cupping-bowl'
 
 interface Sample {
   id: string
@@ -126,7 +127,7 @@ function DashboardContent() {
 
   const stats = [
     { title: 'Active Samples', value: samples.filter(s => s.status === 'in_progress' || s.status === 'under_review').length.toString(), change: '+12%', icon: SampleTin, color: 'lab-icon' },
-    { title: 'Pending Assessments', value: samples.filter(s => s.status === 'under_review').length.toString(), change: '-3%', icon: FlaskConical, color: 'lab-icon' },
+    { title: 'Pending Assessments', value: samples.filter(s => s.status === 'under_review').length.toString(), change: '-3%', icon: CuppingBowl, color: 'lab-icon' },
     { title: 'Certificates Generated', value: approvedSamples.toString(), change: '+8%', icon: FileText, color: 'lab-icon' },
     { title: 'Total Users', value: '12', change: '+2', icon: Users, color: 'lab-icon' },
   ]

@@ -14,14 +14,14 @@ export async function GET(request: NextRequest) {
   if (error) {
     console.error('OAuth error:', error, errorDescription)
     return NextResponse.redirect(
-      `${requestUrl.origin}/login?error=${encodeURIComponent(errorDescription || error)}`
+      `${requestUrl.origin}/?error=${encodeURIComponent(errorDescription || error)}`
     )
   }
 
-  // If no code, redirect to login
+  // If no code, redirect to home (login page)
   if (!code) {
     console.error('No code provided in OAuth callback')
-    return NextResponse.redirect(`${requestUrl.origin}/login`)
+    return NextResponse.redirect(`${requestUrl.origin}/`)
   }
 
   try {
@@ -65,14 +65,14 @@ export async function GET(request: NextRequest) {
     if (exchangeError) {
       console.error('Error exchanging code for session:', exchangeError)
       return NextResponse.redirect(
-        `${requestUrl.origin}/login?error=${encodeURIComponent(exchangeError.message)}`
+        `${requestUrl.origin}/?error=${encodeURIComponent(exchangeError.message)}`
       )
     }
 
     if (!data.session) {
       console.error('No session returned after code exchange')
       return NextResponse.redirect(
-        `${requestUrl.origin}/login?error=No+session+created`
+        `${requestUrl.origin}/?error=No+session+created`
       )
     }
 
@@ -82,7 +82,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('Unexpected error in OAuth callback:', error)
     return NextResponse.redirect(
-      `${requestUrl.origin}/login?error=${encodeURIComponent('Authentication failed')}`
+      `${requestUrl.origin}/?error=${encodeURIComponent('Authentication failed')}`
     )
   }
 }
