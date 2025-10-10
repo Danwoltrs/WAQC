@@ -21,10 +21,16 @@ interface SupplierPerformance {
 
 interface PerformanceLeaderboardProps {
   year: number
-  quarter: number | null
+  quarter?: number | null
+  filters?: {
+    client?: string
+    supplier?: string
+    importer?: string
+    roaster?: string
+  }
 }
 
-export function PerformanceLeaderboard({ year, quarter }: PerformanceLeaderboardProps) {
+export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLeaderboardProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<SupplierPerformance[]>([])
@@ -34,7 +40,7 @@ export function PerformanceLeaderboard({ year, quarter }: PerformanceLeaderboard
     if (user && profile) {
       fetchSupplierPerformance()
     }
-  }, [user, profile, year, quarter])
+  }, [user, profile, year, quarter, filters])
 
   const fetchSupplierPerformance = async () => {
     if (!user || !profile) return
@@ -61,11 +67,25 @@ export function PerformanceLeaderboard({ year, quarter }: PerformanceLeaderboard
       // Build query
       let query = supabase
         .from('samples')
-        .select('exporter, supplier_type, status, created_at')
-        .not('exporter', 'is', null)
+        .select('supplier, sample_type, status, created_at')
+        .not('supplier', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', startDate)
         .lt('created_at', endDate)
+
+      // Apply stakeholder filters
+      if (filters?.supplier) {
+        query = query.eq('supplier', filters.supplier)
+      }
+      if (filters?.importer) {
+        query = query.eq('importer', filters.importer)
+      }
+      if (filters?.roaster) {
+        query = query.eq('roaster', filters.roaster)
+      }
+      if (filters?.client) {
+        query = query.eq('client_id', filters.client)
+      }
 
       // Apply lab filter based on role
       if (profile.qc_role === 'lab_personnel' ||
@@ -90,8 +110,8 @@ export function PerformanceLeaderboard({ year, quarter }: PerformanceLeaderboard
       }>()
 
       samples?.forEach(sample => {
-        const existing = supplierMap.get(sample.exporter)
-        const isPSS = sample.supplier_type === 'PSS'
+        const existing = supplierMap.get(sample.supplier)
+        const isPSS = sample.sample_type === 'PSS'
         const isApproved = sample.status === 'approved'
 
         if (existing) {
@@ -107,7 +127,7 @@ export function PerformanceLeaderboard({ year, quarter }: PerformanceLeaderboard
             if (isApproved) existing.ssApproved += 1
           }
         } else {
-          supplierMap.set(sample.exporter, {
+          supplierMap.set(sample.supplier, {
             totalSamples: 1,
             approvedSamples: isApproved ? 1 : 0,
             rejectedSamples: isApproved ? 0 : 1,

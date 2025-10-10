@@ -40,6 +40,10 @@ interface SupplyChainSankeyProps {
     month?: number | null
     laboratoryId?: string
     minBags?: number
+    client?: string
+    supplier?: string
+    importer?: string
+    roaster?: string
   }
   onNodeClick?: (node: SankeyNode) => void
 }
@@ -100,12 +104,26 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
 
       let query = supabase
         .from('samples')
-        .select('exporter, importer, roaster, bags, status, created_at')
-        .not('exporter', 'is', null)
+        .select('supplier, importer, roaster, bags_quantity_mt, status, created_at, client_id')
+        .not('supplier', 'is', null)
         .not('importer', 'is', null)
         .not('roaster', 'is', null)
         .in('status', ['approved', 'rejected'])
-        .gte('bags', minBags)
+        .gte('bags_quantity_mt', minBags)
+
+      // Apply stakeholder filters
+      if (filters?.supplier) {
+        query = query.eq('supplier', filters.supplier)
+      }
+      if (filters?.importer) {
+        query = query.eq('importer', filters.importer)
+      }
+      if (filters?.roaster) {
+        query = query.eq('roaster', filters.roaster)
+      }
+      if (filters?.client) {
+        query = query.eq('client_id', filters.client)
+      }
 
       // Apply year filter
       if (year) {
@@ -153,21 +171,21 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
       }>()
 
       samples?.forEach(sample => {
-        const key = `${sample.exporter}|${sample.importer}|${sample.roaster}`
+        const key = `${sample.supplier}|${sample.importer}|${sample.roaster}`
         const existing = flowMap.get(key)
 
         if (existing) {
-          existing.totalBags += sample.bags || 0
+          existing.totalBags += sample.bags_quantity_mt || 0
           existing.totalSamples += 1
           if (sample.status === 'approved') {
             existing.approvedSamples += 1
           }
         } else {
           flowMap.set(key, {
-            exporter: sample.exporter,
+            exporter: sample.supplier,
             importer: sample.importer,
             roaster: sample.roaster,
-            totalBags: sample.bags || 0,
+            totalBags: sample.bags_quantity_mt || 0,
             totalSamples: 1,
             approvedSamples: sample.status === 'approved' ? 1 : 0
           })

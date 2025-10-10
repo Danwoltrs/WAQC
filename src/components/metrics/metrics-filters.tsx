@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Filter, Calendar } from 'lucide-react'
@@ -15,6 +15,10 @@ export interface FilterState {
   quarter: number | null
   laboratoryId?: string
   minBags?: number
+  client?: string
+  supplier?: string
+  importer?: string
+  roaster?: string
 }
 
 export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
@@ -23,8 +27,63 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
     year: currentYear,
     month: null,
     quarter: null,
-    minBags: 0
+    minBags: 0,
+    client: undefined,
+    supplier: undefined,
+    importer: undefined,
+    roaster: undefined
   })
+
+  const [stakeholders, setStakeholders] = useState<{
+    clients: string[]
+    suppliers: string[]
+    importers: string[]
+    roasters: string[]
+  }>({
+    clients: [],
+    suppliers: [],
+    importers: [],
+    roasters: []
+  })
+
+  // Load stakeholder options
+  useEffect(() => {
+    loadStakeholders()
+  }, [])
+
+  const loadStakeholders = async () => {
+    try {
+      // Fetch unique values from samples - for now just get from samples directly
+      // In production, you'd want to fetch from dedicated stakeholder tables
+      const response = await fetch('/api/samples?limit=1000')
+      const data = await response.json()
+
+      if (response.ok) {
+        const clientIds = new Set<string>()
+        const suppliers = new Set<string>()
+        const importers = new Set<string>()
+        const roasters = new Set<string>()
+
+        data.samples.forEach((sample: any) => {
+          // For clients, we'll just use IDs for now since we don't have names in the response
+          // TODO: Join with clients table to get actual names
+          if (sample.client_id) clientIds.add(sample.client_id)
+          if (sample.supplier) suppliers.add(sample.supplier)
+          if (sample.importer) importers.add(sample.importer)
+          if (sample.roaster) roasters.add(sample.roaster)
+        })
+
+        setStakeholders({
+          clients: Array.from(clientIds).sort(),
+          suppliers: Array.from(suppliers).sort(),
+          importers: Array.from(importers).sort(),
+          roasters: Array.from(roasters).sort()
+        })
+      }
+    } catch (error) {
+      console.error('Error loading stakeholders:', error)
+    }
+  }
 
   const years = Array.from({ length: 5 }, (_, i) => currentYear - i)
   const months = [
@@ -53,7 +112,11 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
       year: currentYear,
       month: null,
       quarter: null,
-      minBags: 0
+      minBags: 0,
+      client: undefined,
+      supplier: undefined,
+      importer: undefined,
+      roaster: undefined
     }
     setFilters(reset)
     onFilterChange(reset)
@@ -67,6 +130,70 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
           <h3 className="font-semibold">Filters</h3>
         </div>
 
+        {/* Stakeholder Filters */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+          {/* Client filter */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Client</label>
+            <select
+              value={filters.client || ''}
+              onChange={(e) => handleFilterUpdate('client', e.target.value || undefined)}
+              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+            >
+              <option value="">All Clients</option>
+              {stakeholders.clients.map(client => (
+                <option key={client} value={client}>{client}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Supplier/Exporter filter */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Exporter</label>
+            <select
+              value={filters.supplier || ''}
+              onChange={(e) => handleFilterUpdate('supplier', e.target.value || undefined)}
+              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+            >
+              <option value="">All Exporters</option>
+              {stakeholders.suppliers.map(supplier => (
+                <option key={supplier} value={supplier}>{supplier}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Importer filter */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Importer</label>
+            <select
+              value={filters.importer || ''}
+              onChange={(e) => handleFilterUpdate('importer', e.target.value || undefined)}
+              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+            >
+              <option value="">All Importers</option>
+              {stakeholders.importers.map(importer => (
+                <option key={importer} value={importer}>{importer}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Roaster filter */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Roaster</label>
+            <select
+              value={filters.roaster || ''}
+              onChange={(e) => handleFilterUpdate('roaster', e.target.value || undefined)}
+              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+            >
+              <option value="">All Roasters</option>
+              {stakeholders.roasters.map(roaster => (
+                <option key={roaster} value={roaster}>{roaster}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+
+        {/* Time & Volume Filters */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           {/* Year filter */}
           <div>
