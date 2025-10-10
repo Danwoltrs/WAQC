@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import Link from 'next/link'
 import { Search, Moon, Sun, Bell, Menu, X, Globe } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -55,17 +56,17 @@ export function Header({ onMenuToggle, isMenuOpen }: HeaderProps) {
 
           {/* Logo and Search together */}
           <div className="flex items-center space-x-6">
-            <div className="flex items-center space-x-4">
-              <img 
-                src="/images/logos/wolthers-logo-off-white.svg" 
-                alt="Wolthers Logo" 
+            <Link href="/" className="flex items-center space-x-4 hover:opacity-80 transition-opacity cursor-pointer">
+              <img
+                src="/images/logos/wolthers-logo-off-white.svg"
+                alt="Wolthers Logo"
                 className="h-8 w-auto"
               />
               {/* Horizontal separator */}
               <div className="h-6 w-px bg-white/30 dark:bg-white/30"></div>
               {/* QC Text */}
               <span className="text-2xl font-bold text-white dark:text-white">QC</span>
-            </div>
+            </Link>
             
             {/* Search - Right next to logo section */}
             <div className="w-96">
