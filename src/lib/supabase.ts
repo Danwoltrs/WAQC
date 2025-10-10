@@ -514,5 +514,29 @@ export type Database = {
         }
       }
     }
+    Functions: {
+      search_clients: {
+        Args: {
+          search_term: string
+          limit_count: number
+        }
+        Returns: Array<{
+          company_id: string | null
+          qc_client_id: string | null
+          name: string
+          fantasy_name: string | null
+          email: string | null
+          phone: string | null
+          address: string | null
+          city: string | null
+          state: string | null
+          country: string | null
+          primary_category: string | null
+          subcategories: string[] | null
+          source_table: string
+          relevance_score: number
+        }>
+      }
+    }
   }
 }
