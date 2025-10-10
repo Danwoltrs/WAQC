@@ -34,12 +34,11 @@ export async function GET(request: NextRequest) {
 
     // Call the database search function
     type SearchResults = Database['public']['Functions']['search_clients']['Returns']
-    const response = await supabase.rpc('search_clients', {
+    // @ts-expect-error - Supabase RPC types not fully compatible with custom function definitions
+    const { data: results, error } = await supabase.rpc('search_clients', {
       search_term: searchTerm.trim(),
       limit_count: limit
     }) as { data: SearchResults | null; error: any }
-
-    const { data: results, error } = response
 
     if (error) {
       console.error('Error searching clients:', error)
