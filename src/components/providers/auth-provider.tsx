@@ -195,6 +195,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Ensure user has a QC role, default to lab_personnel if missing
+      let finalProfile = profileData
       if (!profileData.qc_role) {
         console.log('User missing QC role, setting default')
         const { data: updatedProfile, error: updateError } = await supabase
@@ -213,25 +214,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         } else if (updatedProfile) {
           // Use the updated profile directly instead of recursive call
-          profileData = updatedProfile
+          finalProfile = updatedProfile
         }
       }
 
-      setProfile(profileData)
-      
+      setProfile(finalProfile)
+
       // Get laboratory info to determine permissions
       let laboratoryType: string | undefined
-      if (profileData.laboratory_id) {
+      if (finalProfile.laboratory_id) {
         const { data: labData } = await supabase
           .from('laboratories')
           .select('type')
-          .eq('id', profileData.laboratory_id)
+          .eq('id', finalProfile.laboratory_id)
           .single()
-        
+
         laboratoryType = labData?.type
       }
 
-      const userPermissions = getUserPermissions(profileData.qc_role, laboratoryType)
+      const userPermissions = getUserPermissions(finalProfile.qc_role, laboratoryType)
       setPermissions(userPermissions)
     } catch (error) {
       console.error('Error in fetchProfile:', error)
