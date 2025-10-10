@@ -47,8 +47,9 @@ interface SupplyChainSankeyProps {
 // Custom node renderer with labels
 const CustomNode = ({ x, y, width, height, index, payload, containerWidth }: any) => {
   const isOut = x + width + 6 > containerWidth
+  const nodeKey = payload?.id || payload?.key || `node-${index}`
   return (
-    <Layer key={`CustomNode${index}`}>
+    <Layer key={nodeKey}>
       <Rectangle
         x={x}
         y={y}

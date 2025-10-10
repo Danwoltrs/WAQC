@@ -1,33 +1,55 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { getServerSession } from 'next-auth'
-import { authOptions } from '@/lib/auth'
-import { createClient } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase-server'
+
+type ProfileData = {
+  qc_role: string
+  laboratory_id: string | null
+  is_global_admin: boolean
+}
 
 export async function PATCH(
   request: NextRequest,
   context: { params: Promise<{ id: string; positionId: string }> }
 ) {
   try {
-    const session = await getServerSession(authOptions)
-    if (!session?.user) {
+    const supabase = await createClient()
+
+    // Check authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Only admins and lab directors can assign positions
-    if (session.user.role !== 'admin' && session.user.role !== 'lab_director') {
-      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    // Get user profile to check permissions
+    const { data: profileData, error: profileError } = await supabase
+      .from('profiles')
+      .select('qc_role, laboratory_id, is_global_admin')
+      .eq('id', user.id)
+      .single()
+
+    if (profileError || !profileData) {
+      return NextResponse.json({ error: 'Profile not found' }, { status: 404 })
     }
+
+    const profile = profileData as ProfileData
 
     const params = await context.params
     const { id: laboratoryId, positionId } = params
+
+    // Only global admins, global_quality_admin, and lab_quality_manager (for their own lab) can assign positions
+    if (!profile.is_global_admin &&
+        profile.qc_role !== 'global_quality_admin' &&
+        !(profile.qc_role === 'lab_quality_manager' && profile.laboratory_id === laboratoryId)) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { client_id, allow_client_view } = body
-
-    const supabase = createClient()
 
     // Update the position assignment
     const { data, error } = await supabase
       .from('storage_positions')
+      // @ts-expect-error - Supabase type inference issue with update
       .update({
         client_id: client_id || null,
         allow_client_view: allow_client_view || false

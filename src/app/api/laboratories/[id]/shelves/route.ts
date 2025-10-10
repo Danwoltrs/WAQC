@@ -7,6 +7,34 @@ type ProfileData = {
   is_global_admin: boolean
 }
 
+type PositionStats = {
+  id: string
+  current_count: number
+  capacity_per_position: number
+}
+
+type MaxShelf = {
+  shelf_number: number
+}
+
+type InsertedShelf = {
+  id: string
+  laboratory_id: string
+  shelf_number: number
+  shelf_letter: string
+  columns: number
+  rows: number
+  position_layout: string
+  samples_per_position: number
+  naming_convention: string
+  client_id: string | null
+  allow_client_view: boolean
+  x_position: number
+  y_position: number
+  created_at: string
+  updated_at: string
+}
+
 /**
  * GET /api/laboratories/[id]/shelves
  * Get all shelves for a laboratory with utilization data
@@ -91,7 +119,7 @@ export async function GET(
     const shelvesWithUtilization = await Promise.all(
       (shelves || []).map(async (shelf: any) => {
         // Get position statistics
-        const { data: positions, error: posError } = await supabase
+        const { data: positionsData, error: posError } = await supabase
           .from('storage_positions')
           .select('id, current_count, capacity_per_position')
           .eq('shelf_id', shelf.id)
@@ -99,6 +127,8 @@ export async function GET(
         if (posError) {
           console.error('Error fetching positions:', posError)
         }
+
+        const positions = positionsData as PositionStats[] | null
 
         const totalPositions = positions?.length || 0
         const totalCapacity = positions?.reduce((sum, p) => sum + p.capacity_per_position, 0) || 0
@@ -193,7 +223,7 @@ export async function POST(
     }
 
     // Get next shelf_number
-    const { data: maxShelf } = await supabase
+    const { data: maxShelfData } = await supabase
       .from('lab_shelves')
       .select('shelf_number')
       .eq('laboratory_id', laboratoryId)
@@ -201,6 +231,7 @@ export async function POST(
       .limit(1)
       .single()
 
+    const maxShelf = maxShelfData as MaxShelf | null
     const nextShelfNumber = (maxShelf?.shelf_number || 0) + 1
 
     // Create shelf
@@ -220,28 +251,30 @@ export async function POST(
     }
 
     console.log('[/shelves POST] Creating shelf with data:', shelfData)
-    const { data: shelf, error: insertError } = await supabase
+    const { data: insertedShelfData, error: insertError } = await supabase
       .from('lab_shelves')
       .insert(shelfData)
       .select()
       .single()
 
     console.log('[/shelves POST] Insert result:', {
-      shelf,
+      shelf: insertedShelfData,
       error: insertError
     })
 
-    if (insertError) {
+    if (insertError || !insertedShelfData) {
       console.error('Error creating shelf:', insertError)
       return NextResponse.json({
         error: 'Failed to create shelf',
-        details: insertError.message
+        details: insertError?.message || 'No data returned'
       }, { status: 500 })
     }
 
+    const shelf = insertedShelfData as InsertedShelf
+
     // Auto-generate storage positions for this shelf
     console.log('[/shelves POST] Generating positions for shelf:', shelf.id)
-    const { data: positionCount, error: generateError } = await supabase
+    const { data: positionCount, error: generateError } = await (supabase as any)
       .rpc('generate_storage_positions_for_shelf', { p_shelf_id: shelf.id })
 
     console.log('[/shelves POST] Position generation result:', {

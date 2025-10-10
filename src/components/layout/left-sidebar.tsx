@@ -18,9 +18,20 @@ import {
   ChevronRight,
   ChevronDown,
   ChevronUp,
-  Award
+  Award,
+  Plus,
+  List,
+  Search,
+  Microscope,
+  ClipboardList,
+  Calendar,
+  UserCheck,
+  UserPlus,
+  Building2,
+  Building
 } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
+import { CuppingBowl } from '@/components/icons/cupping-bowl'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -62,18 +73,90 @@ const navigation: NavItem[] = [
     href: '/samples',
     icon: SampleTin,
     permission: 'view_samples',
+    submenu: [
+      {
+        title: 'New Sample',
+        href: '/samples/intake',
+        icon: Plus,
+        permission: 'create_samples',
+      },
+      {
+        title: 'View All Samples',
+        href: '/samples',
+        icon: List,
+        permission: 'view_samples',
+      },
+      {
+        title: 'Storage Management',
+        href: '/samples/storage',
+        icon: MapPin,
+        permission: 'view_samples',
+      },
+      {
+        title: 'Find Sample',
+        href: '/samples/search',
+        icon: Search,
+        permission: 'view_samples',
+      },
+    ],
   },
   {
     title: 'Quality Assessment',
     href: '/assessment',
-    icon: FlaskConical,
+    icon: CuppingBowl,
     permission: 'conduct_assessments',
+    submenu: [
+      {
+        title: 'Green Bean Analysis',
+        href: '/assessment/green-bean',
+        icon: Microscope,
+        permission: 'conduct_assessments',
+      },
+      {
+        title: 'Cupping Preparation',
+        href: '/assessment/preparation',
+        icon: ClipboardList,
+        permission: 'conduct_assessments',
+      },
+      {
+        title: 'Pending Samples',
+        href: '/assessment/pending',
+        icon: List,
+        permission: 'conduct_assessments',
+      },
+    ],
   },
   {
     title: 'Cupping Sessions',
     href: '/cupping',
     icon: Coffee,
     permission: 'conduct_assessments',
+    submenu: [
+      {
+        title: 'Active Sessions',
+        href: '/cupping/active',
+        icon: Coffee,
+        permission: 'conduct_assessments',
+      },
+      {
+        title: 'Schedule Session',
+        href: '/cupping/schedule',
+        icon: Calendar,
+        permission: 'conduct_assessments',
+      },
+      {
+        title: 'Session History',
+        href: '/cupping/history',
+        icon: List,
+        permission: 'conduct_assessments',
+      },
+      {
+        title: 'Cupper Management',
+        href: '/cupping/cuppers',
+        icon: UserCheck,
+        permission: 'manage_cuppers',
+      },
+    ],
   },
   {
     title: 'Certificates',
@@ -81,26 +164,46 @@ const navigation: NavItem[] = [
     icon: FileText,
     permission: 'view_samples',
   },
-  {
-    title: 'Storage',
-    href: '/storage',
-    icon: MapPin,
-    permission: 'view_samples',
-  },
 ]
 
 const managementNav: NavItem[] = [
+  {
+    title: 'Clients',
+    href: '/clients',
+    icon: Building2,
+    permission: 'manage_clients',
+    submenu: [
+      {
+        title: 'All Clients',
+        href: '/clients',
+        icon: List,
+        permission: 'manage_clients',
+      },
+      {
+        title: 'Add Client',
+        href: '/clients/new',
+        icon: UserPlus,
+        permission: 'manage_clients',
+      },
+      {
+        title: 'Quality Specs',
+        href: '/quality/templates',
+        icon: Crown,
+        permission: 'manage_quality_specs',
+      },
+    ],
+  },
+  {
+    title: 'Laboratories',
+    href: '/laboratories',
+    icon: Building,
+    permission: 'manage_laboratories',
+  },
   {
     title: 'Finance',
     href: '/finance',
     icon: DollarSign,
     permission: 'view_lab_finance',
-  },
-  {
-    title: 'Quality Specs',
-    href: '/quality-specs',
-    icon: Crown,
-    permission: 'manage_quality_specs',
   },
   {
     title: 'Analytics',
@@ -345,36 +448,103 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                   const itemWithBadge = getNavItemWithBadge(item)
                   const Icon = itemWithBadge.icon
                   const active = isActive(itemWithBadge.href)
+                  const hasSubmenu = itemWithBadge.submenu && itemWithBadge.submenu.length > 0
+                  const submenuExpanded = expandedMenus.has(itemWithBadge.href)
+                  const submenuActive = isSubmenuActive(itemWithBadge.submenu)
+                  const filteredSubmenu = hasSubmenu
+                    ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
+                    : []
 
                   return (
-                    <Link
-                      key={itemWithBadge.href}
-                      href={itemWithBadge.href}
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                        active
-                          ? 'bg-accent text-accent-foreground'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-                        !isOpen && 'justify-center'
-                      )}
-                    >
-                      <div className="relative">
-                        <Icon className="h-4 w-4 flex-shrink-0" />
-                        {!isOpen && itemWithBadge.badge && (
-                          <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
-                        )}
-                      </div>
-                      {isOpen && (
-                        <>
-                          <span className="truncate">{itemWithBadge.title}</span>
-                          {itemWithBadge.badge && (
-                            <span className="ml-auto text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">
-                              {itemWithBadge.badge}
-                            </span>
+                    <div key={itemWithBadge.href}>
+                      {/* Main nav item */}
+                      {hasSubmenu && filteredSubmenu.length > 0 ? (
+                        <div
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
+                            active || submenuActive
+                              ? 'bg-accent text-accent-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                           )}
-                        </>
+                        >
+                          <Link href={itemWithBadge.href} className="flex items-center gap-3 flex-1 min-w-0">
+                            <div className="relative">
+                              <Icon className="h-4 w-4 flex-shrink-0" />
+                              {!isOpen && itemWithBadge.badge && (
+                                <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
+                              )}
+                            </div>
+                            {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
+                          </Link>
+                          {isOpen && (
+                            <button
+                              onClick={() => toggleSubmenu(itemWithBadge.href)}
+                              className="p-1 hover:bg-accent/50 rounded transition-colors"
+                            >
+                              {submenuExpanded ? (
+                                <ChevronUp className="h-4 w-4 flex-shrink-0" />
+                              ) : (
+                                <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      ) : (
+                        <Link
+                          href={itemWithBadge.href}
+                          className={cn(
+                            'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
+                            active
+                              ? 'bg-accent text-accent-foreground'
+                              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                            !isOpen && 'justify-center'
+                          )}
+                        >
+                          <div className="relative">
+                            <Icon className="h-4 w-4 flex-shrink-0" />
+                            {!isOpen && itemWithBadge.badge && (
+                              <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
+                            )}
+                          </div>
+                          {isOpen && (
+                            <>
+                              <span className="truncate">{itemWithBadge.title}</span>
+                              {itemWithBadge.badge && (
+                                <span className="ml-auto text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">
+                                  {itemWithBadge.badge}
+                                </span>
+                              )}
+                            </>
+                          )}
+                        </Link>
                       )}
-                    </Link>
+
+                      {/* Submenu items */}
+                      {hasSubmenu && submenuExpanded && isOpen && filteredSubmenu.length > 0 && (
+                        <div className="ml-4 mt-1 space-y-1 border-l-2 border-border pl-2">
+                          {filteredSubmenu.map((subItem) => {
+                            const SubIcon = subItem.icon
+                            const subActive = isActive(subItem.href)
+
+                            return (
+                              <Link
+                                key={subItem.href}
+                                href={subItem.href}
+                                className={cn(
+                                  'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
+                                  subActive
+                                    ? 'bg-accent text-accent-foreground'
+                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                                )}
+                              >
+                                <SubIcon className="h-4 w-4 flex-shrink-0" />
+                                <span className="truncate">{subItem.title}</span>
+                              </Link>
+                            )
+                          })}
+                        </div>
+                      )}
+                    </div>
                   )
                 })}
               </div>

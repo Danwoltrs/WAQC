@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 
+type ShelfData = {
+  id: string
+  shelf_letter: string
+  rows: number
+  columns: number
+  laboratory_id: string
+}
+
 /**
  * GET /api/laboratories/[id]/shelves/[shelfId]/positions
  * Get all storage positions for a shelf in grid format
@@ -23,16 +31,18 @@ export async function GET(
     const availability = searchParams.get('availability') // 'available', 'occupied', 'all'
 
     // Get shelf details to verify access and get dimensions
-    const { data: shelf, error: shelfError } = await supabase
+    const { data: shelfData, error: shelfError } = await supabase
       .from('lab_shelves')
       .select('id, shelf_letter, rows, columns, laboratory_id')
       .eq('id', shelfId)
       .eq('laboratory_id', laboratoryId)
       .single()
 
-    if (shelfError || !shelf) {
+    if (shelfError || !shelfData) {
       return NextResponse.json({ error: 'Shelf not found' }, { status: 404 })
     }
+
+    const shelf = shelfData as ShelfData
 
     // Build query
     let query = supabase

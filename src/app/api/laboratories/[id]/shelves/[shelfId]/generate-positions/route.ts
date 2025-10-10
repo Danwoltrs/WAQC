@@ -7,6 +7,18 @@ type ProfileData = {
   is_global_admin: boolean
 }
 
+type PositionCount = {
+  current_count: number
+}
+
+type ShelfData = {
+  id: string
+  shelf_letter: string
+  rows: number
+  columns: number
+  samples_per_position: number
+}
+
 /**
  * POST /api/laboratories/[id]/shelves/[shelfId]/generate-positions
  * Regenerate all storage positions for a shelf
@@ -49,23 +61,26 @@ export async function POST(
     }
 
     // Verify shelf exists and belongs to this lab
-    const { data: shelf, error: shelfError } = await supabase
+    const { data: shelfData, error: shelfError } = await supabase
       .from('lab_shelves')
       .select('id, shelf_letter, rows, columns, samples_per_position')
       .eq('id', shelfId)
       .eq('laboratory_id', laboratoryId)
       .single()
 
-    if (shelfError || !shelf) {
+    if (shelfError || !shelfData) {
       return NextResponse.json({ error: 'Shelf not found' }, { status: 404 })
     }
 
+    const shelf = shelfData as ShelfData
+
     // Check if shelf has any samples stored
-    const { data: positions } = await supabase
+    const { data: positionsData } = await supabase
       .from('storage_positions')
       .select('current_count')
       .eq('shelf_id', shelfId)
 
+    const positions = positionsData as PositionCount[] | null
     const totalSamples = positions?.reduce((sum, p) => sum + p.current_count, 0) || 0
 
     if (totalSamples > 0) {
@@ -76,7 +91,7 @@ export async function POST(
     }
 
     // Call the database function to regenerate positions
-    const { data: positionCount, error: generateError } = await supabase
+    const { data: positionCount, error: generateError } = await (supabase as any)
       .rpc('generate_storage_positions_for_shelf', { p_shelf_id: shelfId })
 
     if (generateError) {

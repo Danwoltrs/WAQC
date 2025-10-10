@@ -108,11 +108,13 @@ export async function POST(
 
     if (existingUser) {
       // Check if user is a global admin or has a global role
-      const { data: existingProfile } = await supabase
+      const { data: existingProfileData } = await supabase
         .from('profiles')
         .select('is_global_admin, qc_role')
         .eq('id', existingUser.id)
         .single()
+
+      const existingProfile = existingProfileData as { is_global_admin: boolean, qc_role: string } | null
 
       // Don't allow assigning global admins or global roles to specific labs
       if (existingProfile?.is_global_admin ||

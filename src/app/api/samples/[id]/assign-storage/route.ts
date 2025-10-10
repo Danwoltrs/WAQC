@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase-server'
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
@@ -17,6 +17,9 @@ export async function POST(
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    // Await params (Next.js 15)
+    const { id } = await params
 
     const body = await request.json()
     const { storage_position_id } = body
@@ -31,7 +34,7 @@ export async function POST(
     const { data: sample, error: sampleError } = await supabase
       .from('samples')
       .select('id, laboratory_id, storage_position')
-      .eq('id', params.id)
+      .eq('id', id)
       .single()
 
     if (sampleError || !sample) {
@@ -50,48 +53,50 @@ export async function POST(
     }
 
     // Verify laboratory match
-    if (storagePosition.laboratory_id !== sample.laboratory_id) {
+    if ((storagePosition as any).laboratory_id !== (sample as any).laboratory_id) {
       return NextResponse.json({
         error: 'Storage position must be in the same laboratory as the sample'
       }, { status: 400 })
     }
 
     // Check if position has capacity
-    if (!storagePosition.is_available || storagePosition.current_count >= storagePosition.capacity_per_position) {
+    if (!(storagePosition as any).is_available || (storagePosition as any).current_count >= (storagePosition as any).capacity_per_position) {
       return NextResponse.json({
         error: 'Storage position is at full capacity',
         details: {
-          current: storagePosition.current_count,
-          capacity: storagePosition.capacity_per_position
+          current: (storagePosition as any).current_count,
+          capacity: (storagePosition as any).capacity_per_position
         }
       }, { status: 400 })
     }
 
     // If sample is already in a storage position, remove it first
-    if (sample.storage_position) {
+    if ((sample as any).storage_position) {
       const { data: oldPosition } = await supabase
         .from('storage_positions')
         .select('id, current_samples')
-        .eq('position_code', sample.storage_position)
-        .eq('laboratory_id', sample.laboratory_id)
+        .eq('position_code', (sample as any).storage_position)
+        .eq('laboratory_id', (sample as any).laboratory_id)
         .single()
 
       if (oldPosition) {
-        const updatedSamples = (oldPosition.current_samples || []).filter((sid: string) => sid !== params.id)
+        const updatedSamples = ((oldPosition as any).current_samples || []).filter((sid: string) => sid !== id)
         await supabase
           .from('storage_positions')
+          // @ts-expect-error - Supabase type inference issue with update
           .update({
             current_samples: updatedSamples,
             current_count: updatedSamples.length
           })
-          .eq('id', oldPosition.id)
+          .eq('id', (oldPosition as any).id)
       }
     }
 
     // Add sample to new storage position
-    const updatedSamples = [...(storagePosition.current_samples || []), params.id]
+    const updatedSamples = [...((storagePosition as any).current_samples || []), id]
     const { error: updatePositionError } = await supabase
       .from('storage_positions')
+      // @ts-expect-error - Supabase type inference issue with update
       .update({
         current_samples: updatedSamples,
         current_count: updatedSamples.length
@@ -106,8 +111,9 @@ export async function POST(
     // Update sample with new storage position
     const { data: updatedSample, error: updateSampleError } = await supabase
       .from('samples')
-      .update({ storage_position: storagePosition.position_code })
-      .eq('id', params.id)
+      // @ts-expect-error - Supabase type inference issue with update
+      .update({ storage_position: (storagePosition as any).position_code })
+      .eq('id', id)
       .select()
       .single()
 
@@ -119,10 +125,10 @@ export async function POST(
     return NextResponse.json({
       sample: updatedSample,
       storage_position: {
-        id: storagePosition.id,
-        position_code: storagePosition.position_code,
+        id: (storagePosition as any).id,
+        position_code: (storagePosition as any).position_code,
         current_count: updatedSamples.length,
-        capacity: storagePosition.capacity_per_position
+        capacity: (storagePosition as any).capacity_per_position
       }
     })
   } catch (error) {

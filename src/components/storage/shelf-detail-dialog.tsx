@@ -9,7 +9,13 @@ import { PositionGrid } from './position-grid'
 import { PositionAssignmentDialog } from './position-assignment-dialog'
 import { Package, X, Calendar, MapPin, FileText } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { useSession } from 'next-auth/react'
+import { supabase } from '@/lib/supabase-browser'
+
+type ProfileData = {
+  qc_role: string
+  laboratory_id: string | null
+  is_global_admin: boolean
+}
 
 interface ShelfDetailDialogProps {
   open: boolean
@@ -39,7 +45,6 @@ export function ShelfDetailDialog({
   laboratoryId,
   shelfLetter
 }: ShelfDetailDialogProps) {
-  const { data: session } = useSession()
   const [loading, setLoading] = useState(true)
   const [shelf, setShelf] = useState<any>(null)
   const [grid, setGrid] = useState<(Position | null)[][]>([])
@@ -47,9 +52,38 @@ export function ShelfDetailDialog({
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [positionToAssign, setPositionToAssign] = useState<Position | null>(null)
+  const [canManage, setCanManage] = useState(false)
 
-  // Check if user can manage positions
-  const canManage = session?.user?.role === 'admin' || session?.user?.role === 'lab_director'
+  // Check user permissions
+  useEffect(() => {
+    async function checkPermissions() {
+      const { data: { user } } = await supabase.auth.getUser()
+
+      if (!user) {
+        setCanManage(false)
+        return
+      }
+
+      const { data: profileData } = await supabase
+        .from('profiles')
+        .select('qc_role, laboratory_id, is_global_admin')
+        .eq('id', user.id)
+        .single()
+
+      const profile = profileData as ProfileData | null
+
+      if (profile) {
+        // User can manage if they are global admin, global_quality_admin, or lab_quality_manager for this lab
+        const canManagePositions = profile.is_global_admin ||
+          profile.qc_role === 'global_quality_admin' ||
+          (profile.qc_role === 'lab_quality_manager' && profile.laboratory_id === laboratoryId)
+
+        setCanManage(canManagePositions)
+      }
+    }
+
+    checkPermissions()
+  }, [laboratoryId])
 
   useEffect(() => {
     if (open) {

@@ -7,6 +7,39 @@ type ProfileData = {
   is_global_admin: boolean
 }
 
+type PositionCount = {
+  current_count: number
+}
+
+type ShelfWithClient = {
+  id: string
+  laboratory_id: string
+  shelf_number: number
+  shelf_letter: string
+  columns: number
+  rows: number
+  position_layout: string | null
+  samples_per_position: number
+  naming_convention: string | null
+  client_id: string | null
+  allow_client_view: boolean
+  x_position: number | null
+  y_position: number | null
+  created_at: string
+  updated_at: string
+  clients: {
+    id: string
+    name: string
+    contact_name: string | null
+    contact_email: string | null
+  } | null
+}
+
+type ExistingShelf = {
+  id: string
+  shelf_letter: string
+}
+
 /**
  * GET /api/laboratories/[id]/shelves/[shelfId]
  * Get details for a specific shelf
@@ -27,7 +60,7 @@ export async function GET(
     const { id: laboratoryId, shelfId } = await params
 
     // Get shelf with client info
-    const { data: shelf, error: shelfError } = await supabase
+    const { data: shelfData, error: shelfError } = await supabase
       .from('lab_shelves')
       .select(`
         id,
@@ -56,12 +89,14 @@ export async function GET(
       .eq('laboratory_id', laboratoryId)
       .single()
 
-    if (shelfError || !shelf) {
+    if (shelfError || !shelfData) {
       return NextResponse.json({ error: 'Shelf not found' }, { status: 404 })
     }
 
+    const shelf = shelfData as ShelfWithClient
+
     // Get utilization data
-    const { data: utilization } = await supabase
+    const { data: utilization } = await (supabase as any)
       .rpc('get_shelf_utilization', { p_shelf_id: shelfId })
       .single()
 
@@ -125,16 +160,18 @@ export async function PATCH(
     }
 
     // Verify shelf exists
-    const { data: existing, error: fetchError } = await supabase
+    const { data: existingData, error: fetchError } = await supabase
       .from('lab_shelves')
       .select('id, shelf_letter')
       .eq('id', shelfId)
       .eq('laboratory_id', laboratoryId)
       .single()
 
-    if (fetchError || !existing) {
+    if (fetchError || !existingData) {
       return NextResponse.json({ error: 'Shelf not found' }, { status: 404 })
     }
+
+    const existing = existingData as ExistingShelf
 
     const body = await request.json()
 
@@ -199,7 +236,7 @@ export async function PATCH(
 
     // If dimensions or naming changed, regenerate positions
     if (body.rows || body.columns || body.samples_per_position || body.shelf_letter) {
-      const { error: regenerateError } = await supabase
+      const { error: regenerateError } = await (supabase as any)
         .rpc('generate_storage_positions_for_shelf', { p_shelf_id: shelfId })
 
       if (regenerateError) {
@@ -258,11 +295,12 @@ export async function DELETE(
     }
 
     // Check if shelf has any samples
-    const { data: positions } = await supabase
+    const { data: positionsData } = await supabase
       .from('storage_positions')
       .select('current_count')
       .eq('shelf_id', shelfId)
 
+    const positions = positionsData as PositionCount[] | null
     const totalSamples = positions?.reduce((sum, p) => sum + p.current_count, 0) || 0
 
     if (totalSamples > 0) {
