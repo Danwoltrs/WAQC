@@ -92,23 +92,47 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
+    // Check for duplicate clients (by name + email or company + email)
+    if (body.email) {
+      const { data: duplicates } = await supabase
+        .from('clients')
+        .select('id, name, company, email')
+        .or(`and(name.eq.${body.name},email.eq.${body.email}),and(company.eq.${body.company},email.eq.${body.email})`)
+        .limit(1)
+
+      if (duplicates && duplicates.length > 0) {
+        return NextResponse.json({
+          error: 'Duplicate client detected',
+          message: `A client with this name/company and email already exists`,
+          existing_client: duplicates[0]
+        }, { status: 409 })
+      }
+    }
+
     // Prepare client data
     const clientData: ClientInsert = {
       name: body.name,
       company: body.company,
       fantasy_name: body.fantasy_name || body.company,
-      vat: body.vat,
       address: body.address,
       city: body.city,
       state: body.state,
       country: body.country,
-      zip_code: body.zip_code,
       email: body.email,
       phone: body.phone,
-      contact_person: body.contact_person,
-      notes: body.notes,
+      client_types: body.client_types || [], // Array of client types
+      is_qc_client: body.is_qc_client !== undefined ? body.is_qc_client : true,
+      // Pricing fields
+      pricing_model: body.pricing_model || 'per_sample',
+      price_per_sample: body.price_per_sample,
+      price_per_pound_cents: body.price_per_pound_cents,
+      currency: body.currency || 'USD',
+      fee_payer: body.fee_payer || 'client_pays',
+      payment_terms: body.payment_terms,
+      billing_notes: body.billing_notes,
       tracking_number_format: body.tracking_number_format,
-      is_active: body.is_active !== undefined ? body.is_active : true,
+      qc_enabled: body.qc_enabled !== undefined ? body.qc_enabled : true,
+      company_id: body.company_id, // Link to companies table if imported
       legacy_client_id: body.legacy_client_id // For imported clients
     }
 

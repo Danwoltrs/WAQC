@@ -92,18 +92,25 @@ export async function PATCH(
       'name',
       'company',
       'fantasy_name',
-      'vat',
       'address',
       'city',
       'state',
       'country',
-      'zip_code',
       'email',
       'phone',
-      'contact_person',
-      'notes',
+      'client_types',
+      'is_qc_client',
+      'pricing_model',
+      'price_per_sample',
+      'price_per_pound_cents',
+      'currency',
+      'fee_payer',
+      'payment_terms',
+      'billing_notes',
       'tracking_number_format',
-      'is_active'
+      'qc_enabled',
+      'company_id',
+      'legacy_client_id'
     ]
 
     for (const field of allowedFields) {

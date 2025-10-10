@@ -221,6 +221,7 @@ export type Database = {
           sample_type?: 'pss' | 'ss' | 'type'
           bags_quantity_mt?: number
           bag_count?: number
+          bag_weight_kg?: number
           processing_method?: string
           workflow_stage?: string
           assigned_to?: string
@@ -247,6 +248,7 @@ export type Database = {
           sample_type?: 'pss' | 'ss' | 'type'
           bags_quantity_mt?: number
           bag_count?: number
+          bag_weight_kg?: number
           processing_method?: string
           workflow_stage?: string
           assigned_to?: string
@@ -272,6 +274,7 @@ export type Database = {
           sample_type?: 'pss' | 'ss' | 'type'
           bags_quantity_mt?: number
           bag_count?: number
+          bag_weight_kg?: number
           processing_method?: string
           workflow_stage?: string
           assigned_to?: string
@@ -420,9 +423,30 @@ export type Database = {
           email: string
           company: string
           address: string
+          city?: string
+          state?: string
+          country?: string
+          fantasy_name?: string
+          phone?: string
+          client_types?: string[]
+          // Pricing fields
+          pricing_model?: 'per_sample' | 'per_pound'
+          price_per_sample?: number
+          price_per_pound_cents?: number
+          currency?: string
+          fee_payer?: 'exporter' | 'importer' | 'roaster' | 'final_buyer' | 'client_pays'
+          payment_terms?: string
+          billing_notes?: string
           // QC-specific fields
+          is_qc_client?: boolean
           default_quality_specs?: string[]
+          notification_emails?: string[]
+          certificate_delivery_timing?: string
+          tracking_number_format?: string
           qc_enabled?: boolean
+          // Integration fields
+          company_id?: string
+          legacy_client_id?: number
           created_at: string
           updated_at: string
           // May have other travel-related fields
@@ -434,8 +458,27 @@ export type Database = {
           email: string
           company: string
           address: string
+          city?: string
+          state?: string
+          country?: string
+          fantasy_name?: string
+          phone?: string
+          client_types?: string[]
+          pricing_model?: 'per_sample' | 'per_pound'
+          price_per_sample?: number
+          price_per_pound_cents?: number
+          currency?: string
+          fee_payer?: 'exporter' | 'importer' | 'roaster' | 'final_buyer' | 'client_pays'
+          payment_terms?: string
+          billing_notes?: string
+          is_qc_client?: boolean
           default_quality_specs?: string[]
+          notification_emails?: string[]
+          certificate_delivery_timing?: string
+          tracking_number_format?: string
           qc_enabled?: boolean
+          company_id?: string
+          legacy_client_id?: number
           created_at?: string
           updated_at?: string
           [key: string]: any
@@ -445,8 +488,27 @@ export type Database = {
           email?: string
           company?: string
           address?: string
+          city?: string
+          state?: string
+          country?: string
+          fantasy_name?: string
+          phone?: string
+          client_types?: string[]
+          pricing_model?: 'per_sample' | 'per_pound'
+          price_per_sample?: number
+          price_per_pound_cents?: number
+          currency?: string
+          fee_payer?: 'exporter' | 'importer' | 'roaster' | 'final_buyer' | 'client_pays'
+          payment_terms?: string
+          billing_notes?: string
+          is_qc_client?: boolean
           default_quality_specs?: string[]
+          notification_emails?: string[]
+          certificate_delivery_timing?: string
+          tracking_number_format?: string
           qc_enabled?: boolean
+          company_id?: string
+          legacy_client_id?: number
           updated_at?: string
           [key: string]: any
         }
