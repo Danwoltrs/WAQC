@@ -121,7 +121,7 @@ export default function SamplesStoragePage() {
               <AlertCircle className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="text-lg font-semibold mb-2">No laboratory access</h3>
               <p className="text-muted-foreground">
-                You don't have access to any laboratory storage systems.
+                You don&apos;t have access to any laboratory storage systems.
               </p>
             </CardContent>
           </Card>
