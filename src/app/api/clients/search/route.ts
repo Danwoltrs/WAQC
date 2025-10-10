@@ -36,7 +36,7 @@ export async function GET(request: NextRequest) {
       .rpc('search_clients', {
         search_term: searchTerm.trim(),
         limit_count: limit
-      })
+      } as any)
 
     if (error) {
       console.error('Error searching clients:', error)
