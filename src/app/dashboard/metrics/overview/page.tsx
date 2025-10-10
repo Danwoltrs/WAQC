@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { SupplyChainSankey } from '@/components/metrics/supply-chain-sankey'
 import { MetricsFilters, FilterState } from '@/components/metrics/metrics-filters'
+import { SamplesPerWeekCard } from '@/components/metrics/samples-per-week-card'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { TrendingUp, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
@@ -294,28 +295,7 @@ export default function OverviewDashboard() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-medium text-muted-foreground">
-                Active Roasters
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              ) : (
-                <>
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-5 w-5 text-muted-foreground" />
-                    <p className="text-2xl font-bold">{metrics?.activeRoasters || 0}</p>
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Receiving shipments
-                  </p>
-                </>
-              )}
-            </CardContent>
-          </Card>
+          <SamplesPerWeekCard />
         </div>
 
         {/* Sankey Chart */}
