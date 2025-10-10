@@ -32,11 +32,11 @@ export async function GET(request: NextRequest) {
     }
 
     // Call the database search function
-    const { data: results, error } = await supabase
+    const { data: results, error } = (await supabase
       .rpc('search_clients', {
         search_term: searchTerm.trim(),
         limit_count: limit
-      } as any)
+      } as any)) as { data: any[] | null; error: any }
 
     if (error) {
       console.error('Error searching clients:', error)
