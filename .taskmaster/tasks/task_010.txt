@@ -1,0 +1,43 @@
+# Task ID: 10
+# Title: Implement Origin-Specific Taints and Faults System
+# Status: pending
+# Dependencies: 1
+# Priority: medium
+# Description: Build system for configuring taints and faults per origin with client-specific customization options
+# Details:
+Create src/components/quality/taints-faults-config.tsx for lab managers to configure per-origin taints (Brazil: Harsh, Grassy/green, Woody, Past crop, Fruity, Dirty) and faults (Hard riado, Phenol rio, Fermented, Earthy, Moldy). Support client-specific customization of severity levels and point deductions. Create src/app/api/taint-fault-definitions/route.ts. Integration with cupping interface for defect recording. Version tracking for changes to taint/fault definitions.
+
+# Test Strategy:
+Test taint/fault CRUD operations, test origin-specific configurations, test client customization, verify integration with cupping interface
+
+# Subtasks:
+## 1. Create Database Schema for Taint/Fault Definitions [pending]
+### Dependencies: None
+### Description: Design and implement database tables for storing origin-specific taints, faults, severity levels, and client customizations with proper relationships and constraints
+### Details:
+Create tables: taint_fault_definitions (id, origin_id, type, name, default_severity, default_deduction), client_taint_fault_customizations (client_id, definition_id, custom_severity, custom_deduction), taint_fault_versions (definition_id, version, changes, created_at). Include proper foreign keys, indexes, and RLS policies. Support for versioning changes to definitions.
+
+## 2. Build Taints and Faults Configuration Interface [pending]
+### Dependencies: 10.1
+### Description: Create React component for lab managers to configure origin-specific taints and faults with severity levels and point deductions
+### Details:
+Implement src/components/quality/taints-faults-config.tsx with tabs for different origins (Brazil, Colombia, etc.), editable tables for taints and faults, severity level dropdowns, point deduction inputs, add/remove functionality, and save/cancel actions. Include validation for required fields and proper error handling.
+
+## 3. Implement API Routes for Taint/Fault Management [pending]
+### Dependencies: 10.1
+### Description: Create REST API endpoints for managing taint/fault definitions, client customizations, and version tracking
+### Details:
+Create src/app/api/taint-fault-definitions/route.ts with GET (fetch definitions by origin), POST (create new definitions), PUT (update existing), DELETE endpoints. Include src/app/api/client-taint-fault-customizations/route.ts for client-specific overrides. Implement proper error handling, validation, and audit logging for changes.
+
+## 4. Build Client-Specific Customization Interface [pending]
+### Dependencies: 10.2, 10.3
+### Description: Create interface for clients to customize severity levels and point deductions for their specific requirements
+### Details:
+Extend taints-faults-config.tsx with client selection dropdown, customization overlay showing default vs custom values, client-specific save functionality, and inheritance visualization. Include reset to defaults option and change history view for transparency.
+
+## 5. Integrate Taint/Fault System with Cupping Interface [pending]
+### Dependencies: 10.2, 10.3, 10.4
+### Description: Modify existing cupping interface to incorporate origin-specific taints and faults for defect recording during cupping sessions
+### Details:
+Update cupping components to load appropriate taint/fault definitions based on sample origin, add defect recording section with severity selection and automatic point deduction calculation, integrate with cupping score calculations, and ensure real-time updates during collaborative sessions.
+

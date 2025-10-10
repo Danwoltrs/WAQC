@@ -1,0 +1,11 @@
+# Task ID: 20
+# Title: Create Notifications and Activity Feed System
+# Status: pending
+# Dependencies: 2
+# Priority: medium
+# Description: Build comprehensive notification system with real-time activity feed for laboratory coordination
+# Details:
+Create src/components/notifications/notification-center.tsx in right sidebar with notification types: sample-related (assigned, ready for cupping, approaching deadline, out of spec, storage capacity warnings), cupping-related (session invitations, starting reminders, score discrepancies, completion), certificate-related (generated, delivery failed, verification requested), administrative (access requests, new users, maintenance). Implement notification delivery via in-app (right sidebar), email digest (daily/real-time preference), browser push (opt-in). Create src/components/layout/activity-feed.tsx with real-time updates via Supabase subscriptions, time grouping, user avatars, clickable navigation.
+
+# Test Strategy:
+Test notification delivery channels, test real-time updates, test notification preferences, verify activity feed performance

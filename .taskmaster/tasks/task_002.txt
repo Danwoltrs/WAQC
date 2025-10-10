@@ -1,0 +1,49 @@
+# Task ID: 2
+# Title: Update Existing Tables with Phase 2 Fields
+# Status: done
+# Dependencies: 1
+# Priority: high
+# Description: Extend existing samples, quality_assessments, clients, and other tables with new Phase 2 fields including contract numbers, workflow stages, and client-specific configurations
+# Details:
+Add to samples table: wolthers_contract_nr, exporter_contract_nr, buyer_contract_nr, roaster_contract_nr, ico_number, container_nr, sample_type, bags_quantity_mt, bag_count, processing_method, workflow_stage, assigned_to. Add to clients: notification_emails, certificate_delivery_timing, tracking_number_format. Add to quality_assessments: sample_size_grams, moisture_standard, defect_photos. Update laboratories with storage_layout, tax_region. Add proper indexes and constraints.
+<info added on 2025-10-08T18:27:49.228Z>
+I'll analyze the codebase to understand the current database structure and migration patterns before updating the task details.**IMPLEMENTATION COMPLETED - Migration 004_update_existing_tables.sql successfully created (270 lines)**
+
+Successfully extended all 4 target tables with comprehensive Phase 2 functionality:
+
+**SAMPLES TABLE ENHANCEMENTS:**
+- Added 12 new fields including all contract numbers (wolthers_contract_nr, exporter_contract_nr, buyer_contract_nr, roaster_contract_nr), ico_number, container_nr, sample_type enum, bags_quantity_mt, bag_count, processing_method, workflow_stage, and assigned_to
+- Implemented 10 optimized indexes for efficient querying on contract numbers, sample type, workflow stage
+- Added positive value constraints for bag quantities
+- Created workflow_stage validation trigger with proper state transitions (received → green_analysis → roasting → cupping → review → certified/rejected)
+
+**CLIENTS TABLE ENHANCEMENTS:**
+- Added notification_emails array for multi-recipient certificate delivery
+- Added certificate_delivery_timing enum (upon_approval, manual_request, scheduled)
+- Added tracking_number_format with flexible template support using placeholders: {lab}, {year}, {seq:05d}, {client_code}, {origin}
+
+**QUALITY_ASSESSMENTS TABLE ENHANCEMENTS:**
+- Added sample_size_grams with default 350g and validation constraint (100-1000g range)
+- Added moisture_standard enum supporting coffee_industry and iso_6673 standards
+- Added defect_photos array for storing Supabase storage URLs
+
+**LABORATORIES TABLE ENHANCEMENTS:**
+- Added storage_layout JSONB field for flexible shelf configuration
+- Added tax_region for regional tax calculations
+- Updated Santos HQ with actual 4-shelf layout configuration (343 positions, 14,406 sample capacity)
+
+**ADVANCED HELPER FUNCTIONS:**
+- Created generate_tracking_number() function with smart template processing and automatic sequence generation
+- Created validate_workflow_stage_transition() trigger function ensuring proper workflow progression
+
+**DATA MIGRATION & INTEGRITY:**
+- Migrated existing samples to appropriate workflow_stage based on current status
+- Set default sample_size_grams for existing quality assessments
+- Implemented comprehensive verification queries with assertion testing
+
+**ADDITIONAL FIX:**
+- Resolved syntax error in 003_phase2_schema.sql line 89: Replaced invalid UNIQUE constraint with proper partial unique indexes for taint_fault_definitions table ensuring proper constraint handling for both global and client-specific definitions.
+</info added on 2025-10-08T18:27:49.228Z>
+
+# Test Strategy:
+Test data migration with existing records, verify no data loss, test new field validations

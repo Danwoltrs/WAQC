@@ -1,0 +1,11 @@
+# Task ID: 8
+# Title: Implement Roast Analysis Interface
+# Status: pending
+# Dependencies: 2
+# Priority: medium
+# Description: Create roast profile recording interface with automatic date/time capture and quaker counting
+# Details:
+Create src/components/assessments/roast-analysis.tsx with required fields: roast date/time (auto-captured), number of cups prepared. Optional fields: batch size, target/actual roast level (colorimeter or descriptive), roast time, first crack time, Agtron score. Quaker counting with increment/decrement buttons, photo upload, threshold indicators (<3 specialty, <8 Dunkin, configurable per client). Sample preparation tracking (cooling time, rest time, grind setting, cupping schedule). Integration with quality_assessments table or separate roast_profiles table.
+
+# Test Strategy:
+Test automatic timestamp capture, test quaker counting interface, test threshold validation, test optional field handling

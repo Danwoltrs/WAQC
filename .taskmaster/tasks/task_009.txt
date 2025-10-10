@@ -1,0 +1,49 @@
+# Task ID: 9
+# Title: Build Quality Template Management System
+# Status: pending
+# Dependencies: 6
+# Priority: high
+# Description: Create comprehensive quality template builder with client-specific parameters and flexible attribute configuration
+# Details:
+Create src/components/quality/template-builder.tsx for creating reusable quality templates. Support parameter configuration: screen size requirements (Pan, Peas 9-11, 12-20 or specific like 17/18), defect thresholds (primary/secondary), moisture content standards selection, cupping scale configuration (1-5, 1-7, 1-10), custom cupping attributes (add/remove Flavor, Aftertaste, Balance, etc.). Template management: library view, clone functionality, versioning, usage statistics. Create src/app/api/quality-templates/route.ts with full CRUD operations.
+
+# Test Strategy:
+Test template creation/editing, test parameter validation, test template cloning, test version tracking, verify usage statistics accuracy
+
+# Subtasks:
+## 1. Create Quality Template Builder Component [pending]
+### Dependencies: None
+### Description: Build the main template builder interface with form controls for all quality parameters including screen size, defect thresholds, moisture standards, and cupping attributes
+### Details:
+Create src/components/quality/template-builder.tsx with comprehensive form interface. Include parameter configuration sections: screen size requirements (Pan, Peas 9-11, 12-20, specific 17/18), defect threshold settings (primary/secondary), moisture content standards selection, cupping scale configuration (1-5, 1-7, 1-10), and dynamic cupping attributes management (add/remove Flavor, Aftertaste, Balance, etc.). Implement form validation and real-time preview functionality.
+
+## 2. Implement Template Management Library [pending]
+### Dependencies: 9.1
+### Description: Build template library view with search, filtering, clone functionality, and version tracking capabilities
+### Details:
+Create template library interface within the template builder component. Implement template listing with search and filter capabilities, clone functionality for duplicating existing templates, version tracking system for template changes, and usage statistics display. Include template preview modal and comparison functionality between versions.
+
+## 3. Create Quality Templates API Routes [pending]
+### Dependencies: None
+### Description: Build comprehensive CRUD API endpoints for quality template management with validation and error handling
+### Details:
+Create src/app/api/quality-templates/route.ts with full CRUD operations (GET, POST, PUT, DELETE). Implement template creation, retrieval, updating, and deletion with proper validation. Add endpoints for template cloning, version management, and usage statistics. Include proper error handling, authorization checks, and data validation middleware.
+
+## 4. Implement Template Versioning System [pending]
+### Dependencies: 9.2, 9.3
+### Description: Build version control system for templates with change tracking, rollback capabilities, and version comparison
+### Details:
+Implement template versioning system that tracks all changes made to templates. Create version history interface, change diff visualization, rollback functionality to previous versions, and version comparison tools. Store version metadata including timestamp, user, and change description.
+
+## 5. Build Template Usage Analytics [pending]
+### Dependencies: 9.3
+### Description: Create analytics system to track template usage patterns, popular configurations, and performance metrics
+### Details:
+Build usage analytics system that tracks which templates are used most frequently, identifies popular parameter configurations, and measures template performance metrics. Create analytics dashboard showing usage statistics, trend analysis, and template effectiveness reports. Include export functionality for analytics data.
+
+## 6. Database Schema for Quality Templates [pending]
+### Dependencies: None
+### Description: Design and implement database tables for quality templates with multi-language support, variable sample sizes, and template inheritance
+### Details:
+Create migration for quality_templates table with fields: id, name_en, name_pt, name_es, description_en, description_pt, description_es, sample_size_grams (default 300), template_parent_id (for cloning/inheritance), created_by, laboratory_id, is_global, screen_size_requirements (JSONB), defect_thresholds_primary, defect_thresholds_secondary, moisture_standard, cupping_scale_type, cupping_scale_min, cupping_scale_max, cupping_scale_increment, max_taints_allowed, max_faults_allowed, taint_fault_rule_type (AND/OR), created_at, updated_at. Create cupping_attributes table: id, template_id, attribute_name_en, attribute_name_pt, attribute_name_es, scale_type (1-5, 1-7, 1-10), increment (0.25, 0.5, 1.0), is_required, display_order. Create template_versions table for version tracking. Include RLS policies for template sharing (private/lab/global) and proper foreign keys.
+

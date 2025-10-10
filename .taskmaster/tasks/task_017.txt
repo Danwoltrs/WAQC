@@ -1,0 +1,11 @@
+# Task ID: 17
+# Title: Create Client Quality Assignment Interface
+# Status: pending
+# Dependencies: 9
+# Priority: medium
+# Description: Build interface for assigning and customizing quality specifications per client with inheritance system
+# Details:
+Create src/components/quality/client-quality-assignment.tsx for sales managers to assign quality specs to clients. Support client type classification (Exporter/Coop, Buyer/Importer, Importer/Roaster), origin specification (country, region, micro-lot), processing method, sample type (PSS, SS, Type). Quality inheritance: Global Template → Client Template → Sample-Specific with override capability and justification tracking. Bulk import from CSV/Excel, quality library per client grouped by origin/processing/sample type. Create src/app/api/client-qualities/route.ts with full CRUD operations.
+
+# Test Strategy:
+Test quality assignment workflow, test inheritance system, test bulk import functionality, verify override tracking

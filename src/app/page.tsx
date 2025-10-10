@@ -113,6 +113,66 @@ function DashboardContent() {
 
   const maxWeeklyCount = Math.max(...weeklyActivity.map(d => d.count), 1)
 
+  // Calculate samples per week data
+  const samplesPerWeekData = (() => {
+    if (samples.length === 0) {
+      return {
+        currentWeek: 0,
+        allTimeHigh: 0,
+        currentWeekLabel: 'This Week',
+        percentage: 0
+      }
+    }
+
+    // Get current week start (Monday)
+    const now = new Date()
+    const currentDayOfWeek = now.getDay()
+    const daysToMonday = currentDayOfWeek === 0 ? 6 : currentDayOfWeek - 1
+    const currentWeekStart = new Date(now)
+    currentWeekStart.setDate(now.getDate() - daysToMonday)
+    currentWeekStart.setHours(0, 0, 0, 0)
+
+    const currentWeekEnd = new Date(currentWeekStart)
+    currentWeekEnd.setDate(currentWeekStart.getDate() + 7)
+
+    // Count samples in current week
+    const currentWeekSamples = samples.filter(s => {
+      const sampleDate = new Date(s.created_at)
+      return sampleDate >= currentWeekStart && sampleDate < currentWeekEnd
+    }).length
+
+    // Group all samples by week
+    const weekMap = new Map<string, number>()
+    samples.forEach(sample => {
+      const sampleDate = new Date(sample.created_at)
+      const dayOfWeek = sampleDate.getDay()
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+      const weekStart = new Date(sampleDate)
+      weekStart.setDate(sampleDate.getDate() - daysToMonday)
+      weekStart.setHours(0, 0, 0, 0)
+      const weekKey = weekStart.toISOString().split('T')[0]
+      weekMap.set(weekKey, (weekMap.get(weekKey) || 0) + 1)
+    })
+
+    // Find all-time high week
+    let allTimeHigh = 0
+    weekMap.forEach((count) => {
+      if (count > allTimeHigh) {
+        allTimeHigh = count
+      }
+    })
+
+    const currentWeekLabel = `Week of ${currentWeekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`
+    const percentage = allTimeHigh > 0 ? Math.min((currentWeekSamples / allTimeHigh) * 100, 100) : 0
+
+    return {
+      currentWeek: currentWeekSamples,
+      allTimeHigh,
+      currentWeekLabel,
+      percentage
+    }
+  })()
+
   // Calculate average processing time
   const processingTimes = samples
     .filter(s => s.status === 'approved' || s.status === 'rejected')
@@ -377,11 +437,20 @@ function DashboardContent() {
             <div className="space-y-6">
               <div>
                 <div className="flex justify-between items-center mb-2">
-                  <span className="text-sm font-medium">Average Cupping Score</span>
-                  <span className="text-lg font-bold">84.2</span>
+                  <span className="text-sm font-medium">Samples per Week</span>
+                  <span className="text-lg font-bold">{samplesPerWeekData.currentWeek}</span>
                 </div>
-                <div className="bg-muted rounded-full h-2 overflow-hidden">
-                  <div className="bg-emerald-500 h-full rounded-full" style={{width: '84%'}}></div>
+                <div className="space-y-1">
+                  <div className="bg-muted rounded-full h-2 overflow-hidden">
+                    <div
+                      className="bg-green-500 h-full rounded-full transition-all duration-500"
+                      style={{width: `${samplesPerWeekData.percentage}%`}}
+                    ></div>
+                  </div>
+                  <div className="flex justify-between text-xs text-muted-foreground">
+                    <span>{samplesPerWeekData.currentWeekLabel}</span>
+                    <span>Max: {samplesPerWeekData.allTimeHigh}</span>
+                  </div>
                 </div>
               </div>
               <div>

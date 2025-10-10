@@ -1,0 +1,14 @@
+# Task ID: 1
+# Title: Extend Database Schema with Phase 2 Tables
+# Status: done
+# Dependencies: None
+# Priority: high
+# Description: Create new database migration to add all Phase 2 required tables including defect_definitions, taint_fault_definitions, cupping_scale_configs, storage_positions, and certificate_number_configs tables
+# Details:
+Create database/migrations/003_phase2_schema.sql file. Add tables: defect_definitions (client_id, defect_name, point_value, category, origin), taint_fault_definitions (origin, type, name, severity_levels), cupping_scale_configs (client_id, quality_id, scale_type, increment, min_score), cupping_attribute_definitions (client_id, quality_id, attribute_name, required), storage_positions (lab_id, shelf, column, row, capacity_per_position, current_samples), certificate_number_configs (client_id, format_pattern), quality_parameters (flexible parameter definitions), and 15+ other tables from PRD requirements. Include proper foreign key constraints, indexes, and RLS policies.
+<info added on 2025-10-08T18:22:46.435Z>
+I'll analyze the codebase to understand the current implementation and provide context-aware task update information.Migration file successfully created with comprehensive Phase 2 schema implementation. File contains 969 lines including 27 new tables covering all major Phase 2 requirements: client-specific defect definitions, origin-based taint/fault configurations, flexible cupping scale systems, complete storage management infrastructure, certificate tracking and delivery systems, quality parameter templates, roast profile management, sample transfer capabilities, notification systems, lab capability definitions, pricing structures, and API integration support. Implementation includes 5 new enum types for data consistency, 61 RLS policies providing role-based security controls, comprehensive indexing for performance optimization, and helper functions for common operations. All tables follow established naming conventions and foreign key relationships from existing schema. Ready for deployment and testing.
+</info added on 2025-10-08T18:22:46.435Z>
+
+# Test Strategy:
+Test migration rollback/rollforward, verify RLS policies work correctly, test with sample data insertion

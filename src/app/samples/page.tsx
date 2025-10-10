@@ -20,6 +20,8 @@ interface Sample {
   client_id?: string
   supplier?: string
   origin?: string
+  importer?: string
+  roaster?: string
   sample_type?: string
   status: string
   workflow_stage?: string
@@ -50,13 +52,19 @@ export default function SamplesPage() {
       const data = await response.json()
 
       if (response.ok) {
+        // Filter out approved and rejected samples (they should only show in certificates)
+        let filtered = data.samples.filter((s: Sample) =>
+          s.status !== 'approved' && s.status !== 'rejected'
+        )
+
         // Filter by search query on client side
-        let filtered = data.samples
         if (searchQuery) {
           filtered = filtered.filter((s: Sample) =>
             s.tracking_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.supplier?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            s.origin?.toLowerCase().includes(searchQuery.toLowerCase())
+            s.origin?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.importer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.roaster?.toLowerCase().includes(searchQuery.toLowerCase())
           )
         }
         setSamples(filtered)
@@ -169,7 +177,7 @@ export default function SamplesPage() {
           </CardContent>
         </Card>
 
-        {/* Samples List */}
+        {/* Samples Table */}
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">
             Loading samples...
@@ -191,70 +199,59 @@ export default function SamplesPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-4">
-            {samples.map((sample) => (
-              <Card key={sample.id} className="hover:shadow-lg transition-shadow">
-                <CardContent className="p-6">
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1 space-y-3">
-                      <div className="flex items-center gap-3">
-                        <h3 className="text-lg font-semibold">{sample.tracking_number}</h3>
-                        {getStatusBadge(sample.status)}
-                        {sample.sample_type && (
-                          <Badge variant="outline" className="text-xs">
-                            {sample.sample_type}
-                          </Badge>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                        {sample.supplier && (
-                          <div>
-                            <span className="text-muted-foreground">Supplier:</span>
-                            <p className="font-medium">{sample.supplier}</p>
-                          </div>
-                        )}
-                        {sample.origin && (
-                          <div>
-                            <span className="text-muted-foreground">Origin:</span>
-                            <p className="font-medium">{sample.origin}</p>
-                          </div>
-                        )}
-                        {sample.bags_quantity_mt && (
-                          <div>
-                            <span className="text-muted-foreground">Quantity:</span>
-                            <p className="font-medium">{sample.bags_quantity_mt} MT</p>
-                          </div>
-                        )}
-                        <div>
-                          <span className="text-muted-foreground">Created:</span>
-                          <p className="font-medium">
-                            {new Date(sample.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-                      </div>
-
-                      {sample.storage_position && (
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <MapPin className="h-3 w-3" />
-                          <span>Storage: {sample.storage_position}</span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="flex gap-2 ml-4">
-                      <Link href={`/samples/${sample.id}`}>
-                        <Button variant="outline" size="sm">
-                          <Eye className="h-3 w-3 mr-1" />
-                          View
-                        </Button>
-                      </Link>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm font-semibold">
+                All Samples ({samples.length})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Sample Nr</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Origin</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Exporter</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Importer</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Roaster</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Created</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {samples.map((sample) => (
+                      <tr
+                        key={sample.id}
+                        className="border-b border-border hover:bg-accent/50 transition-colors"
+                      >
+                        <td className="py-3 px-4">
+                          <div className="font-medium">{sample.tracking_number}</div>
+                        </td>
+                        <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.supplier || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.importer || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.roaster || '-'}</td>
+                        <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
+                        <td className="py-3 px-4 text-sm">
+                          {new Date(sample.created_at).toLocaleDateString()}
+                        </td>
+                        <td className="py-3 px-4">
+                          <Link href={`/samples/${sample.id}`}>
+                            <Button variant="outline" size="sm">
+                              <Eye className="h-3 w-3 mr-1" />
+                              View
+                            </Button>
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </MainLayout>

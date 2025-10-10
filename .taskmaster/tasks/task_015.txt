@@ -1,0 +1,11 @@
+# Task ID: 15
+# Title: Build Sample Tracking Dashboard
+# Status: pending
+# Dependencies: 3
+# Priority: high
+# Description: Create comprehensive sample tracking interface with Quality filter and all contract number fields
+# Details:
+Create src/components/samples/sample-tracking-dashboard.tsx with searchable table/grid view. Filters: status, date range, client/exporter, importer, Quality (between Client and Importer), laboratory location, sample type. Sample detail view with complete timeline (received → assessment → cupping → certificate), storage location, quality specification, assessment results, certificates, activity log, all contract numbers. Bulk actions: Excel export, print labels (3cm x A4 for tins), print QR code table for cupping (thermal printer), move to storage, assign to cupper. Mobile-responsive with color-coded status indicators.
+
+# Test Strategy:
+Test filtering functionality, test bulk operations, test label/QR printing, test detail view navigation, verify mobile responsiveness

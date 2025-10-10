@@ -1,0 +1,11 @@
+# Task ID: 7
+# Title: Build Green Bean Analysis Interface
+# Status: pending
+# Dependencies: 6
+# Priority: high
+# Description: Create green bean quality assessment form with client-specific defects, dynamic screen sizes, and automatic out-of-spec warnings
+# Details:
+Create src/components/assessments/green-bean-analysis.tsx with dynamic sections: Client-specific defect classification (based on quality spec), screen size analysis (show only needed screens like Pan 17/18), physical properties (moisture with Coffee Industry Standards vs ISO 6673). Include real-time compliance checking with red/yellow/green indicators. Add photo upload for severe defects, automatic defect equivalency calculation, override capability with justification. Auto-save every 30 seconds. Mobile/tablet optimized interface with calculator widget.
+
+# Test Strategy:
+Test defect calculations accuracy, test screen size distribution validation, test photo upload/compression, test auto-save functionality

@@ -1,0 +1,11 @@
+# Task ID: 5
+# Title: Implement Storage Management System
+# Status: pending
+# Dependencies: 2
+# Priority: medium
+# Description: Build visual storage grid interface for Santos HQ lab with 72 positions supporting 42 samples per position (3,024 total capacity)
+# Details:
+Create src/components/storage/storage-grid.tsx with visual representation of Santos HQ layout: Shelf 1 (6x3 front left), Shelf 2 (6x3 front right), Shelf 3 (4x3 back right), Shelf 4 (8x3 back left). Each position holds 3 stacks × 7 tins front/back = 42 samples. Implement drag-drop sample placement, real-time occupancy display, color coding by sample age (green <7 days, yellow 7-30, red >30). Add sample hover preview, search functionality, storage history tracking. Support for other lab configurations (Buenaventura, Guatemala, Peru) with flexible shelf layouts.
+
+# Test Strategy:
+Test storage allocation/deallocation, test visual grid performance with 3,024 samples, test drag-drop functionality, verify capacity calculations

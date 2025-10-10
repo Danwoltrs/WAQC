@@ -1,0 +1,61 @@
+# Task ID: 21
+# Title: Implement Sample Analytics Dashboard
+# Status: pending
+# Dependencies: 15
+# Priority: medium
+# Description: Build comprehensive analytics dashboard for sample processing performance and quality trends
+# Details:
+Major progress completed: Real-time data integration successfully implemented in Overview dashboard (src/app/dashboard/metrics/overview/page.tsx) with Top Performers section showing suppliers with 100% approval rate sorted by volume; Supply Chain Insights calculating most active routes, diversification metrics, and geographic distribution; Summary Cards displaying total bags, active exporters/roasters, and approval rates with sample counts. Supplier Review page (src/app/dashboard/metrics/supplier-review/page.tsx) Key Insights section implemented with real PSS/SS approval rates, top performer metrics, and active supplier counts. All components respect stakeholder filters (Client, Exporter, Importer, Roaster) and apply proper RLS based on user role using Supabase queries with date range filtering and lab-based access control. Loading states and empty data states implemented. Remaining work: Create dedicated analytics dashboard component (src/components/analytics/sample-analytics-dashboard.tsx) consolidating metrics from existing implementations, add time-series trend charts for sample volume (daily/weekly/monthly), implement processing time tracking per stage, create processing bottlenecks analysis, add funnel chart for sample pipeline stages, implement heatmap for daily/hourly activity patterns, and build export capabilities (PNG charts, Excel data) with automated report scheduling via email.
+
+# Test Strategy:
+Test chart rendering performance with large datasets, verify data accuracy against database queries, test export functionality (PNG charts and Excel exports), validate real-time data updates, test loading states and error handling, verify proper RLS enforcement across all user roles
+
+# Subtasks:
+## 1. Create consolidated analytics dashboard component [pending]
+### Dependencies: None
+### Description: Build src/components/analytics/sample-analytics-dashboard.tsx that consolidates metrics from overview and supplier review pages
+### Details:
+Create a comprehensive dashboard component that brings together the successfully implemented metrics from the Overview (src/app/dashboard/metrics/overview/page.tsx) and Supplier Review (src/app/dashboard/metrics/supplier-review/page.tsx) pages. Include Top Performers, Supply Chain Insights, Key Insights sections, and Summary Cards in a unified interface. Use the same stakeholder filtering and RLS patterns already proven to work.
+
+## 2. Implement time-series trend charts [pending]
+### Dependencies: 21.1
+### Description: Add Recharts line charts for sample volume trends with daily, weekly, and monthly views
+### Details:
+Using the existing Recharts integration patterns found in src/components/metrics/supply-chain-sankey.tsx, create line charts showing sample processing volume over time. Implement toggleable views for daily, weekly, and monthly aggregations. Apply the same date range filtering and stakeholder filtering logic used in the existing dashboard implementations.
+
+## 3. Create processing time tracking system [pending]
+### Dependencies: 21.1
+### Description: Implement average processing time calculation per stage (intake → assessment → cupping → certificate)
+### Details:
+Build processing time analytics by tracking sample progression through stages using the existing samples table schema. Calculate average time spent in each stage and identify bottlenecks. Use the same RLS and filtering patterns established in the existing dashboard implementations.
+
+## 4. Implement processing bottlenecks analysis [pending]
+### Dependencies: 21.3
+### Description: Create analysis to identify which processing stages have the longest wait times or highest rejection rates
+### Details:
+Analyze the processing time data to identify bottlenecks in the sample workflow. Create visualizations showing where samples spend the most time and which stages have highest failure rates. Present recommendations for process improvements.
+
+## 5. Add sample pipeline funnel chart [pending]
+### Dependencies: 21.3
+### Description: Create Recharts funnel visualization showing sample progression through processing stages
+### Details:
+Build a funnel chart using Recharts to visualize how samples flow through the processing pipeline (intake → green bean analysis → roast analysis → cupping → certificate generation). Show drop-off rates at each stage and conversion metrics.
+
+## 6. Create daily/hourly activity heatmap [pending]
+### Dependencies: 21.2
+### Description: Implement heatmap visualization showing sample processing activity patterns by hour and day
+### Details:
+Build a heatmap using Recharts or custom visualization showing lab activity patterns. Display when samples are most frequently processed, helping identify peak hours and capacity planning opportunities. Use the established filtering and RLS patterns.
+
+## 7. Implement export capabilities [pending]
+### Dependencies: 21.2, 21.5, 21.6
+### Description: Add PNG chart export and Excel data export functionality with download buttons
+### Details:
+Implement export functionality allowing users to download charts as PNG images and data as Excel files. Add export buttons to each chart component and create utility functions for generating downloadable files. Follow existing component patterns for consistent UI.
+
+## 8. Build automated report scheduling system [pending]
+### Dependencies: 21.7
+### Description: Create email scheduling system for automated analytics reports
+### Details:
+Implement automated report generation and email delivery system. Allow users to schedule regular analytics reports (daily, weekly, monthly) to be sent via email. Use Supabase Edge Functions for server-side processing and email delivery. Include PDF generation for professional report formatting.
+

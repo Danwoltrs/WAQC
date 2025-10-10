@@ -1,0 +1,11 @@
+# Task ID: 18
+# Title: Implement Laboratory Configuration System
+# Status: pending
+# Dependencies: 1
+# Priority: low
+# Description: Build lab creation wizard with flexible storage configuration and pricing management
+# Details:
+Create src/components/admin/lab-configuration-wizard.tsx for global admins to configure new laboratories. Lab identification (name, location, timezone, contact info, lab code), capabilities (services offered, equipment, staff count, daily capacity), flexible storage configuration (shelves, columns/rows per shelf, position layout, samples per position, naming convention). Financial settings with per-client pricing (0.35-1 USD c/lb or USD per sample), third party lab fees (20 USD per sample), invoice numbering, tax information (BVI for own labs). Create src/app/api/laboratories/route.ts with configuration management.
+
+# Test Strategy:
+Test lab creation workflow, test storage configuration flexibility, test pricing calculations, verify permission controls

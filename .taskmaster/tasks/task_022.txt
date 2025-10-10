@@ -1,0 +1,11 @@
+# Task ID: 22
+# Title: Build Quality Trends Analysis System
+# Status: pending
+# Dependencies: 12
+# Priority: medium
+# Description: Create quality trends analysis with comparative metrics across origins and suppliers
+# Details:
+Create src/components/analytics/quality-trends-analysis.tsx with quality metrics: average cupping scores by origin country, processing method, supplier/exporter, time period. Defect trends over time (client-specific defects), screen size consistency, moisture compliance rates. Comparative analysis: side-by-side origin comparison, supplier performance ranking, seasonal quality variations, year-over-year trends. Visualizations: multi-line charts for comparisons, box plots for score distributions, radar charts for flavor profiles. Integration with existing Sankey diagrams for half/one-way flow (buyers from traders like Nespresso > Blaser > Nespresso).
+
+# Test Strategy:
+Test trend calculations accuracy, test comparative analysis features, test visualization performance with large datasets, verify supplier ranking algorithm

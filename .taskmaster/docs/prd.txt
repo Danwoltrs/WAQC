@@ -1,0 +1,1271 @@
+# Wolthers Coffee QC System - Phase 2 Product Requirements Document
+
+## Project Context
+
+**Domain:** qc.wolthers.com
+**Current Phase:** Phase 2 - Core Features
+**Last Updated:** October 8, 2025
+
+### Phase 1 Completion Summary (✅ Complete)
+
+The following foundational systems are fully operational:
+
+**Authentication & User Management:**
+- Microsoft OAuth integration with Azure AD
+- Email/password authentication via Supabase Auth
+- Role-based access control (10-tier hierarchy)
+- Global admin access control system with approval workflow
+- Automatic profile creation for OAuth users
+- QC access enablement system
+
+**Database Architecture:**
+- Complete Supabase schema with 8 core tables
+- Row Level Security (RLS) policies on all tables
+- Helper functions for role/permission checks
+- Quality templates system (3 default templates)
+- Client-specific quality configurations
+- Supply chain tracking fields
+
+**UI/UX Foundation:**
+- Three-column layout (left sidebar, main content, right sidebar)
+- Dark/Light theme system with seamless switching
+- Professional header with green color scheme (#bg-green-800 light, #08231B dark)
+- Collapsible navigation sidebar with submenu support
+- Language selector (EN | PT | ES)
+- Custom SampleTin icon component
+- Monochrome lab-appropriate icon system
+
+**Dashboard Systems:**
+- Main dashboard with real-time statistics
+- Sample lanes with status-based color coding
+- Weekly activity charts from live data
+- Supply Chain Sankey visualization (exporter → importer → roaster)
+- Supplier Performance Review dashboard with quarterly rankings
+- Certificate Statistics dashboard with 4 chart types
+- Role-based data filtering (lab-specific vs global views)
+
+**Data Integration:**
+- Real Supabase queries (no mock data)
+- 8 clients seeded with QC enablement
+- 8 samples with full supply chain data
+- Performance metrics tracking
+- Supplier reviews system
+
+---
+
+## Phase 2 Objectives
+
+Build the core quality control workflow that enables labs to:
+1. Intake and track coffee samples with flexible client-specific configurations
+2. Perform quality assessments (green bean, roast, cupping) with per-client customization
+3. Manage quality specifications per client with flexible defect systems and cupping scales
+4. Generate and deliver client-specific branded certificates
+5. Manage multi-lab storage systems with cross-lab transfers
+
+---
+
+## Feature Requirements - Phase 2
+
+### 1. Sample Management System
+
+**Priority:** P1 (Critical for MVP)
+
+#### 1.1 Sample Intake Form
+
+**User Story:** As a lab technician, I need to manually register new coffee samples so they enter our quality control pipeline.
+
+**Requirements:**
+
+**Multi-step form with validation at each stage:**
+
+**Basic Information:**
+- Exporter (autocomplete from clients table)
+- Buyer/Importer (autocomplete from clients table)
+- Roaster (if any)
+- Origin country and region
+- Processing method (OPTIONAL)
+- Sample type (Pre-Shipment Sample "PSS", Sealed Sample "SS", Type Sample)
+
+**Tracking & Reference Numbers:**
+- Sample nr (manual entry)
+- Lot nr (manual entry)
+- Wolthers Contract # (manual entry, with future system integration for auto approve/reject)
+- Exporter contract # (manual entry)
+- Buyer Contract # (manual entry)
+- Roaster Contract # (if any, manual entry)
+- ICO number (required if SS)
+- Container nr (required if SS)
+
+**Client-Specific Tracking Number Formats:**
+
+*Dunkin Format:*
+- Approved samples: `[Country Initial]-[5 digits]-[YY]`
+  - Examples: `B-12345-25` (Brazil 2025), `P-12345-26` (Peru 2026)
+- Rejected samples: `[Country Initial]-[5 digits]-[YY]-R`
+  - Examples: `B-12345-25-R` (Brazil 2025 rejected)
+
+*Ahold Format:*
+- Pattern: `[Quality Code]-[5 digits]-[YY]`
+- Examples: `SAG-12345-25`, `SAK-23456-25`, `SAX-34567-25`
+
+**Quantity Information:**
+- Always display in M/T (metric tons) THEN number of bags
+- Brazil weights: [existing system] but display M/T first
+- Colombia/Peru weights: [existing system] but display M/T first
+- Bag type selector (big bags, jute, etc.)
+
+**Sample Details:**
+- Arrival date
+- Sample photo upload (with preview)
+- Notes/special instructions
+
+**Technical Notes:**
+- Form should save draft state to avoid data loss
+- Integration with quality_specifications to auto-assign quality requirements based on client
+- Automatic tracking number generation per client format
+- Barcode/QR code generation for physical sample identification
+- Must work on both desktop and tablet (iPad-optimized later)
+- Real-time validation against client database
+
+**Auto-Detection Logic:**
+- Client auto-detection based on exporter name or buyer
+- Quality specification auto-assignment based on client + origin + processing method
+
+#### 1.2 Quality Specification Assignment
+
+**User Story:** As a lab manager, I need to assign or create quality specifications for each sample based on client requirements.
+
+**Requirements:**
+
+**Automatic Quality Template Suggestion:**
+Based on:
+- Client's saved specifications
+- Origin country
+- Processing method (if provided)
+- Sample type (PSS vs SS vs Type)
+
+**Manual Override Capability:**
+- Override with justification field
+- Template selection interface showing:
+  - Screen size requirements (Pan, Peas 9, Peas 10, Peas 11, 12-20)
+  - If quality is only specific screens (e.g., 17/18), show "Pan 17/18" instead of all screens
+  - Maximum defect thresholds by category (Primary/Secondary)
+  - Client-specific defect names and point values
+  - Moisture content range and standard (Coffee Industry Standards or ISO-6673)
+  - Minimum cupping score (if applicable)
+  - Cupping scale for this client/quality (1-5, 1-7, 1-10, etc.)
+  - Custom cupping attributes per client/quality
+  - Special requirements
+
+**Template Management:**
+- Clone existing quality for similar samples
+- Version tracking for quality specifications
+- View change history
+
+**Database Extensions Needed:**
+- quality_templates table (already exists, needs additional fields)
+- client_qualities table (already exists, needs additional fields)
+- quality_parameters table for configurable field definitions
+- quality_versions table for historical tracking
+- defect_definitions table (per-client defect customization)
+- taint_fault_definitions table (per-origin taints and faults)
+- cupping_attribute_definitions table (per-client/quality custom attributes)
+
+#### 1.3 Sample Tracking Interface
+
+**User Story:** As any user, I need to see the current status and location of all samples I have access to.
+
+**Requirements:**
+
+**Searchable Table/Grid View with Filters:**
+- Status (Received, In Progress, Under Review, Approved, Rejected)
+- Date range
+- Client/Exporter
+- Importer
+- **Quality** (filter between Client and Importer)
+- Laboratory location
+- Sample type
+
+**Sample Detail View:**
+- Complete timeline (received → assessment → cupping → certificate)
+- Current storage location
+- Assigned quality specification
+- All assessment results
+- Generated certificates
+- Activity log
+- All contract and reference numbers
+
+**Bulk Actions:**
+- Export to Excel
+- **Print labels (3 cm height by A4 paper width, pre-cut labels for tins)**
+  - Label content: Exporter, Quality, Certificate Nr, Date, and QR Code for the sample
+- **Print QR Code table for cupping (thermal printer)**
+  - QR Code content includes:
+    - Date received
+    - Client
+    - Quality
+    - **Sample nr if PSS OR ICO nr if SS** (conditional display)
+    - **Contract nr** (user can pick: Wolthers, buyers, or sellers)
+    - Optional: hide or show supplier name (exporter/coop/producer)
+  - Table with 4 rows for cupper names (auto-added from assignments or blank)
+  - Columns: Frag/Arom/Body/Acid/Swtn/Bala/Fini (or custom attributes per client)
+  - Columns: Taints and Faults
+  - Purpose: Cuppers can write notes, scan QR Code, and OCR handwritten notes for verification
+- Move to storage
+- Assign to cupper
+
+**UI Considerations:**
+- Mobile-responsive table
+- Color-coded status indicators (match existing dashboard colors)
+- Quick actions dropdown per sample
+- Filter persistence across sessions
+
+#### 1.4 Storage Management System
+
+**User Story:** As a lab technician, I need to assign physical storage locations to samples and track capacity.
+
+**Requirements:**
+
+**Per-Lab Storage Configuration:**
+
+**Santos HQ (BRA) Configuration:**
+- Shelf 1: 6 columns × 3 rows (front of the room left side)
+- Shelf 2: 6 columns × 3 rows (front of the room right side)
+- Shelf 3: 4 columns × 3 rows (back of the room right side)
+- Shelf 4: 8 columns × 3 rows (back of the room left side)
+- **Each position can store 3 stacks × 7 tins (front and back) = 42 samples per position/square**
+- Total positions: (6×3) + (6×3) + (4×3) + (8×3) = 18 + 18 + 12 + 24 = 72 positions
+- Total capacity: 72 positions × 42 samples = 3,024 samples
+
+**Other Labs:**
+- Buenaventura (COL): TBD
+- Guatemala City (GUA): TBD
+- Peru (PER): TBD
+
+**Visual Storage Grid Interface:**
+- Real-time occupancy (occupied/available)
+- Sample hover preview (tracking number, exporter, date)
+- Color coding by sample age (green <7 days, yellow 7-30 days, red >30 days)
+- Drag-drop sample placement
+- Search for specific sample location
+- Storage history log
+- Visual representation showing shelf layout (front left, front right, back right, back left)
+
+**Automated Alerts:**
+- Storage >80% capacity
+- Samples in storage >60 days
+- Misplaced samples
+
+**Database Extensions Needed:**
+- laboratories table with storage configuration (shelf layout, positions per shelf)
+- storage_positions table (shelf, column, row, capacity_per_position, current_samples array)
+- storage_history table for audit trail
+
+---
+
+### 2. Quality Assessment Pipeline
+
+**Priority:** P1 (Critical for MVP)
+
+#### 2.1 Green Bean Analysis Interface
+
+**User Story:** As a lab analyst, I need to record green bean quality metrics according to the sample's quality specification.
+
+**Requirements:**
+
+**Form Sections:**
+
+**1. Defect Classification (Client-Specific & Flexible)**
+
+**MAJOR FEATURE: Per-Client Defect Customization**
+- Defect names, point values, and categories can vary **client by client** (not just origin by origin)
+- Lab managers and global lab managers can:
+  - Add/remove defects per client
+  - Set as primary or secondary per client
+  - Configure point values per client per origin
+  - Modify existing defect counts
+- Option to add more defects (always primary or secondary only)
+
+**Brazil Example - Category 1 (Primary) Defects:**
+- Full black: 1.00 point
+- Full sour: 1.00 point
+- Pod or Cherry: 1.00 point
+- Stone/Stick: 1.00 point
+- Foreign material: 1.00 point
+- **Partial Black: 0.50 point** (moved from Category 2)
+
+**Brazil Example - Category 2 (Secondary) Defects:**
+- Severe Broca: 0.20 point
+- Minor Broca: 0.10 point
+- Broken: 0.10 point
+- Unripe/Immature: 0.20 point
+- Shells: 0.10 point
+- Husk: 0.50 point
+- Partial Sour: 0.50 point
+- Parchment: 0.50 point
+
+**Defect Input:**
+- Defect count per X grams sample (each client has a specific need, not fixed at 350g)
+- Photo upload for defect examples (OPTIONAL, for really bad samples to show on certificate)
+- Automatic equivalency calculation based on client's sample size
+- **Automatic warning when out of spec** (visual alert)
+
+**2. Screen Size Analysis**
+
+**Dynamic Screen Display:**
+- **Only show the screen sizes needed per quality and the pan (bottom)**
+- Standard options: Pan, Peas 9, Peas 10, Peas 11, 12-20
+- If quality is only specific screens (e.g., 17/18), show "Pan 17/18" instead of all screens
+- Percentage retained on each screen
+- **Automatic warning when out of spec** (visual alert with red/yellow/green indicators)
+- Visual bar chart of distribution
+
+**3. Physical Properties**
+
+**Moisture Content (user must pick standard for each client):**
+- Coffee Industry Standards
+- ISO-6673
+- Moisture content (%) with pass/fail indicator
+- Automatic comparison against specification
+
+**Optional Fields:**
+- Density (OPTIONAL)
+- Color assessment (OPTIONAL - visual scale or colorimeter)
+
+**Removed:**
+- Water activity (removed from requirements)
+
+**4. Compliance Check**
+- Real-time comparison against quality specification
+- Red/yellow/green indicators per parameter
+- Overall pass/fail determination
+- Override capability with justification field
+
+**Technical Notes:**
+- Form auto-saves every 30 seconds
+- Mobile/tablet optimized for lab use
+- Calculator widget for defect equivalencies
+- Photo compression before upload
+- Integration with quality_assessments table
+- Support for flexible sample sizes per client
+
+#### 2.2 Roast Analysis Interface
+
+**User Story:** As a roaster, I need to record roast profile and prepare samples for cupping.
+
+**Requirements:**
+
+**Roast Profile Fields:**
+
+**Required:**
+- Roast date and time (**automatically captured**)
+- Number of cups prepared
+
+**Optional:**
+- Batch size (grams)
+- Target roast level: **Colorimeter or Light, Medium-Light, Medium, etc.**
+- Actual roast level achieved
+- Roast time (minutes:seconds)
+- First crack time
+- Agtron score (if available)
+
+**Removed from requirements:**
+- Development time ratio (%)
+- Final temperature
+
+**Quaker Counting:**
+- Count interface with increment/decrement buttons
+- Photo upload of quakers (OPTIONAL)
+- Threshold indicator:
+  - <3 for specialty
+  - <8 for Dunkin
+  - Leave empty if not needed (client-dependent)
+
+**Sample Preparation Tracking (all OPTIONAL):**
+- Cooling time logged
+- Rest time before cupping
+- Grind size setting
+- Cupping scheduled time
+
+**Database Extensions Needed:**
+- roast_profiles table (or extend quality_assessments)
+- roast_photos table
+
+#### 2.3 Digital Cupping Interface (Web Version)
+
+**User Story:** As a Grader, I need to evaluate qualities by client needs/specs, or when doing Q Grading, I need to evaluate coffee samples using SCA cupping protocols with real-time collaboration.
+
+**Requirements:**
+
+**Cupping Session Setup:**
+- Session creation wizard:
+  - Select samples to cup (multi-select)
+  - Add cuppers (minimum 2 required)
+  - Set session type (Standard, Calibration, Q Grading)
+  - Choose cupping form (SCA for Q Grading, or client-specific)
+  - Cupping scale selection (1-5, 1-7, 1-10, etc. - varies per client and quality)
+  - Select cupping attributes (client-specific or standard)
+  - Privacy settings (scores visible to all, or hidden until submit)
+
+**Cupping Interface (per sample):**
+
+**Tabbed Layout:**
+- **Show title as sample nr or container nr** (not generic sample names)
+- Multiple samples in tabs for easy navigation
+
+**Attribute Scoring (fully customizable per client/quality):**
+
+**MAJOR FEATURE: Lab manager/global lab manager can add/remove/edit cupping attribute categories for each client/quality**
+
+**Default Attributes (can be modified):**
+- Fragrance/Aroma
+- Acidity
+- Body
+- Balance
+- Sweetness
+- Finish
+- Uniformity (2 points per cup, max 10) - **only if Q Grading**
+- Clean Cup (2 points per cup, max 10) - **only if Q Grading**
+- Overall impression (OPTIONAL)
+
+**Scoring:**
+- Scale varies per client/quality: 1-5, 1-7, 1-10, etc.
+- Increment levels configurable (0.25, 0.5, 1.0)
+- Sliders or input fields based on preference
+
+**Removed Attributes (but can be added back per client):**
+- Flavor
+- Aftertaste
+
+**Defects Section (Client-Specific & Origin-Specific):**
+- **Each origin AND client quality specs has different taints and levels**
+- Lab manager/global manager can add/edit/remove taints and faults per origin
+
+**Brazil Taints Example:**
+- Harsh
+- Grassy/green
+- Woody
+- Past crop
+- Fruity
+- Dirty
+
+**Brazil Faults Example:**
+- Hard (riado)
+- Phenol (rio)
+- Fermented
+- Earthy
+- Moldy
+
+**Severity Levels (customizable per client and quality):**
+- Point deduction varies by client/quality specification
+- Number of cups affected
+
+**Additional Fields:**
+- **Comments/Notes field** (rich text)
+- Descriptors tags (autocomplete common flavors)
+  - Examples: "Dunkin, Alfenas Dulce, Euro Dulce..."
+- Automatic total score calculation
+- **Finalize cupping** (for this user, changes sample to "Under Review" status)
+
+**Real-Time Collaboration:**
+- **User average score rounded to closest increment level** for each attribute if below discrepancy detection
+- Live score updates from other cuppers (if privacy allows)
+- Discrepancy detection:
+  - **Flag scores > x points different from average** (threshold setup for each client/quality)
+  - Highlight divergent attributes
+  - Suggest re-cupping
+- Session timer showing time elapsed
+- Progress indicator (cuppers completed/pending)
+
+**Removed:**
+- Chat functionality (removed from requirements)
+
+**Post-Session Features:**
+- Aggregate scores calculation: **Only if Q Grading**
+- Standard deviation per attribute
+- **Generate approved or rejected cert for the quality/client**
+- Export to Excel: **(if user wants to)**
+- Save as reference cupping
+
+**Database Extensions Needed:**
+- cupping_sessions table (already exists)
+- cupping_scores table (already exists)
+- cupping_descriptors table
+- taint_fault_definitions table (per-origin taints and faults)
+- cupping_scale_configs table (per-client/quality scale settings)
+- cupping_attribute_definitions table (per-client/quality custom attributes)
+
+---
+
+### 3. Quality Specifications Management
+
+**Priority:** P1 (Critical for MVP)
+
+#### 3.1 Quality Template Builder
+
+**User Story:** As a quality manager, lab manager, or global lab manager, I need to create reusable quality templates that define pass/fail criteria with full flexibility per client.
+
+**Requirements:**
+
+**Template Creation Interface:**
+- Template naming and description
+- Client assignment (can be used by multiple clients)
+- Origin selection (single or multi-origin)
+- Processing method applicability (optional)
+
+**Parameter Configuration Sections:**
+
+**1. Screen Size Requirements**
+- Enable/disable specific screens: Pan, Peas 9, Peas 10, Peas 11, 12-20
+- Set minimum percentage for each screen
+- Set maximum percentage for pans (fines)
+- Conditional display: If quality is only specific screens (e.g., 17/18), show "Pan 17/18"
+- Visual representation of ideal distribution
+
+**2. Defect Thresholds (Client-Specific)**
+- Maximum Primary Defects Allowed (total points)
+- Maximum Secondary Defects Allowed (total points)
+- Percentage-based limits: **"max x% of broca"** as example
+- Specific defect limits (e.g., max 1 full black)
+- Configurable per client:
+  - Add/remove defect names
+  - Set as primary or secondary
+  - Define point values per defect
+  - Set sample size (X grams) for counting
+
+**3. Physical Properties**
+
+**Moisture Content:**
+- Select standard per client:
+  - Standard Coffee Industry
+  - ISO 6673 (not ISO-6673)
+- Define acceptable range (e.g., 10-12%)
+
+**Optional:**
+- Minimum density (OPTIONAL)
+- Color range (OPTIONAL)
+
+**Removed:**
+- Water activity (removed from requirements)
+
+**4. Cupping Requirements (Flexible Scales & Attributes)**
+
+**MAJOR FEATURE: Fully customizable cupping attributes**
+- Lab manager/global lab manager can add/remove/edit attribute categories per client/quality
+- Examples: Add "Flavor" or "Aftertaste" if client needs them
+- Remove "Balance" or "Finish" if not needed
+- Create custom attributes like "Dunkin Character" or "Regional Typicity"
+
+**Scale Configuration:**
+- **Cupping scale can vary per client and quality** (1-5, 1-7, 1-10, etc.)
+- Increment levels (0.25, 0.5, 1.0)
+- Minimum total score (e.g., 80.0 for Q Grading)
+- Minimum score per attribute (if applicable)
+- Maximum allowed defects
+- Required descriptors/flavor profile
+- **Severity levels can also vary client to client and quality to quality**
+
+**5. Origin-Specific Taints & Faults**
+- Configure taints per origin (Harsh, Grassy/green, Woody, etc.)
+- Configure faults per origin (Hard riado, Phenol rio, Fermented, etc.)
+- Set point deductions per severity level
+- Customize per client if needed
+
+**6. Processing Method Specifications (Optional)**
+- Allowed methods (Natural, Washed, Honey, etc.)
+- Method-specific requirements (if processing method provided)
+
+**Template Management:**
+- Template library view (searchable, filterable)
+- Clone template functionality
+- Template versioning (track changes over time)
+- Archive/activate templates
+- Usage statistics (how many clients use this template)
+
+**Database Extensions Needed:**
+- quality_templates table (already exists, needs expansion)
+- quality_parameters table (flexible parameter definitions)
+- template_versions table
+- defect_definitions table (per-client defect configurations)
+- taint_fault_definitions table (per-origin taints/faults)
+- cupping_scale_configs table (per-client/quality scale settings)
+- cupping_attribute_definitions table (per-client/quality custom attributes)
+
+#### 3.2 Client-Specific Quality Assignment
+
+**User Story:** As a sales manager, I need to assign quality specifications to clients for their different origins and sample types.
+
+**Requirements:**
+
+**Client Quality Library:**
+- Per-client dashboard showing all their qualities
+- Group by origin, processing method, sample type
+- Quick clone from template
+- Bulk import from CSV/Excel
+
+**Quality Assignment Interface:**
+- Client selector (autocomplete)
+- Client type classification:
+  - Exporter/Coop/Exporting Producer
+  - Buyer/Importer/Dealer (e.g., Blaser)
+  - Importer/Roaster (e.g., Nespresso, Nordquist, Löfberg)
+- Origin specification:
+  - Country (required)
+  - Region/department (optional)
+  - Micro-lot/estate name (optional)
+- Processing method (optional)
+- Sample type (PSS, SS, Type)
+- Select base template or create custom
+- Customize parameters from template:
+  - Defect names and point values
+  - Screen size requirements
+  - Moisture content standard
+  - Cupping scale (1-5, 1-7, 1-10, etc.)
+  - Cupping attributes (add/remove/edit)
+  - Taints and faults
+- Save and apply to future samples
+
+**Quality Inheritance System:**
+- Hierarchy: Global Template → Client Template → Sample-Specific
+- Override capability at each level with justification
+- Visual indicator showing which level is active
+- Change history tracking
+
+**Database Extensions Needed:**
+- client_qualities table (already exists, needs expansion)
+- quality_overrides table
+
+---
+
+### 4. Certificate Generation System
+
+**Priority:** P1 (Critical for MVP)
+
+#### 4.1 Automated Certificate Generation
+
+**User Story:** As a lab manager, I need to automatically generate professional certificates when samples are approved.
+
+**Requirements:**
+
+**Certificate Data Collection:**
+- Trigger: When cupping is finalized and sample approved
+- Auto-populate from:
+  - Sample information (exporter, buyer, roaster, origin, etc.)
+  - Quality assessment results
+  - Cupping session results (aggregate and average scores to closest increment nr)
+  - Laboratory information
+  - Quality specification used
+  - All contract and reference numbers
+
+**Certificate Templates (Client-Specific):**
+
+**Certificate Number Format:**
+- **Format specific for each client/quality spec** (not universal)
+- Examples: Client A might use `CERT-BRA-2025-0001`, Client B might use `CA-25-001`
+- Configurable in client quality settings
+
+**Professional PDF Layout:**
+- **Lab country flag branding elements** (Brazil for Brazil lab, Peru for Peru lab, etc.)
+- Green color scheme (Dunkin-style as per requirements)
+- Wolthers branding
+
+**Sections:**
+
+**Header:**
+- Wolthers logo
+- Laboratory info (with country flag)
+- Certificate number (client-specific format)
+
+**Sample Details:**
+- Tracking number
+- Exporter
+- Buyer
+- Roaster (if applicable)
+- Origin
+- Bags (M/T then number of bags)
+- ICO number (if SS)
+- Container nr (if SS)
+- Sample type
+- All contract numbers
+
+**Quality Assessment Results:**
+- Screen size distribution (table and chart)
+- Defect analysis (with client-specific defect names)
+- Moisture content (with standard used)
+- Compliance status (Pass/Fail with checkmarks)
+
+**Cupping Results:**
+- **Aggregate and average scores from all cuppers to closest increment nr.**
+- Client-specific attributes displayed
+- Flavor notes and descriptors
+- **Final score (only if Q Grading)**
+- Taints and faults noted
+
+**Signatures:**
+- Digital signature of approving Q Grader (if Q Grading)
+- Lab manager signature
+- QR code for verification
+- Authentication code
+
+**Footer:**
+- Authentication code (alphanumeric, 16 characters)
+- Issue date
+- Validity period
+
+**Certificate Metadata:**
+- Unique certificate number (client-specific format)
+- Authentication code
+- QR code linking to verification portal
+- Digital signature hash
+- Version number (if regenerated)
+
+**Generation Options:**
+- Language selection (EN, PT, ES)
+- Include/exclude cupping notes
+- Include/exclude photos
+- Watermark for draft vs final
+
+**Database Extensions Needed:**
+- certificates table (already exists, needs client-specific format field)
+- certificate_signatures table
+- certificate_versions table
+- certificate_number_configs table (per-client number formats)
+
+#### 4.2 Certificate Distribution System
+
+**User Story:** As a client, I need to receive my certificates via email and download them from the portal.
+
+**Requirements:**
+
+**Email Delivery:**
+
+**Timing Options (Client-Specific):**
+- **Usually set to send by end of day**
+- OR **client can choose to receive as it goes batch by batch**
+- Configurable in client settings
+
+**Email Template:**
+- Recipients: Client contact email(s) from clients table
+- Subject: "Coffee Quality Certificate - [Tracking Number]"
+- Body: Summary of results, download link, verification instructions
+- Attachment: PDF certificate
+- Wolthers branding
+- Delivery tracking (sent, opened, bounced)
+- Retry logic for failed deliveries
+
+**Download Portal:**
+- Client dashboard section "My Certificates"
+- Searchable table with filters:
+  - Date range
+  - Sample tracking number
+  - Origin
+  - Status (Approved, Rejected)
+- Download buttons (PDF, Excel)
+- Bulk download (ZIP)
+- Certificate preview modal
+
+**API Integration:**
+- REST API endpoint for external systems
+- Authentication via API key
+- Endpoints:
+  - GET /api/certificates/:id (retrieve certificate data)
+  - GET /api/certificates/:id/pdf (download PDF)
+  - POST /api/certificates/verify (verify authenticity)
+- Rate limiting
+- Webhook support for real-time notifications
+
+**Database Extensions Needed:**
+- certificate_deliveries table (email tracking)
+- api_keys table (for external integrations)
+- client_certificate_settings table (delivery timing preferences)
+
+---
+
+### 5. Multi-Laboratory Coordination
+
+**Priority:** P2 (Important for full release)
+
+#### 5.1 Laboratory Configuration System
+
+**User Story:** As a global admin, I need to configure new laboratories with their specific settings and capabilities.
+
+**Requirements:**
+
+**Lab Creation Wizard:**
+
+**Lab Identification:**
+- Laboratory name
+- Location (country, city, address)
+- Time zone
+- Contact information
+- Lab code (3-letter): BRA, COL, GUA, PER
+
+**Lab Capabilities:**
+- Services offered (green analysis, roasting, cupping, Q grading)
+- Equipment available
+- Staff count
+- Maximum daily sample capacity
+
+**Storage Configuration:**
+- Flexible shelf layout system
+- Number of shelves
+- Columns and rows per shelf (can vary by shelf)
+- Position layout (front left, front right, back left, back right)
+- Samples per position (e.g., 42 for Santos HQ)
+- Total capacity (auto-calculated)
+- Naming convention
+
+**Example: Santos HQ (BRA):**
+- Shelf 1: 6 columns × 3 rows (front of the room left side)
+- Shelf 2: 6 columns × 3 rows (front of the room right side)
+- Shelf 3: 4 columns × 3 rows (back of the room right side)
+- Shelf 4: 8 columns × 3 rows (back of the room left side)
+- Each position: 42 samples (3 stacks × 7 tins front and back)
+- Total: 72 positions × 42 samples = 3,024 samples capacity
+
+**Financial Settings:**
+
+**Pricing Structure (Client-Specific):**
+- Default currency
+- Each client has their own negotiation:
+  - Can be from 0.35 USD c/lb to 1 c/lb
+  - OR USD per sample
+- **Third party labs:** If we hire a 3rd party lab to do QC for us:
+  - They can charge us a fee like 20 USD per sample
+  - We can charge the final buyer a different fee for approved, or approved/rejected lots too
+- Invoice numbering format
+
+**Tax Information:**
+- **We will use BVI for all our own labs**
+
+**Lab Settings Dashboard:**
+- Edit lab information
+- View lab statistics
+- Manage lab users
+- Configure quality templates specific to this lab
+- Set notification preferences
+- Manage pricing per client
+
+**Database Extensions Needed:**
+- laboratories table (with flexible storage configuration fields)
+- lab_shelves table (shelf-specific configurations)
+- lab_capabilities table
+- lab_pricing table (per-client pricing)
+- third_party_lab_fees table
+
+#### 5.2 Cross-Lab Sample Transfers
+
+**User Story:** As a lab manager, I need to transfer samples between laboratories for specialized testing.
+
+**Requirements:**
+
+**Transfer Request System:**
+
+**Initiate Transfer:**
+- Select sample(s) to transfer
+- Choose destination laboratory
+- Select reason (specialized equipment, capacity, client preference)
+- Estimated arrival date
+- Special handling instructions
+
+**Transfer Approval Workflow:**
+- Destination lab receives transfer request
+- Approve/reject with comments
+- Update sample tracking status
+
+**Transfer Completion:**
+- Mark as shipped (with tracking number)
+- Mark as received at destination
+- Update storage location
+- Update sample ownership
+
+**Transfer History:**
+- Timeline of all transfers
+- Current location always visible
+- Custody chain for audit
+
+**Database Extensions Needed:**
+- sample_transfers table
+- transfer_history table
+
+---
+
+### 6. User Experience Enhancements
+
+**Priority:** P2 (Important for full release)
+
+#### 6.1 Notifications System
+
+**User Story:** As any user, I need to receive timely notifications about samples, sessions, and certificates relevant to me.
+
+**Requirements:**
+
+**Notification Types:**
+
+**Sample-related:**
+- New sample assigned to me
+- Sample ready for cupping
+- Sample approaching deadline
+- Sample out of spec (automatic warning)
+- Storage capacity warning
+
+**Cupping-related:**
+- Invited to cupping session
+- Session starting soon (15 min reminder)
+- Score discrepancy detected
+- Session completed
+
+**Certificate-related:**
+- Certificate generated
+- Certificate delivery failed
+- Certificate verification requested
+
+**Administrative:**
+- Access request pending approval
+- New user joined lab
+- System maintenance scheduled
+
+**Notification Delivery:**
+- In-app notification center (right sidebar)
+- Email digest (daily or real-time, user preference)
+- Browser push notifications (opt-in)
+- Mobile notifications (Phase 3 - iPad app)
+
+**Notification Management:**
+- Mark as read/unread
+- Archive notifications
+- Notification preferences per type
+- Do Not Disturb mode
+
+**Database Extensions Needed:**
+- notifications table
+- notification_preferences table
+
+#### 6.2 Activity Feed
+
+**User Story:** As a user, I want to see recent activities in my laboratory to stay informed.
+
+**Requirements:**
+
+**Activity Types Tracked:**
+- Sample intake
+- Quality assessments completed
+- Cupping sessions
+- Certificates issued
+- Samples out of spec
+- User actions (logins, changes)
+- System events
+
+**Activity Feed Display:**
+- Right sidebar component (already in layout)
+- Real-time updates via Supabase subscriptions
+- Time grouping (Today, Yesterday, This Week, Older)
+- User avatars and action icons
+- Clickable to navigate to related item
+- Filter by activity type
+- Search activities
+
+**Database Extensions Needed:**
+- activities table
+
+---
+
+### 7. Reporting & Analytics Enhancements
+
+**Priority:** P2 (Important for full release)
+
+#### 7.1 Sample Analytics Dashboard
+
+**User Story:** As a lab manager, I need detailed analytics on sample processing performance.
+
+**Requirements:**
+
+**Metrics to Display:**
+- Sample volume trends (daily, weekly, monthly)
+- Average processing time per stage
+- Approval vs rejection rates
+- Processing bottlenecks
+- Top clients by volume
+- Top origins by volume
+- Sample type distribution (PSS vs SS vs Type)
+- Out-of-spec frequency by parameter
+
+**Visualizations:**
+- Line charts for trends over time
+- Bar charts for comparisons
+- Pie charts for distributions
+- Funnel chart for sample pipeline stages
+- Heatmap for daily/hourly activity
+
+**Export Capabilities:**
+- Download charts as PNG
+- Export data to Excel
+- Schedule automated reports (email)
+
+#### 7.2 Quality Trends Analysis
+
+**User Story:** As a quality manager, I need to track quality trends across origins and suppliers.
+
+**Requirements:**
+
+**Quality Metrics:**
+- Average cupping scores by:
+  - Origin country
+  - Processing method
+  - Supplier/exporter
+  - Time period
+- Defect trends over time (client-specific defects)
+- Screen size consistency
+- Moisture compliance rates
+
+**Comparative Analysis:**
+- Side-by-side origin comparison
+- Supplier performance ranking
+- Seasonal quality variations
+- Year-over-year trends
+
+**Visualizations:**
+- Multi-line charts for comparisons
+- Box plots for score distributions
+- Radar charts for flavor profiles
+- Sankey diagrams for quality flow (already implemented)
+  - **Half/one-way flow for buyers who purchase from traders**
+  - Example: Nespresso from Exporter(s) > Blaser > Nespresso
+
+---
+
+## Technical Architecture Updates
+
+### Database Schema Extensions Required
+
+**New Tables:**
+1. defect_definitions - Per-client defect configurations (names, points, primary/secondary)
+2. taint_fault_definitions - Per-origin taints and faults
+3. cupping_scale_configs - Per-client/quality cupping scale settings (1-5, 1-7, 1-10)
+4. cupping_attribute_definitions - Per-client/quality custom cupping attributes
+5. certificate_number_configs - Client-specific certificate number formats
+6. client_certificate_settings - Email delivery timing preferences
+7. storage_positions - Physical storage tracking with capacity per position
+8. storage_history - Audit trail for sample movements
+9. lab_shelves - Shelf-specific configurations (columns, rows, position, samples per position)
+10. quality_parameters - Flexible parameter definitions
+11. template_versions - Quality template versioning
+12. quality_overrides - Sample-specific overrides
+13. roast_profiles - Roast data (or extend quality_assessments)
+14. cupping_descriptors - Flavor tags library
+15. certificate_signatures - Digital signature tracking
+16. certificate_deliveries - Email delivery tracking
+17. certificate_versions - Certificate regeneration history
+18. api_keys - External integration authentication
+19. sample_transfers - Cross-lab transfers
+20. transfer_history - Transfer audit trail
+21. notifications - User notification queue
+22. notification_preferences - User notification settings
+23. activities - Activity feed events
+24. lab_capabilities - Laboratory service offerings
+25. lab_pricing - Per-client laboratory pricing
+26. third_party_lab_fees - Third party lab fee tracking
+
+**Table Updates:**
+- samples: Add workflow_stage, assigned_to, storage_position_id, all contract fields
+- quality_assessments: Add defect photos, sample_size_grams, moisture_standard
+- laboratories: Add comprehensive configuration fields, tax_region (BVI), storage_layout
+- clients: Add notification_emails array, certificate_delivery_timing
+- quality_templates: Add cupping_scale_type, screen_display_mode, custom_attributes
+
+### API Routes Required
+
+**Sample Management:**
+- POST /api/samples - Create new sample with all contract fields
+- GET /api/samples - List samples (with Quality filter)
+- GET /api/samples/:id - Get sample details
+- PATCH /api/samples/:id - Update sample
+- POST /api/samples/:id/assign-storage - Assign storage location
+- POST /api/samples/:id/transfer - Initiate transfer
+- POST /api/samples/:id/print-label - Generate 3cm x A4 label
+- POST /api/samples/:id/print-qr-table - Generate thermal printer QR table
+
+**Quality Assessment:**
+- POST /api/assessments - Create assessment
+- GET /api/assessments/:id - Get assessment
+- PATCH /api/assessments/:id - Update assessment
+- POST /api/assessments/:id/photos - Upload defect photos
+- GET /api/assessments/:id/warnings - Get out-of-spec warnings
+
+**Cupping:**
+- POST /api/cupping/sessions - Create session with scale config and custom attributes
+- GET /api/cupping/sessions/:id - Get session details
+- POST /api/cupping/sessions/:id/scores - Submit scores
+- GET /api/cupping/sessions/:id/scores - Get all scores with averaging
+- PATCH /api/cupping/sessions/:id/finalize - Finalize cupping (change to Under Review)
+
+**Certificates:**
+- POST /api/certificates/generate - Generate certificate (client-specific format)
+- GET /api/certificates/:id - Get certificate data
+- GET /api/certificates/:id/pdf - Download PDF (with country flag)
+- POST /api/certificates/:id/resend - Resend email
+- POST /api/certificates/verify - Verify authenticity
+
+**Quality Templates:**
+- GET /api/quality-templates - List templates
+- POST /api/quality-templates - Create template
+- GET /api/quality-templates/:id - Get template
+- PATCH /api/quality-templates/:id - Update template
+- POST /api/quality-templates/:id/clone - Clone template
+- POST /api/quality-templates/:id/defects - Add/edit defects
+- POST /api/quality-templates/:id/taints-faults - Add/edit taints/faults
+- POST /api/quality-templates/:id/attributes - Add/edit/remove cupping attributes
+
+**Storage:**
+- GET /api/storage/:labId - Get storage grid
+- POST /api/storage/:labId/assign - Assign sample to position
+- GET /api/storage/:labId/available - Get available positions
+
+### Real-Time Features (Supabase Subscriptions)
+
+**Channels to Implement:**
+1. Cupping session scores - Live updates with automatic averaging
+2. Sample status changes - Dashboard updates (including Under Review)
+3. Storage occupancy - Real-time grid updates
+4. Notifications - Instant notification delivery
+5. Activity feed - Live activity stream
+6. Out-of-spec warnings - Real-time alerts
+
+### Performance Considerations
+
+**Optimization Strategies:**
+- Implement pagination for sample lists (50 per page)
+- Cache quality templates and defect definitions in browser localStorage
+- Cache client-specific cupping scales and attributes
+- Lazy load images in sample galleries
+- Debounce search inputs (300ms)
+- Index database columns: sample_tracking_number, client_id, status, created_at, quality
+- Use database views for complex analytics queries
+- Implement Redis caching for frequently accessed data (Phase 3)
+- Optimize QR code generation for thermal printing
+- Virtual scrolling for storage grid with 3,024 samples
+
+### Security Enhancements
+
+**Additional Security Measures:**
+- API rate limiting (100 requests/minute per user)
+- Input sanitization for all form fields (especially contract numbers)
+- File upload validation (type, size limits)
+- CSRF token protection for state-changing operations
+- Audit logging for all data modifications (especially defect config changes, attribute modifications)
+- Encrypted storage for sensitive client data
+- Regular security audits
+- Secure QR code generation with tamper detection
+
+---
+
+## Success Criteria
+
+**Phase 2 is complete when:**
+
+1. ✅ Lab technicians can intake samples via web form with all contract fields
+2. ✅ Samples are automatically assigned client-specific quality specifications
+3. ✅ Green bean analysis can be performed with per-client defect configurations
+4. ✅ Automatic warnings display when samples are out of spec
+5. ✅ Roast profiles can be logged with automatic date/time capture
+6. ✅ Digital cupping sessions support 2+ cuppers with real-time sync and averaging
+7. ✅ Cupping supports client-specific scales (1-5, 1-7, 1-10)
+8. ✅ Cupping supports fully customizable attributes per client/quality
+9. ✅ Cupping supports per-origin taints and faults
+10. ✅ Cupping finalization changes sample to "Under Review"
+11. ✅ Certificates are auto-generated with client-specific formats and country flags
+12. ✅ Certificates display aggregate/average scores to closest increment
+13. ✅ Certificates are emailed with client-chosen timing (batch or end-of-day)
+14. ✅ Clients can download certificates from portal
+15. ✅ Storage management is functional with flexible shelf layouts per lab
+16. ✅ Santos HQ storage supports 72 positions with 42 samples per position (3,024 total)
+17. ✅ Quality templates can be created with full client flexibility
+18. ✅ Lab managers can add/edit/remove defects per client
+19. ✅ Lab managers can configure taints/faults per origin
+20. ✅ Lab managers can add/edit/remove cupping attributes per client/quality
+21. ✅ QR code labels can be printed (3cm x A4 for tins, thermal for cupping)
+22. ✅ All features work on desktop and tablet browsers
+23. ✅ Sample tracking includes Quality filter and all contract numbers
+24. ✅ RLS policies protect all new tables
+25. ✅ System performance remains <5 second response times
+26. ✅ Pricing system supports per-client negotiation and third-party lab fees
+
+---
+
+## Out of Scope for Phase 2
+
+**Deferred to Phase 3:**
+- OCR integration for sample sleeves
+- OCR for handwritten cupper notes (QR code structure ready)
+- Native iPad application
+- AI-powered quality predictions
+- Advanced machine learning features
+- Offline functionality
+- Calibration session management
+- Multi-language UI translation (structure only, no translations yet)
+- Automated report scheduling
+- Advanced data export formats beyond Excel/PDF
+- Wolthers Contract # system integration for auto approve/reject
+
+---
+
+## Dependencies & Risks
+
+**External Dependencies:**
+- Supabase platform stability and performance
+- Email delivery service reliability (Resend or SendGrid)
+- PDF generation library with country flag support (react-pdf or similar)
+- Thermal printer compatibility for QR tables
+- Vercel deployment platform
+
+**Technical Risks:**
+- Real-time cupping collaboration performance with 5+ cuppers
+- PDF generation performance for large certificates (with photos and country flags)
+- Storage grid UI performance with 3,024 samples capacity
+- Mobile browser compatibility for tablet cupping interface
+- Client-specific configuration complexity (defects, scales, attributes, taints, formats)
+- QR code table thermal printer compatibility across labs
+- Database performance with highly flexible schema (many configuration tables)
+
+**Mitigation Strategies:**
+- Load testing for cupping sessions before production
+- Implement background job queue for PDF generation
+- Virtual scrolling for storage grid
+- Progressive enhancement for mobile features
+- Comprehensive browser testing on iPad Safari
+- Modular configuration system with validation
+- Thermal printer testing in Santos HQ before rollout
+- Database indexing strategy for configuration lookups
+- Caching strategy for frequently accessed configurations
+
+---
+
+## Timeline Estimate
+
+**Phase 2 Development:**
+- Sample Management (with all contract fields and QR printing): 3-4 weeks
+- Quality Assessment Pipeline (with client-specific defects and warnings): 4-5 weeks
+- Quality Specifications (with full flexibility system including custom attributes): 4-5 weeks
+- Certificate Generation (with client formats and country flags): 2-3 weeks
+- Multi-Lab Coordination (with flexible storage and pricing system): 2-3 weeks
+- UX Enhancements (notifications and activity feed): 1-2 weeks
+- Testing & Bug Fixes (including thermal printer testing): 2-3 weeks
+
+**Total Estimate:** 18-25 weeks (4.5-6 months)
+
+**Note:** Timeline extended due to:
+- High degree of client-specific customization requirements
+- Fully flexible cupping attribute system
+- Complex storage configuration (variable shelf layouts, capacity per position)
+- Per-client defect, taint, fault, and attribute management
+
+---
+
+## Approval & Sign-off
+
+**Document Owner:** Development Team
+**Stakeholders:** Lab Managers, Quality Team, Global Admin
+**Status:** Ready for Task Master parsing
+**Version:** 2.1 (Final with all corrections)
+**Last Updated:** October 8, 2025
+**Next Action:** Parse PRD with Task Master to generate actionable task breakdown

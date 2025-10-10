@@ -1,0 +1,11 @@
+# Task ID: 12
+# Title: Build Cupping Session Management API
+# Status: pending
+# Dependencies: 11
+# Priority: high
+# Description: Create RESTful API endpoints for cupping session creation, score submission, and real-time collaboration
+# Details:
+Create src/app/api/cupping/sessions/route.ts with POST (create session), GET (list sessions). Create src/app/api/cupping/sessions/[id]/route.ts with GET, PATCH. Add src/app/api/cupping/sessions/[id]/scores/route.ts for score submission/retrieval with automatic averaging. Implement real-time subscriptions using Supabase Realtime for live score updates. Support discrepancy detection with configurable thresholds per client/quality. Include session finalization logic that updates sample status to 'under_review'.
+
+# Test Strategy:
+Test session CRUD operations, test real-time score updates, test averaging calculations, test discrepancy detection algorithms

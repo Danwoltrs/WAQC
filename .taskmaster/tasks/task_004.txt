@@ -1,0 +1,11 @@
+# Task ID: 4
+# Title: Build Multi-Step Sample Intake Form
+# Status: done
+# Dependencies: 3
+# Priority: high
+# Description: Create comprehensive sample intake form with client auto-detection, quality assignment, and contract number tracking
+# Details:
+Create src/components/samples/sample-intake-form.tsx with multi-step wizard: Basic Info (exporter autocomplete, buyer, roaster, origin, processing method, sample type), Tracking Numbers (all contract fields with validation), Quantity (M/T display priority, bag types), Sample Details (arrival date, photo upload, notes). Implement client auto-detection based on exporter/buyer names. Add quality specification auto-assignment. Include form state persistence to prevent data loss. Make responsive for desktop/tablet. Add real-time validation against client database.
+
+# Test Strategy:
+E2E tests for complete intake flow, test form state persistence, test file upload functionality, test client auto-detection accuracy

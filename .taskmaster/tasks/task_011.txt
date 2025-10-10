@@ -1,0 +1,11 @@
+# Task ID: 11
+# Title: Create Digital Cupping Session Interface
+# Status: pending
+# Dependencies: 9, 10
+# Priority: high
+# Description: Build real-time collaborative cupping interface with client-specific scales and custom attributes
+# Details:
+Create src/components/cupping/digital-cupping-session.tsx with session setup wizard: sample selection, cupper assignment (min 2), session type, cupping form selection, scale configuration, attribute selection, privacy settings. Cupping interface with tabbed layout (sample nr or container nr titles), client-specific attributes, configurable scales (1-5, 1-7, 1-10), increment levels (0.25, 0.5, 1.0). Real-time collaboration with live score updates, discrepancy detection, automatic averaging to closest increment. Rich text notes, descriptor tags, finalize cupping (changes status to Under Review).
+
+# Test Strategy:
+Test real-time score synchronization, test discrepancy detection, test session management, test attribute customization, verify privacy settings

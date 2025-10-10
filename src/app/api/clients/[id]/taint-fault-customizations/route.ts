@@ -166,7 +166,6 @@ export async function POST(
     // Insert customization
     const { data: customization, error: insertError } = await supabase
       .from('client_taint_fault_customizations')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert(customizationData)
       .select(`
         *,
@@ -255,7 +254,6 @@ export async function PATCH(
     // Update customization
     const { data: customization, error: updateError } = await supabase
       .from('client_taint_fault_customizations')
-      // @ts-expect-error - Supabase type inference issue with update
       .update(updateData)
       .eq('id', body.customization_id)
       .eq('client_id', clientId)

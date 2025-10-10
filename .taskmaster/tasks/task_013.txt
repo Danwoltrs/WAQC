@@ -1,0 +1,11 @@
+# Task ID: 13
+# Title: Implement Certificate Generation Engine
+# Status: pending
+# Dependencies: 7, 12
+# Priority: high
+# Description: Build automated PDF certificate generation with client-specific formats and country flag branding
+# Details:
+Create src/lib/certificate-generator.ts using react-pdf or similar. Support client-specific certificate number formats (CERT-BRA-2025-0001, CA-25-001). Include lab country flag branding (Brazil for Brazil lab, Peru for Peru lab). Generate professional PDF layout with Wolthers branding, green color scheme. Sections: header (logo, lab info, cert number), sample details (all contract numbers, tracking info), quality assessment results (screen distribution, defects), cupping results (aggregate/average scores to closest increment), signatures (digital signature, QR code, auth code). Multi-language support (EN, PT, ES). Create src/app/api/certificates/generate/route.ts.
+
+# Test Strategy:
+Test PDF generation quality, test client-specific formatting, test country flag integration, test multi-language support, verify authentication codes

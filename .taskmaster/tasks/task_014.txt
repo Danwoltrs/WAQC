@@ -1,0 +1,11 @@
+# Task ID: 14
+# Title: Create Certificate Distribution System
+# Status: pending
+# Dependencies: 13
+# Priority: medium
+# Description: Build email delivery system with client-specific timing preferences and download portal
+# Details:
+Create src/lib/certificate-mailer.ts for email delivery with client-configurable timing (end of day vs batch by batch). Email templates with Wolthers branding, delivery tracking (sent, opened, bounced), retry logic. Create src/components/certificates/certificate-portal.tsx for client dashboard with searchable table, filters (date range, tracking number, origin, status), download buttons (PDF, Excel), bulk download (ZIP), certificate preview modal. Create src/app/api/certificates/[id]/pdf/route.ts, src/app/api/certificates/verify/route.ts for verification.
+
+# Test Strategy:
+Test email delivery reliability, test download portal functionality, test bulk operations, verify certificate verification system

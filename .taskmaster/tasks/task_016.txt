@@ -1,0 +1,11 @@
+# Task ID: 16
+# Title: Implement QR Code and Label Printing System
+# Status: pending
+# Dependencies: 15
+# Priority: medium
+# Description: Build printing system for sample labels and cupping QR code tables with thermal printer support
+# Details:
+Create src/lib/label-printer.ts and src/components/printing/label-print-dialog.tsx for 3cm height x A4 width pre-cut labels containing: Exporter, Quality, Certificate Nr, Date, QR Code. Create src/components/printing/qr-table-print.tsx for thermal printer QR code tables with: Date received, Client, Quality, Sample nr (PSS) or ICO nr (SS), Contract nr (user selectable: Wolthers, buyers, sellers), optional supplier name toggle. Include 4 rows for cupper names, columns for Frag/Arom/Body/Acid/Swtn/Bala/Fini or custom attributes, Taints and Faults columns. Create src/app/api/samples/[id]/print-label/route.ts and print-qr-table/route.ts.
+
+# Test Strategy:
+Test label generation accuracy, test QR code readability, test thermal printer compatibility, test print layout consistency

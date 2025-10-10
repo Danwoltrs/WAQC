@@ -92,12 +92,6 @@ const navigation: NavItem[] = [
         icon: MapPin,
         permission: 'view_samples',
       },
-      {
-        title: 'Find Sample',
-        href: '/samples/search',
-        icon: Search,
-        permission: 'view_samples',
-      },
     ],
   },
   {
@@ -107,54 +101,16 @@ const navigation: NavItem[] = [
     permission: 'conduct_assessments',
     submenu: [
       {
-        title: 'Green Bean Analysis',
-        href: '/assessment/green-bean',
-        icon: Microscope,
+        title: 'Grading',
+        href: '/assessment/grading',
+        icon: FileText,
         permission: 'conduct_assessments',
       },
       {
-        title: 'Cupping Preparation',
-        href: '/assessment/preparation',
-        icon: ClipboardList,
-        permission: 'conduct_assessments',
-      },
-      {
-        title: 'Pending Samples',
-        href: '/assessment/pending',
-        icon: List,
-        permission: 'conduct_assessments',
-      },
-    ],
-  },
-  {
-    title: 'Cupping Sessions',
-    href: '/cupping',
-    icon: Coffee,
-    permission: 'conduct_assessments',
-    submenu: [
-      {
-        title: 'Active Sessions',
-        href: '/cupping/active',
+        title: 'Cupping',
+        href: '/assessment/cupping',
         icon: Coffee,
         permission: 'conduct_assessments',
-      },
-      {
-        title: 'Schedule Session',
-        href: '/cupping/schedule',
-        icon: Calendar,
-        permission: 'conduct_assessments',
-      },
-      {
-        title: 'Session History',
-        href: '/cupping/history',
-        icon: List,
-        permission: 'conduct_assessments',
-      },
-      {
-        title: 'Cupper Management',
-        href: '/cupping/cuppers',
-        icon: UserCheck,
-        permission: 'manage_cuppers',
       },
     ],
   },

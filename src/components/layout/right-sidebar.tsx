@@ -190,7 +190,7 @@ export function RightSidebar() {
                 </p>
                 <div className="flex items-center gap-1 text-xs text-muted-foreground">
                   <Clock className="h-3 w-3" />
-                  {formatTimeAgo(activity.timestamp)}
+                  <span suppressHydrationWarning>{formatTimeAgo(activity.timestamp)}</span>
                 </div>
               </div>
             </div>

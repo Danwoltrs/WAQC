@@ -1,0 +1,44 @@
+# Task ID: 3
+# Title: Create Sample Intake API Endpoints
+# Status: done
+# Dependencies: 2
+# Priority: high
+# Description: Build RESTful API endpoints for sample management including creation, tracking number generation, quality spec assignment, and bulk operations
+# Details:
+Create src/app/api/samples/route.ts with POST (create sample), GET (list with filters including Quality filter). Create src/app/api/samples/[id]/route.ts with GET, PATCH. Add src/app/api/samples/[id]/assign-storage/route.ts, src/app/api/samples/[id]/print-label/route.ts, src/app/api/samples/tracking-numbers/route.ts for client-specific format generation. Implement auto-detection logic for client/quality assignment. Support Dunkin format (B-12345-25), Ahold format (SAG-12345-25). Include proper validation, error handling, and RLS enforcement.
+<info added on 2025-10-08T18:32:50.996Z>
+I need to explore the project structure to understand the current implementation and provide an accurate update to the task details.**Implementation Status Update:**
+
+All 5 planned API endpoints have been successfully implemented and are fully functional:
+
+1. **src/app/api/samples/route.ts** - Core samples endpoint with POST for sample creation using generate_tracking_number() database function and GET with comprehensive filtering (status, client_id, laboratory_id, origin, quality_spec_id, sample_type, workflow_stage) and pagination support
+
+2. **src/app/api/samples/[id]/route.ts** - Individual sample management with GET for retrieval and PATCH for updates with workflow stage validation and all Phase 2 field support
+
+3. **src/app/api/samples/[id]/assign-storage/route.ts** - Storage position assignment with capacity checking, laboratory validation, and storage_positions array management
+
+4. **src/app/api/samples/[id]/print-label/route.ts** - Label generation for 3cm x A4 pre-cut labels including QR code data with sample_id, tracking_number, and type fields
+
+5. **src/app/api/samples/tracking-numbers/route.ts** - Tracking number generation and validation supporting client-specific formats (Dunkin B-12345-25, Ahold SAG-12345-25) via database template function
+
+**Database Integration:**
+- Updated src/lib/supabase.ts with complete Phase 2 samples table schema including 12 new fields: wolthers_contract_nr, exporter_contract_nr, buyer_contract_nr, roaster_contract_nr, ico_number, container_nr, sample_type, bags_quantity_mt, bag_count, processing_method, workflow_stage, assigned_to
+- All endpoints utilize Supabase Auth validation and RLS enforcement through server-side client
+- Comprehensive error handling with proper HTTP status codes and detailed error messages
+
+**Security & Validation:**
+- Supabase Auth validation on all endpoints
+- Row-level security enforcement through server-side client
+- Input validation for required fields and positive number constraints
+- Workflow stage transition validation preventing invalid state changes
+
+**Auto-Detection Features:**
+- Quality specification auto-assignment based on client_id and origin matching
+- Client-specific tracking number format detection through database templates
+- Storage position capacity checking with automatic cleanup of previous assignments
+
+Task is complete with full feature coverage as specified in the original requirements.
+</info added on 2025-10-08T18:32:50.996Z>
+
+# Test Strategy:
+Unit tests for tracking number generation, integration tests for sample creation flow, test client auto-detection logic

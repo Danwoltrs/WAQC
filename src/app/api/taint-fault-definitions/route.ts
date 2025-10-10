@@ -159,7 +159,6 @@ export async function POST(request: NextRequest) {
     // Insert definition
     const { data: definition, error: insertError } = await supabase
       .from('taint_fault_definitions')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert(definitionData)
       .select()
       .single()

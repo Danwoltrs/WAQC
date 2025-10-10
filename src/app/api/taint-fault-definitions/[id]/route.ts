@@ -146,7 +146,6 @@ export async function PATCH(
     // Update definition
     const { data: definition, error: updateError } = await supabase
       .from('taint_fault_definitions')
-      // @ts-expect-error - Supabase type inference issue with update
       .update(updateData)
       .eq('id', id)
       .select()

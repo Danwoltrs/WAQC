@@ -1,0 +1,11 @@
+# Task ID: 19
+# Title: Build Cross-Lab Sample Transfer System
+# Status: pending
+# Dependencies: 5
+# Priority: low
+# Description: Create sample transfer management system for moving samples between laboratories
+# Details:
+Create src/components/samples/sample-transfer.tsx with transfer request system: sample selection, destination lab choice, reason selection (specialized equipment, capacity, client preference), estimated arrival, special handling instructions. Transfer approval workflow with destination lab approval/rejection, transfer completion tracking (shipped with tracking number, received, storage location update). Transfer history timeline, custody chain for audit, current location visibility. Create src/app/api/sample-transfers/route.ts for transfer management. Update sample ownership and tracking.
+
+# Test Strategy:
+Test transfer request workflow, test approval process, test custody chain tracking, verify location updates

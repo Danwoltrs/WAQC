@@ -1,0 +1,54 @@
+# Task ID: 6
+# Title: Create Client-Specific Defect Configuration System
+# Status: pending
+# Dependencies: 1
+# Priority: high
+# Description: Build interface for lab managers to configure defects per client with custom names, point values, and primary/secondary categories
+# Details:
+Create src/components/quality/defect-config-manager.tsx for lab managers and global managers to add/edit/remove defects per client. Support Brazil examples: Full black (1.0), Partial Black (0.5 moved from Category 2), Severe Broca (0.2). Allow custom defect names per client, configurable point values per origin, primary/secondary categorization. Include defect equivalency calculator for different sample sizes. Create src/app/api/defect-definitions/route.ts for CRUD operations. Add validation to prevent removal of defects in use.
+
+# Test Strategy:
+Test defect CRUD operations, test point value calculations, test defect equivalency calculator, verify RLS permissions
+
+# Subtasks:
+## 6. Create defect definitions database schema and migrations [pending]
+### Dependencies: None
+### Description: Design and implement database tables for client-specific defect configurations including defect_definitions, client_defect_configs, and defect_categories tables with proper relationships and constraints
+### Details:
+Create migration files for defect_definitions table (id, name, default_category, default_points, description), client_defect_configs table (client_id, defect_id, custom_name, points_per_300g, category, is_active), and defect_categories table (primary/secondary classification). Include proper foreign key relationships, RLS policies, and indexes for performance. Support point value variations by origin and sample size calculations.
+<info added on 2025-10-10T18:18:11.286Z>
+I'll analyze the codebase to understand the current database structure and then provide the enhanced schema information for multi-language support and variable sample sizes.Now I need to understand the existing schema structure to provide the enhanced multi-language schema update:Based on my analysis of the existing database schema in `database/migrations/003_phase2_schema_TABLES_ONLY.sql`, I can see that there's already a `defect_definitions` table with basic structure. Here's the enhanced multi-language schema update:
+
+Update defect_definitions table schema to replace single-language columns with multi-language variants: Replace defect_name with name_en, name_pt, name_es fields for English, Portuguese, and Spanish respectively. Add description_en, description_pt, description_es for detailed defect descriptions in all three languages. Modify defect_category enum to support tri-lingual category names with JSON structure storing {en: "Primary/Secondary", pt: "Primária/Secundária", es: "Primario/Secundario"}. Replace sample_size_grams with dynamic sample_size_grams field that defaults to 300g but allows customization per client/origin. Implement point value calculation logic that scales from 300g base: new_points = (original_points * sample_size_grams) / 300. Add migration script to preserve existing data by copying current defect_name to name_en and setting default values for pt/es translations. Create helper functions for point value scaling and category translation retrieval. Update all related indexes and constraints to reference new multi-language columns while maintaining performance optimization.
+</info added on 2025-10-10T18:18:11.286Z>
+
+## 7. Build defect configuration API endpoints [pending]
+### Dependencies: 6.1
+### Description: Create REST API endpoints in src/app/api/defect-definitions/route.ts for CRUD operations on defect configurations with proper validation and permissions
+### Details:
+Implement GET /api/defect-definitions (list all), GET /api/defect-definitions/[id] (single defect), POST /api/defect-definitions (create), PUT /api/defect-definitions/[id] (update), DELETE /api/defect-definitions/[id] (delete). Include validation to prevent deletion of defects currently in use by samples. Add endpoints for client-specific configurations: GET/POST/PUT/DELETE /api/clients/[id]/defect-configs. Implement proper error handling and response formatting.
+
+## 8. Create defect configuration management interface [pending]
+### Dependencies: 6.2
+### Description: Build React component src/components/quality/defect-config-manager.tsx for lab managers to configure client-specific defects with intuitive UI
+### Details:
+Create comprehensive interface with client selector dropdown, defect library view showing available defects, client-specific configuration panel. Support adding/editing defect names, point values, primary/secondary categorization. Include Brazil-specific examples (Full Black 1.0, Partial Black 0.5, Severe Broca 0.2). Implement drag-and-drop for easy defect assignment, bulk edit capabilities, and real-time preview of changes. Use shadcn/ui components for consistent styling.
+
+## 9. Implement defect equivalency calculator [pending]
+### Dependencies: 6.3
+### Description: Build calculator component for converting defect counts between different sample sizes with accurate point value scaling
+### Details:
+Create src/components/quality/defect-equivalency-calculator.tsx component that calculates equivalent defect counts when converting between sample sizes (300g standard to other weights). Include mathematical formulas for proportional scaling, rounding rules for fractional defects, and display comparison tables. Support batch calculations for multiple defects simultaneously. Integrate with defect configuration system to use client-specific point values.
+
+## 10. Add defect configuration validation and usage tracking [pending]
+### Dependencies: 6.4
+### Description: Implement validation system to prevent removal of defects in active use and add usage tracking for defect configurations
+### Details:
+Create validation logic that checks if defects are referenced in existing quality assessments before allowing deletion. Implement usage tracking to show which clients use specific defects and how frequently. Add warning dialogs when attempting to modify defects with existing usage. Create audit trail for defect configuration changes including user, timestamp, and change details. Implement soft delete option for defects that cannot be hard deleted.
+
+## 11. Integration with assessment workflow and thermal printer [pending]
+### Dependencies: 6.3, 6.4
+### Description: Connect defect configuration system with quality assessment forms and thermal printer for label generation with QR codes
+### Details:
+Modify existing quality assessment components to load client-specific defect configurations with multi-language support based on user's preferred language. Update defect selection dropdowns to show translated names and point values. Integrate with sample intake workflow for automatic defect profile loading. Implement thermal printer label generation with QR codes linking to quality specs and sample data. Labels should include: defect names in client's language, point values scaled to sample size, category information, and QR code with embedded quality specification URL. Support 3cm x A4 pre-cut label format. Add fallback to default English if translation missing.
+
