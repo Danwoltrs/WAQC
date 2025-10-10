@@ -52,11 +52,11 @@ export async function GET(
     // Calculate sample metrics
     const sampleMetrics = {
       total: samples?.length || 0,
-      received: samples?.filter(s => s.status === 'received').length || 0,
-      in_progress: samples?.filter(s => s.status === 'in_progress').length || 0,
-      under_review: samples?.filter(s => s.status === 'under_review').length || 0,
-      approved: samples?.filter(s => s.status === 'approved').length || 0,
-      rejected: samples?.filter(s => s.status === 'rejected').length || 0,
+      received: samples?.filter((s: any) => s.status === 'received').length || 0,
+      in_progress: samples?.filter((s: any) => s.status === 'in_progress').length || 0,
+      under_review: samples?.filter((s: any) => s.status === 'under_review').length || 0,
+      approved: samples?.filter((s: any) => s.status === 'approved').length || 0,
+      rejected: samples?.filter((s: any) => s.status === 'rejected').length || 0,
     }
 
     // Fetch quality specifications assigned to this client
@@ -84,7 +84,7 @@ export async function GET(
     const { count: certificatesCount, error: certsError } = await supabase
       .from('certificates')
       .select('*', { count: 'exact', head: true })
-      .in('sample_id', samples?.map(s => s.id) || [])
+      .in('sample_id', samples?.map((s: any) => s.id) || [])
 
     if (certsError) {
       console.error('Error fetching certificates count:', certsError)
