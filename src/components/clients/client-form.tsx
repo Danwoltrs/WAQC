@@ -82,6 +82,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
     if (mode === 'edit' && clientId) {
       loadClient()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, mode])
 
   const loadClient = async () => {
@@ -255,7 +256,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                 {searchResults.length === 0 ? (
                   <div className="text-center py-8 text-muted-foreground">
                     <AlertCircle className="h-8 w-8 mx-auto mb-2" />
-                    <p>No companies found matching "{searchQuery}"</p>
+                    <p>No companies found matching &quot;{searchQuery}&quot;</p>
                     <p className="text-sm mt-1">Create a new client using the form below</p>
                   </div>
                 ) : (
