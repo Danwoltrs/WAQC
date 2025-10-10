@@ -24,9 +24,11 @@ interface PositionGridProps {
     columns: number
   }
   grid: (Position | null)[][]
-  onPositionClick?: (position: Position) => void
+  onPositionClick?: (position: Position, isCtrlClick?: boolean) => void
   onPositionAssignClick?: (position: Position) => void
   selectedPositionId?: string
+  selectedPositionIds?: Set<string>
+  selectionMode?: boolean
   size?: 'sm' | 'md' | 'lg' | 'responsive'
   canManage?: boolean
 }
@@ -37,6 +39,8 @@ export function PositionGrid({
   onPositionClick,
   onPositionAssignClick,
   selectedPositionId,
+  selectedPositionIds,
+  selectionMode = false,
   size = 'responsive',
   canManage = false
 }: PositionGridProps) {
@@ -163,9 +167,14 @@ export function PositionGrid({
                     <PositionCell
                       key={`${rowIndex}-${colIndex}`}
                       position={position}
-                      onClick={position && onPositionClick ? () => onPositionClick(position) : undefined}
+                      onClick={position && onPositionClick ? (e: React.MouseEvent) => {
+                        const isCtrlClick = e.ctrlKey || e.metaKey
+                        onPositionClick(position, isCtrlClick)
+                      } : undefined}
                       onAssignClick={position && onPositionAssignClick ? () => onPositionAssignClick(position) : undefined}
                       isSelected={position?.id === selectedPositionId}
+                      isMultiSelected={selectedPositionIds?.has(position?.id || '')}
+                      selectionMode={selectionMode}
                       cellSize={sizes.cell}
                       canManage={canManage}
                     />

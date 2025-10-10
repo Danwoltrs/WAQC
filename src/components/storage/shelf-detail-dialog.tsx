@@ -5,9 +5,10 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { PositionGrid } from './position-grid'
 import { PositionAssignmentDialog } from './position-assignment-dialog'
-import { Package, X, Calendar, MapPin, FileText } from 'lucide-react'
+import { Package, X, Calendar, MapPin, FileText, Users, Edit2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase-browser'
 
@@ -52,7 +53,12 @@ export function ShelfDetailDialog({
   const [selectedPosition, setSelectedPosition] = useState<Position | null>(null)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [positionToAssign, setPositionToAssign] = useState<Position | null>(null)
-  const [canManage, setCanManage] = useState(false)
+  const [canManage, setCanManage] = useState(false) // Can assign positions to clients
+  const [canUpdateCount, setCanUpdateCount] = useState(false) // Can update sample counts
+  const [selectedPositions, setSelectedPositions] = useState<Set<string>>(new Set())
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [editingCount, setEditingCount] = useState(false)
+  const [newCount, setNewCount] = useState<number>(0)
 
   // Check user permissions
   useEffect(() => {
@@ -61,6 +67,7 @@ export function ShelfDetailDialog({
 
       if (!user) {
         setCanManage(false)
+        setCanUpdateCount(false)
         return
       }
 
@@ -73,12 +80,19 @@ export function ShelfDetailDialog({
       const profile = profileData as ProfileData | null
 
       if (profile) {
-        // User can manage if they are global admin, global_quality_admin, or lab_quality_manager for this lab
+        // User can manage positions (assign to clients) if they are global admin, global_quality_admin, or lab_quality_manager for this lab
         const canManagePositions = profile.is_global_admin ||
           profile.qc_role === 'global_quality_admin' ||
           (profile.qc_role === 'lab_quality_manager' && profile.laboratory_id === laboratoryId)
 
         setCanManage(canManagePositions)
+
+        // User can update sample counts if they have manage permissions OR are lab staff for this lab
+        const canUpdateCounts = canManagePositions ||
+          (profile.qc_role === 'lab_assistant' && profile.laboratory_id === laboratoryId) ||
+          (profile.qc_role === 'sample_intake_specialist' && profile.laboratory_id === laboratoryId)
+
+        setCanUpdateCount(canUpdateCounts)
       }
     }
 
@@ -111,8 +125,25 @@ export function ShelfDetailDialog({
     }
   }
 
-  const handlePositionClick = (position: Position) => {
-    setSelectedPosition(position)
+  const handlePositionClick = (position: Position, isCtrlClick: boolean = false) => {
+    if (selectionMode || isCtrlClick) {
+      // Multi-selection mode
+      setSelectedPositions(prev => {
+        const newSet = new Set(prev)
+        if (newSet.has(position.id)) {
+          newSet.delete(position.id)
+        } else {
+          newSet.add(position.id)
+        }
+        return newSet
+      })
+      if (!selectionMode) {
+        setSelectionMode(true)
+      }
+    } else {
+      // Single selection mode (details panel)
+      setSelectedPosition(position)
+    }
   }
 
   const handleClosePositionDetail = () => {
@@ -127,6 +158,45 @@ export function ShelfDetailDialog({
   const handleAssignmentUpdated = () => {
     // Reload shelf details to get updated position data
     loadShelfDetails()
+    // Clear selections after bulk assignment
+    setSelectedPositions(new Set())
+    setSelectionMode(false)
+  }
+
+  const handleCancelSelection = () => {
+    setSelectedPositions(new Set())
+    setSelectionMode(false)
+  }
+
+  const handleBulkAssign = (clientId: string | null, allowClientView: boolean = false) => {
+    // This will be implemented in the API update
+    const positionIds = Array.from(selectedPositions)
+    // For now, we'll handle this through the existing assignment dialog
+    // TODO: Create bulk assignment API endpoint
+  }
+
+  const handleUpdateCount = async () => {
+    if (!selectedPosition) return
+
+    try {
+      const response = await fetch(`/api/laboratories/${laboratoryId}/positions/${selectedPosition.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          current_count: newCount
+        })
+      })
+
+      if (response.ok) {
+        setEditingCount(false)
+        loadShelfDetails()
+      } else {
+        alert('Failed to update count')
+      }
+    } catch (error) {
+      console.error('Error updating count:', error)
+      alert('Failed to update count')
+    }
   }
 
   return (
@@ -157,6 +227,103 @@ export function ShelfDetailDialog({
               <span>Occupied: {positions.filter(p => p.current_count > 0).length}</span>
             </div>
 
+            {/* Bulk Actions Toolbar */}
+            {canManage && (
+              <div className="flex items-center justify-between gap-4 flex-shrink-0">
+                {selectionMode ? (
+                  <>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary">{selectedPositions.size} positions selected</Badge>
+                      <Button onClick={handleCancelSelection} variant="ghost" size="sm">
+                        Cancel
+                      </Button>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        onClick={() => {
+                          // Open assignment dialog with multiple positions
+                          setPositionToAssign(null)
+                          setAssignmentDialogOpen(true)
+                        }}
+                        size="sm"
+                        variant="outline"
+                        disabled={selectedPositions.size === 0}
+                      >
+                        Assign to Client
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          // Mark positions as unusable (set capacity to 0)
+                          const updatePromises = Array.from(selectedPositions).map(id =>
+                            fetch(`/api/laboratories/${laboratoryId}/positions/${id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                capacity_per_position: 0
+                              })
+                            })
+                          )
+
+                          const results = await Promise.all(updatePromises)
+                          if (results.every(r => r.ok)) {
+                            handleAssignmentUpdated()
+                          } else {
+                            alert('Some positions failed to update')
+                          }
+                        }}
+                        size="sm"
+                        variant="outline"
+                        disabled={selectedPositions.size === 0}
+                      >
+                        Mark as Unusable
+                      </Button>
+                      <Button
+                        onClick={async () => {
+                          // Clear all assignments (set to null)
+                          const updatePromises = Array.from(selectedPositions).map(id =>
+                            fetch(`/api/laboratories/${laboratoryId}/positions/${id}`, {
+                              method: 'PATCH',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                client_id: null,
+                                allow_client_view: false
+                              })
+                            })
+                          )
+
+                          const results = await Promise.all(updatePromises)
+                          if (results.every(r => r.ok)) {
+                            handleAssignmentUpdated()
+                          } else {
+                            alert('Some positions failed to update')
+                          }
+                        }}
+                        size="sm"
+                        variant="outline"
+                        disabled={selectedPositions.size === 0}
+                      >
+                        Free for All
+                      </Button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      onClick={() => setSelectionMode(true)}
+                      variant="outline"
+                      size="sm"
+                    >
+                      <Users className="h-4 w-4 mr-2" />
+                      Bulk Assign Positions
+                    </Button>
+                    <span className="text-xs text-muted-foreground">
+                      Or Ctrl+Click positions to multi-select
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex gap-6 flex-1 overflow-hidden min-h-0">
               {/* Position Grid */}
               <div className="flex-1 min-h-0">
@@ -166,6 +333,8 @@ export function ShelfDetailDialog({
                   onPositionClick={handlePositionClick}
                   onPositionAssignClick={handlePositionAssignClick}
                   selectedPositionId={selectedPosition?.id}
+                  selectedPositionIds={selectedPositions}
+                  selectionMode={selectionMode}
                   size="responsive"
                   canManage={canManage}
                 />
@@ -176,11 +345,61 @@ export function ShelfDetailDialog({
                 <Card className="w-80 flex-shrink-0">
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between mb-4">
-                      <div>
-                        <h3 className="font-semibold text-lg">{selectedPosition.position_code}</h3>
-                        <p className="text-sm text-muted-foreground">
-                          {selectedPosition.current_count} / {selectedPosition.capacity_per_position} samples
-                        </p>
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-lg">
+                          Position {selectedPosition.position_code.substring(1)}
+                        </h3>
+                        {editingCount ? (
+                          <div className="flex items-center gap-2 mt-2">
+                            <Input
+                              type="number"
+                              min="0"
+                              max={selectedPosition.capacity_per_position}
+                              value={newCount}
+                              onChange={(e) => setNewCount(parseInt(e.target.value) || 0)}
+                              className="w-20 h-8 text-sm"
+                              autoFocus
+                            />
+                            <span className="text-sm text-muted-foreground">
+                              / {selectedPosition.capacity_per_position}
+                            </span>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={handleUpdateCount}
+                              className="h-8 w-8 p-0"
+                            >
+                              <Check className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setEditingCount(false)}
+                              className="h-8 w-8 p-0"
+                            >
+                              <X className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 mt-1">
+                            <p className="text-sm text-muted-foreground">
+                              {selectedPosition.current_count} / {selectedPosition.capacity_per_position} samples
+                            </p>
+                            {canUpdateCount && (
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={() => {
+                                  setNewCount(selectedPosition.current_count)
+                                  setEditingCount(true)
+                                }}
+                                className="h-6 w-6 p-0"
+                              >
+                                <Edit2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
+                        )}
                       </div>
                       <Button
                         variant="ghost"
@@ -254,15 +473,16 @@ export function ShelfDetailDialog({
       </DialogContent>
 
       {/* Position Assignment Dialog */}
-      {positionToAssign && (
+      {(positionToAssign || selectedPositions.size > 0) && (
         <PositionAssignmentDialog
           open={assignmentDialogOpen}
           onOpenChange={setAssignmentDialogOpen}
-          positionId={positionToAssign.id}
+          positionId={positionToAssign?.id}
+          positionIds={selectedPositions.size > 0 ? Array.from(selectedPositions) : undefined}
           laboratoryId={laboratoryId}
-          positionCode={positionToAssign.position_code}
-          currentClientId={positionToAssign.client_id}
-          currentAllowClientView={positionToAssign.allow_client_view}
+          positionCode={positionToAssign?.position_code || 'Multiple'}
+          currentClientId={positionToAssign?.client_id}
+          currentAllowClientView={positionToAssign?.allow_client_view}
           onAssignmentUpdated={handleAssignmentUpdated}
         />
       )}

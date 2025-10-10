@@ -9,7 +9,8 @@ import { User, Users, Eye, EyeOff } from 'lucide-react'
 interface PositionAssignmentDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  positionId: string
+  positionId?: string
+  positionIds?: string[]
   laboratoryId: string
   positionCode: string
   currentClientId?: string | null
@@ -27,6 +28,7 @@ export function PositionAssignmentDialog({
   open,
   onOpenChange,
   positionId,
+  positionIds,
   laboratoryId,
   positionCode,
   currentClientId,
@@ -69,23 +71,53 @@ export function PositionAssignmentDialog({
     try {
       setSaving(true)
 
-      const response = await fetch(`/api/laboratories/${laboratoryId}/positions/${positionId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          client_id: selectedClientId,
-          allow_client_view: allowClientView
-        })
-      })
+      // Determine if this is a bulk operation
+      const isBulkOperation = positionIds && positionIds.length > 0
+      const targetPositionIds = isBulkOperation ? positionIds : [positionId!]
 
-      const data = await response.json()
+      // If bulk operation, update all positions
+      if (isBulkOperation) {
+        const updatePromises = targetPositionIds.map(id =>
+          fetch(`/api/laboratories/${laboratoryId}/positions/${id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              client_id: selectedClientId,
+              allow_client_view: allowClientView
+            })
+          })
+        )
 
-      if (response.ok) {
-        onAssignmentUpdated?.()
-        onOpenChange(false)
+        const results = await Promise.all(updatePromises)
+        const allSuccess = results.every(r => r.ok)
+
+        if (allSuccess) {
+          onAssignmentUpdated?.()
+          onOpenChange(false)
+        } else {
+          console.error('Some position updates failed')
+          alert('Some positions failed to update. Please try again.')
+        }
       } else {
-        console.error('Failed to update position assignment:', data.error)
-        alert(`Failed to update position assignment: ${data.error}`)
+        // Single position update
+        const response = await fetch(`/api/laboratories/${laboratoryId}/positions/${positionId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            client_id: selectedClientId,
+            allow_client_view: allowClientView
+          })
+        })
+
+        const data = await response.json()
+
+        if (response.ok) {
+          onAssignmentUpdated?.()
+          onOpenChange(false)
+        } else {
+          console.error('Failed to update position assignment:', data.error)
+          alert(`Failed to update position assignment: ${data.error}`)
+        }
       }
     } catch (error) {
       console.error('Error updating position assignment:', error)
@@ -95,11 +127,17 @@ export function PositionAssignmentDialog({
     }
   }
 
+  const isBulkOperation = positionIds && positionIds.length > 0
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Assign Position {positionCode}</DialogTitle>
+          <DialogTitle>
+            {isBulkOperation
+              ? `Assign ${positionIds.length} Positions`
+              : `Assign Position ${positionCode}`}
+          </DialogTitle>
         </DialogHeader>
 
         {loading ? (
@@ -127,7 +165,7 @@ export function PositionAssignmentDialog({
                   <Users className="h-5 w-5" />
                 </div>
                 <div className="flex-1 text-left">
-                  <div className="font-semibold">Open for All Clients</div>
+                  <div className="font-semibold">Available for All Clients</div>
                   <div className="text-sm text-muted-foreground">
                     Any client can use this position
                   </div>

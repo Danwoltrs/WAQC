@@ -7,6 +7,7 @@ type ShelfData = {
   rows: number
   columns: number
   laboratory_id: string
+  samples_per_position: number
 }
 
 /**
@@ -33,7 +34,7 @@ export async function GET(
     // Get shelf details to verify access and get dimensions
     const { data: shelfData, error: shelfError } = await supabase
       .from('lab_shelves')
-      .select('id, shelf_letter, rows, columns, laboratory_id')
+      .select('id, shelf_letter, rows, columns, laboratory_id, samples_per_position')
       .eq('id', shelfId)
       .eq('laboratory_id', laboratoryId)
       .single()
@@ -56,6 +57,12 @@ export async function GET(
         current_samples,
         current_count,
         is_available,
+        client_id,
+        allow_client_view,
+        clients:client_id (
+          id,
+          name
+        ),
         created_at,
         updated_at
       `)
@@ -75,6 +82,141 @@ export async function GET(
     if (positionsError) {
       console.error('Error fetching positions:', positionsError)
       return NextResponse.json({ error: 'Failed to fetch positions' }, { status: 500 })
+    }
+
+    // Check if positions need to be created (if they don't exist for this shelf)
+    const expectedPositionCount = shelf.rows * shelf.columns
+    const actualPositionCount = positions?.length || 0
+
+    // Check if any existing positions have wrong capacity and fix them
+    if (actualPositionCount > 0 && shelf.samples_per_position) {
+      const positionsWithWrongCapacity = positions.filter(
+        (p: any) => p.capacity_per_position !== shelf.samples_per_position
+      )
+
+      if (positionsWithWrongCapacity.length > 0) {
+        // Use service role for updating positions (bypasses RLS)
+        const { createClient: createServiceClient } = await import('@supabase/supabase-js')
+        const serviceClient = createServiceClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.SUPABASE_SERVICE_ROLE_KEY!,
+          {
+            auth: {
+              autoRefreshToken: false,
+              persistSession: false
+            }
+          }
+        )
+
+        // Update all positions with wrong capacity
+        const updatePromises = positionsWithWrongCapacity.map((pos: any) =>
+          serviceClient
+            .from('storage_positions')
+            .update({ capacity_per_position: shelf.samples_per_position })
+            .eq('id', pos.id)
+        )
+
+        await Promise.all(updatePromises)
+
+        // Reload positions after update
+        const { data: updatedPositions } = await supabase
+          .from('storage_positions')
+          .select(`
+            id,
+            position_code,
+            column_number,
+            row_number,
+            capacity_per_position,
+            current_samples,
+            current_count,
+            is_available,
+            client_id,
+            allow_client_view,
+            clients:client_id (
+              id,
+              name
+            ),
+            created_at,
+            updated_at
+          `)
+          .eq('shelf_id', shelfId)
+          .order('row_number')
+          .order('column_number')
+
+        if (updatedPositions) {
+          positions.splice(0, positions.length, ...updatedPositions)
+        }
+      }
+    }
+
+    if (actualPositionCount === 0) {
+      // Create all positions for this shelf
+      const positionsToCreate = []
+      for (let row = 1; row <= shelf.rows; row++) {
+        for (let col = 1; col <= shelf.columns; col++) {
+          const rowLetter = String.fromCharCode(64 + row) // A, B, C...
+          // Include shelf letter to ensure uniqueness across multiple shelves in same lab
+          const positionCode = `${shelf.shelf_letter}${rowLetter}${col}` // e.g., "AA1", "AA2", "BA1"...
+
+          positionsToCreate.push({
+            laboratory_id: laboratoryId,
+            shelf_id: shelfId,
+            position_code: positionCode,
+            row_number: row,
+            column_number: col,
+            capacity_per_position: shelf.samples_per_position || 10,
+            current_count: 0
+          })
+        }
+      }
+
+      // Use service role for creating positions (bypasses RLS)
+      const { createClient: createServiceClient } = await import('@supabase/supabase-js')
+      const serviceClient = createServiceClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false
+          }
+        }
+      )
+
+      const { data: createdPositions, error: createError } = await serviceClient
+        .from('storage_positions')
+        .insert(positionsToCreate as any)
+        .select(`
+          id,
+          position_code,
+          column_number,
+          row_number,
+          capacity_per_position,
+          current_samples,
+          current_count,
+          is_available,
+          client_id,
+          allow_client_view,
+          clients:client_id (
+            id,
+            name
+          ),
+          created_at,
+          updated_at
+        `)
+
+      if (createError) {
+        console.error('Error creating positions:', createError)
+        console.error('Attempted to create positions:', JSON.stringify(positionsToCreate, null, 2))
+        return NextResponse.json({
+          error: 'Failed to create positions',
+          details: createError.message,
+          code: createError.code
+        }, { status: 500 })
+      }
+
+      // Use the newly created positions
+      positions.splice(0, positions.length, ...(createdPositions || []))
     }
 
     // For each position with samples, get sample details

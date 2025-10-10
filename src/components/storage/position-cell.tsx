@@ -13,15 +13,31 @@ interface PositionCellProps {
     is_available: boolean
     samples?: any[]
     client_id?: string | null
+    allow_client_view?: boolean
+    clients?: {
+      id: string
+      name: string
+    } | null
   } | null
-  onClick?: () => void
+  onClick?: (e: React.MouseEvent) => void
   onAssignClick?: () => void
   isSelected?: boolean
+  isMultiSelected?: boolean
+  selectionMode?: boolean
   cellSize?: number
   canManage?: boolean
 }
 
-export function PositionCell({ position, onClick, onAssignClick, isSelected, cellSize = 64, canManage = false }: PositionCellProps) {
+export function PositionCell({
+  position,
+  onClick,
+  onAssignClick,
+  isSelected,
+  isMultiSelected = false,
+  selectionMode = false,
+  cellSize = 64,
+  canManage = false
+}: PositionCellProps) {
   if (!position) {
     return (
       <div
@@ -36,12 +52,45 @@ export function PositionCell({ position, onClick, onAssignClick, isSelected, cel
     )
   }
 
+  // Show unavailable positions differently (capacity = 0)
+  if (position.capacity_per_position === 0) {
+    return (
+      <div
+        className="border-2 border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/20 rounded-md flex items-center justify-center relative"
+        style={{
+          height: `${cellSize}px`,
+          width: `${cellSize}px`
+        }}
+      >
+        {/* Position Code - TOP */}
+        <div className="absolute top-2 left-0 right-0 text-center">
+          <span className="font-semibold text-red-600 dark:text-red-400" style={{ fontSize: `${fontSize}px` }}>
+            {position.position_code.substring(1)}
+          </span>
+        </div>
+
+        {/* Unusable label - MIDDLE */}
+        <div className="flex items-center justify-center h-full">
+          <span className="text-red-500 dark:text-red-400 font-medium" style={{ fontSize: `${smallFontSize}px` }}>
+            Unusable
+          </span>
+        </div>
+
+        {/* Diagonal line to indicate unusable */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <div className="w-full h-0.5 bg-red-400 dark:bg-red-600 rotate-45" />
+        </div>
+      </div>
+    )
+  }
+
   const utilizationPercent = (position.current_count / position.capacity_per_position) * 100
+  const hasClientAssignment = position.client_id !== null && position.client_id !== undefined
 
   // Determine color based on utilization
   const getColorClass = () => {
     if (position.current_count === 0) {
-      return 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-400 dark:text-gray-500'
+      return 'bg-gray-50 dark:bg-gray-800 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300'
     } else if (utilizationPercent < 50) {
       return 'bg-green-50 dark:bg-green-900 border-green-300 dark:border-green-600 text-green-700 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-800'
     } else if (utilizationPercent < 80) {
@@ -66,9 +115,11 @@ export function PositionCell({ position, onClick, onAssignClick, isSelected, cel
       className={cn(
         'border rounded-md flex flex-col items-center justify-center transition-all relative group',
         colorClass,
-        isSelected && 'ring-2 ring-primary ring-offset-2 dark:ring-offset-gray-900',
-        onClick && 'cursor-pointer',
-        !onClick && 'cursor-default'
+        isSelected && !selectionMode && 'ring-2 ring-primary ring-offset-2 dark:ring-offset-gray-900',
+        isMultiSelected && 'ring-4 ring-blue-500 ring-offset-2 dark:ring-offset-gray-900 bg-blue-50 dark:bg-blue-900/30',
+        selectionMode && 'cursor-pointer',
+        onClick && !selectionMode && 'cursor-pointer',
+        !onClick && !selectionMode && 'cursor-default'
       )}
       style={{
         height: `${cellSize}px`,
@@ -76,13 +127,30 @@ export function PositionCell({ position, onClick, onAssignClick, isSelected, cel
         fontSize: `${fontSize}px`
       }}
     >
-      {/* Position Code */}
-      <span className="font-semibold">{position.position_code}</span>
+      {/* Position Code - TOP */}
+      <div className="absolute top-2 left-0 right-0 text-center">
+        <span className="font-semibold" style={{ fontSize: `${fontSize}px` }}>
+          {position.position_code.substring(1)}
+        </span>
+      </div>
 
-      {/* Capacity indicator */}
-      <span className="opacity-70" style={{ fontSize: `${smallFontSize}px` }}>
-        {position.current_count}/{position.capacity_per_position}
-      </span>
+      {/* Client Assignment - MIDDLE */}
+      <div className="flex items-center justify-center h-full">
+        <span
+          className="text-center leading-tight truncate max-w-full px-2"
+          style={{ fontSize: `${smallFontSize}px` }}
+          title={hasClientAssignment && position.clients ? position.clients.name : 'Available for all clients'}
+        >
+          {hasClientAssignment && position.clients ? position.clients.name : 'Free for all'}
+        </span>
+      </div>
+
+      {/* Sample Count - BOTTOM */}
+      <div className="absolute bottom-2 left-0 right-0 text-center">
+        <span className="opacity-70" style={{ fontSize: `${smallFontSize}px` }}>
+          {position.current_count}/{position.capacity_per_position}
+        </span>
+      </div>
 
       {/* Utilization bar */}
       <div className="absolute bottom-0 left-0 right-0 h-1 bg-black/10 dark:bg-white/10 rounded-b-md overflow-hidden">
@@ -93,24 +161,21 @@ export function PositionCell({ position, onClick, onAssignClick, isSelected, cel
       </div>
 
       {/* Hover tooltip */}
-      {onClick && (
-        <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
-          {position.current_count > 0 ? (
-            <>
-              <div>{position.position_code}</div>
-              <div>{position.current_count} of {position.capacity_per_position} samples</div>
-              {position.samples && position.samples.length > 0 && (
-                <div className="text-[10px] mt-1">Click for details</div>
-              )}
-            </>
-          ) : (
-            <>
-              <div>{position.position_code}</div>
-              <div>Empty position</div>
-            </>
-          )}
+      <div className="absolute bottom-full mb-2 left-1/2 transform -translate-x-1/2 bg-black text-white text-xs rounded px-2 py-1 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-10">
+        <div className="font-semibold">Position {position.position_code.substring(1)}</div>
+        <div className="text-[10px] opacity-80">
+          {hasClientAssignment && position.clients
+            ? `Assigned to: ${position.clients.name}`
+            : 'Free for all clients'
+          }
         </div>
-      )}
+        <div className="mt-1">{position.current_count} of {position.capacity_per_position} samples</div>
+        {onClick && (
+          <div className="text-[10px] mt-1 opacity-70">
+            {selectionMode ? 'Click to select' : 'Click for details'}
+          </div>
+        )}
+      </div>
 
       {/* Sample indicator */}
       {position.current_count > 0 && (
