@@ -96,7 +96,25 @@ export async function PATCH(
 
     // Prepare update data
     const updateData: QualityTemplateUpdate = {}
-    const allowedFields = ['name', 'description', 'parameters', 'is_active']
+    const allowedFields = [
+      // Multi-language fields
+      'name_en', 'name_pt', 'name_es',
+      'description_en', 'description_pt', 'description_es',
+      // Sample size
+      'sample_size_grams',
+      // Lab/global sharing
+      'laboratory_id', 'is_global',
+      // Quality thresholds
+      'defect_thresholds_primary', 'defect_thresholds_secondary', 'moisture_standard',
+      // Cupping scale
+      'cupping_scale_type', 'cupping_scale_min', 'cupping_scale_max', 'cupping_scale_increment',
+      // Taint/fault thresholds
+      'max_taints_allowed', 'max_faults_allowed', 'taint_fault_rule_type',
+      // Screen size requirements
+      'screen_size_requirements',
+      // Backward compatibility
+      'name', 'description', 'parameters', 'is_active'
+    ]
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
@@ -104,12 +122,36 @@ export async function PATCH(
       }
     }
 
-    // Validate parameters if being updated
+    // Validate cupping scale if being updated
+    if (updateData.cupping_scale_min !== undefined && updateData.cupping_scale_max !== undefined) {
+      if ((updateData.cupping_scale_min as number) >= (updateData.cupping_scale_max as number)) {
+        return NextResponse.json({
+          error: 'cupping_scale_min must be less than cupping_scale_max'
+        }, { status: 400 })
+      }
+    }
+
+    // Validate sample size if being updated
+    if (updateData.sample_size_grams !== undefined && (typeof updateData.sample_size_grams !== 'number' || (updateData.sample_size_grams as number) <= 0)) {
+      return NextResponse.json({
+        error: 'sample_size_grams must be a positive number'
+      }, { status: 400 })
+    }
+
+    // Validate parameters if being updated (for backward compatibility)
     if (updateData.parameters) {
       const validationError = validateTemplateParameters(updateData.parameters)
       if (validationError) {
         return NextResponse.json({ error: validationError }, { status: 400 })
       }
+    }
+
+    // Update backward compatibility fields
+    if (updateData.name_en) {
+      updateData.name = updateData.name_en as string
+    }
+    if (updateData.description_en) {
+      updateData.description = updateData.description_en as string
     }
 
     // Increment version if parameters changed
