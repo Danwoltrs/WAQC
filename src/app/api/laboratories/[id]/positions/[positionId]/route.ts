@@ -89,7 +89,6 @@ export async function PATCH(
     // Update the position assignment
     const { data, error } = await serviceClient
       .from('storage_positions')
-      // @ts-expect-error - Supabase type inference issue with dynamic update
       .update(updateData)
       .eq('id', positionId)
       .select()
