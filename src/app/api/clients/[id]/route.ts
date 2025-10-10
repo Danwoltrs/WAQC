@@ -37,17 +37,65 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch client' }, { status: 500 })
     }
 
-    // Get quality spec count for this client
-    const { count } = await supabase
+    // Fetch associated samples with recent history
+    const { data: samples, error: samplesError } = await supabase
+      .from('samples')
+      .select('id, tracking_number, origin, status, created_at, quality_spec_id')
+      .eq('client_id', id)
+      .order('created_at', { ascending: false })
+      .limit(50)
+
+    if (samplesError) {
+      console.error('Error fetching samples:', samplesError)
+    }
+
+    // Calculate sample metrics
+    const sampleMetrics = {
+      total: samples?.length || 0,
+      received: samples?.filter(s => s.status === 'received').length || 0,
+      in_progress: samples?.filter(s => s.status === 'in_progress').length || 0,
+      under_review: samples?.filter(s => s.status === 'under_review').length || 0,
+      approved: samples?.filter(s => s.status === 'approved').length || 0,
+      rejected: samples?.filter(s => s.status === 'rejected').length || 0,
+    }
+
+    // Fetch quality specifications assigned to this client
+    const { data: qualitySpecs, error: specsError } = await supabase
       .from('client_qualities')
-      .select('*', { count: 'exact', head: true })
+      .select(`
+        id,
+        origin,
+        custom_parameters,
+        created_at,
+        template:quality_templates (
+          id,
+          name,
+          description,
+          parameters
+        )
+      `)
       .eq('client_id', id)
 
+    if (specsError) {
+      console.error('Error fetching quality specs:', specsError)
+    }
+
+    // Fetch certificates count
+    const { count: certificatesCount, error: certsError } = await supabase
+      .from('certificates')
+      .select('*', { count: 'exact', head: true })
+      .in('sample_id', samples?.map(s => s.id) || [])
+
+    if (certsError) {
+      console.error('Error fetching certificates count:', certsError)
+    }
+
     return NextResponse.json({
-      client: {
-        ...(client as any),
-        quality_specs_count: count || 0
-      }
+      client,
+      samples: samples || [],
+      sampleMetrics,
+      qualitySpecs: qualitySpecs || [],
+      certificatesCount: certificatesCount || 0,
     })
   } catch (error) {
     console.error('Error in GET /api/clients/[id]:', error)
