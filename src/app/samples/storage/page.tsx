@@ -153,10 +153,9 @@ export default function SamplesStoragePage() {
             </Card>
 
             {/* Storage Layout View */}
-            {selectedLabId && selectedLab && (
+            {selectedLabId && (
               <StorageLayoutView
                 laboratoryId={selectedLabId}
-                laboratoryName={selectedLab.name}
               />
             )}
           </>
