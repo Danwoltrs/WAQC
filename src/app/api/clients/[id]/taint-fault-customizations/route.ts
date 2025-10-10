@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+// import { Database } from '@/lib/supabase'
 
-type ClientTaintFaultCustomizationInsert = Database['public']['Tables']['client_taint_fault_customizations']['Insert']
-type ClientTaintFaultCustomizationUpdate = Database['public']['Tables']['client_taint_fault_customizations']['Update']
+// type ClientTaintFaultCustomizationInsert = Database['public']['Tables']['client_taint_fault_customizations']['Insert']
+// type ClientTaintFaultCustomizationUpdate = Database['public']['Tables']['client_taint_fault_customizations']['Update']
+type ClientTaintFaultCustomizationInsert = any // Temporary: Types need to be regenerated
+type ClientTaintFaultCustomizationUpdate = any // Temporary: Types need to be regenerated
 
 /**
  * GET /api/clients/[id]/taint-fault-customizations
