@@ -42,8 +42,9 @@ export async function GET(
     }
 
     // Build query for customizations with definition details
-    let query = supabase
-      .from('client_taint_fault_customizations')
+    // Temporary: Cast to any because types need to be regenerated for client_taint_fault_customizations
+    let query = (supabase
+      .from('client_taint_fault_customizations') as any)
       .select(`
         *,
         definition:taint_fault_definitions(*)
@@ -134,8 +135,8 @@ export async function POST(
     }
 
     // Check for existing customization
-    const { data: existing } = await supabase
-      .from('client_taint_fault_customizations')
+    const { data: existing } = await (supabase
+      .from('client_taint_fault_customizations') as any)
       .select('id')
       .eq('client_id', clientId)
       .eq('definition_id', body.definition_id)
@@ -164,8 +165,8 @@ export async function POST(
     }
 
     // Insert customization
-    const { data: customization, error: insertError } = await supabase
-      .from('client_taint_fault_customizations')
+    const { data: customization, error: insertError } = await (supabase
+      .from('client_taint_fault_customizations') as any)
       .insert(customizationData)
       .select(`
         *,
@@ -216,8 +217,8 @@ export async function PATCH(
     }
 
     // Check if customization exists and belongs to this client
-    const { data: existingCustomization, error: fetchError } = await supabase
-      .from('client_taint_fault_customizations')
+    const { data: existingCustomization, error: fetchError } = await (supabase
+      .from('client_taint_fault_customizations') as any)
       .select('*')
       .eq('id', body.customization_id)
       .eq('client_id', clientId)
@@ -252,9 +253,9 @@ export async function PATCH(
     }
 
     // Update customization
-    // @ts-ignore - Temporary: Types need to be regenerated for client_taint_fault_customizations
-    const { data: customization, error: updateError } = await supabase
-      .from('client_taint_fault_customizations')
+    // Temporary: Cast to any because types need to be regenerated for client_taint_fault_customizations
+    const { data: customization, error: updateError } = await (supabase
+      .from('client_taint_fault_customizations') as any)
       .update(updateData)
       .eq('id', body.customization_id)
       .eq('client_id', clientId)
@@ -308,8 +309,8 @@ export async function DELETE(
     }
 
     // Verify customization exists and belongs to this client
-    const { data: existing, error: fetchError } = await supabase
-      .from('client_taint_fault_customizations')
+    const { data: existing, error: fetchError } = await (supabase
+      .from('client_taint_fault_customizations') as any)
       .select('id')
       .eq('id', customization_id)
       .eq('client_id', clientId)
@@ -320,8 +321,8 @@ export async function DELETE(
     }
 
     // Delete customization
-    const { error: deleteError } = await supabase
-      .from('client_taint_fault_customizations')
+    const { error: deleteError } = await (supabase
+      .from('client_taint_fault_customizations') as any)
       .delete()
       .eq('id', customization_id)
       .eq('client_id', clientId)
