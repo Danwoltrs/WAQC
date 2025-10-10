@@ -144,7 +144,7 @@ export async function GET(
           .order('column_number')
 
         if (updatedPositions) {
-          positions.splice(0, positions.length, ...updatedPositions)
+          (positions as any[]).splice(0, positions!.length, ...updatedPositions)
         }
       }
     }
@@ -216,7 +216,7 @@ export async function GET(
       }
 
       // Use the newly created positions
-      positions.splice(0, positions.length, ...(createdPositions || []))
+      (positions as any[]).splice(0, positions!.length, ...(createdPositions || []))
     }
 
     // For each position with samples, get sample details
