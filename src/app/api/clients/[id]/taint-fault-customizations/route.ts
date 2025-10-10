@@ -252,9 +252,10 @@ export async function PATCH(
     }
 
     // Update customization
+    // @ts-ignore - Temporary: Types need to be regenerated for client_taint_fault_customizations
     const { data: customization, error: updateError } = await supabase
       .from('client_taint_fault_customizations')
-      .update(updateData as any)
+      .update(updateData)
       .eq('id', body.customization_id)
       .eq('client_id', clientId)
       .select(`
