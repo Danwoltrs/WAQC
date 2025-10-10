@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { Database } from '@/lib/supabase'
 
 /**
  * GET /api/clients/search
@@ -32,11 +33,13 @@ export async function GET(request: NextRequest) {
     }
 
     // Call the database search function
-    const { data: results, error } = (await supabase
-      .rpc('search_clients', {
-        search_term: searchTerm.trim(),
-        limit_count: limit
-      } as any)) as { data: any[] | null; error: any }
+    type SearchResults = Database['public']['Functions']['search_clients']['Returns']
+    const response = await supabase.rpc('search_clients', {
+      search_term: searchTerm.trim(),
+      limit_count: limit
+    }) as { data: SearchResults | null; error: any }
+
+    const { data: results, error } = response
 
     if (error) {
       console.error('Error searching clients:', error)

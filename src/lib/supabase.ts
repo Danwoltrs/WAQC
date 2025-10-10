@@ -514,13 +514,16 @@ export type Database = {
         }
       }
     }
+    Views: {
+      [_ in never]: never
+    }
     Functions: {
       search_clients: {
         Args: {
           search_term: string
           limit_count: number
         }
-        Returns: Array<{
+        Returns: {
           company_id: string | null
           qc_client_id: string | null
           name: string
@@ -535,8 +538,11 @@ export type Database = {
           subcategories: string[] | null
           source_table: string
           relevance_score: number
-        }>
+        }[]
       }
+    }
+    Enums: {
+      [_ in never]: never
     }
   }
 }
