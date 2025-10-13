@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
 /**
  * GET /api/clients/search
@@ -34,7 +34,6 @@ export async function GET(request: NextRequest) {
 
     // Call the database search function
     type SearchResults = Database['public']['Functions']['search_clients']['Returns']
-    // @ts-expect-error - Supabase RPC types not fully compatible with custom function definitions
     const { data: results, error } = await supabase.rpc('search_clients', {
       search_term: searchTerm.trim(),
       limit_count: limit

@@ -27,7 +27,6 @@ export async function POST(request: NextRequest) {
 
     // Generate tracking number using database function
     const { data: trackingNumber, error: generationError } = await supabase
-      // @ts-expect-error - Supabase type inference issue with rpc
       .rpc('generate_tracking_number', {
         p_client_id: client_id,
         p_laboratory_id: laboratory_id,

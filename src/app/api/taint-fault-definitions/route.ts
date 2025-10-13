@@ -44,7 +44,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (type) {
-      query = query.eq('type', type)
+      query = query.eq('type', type as Database['public']['Enums']['taint_fault_type'])
     }
 
     if (is_active === 'true') {

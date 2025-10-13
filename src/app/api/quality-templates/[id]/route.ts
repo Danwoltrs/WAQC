@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
 type QualityTemplateUpdate = Database['public']['Tables']['quality_templates']['Update']
 
@@ -163,7 +163,6 @@ export async function PATCH(
       // Create new version record
       await supabase
         .from('template_versions')
-        // @ts-expect-error - Supabase type inference issue with insert
         .insert({
           template_id: id,
           version_number: newVersion,
@@ -176,7 +175,6 @@ export async function PATCH(
     // Update template
     const { data: template, error: updateError } = await supabase
       .from('quality_templates')
-      // @ts-expect-error - Supabase type inference issue with update
       .update(updateData)
       .eq('id', id)
       .select()

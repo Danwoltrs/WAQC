@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
 type ClientInsert = Database['public']['Tables']['clients']['Insert']
 
@@ -139,7 +139,6 @@ export async function POST(request: NextRequest) {
     // Insert client
     const { data: client, error: insertError } = await supabase
       .from('clients')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert(clientData)
       .select()
       .single()

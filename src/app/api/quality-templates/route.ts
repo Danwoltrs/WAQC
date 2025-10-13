@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
 type QualityTemplate = Database['public']['Tables']['quality_templates']['Row']
 type QualityTemplateInsert = Database['public']['Tables']['quality_templates']['Insert']
@@ -164,7 +164,6 @@ export async function POST(request: NextRequest) {
     // Insert template
     const { data: template, error: insertError } = await supabase
       .from('quality_templates')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert(templateData)
       .select()
       .single()
@@ -180,7 +179,6 @@ export async function POST(request: NextRequest) {
     // Create initial version record
     await supabase
       .from('template_versions')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert({
         template_id: (template as any).id,
         version_number: 1,

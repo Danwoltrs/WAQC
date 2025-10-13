@@ -83,7 +83,6 @@ export async function POST(
         const updatedSamples = ((oldPosition as any).current_samples || []).filter((sid: string) => sid !== id)
         await supabase
           .from('storage_positions')
-          // @ts-expect-error - Supabase type inference issue with update
           .update({
             current_samples: updatedSamples,
             current_count: updatedSamples.length
@@ -96,7 +95,6 @@ export async function POST(
     const updatedSamples = [...((storagePosition as any).current_samples || []), id]
     const { error: updatePositionError } = await supabase
       .from('storage_positions')
-      // @ts-expect-error - Supabase type inference issue with update
       .update({
         current_samples: updatedSamples,
         current_count: updatedSamples.length
@@ -111,7 +109,6 @@ export async function POST(
     // Update sample with new storage position
     const { data: updatedSample, error: updateSampleError } = await supabase
       .from('samples')
-      // @ts-expect-error - Supabase type inference issue with update
       .update({ storage_position: (storagePosition as any).position_code })
       .eq('id', id)
       .select()

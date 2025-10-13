@@ -61,7 +61,6 @@ export async function PATCH(
     // Update personnel
     const { data: personnel, error: updateError } = await supabase
       .from('profiles')
-      // @ts-expect-error - Supabase type inference issue with update
       .update(updateData)
       .eq('id', personnelId)
       .eq('laboratory_id', laboratoryId)
@@ -129,7 +128,6 @@ export async function DELETE(
     // Unassign personnel from laboratory (set laboratory_id to null)
     const { error: updateError } = await supabase
       .from('profiles')
-      // @ts-expect-error - Supabase type inference issue with update
       .update({ laboratory_id: null })
       .eq('id', personnelId)
       .eq('laboratory_id', laboratoryId)

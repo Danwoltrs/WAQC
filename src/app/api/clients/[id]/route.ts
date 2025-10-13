@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
 type ClientUpdate = Database['public']['Tables']['clients']['Update']
 
@@ -170,7 +170,6 @@ export async function PATCH(
     // Update client
     const { data: client, error: updateError } = await supabase
       .from('clients')
-      // @ts-expect-error - Supabase type inference issue with update
       .update(updateData)
       .eq('id', id)
       .select()

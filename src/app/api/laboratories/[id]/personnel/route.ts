@@ -33,7 +33,7 @@ export async function GET(
 
     const { data: personnel, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, qc_role, qc_enabled, is_active, created_at')
+      .select('id, email, full_name, qc_role, qc_enabled, created_at')
       .eq('laboratory_id', id)
       .order('full_name')
 
@@ -127,13 +127,11 @@ export async function POST(
       // User exists, update their laboratory assignment
       const { data: updatedProfile, error: updateError } = await supabase
         .from('profiles')
-        // @ts-expect-error - Supabase type inference issue with update
         .update({
           laboratory_id: laboratoryId,
           full_name: body.full_name,
           qc_role: body.qc_role,
-          qc_enabled: true,
-          is_active: body.is_active !== undefined ? body.is_active : true
+          qc_enabled: true
         })
         .eq('id', existingUser.id)
         .select()
@@ -153,34 +151,12 @@ export async function POST(
       })
     }
 
-    // Create new profile for this user
-    // Note: They will need to sign up with this email to activate their account
-    const { data: newProfile, error: insertError } = await supabase
-      .from('profiles')
-      // @ts-expect-error - Supabase type inference issue with insert
-      .insert({
-        email: body.email,
-        full_name: body.full_name,
-        qc_role: body.qc_role,
-        laboratory_id: laboratoryId,
-        qc_enabled: true,
-        is_active: body.is_active !== undefined ? body.is_active : true
-      })
-      .select()
-      .single()
-
-    if (insertError) {
-      console.error('Error creating profile:', insertError)
-      return NextResponse.json({
-        error: 'Failed to add personnel',
-        details: insertError.message
-      }, { status: 500 })
-    }
-
+    // Cannot create profile without auth user due to foreign key constraint
+    // User must first be invited/sign up through Supabase Auth
     return NextResponse.json({
-      personnel: newProfile,
-      message: 'Personnel invitation created. User must sign up with this email to activate account.'
-    }, { status: 201 })
+      error: `No user found with email ${body.email}. Please invite this user through Supabase Auth first, then assign them to this laboratory.`,
+      suggestion: 'User must create an account before they can be assigned to a laboratory.'
+    }, { status: 400 })
   } catch (error) {
     console.error('Error in POST /api/laboratories/[id]/personnel:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

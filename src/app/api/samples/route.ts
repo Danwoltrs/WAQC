@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
 type Sample = Database['public']['Tables']['samples']['Row']
 type SampleInsert = Database['public']['Tables']['samples']['Insert']
@@ -40,12 +40,12 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1)
 
     // Apply filters if provided
-    if (status) query = query.eq('status', status)
+    if (status) query = query.eq('status', status as Database['public']['Enums']['sample_status'])
     if (client_id) query = query.eq('client_id', client_id)
     if (laboratory_id) query = query.eq('laboratory_id', laboratory_id)
     if (origin) query = query.eq('origin', origin)
     if (quality_spec_id) query = query.eq('quality_spec_id', quality_spec_id)
-    if (sample_type) query = query.eq('sample_type', sample_type)
+    if (sample_type) query = query.eq('sample_type', sample_type as Database['public']['Enums']['sample_type_enum'])
     if (workflow_stage) query = query.eq('workflow_stage', workflow_stage)
 
     const { data: samples, error } = await query
@@ -60,12 +60,12 @@ export async function GET(request: NextRequest) {
       .from('samples')
       .select('*', { count: 'exact', head: true })
 
-    if (status) countQuery = countQuery.eq('status', status)
+    if (status) countQuery = countQuery.eq('status', status as Database['public']['Enums']['sample_status'])
     if (client_id) countQuery = countQuery.eq('client_id', client_id)
     if (laboratory_id) countQuery = countQuery.eq('laboratory_id', laboratory_id)
     if (origin) countQuery = countQuery.eq('origin', origin)
     if (quality_spec_id) countQuery = countQuery.eq('quality_spec_id', quality_spec_id)
-    if (sample_type) countQuery = countQuery.eq('sample_type', sample_type)
+    if (sample_type) countQuery = countQuery.eq('sample_type', sample_type as Database['public']['Enums']['sample_type_enum'])
     if (workflow_stage) countQuery = countQuery.eq('workflow_stage', workflow_stage)
 
     const { count } = await countQuery
@@ -110,7 +110,6 @@ export async function POST(request: NextRequest) {
 
     // Generate tracking number using helper function
     const { data: trackingNumberData, error: trackingError } = await supabase
-      // @ts-expect-error - Supabase type inference issue with rpc
       .rpc('generate_tracking_number', {
         p_client_id: body.client_id,
         p_laboratory_id: body.laboratory_id,
@@ -173,7 +172,6 @@ export async function POST(request: NextRequest) {
     // Insert sample
     const { data: sample, error: insertError } = await supabase
       .from('samples')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert(sampleData)
       .select()
       .single()

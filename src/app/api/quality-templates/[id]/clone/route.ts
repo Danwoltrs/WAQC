@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
 type QualityTemplateInsert = Database['public']['Tables']['quality_templates']['Insert']
 
@@ -78,7 +78,6 @@ export async function POST(
     // Insert cloned template
     const { data: clonedTemplate, error: insertError } = await supabase
       .from('quality_templates')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert(clonedData)
       .select()
       .single()
@@ -94,7 +93,6 @@ export async function POST(
     // Create initial version record for cloned template
     await supabase
       .from('template_versions')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert({
         template_id: (clonedTemplate as any).id,
         version_number: 1,

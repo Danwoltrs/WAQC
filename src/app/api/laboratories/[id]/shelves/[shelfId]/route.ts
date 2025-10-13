@@ -220,7 +220,6 @@ export async function PATCH(
     // Update shelf
     const { data: shelf, error: updateError } = await supabase
       .from('lab_shelves')
-      // @ts-expect-error - Supabase type inference issue with update
       .update(updateData)
       .eq('id', shelfId)
       .select()

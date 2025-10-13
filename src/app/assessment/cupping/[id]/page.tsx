@@ -269,7 +269,7 @@ export default function CuppingDetailPage() {
                       key={taint}
                       variant="destructive"
                       className="cursor-pointer"
-                      onClick={() => removeItem(selectedCup, 'taints', taint)}
+                      onClick={() => removeItem(selectedCup!, 'taints', taint)}
                     >
                       {taint}
                       <X className="h-3 w-3 ml-1" />
@@ -282,7 +282,7 @@ export default function CuppingDetailPage() {
                       key={taint}
                       variant="outline"
                       size="sm"
-                      onClick={() => addItem(selectedCup, 'taints', taint)}
+                      onClick={() => addItem(selectedCup!, 'taints', taint)}
                     >
                       {taint}
                     </Button>
@@ -302,7 +302,7 @@ export default function CuppingDetailPage() {
                       key={fault}
                       variant="destructive"
                       className="cursor-pointer"
-                      onClick={() => removeItem(selectedCup, 'faults', fault)}
+                      onClick={() => removeItem(selectedCup!, 'faults', fault)}
                     >
                       {fault}
                       <X className="h-3 w-3 ml-1" />
@@ -315,7 +315,7 @@ export default function CuppingDetailPage() {
                       key={fault}
                       variant="outline"
                       size="sm"
-                      onClick={() => addItem(selectedCup, 'faults', fault)}
+                      onClick={() => addItem(selectedCup!, 'faults', fault)}
                     >
                       {fault}
                     </Button>
@@ -335,7 +335,7 @@ export default function CuppingDetailPage() {
                       key={attr}
                       variant="default"
                       className="cursor-pointer"
-                      onClick={() => removeItem(selectedCup, 'attributes', attr)}
+                      onClick={() => removeItem(selectedCup!, 'attributes', attr)}
                     >
                       {attr}
                       <X className="h-3 w-3 ml-1" />
@@ -348,7 +348,7 @@ export default function CuppingDetailPage() {
                       key={attr}
                       variant="outline"
                       size="sm"
-                      onClick={() => addItem(selectedCup, 'attributes', attr)}
+                      onClick={() => addItem(selectedCup!, 'attributes', attr)}
                     >
                       {attr}
                     </Button>
@@ -368,7 +368,7 @@ export default function CuppingDetailPage() {
                   max="100"
                   step="0.25"
                   value={selectedCupData.score || ''}
-                  onChange={(e) => updateScore(selectedCup, parseFloat(e.target.value))}
+                  onChange={(e) => updateScore(selectedCup!, parseFloat(e.target.value))}
                   placeholder="Enter score"
                   className="max-w-xs"
                 />

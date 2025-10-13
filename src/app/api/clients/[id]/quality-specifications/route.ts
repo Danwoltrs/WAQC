@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/supabase'
+import { Database } from '@/lib/database.types'
 
 type ClientQuality = Database['public']['Tables']['client_qualities']['Row']
 type ClientQualityInsert = Database['public']['Tables']['client_qualities']['Insert']
@@ -119,7 +119,6 @@ export async function POST(
     // Insert client quality specification
     const { data: specification, error: insertError } = await supabase
       .from('client_qualities')
-      // @ts-expect-error - Supabase type inference issue with insert
       .insert(qualityData)
       .select(`
         *,

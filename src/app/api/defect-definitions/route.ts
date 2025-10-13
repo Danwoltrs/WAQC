@@ -48,7 +48,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (category) {
-      query = query.eq('category', category)
+      query = query.eq('category', category as Database['public']['Enums']['defect_category'])
     }
 
     if (is_active === 'true') {
