@@ -266,6 +266,15 @@
             "status": "done",
             "dependencies": [],
             "parentTaskId": 9
+          },
+          {
+            "id": 8,
+            "title": "Implement Flexible Defect Configuration System",
+            "description": "Build comprehensive defect management system with customizable defect lists, weights, and validation thresholds per origin/client/quality template",
+            "details": "### Implementation Summary\n\n**Completed Components:**\n1. Type system for flexible defects (`src/types/defect-configuration.ts`)\n   - DefectConfig: Individual defect with name, weight, category\n   - DefectThresholds: Max limits for primary, secondary, and total\n   - DefectConfiguration: Complete defect setup\n   - Predefined templates: Brazil SCA, Colombia, Guatemala, SCA Standard\n   - Helper functions for calculations and validation\n\n2. UI Components (`src/components/quality/defect-config-manager.tsx`)\n   - DefectConfigManager: Main dialog component\n   - DefectCategorySection: Manage primary and secondary defects\n   - DefectThresholdsSection: Set validation limits\n   - Template selector for quick loading\n\n3. Template Builder Integration\n   - Updated template-builder.tsx with DefectConfigManager\n   - Wired \"Manage Defects\" button to open dialog\n   - Added defect configuration storage in TemplateParameters\n   - Integrated validation logic\n\n**Features:**\n- Two defect categories (Primary and Secondary)\n- Customizable weight per defect (e.g., 1.00, 0.2, 0.5)\n- Add/remove/edit defects in both categories\n- Drag-to-reorder defect display\n- Set max thresholds for Primary, Secondary, and Total\n- Predefined templates by origin (Brazil, Colombia, Guatemala, SCA)\n- Auto-calculate totals: count × weight for each defect\n- Real-time validation with error messages\n\n**Real-World Examples:**\n- Brazil SCA: 6 primary (weight 1.00) + 9 secondary (weights 0.1-0.5)\n- Colombia Standard: 5 primary + 9 secondary\n- Guatemala Standard: 6 primary + 10 secondary\n- Thresholds: Primary ≤5, Secondary ≤86, Total ≤91 (Brazil example)\n\n**Files Created:**\n- src/types/defect-configuration.ts (550 lines)\n- src/components/quality/defect-config-manager.tsx (640 lines)\n\n**Files Modified:**\n- src/components/quality/template-builder.tsx (integrated defect manager)\n\n**Testing:**\n- TypeScript compilation passes\n- All validation logic implemented\n- Ready for UI and integration testing",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 9
           }
         ],
         "updatedAt": "2025-10-13T14:54:32.136Z"

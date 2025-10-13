@@ -21,13 +21,13 @@ import {
   createNumericScale
 } from '@/types/attribute-scales'
 import { AttributeScaleManager, AttributeWithScale } from './scale-builder'
+import {
+  DefectConfiguration,
+  createEmptyDefectConfiguration
+} from '@/types/defect-configuration'
+import { DefectConfigManager } from './defect-config-manager'
 
 // AttributeScale is now imported from @/types/attribute-scales as CuppingAttribute
-
-interface DefectConfig {
-  definition_id: string
-  max_count?: number
-}
 
 interface TaintFaultConfig {
   definition_id: string
@@ -41,7 +41,7 @@ interface TemplateParameters {
     sizes?: { [key: string]: number } // Legacy format - kept for backward compatibility
   }
   screen_size_requirements?: ScreenSizeRequirements // New constraint-based format
-  defects?: DefectConfig[]
+  defect_configuration?: DefectConfiguration // New flexible defect format
   moisture_min?: number
   moisture_max?: number
   moisture_standard?: 'coffee_industry' | 'iso_6673'
@@ -112,10 +112,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [newConstraintMinValue, setNewConstraintMinValue] = useState<string>('')
   const [newConstraintMaxValue, setNewConstraintMaxValue] = useState<string>('')
 
-  // Defects
-  const [defectConfigs, setDefectConfigs] = useState<DefectConfig[]>(
-    template?.parameters.defects || []
+  // Defects (new flexible format)
+  const [defectConfiguration, setDefectConfiguration] = useState<DefectConfiguration>(
+    template?.parameters.defect_configuration || createEmptyDefectConfiguration()
   )
+  const [defectDialogOpen, setDefectDialogOpen] = useState(false)
 
   // Moisture
   const [moistureMin, setMoistureMin] = useState(
@@ -276,6 +277,15 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       }
     }
 
+    // Validate defect configuration
+    if (defectConfiguration.defects.length > 0) {
+      const { validateDefectConfiguration } = require('@/types/defect-configuration')
+      const defectValidation = validateDefectConfiguration(defectConfiguration)
+      if (!defectValidation.valid) {
+        return `Defect configuration: ${defectValidation.error}`
+      }
+    }
+
     return null
   }
 
@@ -304,9 +314,9 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         notes: ''
       }
 
-      // Defects
-      if (defectConfigs.length > 0) {
-        parameters.defects = defectConfigs
+      // Defect Configuration (new flexible format)
+      if (defectConfiguration.defects.length > 0) {
+        parameters.defect_configuration = defectConfiguration
       }
 
       // Moisture
@@ -580,29 +590,70 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
       </Card>
 
-      {/* Defects */}
+      {/* Defect Configuration (New Flexible System) */}
       <Card>
         <CardHeader>
           <CardTitle>Defect Configuration</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            <p>Configure defects, weights, and validation thresholds:</p>
+            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
+              <li><strong>Primary Defects:</strong> Severe defects (typically weight 1.00)</li>
+              <li><strong>Secondary Defects:</strong> Minor defects (variable weights 0.1-0.5)</li>
+              <li><strong>Custom Weights:</strong> Define point values per defect</li>
+              <li><strong>Validation Thresholds:</strong> Set max limits for primary, secondary, and total</li>
+              <li><strong>Templates:</strong> Load Brazil, Colombia, Guatemala, or SCA standards</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
             <div>
-              <p className="text-sm text-muted-foreground">
-                Configure which defects apply to this template and set maximum counts
-              </p>
-              {defectConfigs.length > 0 && (
-                <p className="text-sm mt-1">
-                  {defectConfigs.length} defect{defectConfigs.length !== 1 ? 's' : ''} configured
+              {defectConfiguration.defects.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No defects configured yet. Click "Manage Defects" to get started.
                 </p>
+              ) : (
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium">
+                    {defectConfiguration.defects.length} defect{defectConfiguration.defects.length !== 1 ? 's' : ''} configured
+                  </p>
+                  <p className="text-muted-foreground">
+                    Primary: {defectConfiguration.defects.filter(d => d.category === 'primary').length} •
+                    Secondary: {defectConfiguration.defects.filter(d => d.category === 'secondary').length}
+                  </p>
+                  {(defectConfiguration.thresholds.max_primary ||
+                    defectConfiguration.thresholds.max_secondary ||
+                    defectConfiguration.thresholds.max_total) && (
+                    <p className="text-muted-foreground">
+                      Thresholds:
+                      {defectConfiguration.thresholds.max_primary && ` Primary ≤${defectConfiguration.thresholds.max_primary}`}
+                      {defectConfiguration.thresholds.max_secondary && ` • Secondary ≤${defectConfiguration.thresholds.max_secondary}`}
+                      {defectConfiguration.thresholds.max_total && ` • Total ≤${defectConfiguration.thresholds.max_total}`}
+                    </p>
+                  )}
+                </div>
               )}
             </div>
-            <Button type="button" variant="outline" onClick={() => {/* TODO: Open defects dialog */}}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setDefectDialogOpen(true)}
+            >
               Manage Defects
             </Button>
           </div>
         </CardContent>
       </Card>
+
+      {/* Defect Configuration Dialog */}
+      <DefectConfigManager
+        open={defectDialogOpen}
+        onOpenChange={setDefectDialogOpen}
+        value={defectConfiguration}
+        onChange={setDefectConfiguration}
+        sampleSize={parseFloat(sampleSizeGrams) || 300}
+      />
 
       {/* Moisture % */}
       <Card>
