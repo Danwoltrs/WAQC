@@ -20,7 +20,6 @@ import {
   AttributeScaleType,
   createNumericScale
 } from '@/types/attribute-scales'
-import { AttributeScaleManager, AttributeWithScale } from './scale-builder'
 import {
   DefectConfiguration,
   createEmptyDefectConfiguration
@@ -31,6 +30,7 @@ import {
   createEmptyTaintFaultConfiguration
 } from '@/types/taint-fault-configuration'
 import { TaintFaultConfigManager } from './taint-fault-config-manager'
+import { CuppingAttributeConfigManager, AttributeWithScale } from './cupping-attribute-config-manager'
 
 // AttributeScale is now imported from @/types/attribute-scales as CuppingAttribute
 
@@ -132,6 +132,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [cuppingAttributes, setCuppingAttributes] = useState<CuppingAttribute[]>(
     template?.parameters.cupping_attributes || DEFAULT_CUPPING_ATTRIBUTES
   )
+  const [cuppingAttributesDialogOpen, setCuppingAttributesDialogOpen] = useState(false)
 
   // Taints and Faults (new flexible format)
   const [taintFaultConfiguration, setTaintFaultConfiguration] = useState<TaintFaultConfiguration>(
@@ -734,13 +735,60 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
               </ul>
             </div>
 
-            <AttributeScaleManager
-              attributes={attributesWithScale}
-              onChange={handleAttributesChange}
-            />
+            <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
+              <div>
+                {cuppingAttributes.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No attributes configured yet. Click &quot;Manage Attributes&quot; to get started.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium">
+                      {cuppingAttributes.length} attribute{cuppingAttributes.length !== 1 ? 's' : ''} configured
+                    </p>
+                    <div className="space-y-1">
+                      {cuppingAttributes.map((attr, index) => (
+                        <div key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Badge variant="outline" className="font-normal">
+                            {attr.attribute}
+                          </Badge>
+                          <span className="text-xs">
+                            {attr.scale.type === 'numeric'
+                              ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
+                              : `${attr.scale.options?.length || 0} options`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-sm text-muted-foreground mt-2">
+                      Numeric: {cuppingAttributes.filter(a => a.scale.type === 'numeric').length} •
+                      Wording: {cuppingAttributes.filter(a => a.scale.type === 'wording').length} •
+                      Max Total: {cuppingAttributes
+                        .filter(a => a.scale.type === 'numeric')
+                        .reduce((sum, a) => sum + (a.scale.type === 'numeric' ? a.scale.max : 0), 0)}
+                    </p>
+                  </div>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setCuppingAttributesDialogOpen(true)}
+              >
+                Manage Attributes
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
+
+      {/* Cupping Attributes Configuration Dialog */}
+      <CuppingAttributeConfigManager
+        open={cuppingAttributesDialogOpen}
+        onOpenChange={setCuppingAttributesDialogOpen}
+        value={attributesWithScale}
+        onChange={handleAttributesChange}
+      />
 
       {/* Taints and Faults (New Flexible System) */}
       <Card>
