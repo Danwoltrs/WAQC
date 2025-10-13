@@ -1,6 +1,6 @@
 # Task ID: 9
 # Title: Build Quality Template Management System
-# Status: pending
+# Status: in-progress
 # Dependencies: 6
 # Priority: high
 # Description: Create comprehensive quality template builder with client-specific parameters and flexible attribute configuration
@@ -11,11 +11,14 @@ Create src/components/quality/template-builder.tsx for creating reusable quality
 Test template creation/editing, test parameter validation, test template cloning, test version tracking, verify usage statistics accuracy
 
 # Subtasks:
-## 1. Create Quality Template Builder Component [pending]
+## 1. Create Quality Template Builder Component [done]
 ### Dependencies: None
 ### Description: Build the main template builder interface with form controls for all quality parameters including screen size, defect thresholds, moisture standards, and cupping attributes
 ### Details:
 Create src/components/quality/template-builder.tsx with comprehensive form interface. Include parameter configuration sections: screen size requirements (Pan, Peas 9-11, 12-20, specific 17/18), defect threshold settings (primary/secondary), moisture content standards selection, cupping scale configuration (1-5, 1-7, 1-10), and dynamic cupping attributes management (add/remove Flavor, Aftertaste, Balance, etc.). Implement form validation and real-time preview functionality.
+<info added on 2025-10-13T14:54:08.644Z>
+Screen size constraint refactoring completed successfully. New flexible constraint-based system implemented to replace fixed percentages. TypeScript type definitions created in src/types/screen-size-constraints.ts supporting four constraint types: minimum (≥), maximum (≤), range, and any. Template builder component updated with interactive constraint UI including dropdown selectors, constraint type selection, and conditional value inputs. Real-time validation system added with clear error messages. System no longer requires percentages to sum to 100%, allows defining only relevant screens per quality specification. Quality grading interface (src/app/assessment/grading/[id]/page.tsx) modified to dynamically load only screens with defined constraints, displaying constraint requirements as badges. Validation on submission implemented with detailed violation messages. TypeScript compilation successful with zero errors. Changes committed as 7ed3910 and pushed to main branch.
+</info added on 2025-10-13T14:54:08.644Z>
 
 ## 2. Implement Template Management Library [pending]
 ### Dependencies: 9.1
@@ -23,7 +26,7 @@ Create src/components/quality/template-builder.tsx with comprehensive form inter
 ### Details:
 Create template library interface within the template builder component. Implement template listing with search and filter capabilities, clone functionality for duplicating existing templates, version tracking system for template changes, and usage statistics display. Include template preview modal and comparison functionality between versions.
 
-## 3. Create Quality Templates API Routes [pending]
+## 3. Create Quality Templates API Routes [done]
 ### Dependencies: None
 ### Description: Build comprehensive CRUD API endpoints for quality template management with validation and error handling
 ### Details:
@@ -41,9 +44,62 @@ Implement template versioning system that tracks all changes made to templates. 
 ### Details:
 Build usage analytics system that tracks which templates are used most frequently, identifies popular parameter configurations, and measures template performance metrics. Create analytics dashboard showing usage statistics, trend analysis, and template effectiveness reports. Include export functionality for analytics data.
 
-## 6. Database Schema for Quality Templates [pending]
+## 6. Database Schema for Quality Templates [done]
 ### Dependencies: None
 ### Description: Design and implement database tables for quality templates with multi-language support, variable sample sizes, and template inheritance
 ### Details:
 Create migration for quality_templates table with fields: id, name_en, name_pt, name_es, description_en, description_pt, description_es, sample_size_grams (default 300), template_parent_id (for cloning/inheritance), created_by, laboratory_id, is_global, screen_size_requirements (JSONB), defect_thresholds_primary, defect_thresholds_secondary, moisture_standard, cupping_scale_type, cupping_scale_min, cupping_scale_max, cupping_scale_increment, max_taints_allowed, max_faults_allowed, taint_fault_rule_type (AND/OR), created_at, updated_at. Create cupping_attributes table: id, template_id, attribute_name_en, attribute_name_pt, attribute_name_es, scale_type (1-5, 1-7, 1-10), increment (0.25, 0.5, 1.0), is_required, display_order. Create template_versions table for version tracking. Include RLS policies for template sharing (private/lab/global) and proper foreign keys.
+
+## 7. Implement Flexible Attribute Scale System [done]
+### Dependencies: None
+### Description: Refactor cupping attribute system to support both numeric and custom wording-based scales with complete per-attribute customization
+### Details:
+### Implementation Summary
+
+**Completed Components:**
+1. Type system for flexible scales (`src/types/attribute-scales.ts`)
+   - NumericScale: Custom min-max ranges with increments
+   - WordingScale: Text labels with assigned numeric values
+   - Predefined templates: SCA, COE, Brazil Traditional
+   - Helper functions for validation and conversion
+
+2. UI Components (`src/components/quality/scale-builder.tsx`)
+   - ScaleBuilder: Main scale configuration component
+   - NumericScaleBuilder: For numeric scale ranges
+   - WordingScaleBuilder: For wording scales with add/edit/remove
+   - AttributeScaleManager: Manages multiple attributes
+
+3. Template Builder Integration
+   - Updated template-builder.tsx to use AttributeScaleManager
+   - Removed hardcoded scale types (1-5, 1-7, 1-10)
+   - Added validation for new scale system
+   - Maintained backward compatibility
+
+4. Documentation (`docs/attribute-scales-migration.md`)
+   - Complete migration guide with examples
+   - Real-world template configurations
+   - API integration documentation
+   - Troubleshooting guide
+
+**Features:**
+- Two scale types per attribute (numeric or wording)
+- Complete customization per attribute (different scales, different lengths)
+- Predefined scale templates for quick setup
+- Wording scales with editable labels and numeric values
+- Add/remove/edit individual options per attribute
+- Mix numeric and wording scales in same template
+- Real-world examples: SCA 7-level wording, Brazil 10-level flavor
+
+**Files Created:**
+- src/types/attribute-scales.ts (271 lines)
+- src/components/quality/scale-builder.tsx (515 lines)
+- docs/attribute-scales-migration.md (477 lines)
+
+**Files Modified:**
+- src/components/quality/template-builder.tsx (integrated new system)
+
+**Testing:**
+- TypeScript compilation passes
+- All validation logic implemented
+- Ready for UI and integration testing
 

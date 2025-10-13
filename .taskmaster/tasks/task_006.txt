@@ -11,7 +11,7 @@ Create src/components/quality/defect-config-manager.tsx for lab managers and glo
 Test defect CRUD operations, test point value calculations, test defect equivalency calculator, verify RLS permissions
 
 # Subtasks:
-## 6. Create defect definitions database schema and migrations [pending]
+## 6. Create defect definitions database schema and migrations [done]
 ### Dependencies: None
 ### Description: Design and implement database tables for client-specific defect configurations including defect_definitions, client_defect_configs, and defect_categories tables with proper relationships and constraints
 ### Details:
@@ -22,7 +22,7 @@ I'll analyze the codebase to understand the current database structure and then 
 Update defect_definitions table schema to replace single-language columns with multi-language variants: Replace defect_name with name_en, name_pt, name_es fields for English, Portuguese, and Spanish respectively. Add description_en, description_pt, description_es for detailed defect descriptions in all three languages. Modify defect_category enum to support tri-lingual category names with JSON structure storing {en: "Primary/Secondary", pt: "Primária/Secundária", es: "Primario/Secundario"}. Replace sample_size_grams with dynamic sample_size_grams field that defaults to 300g but allows customization per client/origin. Implement point value calculation logic that scales from 300g base: new_points = (original_points * sample_size_grams) / 300. Add migration script to preserve existing data by copying current defect_name to name_en and setting default values for pt/es translations. Create helper functions for point value scaling and category translation retrieval. Update all related indexes and constraints to reference new multi-language columns while maintaining performance optimization.
 </info added on 2025-10-10T18:18:11.286Z>
 
-## 7. Build defect configuration API endpoints [pending]
+## 7. Build defect configuration API endpoints [done]
 ### Dependencies: 6.1
 ### Description: Create REST API endpoints in src/app/api/defect-definitions/route.ts for CRUD operations on defect configurations with proper validation and permissions
 ### Details:

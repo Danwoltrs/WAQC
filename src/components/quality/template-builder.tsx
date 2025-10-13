@@ -15,12 +15,14 @@ import {
   STANDARD_SCREEN_SIZES,
   getConstraintDisplayText
 } from '@/types/screen-size-constraints'
+import {
+  CuppingAttribute,
+  AttributeScaleType,
+  createNumericScale
+} from '@/types/attribute-scales'
+import { AttributeScaleManager, AttributeWithScale } from './scale-builder'
 
-interface AttributeScale {
-  attribute: string
-  scale: number
-  range: number // +/- range
-}
+// AttributeScale is now imported from @/types/attribute-scales as CuppingAttribute
 
 interface DefectConfig {
   definition_id: string
@@ -44,10 +46,12 @@ interface TemplateParameters {
   moisture_max?: number
   moisture_standard?: 'coffee_industry' | 'iso_6673'
   cupping?: {
-    scale_type: '1-5' | '1-7' | '1-10'
+    // Legacy format - deprecated, kept for backward compatibility
+    scale_type?: '1-5' | '1-7' | '1-10'
     min_score?: number
-    attributes: AttributeScale[]
+    attributes?: any[] // Old attribute format
   }
+  cupping_attributes?: CuppingAttribute[] // New flexible attribute format
   taints_faults?: TaintFaultConfig[]
 }
 
@@ -69,17 +73,17 @@ interface TemplateBuilderProps {
   onCancel: () => void
 }
 
-const DEFAULT_CUPPING_ATTRIBUTES: AttributeScale[] = [
-  { attribute: 'Fragrance/Aroma', scale: 4, range: 1 },
-  { attribute: 'Flavor', scale: 4, range: 1 },
-  { attribute: 'Aftertaste', scale: 4, range: 1 },
-  { attribute: 'Acidity', scale: 4, range: 1 },
-  { attribute: 'Body', scale: 4, range: 1 },
-  { attribute: 'Balance', scale: 4, range: 1 },
-  { attribute: 'Uniformity', scale: 4, range: 1 },
-  { attribute: 'Clean Cup', scale: 4, range: 1 },
-  { attribute: 'Sweetness', scale: 4, range: 1 },
-  { attribute: 'Overall', scale: 4, range: 1 }
+const DEFAULT_CUPPING_ATTRIBUTES: CuppingAttribute[] = [
+  { attribute: 'Fragrance/Aroma', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Flavor', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Aftertaste', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Acidity', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Body', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Balance', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Uniformity', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Clean Cup', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Sweetness', scale: createNumericScale(1, 10, 0.25), is_required: true },
+  { attribute: 'Overall', scale: createNumericScale(1, 10, 0.25), is_required: true }
 ]
 
 // Removed SCREEN_SIZES - now using STANDARD_SCREEN_SIZES from types
@@ -124,52 +128,28 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     template?.parameters.moisture_standard || 'coffee_industry'
   )
 
-  // Cupping
-  const [cuppingScaleType, setCuppingScaleType] = useState<'1-5' | '1-7' | '1-10'>(
-    template?.parameters.cupping?.scale_type || '1-10'
+  // Cupping Attributes (new flexible format)
+  const [cuppingAttributes, setCuppingAttributes] = useState<CuppingAttribute[]>(
+    template?.parameters.cupping_attributes || DEFAULT_CUPPING_ATTRIBUTES
   )
-  const [cuppingMinScore, setCuppingMinScore] = useState(
-    template?.parameters.cupping?.min_score?.toString() || ''
-  )
-  const [cuppingAttributes, setCuppingAttributes] = useState<AttributeScale[]>(
-    template?.parameters.cupping?.attributes || DEFAULT_CUPPING_ATTRIBUTES
-  )
-  const [newAttribute, setNewAttribute] = useState('')
-  const [newAttributeScale, setNewAttributeScale] = useState('4')
-  const [newAttributeRange, setNewAttributeRange] = useState('1')
 
   // Taints and Faults
   const [taintFaultConfigs, setTaintFaultConfigs] = useState<TaintFaultConfig[]>(
     template?.parameters.taints_faults || []
   )
 
-  const handleAddAttribute = () => {
-    if (newAttribute.trim() && !cuppingAttributes.find(a => a.attribute === newAttribute.trim())) {
-      setCuppingAttributes([...cuppingAttributes, {
-        attribute: newAttribute.trim(),
-        scale: parseFloat(newAttributeScale),
-        range: parseFloat(newAttributeRange)
-      }])
-      setNewAttribute('')
-      setNewAttributeScale('4')
-      setNewAttributeRange('1')
-    }
-  }
+  // Convert CuppingAttribute[] to AttributeWithScale[] for the manager
+  const attributesWithScale: AttributeWithScale[] = cuppingAttributes.map(attr => ({
+    attribute: attr.attribute,
+    scale: attr.scale
+  }))
 
-  const handleRemoveAttribute = (attribute: string) => {
-    setCuppingAttributes(cuppingAttributes.filter(a => a.attribute !== attribute))
-  }
-
-  const handleAttributeScaleChange = (attribute: string, scale: string) => {
-    setCuppingAttributes(cuppingAttributes.map(a =>
-      a.attribute === attribute ? { ...a, scale: parseFloat(scale) || 0 } : a
-    ))
-  }
-
-  const handleAttributeRangeChange = (attribute: string, range: string) => {
-    setCuppingAttributes(cuppingAttributes.map(a =>
-      a.attribute === attribute ? { ...a, range: parseFloat(range) || 0 } : a
-    ))
+  const handleAttributesChange = (newAttributes: AttributeWithScale[]) => {
+    setCuppingAttributes(newAttributes.map(attr => ({
+      attribute: attr.attribute,
+      scale: attr.scale,
+      is_required: true
+    })))
   }
 
   // Screen size constraint handlers
@@ -277,17 +257,23 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       return 'Moisture min must be less than moisture max'
     }
 
-    // Validate cupping
-    if (cuppingMinScore) {
-      const scoreMap = { '1-5': 5, '1-7': 7, '1-10': 10 }
-      const maxScore = scoreMap[cuppingScaleType]
-      if (parseFloat(cuppingMinScore) < 1 || parseFloat(cuppingMinScore) > maxScore) {
-        return `Cupping min score must be between 1 and ${maxScore}`
-      }
-    }
-
+    // Validate cupping attributes
     if (cuppingAttributes.length === 0) {
       return 'At least one cupping attribute is required'
+    }
+
+    // Validate each attribute's scale configuration
+    for (const attr of cuppingAttributes) {
+      if (!attr.scale) {
+        return `Attribute "${attr.attribute}" is missing scale configuration`
+      }
+
+      // Import validateScale from attribute-scales
+      const { validateScale } = require('@/types/attribute-scales')
+      const validation = validateScale(attr.scale)
+      if (!validation.valid) {
+        return `Attribute "${attr.attribute}": ${validation.error}`
+      }
     }
 
     return null
@@ -330,12 +316,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         parameters.moisture_standard = moistureStandard
       }
 
-      // Cupping
-      parameters.cupping = {
-        scale_type: cuppingScaleType,
-        min_score: cuppingMinScore ? parseFloat(cuppingMinScore) : undefined,
-        attributes: cuppingAttributes
-      }
+      // Cupping Attributes (new flexible format)
+      parameters.cupping_attributes = cuppingAttributes
 
       // Taints and Faults
       if (taintFaultConfigs.length > 0) {
@@ -675,124 +657,27 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
       </Card>
 
-      {/* Attributes (Cupping) */}
+      {/* Cupping Attributes (New Flexible System) */}
       <Card>
         <CardHeader>
-          <CardTitle>Attributes</CardTitle>
+          <CardTitle>Cupping Attributes</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Cupping Scale Type</Label>
-              <Select value={cuppingScaleType} onValueChange={(v: any) => setCuppingScaleType(v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1-5">1-5 Scale</SelectItem>
-                  <SelectItem value="1-7">1-7 Scale</SelectItem>
-                  <SelectItem value="1-10">1-10 Scale (SCA Standard)</SelectItem>
-                </SelectContent>
-              </Select>
+        <CardContent>
+          <div className="space-y-4">
+            <div className="text-sm text-muted-foreground">
+              <p>Configure cupping attributes with flexible scales:</p>
+              <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
+                <li><strong>Numeric Scales:</strong> Define custom ranges (e.g., 1-5, 1-10, any min-max)</li>
+                <li><strong>Wording Scales:</strong> Create custom text-based scales with numeric values (e.g., Outstanding=10, Good=7, Poor=3)</li>
+                <li><strong>Mixed Attributes:</strong> Each attribute can use a different scale type</li>
+                <li><strong>Templates:</strong> Start with SCA, COE, or Brazil Traditional presets</li>
+              </ul>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="cupping_min_score">Minimum Total Score (optional)</Label>
-              <Input
-                id="cupping_min_score"
-                type="number"
-                min="1"
-                max={cuppingScaleType === '1-5' ? '5' : cuppingScaleType === '1-7' ? '7' : '10'}
-                step="0.25"
-                value={cuppingMinScore}
-                onChange={(e) => setCuppingMinScore(e.target.value)}
-                placeholder="Leave empty if not required"
-              />
-              <p className="text-xs text-muted-foreground">
-                Quality evaluated by scale and range if not set
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-3">
-            <Label>Attribute Scales and Ranges</Label>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {cuppingAttributes.map((attr) => (
-                <div key={attr.attribute} className="p-3 rounded-lg border bg-card space-y-2">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-sm font-medium">{attr.attribute}</Label>
-                    <button
-                      onClick={() => handleRemoveAttribute(attr.attribute)}
-                      className="hover:text-destructive"
-                    >
-                      <X className="h-3 w-3" />
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Scale</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="10"
-                        step="0.25"
-                        value={attr.scale}
-                        onChange={(e) => handleAttributeScaleChange(attr.attribute, e.target.value)}
-                        className="h-8"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <Label className="text-xs text-muted-foreground">Range (+/-)</Label>
-                      <Input
-                        type="number"
-                        min="0"
-                        max="5"
-                        step="0.25"
-                        value={attr.range}
-                        onChange={(e) => handleAttributeRangeChange(attr.attribute, e.target.value)}
-                        className="h-8"
-                      />
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex gap-2">
-              <Input
-                value={newAttribute}
-                onChange={(e) => setNewAttribute(e.target.value)}
-                onKeyPress={(e) => e.key === 'Enter' && handleAddAttribute()}
-                placeholder="Attribute name..."
-                className="flex-1"
-              />
-              <Input
-                type="number"
-                min="0"
-                max="10"
-                step="0.25"
-                value={newAttributeScale}
-                onChange={(e) => setNewAttributeScale(e.target.value)}
-                placeholder="4"
-                className="w-20"
-              />
-              <Input
-                type="number"
-                min="0"
-                max="5"
-                step="0.25"
-                value={newAttributeRange}
-                onChange={(e) => setNewAttributeRange(e.target.value)}
-                placeholder="1"
-                className="w-20"
-              />
-              <Button type="button" variant="outline" onClick={handleAddAttribute}>
-                <Plus className="h-4 w-4" />
-              </Button>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Example: Fragrance/Aroma with Scale 4 and Range 1 means acceptable range is 3-5 (4 +/- 1).
-            </p>
+            <AttributeScaleManager
+              attributes={attributesWithScale}
+              onChange={handleAttributesChange}
+            />
           </div>
         </CardContent>
       </Card>

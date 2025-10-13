@@ -86,7 +86,8 @@
             "dependencies": [],
             "details": "Create migration files for defect_definitions table (id, name, default_category, default_points, description), client_defect_configs table (client_id, defect_id, custom_name, points_per_300g, category, is_active), and defect_categories table (primary/secondary classification). Include proper foreign key relationships, RLS policies, and indexes for performance. Support point value variations by origin and sample size calculations.\n<info added on 2025-10-10T18:18:11.286Z>\nI'll analyze the codebase to understand the current database structure and then provide the enhanced schema information for multi-language support and variable sample sizes.Now I need to understand the existing schema structure to provide the enhanced multi-language schema update:Based on my analysis of the existing database schema in `database/migrations/003_phase2_schema_TABLES_ONLY.sql`, I can see that there's already a `defect_definitions` table with basic structure. Here's the enhanced multi-language schema update:\n\nUpdate defect_definitions table schema to replace single-language columns with multi-language variants: Replace defect_name with name_en, name_pt, name_es fields for English, Portuguese, and Spanish respectively. Add description_en, description_pt, description_es for detailed defect descriptions in all three languages. Modify defect_category enum to support tri-lingual category names with JSON structure storing {en: \"Primary/Secondary\", pt: \"Primária/Secundária\", es: \"Primario/Secundario\"}. Replace sample_size_grams with dynamic sample_size_grams field that defaults to 300g but allows customization per client/origin. Implement point value calculation logic that scales from 300g base: new_points = (original_points * sample_size_grams) / 300. Add migration script to preserve existing data by copying current defect_name to name_en and setting default values for pt/es translations. Create helper functions for point value scaling and category translation retrieval. Update all related indexes and constraints to reference new multi-language columns while maintaining performance optimization.\n</info added on 2025-10-10T18:18:11.286Z>",
             "status": "done",
-            "testStrategy": "Test database constraints, verify RLS policies work correctly, test migration rollback capability, verify foreign key relationships"
+            "testStrategy": "Test database constraints, verify RLS policies work correctly, test migration rollback capability, verify foreign key relationships",
+            "parentId": "undefined"
           },
           {
             "id": 7,
@@ -97,7 +98,8 @@
             ],
             "details": "Implement GET /api/defect-definitions (list all), GET /api/defect-definitions/[id] (single defect), POST /api/defect-definitions (create), PUT /api/defect-definitions/[id] (update), DELETE /api/defect-definitions/[id] (delete). Include validation to prevent deletion of defects currently in use by samples. Add endpoints for client-specific configurations: GET/POST/PUT/DELETE /api/clients/[id]/defect-configs. Implement proper error handling and response formatting.",
             "status": "done",
-            "testStrategy": "Test all CRUD operations, verify validation prevents deletion of active defects, test permission-based access, test error handling for invalid requests"
+            "testStrategy": "Test all CRUD operations, verify validation prevents deletion of active defects, test permission-based access, test error handling for invalid requests",
+            "parentId": "undefined"
           },
           {
             "id": 8,
@@ -108,7 +110,8 @@
             ],
             "details": "Create comprehensive interface with client selector dropdown, defect library view showing available defects, client-specific configuration panel. Support adding/editing defect names, point values, primary/secondary categorization. Include Brazil-specific examples (Full Black 1.0, Partial Black 0.5, Severe Broca 0.2). Implement drag-and-drop for easy defect assignment, bulk edit capabilities, and real-time preview of changes. Use shadcn/ui components for consistent styling.",
             "status": "pending",
-            "testStrategy": "Test defect assignment workflow, verify point value calculations, test bulk operations, verify UI responsiveness and accessibility"
+            "testStrategy": "Test defect assignment workflow, verify point value calculations, test bulk operations, verify UI responsiveness and accessibility",
+            "parentId": "undefined"
           },
           {
             "id": 9,
@@ -119,7 +122,8 @@
             ],
             "details": "Create src/components/quality/defect-equivalency-calculator.tsx component that calculates equivalent defect counts when converting between sample sizes (300g standard to other weights). Include mathematical formulas for proportional scaling, rounding rules for fractional defects, and display comparison tables. Support batch calculations for multiple defects simultaneously. Integrate with defect configuration system to use client-specific point values.",
             "status": "pending",
-            "testStrategy": "Test mathematical accuracy of conversions, verify rounding logic, test edge cases with very small/large sample sizes, test batch calculation functionality"
+            "testStrategy": "Test mathematical accuracy of conversions, verify rounding logic, test edge cases with very small/large sample sizes, test batch calculation functionality",
+            "parentId": "undefined"
           },
           {
             "id": 10,
@@ -130,7 +134,8 @@
             ],
             "details": "Create validation logic that checks if defects are referenced in existing quality assessments before allowing deletion. Implement usage tracking to show which clients use specific defects and how frequently. Add warning dialogs when attempting to modify defects with existing usage. Create audit trail for defect configuration changes including user, timestamp, and change details. Implement soft delete option for defects that cannot be hard deleted.",
             "status": "pending",
-            "testStrategy": "Test deletion prevention for active defects, verify usage tracking accuracy, test audit trail functionality, test soft delete behavior"
+            "testStrategy": "Test deletion prevention for active defects, verify usage tracking accuracy, test audit trail functionality, test soft delete behavior",
+            "parentId": "undefined"
           },
           {
             "id": 11,
@@ -142,7 +147,8 @@
               "6.3",
               "6.4"
             ],
-            "parentTaskId": 6
+            "parentTaskId": 6,
+            "parentId": "undefined"
           }
         ]
       },
@@ -182,16 +188,18 @@
         "dependencies": [
           "6"
         ],
-        "status": "pending",
+        "status": "in-progress",
         "subtasks": [
           {
             "id": 1,
             "title": "Create Quality Template Builder Component",
             "description": "Build the main template builder interface with form controls for all quality parameters including screen size, defect thresholds, moisture standards, and cupping attributes",
             "dependencies": [],
-            "details": "Create src/components/quality/template-builder.tsx with comprehensive form interface. Include parameter configuration sections: screen size requirements (Pan, Peas 9-11, 12-20, specific 17/18), defect threshold settings (primary/secondary), moisture content standards selection, cupping scale configuration (1-5, 1-7, 1-10), and dynamic cupping attributes management (add/remove Flavor, Aftertaste, Balance, etc.). Implement form validation and real-time preview functionality.",
-            "status": "pending",
-            "testStrategy": "Test all parameter input controls, validate form submission with various configurations, test dynamic attribute addition/removal, verify form validation rules"
+            "details": "Create src/components/quality/template-builder.tsx with comprehensive form interface. Include parameter configuration sections: screen size requirements (Pan, Peas 9-11, 12-20, specific 17/18), defect threshold settings (primary/secondary), moisture content standards selection, cupping scale configuration (1-5, 1-7, 1-10), and dynamic cupping attributes management (add/remove Flavor, Aftertaste, Balance, etc.). Implement form validation and real-time preview functionality.\n<info added on 2025-10-13T14:54:08.644Z>\nScreen size constraint refactoring completed successfully. New flexible constraint-based system implemented to replace fixed percentages. TypeScript type definitions created in src/types/screen-size-constraints.ts supporting four constraint types: minimum (≥), maximum (≤), range, and any. Template builder component updated with interactive constraint UI including dropdown selectors, constraint type selection, and conditional value inputs. Real-time validation system added with clear error messages. System no longer requires percentages to sum to 100%, allows defining only relevant screens per quality specification. Quality grading interface (src/app/assessment/grading/[id]/page.tsx) modified to dynamically load only screens with defined constraints, displaying constraint requirements as badges. Validation on submission implemented with detailed violation messages. TypeScript compilation successful with zero errors. Changes committed as 7ed3910 and pushed to main branch.\n</info added on 2025-10-13T14:54:08.644Z>",
+            "status": "done",
+            "testStrategy": "Test all parameter input controls, validate form submission with various configurations, test dynamic attribute addition/removal, verify form validation rules",
+            "updatedAt": "2025-10-13T14:54:32.136Z",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -202,7 +210,8 @@
             ],
             "details": "Create template library interface within the template builder component. Implement template listing with search and filter capabilities, clone functionality for duplicating existing templates, version tracking system for template changes, and usage statistics display. Include template preview modal and comparison functionality between versions.",
             "status": "pending",
-            "testStrategy": "Test template search and filtering, verify clone functionality creates exact duplicates, test version tracking accuracy, validate usage statistics calculations"
+            "testStrategy": "Test template search and filtering, verify clone functionality creates exact duplicates, test version tracking accuracy, validate usage statistics calculations",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -211,7 +220,8 @@
             "dependencies": [],
             "details": "Create src/app/api/quality-templates/route.ts with full CRUD operations (GET, POST, PUT, DELETE). Implement template creation, retrieval, updating, and deletion with proper validation. Add endpoints for template cloning, version management, and usage statistics. Include proper error handling, authorization checks, and data validation middleware.",
             "status": "done",
-            "testStrategy": "Test all CRUD operations with various data inputs, verify validation rules, test error handling scenarios, confirm authorization checks work properly"
+            "testStrategy": "Test all CRUD operations with various data inputs, verify validation rules, test error handling scenarios, confirm authorization checks work properly",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -223,7 +233,8 @@
             ],
             "details": "Implement template versioning system that tracks all changes made to templates. Create version history interface, change diff visualization, rollback functionality to previous versions, and version comparison tools. Store version metadata including timestamp, user, and change description.",
             "status": "pending",
-            "testStrategy": "Test version creation on template changes, verify rollback functionality, test version comparison interface, validate change tracking accuracy"
+            "testStrategy": "Test version creation on template changes, verify rollback functionality, test version comparison interface, validate change tracking accuracy",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -234,7 +245,8 @@
             ],
             "details": "Build usage analytics system that tracks which templates are used most frequently, identifies popular parameter configurations, and measures template performance metrics. Create analytics dashboard showing usage statistics, trend analysis, and template effectiveness reports. Include export functionality for analytics data.",
             "status": "pending",
-            "testStrategy": "Test usage tracking accuracy, verify analytics calculations, test dashboard visualizations, confirm export functionality works correctly"
+            "testStrategy": "Test usage tracking accuracy, verify analytics calculations, test dashboard visualizations, confirm export functionality works correctly",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -243,9 +255,20 @@
             "details": "Create migration for quality_templates table with fields: id, name_en, name_pt, name_es, description_en, description_pt, description_es, sample_size_grams (default 300), template_parent_id (for cloning/inheritance), created_by, laboratory_id, is_global, screen_size_requirements (JSONB), defect_thresholds_primary, defect_thresholds_secondary, moisture_standard, cupping_scale_type, cupping_scale_min, cupping_scale_max, cupping_scale_increment, max_taints_allowed, max_faults_allowed, taint_fault_rule_type (AND/OR), created_at, updated_at. Create cupping_attributes table: id, template_id, attribute_name_en, attribute_name_pt, attribute_name_es, scale_type (1-5, 1-7, 1-10), increment (0.25, 0.5, 1.0), is_required, display_order. Create template_versions table for version tracking. Include RLS policies for template sharing (private/lab/global) and proper foreign keys.",
             "status": "done",
             "dependencies": [],
+            "parentTaskId": 9,
+            "parentId": "undefined"
+          },
+          {
+            "id": 7,
+            "title": "Implement Flexible Attribute Scale System",
+            "description": "Refactor cupping attribute system to support both numeric and custom wording-based scales with complete per-attribute customization",
+            "details": "### Implementation Summary\n\n**Completed Components:**\n1. Type system for flexible scales (`src/types/attribute-scales.ts`)\n   - NumericScale: Custom min-max ranges with increments\n   - WordingScale: Text labels with assigned numeric values\n   - Predefined templates: SCA, COE, Brazil Traditional\n   - Helper functions for validation and conversion\n\n2. UI Components (`src/components/quality/scale-builder.tsx`)\n   - ScaleBuilder: Main scale configuration component\n   - NumericScaleBuilder: For numeric scale ranges\n   - WordingScaleBuilder: For wording scales with add/edit/remove\n   - AttributeScaleManager: Manages multiple attributes\n\n3. Template Builder Integration\n   - Updated template-builder.tsx to use AttributeScaleManager\n   - Removed hardcoded scale types (1-5, 1-7, 1-10)\n   - Added validation for new scale system\n   - Maintained backward compatibility\n\n4. Documentation (`docs/attribute-scales-migration.md`)\n   - Complete migration guide with examples\n   - Real-world template configurations\n   - API integration documentation\n   - Troubleshooting guide\n\n**Features:**\n- Two scale types per attribute (numeric or wording)\n- Complete customization per attribute (different scales, different lengths)\n- Predefined scale templates for quick setup\n- Wording scales with editable labels and numeric values\n- Add/remove/edit individual options per attribute\n- Mix numeric and wording scales in same template\n- Real-world examples: SCA 7-level wording, Brazil 10-level flavor\n\n**Files Created:**\n- src/types/attribute-scales.ts (271 lines)\n- src/components/quality/scale-builder.tsx (515 lines)\n- docs/attribute-scales-migration.md (477 lines)\n\n**Files Modified:**\n- src/components/quality/template-builder.tsx (integrated new system)\n\n**Testing:**\n- TypeScript compilation passes\n- All validation logic implemented\n- Ready for UI and integration testing",
+            "status": "done",
+            "dependencies": [],
             "parentTaskId": 9
           }
-        ]
+        ],
+        "updatedAt": "2025-10-13T14:54:32.136Z"
       },
       {
         "id": 10,
@@ -266,7 +289,8 @@
             "dependencies": [],
             "details": "Create tables: taint_fault_definitions (id, origin_id, type, name, default_severity, default_deduction), client_taint_fault_customizations (client_id, definition_id, custom_severity, custom_deduction), taint_fault_versions (definition_id, version, changes, created_at). Include proper foreign keys, indexes, and RLS policies. Support for versioning changes to definitions.\n<info added on 2025-10-10T18:25:17.481Z>\nI'll analyze the codebase to understand the current database structure and implementation patterns before enhancing the schema details.Based on my analysis of the current database schema in `/database/migrations/003_phase2_schema_TABLES_ONLY.sql`, I can see the existing structure for the `taint_fault_definitions` table and related components. Here's the enhanced schema specification:\n\nExpand taint_fault_definitions table to include multi-language support: Add name_en TEXT NOT NULL, name_pt TEXT, name_es TEXT for English (required), Portuguese, and Spanish translations. Add scale configuration: default_scale TEXT NOT NULL DEFAULT '1-10' (values: '1-5', '1-7', '1-10'), default_increment DECIMAL(3,2) NOT NULL DEFAULT 0.25 (values: 0.25, 0.5, 1.0) to replace the severity_levels JSONB approach with structured scale fields. Add tolerance_distinction BOOLEAN DEFAULT false to separate taints from faults in tolerance counting.\n\nEnhance client_taint_fault_customizations table with additional fields: Add custom_scale TEXT (allows client to override default scale), custom_increment DECIMAL(3,2) (custom increment override), max_acceptable_score DECIMAL(4,2) (threshold per taint/fault beyond which sample fails). These fields reference the existing custom_severity and custom_deduction fields.\n\nCreate taint_fault_translations table for future extensibility: id UUID PRIMARY KEY, definition_id UUID REFERENCES taint_fault_definitions(id) ON DELETE CASCADE, language_code VARCHAR(2) NOT NULL (ISO 639-1), translated_name TEXT NOT NULL, UNIQUE(definition_id, language_code). This supplements the direct name_en/pt/es columns and supports additional languages later.\n\nUpdate existing indexes to include new fields: Modify idx_taint_fault_global_unique to include name_en instead of name for consistency. Add separate indexes on name_pt and name_es for search performance. Add index on default_scale and tolerance_distinction for filtering queries by scale type and taint vs fault distinction.\n</info added on 2025-10-10T18:25:17.481Z>",
             "status": "done",
-            "testStrategy": "Test table creation, foreign key constraints, RLS policies, version tracking functionality, and data integrity"
+            "testStrategy": "Test table creation, foreign key constraints, RLS policies, version tracking functionality, and data integrity",
+            "parentId": "undefined"
           },
           {
             "id": 2,
@@ -277,7 +301,8 @@
             ],
             "details": "Implement src/components/quality/taints-faults-config.tsx with tabs for different origins (Brazil, Colombia, etc.), editable tables for taints and faults, severity level dropdowns, point deduction inputs, add/remove functionality, and save/cancel actions. Include validation for required fields and proper error handling.",
             "status": "pending",
-            "testStrategy": "Test CRUD operations, form validation, origin switching, data persistence, and error handling scenarios"
+            "testStrategy": "Test CRUD operations, form validation, origin switching, data persistence, and error handling scenarios",
+            "parentId": "undefined"
           },
           {
             "id": 3,
@@ -288,7 +313,8 @@
             ],
             "details": "Create src/app/api/taint-fault-definitions/route.ts with GET (fetch definitions by origin), POST (create new definitions), PUT (update existing), DELETE endpoints. Include src/app/api/client-taint-fault-customizations/route.ts for client-specific overrides. Implement proper error handling, validation, and audit logging for changes.",
             "status": "done",
-            "testStrategy": "Test all CRUD operations, parameter validation, error responses, permission checks, and audit trail creation"
+            "testStrategy": "Test all CRUD operations, parameter validation, error responses, permission checks, and audit trail creation",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -300,7 +326,8 @@
             ],
             "details": "Extend taints-faults-config.tsx with client selection dropdown, customization overlay showing default vs custom values, client-specific save functionality, and inheritance visualization. Include reset to defaults option and change history view for transparency.",
             "status": "pending",
-            "testStrategy": "Test client switching, customization persistence, inheritance logic, reset functionality, and change tracking"
+            "testStrategy": "Test client switching, customization persistence, inheritance logic, reset functionality, and change tracking",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -313,7 +340,8 @@
             ],
             "details": "Update cupping components to load appropriate taint/fault definitions based on sample origin, add defect recording section with severity selection and automatic point deduction calculation, integrate with cupping score calculations, and ensure real-time updates during collaborative sessions.",
             "status": "pending",
-            "testStrategy": "Test origin-based loading, defect recording workflow, score calculations, real-time synchronization, and integration with existing cupping functionality"
+            "testStrategy": "Test origin-based loading, defect recording workflow, score calculations, real-time synchronization, and integration with existing cupping functionality",
+            "parentId": "undefined"
           }
         ]
       },
@@ -781,15 +809,14 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-10T16:54:39.445Z",
+      "lastModified": "2025-10-13T14:54:32.136Z",
       "taskCount": 26,
       "completedCount": 4,
       "tags": [
         "master"
       ],
-      "created": "2025-10-10T17:23:38.616Z",
-      "description": "Tasks for master context",
-      "updated": "2025-10-10T19:21:10.660Z"
+      "created": "2025-10-13T15:11:16.994Z",
+      "description": "Tasks for master context"
     }
   }
 }

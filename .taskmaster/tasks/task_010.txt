@@ -11,11 +11,22 @@ Create src/components/quality/taints-faults-config.tsx for lab managers to confi
 Test taint/fault CRUD operations, test origin-specific configurations, test client customization, verify integration with cupping interface
 
 # Subtasks:
-## 1. Create Database Schema for Taint/Fault Definitions [pending]
+## 1. Create Database Schema for Taint/Fault Definitions [done]
 ### Dependencies: None
 ### Description: Design and implement database tables for storing origin-specific taints, faults, severity levels, and client customizations with proper relationships and constraints
 ### Details:
 Create tables: taint_fault_definitions (id, origin_id, type, name, default_severity, default_deduction), client_taint_fault_customizations (client_id, definition_id, custom_severity, custom_deduction), taint_fault_versions (definition_id, version, changes, created_at). Include proper foreign keys, indexes, and RLS policies. Support for versioning changes to definitions.
+<info added on 2025-10-10T18:25:17.481Z>
+I'll analyze the codebase to understand the current database structure and implementation patterns before enhancing the schema details.Based on my analysis of the current database schema in `/database/migrations/003_phase2_schema_TABLES_ONLY.sql`, I can see the existing structure for the `taint_fault_definitions` table and related components. Here's the enhanced schema specification:
+
+Expand taint_fault_definitions table to include multi-language support: Add name_en TEXT NOT NULL, name_pt TEXT, name_es TEXT for English (required), Portuguese, and Spanish translations. Add scale configuration: default_scale TEXT NOT NULL DEFAULT '1-10' (values: '1-5', '1-7', '1-10'), default_increment DECIMAL(3,2) NOT NULL DEFAULT 0.25 (values: 0.25, 0.5, 1.0) to replace the severity_levels JSONB approach with structured scale fields. Add tolerance_distinction BOOLEAN DEFAULT false to separate taints from faults in tolerance counting.
+
+Enhance client_taint_fault_customizations table with additional fields: Add custom_scale TEXT (allows client to override default scale), custom_increment DECIMAL(3,2) (custom increment override), max_acceptable_score DECIMAL(4,2) (threshold per taint/fault beyond which sample fails). These fields reference the existing custom_severity and custom_deduction fields.
+
+Create taint_fault_translations table for future extensibility: id UUID PRIMARY KEY, definition_id UUID REFERENCES taint_fault_definitions(id) ON DELETE CASCADE, language_code VARCHAR(2) NOT NULL (ISO 639-1), translated_name TEXT NOT NULL, UNIQUE(definition_id, language_code). This supplements the direct name_en/pt/es columns and supports additional languages later.
+
+Update existing indexes to include new fields: Modify idx_taint_fault_global_unique to include name_en instead of name for consistency. Add separate indexes on name_pt and name_es for search performance. Add index on default_scale and tolerance_distinction for filtering queries by scale type and taint vs fault distinction.
+</info added on 2025-10-10T18:25:17.481Z>
 
 ## 2. Build Taints and Faults Configuration Interface [pending]
 ### Dependencies: 10.1
@@ -23,7 +34,7 @@ Create tables: taint_fault_definitions (id, origin_id, type, name, default_sever
 ### Details:
 Implement src/components/quality/taints-faults-config.tsx with tabs for different origins (Brazil, Colombia, etc.), editable tables for taints and faults, severity level dropdowns, point deduction inputs, add/remove functionality, and save/cancel actions. Include validation for required fields and proper error handling.
 
-## 3. Implement API Routes for Taint/Fault Management [pending]
+## 3. Implement API Routes for Taint/Fault Management [done]
 ### Dependencies: 10.1
 ### Description: Create REST API endpoints for managing taint/fault definitions, client customizations, and version tracking
 ### Details:
