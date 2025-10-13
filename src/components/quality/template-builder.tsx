@@ -15,16 +15,23 @@ interface AttributeScale {
   range: number // +/- range
 }
 
+interface DefectConfig {
+  definition_id: string
+  max_count?: number
+}
+
+interface TaintFaultConfig {
+  definition_id: string
+  max_count?: number
+  is_blocking?: boolean
+}
+
 interface TemplateParameters {
+  sample_size_grams?: number // For proportional scaling
   screen_sizes?: {
     sizes?: { [key: string]: number } // e.g., { "Pan": 5, "Peas 9": 10, "Scr. 17": 25 }
   }
-  defects?: {
-    primary_max: number
-    secondary_max: number
-    total_max: number
-    defect_types?: { [key: string]: number } // e.g., { "broken": 5, "green": 3 }
-  }
+  defects?: DefectConfig[]
   moisture_min?: number
   moisture_max?: number
   moisture_standard?: 'coffee_industry' | 'iso_6673'
@@ -33,11 +40,7 @@ interface TemplateParameters {
     min_score?: number
     attributes: AttributeScale[]
   }
-  taints_faults?: {
-    max_taints: number
-    max_faults: number
-    rule_type: 'AND' | 'OR'
-  }
+  taints_faults?: TaintFaultConfig[]
 }
 
 interface Template {
@@ -73,8 +76,6 @@ const DEFAULT_CUPPING_ATTRIBUTES: AttributeScale[] = [
 
 const SCREEN_SIZES = ['Pan', 'Peas 9', 'Peas 10', 'Peas 11', 'Scr. 12', 'Scr. 13', 'Scr. 14', 'Scr. 15', 'Scr. 16', 'Scr. 17', 'Scr. 18', 'Scr. 19', 'Scr. 20']
 
-const DEFECT_TYPES = ['Broken', 'Green', 'Broca', 'Sour', 'Black', 'Fungus', 'Foreign Matter', 'Quaker']
-
 export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderProps) {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -85,23 +86,19 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [description, setDescription] = useState(template?.description || '')
   const [isActive, setIsActive] = useState(template?.is_active !== false)
 
+  // Sample size
+  const [sampleSizeGrams, setSampleSizeGrams] = useState(
+    template?.parameters.sample_size_grams?.toString() || '300'
+  )
+
   // Screen sizes
   const [specificSizes, setSpecificSizes] = useState<{ [key: string]: number }>(
     template?.parameters.screen_sizes?.sizes || {}
   )
 
   // Defects
-  const [primaryMax, setPrimaryMax] = useState(
-    template?.parameters.defects?.primary_max?.toString() || ''
-  )
-  const [secondaryMax, setSecondaryMax] = useState(
-    template?.parameters.defects?.secondary_max?.toString() || ''
-  )
-  const [totalMax, setTotalMax] = useState(
-    template?.parameters.defects?.total_max?.toString() || ''
-  )
-  const [defectTypes, setDefectTypes] = useState<{ [key: string]: number }>(
-    template?.parameters.defects?.defect_types || {}
+  const [defectConfigs, setDefectConfigs] = useState<DefectConfig[]>(
+    template?.parameters.defects || []
   )
 
   // Moisture
@@ -130,14 +127,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [newAttributeRange, setNewAttributeRange] = useState('1')
 
   // Taints and Faults
-  const [maxTaints, setMaxTaints] = useState(
-    template?.parameters.taints_faults?.max_taints?.toString() || ''
-  )
-  const [maxFaults, setMaxFaults] = useState(
-    template?.parameters.taints_faults?.max_faults?.toString() || ''
-  )
-  const [taintFaultRule, setTaintFaultRule] = useState<'AND' | 'OR'>(
-    template?.parameters.taints_faults?.rule_type || 'AND'
+  const [taintFaultConfigs, setTaintFaultConfigs] = useState<TaintFaultConfig[]>(
+    template?.parameters.taints_faults || []
   )
 
   const handleAddAttribute = () => {
@@ -179,34 +170,18 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     }
   }
 
-  const handleDefectTypeChange = (defectType: string, value: string) => {
-    const numValue = parseFloat(value)
-    if (isNaN(numValue) || numValue < 0) {
-      const { [defectType]: _, ...rest } = defectTypes
-      setDefectTypes(rest)
-    } else {
-      setDefectTypes({ ...defectTypes, [defectType]: numValue })
-    }
-  }
-
   const validateForm = (): string | null => {
     if (!name.trim()) return 'Template name is required'
+
+    // Validate sample size
+    if (sampleSizeGrams && (parseFloat(sampleSizeGrams) <= 0)) {
+      return 'Sample size must be greater than 0'
+    }
 
     // Validate screen sizes
     if (Object.keys(specificSizes).length === 0) return 'At least one screen size is required'
     const total = Object.values(specificSizes).reduce((sum, val) => sum + val, 0)
     if (Math.abs(total - 100) > 0.1) return `Screen size percentages must total 100% (currently ${total.toFixed(1)}%)`
-
-    // Validate defects
-    if (primaryMax && (parseFloat(primaryMax) < 0 || parseFloat(primaryMax) > 100)) {
-      return 'Primary defects max must be between 0 and 100'
-    }
-    if (secondaryMax && (parseFloat(secondaryMax) < 0 || parseFloat(secondaryMax) > 100)) {
-      return 'Secondary defects max must be between 0 and 100'
-    }
-    if (totalMax && (parseFloat(totalMax) < 0 || parseFloat(totalMax) > 100)) {
-      return 'Total defects max must be between 0 and 100'
-    }
 
     // Validate moisture
     if (moistureMin && (parseFloat(moistureMin) < 0 || parseFloat(moistureMin) > 100)) {
@@ -232,14 +207,6 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       return 'At least one cupping attribute is required'
     }
 
-    // Validate taints and faults
-    if (maxTaints && parseFloat(maxTaints) < 0) {
-      return 'Max taints must be 0 or greater'
-    }
-    if (maxFaults && parseFloat(maxFaults) < 0) {
-      return 'Max faults must be 0 or greater'
-    }
-
     return null
   }
 
@@ -257,19 +224,19 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       // Build parameters object
       const parameters: TemplateParameters = {}
 
+      // Sample size
+      if (sampleSizeGrams) {
+        parameters.sample_size_grams = parseFloat(sampleSizeGrams)
+      }
+
       // Screen sizes
       parameters.screen_sizes = {
         sizes: specificSizes
       }
 
       // Defects
-      if (primaryMax || secondaryMax || totalMax) {
-        parameters.defects = {
-          primary_max: primaryMax ? parseFloat(primaryMax) : 0,
-          secondary_max: secondaryMax ? parseFloat(secondaryMax) : 0,
-          total_max: totalMax ? parseFloat(totalMax) : 0,
-          defect_types: Object.keys(defectTypes).length > 0 ? defectTypes : undefined
-        }
+      if (defectConfigs.length > 0) {
+        parameters.defects = defectConfigs
       }
 
       // Moisture
@@ -287,12 +254,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       }
 
       // Taints and Faults
-      if (maxTaints || maxFaults) {
-        parameters.taints_faults = {
-          max_taints: maxTaints ? parseFloat(maxTaints) : 0,
-          max_faults: maxFaults ? parseFloat(maxFaults) : 0,
-          rule_type: taintFaultRule
-        }
+      if (taintFaultConfigs.length > 0) {
+        parameters.taints_faults = taintFaultConfigs
       }
 
       const templateData: Template = {
@@ -356,6 +319,21 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             />
           </div>
 
+          <div className="space-y-2">
+            <Label htmlFor="sample_size">Sample Size (grams)</Label>
+            <Input
+              id="sample_size"
+              type="number"
+              min="1"
+              value={sampleSizeGrams}
+              onChange={(e) => setSampleSizeGrams(e.target.value)}
+              placeholder="300"
+            />
+            <p className="text-xs text-muted-foreground">
+              Default: 300g. Used for proportional scaling of defect counts and point values.
+            </p>
+          </div>
+
           <div className="flex items-center gap-2">
             <input
               type="checkbox"
@@ -406,81 +384,26 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
       </Card>
 
-      {/* Defect Thresholds */}
+      {/* Defects */}
       <Card>
         <CardHeader>
-          <CardTitle>Defect Thresholds</CardTitle>
+          <CardTitle>Defect Configuration</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="primary_max">Primary Defects Maximum</Label>
-              <Input
-                id="primary_max"
-                type="number"
-                min="0"
-                max="100"
-                step="0.5"
-                value={primaryMax}
-                onChange={(e) => setPrimaryMax(e.target.value)}
-                placeholder="e.g., 5"
-              />
-              <p className="text-xs text-muted-foreground">Maximum allowed primary defects count</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Configure which defects apply to this template and set maximum counts
+              </p>
+              {defectConfigs.length > 0 && (
+                <p className="text-sm mt-1">
+                  {defectConfigs.length} defect{defectConfigs.length !== 1 ? 's' : ''} configured
+                </p>
+              )}
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="secondary_max">Secondary Defects Maximum</Label>
-              <Input
-                id="secondary_max"
-                type="number"
-                min="0"
-                max="100"
-                step="0.5"
-                value={secondaryMax}
-                onChange={(e) => setSecondaryMax(e.target.value)}
-                placeholder="e.g., 10"
-              />
-              <p className="text-xs text-muted-foreground">Maximum allowed secondary defects count</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="total_max">Total Defects Maximum</Label>
-              <Input
-                id="total_max"
-                type="number"
-                min="0"
-                max="100"
-                step="0.5"
-                value={totalMax}
-                onChange={(e) => setTotalMax(e.target.value)}
-                placeholder="e.g., 15"
-              />
-              <p className="text-xs text-muted-foreground">Sum of primary and secondary defects</p>
-            </div>
-          </div>
-
-          <div className="space-y-3 mt-4">
-            <Label>Individual Defect Types (optional limits)</Label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {DEFECT_TYPES.map((defect) => (
-                <div key={defect} className="space-y-1">
-                  <Label className="text-xs">{defect}</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.5"
-                    value={defectTypes[defect] || ''}
-                    onChange={(e) => handleDefectTypeChange(defect, e.target.value)}
-                    placeholder="Max"
-                    className="h-8"
-                  />
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Set specific limits for individual defect types if needed.
-            </p>
+            <Button type="button" variant="outline" onClick={() => {/* TODO: Open defects dialog */}}>
+              Manage Defects
+            </Button>
           </div>
         </CardContent>
       </Card>
@@ -560,7 +483,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="cupping_min_score">Minimum Total Score</Label>
+              <Label htmlFor="cupping_min_score">Minimum Total Score (optional)</Label>
               <Input
                 id="cupping_min_score"
                 type="number"
@@ -569,20 +492,29 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 step="0.25"
                 value={cuppingMinScore}
                 onChange={(e) => setCuppingMinScore(e.target.value)}
-                placeholder={`e.g., ${cuppingScaleType === '1-10' ? '80' : cuppingScaleType === '1-7' ? '5.6' : '4.0'}`}
+                placeholder="Leave empty if not required"
               />
+              <p className="text-xs text-muted-foreground">
+                Quality evaluated by scale and range if not set
+              </p>
             </div>
           </div>
 
           <div className="space-y-3">
             <Label>Attribute Scales and Ranges</Label>
-            <div className="space-y-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {cuppingAttributes.map((attr) => (
-                <div key={attr.attribute} className="flex items-center gap-3 p-3 rounded-md border">
-                  <div className="flex-1">
+                <div key={attr.attribute} className="p-3 rounded-lg border bg-card space-y-2">
+                  <div className="flex items-center justify-between">
                     <Label className="text-sm font-medium">{attr.attribute}</Label>
+                    <button
+                      onClick={() => handleRemoveAttribute(attr.attribute)}
+                      className="hover:text-destructive"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="grid grid-cols-2 gap-2">
                     <div className="space-y-1">
                       <Label className="text-xs text-muted-foreground">Scale</Label>
                       <Input
@@ -592,7 +524,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                         step="0.25"
                         value={attr.scale}
                         onChange={(e) => handleAttributeScaleChange(attr.attribute, e.target.value)}
-                        className="h-8 w-20"
+                        className="h-8"
                       />
                     </div>
                     <div className="space-y-1">
@@ -604,15 +536,9 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                         step="0.25"
                         value={attr.range}
                         onChange={(e) => handleAttributeRangeChange(attr.attribute, e.target.value)}
-                        className="h-8 w-20"
+                        className="h-8"
                       />
                     </div>
-                    <button
-                      onClick={() => handleRemoveAttribute(attr.attribute)}
-                      className="ml-2 hover:text-destructive"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
                   </div>
                 </div>
               ))}
@@ -633,7 +559,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 step="0.25"
                 value={newAttributeScale}
                 onChange={(e) => setNewAttributeScale(e.target.value)}
-                placeholder="Scale"
+                placeholder="4"
                 className="w-20"
               />
               <Input
@@ -643,7 +569,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 step="0.25"
                 value={newAttributeRange}
                 onChange={(e) => setNewAttributeRange(e.target.value)}
-                placeholder="+/-"
+                placeholder="1"
                 className="w-20"
               />
               <Button type="button" variant="outline" onClick={handleAddAttribute}>
@@ -663,50 +589,23 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
           <CardTitle>Taints and Faults</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="max_taints">Maximum Taints Allowed</Label>
-              <Input
-                id="max_taints"
-                type="number"
-                min="0"
-                step="1"
-                value={maxTaints}
-                onChange={(e) => setMaxTaints(e.target.value)}
-                placeholder="e.g., 0"
-              />
-              <p className="text-xs text-muted-foreground">Total number of taints allowed</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-muted-foreground">
+                Configure which taints and faults apply to this template and set thresholds
+              </p>
+              {taintFaultConfigs.length > 0 && (
+                <p className="text-sm mt-1">
+                  {taintFaultConfigs.length} taint/fault{taintFaultConfigs.length !== 1 ? 's' : ''} configured
+                </p>
+              )}
             </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="max_faults">Maximum Faults Allowed</Label>
-              <Input
-                id="max_faults"
-                type="number"
-                min="0"
-                step="1"
-                value={maxFaults}
-                onChange={(e) => setMaxFaults(e.target.value)}
-                placeholder="e.g., 0"
-              />
-              <p className="text-xs text-muted-foreground">Total number of faults allowed</p>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Rule Type</Label>
-              <Select value={taintFaultRule} onValueChange={(v: any) => setTaintFaultRule(v)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="AND">AND (both limits must pass)</SelectItem>
-                  <SelectItem value="OR">OR (either limit can pass)</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            <Button type="button" variant="outline" onClick={() => {/* TODO: Open taints/faults dialog */}}>
+              Manage Taints & Faults
+            </Button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Configure thresholds for taints and faults detected during cupping sessions.
+            Taints and faults are origin-specific and detected during cupping sessions.
           </p>
         </CardContent>
       </Card>
