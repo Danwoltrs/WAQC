@@ -47,12 +47,22 @@ export type AttributeScaleType = NumericScale | WordingScale
 // ========================================
 
 /**
+ * Validation rule for cupping attribute
+ */
+export interface AttributeValidationRule {
+  type: 'minimum' | 'range' // Minimum score (>=) or range (between)
+  min_value: number // Minimum acceptable value
+  max_value?: number // Maximum acceptable value (only for range type)
+}
+
+/**
  * Cupping attribute with flexible scale configuration
  */
 export interface CuppingAttribute {
   attribute: string // Attribute name (e.g., "Fragrance/Aroma", "Flavor")
   scale: AttributeScaleType // Either numeric or wording scale
-  min_score?: number // Optional minimum score requirement for this attribute
+  min_score?: number // Deprecated - use validation_rule instead
+  validation_rule?: AttributeValidationRule // Optional validation rule for acceptable scores
   weight?: number // Optional weight for weighted scoring
   is_required?: boolean // Whether this attribute must be scored
 }
@@ -115,6 +125,29 @@ export const SCA_WORDING_7_LEVEL: ScaleTemplate = {
     ]
   },
   category: 'standard',
+  is_system: true
+}
+
+/**
+ * Brazil 7-level wording scale for general attributes
+ */
+export const BRAZIL_WORDING_7_LEVEL: ScaleTemplate = {
+  id: 'brazil-wording-7',
+  name: 'Brazil 7-Level Wording',
+  description: 'Traditional Brazilian 7-level wording scale for cupping attributes',
+  scale: {
+    type: 'wording',
+    options: [
+      { label: 'Outstanding', value: 7, display_order: 0 },
+      { label: 'Excellent', value: 6, display_order: 1 },
+      { label: 'Very Good', value: 5, display_order: 2 },
+      { label: 'Good', value: 4, display_order: 3 },
+      { label: 'Fair', value: 3, display_order: 4 },
+      { label: 'Below Average', value: 2, display_order: 5 },
+      { label: 'Poor', value: 1, display_order: 6 }
+    ]
+  },
+  category: 'regional',
   is_system: true
 }
 
@@ -201,6 +234,7 @@ export const NUMERIC_5_SCALE: ScaleTemplate = {
 export const PREDEFINED_SCALE_TEMPLATES: ScaleTemplate[] = [
   SCA_NUMERIC_SCALE,
   SCA_WORDING_7_LEVEL,
+  BRAZIL_WORDING_7_LEVEL,
   BRAZIL_FLAVOR_10_LEVEL,
   COE_NUMERIC_SCALE,
   NUMERIC_7_SCALE,
@@ -361,4 +395,56 @@ export function cloneScaleTemplate(
     category: 'custom',
     is_system: false
   }
+}
+
+/**
+ * Format validation rule for display
+ * Returns human-readable text like ">=4 (Good)" or ">=7" or "4-6 (Good to Excellent)"
+ */
+export function formatValidationRule(
+  rule: AttributeValidationRule,
+  scale: AttributeScaleType
+): string {
+  if (rule.type === 'minimum') {
+    // Minimum constraint (>=)
+    const label = getScoreLabel(rule.min_value, scale)
+    if (scale.type === 'wording' && label) {
+      return `>=${rule.min_value} (${label})`
+    }
+    return `>=${rule.min_value}`
+  } else {
+    // Range constraint (between)
+    const minLabel = getScoreLabel(rule.min_value, scale)
+    const maxLabel = rule.max_value !== undefined ? getScoreLabel(rule.max_value, scale) : null
+
+    if (scale.type === 'wording' && minLabel && maxLabel) {
+      return `${rule.min_value}-${rule.max_value} (${minLabel} to ${maxLabel})`
+    }
+    return `${rule.min_value}-${rule.max_value}`
+  }
+}
+
+/**
+ * Validate a score against an attribute's validation rule
+ */
+export function validateScoreAgainstRule(
+  score: number,
+  rule: AttributeValidationRule
+): { valid: boolean; error?: string } {
+  if (rule.type === 'minimum') {
+    if (score < rule.min_value) {
+      return {
+        valid: false,
+        error: `Score must be at least ${rule.min_value}`
+      }
+    }
+  } else if (rule.type === 'range') {
+    if (score < rule.min_value || (rule.max_value !== undefined && score > rule.max_value)) {
+      return {
+        valid: false,
+        error: `Score must be between ${rule.min_value} and ${rule.max_value}`
+      }
+    }
+  }
+  return { valid: true }
 }

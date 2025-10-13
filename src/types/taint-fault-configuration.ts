@@ -326,15 +326,19 @@ export const BRAZIL_TRADITIONAL_TAINTS_FAULTS: TaintFaultTemplate = {
   description: 'Traditional Brazilian classification with specific taint/fault terminology',
   configuration: {
     taints: [
-      { ...createTaintDefinition('Riado', 0), scale: createNumericScale(1, 5, 0.5) },
-      { ...createTaintDefinition('Rio', 1), scale: createNumericScale(1, 5, 0.5) },
-      { ...createTaintDefinition('Fermented', 2), scale: createNumericScale(1, 5, 0.5) },
-      { ...createTaintDefinition('Earthy', 3), scale: createNumericScale(1, 5, 0.5) }
+      { ...createTaintDefinition('Harsh', 0), scale: createNumericScale(1, 5, 0.5) },
+      { ...createTaintDefinition('Grassy/green', 1), scale: createNumericScale(1, 5, 0.5) },
+      { ...createTaintDefinition('Woody', 2), scale: createNumericScale(1, 5, 0.5) },
+      { ...createTaintDefinition('Past crop', 3), scale: createNumericScale(1, 5, 0.5) },
+      { ...createTaintDefinition('Fruity', 4), scale: createNumericScale(1, 5, 0.5) },
+      { ...createTaintDefinition('Dirty', 5), scale: createNumericScale(1, 5, 0.5) }
     ],
     faults: [
-      { ...createFaultDefinition('Hard Riado', 0), scale: createNumericScale(1, 5, 0.5) },
-      { ...createFaultDefinition('Phenol Rio', 1), scale: createNumericScale(1, 5, 0.5) },
-      { ...createFaultDefinition('Moldy', 2), scale: createNumericScale(1, 5, 0.5) }
+      { ...createFaultDefinition('Hard (riado)', 0), scale: createNumericScale(1, 5, 0.5) },
+      { ...createFaultDefinition('Phenol (rio)', 1), scale: createNumericScale(1, 5, 0.5) },
+      { ...createFaultDefinition('Fermented', 2), scale: createNumericScale(1, 5, 0.5) },
+      { ...createFaultDefinition('Earthy', 3), scale: createNumericScale(1, 5, 0.5) },
+      { ...createFaultDefinition('Moldy', 4), scale: createNumericScale(1, 5, 0.5) }
     ],
     rules: {
       max_taints: 2,

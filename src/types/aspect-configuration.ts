@@ -156,12 +156,12 @@ const ROAST_ASPECT_STANDARD: AspectConfigTemplate = {
   configuration: {
     wordings: [
       createAspectWording('Uneven', 1, 0, 'Inconsistent roast, mixed colors'),
-      createAspectWording('Good', 5, 1, 'Acceptable roast appearance'),
+      createAspectWording('Good', 4, 1, 'Acceptable roast appearance'),
       createAspectWording('Good to Fine', 7, 2, 'Above average appearance'),
-      createAspectWording('Fine', 9, 3, 'Excellent roast appearance')
+      createAspectWording('Fine', 10, 3, 'Excellent roast appearance')
     ],
     validation: undefined,
-    notes: 'Even coloration indicates consistent roasting'
+    notes: 'Even coloration indicates consistent roasting. Equal quartile scale (1, 4, 7, 10).'
   }
 }
 
@@ -172,15 +172,15 @@ const ROAST_ASPECT_DETAILED: AspectConfigTemplate = {
   configuration: {
     wordings: [
       createAspectWording('Very Uneven', 1, 0, 'Highly inconsistent appearance'),
-      createAspectWording('Uneven', 3, 1, 'Inconsistent roast'),
-      createAspectWording('Fair', 5, 2, 'Somewhat even'),
-      createAspectWording('Good', 6, 3, 'Acceptable appearance'),
+      createAspectWording('Uneven', 2.5, 1, 'Inconsistent roast'),
+      createAspectWording('Fair', 4, 2, 'Somewhat even'),
+      createAspectWording('Good', 5.5, 3, 'Acceptable appearance'),
       createAspectWording('Good to Fine', 7, 4, 'Above average'),
-      createAspectWording('Fine', 8, 5, 'Very good appearance'),
-      createAspectWording('Excellent', 9, 6, 'Outstanding appearance')
+      createAspectWording('Fine', 8.5, 5, 'Very good appearance'),
+      createAspectWording('Excellent', 10, 6, 'Outstanding appearance')
     ],
     validation: undefined,
-    notes: 'More granular scale for detailed quality grading'
+    notes: 'More granular scale for detailed quality grading (1-10 range with 1.5 point increments)'
   }
 }
 

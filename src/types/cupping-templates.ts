@@ -102,11 +102,11 @@ const COE_TEMPLATE: CuppingAttributeTemplate = {
   ]
 }
 
-// Brazil Traditional (Classic Brazilian Cupping)
+// Brazil Traditional (Classic Brazilian Cupping with Numeric)
 const BRAZIL_TRADITIONAL_TEMPLATE: CuppingAttributeTemplate = {
   id: 'brazil-traditional',
-  name: 'Brazil Traditional',
-  description: 'Classic Brazilian coffee cupping',
+  name: 'Brazil Traditional (Numeric)',
+  description: 'Classic Brazilian coffee cupping with numeric scales',
   attributes: [
     {
       attribute: 'Bebida (Beverage)',
@@ -145,6 +145,123 @@ const BRAZIL_TRADITIONAL_TEMPLATE: CuppingAttributeTemplate = {
   ]
 }
 
+// Brazil Wording (Brazilian Cupping with Wording Scales)
+const BRAZIL_WORDING_TEMPLATE: CuppingAttributeTemplate = {
+  id: 'brazil-wording',
+  name: 'Brazil Wording',
+  description: 'Brazilian coffee cupping with wording-based scales (7-level for attributes, 10-level for Flavor)',
+  attributes: [
+    {
+      attribute: 'Fragrance/Aroma',
+      scale: {
+        type: 'wording',
+        options: [
+          { label: 'Outstanding', value: 7, display_order: 0 },
+          { label: 'Excellent', value: 6, display_order: 1 },
+          { label: 'Very Good', value: 5, display_order: 2 },
+          { label: 'Good', value: 4, display_order: 3 },
+          { label: 'Fair', value: 3, display_order: 4 },
+          { label: 'Below Average', value: 2, display_order: 5 },
+          { label: 'Poor', value: 1, display_order: 6 }
+        ]
+      }
+    },
+    {
+      attribute: 'Flavor',
+      scale: {
+        type: 'wording',
+        options: [
+          { label: 'Special', value: 10, display_order: 0 },
+          { label: 'S.Soft', value: 9, display_order: 1 },
+          { label: 'Soft', value: 8, display_order: 2 },
+          { label: 'Softish', value: 7, display_order: 3 },
+          { label: 'Hard', value: 6, display_order: 4 },
+          { label: 'Hardish', value: 5, display_order: 5 },
+          { label: 'Rioy', value: 4, display_order: 6 },
+          { label: 'Rioy/Rio', value: 3, display_order: 7 },
+          { label: 'Rio', value: 2, display_order: 8 },
+          { label: 'Strong Rio', value: 1, display_order: 9 }
+        ]
+      }
+    },
+    {
+      attribute: 'Aftertaste',
+      scale: {
+        type: 'wording',
+        options: [
+          { label: 'Outstanding', value: 7, display_order: 0 },
+          { label: 'Excellent', value: 6, display_order: 1 },
+          { label: 'Very Good', value: 5, display_order: 2 },
+          { label: 'Good', value: 4, display_order: 3 },
+          { label: 'Fair', value: 3, display_order: 4 },
+          { label: 'Below Average', value: 2, display_order: 5 },
+          { label: 'Poor', value: 1, display_order: 6 }
+        ]
+      }
+    },
+    {
+      attribute: 'Acidity',
+      scale: {
+        type: 'wording',
+        options: [
+          { label: 'Outstanding', value: 7, display_order: 0 },
+          { label: 'Excellent', value: 6, display_order: 1 },
+          { label: 'Very Good', value: 5, display_order: 2 },
+          { label: 'Good', value: 4, display_order: 3 },
+          { label: 'Fair', value: 3, display_order: 4 },
+          { label: 'Below Average', value: 2, display_order: 5 },
+          { label: 'Poor', value: 1, display_order: 6 }
+        ]
+      }
+    },
+    {
+      attribute: 'Body',
+      scale: {
+        type: 'wording',
+        options: [
+          { label: 'Outstanding', value: 7, display_order: 0 },
+          { label: 'Excellent', value: 6, display_order: 1 },
+          { label: 'Very Good', value: 5, display_order: 2 },
+          { label: 'Good', value: 4, display_order: 3 },
+          { label: 'Fair', value: 3, display_order: 4 },
+          { label: 'Below Average', value: 2, display_order: 5 },
+          { label: 'Poor', value: 1, display_order: 6 }
+        ]
+      }
+    },
+    {
+      attribute: 'Balance',
+      scale: {
+        type: 'wording',
+        options: [
+          { label: 'Outstanding', value: 7, display_order: 0 },
+          { label: 'Excellent', value: 6, display_order: 1 },
+          { label: 'Very Good', value: 5, display_order: 2 },
+          { label: 'Good', value: 4, display_order: 3 },
+          { label: 'Fair', value: 3, display_order: 4 },
+          { label: 'Below Average', value: 2, display_order: 5 },
+          { label: 'Poor', value: 1, display_order: 6 }
+        ]
+      }
+    },
+    {
+      attribute: 'Overall',
+      scale: {
+        type: 'wording',
+        options: [
+          { label: 'Outstanding', value: 7, display_order: 0 },
+          { label: 'Excellent', value: 6, display_order: 1 },
+          { label: 'Very Good', value: 5, display_order: 2 },
+          { label: 'Good', value: 4, display_order: 3 },
+          { label: 'Fair', value: 3, display_order: 4 },
+          { label: 'Below Average', value: 2, display_order: 5 },
+          { label: 'Poor', value: 1, display_order: 6 }
+        ]
+      }
+    }
+  ]
+}
+
 // Simple 5-Point Scale Template
 const SIMPLE_5_POINT_TEMPLATE: CuppingAttributeTemplate = {
   id: 'simple-5-point',
@@ -178,5 +295,6 @@ export const CUPPING_ATTRIBUTE_TEMPLATES: CuppingAttributeTemplate[] = [
   SCA_TEMPLATE,
   COE_TEMPLATE,
   BRAZIL_TRADITIONAL_TEMPLATE,
+  BRAZIL_WORDING_TEMPLATE,
   SIMPLE_5_POINT_TEMPLATE
 ]

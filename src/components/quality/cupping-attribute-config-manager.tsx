@@ -23,7 +23,12 @@ import {
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus, X, Settings2, CheckCircle2, Copy } from 'lucide-react'
 import { ScaleBuilder } from './scale-builder'
-import { AttributeScaleType } from '@/types/attribute-scales'
+import {
+  AttributeScaleType,
+  AttributeValidationRule,
+  getScaleValidValues,
+  getScoreLabel
+} from '@/types/attribute-scales'
 import {
   CUPPING_ATTRIBUTE_TEMPLATES,
   type CuppingAttributeTemplate
@@ -32,6 +37,7 @@ import {
 export interface AttributeWithScale {
   attribute: string
   scale: AttributeScaleType
+  validation_rule?: AttributeValidationRule
 }
 
 interface CuppingAttributeConfigManagerProps {
@@ -212,7 +218,111 @@ export function CuppingAttributeConfigManager({
                             )}
                           </div>
                         </CardHeader>
-                        <CardContent className="space-y-2 pt-0">
+                        <CardContent className="space-y-3 pt-0">
+                          {/* Validation Rule */}
+                          <div className="space-y-2 border-t pt-3">
+                            <Label className="text-xs text-muted-foreground">Acceptable Range</Label>
+                            <Select
+                              value={attr.validation_rule?.type || 'none'}
+                              onValueChange={(value) => {
+                                if (value === 'none') {
+                                  handleUpdateAttribute(index, { validation_rule: undefined })
+                                } else {
+                                  const validValues = getScaleValidValues(attr.scale)
+                                  const minVal = validValues[Math.floor(validValues.length / 2)]
+                                  handleUpdateAttribute(index, {
+                                    validation_rule: {
+                                      type: value as 'minimum' | 'range',
+                                      min_value: minVal,
+                                      max_value: value === 'range' ? validValues[0] : undefined
+                                    }
+                                  })
+                                }
+                              }}
+                            >
+                              <SelectTrigger className="h-8 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No Validation</SelectItem>
+                                <SelectItem value="minimum">Minimum (≥)</SelectItem>
+                                <SelectItem value="range">Range</SelectItem>
+                              </SelectContent>
+                            </Select>
+
+                            {attr.validation_rule && (
+                              <div className="space-y-2">
+                                {/* Min Value */}
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-muted-foreground">
+                                    {attr.validation_rule.type === 'minimum' ? 'Minimum' : 'Min'}
+                                  </Label>
+                                  <Select
+                                    value={attr.validation_rule.min_value.toString()}
+                                    onValueChange={(value) => {
+                                      handleUpdateAttribute(index, {
+                                        validation_rule: {
+                                          ...attr.validation_rule!,
+                                          min_value: parseFloat(value)
+                                        }
+                                      })
+                                    }}
+                                  >
+                                    <SelectTrigger className="h-8 text-xs">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      {getScaleValidValues(attr.scale).map((val) => {
+                                        const label = getScoreLabel(val, attr.scale)
+                                        return (
+                                          <SelectItem key={val} value={val.toString()}>
+                                            {val}
+                                            {label && attr.scale.type === 'wording' && ` (${label})`}
+                                          </SelectItem>
+                                        )
+                                      })}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                {/* Max Value (only for range) */}
+                                {attr.validation_rule.type === 'range' && (
+                                  <div className="space-y-1">
+                                    <Label className="text-xs text-muted-foreground">Max</Label>
+                                    <Select
+                                      value={attr.validation_rule.max_value?.toString() || ''}
+                                      onValueChange={(value) => {
+                                        handleUpdateAttribute(index, {
+                                          validation_rule: {
+                                            ...attr.validation_rule!,
+                                            max_value: parseFloat(value)
+                                          }
+                                        })
+                                      }}
+                                    >
+                                      <SelectTrigger className="h-8 text-xs">
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        {getScaleValidValues(attr.scale)
+                                          .filter((val) => val > attr.validation_rule!.min_value)
+                                          .map((val) => {
+                                            const label = getScoreLabel(val, attr.scale)
+                                            return (
+                                              <SelectItem key={val} value={val.toString()}>
+                                                {val}
+                                                {label && attr.scale.type === 'wording' && ` (${label})`}
+                                              </SelectItem>
+                                            )
+                                          })}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+
                           <div className="flex gap-2">
                             <Button
                               type="button"

@@ -18,19 +18,23 @@ import {
 import {
   CuppingAttribute,
   AttributeScaleType,
-  createNumericScale
+  createNumericScale,
+  formatValidationRule
 } from '@/types/attribute-scales'
 import {
   DefectConfiguration,
-  createEmptyDefectConfiguration
+  createEmptyDefectConfiguration,
+  BRAZIL_SCA_DEFECTS
 } from '@/types/defect-configuration'
 import { DefectConfigManager } from './defect-config-manager'
 import {
   TaintFaultConfiguration,
-  createEmptyTaintFaultConfiguration
+  createEmptyTaintFaultConfiguration,
+  BRAZIL_TRADITIONAL_TAINTS_FAULTS
 } from '@/types/taint-fault-configuration'
 import { TaintFaultConfigManager } from './taint-fault-config-manager'
 import { CuppingAttributeConfigManager, AttributeWithScale } from './cupping-attribute-config-manager'
+import { CUPPING_ATTRIBUTE_TEMPLATES } from '@/types/cupping-templates'
 import {
   AspectConfiguration,
   createEmptyAspectConfiguration,
@@ -53,6 +57,9 @@ interface TemplateParameters {
   moisture_max?: number
   moisture_standard?: 'coffee_industry' | 'iso_6673'
   roast_aspect_configuration?: AspectConfiguration // Roasted bean visual appearance
+  roast_sample_size_grams?: number // Sample size for roast analysis (may differ from green sample size)
+  max_quakers?: number // Maximum quakers allowed per sample
+  quaker_notes?: string // Notes about quaker expectations
   cupping?: {
     // Legacy format - deprecated, kept for backward compatibility
     scale_type?: '1-5' | '1-7' | '1-10'
@@ -81,18 +88,25 @@ interface TemplateBuilderProps {
   onCancel: () => void
 }
 
-const DEFAULT_CUPPING_ATTRIBUTES: CuppingAttribute[] = [
-  { attribute: 'Fragrance/Aroma', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Flavor', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Aftertaste', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Acidity', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Body', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Balance', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Uniformity', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Clean Cup', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Sweetness', scale: createNumericScale(1, 10, 0.25), is_required: true },
-  { attribute: 'Overall', scale: createNumericScale(1, 10, 0.25), is_required: true }
-]
+// Get Brazil Wording template as default (7-level wording for most attributes, 10-level for Flavor)
+const BRAZIL_WORDING_TEMPLATE = CUPPING_ATTRIBUTE_TEMPLATES.find(t => t.id === 'brazil-wording')
+
+const DEFAULT_CUPPING_ATTRIBUTES: CuppingAttribute[] = BRAZIL_WORDING_TEMPLATE
+  ? BRAZIL_WORDING_TEMPLATE.attributes.map(attr => ({
+      attribute: attr.attribute,
+      scale: attr.scale,
+      is_required: true
+    }))
+  : [
+      // Fallback to SCA numeric if Brazil Wording template not found
+      { attribute: 'Fragrance/Aroma', scale: createNumericScale(1, 10, 0.25), is_required: true },
+      { attribute: 'Flavor', scale: createNumericScale(1, 10, 0.25), is_required: true },
+      { attribute: 'Aftertaste', scale: createNumericScale(1, 10, 0.25), is_required: true },
+      { attribute: 'Acidity', scale: createNumericScale(1, 10, 0.25), is_required: true },
+      { attribute: 'Body', scale: createNumericScale(1, 10, 0.25), is_required: true },
+      { attribute: 'Balance', scale: createNumericScale(1, 10, 0.25), is_required: true },
+      { attribute: 'Overall', scale: createNumericScale(1, 10, 0.25), is_required: true }
+    ]
 
 // Removed SCREEN_SIZES - now using STANDARD_SCREEN_SIZES from types
 
@@ -127,18 +141,25 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   )
   const [greenAspectDialogOpen, setGreenAspectDialogOpen] = useState(false)
 
-  // Defects (new flexible format)
+  // Defects (new flexible format) - Pre-filled with Brazil standards
   const [defectConfiguration, setDefectConfiguration] = useState<DefectConfiguration>(
-    template?.parameters.defect_configuration || createEmptyDefectConfiguration()
+    template?.parameters.defect_configuration || {
+      ...BRAZIL_SCA_DEFECTS.configuration,
+      thresholds: {
+        max_primary: 1,
+        max_secondary: 21,
+        max_total: 21
+      }
+    }
   )
   const [defectDialogOpen, setDefectDialogOpen] = useState(false)
 
-  // Moisture
+  // Moisture - Pre-filled with 11% min and 12% max
   const [moistureMin, setMoistureMin] = useState(
-    template?.parameters.moisture_min?.toString() || ''
+    template?.parameters.moisture_min?.toString() || '11'
   )
   const [moistureMax, setMoistureMax] = useState(
-    template?.parameters.moisture_max?.toString() || ''
+    template?.parameters.moisture_max?.toString() || '12'
   )
   const [moistureStandard, setMoistureStandard] = useState<'coffee_industry' | 'iso_6673'>(
     template?.parameters.moisture_standard || 'coffee_industry'
@@ -151,28 +172,41 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   )
   const [roastAspectDialogOpen, setRoastAspectDialogOpen] = useState(false)
 
+  // Quaker Count
+  const [roastSampleSizeGrams, setRoastSampleSizeGrams] = useState(
+    template?.parameters.roast_sample_size_grams?.toString() || '300'
+  )
+  const [maxQuakers, setMaxQuakers] = useState(
+    template?.parameters.max_quakers?.toString() || ''
+  )
+  const [quakerNotes, setQuakerNotes] = useState(
+    template?.parameters.quaker_notes || ''
+  )
+
   // Cupping Attributes (new flexible format)
   const [cuppingAttributes, setCuppingAttributes] = useState<CuppingAttribute[]>(
     template?.parameters.cupping_attributes || DEFAULT_CUPPING_ATTRIBUTES
   )
   const [cuppingAttributesDialogOpen, setCuppingAttributesDialogOpen] = useState(false)
 
-  // Taints and Faults (new flexible format)
+  // Taints and Faults (new flexible format) - Pre-filled with Brazil standards
   const [taintFaultConfiguration, setTaintFaultConfiguration] = useState<TaintFaultConfiguration>(
-    template?.parameters.taint_fault_configuration || createEmptyTaintFaultConfiguration()
+    template?.parameters.taint_fault_configuration || BRAZIL_TRADITIONAL_TAINTS_FAULTS.configuration
   )
   const [taintFaultDialogOpen, setTaintFaultDialogOpen] = useState(false)
 
   // Convert CuppingAttribute[] to AttributeWithScale[] for the manager
   const attributesWithScale: AttributeWithScale[] = cuppingAttributes.map(attr => ({
     attribute: attr.attribute,
-    scale: attr.scale
+    scale: attr.scale,
+    validation_rule: attr.validation_rule
   }))
 
   const handleAttributesChange = (newAttributes: AttributeWithScale[]) => {
     setCuppingAttributes(newAttributes.map(attr => ({
       attribute: attr.attribute,
       scale: attr.scale,
+      validation_rule: attr.validation_rule,
       is_required: true
     })))
   }
@@ -328,6 +362,14 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       }
     }
 
+    // Validate roast sample size and quaker count
+    if (roastSampleSizeGrams && parseFloat(roastSampleSizeGrams) <= 0) {
+      return 'Roast sample size must be greater than 0'
+    }
+    if (maxQuakers && parseFloat(maxQuakers) < 0) {
+      return 'Maximum quakers must be 0 or greater'
+    }
+
     // Validate taint/fault configuration
     if (taintFaultConfiguration.taints.length > 0 || taintFaultConfiguration.faults.length > 0) {
       const { validateTaintFaultConfiguration } = require('@/types/taint-fault-configuration')
@@ -385,6 +427,17 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       // Roast Aspect Configuration
       if (roastAspectConfiguration.wordings.length > 0) {
         parameters.roast_aspect_configuration = roastAspectConfiguration
+      }
+
+      // Quaker Count
+      if (roastSampleSizeGrams) {
+        parameters.roast_sample_size_grams = parseFloat(roastSampleSizeGrams)
+      }
+      if (maxQuakers) {
+        parameters.max_quakers = parseFloat(maxQuakers)
+      }
+      if (quakerNotes) {
+        parameters.quaker_notes = quakerNotes
       }
 
       // Cupping Attributes (new flexible format)
@@ -732,42 +785,103 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             </ul>
           </div>
 
-          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-            <div>
-              {defectConfiguration.defects.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No defects configured yet. Click &quot;Manage Defects&quot; to get started.
-                </p>
-              ) : (
+          {defectConfiguration.defects.length === 0 ? (
+            <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
+              <p className="text-sm text-muted-foreground">
+                No defects configured yet. Click &quot;Manage Defects&quot; to get started.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => setDefectDialogOpen(true)}
+              >
+                Manage Defects
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {/* Thresholds Summary */}
+              <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
                 <div className="space-y-1 text-sm">
                   <p className="font-medium">
                     {defectConfiguration.defects.length} defect{defectConfiguration.defects.length !== 1 ? 's' : ''} configured
-                  </p>
-                  <p className="text-muted-foreground">
-                    Primary: {defectConfiguration.defects.filter(d => d.category === 'primary').length} •
-                    Secondary: {defectConfiguration.defects.filter(d => d.category === 'secondary').length}
                   </p>
                   {(defectConfiguration.thresholds.max_primary ||
                     defectConfiguration.thresholds.max_secondary ||
                     defectConfiguration.thresholds.max_total) && (
                     <p className="text-muted-foreground">
                       Thresholds:
-                      {defectConfiguration.thresholds.max_primary && ` Primary ≤${defectConfiguration.thresholds.max_primary}`}
-                      {defectConfiguration.thresholds.max_secondary && ` • Secondary ≤${defectConfiguration.thresholds.max_secondary}`}
-                      {defectConfiguration.thresholds.max_total && ` • Total ≤${defectConfiguration.thresholds.max_total}`}
+                      {defectConfiguration.thresholds.max_primary !== undefined && ` Primary ≤${defectConfiguration.thresholds.max_primary}`}
+                      {defectConfiguration.thresholds.max_secondary !== undefined && ` • Secondary ≤${defectConfiguration.thresholds.max_secondary}`}
+                      {defectConfiguration.thresholds.max_total !== undefined && ` • Total ≤${defectConfiguration.thresholds.max_total}`}
                     </p>
                   )}
                 </div>
-              )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setDefectDialogOpen(true)}
+                >
+                  Manage Defects
+                </Button>
+              </div>
+
+              {/* Defect Tables - Primary and Secondary */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Primary Defects Table */}
+                <div className="rounded-lg border">
+                  <div className="bg-muted/50 px-4 py-2 border-b">
+                    <h4 className="font-medium text-sm">Primary Defects ({defectConfiguration.defects.filter(d => d.category === 'primary').length})</h4>
+                  </div>
+                  <div className="p-4">
+                    {defectConfiguration.defects.filter(d => d.category === 'primary').length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No primary defects configured</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {defectConfiguration.defects
+                          .filter(d => d.category === 'primary')
+                          .sort((a, b) => a.display_order - b.display_order)
+                          .map((defect) => (
+                            <div key={defect.name} className="flex items-center justify-between text-sm">
+                              <span>{defect.name}</span>
+                              <Badge variant="secondary" className="ml-2">
+                                {defect.weight}
+                              </Badge>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Secondary Defects Table */}
+                <div className="rounded-lg border">
+                  <div className="bg-muted/50 px-4 py-2 border-b">
+                    <h4 className="font-medium text-sm">Secondary Defects ({defectConfiguration.defects.filter(d => d.category === 'secondary').length})</h4>
+                  </div>
+                  <div className="p-4">
+                    {defectConfiguration.defects.filter(d => d.category === 'secondary').length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No secondary defects configured</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {defectConfiguration.defects
+                          .filter(d => d.category === 'secondary')
+                          .sort((a, b) => a.display_order - b.display_order)
+                          .map((defect) => (
+                            <div key={defect.name} className="flex items-center justify-between text-sm">
+                              <span>{defect.name}</span>
+                              <Badge variant="secondary" className="ml-2">
+                                {defect.weight}
+                              </Badge>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setDefectDialogOpen(true)}
-            >
-              Manage Defects
-            </Button>
-          </div>
+          )}
         </CardContent>
       </Card>
 
@@ -799,7 +913,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 onChange={(e) => setMoistureMin(e.target.value)}
                 placeholder="e.g., 10.0"
               />
-              <p className="text-xs text-muted-foreground">Usually around 10%</p>
+              <p className="text-xs text-muted-foreground">Usually around 11%</p>
             </div>
 
             <div className="space-y-2">
@@ -897,6 +1011,63 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         aspectType="roast"
       />
 
+      {/* Quaker Count Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Quaker Count</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground">
+            <p>Set maximum allowable quaker beans (unripe/defective beans that don&apos;t roast properly):</p>
+            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
+              <li><strong>Quakers:</strong> Unripe beans that remain pale after roasting</li>
+              <li><strong>Quality Impact:</strong> High quaker count indicates poor bean sorting</li>
+              <li><strong>Client Requirements:</strong> Some clients have strict quaker limits</li>
+              <li><strong>Flexible Sample Size:</strong> Define the roast sample size and quaker limit separately from green bean analysis</li>
+            </ul>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="roast_sample_size">Roast Sample Size (grams)</Label>
+              <Input
+                id="roast_sample_size"
+                type="number"
+                min="1"
+                value={roastSampleSizeGrams}
+                onChange={(e) => setRoastSampleSizeGrams(e.target.value)}
+                placeholder="300"
+              />
+              <p className="text-xs text-muted-foreground">
+                Sample size for roast analysis (may differ from green sample size)
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="max_quakers">Maximum Quakers (per {roastSampleSizeGrams}g sample)</Label>
+              <Input
+                id="max_quakers"
+                type="number"
+                min="0"
+                value={maxQuakers}
+                onChange={(e) => setMaxQuakers(e.target.value)}
+                placeholder="e.g., 5"
+              />
+              <p className="text-xs text-muted-foreground">
+                Leave empty for no quaker limit. Common ranges: 0-5 for specialty, 0-10 for commercial.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="quaker_notes">Notes</Label>
+              <Input
+                id="quaker_notes"
+                value={quakerNotes}
+                onChange={(e) => setQuakerNotes(e.target.value)}
+                placeholder="Client-specific quaker requirements..."
+              />
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Cupping Attributes (New Flexible System) */}
       <Card>
         <CardHeader>
@@ -936,6 +1107,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                               ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
                               : `${attr.scale.options?.length || 0} options`}
                           </span>
+                          {attr.validation_rule && (
+                            <Badge variant="secondary" className="text-xs">
+                              {formatValidationRule(attr.validation_rule, attr.scale)}
+                            </Badge>
+                          )}
                         </div>
                       ))}
                     </div>
