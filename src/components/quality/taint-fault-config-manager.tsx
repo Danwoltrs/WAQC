@@ -89,9 +89,9 @@ export function TaintFaultConfigManager({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0">
+        <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
           {/* Fixed Header */}
-          <div className="sticky top-0 z-10 bg-background border-b px-6 py-4">
+          <div className="shrink-0 border-b px-6 py-4 bg-background">
             <DialogHeader>
               <DialogTitle>Taint & Fault Configuration</DialogTitle>
               <DialogDescription>
@@ -101,7 +101,7 @@ export function TaintFaultConfigManager({
           </div>
 
           {/* Scrollable Content */}
-          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 min-h-0">
             {/* Error Display */}
             {error && (
               <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
@@ -235,7 +235,7 @@ export function TaintFaultConfigManager({
           </div>
 
           {/* Fixed Footer */}
-          <div className="sticky bottom-0 z-10 bg-background border-t px-6 py-4">
+          <div className="shrink-0 border-t px-6 py-4 bg-background">
             <DialogFooter>
               <Button variant="outline" onClick={handleCancel}>
                 Cancel
