@@ -9,24 +9,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import { AlertCircle, CheckCircle2, Plus, X, Save } from 'lucide-react'
 
+interface AttributeScale {
+  attribute: string
+  scale: number
+  range: number // +/- range
+}
+
 interface TemplateParameters {
   screen_sizes?: {
-    type: 'range' | 'specific' | 'predefined'
-    predefined?: string // 'Pan', 'Peas 9-11', '12-20'
-    min?: number
-    max?: number
-    sizes?: { [key: string]: number } // e.g., { "17": 25, "18": 30 }
+    sizes?: { [key: string]: number } // e.g., { "Pan": 5, "Peas 9": 10, "Scr. 17": 25 }
   }
   defects?: {
     primary_max: number
     secondary_max: number
+    total_max: number
+    defect_types?: { [key: string]: number } // e.g., { "broken": 5, "green": 3 }
   }
+  moisture_min?: number
   moisture_max?: number
   moisture_standard?: 'coffee_industry' | 'iso_6673'
   cupping?: {
     scale_type: '1-5' | '1-7' | '1-10'
     min_score?: number
-    attributes: string[]
+    attributes: AttributeScale[]
+  }
+  taints_faults?: {
+    max_taints: number
+    max_faults: number
+    rule_type: 'AND' | 'OR'
   }
 }
 
@@ -48,20 +58,22 @@ interface TemplateBuilderProps {
   onCancel: () => void
 }
 
-const DEFAULT_CUPPING_ATTRIBUTES = [
-  'Fragrance/Aroma',
-  'Flavor',
-  'Aftertaste',
-  'Acidity',
-  'Body',
-  'Balance',
-  'Uniformity',
-  'Clean Cup',
-  'Sweetness',
-  'Overall'
+const DEFAULT_CUPPING_ATTRIBUTES: AttributeScale[] = [
+  { attribute: 'Fragrance/Aroma', scale: 4, range: 1 },
+  { attribute: 'Flavor', scale: 4, range: 1 },
+  { attribute: 'Aftertaste', scale: 4, range: 1 },
+  { attribute: 'Acidity', scale: 4, range: 1 },
+  { attribute: 'Body', scale: 4, range: 1 },
+  { attribute: 'Balance', scale: 4, range: 1 },
+  { attribute: 'Uniformity', scale: 4, range: 1 },
+  { attribute: 'Clean Cup', scale: 4, range: 1 },
+  { attribute: 'Sweetness', scale: 4, range: 1 },
+  { attribute: 'Overall', scale: 4, range: 1 }
 ]
 
-const SCREEN_SIZES = ['9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19', '20']
+const SCREEN_SIZES = ['Pan', 'Peas 9', 'Peas 10', 'Peas 11', 'Scr. 12', 'Scr. 13', 'Scr. 14', 'Scr. 15', 'Scr. 16', 'Scr. 17', 'Scr. 18', 'Scr. 19', 'Scr. 20']
+
+const DEFECT_TYPES = ['Broken', 'Green', 'Broca', 'Sour', 'Black', 'Fungus', 'Foreign Matter', 'Quaker']
 
 export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderProps) {
   const [loading, setLoading] = useState(false)
@@ -74,18 +86,6 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [isActive, setIsActive] = useState(template?.is_active !== false)
 
   // Screen sizes
-  const [screenSizeType, setScreenSizeType] = useState<'range' | 'specific' | 'predefined'>(
-    template?.parameters.screen_sizes?.type || 'specific'
-  )
-  const [screenSizePredefined, setScreenSizePredefined] = useState(
-    template?.parameters.screen_sizes?.predefined || ''
-  )
-  const [screenSizeMin, setScreenSizeMin] = useState(
-    template?.parameters.screen_sizes?.min?.toString() || ''
-  )
-  const [screenSizeMax, setScreenSizeMax] = useState(
-    template?.parameters.screen_sizes?.max?.toString() || ''
-  )
   const [specificSizes, setSpecificSizes] = useState<{ [key: string]: number }>(
     template?.parameters.screen_sizes?.sizes || {}
   )
@@ -97,8 +97,17 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [secondaryMax, setSecondaryMax] = useState(
     template?.parameters.defects?.secondary_max?.toString() || ''
   )
+  const [totalMax, setTotalMax] = useState(
+    template?.parameters.defects?.total_max?.toString() || ''
+  )
+  const [defectTypes, setDefectTypes] = useState<{ [key: string]: number }>(
+    template?.parameters.defects?.defect_types || {}
+  )
 
   // Moisture
+  const [moistureMin, setMoistureMin] = useState(
+    template?.parameters.moisture_min?.toString() || ''
+  )
   const [moistureMax, setMoistureMax] = useState(
     template?.parameters.moisture_max?.toString() || ''
   )
@@ -113,20 +122,51 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [cuppingMinScore, setCuppingMinScore] = useState(
     template?.parameters.cupping?.min_score?.toString() || ''
   )
-  const [cuppingAttributes, setCuppingAttributes] = useState<string[]>(
+  const [cuppingAttributes, setCuppingAttributes] = useState<AttributeScale[]>(
     template?.parameters.cupping?.attributes || DEFAULT_CUPPING_ATTRIBUTES
   )
   const [newAttribute, setNewAttribute] = useState('')
+  const [newAttributeScale, setNewAttributeScale] = useState('4')
+  const [newAttributeRange, setNewAttributeRange] = useState('1')
+
+  // Taints and Faults
+  const [maxTaints, setMaxTaints] = useState(
+    template?.parameters.taints_faults?.max_taints?.toString() || ''
+  )
+  const [maxFaults, setMaxFaults] = useState(
+    template?.parameters.taints_faults?.max_faults?.toString() || ''
+  )
+  const [taintFaultRule, setTaintFaultRule] = useState<'AND' | 'OR'>(
+    template?.parameters.taints_faults?.rule_type || 'AND'
+  )
 
   const handleAddAttribute = () => {
-    if (newAttribute.trim() && !cuppingAttributes.includes(newAttribute.trim())) {
-      setCuppingAttributes([...cuppingAttributes, newAttribute.trim()])
+    if (newAttribute.trim() && !cuppingAttributes.find(a => a.attribute === newAttribute.trim())) {
+      setCuppingAttributes([...cuppingAttributes, {
+        attribute: newAttribute.trim(),
+        scale: parseFloat(newAttributeScale),
+        range: parseFloat(newAttributeRange)
+      }])
       setNewAttribute('')
+      setNewAttributeScale('4')
+      setNewAttributeRange('1')
     }
   }
 
   const handleRemoveAttribute = (attribute: string) => {
-    setCuppingAttributes(cuppingAttributes.filter(a => a !== attribute))
+    setCuppingAttributes(cuppingAttributes.filter(a => a.attribute !== attribute))
+  }
+
+  const handleAttributeScaleChange = (attribute: string, scale: string) => {
+    setCuppingAttributes(cuppingAttributes.map(a =>
+      a.attribute === attribute ? { ...a, scale: parseFloat(scale) || 0 } : a
+    ))
+  }
+
+  const handleAttributeRangeChange = (attribute: string, range: string) => {
+    setCuppingAttributes(cuppingAttributes.map(a =>
+      a.attribute === attribute ? { ...a, range: parseFloat(range) || 0 } : a
+    ))
   }
 
   const handleSpecificSizeChange = (size: string, percentage: string) => {
@@ -139,20 +179,23 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     }
   }
 
+  const handleDefectTypeChange = (defectType: string, value: string) => {
+    const numValue = parseFloat(value)
+    if (isNaN(numValue) || numValue < 0) {
+      const { [defectType]: _, ...rest } = defectTypes
+      setDefectTypes(rest)
+    } else {
+      setDefectTypes({ ...defectTypes, [defectType]: numValue })
+    }
+  }
+
   const validateForm = (): string | null => {
     if (!name.trim()) return 'Template name is required'
 
     // Validate screen sizes
-    if (screenSizeType === 'range') {
-      if (!screenSizeMin || !screenSizeMax) return 'Screen size range requires min and max values'
-      if (parseInt(screenSizeMin) >= parseInt(screenSizeMax)) return 'Min must be less than max'
-    } else if (screenSizeType === 'specific') {
-      if (Object.keys(specificSizes).length === 0) return 'At least one screen size is required'
-      const total = Object.values(specificSizes).reduce((sum, val) => sum + val, 0)
-      if (Math.abs(total - 100) > 0.1) return `Screen size percentages must total 100% (currently ${total.toFixed(1)}%)`
-    } else if (screenSizeType === 'predefined') {
-      if (!screenSizePredefined) return 'Predefined screen size type is required'
-    }
+    if (Object.keys(specificSizes).length === 0) return 'At least one screen size is required'
+    const total = Object.values(specificSizes).reduce((sum, val) => sum + val, 0)
+    if (Math.abs(total - 100) > 0.1) return `Screen size percentages must total 100% (currently ${total.toFixed(1)}%)`
 
     // Validate defects
     if (primaryMax && (parseFloat(primaryMax) < 0 || parseFloat(primaryMax) > 100)) {
@@ -161,10 +204,19 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     if (secondaryMax && (parseFloat(secondaryMax) < 0 || parseFloat(secondaryMax) > 100)) {
       return 'Secondary defects max must be between 0 and 100'
     }
+    if (totalMax && (parseFloat(totalMax) < 0 || parseFloat(totalMax) > 100)) {
+      return 'Total defects max must be between 0 and 100'
+    }
 
     // Validate moisture
+    if (moistureMin && (parseFloat(moistureMin) < 0 || parseFloat(moistureMin) > 100)) {
+      return 'Moisture min must be between 0 and 100'
+    }
     if (moistureMax && (parseFloat(moistureMax) < 0 || parseFloat(moistureMax) > 100)) {
       return 'Moisture max must be between 0 and 100'
+    }
+    if (moistureMin && moistureMax && parseFloat(moistureMin) >= parseFloat(moistureMax)) {
+      return 'Moisture min must be less than moisture max'
     }
 
     // Validate cupping
@@ -178,6 +230,14 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
     if (cuppingAttributes.length === 0) {
       return 'At least one cupping attribute is required'
+    }
+
+    // Validate taints and faults
+    if (maxTaints && parseFloat(maxTaints) < 0) {
+      return 'Max taints must be 0 or greater'
+    }
+    if (maxFaults && parseFloat(maxFaults) < 0) {
+      return 'Max faults must be 0 or greater'
     }
 
     return null
@@ -198,35 +258,24 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       const parameters: TemplateParameters = {}
 
       // Screen sizes
-      if (screenSizeType === 'predefined') {
-        parameters.screen_sizes = {
-          type: 'predefined',
-          predefined: screenSizePredefined
-        }
-      } else if (screenSizeType === 'range') {
-        parameters.screen_sizes = {
-          type: 'range',
-          min: parseInt(screenSizeMin),
-          max: parseInt(screenSizeMax)
-        }
-      } else {
-        parameters.screen_sizes = {
-          type: 'specific',
-          sizes: specificSizes
-        }
+      parameters.screen_sizes = {
+        sizes: specificSizes
       }
 
       // Defects
-      if (primaryMax || secondaryMax) {
+      if (primaryMax || secondaryMax || totalMax) {
         parameters.defects = {
           primary_max: primaryMax ? parseFloat(primaryMax) : 0,
-          secondary_max: secondaryMax ? parseFloat(secondaryMax) : 0
+          secondary_max: secondaryMax ? parseFloat(secondaryMax) : 0,
+          total_max: totalMax ? parseFloat(totalMax) : 0,
+          defect_types: Object.keys(defectTypes).length > 0 ? defectTypes : undefined
         }
       }
 
       // Moisture
-      if (moistureMax) {
-        parameters.moisture_max = parseFloat(moistureMax)
+      if (moistureMin || moistureMax) {
+        parameters.moisture_min = moistureMin ? parseFloat(moistureMin) : undefined
+        parameters.moisture_max = moistureMax ? parseFloat(moistureMax) : undefined
         parameters.moisture_standard = moistureStandard
       }
 
@@ -235,6 +284,15 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         scale_type: cuppingScaleType,
         min_score: cuppingMinScore ? parseFloat(cuppingMinScore) : undefined,
         attributes: cuppingAttributes
+      }
+
+      // Taints and Faults
+      if (maxTaints || maxFaults) {
+        parameters.taints_faults = {
+          max_taints: maxTaints ? parseFloat(maxTaints) : 0,
+          max_faults: maxFaults ? parseFloat(maxFaults) : 0,
+          rule_type: taintFaultRule
+        }
       }
 
       const templateData: Template = {
@@ -317,90 +375,34 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
           <CardTitle>Screen Size Requirements</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label>Configuration Type</Label>
-            <Select value={screenSizeType} onValueChange={(v: any) => setScreenSizeType(v)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="predefined">Predefined (Pan, Peas, etc.)</SelectItem>
-                <SelectItem value="range">Range (e.g., 12-20)</SelectItem>
-                <SelectItem value="specific">Specific Percentages</SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <Label>Size Distribution (must total 100%)</Label>
+              <Badge variant="outline">
+                Total: {Object.values(specificSizes).reduce((sum, val) => sum + val, 0).toFixed(1)}%
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {SCREEN_SIZES.map((size) => (
+                <div key={size} className="space-y-1">
+                  <Label className="text-xs">{size}</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={specificSizes[size] || ''}
+                    onChange={(e) => handleSpecificSizeChange(size, e.target.value)}
+                    placeholder="0.0%"
+                    className="h-8"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Templates you create can be saved and reused for specific client configurations (e.g., NY 2/3 14/16 SS FC).
+            </p>
           </div>
-
-          {screenSizeType === 'predefined' && (
-            <div className="space-y-2">
-              <Label>Predefined Type</Label>
-              <Select value={screenSizePredefined} onValueChange={setScreenSizePredefined}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="Pan">Pan</SelectItem>
-                  <SelectItem value="Peas 9-11">Peas 9-11</SelectItem>
-                  <SelectItem value="12-20">12-20</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {screenSizeType === 'range' && (
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label>Minimum Size</Label>
-                <Input
-                  type="number"
-                  min="9"
-                  max="20"
-                  value={screenSizeMin}
-                  onChange={(e) => setScreenSizeMin(e.target.value)}
-                  placeholder="9"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Maximum Size</Label>
-                <Input
-                  type="number"
-                  min="9"
-                  max="20"
-                  value={screenSizeMax}
-                  onChange={(e) => setScreenSizeMax(e.target.value)}
-                  placeholder="20"
-                />
-              </div>
-            </div>
-          )}
-
-          {screenSizeType === 'specific' && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <Label>Size Distribution (must total 100%)</Label>
-                <Badge variant="outline">
-                  Total: {Object.values(specificSizes).reduce((sum, val) => sum + val, 0).toFixed(1)}%
-                </Badge>
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                {SCREEN_SIZES.map((size) => (
-                  <div key={size} className="space-y-1">
-                    <Label className="text-xs">Size {size}</Label>
-                    <Input
-                      type="number"
-                      min="0"
-                      max="100"
-                      step="0.1"
-                      value={specificSizes[size] || ''}
-                      onChange={(e) => handleSpecificSizeChange(size, e.target.value)}
-                      placeholder="0.0%"
-                      className="h-8"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </CardContent>
       </Card>
 
@@ -410,7 +412,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
           <CardTitle>Defect Thresholds</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
               <Label htmlFor="primary_max">Primary Defects Maximum</Label>
               <Input
@@ -440,19 +442,73 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
               />
               <p className="text-xs text-muted-foreground">Maximum allowed secondary defects count</p>
             </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="total_max">Total Defects Maximum</Label>
+              <Input
+                id="total_max"
+                type="number"
+                min="0"
+                max="100"
+                step="0.5"
+                value={totalMax}
+                onChange={(e) => setTotalMax(e.target.value)}
+                placeholder="e.g., 15"
+              />
+              <p className="text-xs text-muted-foreground">Sum of primary and secondary defects</p>
+            </div>
+          </div>
+
+          <div className="space-y-3 mt-4">
+            <Label>Individual Defect Types (optional limits)</Label>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {DEFECT_TYPES.map((defect) => (
+                <div key={defect} className="space-y-1">
+                  <Label className="text-xs">{defect}</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.5"
+                    value={defectTypes[defect] || ''}
+                    onChange={(e) => handleDefectTypeChange(defect, e.target.value)}
+                    placeholder="Max"
+                    className="h-8"
+                  />
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Set specific limits for individual defect types if needed.
+            </p>
           </div>
         </CardContent>
       </Card>
 
-      {/* Moisture Content */}
+      {/* Moisture % */}
       <Card>
         <CardHeader>
-          <CardTitle>Moisture Content Standards</CardTitle>
+          <CardTitle>Moisture %</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="space-y-2">
-              <Label htmlFor="moisture_max">Maximum Moisture Content (%)</Label>
+              <Label htmlFor="moisture_min">Minimum Moisture (%)</Label>
+              <Input
+                id="moisture_min"
+                type="number"
+                min="0"
+                max="100"
+                step="0.1"
+                value={moistureMin}
+                onChange={(e) => setMoistureMin(e.target.value)}
+                placeholder="e.g., 10.0"
+              />
+              <p className="text-xs text-muted-foreground">Usually around 10%</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="moisture_max">Maximum Moisture (%)</Label>
               <Input
                 id="moisture_max"
                 type="number"
@@ -461,8 +517,9 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 step="0.1"
                 value={moistureMax}
                 onChange={(e) => setMoistureMax(e.target.value)}
-                placeholder="e.g., 12.5"
+                placeholder="e.g., 12.0"
               />
+              <p className="text-xs text-muted-foreground">Usually around 12%</p>
             </div>
 
             <div className="space-y-2">
@@ -481,10 +538,10 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
       </Card>
 
-      {/* Cupping Configuration */}
+      {/* Attributes (Cupping) */}
       <Card>
         <CardHeader>
-          <CardTitle>Cupping Configuration</CardTitle>
+          <CardTitle>Attributes</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -518,18 +575,46 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
           </div>
 
           <div className="space-y-3">
-            <Label>Cupping Attributes</Label>
-            <div className="flex flex-wrap gap-2">
+            <Label>Attribute Scales and Ranges</Label>
+            <div className="space-y-2">
               {cuppingAttributes.map((attr) => (
-                <Badge key={attr} variant="secondary" className="gap-1">
-                  {attr}
-                  <button
-                    onClick={() => handleRemoveAttribute(attr)}
-                    className="ml-1 hover:text-destructive"
-                  >
-                    <X className="h-3 w-3" />
-                  </button>
-                </Badge>
+                <div key={attr.attribute} className="flex items-center gap-3 p-3 rounded-md border">
+                  <div className="flex-1">
+                    <Label className="text-sm font-medium">{attr.attribute}</Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Scale</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="10"
+                        step="0.25"
+                        value={attr.scale}
+                        onChange={(e) => handleAttributeScaleChange(attr.attribute, e.target.value)}
+                        className="h-8 w-20"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Range (+/-)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="5"
+                        step="0.25"
+                        value={attr.range}
+                        onChange={(e) => handleAttributeRangeChange(attr.attribute, e.target.value)}
+                        className="h-8 w-20"
+                      />
+                    </div>
+                    <button
+                      onClick={() => handleRemoveAttribute(attr.attribute)}
+                      className="ml-2 hover:text-destructive"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
               ))}
             </div>
 
@@ -538,13 +623,91 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 value={newAttribute}
                 onChange={(e) => setNewAttribute(e.target.value)}
                 onKeyPress={(e) => e.key === 'Enter' && handleAddAttribute()}
-                placeholder="Add custom attribute..."
+                placeholder="Attribute name..."
+                className="flex-1"
+              />
+              <Input
+                type="number"
+                min="0"
+                max="10"
+                step="0.25"
+                value={newAttributeScale}
+                onChange={(e) => setNewAttributeScale(e.target.value)}
+                placeholder="Scale"
+                className="w-20"
+              />
+              <Input
+                type="number"
+                min="0"
+                max="5"
+                step="0.25"
+                value={newAttributeRange}
+                onChange={(e) => setNewAttributeRange(e.target.value)}
+                placeholder="+/-"
+                className="w-20"
               />
               <Button type="button" variant="outline" onClick={handleAddAttribute}>
                 <Plus className="h-4 w-4" />
               </Button>
             </div>
+            <p className="text-xs text-muted-foreground">
+              Example: Fragrance/Aroma with Scale 4 and Range 1 means acceptable range is 3-5 (4 +/- 1).
+            </p>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Taints and Faults */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Taints and Faults</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="max_taints">Maximum Taints Allowed</Label>
+              <Input
+                id="max_taints"
+                type="number"
+                min="0"
+                step="1"
+                value={maxTaints}
+                onChange={(e) => setMaxTaints(e.target.value)}
+                placeholder="e.g., 0"
+              />
+              <p className="text-xs text-muted-foreground">Total number of taints allowed</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="max_faults">Maximum Faults Allowed</Label>
+              <Input
+                id="max_faults"
+                type="number"
+                min="0"
+                step="1"
+                value={maxFaults}
+                onChange={(e) => setMaxFaults(e.target.value)}
+                placeholder="e.g., 0"
+              />
+              <p className="text-xs text-muted-foreground">Total number of faults allowed</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Rule Type</Label>
+              <Select value={taintFaultRule} onValueChange={(v: any) => setTaintFaultRule(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="AND">AND (both limits must pass)</SelectItem>
+                  <SelectItem value="OR">OR (either limit can pass)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Configure thresholds for taints and faults detected during cupping sessions.
+          </p>
         </CardContent>
       </Card>
 
