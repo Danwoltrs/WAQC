@@ -34,7 +34,8 @@ import { CuppingAttributeConfigManager, AttributeWithScale } from './cupping-att
 import {
   AspectConfiguration,
   createEmptyAspectConfiguration,
-  GREEN_ASPECT_TEMPLATES
+  GREEN_ASPECT_TEMPLATES,
+  ROAST_ASPECT_TEMPLATES
 } from '@/types/aspect-configuration'
 import { AspectConfigManager } from './aspect-config-manager'
 
@@ -145,7 +146,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
   // Roast Aspect (roasted bean visual appearance)
   const [roastAspectConfiguration, setRoastAspectConfiguration] = useState<AspectConfiguration>(
-    template?.parameters.roast_aspect_configuration || createEmptyAspectConfiguration()
+    template?.parameters.roast_aspect_configuration ||
+    ROAST_ASPECT_TEMPLATES[0].configuration // Default to standard template
   )
   const [roastAspectDialogOpen, setRoastAspectDialogOpen] = useState(false)
 

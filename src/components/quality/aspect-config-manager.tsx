@@ -369,9 +369,9 @@ export function AspectConfigManager({
               <div className="space-y-2">
                 <Label htmlFor="min_acceptable">Minimum Acceptable Wording</Label>
                 <Select
-                  value={config.validation?.min_acceptable_value?.toString() || ''}
+                  value={config.validation?.min_acceptable_value?.toString() || 'none'}
                   onValueChange={val => {
-                    if (!val) {
+                    if (val === 'none') {
                       handleConfigChange({
                         ...config,
                         validation: undefined
@@ -391,7 +391,7 @@ export function AspectConfigManager({
                     <SelectValue placeholder="No validation (any value acceptable)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No validation</SelectItem>
+                    <SelectItem value="none">No validation</SelectItem>
                     {config.wordings
                       .sort((a, b) => a.value - b.value)
                       .map(w => (
