@@ -1124,7 +1124,7 @@ export default function LaboratoriesPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {laboratories.map((lab) => (
-              <Card key={lab.id} className="hover:shadow-lg transition-shadow">
+              <Card key={lab.id} className="hover:shadow-lg transition-shadow min-w-[280px]">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
                     <Building className="h-4 w-4" />
@@ -1157,51 +1157,53 @@ export default function LaboratoriesPage() {
                     <span>Sample Storage: {lab.storage_capacity.toLocaleString()}</span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2 pt-1">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setViewingStorage(lab)}
-                      className="w-full justify-start"
-                    >
-                      <Warehouse className="h-3 w-3 mr-1" />
-                      Storage
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleViewPersonnel(lab)}
-                      className="w-full justify-start"
-                    >
-                      <Users className="h-3 w-3 mr-1" />
-                      Personnel
-                    </Button>
-                  </div>
-
-                  {(canManageAllLabs || (canManageOwnLab && profile?.laboratory_id === lab.id)) && (
-                    <div className="grid grid-cols-2 gap-2">
+                  <div className="flex items-center justify-between gap-1 pt-1">
+                    <div className="flex gap-1">
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setEditingLab(lab)}
-                        className="w-full justify-start"
+                        onClick={() => setViewingStorage(lab)}
+                        className="px-2"
+                        title="Storage"
                       >
-                        <Edit className="h-3 w-3 mr-1" />
-                        Edit
+                        <Warehouse className="h-4 w-4" />
                       </Button>
-                      {canManageAllLabs && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleViewPersonnel(lab)}
+                        className="px-2"
+                        title="Personnel"
+                      >
+                        <Users className="h-4 w-4" />
+                      </Button>
+                    </div>
+
+                    {(canManageAllLabs || (canManageOwnLab && profile?.laboratory_id === lab.id)) && (
+                      <div className="flex gap-1">
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => handleDeleteLab(lab)}
-                          className="text-destructive hover:text-destructive w-full justify-start"
+                          onClick={() => setEditingLab(lab)}
+                          className="px-2"
+                          title="Edit"
                         >
-                          <Trash2 className="h-3 w-3 mr-1" />
-                          Delete
+                          <Edit className="h-4 w-4" />
                         </Button>
-                      )}
-                    </div>
-                  )}
+                        {canManageAllLabs && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleDeleteLab(lab)}
+                            className="text-destructive hover:text-destructive px-2"
+                            title="Delete"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             ))}
