@@ -611,7 +611,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             <div>
               {defectConfiguration.defects.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  No defects configured yet. Click "Manage Defects" to get started.
+                  No defects configured yet. Click &quot;Manage Defects&quot; to get started.
                 </p>
               ) : (
                 <div className="space-y-1 text-sm">
