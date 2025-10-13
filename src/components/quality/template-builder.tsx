@@ -26,14 +26,13 @@ import {
   createEmptyDefectConfiguration
 } from '@/types/defect-configuration'
 import { DefectConfigManager } from './defect-config-manager'
+import {
+  TaintFaultConfiguration,
+  createEmptyTaintFaultConfiguration
+} from '@/types/taint-fault-configuration'
+import { TaintFaultConfigManager } from './taint-fault-config-manager'
 
 // AttributeScale is now imported from @/types/attribute-scales as CuppingAttribute
-
-interface TaintFaultConfig {
-  definition_id: string
-  max_count?: number
-  is_blocking?: boolean
-}
 
 interface TemplateParameters {
   sample_size_grams?: number // For proportional scaling
@@ -52,7 +51,7 @@ interface TemplateParameters {
     attributes?: any[] // Old attribute format
   }
   cupping_attributes?: CuppingAttribute[] // New flexible attribute format
-  taints_faults?: TaintFaultConfig[]
+  taint_fault_configuration?: TaintFaultConfiguration // New flexible taint/fault format
 }
 
 interface Template {
@@ -134,10 +133,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     template?.parameters.cupping_attributes || DEFAULT_CUPPING_ATTRIBUTES
   )
 
-  // Taints and Faults
-  const [taintFaultConfigs, setTaintFaultConfigs] = useState<TaintFaultConfig[]>(
-    template?.parameters.taints_faults || []
+  // Taints and Faults (new flexible format)
+  const [taintFaultConfiguration, setTaintFaultConfiguration] = useState<TaintFaultConfiguration>(
+    template?.parameters.taint_fault_configuration || createEmptyTaintFaultConfiguration()
   )
+  const [taintFaultDialogOpen, setTaintFaultDialogOpen] = useState(false)
 
   // Convert CuppingAttribute[] to AttributeWithScale[] for the manager
   const attributesWithScale: AttributeWithScale[] = cuppingAttributes.map(attr => ({
@@ -286,6 +286,15 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       }
     }
 
+    // Validate taint/fault configuration
+    if (taintFaultConfiguration.taints.length > 0 || taintFaultConfiguration.faults.length > 0) {
+      const { validateTaintFaultConfiguration } = require('@/types/taint-fault-configuration')
+      const taintFaultValidation = validateTaintFaultConfiguration(taintFaultConfiguration)
+      if (!taintFaultValidation.valid) {
+        return `Taint/Fault configuration: ${taintFaultValidation.error}`
+      }
+    }
+
     return null
   }
 
@@ -329,9 +338,9 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       // Cupping Attributes (new flexible format)
       parameters.cupping_attributes = cuppingAttributes
 
-      // Taints and Faults
-      if (taintFaultConfigs.length > 0) {
-        parameters.taints_faults = taintFaultConfigs
+      // Taint/Fault Configuration (new flexible format)
+      if (taintFaultConfiguration.taints.length > 0 || taintFaultConfiguration.faults.length > 0) {
+        parameters.taint_fault_configuration = taintFaultConfiguration
       }
 
       const templateData: Template = {
@@ -733,32 +742,74 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
       </Card>
 
-      {/* Taints and Faults */}
+      {/* Taints and Faults (New Flexible System) */}
       <Card>
         <CardHeader>
           <CardTitle>Taints and Faults</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">
+            <p>Configure taints, faults, intensity scales, and validation rules:</p>
+            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
+              <li><strong>Taints:</strong> Mild off-flavors that may be acceptable in certain grades</li>
+              <li><strong>Faults:</strong> Severe sensory defects that typically result in rejection</li>
+              <li><strong>Custom Scales:</strong> Define intensity measurement per taint/fault (numeric or wording)</li>
+              <li><strong>Validation Rules:</strong> Set count limits, intensity caps, or zero tolerance</li>
+              <li><strong>Templates:</strong> Load SCA, Specialty, Commercial, or Brazil standards</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
             <div>
-              <p className="text-sm text-muted-foreground">
-                Configure which taints and faults apply to this template and set thresholds
-              </p>
-              {taintFaultConfigs.length > 0 && (
-                <p className="text-sm mt-1">
-                  {taintFaultConfigs.length} taint/fault{taintFaultConfigs.length !== 1 ? 's' : ''} configured
+              {taintFaultConfiguration.taints.length === 0 && taintFaultConfiguration.faults.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No taints or faults configured yet. Click &quot;Manage Taints & Faults&quot; to get started.
                 </p>
+              ) : (
+                <div className="space-y-1 text-sm">
+                  <p className="font-medium">
+                    {taintFaultConfiguration.taints.length + taintFaultConfiguration.faults.length} definition{(taintFaultConfiguration.taints.length + taintFaultConfiguration.faults.length) !== 1 ? 's' : ''} configured
+                  </p>
+                  <p className="text-muted-foreground">
+                    Taints: {taintFaultConfiguration.taints.length} • Faults: {taintFaultConfiguration.faults.length}
+                  </p>
+                  {taintFaultConfiguration.rules.zero_tolerance ? (
+                    <p className="text-muted-foreground font-medium text-destructive">
+                      Zero Tolerance Mode
+                    </p>
+                  ) : (
+                    (taintFaultConfiguration.rules.max_taints ||
+                      taintFaultConfiguration.rules.max_faults ||
+                      taintFaultConfiguration.rules.max_combined) && (
+                      <p className="text-muted-foreground">
+                        Rules:
+                        {taintFaultConfiguration.rules.max_taints !== undefined && ` Taints ≤${taintFaultConfiguration.rules.max_taints}`}
+                        {taintFaultConfiguration.rules.max_faults !== undefined && ` • Faults ≤${taintFaultConfiguration.rules.max_faults}`}
+                        {taintFaultConfiguration.rules.max_combined !== undefined && ` • Combined ≤${taintFaultConfiguration.rules.max_combined}`}
+                      </p>
+                    )
+                  )}
+                </div>
               )}
             </div>
-            <Button type="button" variant="outline" onClick={() => {/* TODO: Open taints/faults dialog */}}>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTaintFaultDialogOpen(true)}
+            >
               Manage Taints & Faults
             </Button>
           </div>
-          <p className="text-xs text-muted-foreground">
-            Taints and faults are origin-specific and detected during cupping sessions.
-          </p>
         </CardContent>
       </Card>
+
+      {/* Taint/Fault Configuration Dialog */}
+      <TaintFaultConfigManager
+        open={taintFaultDialogOpen}
+        onOpenChange={setTaintFaultDialogOpen}
+        value={taintFaultConfiguration}
+        onChange={setTaintFaultConfiguration}
+      />
 
       {/* Actions */}
       <div className="flex justify-end gap-3">
