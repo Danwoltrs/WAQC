@@ -157,3 +157,9 @@ Create migration for quality_templates table with fields: id, name_en, name_pt, 
 - All validation logic implemented
 - Ready for UI and integration testing
 
+## 9. Implement Flexible Taint/Fault Configuration System [done]
+### Dependencies: None
+### Description: Build comprehensive taint/fault management system with customizable definitions, intensity scales, and complex validation rules per quality template
+### Details:
+Created type system in src/types/taint-fault-configuration.ts with TaintFaultDefinition (custom intensity scales per item), TaintFaultValidationRules (zero tolerance, count limits, intensity caps), and predefined templates (SCA, Specialty, Commercial, Brazil). Built UI in src/components/quality/taint-fault-config-manager.tsx with separate sections for taints and faults, per-item scale editing, validation rules configuration, and template loading. Integrated with template-builder.tsx including full configuration UI, validation, and parameter storage. System provides complete flexibility - each template defines its own taint/fault list, custom intensity scales (numeric or wording), and acceptance criteria based on quality grade.
+
