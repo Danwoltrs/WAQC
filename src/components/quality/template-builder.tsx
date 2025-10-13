@@ -31,6 +31,12 @@ import {
 } from '@/types/taint-fault-configuration'
 import { TaintFaultConfigManager } from './taint-fault-config-manager'
 import { CuppingAttributeConfigManager, AttributeWithScale } from './cupping-attribute-config-manager'
+import {
+  AspectConfiguration,
+  createEmptyAspectConfiguration,
+  GREEN_ASPECT_TEMPLATES
+} from '@/types/aspect-configuration'
+import { AspectConfigManager } from './aspect-config-manager'
 
 // AttributeScale is now imported from @/types/attribute-scales as CuppingAttribute
 
@@ -40,10 +46,12 @@ interface TemplateParameters {
     sizes?: { [key: string]: number } // Legacy format - kept for backward compatibility
   }
   screen_size_requirements?: ScreenSizeRequirements // New constraint-based format
+  green_aspect_configuration?: AspectConfiguration // Green bean visual appearance
   defect_configuration?: DefectConfiguration // New flexible defect format
   moisture_min?: number
   moisture_max?: number
   moisture_standard?: 'coffee_industry' | 'iso_6673'
+  roast_aspect_configuration?: AspectConfiguration // Roasted bean visual appearance
   cupping?: {
     // Legacy format - deprecated, kept for backward compatibility
     scale_type?: '1-5' | '1-7' | '1-10'
@@ -111,6 +119,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [newConstraintMinValue, setNewConstraintMinValue] = useState<string>('')
   const [newConstraintMaxValue, setNewConstraintMaxValue] = useState<string>('')
 
+  // Green Aspect (raw bean visual appearance)
+  const [greenAspectConfiguration, setGreenAspectConfiguration] = useState<AspectConfiguration>(
+    template?.parameters.green_aspect_configuration ||
+    GREEN_ASPECT_TEMPLATES[0].configuration // Default to standard template
+  )
+  const [greenAspectDialogOpen, setGreenAspectDialogOpen] = useState(false)
+
   // Defects (new flexible format)
   const [defectConfiguration, setDefectConfiguration] = useState<DefectConfiguration>(
     template?.parameters.defect_configuration || createEmptyDefectConfiguration()
@@ -127,6 +142,12 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [moistureStandard, setMoistureStandard] = useState<'coffee_industry' | 'iso_6673'>(
     template?.parameters.moisture_standard || 'coffee_industry'
   )
+
+  // Roast Aspect (roasted bean visual appearance)
+  const [roastAspectConfiguration, setRoastAspectConfiguration] = useState<AspectConfiguration>(
+    template?.parameters.roast_aspect_configuration || createEmptyAspectConfiguration()
+  )
+  const [roastAspectDialogOpen, setRoastAspectDialogOpen] = useState(false)
 
   // Cupping Attributes (new flexible format)
   const [cuppingAttributes, setCuppingAttributes] = useState<CuppingAttribute[]>(
@@ -287,6 +308,24 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       }
     }
 
+    // Validate green aspect configuration
+    if (greenAspectConfiguration.wordings.length > 0) {
+      const { validateAspectConfiguration } = require('@/types/aspect-configuration')
+      const greenAspectValidation = validateAspectConfiguration(greenAspectConfiguration)
+      if (!greenAspectValidation.valid) {
+        return `Green Aspect configuration: ${greenAspectValidation.error}`
+      }
+    }
+
+    // Validate roast aspect configuration
+    if (roastAspectConfiguration.wordings.length > 0) {
+      const { validateAspectConfiguration } = require('@/types/aspect-configuration')
+      const roastAspectValidation = validateAspectConfiguration(roastAspectConfiguration)
+      if (!roastAspectValidation.valid) {
+        return `Roast Aspect configuration: ${roastAspectValidation.error}`
+      }
+    }
+
     // Validate taint/fault configuration
     if (taintFaultConfiguration.taints.length > 0 || taintFaultConfiguration.faults.length > 0) {
       const { validateTaintFaultConfiguration } = require('@/types/taint-fault-configuration')
@@ -324,6 +363,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         notes: ''
       }
 
+      // Green Aspect Configuration
+      if (greenAspectConfiguration.wordings.length > 0) {
+        parameters.green_aspect_configuration = greenAspectConfiguration
+      }
+
       // Defect Configuration (new flexible format)
       if (defectConfiguration.defects.length > 0) {
         parameters.defect_configuration = defectConfiguration
@@ -334,6 +378,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         parameters.moisture_min = moistureMin ? parseFloat(moistureMin) : undefined
         parameters.moisture_max = moistureMax ? parseFloat(moistureMax) : undefined
         parameters.moisture_standard = moistureStandard
+      }
+
+      // Roast Aspect Configuration
+      if (roastAspectConfiguration.wordings.length > 0) {
+        parameters.roast_aspect_configuration = roastAspectConfiguration
       }
 
       // Cupping Attributes (new flexible format)
@@ -600,6 +649,70 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
       </Card>
 
+      {/* Green Aspect Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Green Aspect (Raw Bean Appearance)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground">
+            <p>Configure visual appearance terminology for raw green coffee beans:</p>
+            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
+              <li><strong>Custom Wordings:</strong> Define appearance terms (e.g., Blue-Green, Greenish, Yellowish)</li>
+              <li><strong>Quality Scale:</strong> Assign numeric values where higher = better appearance</li>
+              <li><strong>Validation Rules:</strong> Set minimum acceptable appearance standards</li>
+              <li><strong>Templates:</strong> Start with Standard (9 levels) or Simplified (3 levels) scales</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
+            <div>
+              {greenAspectConfiguration.wordings.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No green aspect wordings configured yet. Click &quot;Manage Green Aspect&quot; to get started.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    {greenAspectConfiguration.wordings.length} wording{greenAspectConfiguration.wordings.length !== 1 ? 's' : ''} configured
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {greenAspectConfiguration.wordings
+                      .sort((a, b) => a.display_order - b.display_order)
+                      .map((wording) => (
+                        <Badge key={wording.id} variant="outline" className="font-normal">
+                          {wording.label} ({wording.value})
+                        </Badge>
+                      ))}
+                  </div>
+                  {greenAspectConfiguration.validation?.min_acceptable_value !== undefined && (
+                    <p className="text-sm text-muted-foreground">
+                      Min Acceptable: {greenAspectConfiguration.wordings.find(w => w.value === greenAspectConfiguration.validation?.min_acceptable_value)?.label || 'N/A'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setGreenAspectDialogOpen(true)}
+            >
+              Manage Green Aspect
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Green Aspect Configuration Dialog */}
+      <AspectConfigManager
+        open={greenAspectDialogOpen}
+        onOpenChange={setGreenAspectDialogOpen}
+        value={greenAspectConfiguration}
+        onChange={setGreenAspectConfiguration}
+        aspectType="green"
+      />
+
       {/* Defect Configuration (New Flexible System) */}
       <Card>
         <CardHeader>
@@ -717,6 +830,70 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
           </div>
         </CardContent>
       </Card>
+
+      {/* Roast Aspect Configuration */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Roast Aspect (Roasted Bean Appearance)</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground">
+            <p>Configure visual appearance terminology for roasted coffee beans:</p>
+            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
+              <li><strong>Custom Wordings:</strong> Define appearance terms (e.g., Fine, Good, Uneven)</li>
+              <li><strong>Quality Scale:</strong> Assign numeric values where higher = better appearance</li>
+              <li><strong>Validation Rules:</strong> Set minimum acceptable roast appearance standards</li>
+              <li><strong>Templates:</strong> Start with Standard (4 levels) or Detailed (7 levels) scales</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
+            <div>
+              {roastAspectConfiguration.wordings.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No roast aspect wordings configured yet. Click &quot;Manage Roast Aspect&quot; to get started.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    {roastAspectConfiguration.wordings.length} wording{roastAspectConfiguration.wordings.length !== 1 ? 's' : ''} configured
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {roastAspectConfiguration.wordings
+                      .sort((a, b) => a.display_order - b.display_order)
+                      .map((wording) => (
+                        <Badge key={wording.id} variant="outline" className="font-normal">
+                          {wording.label} ({wording.value})
+                        </Badge>
+                      ))}
+                  </div>
+                  {roastAspectConfiguration.validation?.min_acceptable_value !== undefined && (
+                    <p className="text-sm text-muted-foreground">
+                      Min Acceptable: {roastAspectConfiguration.wordings.find(w => w.value === roastAspectConfiguration.validation?.min_acceptable_value)?.label || 'N/A'}
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setRoastAspectDialogOpen(true)}
+            >
+              Manage Roast Aspect
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Roast Aspect Configuration Dialog */}
+      <AspectConfigManager
+        open={roastAspectDialogOpen}
+        onOpenChange={setRoastAspectDialogOpen}
+        value={roastAspectConfiguration}
+        onChange={setRoastAspectConfiguration}
+        aspectType="roast"
+      />
 
       {/* Cupping Attributes (New Flexible System) */}
       <Card>
