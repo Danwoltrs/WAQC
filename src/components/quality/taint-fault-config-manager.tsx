@@ -89,15 +89,19 @@ export function TaintFaultConfigManager({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Taint & Fault Configuration</DialogTitle>
-            <DialogDescription>
-              Define taints (mild off-flavors), faults (severe defects), intensity scales, and validation rules
-            </DialogDescription>
-          </DialogHeader>
+        <DialogContent className="max-w-6xl h-[90vh] flex flex-col p-0">
+          {/* Fixed Header */}
+          <div className="sticky top-0 z-10 bg-background border-b px-6 py-4">
+            <DialogHeader>
+              <DialogTitle>Taint & Fault Configuration</DialogTitle>
+              <DialogDescription>
+                Define taints (mild off-flavors), faults (severe defects), intensity scales, and validation rules
+              </DialogDescription>
+            </DialogHeader>
+          </div>
 
-          <div className="space-y-6 py-4">
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
             {/* Error Display */}
             {error && (
               <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
@@ -230,14 +234,17 @@ export function TaintFaultConfigManager({
             </Card>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={handleCancel}>
-              Cancel
-            </Button>
-            <Button onClick={handleSave}>
-              Save Configuration
-            </Button>
-          </DialogFooter>
+          {/* Fixed Footer */}
+          <div className="sticky bottom-0 z-10 bg-background border-t px-6 py-4">
+            <DialogFooter>
+              <Button variant="outline" onClick={handleCancel}>
+                Cancel
+              </Button>
+              <Button onClick={handleSave}>
+                Save Configuration
+              </Button>
+            </DialogFooter>
+          </div>
         </DialogContent>
       </Dialog>
 
@@ -324,55 +331,54 @@ function TaintFaultSection({
             <p className="text-xs mt-1">Click &quot;Add {title.slice(0, -1)}&quot; to get started</p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             {definitions.map((definition, index) => (
-              <div key={definition.id} className="flex items-start gap-3 p-3 rounded-lg border bg-card">
-                <div className="flex-1 space-y-2">
+              <Card key={definition.id} className="relative">
+                <button
+                  onClick={() => onRemove(definition.id)}
+                  className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors"
+                >
+                  <X className="h-3 w-3" />
+                </button>
+                <CardHeader className="pb-3">
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">
-                      {index + 1}
-                    </Badge>
+                    <Badge variant="outline" className="text-xs">{index + 1}</Badge>
                     <Input
                       value={definition.name}
                       onChange={(e) => onUpdate(definition.id, { name: e.target.value })}
                       placeholder={`${title.slice(0, -1)} name...`}
-                      className="flex-1"
+                      className="h-8 text-sm"
                     />
                   </div>
-
-                  <div className="flex items-center gap-2">
-                    <Label className="text-xs text-muted-foreground min-w-[60px]">Scale:</Label>
-                    <Badge variant="secondary" className="text-xs">
-                      {definition.scale.type === 'numeric'
-                        ? `${definition.scale.min}-${definition.scale.max} (${definition.scale.increment})`
-                        : `${definition.scale.options.length} options`}
-                    </Badge>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => onEditScale(definition)}
-                      className="h-7 text-xs"
-                    >
-                      <Settings2 className="h-3 w-3 mr-1" />
-                      Edit Scale
-                    </Button>
+                </CardHeader>
+                <CardContent className="space-y-2 pt-0">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Scale</Label>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="secondary" className="text-xs flex-1 justify-center">
+                        {definition.scale.type === 'numeric'
+                          ? `${definition.scale.min}-${definition.scale.max} (${definition.scale.increment})`
+                          : `${definition.scale.options.length} options`}
+                      </Badge>
+                    </div>
                   </div>
-
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => onEditScale(definition)}
+                    className="w-full h-8 text-xs"
+                  >
+                    <Settings2 className="h-3 w-3 mr-1" />
+                    Edit Scale
+                  </Button>
                   <Input
                     value={definition.description || ''}
                     onChange={(e) => onUpdate(definition.id, { description: e.target.value })}
-                    placeholder="Optional description..."
-                    className="text-xs"
+                    placeholder="Description (optional)"
+                    className="text-xs h-8"
                   />
-                </div>
-
-                <button
-                  onClick={() => onRemove(definition.id)}
-                  className="text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
         )}

@@ -482,53 +482,74 @@ export function AttributeScaleManager({ attributes, onChange }: AttributeScaleMa
       {/* Existing Attributes */}
       <div className="space-y-3">
         <Label>Attributes ({attributes.length})</Label>
-        {attributes.map((attr, index) => (
-          <Card key={index}>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-medium">{attr.attribute}</CardTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {attributes.map((attr, index) => (
+            <Card key={index} className="relative">
+              <button
+                onClick={() => handleRemoveAttribute(index)}
+                className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors z-10"
+              >
+                <X className="h-3 w-3" />
+              </button>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium pr-6">{attr.attribute}</CardTitle>
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline">
+                  <Badge variant="outline" className="text-xs">
                     {attr.scale.type === 'numeric' ? 'Numeric' : 'Wording'}
                   </Badge>
+                  {attr.scale.type === 'numeric' ? (
+                    <span className="text-xs text-muted-foreground">
+                      {attr.scale.min}-{attr.scale.max}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">
+                      {attr.scale.options?.length || 0} opts
+                    </span>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-2 pt-0">
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setEditingIndex(editingIndex === index ? null : index)}
+                    className="flex-1 h-8 text-xs"
+                  >
+                    {editingIndex === index ? 'Hide' : 'Edit'} Scale
+                  </Button>
                   <Button
                     type="button"
                     variant="ghost"
                     size="sm"
                     onClick={() => handleDuplicateAttribute(index)}
+                    className="h-8"
                   >
                     <Copy className="h-3 w-3" />
                   </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setEditingIndex(editingIndex === index ? null : index)}
-                  >
-                    {editingIndex === index ? 'Hide' : 'Edit'}
-                  </Button>
-                  <button
-                    type="button"
-                    onClick={() => handleRemoveAttribute(index)}
-                    className="hover:text-destructive"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
                 </div>
-              </div>
-            </CardHeader>
-            {editingIndex === index && (
-              <CardContent>
-                <ScaleBuilder
-                  value={attr.scale}
-                  onChange={(scale) => handleUpdateAttributeScale(index, scale)}
-                  showTemplateSelector={true}
-                />
               </CardContent>
-            )}
-          </Card>
-        ))}
+            </Card>
+          ))}
+        </div>
       </div>
+
+      {/* Scale Editor (shown when editing) */}
+      {editingIndex !== null && (
+        <Card className="border-2 border-primary">
+          <CardHeader>
+            <CardTitle className="text-sm">Editing: {attributes[editingIndex].attribute}</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ScaleBuilder
+              value={attributes[editingIndex].scale}
+              onChange={(scale) => handleUpdateAttributeScale(editingIndex, scale)}
+              showTemplateSelector={true}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Add New Attribute */}
       <div className="border-t pt-4 space-y-2">

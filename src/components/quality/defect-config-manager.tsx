@@ -75,16 +75,20 @@ export function DefectConfigManager({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>Manage Defect Configuration</DialogTitle>
-          <DialogDescription>
-            Configure defects, weights, and validation thresholds for this quality template.
-            Sample size: {sampleSize}g
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-w-4xl h-[90vh] flex flex-col p-0">
+        {/* Fixed Header */}
+        <div className="sticky top-0 z-10 bg-background border-b px-6 py-4">
+          <DialogHeader>
+            <DialogTitle>Manage Defect Configuration</DialogTitle>
+            <DialogDescription>
+              Configure defects, weights, and validation thresholds for this quality template.
+              Sample size: {sampleSize}g
+            </DialogDescription>
+          </DialogHeader>
+        </div>
 
-        <div className="space-y-6 py-4">
+        {/* Scrollable Content */}
+        <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
           {/* Validation Error */}
           {!validation.valid && (
             <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
@@ -205,18 +209,20 @@ export function DefectConfigManager({
           </Card>
         </div>
 
-        {/* Actions */}
-        <div className="flex justify-end gap-3 pt-4 border-t">
-          <Button variant="outline" onClick={handleCancel}>
-            Cancel
-          </Button>
-          <Button
-            onClick={handleSave}
-            disabled={!validation.valid}
-          >
-            <CheckCircle2 className="h-4 w-4 mr-2" />
-            Save Configuration
-          </Button>
+        {/* Fixed Footer */}
+        <div className="sticky bottom-0 z-10 bg-background border-t px-6 py-4">
+          <div className="flex justify-end gap-3">
+            <Button variant="outline" onClick={handleCancel}>
+              Cancel
+            </Button>
+            <Button
+              onClick={handleSave}
+              disabled={!validation.valid}
+            >
+              <CheckCircle2 className="h-4 w-4 mr-2" />
+              Save Configuration
+            </Button>
+          </div>
         </div>
       </DialogContent>
     </Dialog>
