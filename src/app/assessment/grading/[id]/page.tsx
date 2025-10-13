@@ -11,6 +11,13 @@ import { Badge } from '@/components/ui/badge'
 import {
   ChevronLeft, Save, CheckCircle2, Coffee
 } from 'lucide-react'
+import {
+  ScreenSizeConstraint,
+  ScreenSizeRequirements,
+  getConstraintDisplayText,
+  validateScreenSizeDistribution,
+  ConstraintValidationResult
+} from '@/types/screen-size-constraints'
 
 interface Sample {
   id: string
@@ -22,14 +29,28 @@ interface Sample {
   cups_per_sample?: number
   bags_quantity_mt?: number
   created_at: string
+  quality_spec_id?: string
+}
+
+interface ClientQuality {
+  id: string
+  template_id: string
+  client_id: string
+  origin: string
+}
+
+interface QualityTemplate {
+  id: string
+  name: string
+  name_en: string
+  parameters: {
+    screen_size_requirements?: ScreenSizeRequirements
+  }
+  screen_size_requirements?: ScreenSizeRequirements
 }
 
 interface GradingData {
-  screen_size_17_plus: number
-  screen_size_16: number
-  screen_size_15: number
-  screen_size_14: number
-  screen_size_13_minus: number
+  screen_sizes: { [key: string]: number } // Dynamic screen sizes based on template
   moisture_percentage: number
   defects_primary: number
   defects_secondary: number
@@ -44,14 +65,13 @@ export default function GradingDetailPage() {
   const sampleId = params?.id as string
 
   const [sample, setSample] = useState<Sample | null>(null)
+  const [qualityTemplate, setQualityTemplate] = useState<QualityTemplate | null>(null)
+  const [screenSizeConstraints, setScreenSizeConstraints] = useState<ScreenSizeConstraint[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [gradingData, setGradingData] = useState<GradingData>({
-    screen_size_17_plus: 0,
-    screen_size_16: 0,
-    screen_size_15: 0,
-    screen_size_14: 0,
-    screen_size_13_minus: 0,
+    screen_sizes: {},
     moisture_percentage: 0,
     defects_primary: 0,
     defects_secondary: 0,
@@ -74,6 +94,12 @@ export default function GradingDetailPage() {
 
       if (response.ok) {
         setSample(data.sample)
+
+        // Load quality template if quality_spec_id exists
+        if (data.sample.quality_spec_id) {
+          await loadQualityTemplate(data.sample.quality_spec_id)
+        }
+
         // Load existing grading data if available
         if (data.sample.cups_per_sample) {
           setGradingData(prev => ({
@@ -91,6 +117,43 @@ export default function GradingDetailPage() {
     }
   }
 
+  const loadQualityTemplate = async (qualitySpecId: string) => {
+    try {
+      // Load client quality to get template_id
+      const clientQualityResponse = await fetch(`/api/client-qualities/${qualitySpecId}`)
+      const clientQualityData = await clientQualityResponse.json()
+
+      if (clientQualityResponse.ok && clientQualityData.client_quality?.template_id) {
+        // Load quality template
+        const templateResponse = await fetch(`/api/quality-templates/${clientQualityData.client_quality.template_id}`)
+        const templateData = await templateResponse.json()
+
+        if (templateResponse.ok) {
+          const template = templateData.template
+          setQualityTemplate(template)
+
+          // Extract screen size constraints from template
+          const requirements = template.screen_size_requirements || template.parameters?.screen_size_requirements
+          if (requirements?.constraints) {
+            setScreenSizeConstraints(requirements.constraints)
+
+            // Initialize screen_sizes in gradingData with empty values for each constraint
+            const initialScreenSizes: { [key: string]: number } = {}
+            requirements.constraints.forEach((constraint: ScreenSizeConstraint) => {
+              initialScreenSizes[constraint.screen_size] = 0
+            })
+            setGradingData(prev => ({
+              ...prev,
+              screen_sizes: initialScreenSizes
+            }))
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading quality template:', error)
+    }
+  }
+
   const handleInputChange = (field: keyof GradingData, value: string | number) => {
     setGradingData(prev => ({
       ...prev,
@@ -98,9 +161,35 @@ export default function GradingDetailPage() {
     }))
   }
 
+  const handleScreenSizeChange = (screenSize: string, value: number) => {
+    setGradingData(prev => ({
+      ...prev,
+      screen_sizes: {
+        ...prev.screen_sizes,
+        [screenSize]: value
+      }
+    }))
+  }
+
   const handleSubmitGrading = async () => {
     try {
       setSaving(true)
+      setValidationErrors([])
+
+      // Validate screen size distribution against constraints
+      if (screenSizeConstraints.length > 0) {
+        const validationResult = validateScreenSizeDistribution(
+          gradingData.screen_sizes,
+          { constraints: screenSizeConstraints }
+        )
+
+        if (!validationResult.is_valid) {
+          const errors = validationResult.violations.map(v => v.message)
+          setValidationErrors(errors)
+          setSaving(false)
+          return
+        }
+      }
 
       // Update sample with grading data and cups per sample
       const updateResponse = await fetch(`/api/samples/${sampleId}`, {
@@ -123,13 +212,7 @@ export default function GradingDetailPage() {
         body: JSON.stringify({
           sample_id: sampleId,
           green_bean_data: {
-            screen_sizes: {
-              '17+': gradingData.screen_size_17_plus,
-              '16': gradingData.screen_size_16,
-              '15': gradingData.screen_size_15,
-              '14': gradingData.screen_size_14,
-              '13-': gradingData.screen_size_13_minus
-            },
+            screen_sizes: gradingData.screen_sizes, // Dynamic screen sizes from constraints
             moisture_percentage: gradingData.moisture_percentage,
             defects: {
               primary: gradingData.defects_primary,
@@ -185,6 +268,25 @@ export default function GradingDetailPage() {
   return (
     <MainLayout>
       <div className="p-6 space-y-6">
+        {/* Validation Errors */}
+        {validationErrors.length > 0 && (
+          <Card className="border-destructive">
+            <CardContent className="pt-6">
+              <div className="space-y-2">
+                <h3 className="text-sm font-semibold text-destructive">Screen Size Constraint Violations</h3>
+                <ul className="list-disc list-inside space-y-1">
+                  {validationErrors.map((error, idx) => (
+                    <li key={idx} className="text-sm text-destructive">{error}</li>
+                  ))}
+                </ul>
+                <p className="text-xs text-muted-foreground mt-3">
+                  Please adjust the screen size percentages to meet the quality template requirements before submitting.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
@@ -285,78 +387,57 @@ export default function GradingDetailPage() {
             <CardTitle>Green Bean Analysis</CardTitle>
           </CardHeader>
           <CardContent className="space-y-6">
-            {/* Screen Sizes */}
+            {/* Screen Sizes - Dynamic based on quality template constraints */}
             <div>
-              <Label className="text-base font-semibold mb-3 block">
-                Screen Size Distribution (%)
-              </Label>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                <div>
-                  <Label htmlFor="screen_17_plus" className="text-sm">17+</Label>
-                  <Input
-                    id="screen_17_plus"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={gradingData.screen_size_17_plus}
-                    onChange={(e) => handleInputChange('screen_size_17_plus', parseFloat(e.target.value) || 0)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="screen_16" className="text-sm">16</Label>
-                  <Input
-                    id="screen_16"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={gradingData.screen_size_16}
-                    onChange={(e) => handleInputChange('screen_size_16', parseFloat(e.target.value) || 0)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="screen_15" className="text-sm">15</Label>
-                  <Input
-                    id="screen_15"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={gradingData.screen_size_15}
-                    onChange={(e) => handleInputChange('screen_size_15', parseFloat(e.target.value) || 0)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="screen_14" className="text-sm">14</Label>
-                  <Input
-                    id="screen_14"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={gradingData.screen_size_14}
-                    onChange={(e) => handleInputChange('screen_size_14', parseFloat(e.target.value) || 0)}
-                    className="mt-1"
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="screen_13_minus" className="text-sm">13-</Label>
-                  <Input
-                    id="screen_13_minus"
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={gradingData.screen_size_13_minus}
-                    onChange={(e) => handleInputChange('screen_size_13_minus', parseFloat(e.target.value) || 0)}
-                    className="mt-1"
-                  />
-                </div>
+              <div className="flex items-center justify-between mb-3">
+                <Label className="text-base font-semibold">
+                  Screen Size Distribution (%)
+                </Label>
+                {qualityTemplate && (
+                  <Badge variant="outline" className="text-xs">
+                    Template: {qualityTemplate.name_en || qualityTemplate.name}
+                  </Badge>
+                )}
               </div>
+
+              {screenSizeConstraints.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                    {screenSizeConstraints
+                      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                      .map((constraint) => (
+                        <div key={constraint.screen_size} className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label htmlFor={`screen_${constraint.screen_size}`} className="text-sm font-medium">
+                              {constraint.screen_size}
+                            </Label>
+                            <Badge variant="secondary" className="text-xs">
+                              {getConstraintDisplayText(constraint)}
+                            </Badge>
+                          </div>
+                          <Input
+                            id={`screen_${constraint.screen_size}`}
+                            type="number"
+                            min="0"
+                            max="100"
+                            step="0.1"
+                            value={gradingData.screen_sizes[constraint.screen_size] || 0}
+                            onChange={(e) => handleScreenSizeChange(constraint.screen_size, parseFloat(e.target.value) || 0)}
+                            placeholder="0.0"
+                          />
+                        </div>
+                      ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-3">
+                    Only screens defined in the quality template are shown. Enter actual measured percentages.
+                  </p>
+                </>
+              ) : (
+                <div className="p-4 border border-dashed rounded-lg text-center text-muted-foreground">
+                  <p className="text-sm">No quality template associated with this sample.</p>
+                  <p className="text-xs mt-1">Screen size requirements will be displayed once a quality template is assigned.</p>
+                </div>
+              )}
             </div>
 
             {/* Physical Properties */}

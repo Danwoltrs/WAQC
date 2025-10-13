@@ -8,6 +8,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
 import { AlertCircle, CheckCircle2, Plus, X, Save } from 'lucide-react'
+import {
+  ScreenSizeConstraint,
+  ScreenSizeRequirements,
+  ConstraintType,
+  STANDARD_SCREEN_SIZES,
+  getConstraintDisplayText
+} from '@/types/screen-size-constraints'
 
 interface AttributeScale {
   attribute: string
@@ -29,8 +36,9 @@ interface TaintFaultConfig {
 interface TemplateParameters {
   sample_size_grams?: number // For proportional scaling
   screen_sizes?: {
-    sizes?: { [key: string]: number } // e.g., { "Pan": 5, "Peas 9": 10, "Scr. 17": 25 }
+    sizes?: { [key: string]: number } // Legacy format - kept for backward compatibility
   }
+  screen_size_requirements?: ScreenSizeRequirements // New constraint-based format
   defects?: DefectConfig[]
   moisture_min?: number
   moisture_max?: number
@@ -74,7 +82,7 @@ const DEFAULT_CUPPING_ATTRIBUTES: AttributeScale[] = [
   { attribute: 'Overall', scale: 4, range: 1 }
 ]
 
-const SCREEN_SIZES = ['Pan', 'Peas 9', 'Peas 10', 'Peas 11', 'Scr. 12', 'Scr. 13', 'Scr. 14', 'Scr. 15', 'Scr. 16', 'Scr. 17', 'Scr. 18', 'Scr. 19', 'Scr. 20']
+// Removed SCREEN_SIZES - now using STANDARD_SCREEN_SIZES from types
 
 export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderProps) {
   const [loading, setLoading] = useState(false)
@@ -91,10 +99,14 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     template?.parameters.sample_size_grams?.toString() || '300'
   )
 
-  // Screen sizes
-  const [specificSizes, setSpecificSizes] = useState<{ [key: string]: number }>(
-    template?.parameters.screen_sizes?.sizes || {}
+  // Screen size constraints (new format)
+  const [screenSizeConstraints, setScreenSizeConstraints] = useState<ScreenSizeConstraint[]>(
+    template?.parameters.screen_size_requirements?.constraints || []
   )
+  const [newConstraintScreen, setNewConstraintScreen] = useState<string>('')
+  const [newConstraintType, setNewConstraintType] = useState<ConstraintType>('minimum')
+  const [newConstraintMinValue, setNewConstraintMinValue] = useState<string>('')
+  const [newConstraintMaxValue, setNewConstraintMaxValue] = useState<string>('')
 
   // Defects
   const [defectConfigs, setDefectConfigs] = useState<DefectConfig[]>(
@@ -160,14 +172,67 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     ))
   }
 
-  const handleSpecificSizeChange = (size: string, percentage: string) => {
-    const value = parseFloat(percentage)
-    if (isNaN(value) || value < 0) {
-      const { [size]: _, ...rest } = specificSizes
-      setSpecificSizes(rest)
-    } else {
-      setSpecificSizes({ ...specificSizes, [size]: value })
+  // Screen size constraint handlers
+  const handleAddConstraint = () => {
+    if (!newConstraintScreen) return
+
+    // Check if constraint already exists for this screen size
+    if (screenSizeConstraints.find(c => c.screen_size === newConstraintScreen)) {
+      setError(`Constraint already exists for ${newConstraintScreen}`)
+      return
     }
+
+    const newConstraint: ScreenSizeConstraint = {
+      screen_size: newConstraintScreen,
+      constraint_type: newConstraintType,
+      display_order: screenSizeConstraints.length
+    }
+
+    // Add values based on constraint type
+    if (newConstraintType === 'minimum') {
+      const minVal = parseFloat(newConstraintMinValue)
+      if (isNaN(minVal) || minVal < 0 || minVal > 100) {
+        setError('Minimum value must be between 0 and 100')
+        return
+      }
+      newConstraint.min_value = minVal
+    } else if (newConstraintType === 'maximum') {
+      const maxVal = parseFloat(newConstraintMaxValue)
+      if (isNaN(maxVal) || maxVal < 0 || maxVal > 100) {
+        setError('Maximum value must be between 0 and 100')
+        return
+      }
+      newConstraint.max_value = maxVal
+    } else if (newConstraintType === 'range') {
+      const minVal = parseFloat(newConstraintMinValue)
+      const maxVal = parseFloat(newConstraintMaxValue)
+      if (isNaN(minVal) || isNaN(maxVal) || minVal < 0 || maxVal > 100 || minVal >= maxVal) {
+        setError('Range values must be valid, between 0-100, and min < max')
+        return
+      }
+      newConstraint.min_value = minVal
+      newConstraint.max_value = maxVal
+    }
+    // 'any' type doesn't need values
+
+    setScreenSizeConstraints([...screenSizeConstraints, newConstraint])
+
+    // Reset form
+    setNewConstraintScreen('')
+    setNewConstraintType('minimum')
+    setNewConstraintMinValue('')
+    setNewConstraintMaxValue('')
+    setError(null)
+  }
+
+  const handleRemoveConstraint = (screenSize: string) => {
+    setScreenSizeConstraints(screenSizeConstraints.filter(c => c.screen_size !== screenSize))
+  }
+
+  const handleUpdateConstraint = (screenSize: string, field: keyof ScreenSizeConstraint, value: any) => {
+    setScreenSizeConstraints(screenSizeConstraints.map(c =>
+      c.screen_size === screenSize ? { ...c, [field]: value } : c
+    ))
   }
 
   const validateForm = (): string | null => {
@@ -178,10 +243,28 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       return 'Sample size must be greater than 0'
     }
 
-    // Validate screen sizes
-    if (Object.keys(specificSizes).length === 0) return 'At least one screen size is required'
-    const total = Object.values(specificSizes).reduce((sum, val) => sum + val, 0)
-    if (Math.abs(total - 100) > 0.1) return `Screen size percentages must total 100% (currently ${total.toFixed(1)}%)`
+    // Validate screen size constraints (new system)
+    if (screenSizeConstraints.length === 0) {
+      return 'At least one screen size constraint is required'
+    }
+
+    // Validate each constraint has valid values
+    for (const constraint of screenSizeConstraints) {
+      if (constraint.constraint_type === 'minimum' && (constraint.min_value === undefined || constraint.min_value < 0 || constraint.min_value > 100)) {
+        return `Minimum constraint for ${constraint.screen_size} must have a value between 0 and 100`
+      }
+      if (constraint.constraint_type === 'maximum' && (constraint.max_value === undefined || constraint.max_value < 0 || constraint.max_value > 100)) {
+        return `Maximum constraint for ${constraint.screen_size} must have a value between 0 and 100`
+      }
+      if (constraint.constraint_type === 'range') {
+        if (constraint.min_value === undefined || constraint.max_value === undefined) {
+          return `Range constraint for ${constraint.screen_size} must have both min and max values`
+        }
+        if (constraint.min_value >= constraint.max_value) {
+          return `Range constraint for ${constraint.screen_size} must have min < max`
+        }
+      }
+    }
 
     // Validate moisture
     if (moistureMin && (parseFloat(moistureMin) < 0 || parseFloat(moistureMin) > 100)) {
@@ -229,9 +312,10 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         parameters.sample_size_grams = parseFloat(sampleSizeGrams)
       }
 
-      // Screen sizes
-      parameters.screen_sizes = {
-        sizes: specificSizes
+      // Screen size requirements (new constraint-based format)
+      parameters.screen_size_requirements = {
+        constraints: screenSizeConstraints,
+        notes: ''
       }
 
       // Defects
@@ -347,39 +431,169 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
       </Card>
 
-      {/* Screen Sizes */}
+      {/* Screen Size Requirements */}
       <Card>
         <CardHeader>
           <CardTitle>Screen Size Requirements</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label>Size Distribution (must total 100%)</Label>
-              <Badge variant="outline">
-                Total: {Object.values(specificSizes).reduce((sum, val) => sum + val, 0).toFixed(1)}%
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {SCREEN_SIZES.map((size) => (
-                <div key={size} className="space-y-1">
-                  <Label className="text-xs">{size}</Label>
-                  <Input
-                    type="number"
-                    min="0"
-                    max="100"
-                    step="0.1"
-                    value={specificSizes[size] || ''}
-                    onChange={(e) => handleSpecificSizeChange(size, e.target.value)}
-                    placeholder="0.0%"
-                    className="h-8"
-                  />
+            <Label>Defined Constraints ({screenSizeConstraints.length})</Label>
+
+            {/* Display existing constraints */}
+            {screenSizeConstraints.length > 0 && (
+              <div className="space-y-2">
+                {screenSizeConstraints.map((constraint) => (
+                  <div key={constraint.screen_size} className="flex items-center justify-between p-3 rounded-lg border bg-card">
+                    <div className="flex items-center gap-4 flex-1">
+                      <Badge variant="outline" className="min-w-[100px]">
+                        {constraint.screen_size}
+                      </Badge>
+                      <div className="flex items-center gap-2">
+                        <Badge variant="secondary">
+                          {constraint.constraint_type}
+                        </Badge>
+                        <span className="text-sm font-medium">
+                          {getConstraintDisplayText(constraint)}
+                        </span>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => handleRemoveConstraint(constraint.screen_size)}
+                      className="hover:text-destructive"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new constraint form */}
+            <div className="border-t pt-4 space-y-3">
+              <Label>Add Screen Size Constraint</Label>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Screen size selector */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Screen Size</Label>
+                  <Select value={newConstraintScreen} onValueChange={setNewConstraintScreen}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {STANDARD_SCREEN_SIZES.filter(
+                        size => !screenSizeConstraints.find(c => c.screen_size === size)
+                      ).map((size) => (
+                        <SelectItem key={size} value={size}>
+                          {size}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              ))}
+
+                {/* Constraint type selector */}
+                <div className="space-y-1">
+                  <Label className="text-xs">Constraint Type</Label>
+                  <Select value={newConstraintType} onValueChange={(v: ConstraintType) => setNewConstraintType(v)}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="minimum">Minimum (≥)</SelectItem>
+                      <SelectItem value="maximum">Maximum (≤)</SelectItem>
+                      <SelectItem value="range">Range</SelectItem>
+                      <SelectItem value="any">Any Amount</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Value inputs (conditional based on constraint type) */}
+                {newConstraintType === 'minimum' && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Minimum %</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={newConstraintMinValue}
+                      onChange={(e) => setNewConstraintMinValue(e.target.value)}
+                      placeholder="e.g., 40"
+                    />
+                  </div>
+                )}
+
+                {newConstraintType === 'maximum' && (
+                  <div className="space-y-1">
+                    <Label className="text-xs">Maximum %</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      max="100"
+                      step="0.1"
+                      value={newConstraintMaxValue}
+                      onChange={(e) => setNewConstraintMaxValue(e.target.value)}
+                      placeholder="e.g., 20"
+                    />
+                  </div>
+                )}
+
+                {newConstraintType === 'range' && (
+                  <>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Min %</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={newConstraintMinValue}
+                        onChange={(e) => setNewConstraintMinValue(e.target.value)}
+                        placeholder="e.g., 35"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <Label className="text-xs">Max %</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        value={newConstraintMaxValue}
+                        onChange={(e) => setNewConstraintMaxValue(e.target.value)}
+                        placeholder="e.g., 45"
+                      />
+                    </div>
+                  </>
+                )}
+
+                {/* Add button */}
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={handleAddConstraint}
+                    disabled={!newConstraintScreen}
+                    className="w-full"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add
+                  </Button>
+                </div>
+              </div>
             </div>
-            <p className="text-xs text-muted-foreground">
-              Templates you create can be saved and reused for specific client configurations (e.g., NY 2/3 14/16 SS FC).
-            </p>
+
+            <div className="text-xs text-muted-foreground space-y-1">
+              <p><strong>Constraint Types:</strong></p>
+              <ul className="list-disc list-inside space-y-1 ml-2">
+                <li><strong>Minimum:</strong> At least X% must be this screen size (e.g., ≥45% Screen 11+)</li>
+                <li><strong>Maximum:</strong> At most X% can be this screen size (e.g., ≤5% Pan)</li>
+                <li><strong>Range:</strong> Screen size must be between min-max% (e.g., 35-45% Screen 18)</li>
+                <li><strong>Any:</strong> No constraint, just track the screen exists (e.g., Screen 15 any amount)</li>
+              </ul>
+              <p className="mt-2">During QC grading, only screens with defined constraints will be shown, reducing visual clutter.</p>
+            </div>
           </div>
         </CardContent>
       </Card>
