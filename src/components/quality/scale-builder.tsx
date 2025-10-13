@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -209,6 +209,19 @@ function WordingScaleBuilder({ scale, onChange }: WordingScaleBuilderProps) {
   const [newLabel, setNewLabel] = useState('')
   const [newValue, setNewValue] = useState('')
 
+  // Ensure options array exists - use effect to avoid calling onChange during render
+  useEffect(() => {
+    if (!scale.options || !Array.isArray(scale.options)) {
+      onChange({
+        type: 'wording',
+        options: []
+      })
+    }
+  }, [])
+
+  // Guard against undefined options during render
+  const options = scale.options || []
+
   const handleAddOption = () => {
     if (!newLabel.trim() || !newValue) return
 
@@ -216,19 +229,19 @@ function WordingScaleBuilder({ scale, onChange }: WordingScaleBuilderProps) {
     if (isNaN(value)) return
 
     // Check for duplicates
-    if (scale.options.some(o => o.label.toLowerCase() === newLabel.trim().toLowerCase())) {
+    if (options.some(o => o.label.toLowerCase() === newLabel.trim().toLowerCase())) {
       return
     }
-    if (scale.options.some(o => o.value === value)) {
+    if (options.some(o => o.value === value)) {
       return
     }
 
     const newOptions = [
-      ...scale.options,
+      ...options,
       {
         label: newLabel.trim(),
         value,
-        display_order: scale.options.length
+        display_order: options.length
       }
     ]
 
@@ -245,14 +258,14 @@ function WordingScaleBuilder({ scale, onChange }: WordingScaleBuilderProps) {
   }
 
   const handleRemoveOption = (index: number) => {
-    const newOptions = scale.options
+    const newOptions = options
       .filter((_, i) => i !== index)
       .map((opt, idx) => ({ ...opt, display_order: idx }))
     onChange({ ...scale, options: newOptions })
   }
 
   const handleUpdateOption = (index: number, field: keyof WordingScaleOption, value: string | number) => {
-    const newOptions = [...scale.options]
+    const newOptions = [...options]
     newOptions[index] = { ...newOptions[index], [field]: value }
     onChange({ ...scale, options: newOptions })
   }
@@ -260,12 +273,12 @@ function WordingScaleBuilder({ scale, onChange }: WordingScaleBuilderProps) {
   const handleMoveOption = (index: number, direction: 'up' | 'down') => {
     if (
       (direction === 'up' && index === 0) ||
-      (direction === 'down' && index === scale.options.length - 1)
+      (direction === 'down' && index === options.length - 1)
     ) {
       return
     }
 
-    const newOptions = [...scale.options]
+    const newOptions = [...options]
     const targetIndex = direction === 'up' ? index - 1 : index + 1
 
     // Swap display_order
@@ -287,12 +300,12 @@ function WordingScaleBuilder({ scale, onChange }: WordingScaleBuilderProps) {
       <CardContent className="space-y-4">
         {/* Existing Options */}
         <div className="space-y-2">
-          <Label className="text-xs">Scale Options ({scale.options.length})</Label>
-          {scale.options.length === 0 ? (
+          <Label className="text-xs">Scale Options ({options.length})</Label>
+          {options.length === 0 ? (
             <p className="text-sm text-muted-foreground">No options defined yet. Add options below.</p>
           ) : (
             <div className="space-y-2">
-              {scale.options.map((option, index) => (
+              {options.map((option, index) => (
                 <div
                   key={index}
                   className="flex items-center gap-2 p-2 rounded-lg border bg-card"
@@ -312,7 +325,7 @@ function WordingScaleBuilder({ scale, onChange }: WordingScaleBuilderProps) {
                     <button
                       type="button"
                       onClick={() => handleMoveOption(index, 'down')}
-                      disabled={index === scale.options.length - 1}
+                      disabled={index === options.length - 1}
                       className="hover:text-primary disabled:opacity-30"
                     >
                       <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -393,11 +406,11 @@ function WordingScaleBuilder({ scale, onChange }: WordingScaleBuilderProps) {
         </div>
 
         {/* Preview */}
-        {scale.options.length > 0 && (
+        {options.length > 0 && (
           <div className="text-xs text-muted-foreground space-y-1">
             <p><strong>Preview:</strong></p>
             <div className="flex flex-wrap gap-1">
-              {scale.options.map((option, index) => (
+              {options.map((option, index) => (
                 <Badge key={index} variant="secondary">
                   {option.label} ({option.value})
                 </Badge>
