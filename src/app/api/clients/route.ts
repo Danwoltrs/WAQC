@@ -92,18 +92,20 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Check for duplicate clients (by name + email or company + email)
+    // Check for duplicate clients by email
     if (body.email) {
-      const { data: duplicates } = await supabase
+      const { data: duplicates, error: dupError } = await supabase
         .from('clients')
         .select('id, name, company, email')
-        .or(`and(name.eq.${body.name},email.eq.${body.email}),and(company.eq.${body.company},email.eq.${body.email})`)
+        .eq('email', body.email)
         .limit(1)
 
-      if (duplicates && duplicates.length > 0) {
+      if (dupError) {
+        console.error('Error checking for duplicates:', dupError)
+      } else if (duplicates && duplicates.length > 0) {
         return NextResponse.json({
           error: 'Duplicate client detected',
-          message: `A client with this name/company and email already exists`,
+          message: `A client with this email address already exists`,
           existing_client: duplicates[0]
         }, { status: 409 })
       }
@@ -114,7 +116,7 @@ export async function POST(request: NextRequest) {
       name: body.name,
       company: body.company,
       fantasy_name: body.fantasy_name || body.company,
-      address: body.address,
+      address: body.address || '',
       city: body.city,
       state: body.state,
       country: body.country,
