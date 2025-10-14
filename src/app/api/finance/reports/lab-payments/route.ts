@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
     const totals = {
       total_labs: labSummaries?.length || 0,
       total_samples: labSummaries?.reduce((sum, l) => sum + (l.total_samples || 0), 0) || 0,
-      total_owed: labSummaries?.reduce((sum, l) => sum + (parseFloat(l.total_owed_amount) || 0), 0) || 0,
-      total_potential: labSummaries?.reduce((sum, l) => sum + (parseFloat(l.total_potential_amount) || 0), 0) || 0,
+      total_owed: labSummaries?.reduce((sum, l) => sum + (l.total_owed_amount || 0), 0) || 0,
+      total_potential: labSummaries?.reduce((sum, l) => sum + (l.total_potential_amount || 0), 0) || 0,
     }
 
     return NextResponse.json({
