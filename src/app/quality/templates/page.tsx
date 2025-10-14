@@ -311,7 +311,7 @@ export default function QualityTemplatesPage() {
           </CardContent>
         </Card>
 
-        {/* Templates Grid */}
+        {/* Templates Table */}
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">
             Loading templates...
@@ -333,93 +333,249 @@ export default function QualityTemplatesPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredTemplates.map((template) => (
-              <Card key={template.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex-1">
-                      <CardTitle className="text-lg">{getTemplateName(template)}</CardTitle>
-                      <div className="flex items-center gap-2 mt-2">
-                        {template.is_active ? (
-                          <Badge variant="default" className="text-xs">
-                            <CheckCircle className="h-3 w-3 mr-1" />
-                            Active
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary" className="text-xs">
-                            <XCircle className="h-3 w-3 mr-1" />
-                            Inactive
-                          </Badge>
-                        )}
-                        <Badge variant="outline" className="text-xs">
-                          v{template.version}
-                        </Badge>
-                      </div>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <p className="text-sm text-muted-foreground line-clamp-2">
-                    {getTemplateDescription(template) || 'No description provided'}
-                  </p>
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full">
+                  <thead>
+                    <tr className="border-b bg-muted/50">
+                      <th className="px-4 py-3 text-left text-sm font-medium">Template</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Usage</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Screen Sizes</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Defects</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Green Aspect</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Roast Aspect</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Quakers</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Taints & Faults</th>
+                      <th className="px-4 py-3 text-right text-sm font-medium">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredTemplates.map((template) => (
+                      <tr key={template.id} className="border-b hover:bg-muted/20 transition-colors">
+                        {/* Template Info */}
+                        <td className="px-4 py-4">
+                          <div className="space-y-1">
+                            <div className="font-medium">{getTemplateName(template)}</div>
+                            <div className="text-xs text-muted-foreground line-clamp-2">
+                              {getTemplateDescription(template) || 'No description'}
+                            </div>
+                            <div className="flex items-center gap-2 mt-1">
+                              {template.is_active ? (
+                                <Badge variant="default" className="text-xs">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Active
+                                </Badge>
+                              ) : (
+                                <Badge variant="secondary" className="text-xs">
+                                  <XCircle className="h-3 w-3 mr-1" />
+                                  Inactive
+                                </Badge>
+                              )}
+                              <Badge variant="outline" className="text-xs">v{template.version}</Badge>
+                            </div>
+                          </div>
+                        </td>
 
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    {template.usage_count !== undefined && (
-                      <>
-                        {template.usage_count > 0 ? (
-                          <span className="flex items-center gap-1">
-                            <AlertCircle className="h-3 w-3" />
-                            Used by {template.usage_count} client{template.usage_count !== 1 ? 's' : ''}
-                          </span>
-                        ) : (
-                          <span>Not in use</span>
-                        )}
-                      </>
-                    )}
-                  </div>
+                        {/* Usage */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm">
+                            {template.usage_count !== undefined && template.usage_count > 0 ? (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto p-0 hover:underline"
+                                onClick={() => {
+                                  // TODO: Show dialog with clients using this template
+                                  alert(`View clients using "${getTemplateName(template)}"`)
+                                }}
+                              >
+                                <AlertCircle className="h-3 w-3 mr-1 text-amber-500" />
+                                {template.usage_count} client{template.usage_count !== 1 ? 's' : ''}
+                              </Button>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">Not in use</span>
+                            )}
+                          </div>
+                        </td>
 
-                  <div className="flex flex-wrap gap-2 pt-2 border-t">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setViewingTemplate(template)}
-                    >
-                      <Eye className="h-3 w-3 mr-1" />
-                      View
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEdit(template)}
-                    >
-                      <Edit className="h-3 w-3 mr-1" />
-                      Edit
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleClone(template)}
-                    >
-                      <Copy className="h-3 w-3 mr-1" />
-                      Clone
-                    </Button>
-                    {(!template.usage_count || template.usage_count === 0) && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleDelete(template)}
-                        className="text-destructive hover:text-destructive"
-                      >
-                        <Trash2 className="h-3 w-3 mr-1" />
-                        Delete
-                      </Button>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                        {/* Screen Sizes */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm space-y-1">
+                            {template.parameters.screen_size_requirements?.constraints?.length ? (
+                              <>
+                                <div className="font-medium text-xs mb-1">
+                                  {template.parameters.screen_size_requirements.constraints.length} constraint{template.parameters.screen_size_requirements.constraints.length !== 1 ? 's' : ''}
+                                </div>
+                                <div className="space-y-0.5 max-h-20 overflow-y-auto">
+                                  {template.parameters.screen_size_requirements.constraints
+                                    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                                    .map((c, idx) => (
+                                      <div key={idx} className="text-xs text-muted-foreground">
+                                        <span className="font-mono">{c.screen_size}</span>: {c.constraint_type === 'minimum' && `≥${c.min_value}%`}
+                                        {c.constraint_type === 'maximum' && `≤${c.max_value}%`}
+                                        {c.constraint_type === 'range' && `${c.min_value}-${c.max_value}%`}
+                                        {c.constraint_type === 'any' && 'any'}
+                                      </div>
+                                    ))}
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">None</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Defects */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm space-y-1">
+                            {template.parameters.defect_configuration?.defects?.length ? (
+                              <>
+                                <div className="text-xs space-y-0.5">
+                                  <div>
+                                    <span className="text-muted-foreground">Primary:</span> ≤{template.parameters.defect_configuration.thresholds?.max_primary ?? '-'}
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Secondary:</span> ≤{template.parameters.defect_configuration.thresholds?.max_secondary ?? '-'}
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Total:</span> ≤{template.parameters.defect_configuration.thresholds?.max_total ?? '-'}
+                                  </div>
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">None</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Green Aspect */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm">
+                            {template.parameters.green_aspect_configuration?.wordings?.length ? (
+                              <div className="text-xs">
+                                {template.parameters.green_aspect_configuration.wordings.length} level{template.parameters.green_aspect_configuration.wordings.length !== 1 ? 's' : ''}
+                                {template.parameters.green_aspect_configuration.validation?.min_acceptable_value && (
+                                  <div className="text-muted-foreground">
+                                    Min: {template.parameters.green_aspect_configuration.wordings.find(w => w.value === template.parameters.green_aspect_configuration?.validation?.min_acceptable_value)?.label || '-'}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">None</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Roast Aspect */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm">
+                            {template.parameters.roast_aspect_configuration?.wordings?.length ? (
+                              <div className="text-xs">
+                                {template.parameters.roast_aspect_configuration.wordings.length} level{template.parameters.roast_aspect_configuration.wordings.length !== 1 ? 's' : ''}
+                                {template.parameters.roast_aspect_configuration.validation?.min_acceptable_value && (
+                                  <div className="text-muted-foreground">
+                                    Min: {template.parameters.roast_aspect_configuration.wordings.find(w => w.value === template.parameters.roast_aspect_configuration?.validation?.min_acceptable_value)?.label || '-'}
+                                  </div>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">None</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Quakers */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm">
+                            {template.parameters.max_quakers !== undefined ? (
+                              <div className="text-xs">
+                                ≤{template.parameters.max_quakers}
+                                <div className="text-muted-foreground">
+                                  per {template.parameters.roast_sample_size_grams || 300}g
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">No limit</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Taints & Faults */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm">
+                            {template.parameters.taint_fault_configuration ? (
+                              <div className="text-xs space-y-0.5">
+                                {template.parameters.taint_fault_configuration.rules?.zero_tolerance ? (
+                                  <Badge variant="destructive" className="text-xs">Zero Tolerance</Badge>
+                                ) : (
+                                  <>
+                                    {template.parameters.taint_fault_configuration.taints?.length > 0 && (
+                                      <div>
+                                        <span className="text-muted-foreground">Taints:</span> {template.parameters.taint_fault_configuration.taints.length}
+                                      </div>
+                                    )}
+                                    {template.parameters.taint_fault_configuration.faults?.length > 0 && (
+                                      <div>
+                                        <span className="text-muted-foreground">Faults:</span> {template.parameters.taint_fault_configuration.faults.length}
+                                      </div>
+                                    )}
+                                  </>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">None</span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-4">
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setViewingTemplate(template)}
+                              title="View details"
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleEdit(template)}
+                              title="Edit template"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleClone(template)}
+                              title="Clone template"
+                            >
+                              <Copy className="h-4 w-4" />
+                            </Button>
+                            {(!template.usage_count || template.usage_count === 0) && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDelete(template)}
+                                className="text-destructive hover:text-destructive"
+                                title="Delete template"
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         )}
       </div>
     </MainLayout>
