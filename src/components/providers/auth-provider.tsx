@@ -142,21 +142,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     try {
       console.log('Fetching profile for user:', userId)
-      
-      // Test basic database connectivity first
-      const { data: testData, error: testError } = await supabase
-        .from('profiles')
-        .select('count')
-        .limit(1)
-      
-      if (testError) {
-        console.error('Database connectivity test failed:', testError)
-        setLoading(false)
-        return
-      }
-      
-      console.log('Database connectivity test passed')
-      
+
       const { data: profileData, error } = await supabase
         .from('profiles')
         .select('*')
