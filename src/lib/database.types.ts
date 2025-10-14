@@ -68,6 +68,20 @@ export type Database = {
             foreignKeyName: "access_requests_requested_laboratory_id_fkey"
             columns: ["requested_laboratory_id"]
             isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "access_requests_requested_laboratory_id_fkey"
+            columns: ["requested_laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "access_requests_requested_laboratory_id_fkey"
+            columns: ["requested_laboratory_id"]
+            isOneToOne: false
             referencedRelation: "laboratories"
             referencedColumns: ["id"]
           },
@@ -470,6 +484,20 @@ export type Database = {
             foreignKeyName: "api_keys_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "api_keys_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "api_keys_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
@@ -564,6 +592,20 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "certificate_number_configs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "certificate_number_configs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
           {
             foreignKeyName: "certificate_number_configs_client_id_fkey"
             columns: ["client_id"]
@@ -754,6 +796,20 @@ export type Database = {
             foreignKeyName: "client_certificate_settings_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: true
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_certificate_settings_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "client_certificate_settings_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: true
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
@@ -834,6 +890,67 @@ export type Database = {
           },
         ]
       }
+      client_origin_pricing: {
+        Row: {
+          client_id: string
+          created_at: string | null
+          currency: string | null
+          id: string
+          is_active: boolean | null
+          origin: string
+          price_per_pound_cents: number | null
+          price_per_sample: number | null
+          pricing_model: Database["public"]["Enums"]["pricing_model"]
+          updated_at: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string | null
+          currency?: string | null
+          id?: string
+          is_active?: boolean | null
+          origin: string
+          price_per_pound_cents?: number | null
+          price_per_sample?: number | null
+          pricing_model: Database["public"]["Enums"]["pricing_model"]
+          updated_at?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string | null
+          currency?: string | null
+          id?: string
+          is_active?: boolean | null
+          origin?: string
+          price_per_pound_cents?: number | null
+          price_per_sample?: number | null
+          pricing_model?: Database["public"]["Enums"]["pricing_model"]
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_origin_pricing_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_origin_pricing_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "client_origin_pricing_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       client_qualities: {
         Row: {
           client_id: string | null
@@ -863,6 +980,20 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "client_qualities_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_qualities_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
           {
             foreignKeyName: "client_qualities_client_id_fkey"
             columns: ["client_id"]
@@ -936,6 +1067,20 @@ export type Database = {
             foreignKeyName: "client_taint_fault_customizations_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_taint_fault_customizations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "client_taint_fault_customizations_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
@@ -958,6 +1103,7 @@ export type Database = {
       clients: {
         Row: {
           address: string
+          billing_basis: Database["public"]["Enums"]["billing_basis"] | null
           billing_notes: string | null
           certificate_delivery_timing: string | null
           city: string | null
@@ -971,6 +1117,7 @@ export type Database = {
           email: string
           fantasy_name: string | null
           fee_payer: Database["public"]["Enums"]["fee_payer"] | null
+          has_origin_pricing: boolean | null
           id: string
           is_active: boolean
           is_qc_client: boolean | null
@@ -989,6 +1136,7 @@ export type Database = {
         }
         Insert: {
           address: string
+          billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
           billing_notes?: string | null
           certificate_delivery_timing?: string | null
           city?: string | null
@@ -1002,6 +1150,7 @@ export type Database = {
           email: string
           fantasy_name?: string | null
           fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
+          has_origin_pricing?: boolean | null
           id?: string
           is_active?: boolean
           is_qc_client?: boolean | null
@@ -1020,6 +1169,7 @@ export type Database = {
         }
         Update: {
           address?: string
+          billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
           billing_notes?: string | null
           certificate_delivery_timing?: string | null
           city?: string | null
@@ -1033,6 +1183,7 @@ export type Database = {
           email?: string
           fantasy_name?: string | null
           fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
+          has_origin_pricing?: boolean | null
           id?: string
           is_active?: boolean
           is_qc_client?: boolean | null
@@ -1945,6 +2096,20 @@ export type Database = {
             foreignKeyName: "cupping_attribute_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_attribute_definitions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "cupping_attribute_definitions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
           },
@@ -2019,6 +2184,20 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "cupping_scale_configs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_scale_configs_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
           {
             foreignKeyName: "cupping_scale_configs_client_id_fkey"
             columns: ["client_id"]
@@ -2193,6 +2372,20 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "defect_definitions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "defect_definitions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
           {
             foreignKeyName: "defect_definitions_client_id_fkey"
             columns: ["client_id"]
@@ -3503,6 +3696,20 @@ export type Database = {
             foreignKeyName: "lab_capabilities_laboratory_id_fkey"
             columns: ["laboratory_id"]
             isOneToOne: true
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "lab_capabilities_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: true
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "lab_capabilities_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: true
             referencedRelation: "laboratories"
             referencedColumns: ["id"]
           },
@@ -3553,8 +3760,36 @@ export type Database = {
             foreignKeyName: "lab_pricing_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lab_pricing_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "lab_pricing_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lab_pricing_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "lab_pricing_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
           },
           {
             foreignKeyName: "lab_pricing_laboratory_id_fkey"
@@ -3622,8 +3857,36 @@ export type Database = {
             foreignKeyName: "lab_shelves_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lab_shelves_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "lab_shelves_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lab_shelves_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "lab_shelves_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
           },
           {
             foreignKeyName: "lab_shelves_laboratory_id_fkey"
@@ -3636,54 +3899,227 @@ export type Database = {
       }
       laboratories: {
         Row: {
+          billing_basis: string | null
           code: string
           created_at: string | null
           entrance_x_position: number | null
           entrance_y_position: number | null
+          fee_currency: string | null
+          fee_per_sample: number | null
           id: string
+          is_3rd_party: boolean | null
           is_active: boolean | null
           location: string | null
           name: string
           storage_capacity: number | null
           storage_layout: Json | null
+          supported_origins: string[] | null
           tax_region: string | null
           timezone: string | null
           type: string | null
           updated_at: string | null
         }
         Insert: {
+          billing_basis?: string | null
           code: string
           created_at?: string | null
           entrance_x_position?: number | null
           entrance_y_position?: number | null
+          fee_currency?: string | null
+          fee_per_sample?: number | null
           id?: string
+          is_3rd_party?: boolean | null
           is_active?: boolean | null
           location?: string | null
           name: string
           storage_capacity?: number | null
           storage_layout?: Json | null
+          supported_origins?: string[] | null
           tax_region?: string | null
           timezone?: string | null
           type?: string | null
           updated_at?: string | null
         }
         Update: {
+          billing_basis?: string | null
           code?: string
           created_at?: string | null
           entrance_x_position?: number | null
           entrance_y_position?: number | null
+          fee_currency?: string | null
+          fee_per_sample?: number | null
           id?: string
+          is_3rd_party?: boolean | null
           is_active?: boolean | null
           location?: string | null
           name?: string
           storage_capacity?: number | null
           storage_layout?: Json | null
+          supported_origins?: string[] | null
           tax_region?: string | null
           timezone?: string | null
           type?: string | null
           updated_at?: string | null
         }
         Relationships: []
+      }
+      laboratory_invoices: {
+        Row: {
+          approved_count: number | null
+          created_at: string | null
+          currency: string | null
+          due_date: string
+          id: string
+          invoice_number: string
+          laboratory_id: string
+          notes: string | null
+          paid_date: string | null
+          period_end: string
+          period_start: string
+          rejected_count: number | null
+          sample_count: number
+          status: Database["public"]["Enums"]["invoice_status"] | null
+          total_amount: number
+          updated_at: string | null
+        }
+        Insert: {
+          approved_count?: number | null
+          created_at?: string | null
+          currency?: string | null
+          due_date: string
+          id?: string
+          invoice_number: string
+          laboratory_id: string
+          notes?: string | null
+          paid_date?: string | null
+          period_end: string
+          period_start: string
+          rejected_count?: number | null
+          sample_count?: number
+          status?: Database["public"]["Enums"]["invoice_status"] | null
+          total_amount: number
+          updated_at?: string | null
+        }
+        Update: {
+          approved_count?: number | null
+          created_at?: string | null
+          currency?: string | null
+          due_date?: string
+          id?: string
+          invoice_number?: string
+          laboratory_id?: string
+          notes?: string | null
+          paid_date?: string | null
+          period_end?: string
+          period_start?: string
+          rejected_count?: number | null
+          sample_count?: number
+          status?: Database["public"]["Enums"]["invoice_status"] | null
+          total_amount?: number
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "laboratory_invoices_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "laboratory_invoices_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "laboratory_invoices_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      laboratory_third_party_config: {
+        Row: {
+          billing_basis: Database["public"]["Enums"]["billing_basis"] | null
+          contact_email: string | null
+          contact_name: string | null
+          contract_end_date: string | null
+          contract_start_date: string | null
+          created_at: string | null
+          currency: string | null
+          fee_per_sample: number
+          id: string
+          is_active: boolean | null
+          laboratory_id: string
+          notes: string | null
+          payment_schedule:
+            | Database["public"]["Enums"]["payment_schedule"]
+            | null
+          updated_at: string | null
+        }
+        Insert: {
+          billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contract_end_date?: string | null
+          contract_start_date?: string | null
+          created_at?: string | null
+          currency?: string | null
+          fee_per_sample: number
+          id?: string
+          is_active?: boolean | null
+          laboratory_id: string
+          notes?: string | null
+          payment_schedule?:
+            | Database["public"]["Enums"]["payment_schedule"]
+            | null
+          updated_at?: string | null
+        }
+        Update: {
+          billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
+          contact_email?: string | null
+          contact_name?: string | null
+          contract_end_date?: string | null
+          contract_start_date?: string | null
+          created_at?: string | null
+          currency?: string | null
+          fee_per_sample?: number
+          id?: string
+          is_active?: boolean | null
+          laboratory_id?: string
+          notes?: string | null
+          payment_schedule?:
+            | Database["public"]["Enums"]["payment_schedule"]
+            | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "laboratory_third_party_config_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: true
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "laboratory_third_party_config_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: true
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "laboratory_third_party_config_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: true
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       labs: {
         Row: {
@@ -4803,8 +5239,36 @@ export type Database = {
             foreignKeyName: "performance_metrics_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "performance_metrics_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "performance_metrics_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "performance_metrics_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
           },
           {
             foreignKeyName: "performance_metrics_laboratory_id_fkey"
@@ -4860,8 +5324,36 @@ export type Database = {
             foreignKeyName: "profiles_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "profiles_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "profiles_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "profiles_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
           },
           {
             foreignKeyName: "profiles_laboratory_id_fkey"
@@ -4907,6 +5399,20 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "qc_activities_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "qc_activities_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
           {
             foreignKeyName: "qc_activities_laboratory_id_fkey"
             columns: ["laboratory_id"]
@@ -5196,6 +5702,20 @@ export type Database = {
             foreignKeyName: "quality_templates_laboratory_id_fkey"
             columns: ["laboratory_id"]
             isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "quality_templates_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "quality_templates_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
             referencedRelation: "laboratories"
             referencedColumns: ["id"]
           },
@@ -5394,6 +5914,20 @@ export type Database = {
             foreignKeyName: "sample_transfers_from_laboratory_id_fkey"
             columns: ["from_laboratory_id"]
             isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "sample_transfers_from_laboratory_id_fkey"
+            columns: ["from_laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "sample_transfers_from_laboratory_id_fkey"
+            columns: ["from_laboratory_id"]
+            isOneToOne: false
             referencedRelation: "laboratories"
             referencedColumns: ["id"]
           },
@@ -5415,6 +5949,20 @@ export type Database = {
             foreignKeyName: "sample_transfers_to_laboratory_id_fkey"
             columns: ["to_laboratory_id"]
             isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "sample_transfers_to_laboratory_id_fkey"
+            columns: ["to_laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "sample_transfers_to_laboratory_id_fkey"
+            columns: ["to_laboratory_id"]
+            isOneToOne: false
             referencedRelation: "laboratories"
             referencedColumns: ["id"]
           },
@@ -5429,6 +5977,8 @@ export type Database = {
           bags_quantity_mt: number | null
           buyer: string | null
           buyer_contract_nr: string | null
+          calculated_client_fee: number | null
+          calculated_lab_fee: number | null
           client_id: string | null
           container: string | null
           container_nr: string | null
@@ -5466,6 +6016,8 @@ export type Database = {
           bags_quantity_mt?: number | null
           buyer?: string | null
           buyer_contract_nr?: string | null
+          calculated_client_fee?: number | null
+          calculated_lab_fee?: number | null
           client_id?: string | null
           container?: string | null
           container_nr?: string | null
@@ -5503,6 +6055,8 @@ export type Database = {
           bags_quantity_mt?: number | null
           buyer?: string | null
           buyer_contract_nr?: string | null
+          calculated_client_fee?: number | null
+          calculated_lab_fee?: number | null
           client_id?: string | null
           container?: string | null
           container_nr?: string | null
@@ -5544,8 +6098,36 @@ export type Database = {
             foreignKeyName: "samples_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "samples_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "samples_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
           },
           {
             foreignKeyName: "samples_laboratory_id_fkey"
@@ -5669,8 +6251,36 @@ export type Database = {
             foreignKeyName: "storage_positions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "storage_positions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "storage_positions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "storage_positions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "storage_positions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
           },
           {
             foreignKeyName: "storage_positions_laboratory_id_fkey"
@@ -5767,6 +6377,20 @@ export type Database = {
             foreignKeyName: "supplier_reviews_laboratory_id_fkey"
             columns: ["laboratory_id"]
             isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "supplier_reviews_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "supplier_reviews_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
             referencedRelation: "laboratories"
             referencedColumns: ["id"]
           },
@@ -5819,6 +6443,20 @@ export type Database = {
           year?: number
         }
         Relationships: [
+          {
+            foreignKeyName: "supply_chain_flows_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "supply_chain_flows_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
           {
             foreignKeyName: "supply_chain_flows_laboratory_id_fkey"
             columns: ["laboratory_id"]
@@ -5902,6 +6540,20 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "taint_fault_definitions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "taint_fault_definitions_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
           {
             foreignKeyName: "taint_fault_definitions_client_id_fkey"
             columns: ["client_id"]
@@ -7912,6 +8564,47 @@ export type Database = {
           },
         ]
       }
+      client_billing_summary: {
+        Row: {
+          approved_samples: number | null
+          billing_basis: Database["public"]["Enums"]["billing_basis"] | null
+          company: string | null
+          currency: string | null
+          has_origin_pricing: boolean | null
+          id: string | null
+          in_progress_samples: number | null
+          is_qc_client: boolean | null
+          last_sample_date: string | null
+          name: string | null
+          price_per_pound_cents: number | null
+          price_per_sample: number | null
+          pricing_model: Database["public"]["Enums"]["pricing_model"] | null
+          received_samples: number | null
+          rejected_samples: number | null
+          total_billable_amount: number | null
+          total_potential_amount: number | null
+          total_samples: number | null
+        }
+        Relationships: []
+      }
+      client_origin_pricing_summary: {
+        Row: {
+          approved_count: number | null
+          billable_amount: number | null
+          client_id: string | null
+          client_name: string | null
+          company: string | null
+          currency: string | null
+          is_active: boolean | null
+          origin: string | null
+          price_per_pound_cents: number | null
+          price_per_sample: number | null
+          pricing_model: Database["public"]["Enums"]["pricing_model"] | null
+          rejected_count: number | null
+          samples_count: number | null
+        }
+        Relationships: []
+      }
       client_search_view: {
         Row: {
           address: string | null
@@ -7958,8 +8651,36 @@ export type Database = {
             foreignKeyName: "lab_shelves_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lab_shelves_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "lab_shelves_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "lab_shelves_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "lab_shelves_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
           },
           {
             foreignKeyName: "lab_shelves_laboratory_id_fkey"
@@ -8153,6 +8874,91 @@ export type Database = {
           },
         ]
       }
+      lab_invoice_summary: {
+        Row: {
+          approved_count: number | null
+          created_at: string | null
+          currency: string | null
+          days_overdue: number | null
+          due_date: string | null
+          invoice_id: string | null
+          invoice_number: string | null
+          lab_location: string | null
+          lab_name: string | null
+          laboratory_id: string | null
+          paid_date: string | null
+          payment_status: string | null
+          period_end: string | null
+          period_start: string | null
+          rejected_count: number | null
+          sample_count: number | null
+          status: Database["public"]["Enums"]["invoice_status"] | null
+          total_amount: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "laboratory_invoices_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "laboratory_invoices_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "laboratory_invoices_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lab_payment_summary: {
+        Row: {
+          approved_samples: number | null
+          billing_basis: Database["public"]["Enums"]["billing_basis"] | null
+          contact_email: string | null
+          contact_name: string | null
+          currency: string | null
+          fee_per_sample: number | null
+          first_sample_date: string | null
+          is_active: boolean | null
+          laboratory_id: string | null
+          last_sample_date: string | null
+          location: string | null
+          name: string | null
+          payment_schedule:
+            | Database["public"]["Enums"]["payment_schedule"]
+            | null
+          pending_samples: number | null
+          rejected_samples: number | null
+          total_owed_amount: number | null
+          total_potential_amount: number | null
+          total_samples: number | null
+          type: string | null
+        }
+        Relationships: []
+      }
+      lab_sample_breakdown: {
+        Row: {
+          approval_rate: number | null
+          approved_samples: number | null
+          laboratory_id: string | null
+          location: string | null
+          name: string | null
+          pending_samples: number | null
+          rejected_samples: number | null
+          total_samples: number | null
+          type: string | null
+        }
+        Relationships: []
+      }
       trip_card_data: {
         Row: {
           access_code: string | null
@@ -8341,8 +9147,19 @@ export type Database = {
       }
     }
     Functions: {
-      calculate_sample_fee: {
+      calculate_client_fee: {
         Args: { client_id_param: string; sample_id_param: string }
+        Returns: number
+      }
+      calculate_invoice_due_date: {
+        Args: { invoice_date: string; lab_id: string }
+        Returns: string
+      }
+      calculate_lab_fee: {
+        Args: {
+          laboratory_id_param: string
+          sample_status_param: Database["public"]["Enums"]["sample_status"]
+        }
         Returns: number
       }
       calculate_scaled_defect_points: {
@@ -8410,6 +9227,10 @@ export type Database = {
           total_faults: number
           total_taints: number
         }[]
+      }
+      generate_lab_invoice_number: {
+        Args: { lab_id: string; period_end_date: string }
+        Returns: string
       }
       generate_position_code: {
         Args: {
@@ -8772,6 +9593,7 @@ export type Database = {
         | "networking_event"
         | "presentation"
         | "flight_travel"
+      billing_basis: "approved_only" | "approved_and_rejected" | "all_samples"
       certificate_status: "draft" | "issued" | "revoked"
       client_type:
         | "producer"
@@ -8836,6 +9658,7 @@ export type Database = {
         | "contract_signed"
         | "sample_sent"
         | "cupping_session"
+      invoice_status: "pending" | "approved" | "paid" | "disputed"
       moisture_standard: "coffee_industry" | "iso_6673"
       note_type:
         | "text"
@@ -8848,6 +9671,7 @@ export type Database = {
         | "guest_itinerary"
         | "staff_notification"
         | "general_notification"
+      payment_schedule: "net_30" | "net_45" | "end_of_next_month"
       pricing_model: "per_sample" | "per_pound" | "complimentary"
       sample_status:
         | "received"
@@ -9035,6 +9859,7 @@ export const Constants = {
         "presentation",
         "flight_travel",
       ],
+      billing_basis: ["approved_only", "approved_and_rejected", "all_samples"],
       certificate_status: ["draft", "issued", "revoked"],
       client_type: [
         "producer",
@@ -9106,6 +9931,7 @@ export const Constants = {
         "sample_sent",
         "cupping_session",
       ],
+      invoice_status: ["pending", "approved", "paid", "disputed"],
       moisture_standard: ["coffee_industry", "iso_6673"],
       note_type: [
         "text",
@@ -9120,6 +9946,7 @@ export const Constants = {
         "staff_notification",
         "general_notification",
       ],
+      payment_schedule: ["net_30", "net_45", "end_of_next_month"],
       pricing_model: ["per_sample", "per_pound", "complimentary"],
       sample_status: [
         "received",

@@ -1,10 +1,12 @@
 import { createBrowserClient } from '@supabase/ssr'
+import type { Database as GeneratedDatabase } from './database.types'
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
 // Use SSR-compatible browser client that stores auth in cookies
-export const supabase = createBrowserClient(supabaseUrl, supabaseAnonKey)
+// Note: Using generated types for the client, but exporting manual Database type for compatibility
+export const supabase = createBrowserClient<GeneratedDatabase>(supabaseUrl, supabaseAnonKey)
 
 // User roles for the coffee QC system
 export type UserRole = 
