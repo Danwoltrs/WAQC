@@ -14,6 +14,7 @@ import {
   Users, CheckCircle, XCircle, User, Warehouse, Grid3x3, MoveIcon,
   Wind, DoorOpen, Box, Square, AlertTriangle
 } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { LabStorageManagement } from '@/components/storage/lab-storage-management'
 
@@ -68,6 +69,17 @@ interface Obstacle {
   label: string
 }
 
+const ORIGIN_OPTIONS = [
+  'Brazil',
+  'Colombia',
+  'El Salvador',
+  'Guatemala',
+  'Honduras',
+  'Mexico',
+  'Nicaragua',
+  'Peru',
+]
+
 export default function LaboratoriesPage() {
   const { profile, permissions } = useAuth()
   const [laboratories, setLaboratories] = useState<Laboratory[]>([])
@@ -96,7 +108,12 @@ export default function LaboratoriesPage() {
     contact_email: '',
     contact_phone: '',
     admin_email: '',
-    admin_name: ''
+    admin_name: '',
+    supported_origins: [] as string[],
+    is_3rd_party: false,
+    fee_per_sample: undefined as number | undefined,
+    fee_currency: 'USD' as string,
+    billing_basis: 'approved_only' as 'approved_only' | 'approved_and_rejected'
   })
 
   // Storage shelves state
@@ -295,7 +312,12 @@ export default function LaboratoriesPage() {
             type: newLab.type,
             storage_capacity: calculateTotalCapacity(),
             contact_email: newLab.contact_email,
-            contact_phone: newLab.contact_phone
+            contact_phone: newLab.contact_phone,
+            supported_origins: newLab.supported_origins.length > 0 ? newLab.supported_origins : null,
+            is_3rd_party: newLab.is_3rd_party,
+            fee_per_sample: newLab.is_3rd_party ? newLab.fee_per_sample : null,
+            fee_currency: newLab.is_3rd_party ? newLab.fee_currency : null,
+            billing_basis: newLab.is_3rd_party ? newLab.billing_basis : null
           })
         })
 
@@ -375,7 +397,12 @@ export default function LaboratoriesPage() {
         contact_email: '',
         contact_phone: '',
         admin_email: '',
-        admin_name: ''
+        admin_name: '',
+        supported_origins: [],
+        is_3rd_party: false,
+        fee_per_sample: undefined,
+        fee_currency: 'USD',
+        billing_basis: 'approved_only'
       })
       setShelves([])
       setObstacles([])
@@ -650,6 +677,109 @@ export default function LaboratoriesPage() {
                           placeholder="+55 13 1234-5678"
                         />
                       </div>
+                    </div>
+
+                    {/* 3rd Party Lab Configuration */}
+                    <div className="pt-4 border-t space-y-4">
+                      <div className="flex items-center gap-2">
+                        <Checkbox
+                          id="is_3rd_party"
+                          checked={newLab.is_3rd_party}
+                          onCheckedChange={(checked) => setNewLab({ ...newLab, is_3rd_party: checked as boolean })}
+                        />
+                        <Label htmlFor="is_3rd_party" className="font-semibold cursor-pointer">
+                          This is a 3rd Party Laboratory
+                        </Label>
+                      </div>
+                      <p className="text-xs text-muted-foreground -mt-2">
+                        Check this if we outsource QC services to this laboratory and pay them fees
+                      </p>
+
+                      {newLab.is_3rd_party && (
+                        <div className="space-y-4 pl-6 border-l-2 border-muted">
+                          <div className="space-y-2">
+                            <Label>Supported Origins *</Label>
+                            <div className="grid grid-cols-2 gap-2">
+                              {ORIGIN_OPTIONS.map((origin) => (
+                                <div key={origin} className="flex items-center gap-2">
+                                  <Checkbox
+                                    id={`origin_${origin}`}
+                                    checked={newLab.supported_origins.includes(origin)}
+                                    onCheckedChange={(checked) => {
+                                      if (checked) {
+                                        setNewLab({
+                                          ...newLab,
+                                          supported_origins: [...newLab.supported_origins, origin]
+                                        })
+                                      } else {
+                                        setNewLab({
+                                          ...newLab,
+                                          supported_origins: newLab.supported_origins.filter(o => o !== origin)
+                                        })
+                                      }
+                                    }}
+                                  />
+                                  <Label htmlFor={`origin_${origin}`} className="cursor-pointer font-normal">
+                                    {origin}
+                                  </Label>
+                                </div>
+                              ))}
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              Select which coffee origins this laboratory can handle
+                            </p>
+                          </div>
+
+                          <div className="grid grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                              <Label htmlFor="fee_per_sample">Fee per Sample *</Label>
+                              <Input
+                                id="fee_per_sample"
+                                type="number"
+                                step="0.01"
+                                min="0"
+                                value={newLab.fee_per_sample || ''}
+                                onChange={(e) => setNewLab({ ...newLab, fee_per_sample: e.target.value ? Number(e.target.value) : undefined })}
+                                placeholder="25.00"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="fee_currency">Currency</Label>
+                              <Select
+                                value={newLab.fee_currency}
+                                onValueChange={(value) => setNewLab({ ...newLab, fee_currency: value })}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="USD">USD</SelectItem>
+                                  <SelectItem value="EUR">EUR</SelectItem>
+                                  <SelectItem value="BRL">BRL</SelectItem>
+                                  <SelectItem value="GBP">GBP</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="billing_basis">Pay For *</Label>
+                              <Select
+                                value={newLab.billing_basis}
+                                onValueChange={(value: 'approved_only' | 'approved_and_rejected') =>
+                                  setNewLab({ ...newLab, billing_basis: value })
+                                }
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="approved_only">Approved Only</SelectItem>
+                                  <SelectItem value="approved_and_rejected">Approved + Rejected</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Lab Admin Section */}
@@ -1305,6 +1435,36 @@ export default function LaboratoriesPage() {
                   />
                   <Label htmlFor="edit-active" className="cursor-pointer">Active</Label>
                 </div>
+
+                {/* 3rd Party Lab Configuration */}
+                <div className="pt-4 border-t space-y-4">
+                  <div>
+                    <h4 className="text-sm font-semibold mb-2">3rd Party Lab Configuration</h4>
+                    <p className="text-xs text-muted-foreground mb-3">
+                      Configure if this is a 3rd party laboratory that we pay fees to
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-supported-origins">Supported Origins</Label>
+                    <Input
+                      id="edit-supported-origins"
+                      placeholder="Peru, Mexico, Nicaragua (comma-separated)"
+                      defaultValue={(editingLab as any).supported_origins?.join(', ') || ''}
+                      onBlur={(e) => {
+                        const origins = e.target.value
+                          .split(',')
+                          .map(o => o.trim())
+                          .filter(Boolean)
+                        setEditingLab({ ...editingLab, supported_origins: origins } as any)
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Coffee origins this lab can handle
+                    </p>
+                  </div>
+                </div>
+
                 <div className="flex justify-end gap-2 pt-4">
                   <Button variant="outline" onClick={() => setEditingLab(null)}>
                     Cancel
