@@ -1301,7 +1301,14 @@ export default function LaboratoriesPage() {
                 </TableHeader>
                 <TableBody>
                   {laboratories.map((lab) => (
-                    <TableRow key={lab.id}>
+                    <TableRow key={lab.id} className={!lab.is_active ? 'relative' : ''}>
+                      {!lab.is_active && (
+                        <td colSpan={7} className="absolute inset-0 pointer-events-none">
+                          <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t-2 border-red-500" />
+                          </div>
+                        </td>
+                      )}
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <Building className="h-4 w-4 text-muted-foreground" />
@@ -1359,26 +1366,21 @@ export default function LaboratoriesPage() {
                         </Button>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Switch
-                            checked={lab.is_active}
-                            onCheckedChange={() => handleToggleActive(lab)}
-                            disabled={togglingStatus === lab.id}
-                          />
-                          <span className="text-sm text-muted-foreground">
-                            {lab.is_active ? 'Active' : 'Inactive'}
-                          </span>
-                        </div>
+                        <Switch
+                          checked={lab.is_active}
+                          onCheckedChange={() => handleToggleActive(lab)}
+                          disabled={togglingStatus === lab.id}
+                        />
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-2">
                           <Button
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
                             onClick={() => setViewingStorage(lab)}
-                            title="Manage Storage"
                           >
-                            <Warehouse className="h-4 w-4" />
+                            <Warehouse className="h-4 w-4 mr-2" />
+                            Manage Storage
                           </Button>
                           {(canManageAllLabs || (canManageOwnLab && profile?.laboratory_id === lab.id)) && (
                             <Button
