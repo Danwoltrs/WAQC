@@ -15,8 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
-  Plus, Search, Edit, Trash2, Building2, MapPin, Phone, Mail,
-  CheckCircle, XCircle, Loader2
+  Plus, Search, Edit, Trash2, Loader2, Copy, Check
 } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
@@ -50,6 +49,7 @@ export default function ClientsPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [togglingStatus, setTogglingStatus] = useState<string | null>(null)
+  const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
 
   useEffect(() => {
     loadClients()
@@ -121,6 +121,16 @@ export default function ClientsPage() {
     }
   }
 
+  const handleCopyEmail = async (email: string) => {
+    try {
+      await navigator.clipboard.writeText(email)
+      setCopiedEmail(email)
+      setTimeout(() => setCopiedEmail(null), 2000)
+    } catch (error) {
+      console.error('Failed to copy email:', error)
+    }
+  }
+
   const formatClientTypes = (types?: string[]) => {
     if (!types || types.length === 0) return '-'
     return types
@@ -129,6 +139,7 @@ export default function ClientsPage() {
   }
 
   const formatPricing = (client: Client) => {
+    if (!client.is_qc_client) return '-'
     if (!client.pricing_model) return '-'
 
     if (client.pricing_model === 'complimentary') {
@@ -184,7 +195,6 @@ export default function ClientsPage() {
         ) : clients.length === 0 ? (
           <Card>
             <CardContent className="py-12 text-center">
-              <Building2 className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="text-lg font-semibold mb-2">No clients found</h3>
               <p className="text-muted-foreground mb-4">
                 {searchQuery ? 'Try adjusting your search criteria' : 'Get started by adding your first client'}
@@ -204,9 +214,8 @@ export default function ClientsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Client</TableHead>
-                    <TableHead>Contact</TableHead>
-                    <TableHead>Location</TableHead>
                     <TableHead>Type</TableHead>
+                    <TableHead>QC</TableHead>
                     <TableHead>Pricing</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -216,56 +225,48 @@ export default function ClientsPage() {
                   {clients.map((client) => (
                     <TableRow key={client.id}>
                       <TableCell>
-                        <div className="flex flex-col">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-4 w-4 text-muted-foreground" />
-                            <span className="font-medium">{client.fantasy_name || client.name}</span>
-                          </div>
-                          {client.fantasy_name && client.fantasy_name !== client.name && (
-                            <span className="text-sm text-muted-foreground ml-6">{client.company}</span>
-                          )}
-                          <div className="flex items-center gap-2 mt-1 ml-6">
-                            {client.is_qc_client !== false && (
-                              <Badge variant="default" className="text-xs">
-                                QC Client
-                              </Badge>
-                            )}
-                            {client.is_qc_client === false && (
-                              <Badge variant="outline" className="text-xs">
-                                Supply Chain
-                              </Badge>
-                            )}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col gap-1 text-sm">
+                        <div className="flex flex-col gap-1">
+                          <span className="font-semibold">{client.fantasy_name || client.name}</span>
                           {client.email && (
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Mail className="h-3 w-3" />
-                              <span className="truncate max-w-[200px]">{client.email}</span>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <span className="truncate max-w-[250px]">{client.email}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => handleCopyEmail(client.email!)}
+                              >
+                                {copiedEmail === client.email ? (
+                                  <Check className="h-3 w-3 text-green-600" />
+                                ) : (
+                                  <Copy className="h-3 w-3" />
+                                )}
+                              </Button>
                             </div>
                           )}
                           {client.phone && (
-                            <div className="flex items-center gap-1 text-muted-foreground">
-                              <Phone className="h-3 w-3" />
-                              <span>{client.phone}</span>
-                            </div>
+                            <span className="text-sm text-muted-foreground">{client.phone}</span>
+                          )}
+                          {(client.city || client.country) && (
+                            <span className="text-sm text-muted-foreground">
+                              {[client.city, client.state, client.country].filter(Boolean).join(', ')}
+                            </span>
                           )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        {(client.city || client.country) ? (
-                          <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                            <MapPin className="h-3 w-3" />
-                            <span>{[client.city, client.state, client.country].filter(Boolean).join(', ')}</span>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
+                        <span className="text-sm">{formatClientTypes(client.client_types)}</span>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm">{formatClientTypes(client.client_types)}</span>
+                        {client.is_qc_client !== false ? (
+                          <Badge variant="default" className="text-xs">
+                            Yes
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="text-xs">
+                            No
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span className="text-sm">{formatPricing(client)}</span>
@@ -277,17 +278,9 @@ export default function ClientsPage() {
                             onCheckedChange={() => handleToggleActive(client)}
                             disabled={togglingStatus === client.id}
                           />
-                          {client.is_active ? (
-                            <Badge variant="default" className="text-xs">
-                              <CheckCircle className="h-3 w-3 mr-1" />
-                              Active
-                            </Badge>
-                          ) : (
-                            <Badge variant="secondary" className="text-xs">
-                              <XCircle className="h-3 w-3 mr-1" />
-                              Inactive
-                            </Badge>
-                          )}
+                          <span className="text-sm text-muted-foreground">
+                            {client.is_active ? 'Active' : 'Inactive'}
+                          </span>
                         </div>
                       </TableCell>
                       <TableCell className="text-right">
