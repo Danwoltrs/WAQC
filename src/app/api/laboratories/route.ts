@@ -58,14 +58,48 @@ export async function GET(request: NextRequest) {
     // For each lab, get personnel count
     const labsWithCounts = await Promise.all(
       (laboratories || []).map(async (lab: any) => {
-        const { count } = await supabase
-          .from('profiles')
-          .select('*', { count: 'exact', head: true })
-          .eq('laboratory_id', lab.id)
+        const isSantosHQ = lab.name?.toLowerCase().includes('santos') && lab.name?.toLowerCase().includes('hq')
 
-        return {
-          ...lab,
-          personnel_count: count || 0
+        if (isSantosHQ) {
+          // For Santos HQ, count both lab-specific personnel and global staff
+          const { count: labCount } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('laboratory_id', lab.id)
+
+          const { count: globalCount } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+            .or('is_global_admin.eq.true,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
+
+          // Use Set logic to avoid double counting users who might be in both groups
+          const { data: labPersonnel } = await supabase
+            .from('profiles')
+            .select('id')
+            .eq('laboratory_id', lab.id)
+
+          const { data: globalStaff } = await supabase
+            .from('profiles')
+            .select('id')
+            .or('is_global_admin.eq.true,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
+
+          const labIds = new Set((labPersonnel || []).map(p => p.id))
+          const uniqueGlobalStaff = (globalStaff || []).filter(staff => !labIds.has(staff.id))
+
+          return {
+            ...lab,
+            personnel_count: (labPersonnel?.length || 0) + uniqueGlobalStaff.length
+          }
+        } else {
+          const { count } = await supabase
+            .from('profiles')
+            .select('*', { count: 'exact', head: true })
+            .eq('laboratory_id', lab.id)
+
+          return {
+            ...lab,
+            personnel_count: count || 0
+          }
         }
       })
     )
