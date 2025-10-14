@@ -126,7 +126,12 @@ export async function POST(request: NextRequest) {
       storage_capacity: body.storage_capacity || 1764,
       contact_email: body.contact_email || null,
       contact_phone: body.contact_phone || null,
-      is_active: body.is_active !== undefined ? body.is_active : true
+      is_active: body.is_active !== undefined ? body.is_active : true,
+      supported_origins: body.supported_origins || null,
+      is_3rd_party: body.is_3rd_party || false,
+      fee_per_sample: body.fee_per_sample || null,
+      fee_currency: body.fee_currency || null,
+      billing_basis: body.billing_basis || null
     }
 
     const { data: laboratory, error: insertError } = await supabase
