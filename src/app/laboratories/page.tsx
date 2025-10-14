@@ -1664,11 +1664,11 @@ export default function LaboratoriesPage() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
-                                  {person.is_global_admin && (
+                                  {(person.is_global_admin || ['global_quality_admin', 'global_finance_admin', 'santos_hq_finance'].includes(person.qc_role)) && (
                                     <Badge variant="default" className="bg-primary">Wolthers Staff</Badge>
                                   )}
                                   <Badge variant="outline">{getRoleBadge(person.qc_role)}</Badge>
-                                  {canManageAllLabs && !person.is_global_admin && (
+                                  {canManageAllLabs && !person.is_global_admin && !['global_quality_admin', 'global_finance_admin', 'santos_hq_finance'].includes(person.qc_role) && (
                                     <Button
                                       variant="ghost"
                                       size="sm"

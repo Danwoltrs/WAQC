@@ -54,19 +54,19 @@ export async function GET(
 
     let personnel = labPersonnel || []
 
-    // If this is Santos HQ, also include global admins as Wolthers staff
+    // If this is Santos HQ, also include global staff (global admins and global roles) as Wolthers staff
     if (isSantosHQ) {
-      const { data: globalAdmins, error: globalError } = await supabase
+      const { data: globalStaff, error: globalError } = await supabase
         .from('profiles')
         .select('id, email, full_name, qc_role, qc_enabled, created_at, is_global_admin')
-        .eq('is_global_admin', true)
+        .or('is_global_admin.eq.true,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
         .order('full_name')
 
-      if (!globalError && globalAdmins) {
-        // Add global admins that aren't already in the lab personnel list
+      if (!globalError && globalStaff) {
+        // Add global staff that aren't already in the lab personnel list
         const existingIds = new Set(personnel.map(p => p.id))
-        const uniqueGlobalAdmins = globalAdmins.filter(admin => !existingIds.has(admin.id))
-        personnel = [...personnel, ...uniqueGlobalAdmins]
+        const uniqueGlobalStaff = globalStaff.filter(staff => !existingIds.has(staff.id))
+        personnel = [...personnel, ...uniqueGlobalStaff]
       }
     }
 
