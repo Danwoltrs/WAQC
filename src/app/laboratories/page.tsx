@@ -570,12 +570,14 @@ export default function LaboratoriesPage() {
   const getRoleBadge = (role: string) => {
     const roleLabels: Record<string, string> = {
       lab_personnel: 'Lab Personnel',
+      lab_q_grader: 'Lab Q Grader',
       lab_director: 'Lab Director',
       lab_finance_manager: 'Finance Manager',
       lab_quality_manager: 'Quality Manager',
       global_admin: 'Global Admin',
       global_quality_admin: 'Global Quality Admin',
-      global_finance_admin: 'Global Finance Admin'
+      global_finance_admin: 'Global Finance Admin',
+      santos_hq_finance: 'Santos HQ Finance'
     }
     return roleLabels[role] || role
   }
