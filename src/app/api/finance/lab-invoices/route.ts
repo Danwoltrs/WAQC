@@ -17,7 +17,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const laboratoryId = searchParams.get('laboratory_id')
-    const status = searchParams.get('status')
+    const statusParam = searchParams.get('status')
     const overdue = searchParams.get('overdue')
 
     let query = supabase
@@ -29,8 +29,14 @@ export async function GET(request: NextRequest) {
       query = query.eq('laboratory_id', laboratoryId)
     }
 
-    if (status) {
-      query = query.eq('status', status)
+    // Validate status is one of the valid enum values
+    if (statusParam) {
+      const validStatuses = ['pending', 'approved', 'paid', 'disputed'] as const
+      type InvoiceStatus = typeof validStatuses[number]
+
+      if (validStatuses.includes(statusParam as InvoiceStatus)) {
+        query = query.eq('status', statusParam as InvoiceStatus)
+      }
     }
 
     if (overdue === 'true') {
