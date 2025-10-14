@@ -140,8 +140,10 @@ export default function CertificateStatisticsPage() {
         }
 
         // By month
-        const monthKey = new Date(cert.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
-        monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + 1)
+        if (cert.created_at) {
+          const monthKey = new Date(cert.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+          monthMap.set(monthKey, (monthMap.get(monthKey) || 0) + 1)
+        }
       })
 
       setStats({
