@@ -408,7 +408,7 @@ export default function QualityTemplatesPage() {
                                   {template.parameters.screen_size_requirements.constraints.length} constraint{template.parameters.screen_size_requirements.constraints.length !== 1 ? 's' : ''}
                                 </div>
                                 <div className="space-y-0.5 max-h-20 overflow-y-auto">
-                                  {template.parameters.screen_size_requirements.constraints
+                                  {[...template.parameters.screen_size_requirements.constraints]
                                     .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
                                     .map((c, idx) => (
                                       <div key={idx} className="text-xs text-muted-foreground">
