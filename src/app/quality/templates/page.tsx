@@ -45,6 +45,22 @@ export default function QualityTemplatesPage() {
   const getTemplateName = (template: Template) => template.name_en || template.name || ''
   const getTemplateDescription = (template: Template) => template.description_en || template.description || ''
 
+  // Helper to get green aspect min label
+  const getGreenAspectMinLabel = (template: Template) => {
+    const config = template.parameters.green_aspect_configuration
+    if (!config?.validation?.min_acceptable_value || !config?.wordings) return '-'
+    const wording = config.wordings.find((w: any) => w.value === config.validation?.min_acceptable_value)
+    return wording?.label || '-'
+  }
+
+  // Helper to get roast aspect min label
+  const getRoastAspectMinLabel = (template: Template) => {
+    const config = template.parameters.roast_aspect_configuration
+    if (!config?.validation?.min_acceptable_value || !config?.wordings) return '-'
+    const wording = config.wordings.find((w: any) => w.value === config.validation?.min_acceptable_value)
+    return wording?.label || '-'
+  }
+
   useEffect(() => {
     loadTemplates()
   }, [filterActive])
@@ -457,7 +473,7 @@ export default function QualityTemplatesPage() {
                                 {template.parameters.green_aspect_configuration.wordings.length} level{template.parameters.green_aspect_configuration.wordings.length !== 1 ? 's' : ''}
                                 {template.parameters.green_aspect_configuration.validation?.min_acceptable_value && (
                                   <div className="text-muted-foreground">
-                                    Min: {template.parameters.green_aspect_configuration.wordings.find(w => w.value === template.parameters.green_aspect_configuration?.validation?.min_acceptable_value)?.label || '-'}
+                                    Min: {getGreenAspectMinLabel(template)}
                                   </div>
                                 )}
                               </div>
@@ -475,7 +491,7 @@ export default function QualityTemplatesPage() {
                                 {template.parameters.roast_aspect_configuration.wordings.length} level{template.parameters.roast_aspect_configuration.wordings.length !== 1 ? 's' : ''}
                                 {template.parameters.roast_aspect_configuration.validation?.min_acceptable_value && (
                                   <div className="text-muted-foreground">
-                                    Min: {template.parameters.roast_aspect_configuration.wordings.find(w => w.value === template.parameters.roast_aspect_configuration?.validation?.min_acceptable_value)?.label || '-'}
+                                    Min: {getRoastAspectMinLabel(template)}
                                   </div>
                                 )}
                               </div>
