@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
           const { count: globalCount } = await supabase
             .from('profiles')
             .select('*', { count: 'exact', head: true })
-            .or('is_global_admin.eq.true,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
+            .or('is_global_admin.eq.true,qc_role.eq.global_admin,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
 
           // Use Set logic to avoid double counting users who might be in both groups
           const { data: labPersonnel } = await supabase
@@ -81,7 +81,7 @@ export async function GET(request: NextRequest) {
           const { data: globalStaff } = await supabase
             .from('profiles')
             .select('id')
-            .or('is_global_admin.eq.true,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
+            .or('is_global_admin.eq.true,qc_role.eq.global_admin,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
 
           const labIds = new Set((labPersonnel || []).map(p => p.id))
           const uniqueGlobalStaff = (globalStaff || []).filter(staff => !labIds.has(staff.id))

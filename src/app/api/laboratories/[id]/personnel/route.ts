@@ -59,7 +59,7 @@ export async function GET(
       const { data: globalStaff, error: globalError } = await supabase
         .from('profiles')
         .select('id, email, full_name, qc_role, qc_enabled, created_at, is_global_admin')
-        .or('is_global_admin.eq.true,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
+        .or('is_global_admin.eq.true,qc_role.eq.global_admin,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
         .order('full_name')
 
       if (!globalError && globalStaff) {
