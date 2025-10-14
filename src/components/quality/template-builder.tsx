@@ -72,8 +72,15 @@ interface TemplateParameters {
 
 interface Template {
   id?: string
-  name: string
-  description: string
+  name_en?: string
+  name_pt?: string
+  name_es?: string
+  description_en?: string
+  description_pt?: string
+  description_es?: string
+  // Legacy fields for backward compatibility
+  name?: string
+  description?: string
   version?: number
   parameters: TemplateParameters
   is_active?: boolean
