@@ -154,12 +154,45 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', userId)
         .single()
 
-      const { data: profileData, error } = await Promise.race([
+      const result = await Promise.race([
         fetchPromise,
         timeoutPromise
-      ]) as any
+      ]).catch((err) => ({ data: null, error: err })) as any
+
+      const { data: profileData, error } = result
 
       if (error) {
+        // Check if this is a timeout and user is a known admin
+        if (error.message === 'Profile fetch timeout') {
+          const { data: { user: authUser } } = await supabase.auth.getUser()
+          const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(authUser?.email || '')
+
+          if (isGlobalAdmin) {
+            console.warn('Profile fetch timed out, using fallback for global admin:', authUser?.email)
+            // Create temporary profile for global admin
+            const tempProfile = {
+              id: userId,
+              email: authUser?.email || '',
+              full_name: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'Admin',
+              qc_enabled: true,
+              qc_role: 'global_admin',
+              is_global_admin: true,
+              laboratory_id: null,
+              qc_permissions: [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            } as Profile
+
+            setProfile(tempProfile)
+            setPermissions(getUserPermissions('global_admin', undefined))
+            setLoading(false)
+
+            // Try to create the profile in background
+            createUserProfile(userId).catch(err => console.error('Background profile creation failed:', err))
+            return
+          }
+        }
+
         // If profile doesn't exist, try to create one
         if (error.code === 'PGRST116' || error.message?.includes('No rows returned') || error.message?.includes('JSON object requested, multiple (or no) rows returned')) {
           console.log('Profile not found, creating new profile for user')
