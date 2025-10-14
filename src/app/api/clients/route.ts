@@ -86,9 +86,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Validate required fields
-    if (!body.name || !body.company) {
+    if (!body.name || !body.company || !body.email) {
       return NextResponse.json({
-        error: 'Missing required fields: name, company'
+        error: 'Missing required fields: name, company, email'
       }, { status: 400 })
     }
 

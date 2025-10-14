@@ -8845,7 +8845,7 @@ export type Database = {
         | "guest_itinerary"
         | "staff_notification"
         | "general_notification"
-      pricing_model: "per_sample" | "per_pound"
+      pricing_model: "per_sample" | "per_pound" | "complimentary"
       sample_status:
         | "received"
         | "in_progress"
@@ -9117,7 +9117,7 @@ export const Constants = {
         "staff_notification",
         "general_notification",
       ],
-      pricing_model: ["per_sample", "per_pound"],
+      pricing_model: ["per_sample", "per_pound", "complimentary"],
       sample_status: [
         "received",
         "in_progress",
