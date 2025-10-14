@@ -143,11 +143,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('Fetching profile for user:', userId)
 
-      const { data: profileData, error } = await supabase
+      // Add timeout to prevent hanging
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
+      )
+
+      const fetchPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
+
+      const { data: profileData, error } = await Promise.race([
+        fetchPromise,
+        timeoutPromise
+      ]) as any
 
       if (error) {
         // If profile doesn't exist, try to create one
@@ -156,12 +166,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           await createUserProfile(userId)
           return
         }
-        
+
         console.error('Error fetching profile:', {
           code: error?.code,
           message: error?.message,
           userId: userId
         })
+        setLoading(false)
         return
       }
 
