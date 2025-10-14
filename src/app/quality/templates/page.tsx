@@ -14,8 +14,15 @@ import {
 
 interface Template {
   id: string
-  name: string
-  description: string
+  name_en: string
+  name_pt?: string
+  name_es?: string
+  description_en?: string
+  description_pt?: string
+  description_es?: string
+  // Legacy fields for backward compatibility
+  name?: string
+  description?: string
   version: number
   parameters: any
   is_active: boolean
@@ -33,6 +40,10 @@ export default function QualityTemplatesPage() {
   const [showBuilder, setShowBuilder] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [viewingTemplate, setViewingTemplate] = useState<Template | null>(null)
+
+  // Helper to get display name (prefer English, fallback to legacy name)
+  const getTemplateName = (template: Template) => template.name_en || template.name || ''
+  const getTemplateDescription = (template: Template) => template.description_en || template.description || ''
 
   useEffect(() => {
     loadTemplates()
@@ -75,8 +86,8 @@ export default function QualityTemplatesPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: `${template.name} (Copy)`,
-          description: template.description
+          name_en: `${getTemplateName(template)} (Copy)`,
+          description_en: getTemplateDescription(template)
         })
       })
 
@@ -95,11 +106,11 @@ export default function QualityTemplatesPage() {
 
   const handleDelete = async (template: Template) => {
     if (template.usage_count && template.usage_count > 0) {
-      alert(`Cannot delete template "${template.name}" because it is currently in use by ${template.usage_count} client(s).`)
+      alert(`Cannot delete template "${getTemplateName(template)}" because it is currently in use by ${template.usage_count} client(s).`)
       return
     }
 
-    if (!confirm(`Are you sure you want to delete template "${template.name}"?`)) {
+    if (!confirm(`Are you sure you want to delete template "${getTemplateName(template)}"?`)) {
       return
     }
 
@@ -148,10 +159,12 @@ export default function QualityTemplatesPage() {
     }
   }
 
-  const filteredTemplates = templates.filter(template =>
-    template.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    template.description.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  const filteredTemplates = templates.filter(template => {
+    const name = getTemplateName(template).toLowerCase()
+    const description = getTemplateDescription(template).toLowerCase()
+    const query = searchQuery.toLowerCase()
+    return name.includes(query) || description.includes(query)
+  })
 
   if (showBuilder) {
     return (
@@ -187,8 +200,8 @@ export default function QualityTemplatesPage() {
         <div className="p-6 max-w-4xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">{viewingTemplate.name}</h1>
-              <p className="text-muted-foreground">{viewingTemplate.description}</p>
+              <h1 className="text-3xl font-bold tracking-tight">{getTemplateName(viewingTemplate)}</h1>
+              <p className="text-muted-foreground">{getTemplateDescription(viewingTemplate)}</p>
             </div>
             <Button variant="outline" onClick={() => setViewingTemplate(null)}>
               Back to Library
@@ -326,7 +339,7 @@ export default function QualityTemplatesPage() {
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">
-                      <CardTitle className="text-lg">{template.name}</CardTitle>
+                      <CardTitle className="text-lg">{getTemplateName(template)}</CardTitle>
                       <div className="flex items-center gap-2 mt-2">
                         {template.is_active ? (
                           <Badge variant="default" className="text-xs">
@@ -348,7 +361,7 @@ export default function QualityTemplatesPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <p className="text-sm text-muted-foreground line-clamp-2">
-                    {template.description || 'No description provided'}
+                    {getTemplateDescription(template) || 'No description provided'}
                   </p>
 
                   <div className="flex items-center gap-2 text-xs text-muted-foreground">

@@ -116,8 +116,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [success, setSuccess] = useState(false)
 
   // Basic info
-  const [name, setName] = useState(template?.name || '')
-  const [description, setDescription] = useState(template?.description || '')
+  const [name, setName] = useState((template as any)?.name_en || template?.name || '')
+  const [description, setDescription] = useState((template as any)?.description_en || template?.description || '')
   const [isActive, setIsActive] = useState(template?.is_active !== false)
 
   // Sample size
@@ -448,10 +448,14 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         parameters.taint_fault_configuration = taintFaultConfiguration
       }
 
-      const templateData: Template = {
+      const templateData: any = {
         ...(template?.id && { id: template.id }),
-        name: name.trim(),
-        description: description.trim(),
+        name_en: name.trim(),
+        name_pt: name.trim(), // Use English name as fallback for other languages
+        name_es: name.trim(),
+        description_en: description.trim() || null,
+        description_pt: description.trim() || null,
+        description_es: description.trim() || null,
         parameters,
         is_active: isActive
       }
