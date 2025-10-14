@@ -4,6 +4,15 @@ import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Switch } from '@/components/ui/switch'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -95,6 +104,7 @@ export default function LaboratoriesPage() {
   const [loadingPersonnel, setLoadingPersonnel] = useState(false)
   const [addPersonnelDialogOpen, setAddPersonnelDialogOpen] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
+  const [togglingStatus, setTogglingStatus] = useState<string | null>(null)
 
   // New lab form state
   const [newLab, setNewLab] = useState({
@@ -448,6 +458,29 @@ export default function LaboratoriesPage() {
       }
     } catch (error) {
       console.error('Error updating laboratory:', error)
+    }
+  }
+
+  const handleToggleActive = async (lab: Laboratory) => {
+    try {
+      setTogglingStatus(lab.id)
+      const response = await fetch(`/api/laboratories/${lab.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: !lab.is_active }),
+      })
+
+      if (response.ok) {
+        await loadLaboratories()
+      } else {
+        const error = await response.json()
+        alert(`Failed to update laboratory status: ${error.error}`)
+      }
+    } catch (error) {
+      console.error('Error toggling laboratory status:', error)
+      alert('Failed to update laboratory status')
+    } finally {
+      setTogglingStatus(null)
     }
   }
 
@@ -1230,7 +1263,7 @@ export default function LaboratoriesPage() {
           </CardContent>
         </Card>
 
-        {/* Laboratories List */}
+        {/* Laboratories Table */}
         {loading ? (
           <div className="text-center py-12 text-muted-foreground">
             Loading laboratories...
@@ -1252,92 +1285,128 @@ export default function LaboratoriesPage() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {laboratories.map((lab) => (
-              <Card key={lab.id} className="hover:shadow-lg transition-shadow min-w-[280px]">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Building className="h-4 w-4" />
-                    {lab.name}
-                  </CardTitle>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {lab.location}
-                    {lab.country && `, ${lab.country}`}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    {lab.is_active ? (
-                      <Badge variant="default" className="text-xs">
-                        <CheckCircle className="h-3 w-3 mr-1" />
-                        Active
-                      </Badge>
-                    ) : (
-                      <Badge variant="secondary" className="text-xs">
-                        <XCircle className="h-3 w-3 mr-1" />
-                        Inactive
-                      </Badge>
-                    )}
-                    <Badge variant="outline" className="text-xs">
-                      {lab.type === 'hq' ? 'HQ' : 'Lab'}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2 pt-0">
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground pb-2 border-b">
-                    <Warehouse className="h-3 w-3" />
-                    <span>Sample Storage: {lab.storage_capacity.toLocaleString()}</span>
-                  </div>
-
-                  <div className="flex items-center justify-between gap-1 pt-1">
-                    <div className="flex gap-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setViewingStorage(lab)}
-                        className="px-2"
-                        title="Storage"
-                      >
-                        <Warehouse className="h-4 w-4" />
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleViewPersonnel(lab)}
-                        className="px-2"
-                        title="Personnel"
-                      >
-                        <Users className="h-4 w-4" />
-                      </Button>
-                    </div>
-
-                    {(canManageAllLabs || (canManageOwnLab && profile?.laboratory_id === lab.id)) && (
-                      <div className="flex gap-1">
+          <Card>
+            <CardContent className="p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Laboratory</TableHead>
+                    <TableHead>Location</TableHead>
+                    <TableHead>Type</TableHead>
+                    <TableHead>Storage Capacity</TableHead>
+                    <TableHead>Personnel</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {laboratories.map((lab) => (
+                    <TableRow key={lab.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Building className="h-4 w-4 text-muted-foreground" />
+                          <div>
+                            <p className="font-semibold">{lab.name}</p>
+                            {(lab.contact_email || lab.contact_phone) && (
+                              <div className="text-sm text-muted-foreground flex items-center gap-2 mt-1">
+                                {lab.contact_email && (
+                                  <span className="flex items-center gap-1">
+                                    <Mail className="h-3 w-3" />
+                                    {lab.contact_email}
+                                  </span>
+                                )}
+                                {lab.contact_phone && (
+                                  <span className="flex items-center gap-1">
+                                    <Phone className="h-3 w-3" />
+                                    {lab.contact_phone}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-start gap-2">
+                          <MapPin className="h-4 w-4 text-muted-foreground mt-0.5" />
+                          <div>
+                            <p className="text-sm">{lab.location}</p>
+                            {lab.country && (
+                              <p className="text-sm text-muted-foreground">{lab.country}</p>
+                            )}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className="text-xs">
+                          {lab.type === 'hq' ? 'HQ' : 'Lab'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Warehouse className="h-4 w-4 text-muted-foreground" />
+                          <span className="text-sm">{lab.storage_capacity.toLocaleString()} samples</span>
+                        </div>
+                      </TableCell>
+                      <TableCell>
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => setEditingLab(lab)}
-                          className="px-2"
-                          title="Edit"
+                          onClick={() => handleViewPersonnel(lab)}
                         >
-                          <Edit className="h-4 w-4" />
+                          <Users className="h-4 w-4 mr-2" />
+                          {lab.personnel_count || 0}
                         </Button>
-                        {canManageAllLabs && (
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Switch
+                            checked={lab.is_active}
+                            onCheckedChange={() => handleToggleActive(lab)}
+                            disabled={togglingStatus === lab.id}
+                          />
+                          <span className="text-sm text-muted-foreground">
+                            {lab.is_active ? 'Active' : 'Inactive'}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div className="flex items-center justify-end gap-2">
                           <Button
-                            variant="outline"
+                            variant="ghost"
                             size="sm"
-                            onClick={() => handleDeleteLab(lab)}
-                            className="text-destructive hover:text-destructive px-2"
-                            title="Delete"
+                            onClick={() => setViewingStorage(lab)}
+                            title="Manage Storage"
                           >
-                            <Trash2 className="h-4 w-4" />
+                            <Warehouse className="h-4 w-4" />
                           </Button>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
+                          {(canManageAllLabs || (canManageOwnLab && profile?.laboratory_id === lab.id)) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setEditingLab(lab)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {canManageAllLabs && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDeleteLab(lab)}
+                              className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </CardContent>
+          </Card>
         )}
 
         {/* Storage Management Dialog */}
