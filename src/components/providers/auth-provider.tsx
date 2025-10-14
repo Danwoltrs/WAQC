@@ -175,9 +175,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               email: authUser?.email || '',
               full_name: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'Admin',
               qc_enabled: true,
-              qc_role: 'global_admin',
+              qc_role: 'global_admin' as UserRole,
               is_global_admin: true,
-              laboratory_id: null,
+              laboratory_id: undefined,
               qc_permissions: [],
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
