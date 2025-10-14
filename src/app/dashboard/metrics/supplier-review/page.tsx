@@ -110,8 +110,8 @@ export default function SupplierReviewPage() {
       // Calculate insights
       const suppliers = new Set(samples.map(s => s.supplier))
 
-      const pssSamples = samples.filter(s => s.sample_type === 'PSS')
-      const ssSamples = samples.filter(s => s.sample_type === 'SS')
+      const pssSamples = samples.filter(s => s.sample_type === 'pss')
+      const ssSamples = samples.filter(s => s.sample_type === 'ss')
 
       const pssApproved = pssSamples.filter(s => s.status === 'approved').length
       const ssApproved = ssSamples.filter(s => s.status === 'approved').length

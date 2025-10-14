@@ -113,7 +113,7 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
 
       samples?.forEach(sample => {
         const existing = supplierMap.get(sample.supplier)
-        const isPSS = sample.sample_type === 'PSS'
+        const isPSS = sample.sample_type === 'pss'
         const isApproved = sample.status === 'approved'
 
         if (existing) {
