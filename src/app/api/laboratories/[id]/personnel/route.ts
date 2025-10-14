@@ -31,15 +31,43 @@ export async function GET(
 
     const { id } = await params
 
-    const { data: personnel, error } = await supabase
+    // Get laboratory info to check if it's Santos HQ
+    const { data: lab } = await supabase
+      .from('laboratories')
+      .select('name')
+      .eq('id', id)
+      .single()
+
+    const isSantosHQ = lab?.name?.toLowerCase().includes('santos') && lab?.name?.toLowerCase().includes('hq')
+
+    // Get lab-specific personnel
+    const { data: labPersonnel, error } = await supabase
       .from('profiles')
-      .select('id, email, full_name, qc_role, qc_enabled, created_at')
+      .select('id, email, full_name, qc_role, qc_enabled, created_at, is_global_admin')
       .eq('laboratory_id', id)
       .order('full_name')
 
     if (error) {
       console.error('Error fetching personnel:', error)
       return NextResponse.json({ error: 'Failed to fetch personnel' }, { status: 500 })
+    }
+
+    let personnel = labPersonnel || []
+
+    // If this is Santos HQ, also include global admins as Wolthers staff
+    if (isSantosHQ) {
+      const { data: globalAdmins, error: globalError } = await supabase
+        .from('profiles')
+        .select('id, email, full_name, qc_role, qc_enabled, created_at, is_global_admin')
+        .eq('is_global_admin', true)
+        .order('full_name')
+
+      if (!globalError && globalAdmins) {
+        // Add global admins that aren't already in the lab personnel list
+        const existingIds = new Set(personnel.map(p => p.id))
+        const uniqueGlobalAdmins = globalAdmins.filter(admin => !existingIds.has(admin.id))
+        personnel = [...personnel, ...uniqueGlobalAdmins]
+      }
     }
 
     return NextResponse.json({ personnel })

@@ -48,6 +48,7 @@ interface Personnel {
   qc_role: string
   is_active: boolean
   created_at: string
+  is_global_admin?: boolean
 }
 
 interface ShelfData {
@@ -1663,8 +1664,11 @@ export default function LaboratoriesPage() {
                                   </div>
                                 </div>
                                 <div className="flex items-center gap-2">
+                                  {person.is_global_admin && (
+                                    <Badge variant="default" className="bg-primary">Wolthers Staff</Badge>
+                                  )}
                                   <Badge variant="outline">{getRoleBadge(person.qc_role)}</Badge>
-                                  {canManageAllLabs && (
+                                  {canManageAllLabs && !person.is_global_admin && (
                                     <Button
                                       variant="ghost"
                                       size="sm"
