@@ -1614,9 +1614,17 @@ export default function LaboratoriesPage() {
                                   </SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="lab_personnel">Lab Personnel</SelectItem>
+                                    <SelectItem value="lab_q_grader">Lab Q Grader</SelectItem>
                                     <SelectItem value="lab_director">Lab Director</SelectItem>
                                     <SelectItem value="lab_finance_manager">Finance Manager</SelectItem>
                                     <SelectItem value="lab_quality_manager">Quality Manager</SelectItem>
+                                    {profile?.is_global_admin && (
+                                      <>
+                                        <SelectItem value="global_quality_admin">Global Quality Admin</SelectItem>
+                                        <SelectItem value="global_finance_admin">Global Finance Admin</SelectItem>
+                                        <SelectItem value="santos_hq_finance">Santos HQ Finance</SelectItem>
+                                      </>
+                                    )}
                                   </SelectContent>
                                 </Select>
                               </div>
