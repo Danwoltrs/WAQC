@@ -972,6 +972,7 @@ export type Database = {
           fantasy_name: string | null
           fee_payer: Database["public"]["Enums"]["fee_payer"] | null
           id: string
+          is_active: boolean
           is_qc_client: boolean | null
           legacy_client_id: number | null
           name: string
@@ -1002,6 +1003,7 @@ export type Database = {
           fantasy_name?: string | null
           fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
           id?: string
+          is_active?: boolean
           is_qc_client?: boolean | null
           legacy_client_id?: number | null
           name: string
@@ -1032,6 +1034,7 @@ export type Database = {
           fantasy_name?: string | null
           fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
           id?: string
+          is_active?: boolean
           is_qc_client?: boolean | null
           legacy_client_id?: number | null
           name?: string
