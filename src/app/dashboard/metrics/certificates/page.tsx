@@ -135,7 +135,9 @@ export default function CertificateStatisticsPage() {
         }
 
         // By status
-        statusMap.set(cert.status, (statusMap.get(cert.status) || 0) + 1)
+        if (cert.status) {
+          statusMap.set(cert.status, (statusMap.get(cert.status) || 0) + 1)
+        }
 
         // By month
         const monthKey = new Date(cert.created_at).toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
