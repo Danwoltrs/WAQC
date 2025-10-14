@@ -87,7 +87,9 @@ export default function SupplierReviewPage() {
       if (profile.qc_role === 'lab_personnel' ||
           profile.qc_role === 'lab_quality_manager' ||
           profile.qc_role === 'lab_finance_manager') {
-        query = query.eq('laboratory_id', profile.laboratory_id)
+        if (profile.laboratory_id) {
+          query = query.eq('laboratory_id', profile.laboratory_id)
+        }
       }
 
       const { data: samples, error } = await query

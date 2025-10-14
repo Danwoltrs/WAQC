@@ -146,7 +146,9 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
           profile.qc_role === 'lab_quality_manager' ||
           profile.qc_role === 'lab_finance_manager') {
         // Lab users see only their lab's data
-        query = query.eq('laboratory_id', profile.laboratory_id)
+        if (profile.laboratory_id) {
+          query = query.eq('laboratory_id', profile.laboratory_id)
+        }
       } else if (filters?.laboratoryId &&
                  (profile.qc_role === 'global_admin' ||
                   profile.qc_role === 'global_quality_admin' ||
