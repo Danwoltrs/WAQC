@@ -188,7 +188,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       .order('company')
 
     if (data && !error) {
-      setClients(data)
+      setClients(data as Client[])
     }
   }
 
@@ -203,7 +203,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         .single()
 
       if (data && !error) {
-        setLaboratories([data])
+        setLaboratories([data] as unknown as Laboratory[])
       }
     } else {
       // Global admins or users without assigned lab see all labs
@@ -213,7 +213,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         .order('name')
 
       if (data && !error) {
-        setLaboratories(data)
+        setLaboratories(data as unknown as Laboratory[])
       }
     }
   }

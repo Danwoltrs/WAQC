@@ -71,6 +71,7 @@ export function SamplesPerWeekCard() {
 
       // Count samples in current week
       const currentWeekSamples = samples.filter(s => {
+        if (!s.created_at) return false
         const sampleDate = new Date(s.created_at)
         return sampleDate >= currentWeekStart && sampleDate < currentWeekEnd
       }).length
@@ -79,6 +80,7 @@ export function SamplesPerWeekCard() {
       const weekMap = new Map<string, number>()
 
       samples.forEach(sample => {
+        if (!sample.created_at) return
         const sampleDate = new Date(sample.created_at)
         // Get Monday of the week for this sample
         const dayOfWeek = sampleDate.getDay()

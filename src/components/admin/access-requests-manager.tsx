@@ -52,7 +52,9 @@ export function AccessRequestsManager() {
         return
       }
 
-      setRequests(data || [])
+      if (data) {
+        setRequests(data as AccessRequest[])
+      }
     } catch (error) {
       console.error('Error in fetchRequests:', error)
     } finally {
@@ -72,7 +74,9 @@ export function AccessRequestsManager() {
         return
       }
 
-      setLaboratories(data || [])
+      if (data) {
+        setLaboratories(data as unknown as Laboratory[])
+      }
     } catch (error) {
       console.error('Error in fetchLaboratories:', error)
     }

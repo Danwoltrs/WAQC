@@ -17,7 +17,7 @@ interface Sample {
   buyer: string | null
   quality_name: string | null
   status: string | null
-  created_at: string
+  created_at: string | null
 }
 
 function DashboardContent() {
@@ -35,7 +35,7 @@ function DashboardContent() {
     try {
       const { data, error } = await supabase
         .from('samples')
-        .select('*')
+        .select('id, tracking_number, origin, buyer, quality_name, status, created_at')
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -89,6 +89,7 @@ function DashboardContent() {
     const counts = [0, 0, 0, 0, 0, 0, 0]
 
     samples.forEach(sample => {
+      if (!sample.created_at) return
       const sampleDate = new Date(sample.created_at)
       const dayOfWeek = sampleDate.getDay()
       counts[dayOfWeek]++
@@ -137,6 +138,7 @@ function DashboardContent() {
 
     // Count samples in current week
     const currentWeekSamples = samples.filter(s => {
+      if (!s.created_at) return false
       const sampleDate = new Date(s.created_at)
       return sampleDate >= currentWeekStart && sampleDate < currentWeekEnd
     }).length
@@ -144,6 +146,7 @@ function DashboardContent() {
     // Group all samples by week
     const weekMap = new Map<string, number>()
     samples.forEach(sample => {
+      if (!sample.created_at) return
       const sampleDate = new Date(sample.created_at)
       const dayOfWeek = sampleDate.getDay()
       const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
@@ -175,9 +178,9 @@ function DashboardContent() {
 
   // Calculate average processing time
   const processingTimes = samples
-    .filter(s => s.status === 'approved' || s.status === 'rejected')
+    .filter(s => (s.status === 'approved' || s.status === 'rejected') && s.created_at)
     .map(s => {
-      const created = new Date(s.created_at)
+      const created = new Date(s.created_at!)
       const now = new Date()
       return (now.getTime() - created.getTime()) / (1000 * 60 * 60 * 24) // days
     })
@@ -480,11 +483,9 @@ function DashboardContent() {
   )
 }
 
-type AccessRequest = Database['public']['Tables']['access_requests']['Row']
-
 function QCAccessMessage() {
   const { user, profile } = useAuth()
-  const [accessRequest, setAccessRequest] = useState<AccessRequest | null>(null)
+  const [accessRequest, setAccessRequest] = useState<Database['public']['Tables']['access_requests']['Row'] | null>(null)
   const [loading, setLoading] = useState(true)
   const isWolthersUser = user?.email?.endsWith('@wolthers.com')
   
@@ -498,16 +499,20 @@ function QCAccessMessage() {
   }, [user?.id, isWolthersUser])
   
   const checkAccessRequest = async () => {
+    if (!user?.id) return
+
     try {
       const { data } = await supabase
         .from('access_requests')
         .select('*')
-        .eq('user_id', user?.id)
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false })
         .limit(1)
         .single()
-      
-      setAccessRequest(data)
+
+      if (data) {
+        setAccessRequest(data as Database['public']['Tables']['access_requests']['Row'])
+      }
     } catch (error) {
       console.log('No access request found or error:', error)
     } finally {
@@ -542,7 +547,7 @@ function QCAccessMessage() {
                 <p className="text-sm">
                   Your access request has been automatically submitted.
                 </p>
-                {accessRequest && (
+                {accessRequest && accessRequest.status && accessRequest.created_at && (
                   <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-lg">
                     <p className="text-sm font-medium text-blue-800 dark:text-blue-200">
                       Status: {accessRequest.status.charAt(0).toUpperCase() + accessRequest.status.slice(1)}

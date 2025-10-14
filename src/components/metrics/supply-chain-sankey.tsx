@@ -184,9 +184,9 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
           }
         } else {
           flowMap.set(key, {
-            exporter: sample.supplier,
-            importer: sample.importer,
-            roaster: sample.roaster,
+            exporter: sample.supplier!,
+            importer: sample.importer!,
+            roaster: sample.roaster!,
             totalBags: sample.bags_quantity_mt || 0,
             totalSamples: 1,
             approvedSamples: sample.status === 'approved' ? 1 : 0

@@ -170,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!profileData.qc_enabled) {
           console.log('QC not enabled for this user')
           // For existing users, we'll show them a message instead of blocking completely
-          setProfile(profileData)
+          setProfile(profileData as Profile)
           setLoading(false)
           return
         }
@@ -194,7 +194,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (updateError) {
           console.error('Error setting default QC role:', updateError)
           // Continue with the profile as-is rather than infinite loop
-          setProfile(profileData)
+          setProfile(profileData as Profile)
           setPermissions(getUserPermissions('lab_personnel', undefined))
           setLoading(false)
           return
@@ -204,7 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      setProfile(finalProfile)
+      setProfile(finalProfile as Profile)
 
       // Get laboratory info to determine permissions
       let laboratoryType: string | undefined
@@ -215,10 +215,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           .eq('id', finalProfile.laboratory_id)
           .single()
 
-        laboratoryType = labData?.type
+        laboratoryType = labData?.type ?? undefined
       }
 
-      const userPermissions = getUserPermissions(finalProfile.qc_role, laboratoryType)
+      const userPermissions = getUserPermissions(finalProfile.qc_role as UserRole, laboratoryType)
       setPermissions(userPermissions)
     } catch (error) {
       console.error('Error in fetchProfile:', error)
