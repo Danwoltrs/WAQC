@@ -16,7 +16,7 @@ interface Sample {
   origin: string
   buyer: string | null
   quality_name: string | null
-  status: string
+  status: string | null
   created_at: string
 }
 
