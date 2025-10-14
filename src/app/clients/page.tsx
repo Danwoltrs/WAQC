@@ -214,9 +214,10 @@ export default function ClientsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Client</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Address</TableHead>
                     <TableHead>Type</TableHead>
-                    <TableHead>QC</TableHead>
-                    <TableHead>Pricing</TableHead>
+                    <TableHead>QC / Pricing</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
@@ -227,49 +228,59 @@ export default function ClientsPage() {
                       <TableCell>
                         <div className="flex flex-col gap-1">
                           <span className="font-semibold">{client.fantasy_name || client.name}</span>
-                          {client.email && (
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <span className="truncate max-w-[250px]">{client.email}</span>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0"
-                                onClick={() => handleCopyEmail(client.email!)}
-                              >
-                                {copiedEmail === client.email ? (
-                                  <Check className="h-3 w-3 text-green-600" />
-                                ) : (
-                                  <Copy className="h-3 w-3" />
-                                )}
-                              </Button>
-                            </div>
-                          )}
                           {client.phone && (
                             <span className="text-sm text-muted-foreground">{client.phone}</span>
                           )}
-                          {(client.city || client.country) && (
-                            <span className="text-sm text-muted-foreground">
-                              {[client.city, client.state, client.country].filter(Boolean).join(', ')}
-                            </span>
-                          )}
                         </div>
+                      </TableCell>
+                      <TableCell>
+                        {client.email ? (
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm truncate max-w-[200px]">{client.email}</span>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 w-6 p-0 flex-shrink-0"
+                              onClick={() => handleCopyEmail(client.email!)}
+                            >
+                              {copiedEmail === client.email ? (
+                                <Check className="h-3 w-3 text-green-600" />
+                              ) : (
+                                <Copy className="h-3 w-3" />
+                              )}
+                            </Button>
+                          </div>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">-</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {(client.city || client.country) ? (
+                          <span className="text-sm">
+                            {[client.city, client.state, client.country].filter(Boolean).join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-sm text-muted-foreground">-</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span className="text-sm">{formatClientTypes(client.client_types)}</span>
                       </TableCell>
                       <TableCell>
-                        {client.is_qc_client !== false ? (
-                          <Badge variant="default" className="text-xs">
-                            Yes
-                          </Badge>
-                        ) : (
-                          <Badge variant="outline" className="text-xs">
-                            No
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-sm">{formatPricing(client)}</span>
+                        <div className="flex flex-col gap-1">
+                          {client.is_qc_client !== false ? (
+                            <>
+                              <Badge variant="default" className="text-xs w-fit">
+                                QC Client
+                              </Badge>
+                              <span className="text-sm">{formatPricing(client)}</span>
+                            </>
+                          ) : (
+                            <Badge variant="outline" className="text-xs w-fit">
+                              No QC
+                            </Badge>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
