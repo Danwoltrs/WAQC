@@ -40,8 +40,8 @@ export async function GET(request: NextRequest) {
     const totals = {
       total_clients: clientSummaries?.length || 0,
       total_samples: clientSummaries?.reduce((sum, c) => sum + (c.total_samples || 0), 0) || 0,
-      total_billable: clientSummaries?.reduce((sum, c) => sum + (parseFloat(c.total_billable_amount) || 0), 0) || 0,
-      total_potential: clientSummaries?.reduce((sum, c) => sum + (parseFloat(c.total_potential_amount) || 0), 0) || 0,
+      total_billable: clientSummaries?.reduce((sum, c) => sum + (c.total_billable_amount || 0), 0) || 0,
+      total_potential: clientSummaries?.reduce((sum, c) => sum + (c.total_potential_amount || 0), 0) || 0,
     }
 
     return NextResponse.json({
