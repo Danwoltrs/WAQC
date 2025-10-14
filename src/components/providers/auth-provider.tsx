@@ -144,8 +144,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log('Fetching profile for user:', userId)
 
       // Add timeout to prevent hanging
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 10000)
+      const timeoutPromise = new Promise<{ data: null, error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: 'Profile fetch timeout' } }), 10000)
       )
 
       const fetchPromise = supabase
@@ -154,12 +154,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .eq('id', userId)
         .single()
 
-      const result = await Promise.race([
+      const { data: profileData, error } = await Promise.race([
         fetchPromise,
         timeoutPromise
-      ]).catch((err) => ({ data: null, error: err })) as any
-
-      const { data: profileData, error } = result
+      ]) as any
 
       if (error) {
         // Check if this is a timeout and user is a known admin
