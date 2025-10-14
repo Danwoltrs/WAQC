@@ -56,16 +56,24 @@ export async function GET(
 
     // If this is Santos HQ, also include global staff (global admins and global roles) as Wolthers staff
     if (isSantosHQ) {
+      console.log('Santos HQ detected, fetching global staff...')
       const { data: globalStaff, error: globalError } = await supabase
         .from('profiles')
         .select('id, email, full_name, qc_role, qc_enabled, created_at, is_global_admin')
         .or('is_global_admin.eq.true,qc_role.eq.global_admin,qc_role.eq.global_quality_admin,qc_role.eq.global_finance_admin,qc_role.eq.santos_hq_finance')
         .order('full_name')
 
+      if (globalError) {
+        console.error('Error fetching global staff:', globalError)
+      } else {
+        console.log('Global staff fetched:', globalStaff?.length || 0, 'users')
+      }
+
       if (!globalError && globalStaff) {
         // Add global staff that aren't already in the lab personnel list
         const existingIds = new Set(personnel.map(p => p.id))
         const uniqueGlobalStaff = globalStaff.filter(staff => !existingIds.has(staff.id))
+        console.log('Unique global staff to add:', uniqueGlobalStaff.length)
         personnel = [...personnel, ...uniqueGlobalStaff]
       }
     }
