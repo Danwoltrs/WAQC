@@ -129,11 +129,13 @@ export async function PATCH(
       'neighborhood',
       'city',
       'state',
+      'zip_code',
       'type',
       'storage_capacity',
       'contact_email',
       'contact_phone',
       'is_active',
+      'supported_origins',
       'entrance_x_position',
       'entrance_y_position'
     ]

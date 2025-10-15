@@ -36,11 +36,13 @@ interface Laboratory {
   neighborhood?: string
   city?: string
   state?: string
+  zip_code?: string
   type: string
   storage_capacity: number
   contact_email?: string
   contact_phone?: string
   is_active: boolean
+  supported_origins?: string[]
   personnel_count?: number
   created_at: string
 }
@@ -462,7 +464,9 @@ export default function LaboratoriesPage() {
           storage_capacity: editingLab.storage_capacity,
           contact_email: editingLab.contact_email,
           contact_phone: editingLab.contact_phone,
-          is_active: editingLab.is_active
+          is_active: editingLab.is_active,
+          supported_origins: (editingLab as any).supported_origins || [],
+          zip_code: (editingLab as any).zip_code
         })
       })
 
