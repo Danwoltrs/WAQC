@@ -1708,11 +1708,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                               .map((taint) => (
                                 <div key={taint.name} className="flex items-center justify-between text-[11px]">
                                   <span>{taint.name}</span>
-                                  {taint.intensity_scale && (
+                                  {taint.scale && (
                                     <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                      {taint.intensity_scale.type === 'numeric'
-                                        ? `${taint.intensity_scale.min}-${taint.intensity_scale.max}`
-                                        : `${taint.intensity_scale.options?.length || 0} levels`}
+                                      {taint.scale.type === 'numeric'
+                                        ? `${taint.scale.min}-${taint.scale.max}`
+                                        : `${taint.scale.options?.length || 0} levels`}
                                     </Badge>
                                   )}
                                 </div>
@@ -1737,11 +1737,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                               .map((fault) => (
                                 <div key={fault.name} className="flex items-center justify-between text-[11px]">
                                   <span>{fault.name}</span>
-                                  {fault.intensity_scale && (
+                                  {fault.scale && (
                                     <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                      {fault.intensity_scale.type === 'numeric'
-                                        ? `${fault.intensity_scale.min}-${fault.intensity_scale.max}`
-                                        : `${fault.intensity_scale.options?.length || 0} levels`}
+                                      {fault.scale.type === 'numeric'
+                                        ? `${fault.scale.min}-${fault.scale.max}`
+                                        : `${fault.scale.options?.length || 0} levels`}
                                     </Badge>
                                   )}
                                 </div>
