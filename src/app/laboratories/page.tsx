@@ -27,6 +27,18 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { LabStorageManagement } from '@/components/storage/lab-storage-management'
 
+interface MicroRegionConfig {
+  id: string
+  name: string
+  is_required: boolean
+  percentage?: number | null
+}
+
+interface OriginMicroConfig {
+  origin: string
+  micro_regions: MicroRegionConfig[]
+}
+
 interface Laboratory {
   id: string
   name: string
@@ -36,6 +48,7 @@ interface Laboratory {
   neighborhood?: string
   city?: string
   state?: string
+  zip_code?: string
   type: string
   storage_capacity: number
   contact_email?: string
@@ -43,6 +56,8 @@ interface Laboratory {
   is_active: boolean
   personnel_count?: number
   created_at: string
+  supported_origins?: string[]
+  micro_origin_config?: OriginMicroConfig[]
 }
 
 interface Personnel {
@@ -93,6 +108,205 @@ const ORIGIN_OPTIONS = [
   'Nicaragua',
   'Peru',
 ]
+
+interface MicroRegion {
+  id: string
+  origin: string
+  region_name_en: string
+  region_name_pt?: string
+  region_name_es?: string
+}
+
+interface MicroOriginEditorProps {
+  supportedOrigins: string[]
+  microOriginConfig: OriginMicroConfig[]
+  onChange: (config: OriginMicroConfig[]) => void
+}
+
+function MicroOriginEditor({ supportedOrigins, microOriginConfig, onChange }: MicroOriginEditorProps) {
+  const [availableMicroRegions, setAvailableMicroRegions] = useState<Record<string, MicroRegion[]>>({})
+  const [loading, setLoading] = useState(false)
+
+  // Fetch micro-regions for all supported origins
+  useEffect(() => {
+    const fetchMicroRegions = async () => {
+      setLoading(true)
+      const regionsMap: Record<string, MicroRegion[]> = {}
+
+      for (const origin of supportedOrigins) {
+        try {
+          const response = await fetch(`/api/micro-regions?origin=${encodeURIComponent(origin)}`)
+          if (response.ok) {
+            const data = await response.json()
+            regionsMap[origin] = data.micro_regions || []
+          }
+        } catch (error) {
+          console.error(`Error fetching micro-regions for ${origin}:`, error)
+        }
+      }
+
+      setAvailableMicroRegions(regionsMap)
+      setLoading(false)
+    }
+
+    if (supportedOrigins.length > 0) {
+      fetchMicroRegions()
+    }
+  }, [supportedOrigins])
+
+  const getOriginConfig = (origin: string): OriginMicroConfig => {
+    return microOriginConfig.find(c => c.origin === origin) || {
+      origin,
+      micro_regions: []
+    }
+  }
+
+  const updateOriginConfig = (origin: string, micro_regions: MicroRegionConfig[]) => {
+    const newConfig = microOriginConfig.filter(c => c.origin !== origin)
+    if (micro_regions.length > 0) {
+      newConfig.push({ origin, micro_regions })
+    }
+    onChange(newConfig)
+  }
+
+  const toggleMicroRegion = (origin: string, microRegion: MicroRegion) => {
+    const originConfig = getOriginConfig(origin)
+    const existing = originConfig.micro_regions.find(mr => mr.id === microRegion.id)
+
+    if (existing) {
+      // Remove it
+      updateOriginConfig(
+        origin,
+        originConfig.micro_regions.filter(mr => mr.id !== microRegion.id)
+      )
+    } else {
+      // Add it
+      updateOriginConfig(
+        origin,
+        [...originConfig.micro_regions, {
+          id: microRegion.id,
+          name: microRegion.region_name_en,
+          is_required: false,
+          percentage: null
+        }]
+      )
+    }
+  }
+
+  const updateMicroRegionRequirement = (origin: string, microRegionId: string, is_required: boolean) => {
+    const originConfig = getOriginConfig(origin)
+    updateOriginConfig(
+      origin,
+      originConfig.micro_regions.map(mr =>
+        mr.id === microRegionId ? { ...mr, is_required } : mr
+      )
+    )
+  }
+
+  const updateMicroRegionPercentage = (origin: string, microRegionId: string, percentage: number | null) => {
+    const originConfig = getOriginConfig(origin)
+    updateOriginConfig(
+      origin,
+      originConfig.micro_regions.map(mr =>
+        mr.id === microRegionId ? { ...mr, percentage } : mr
+      )
+    )
+  }
+
+  if (loading) {
+    return <div className="text-sm text-muted-foreground">Loading micro-regions...</div>
+  }
+
+  return (
+    <div className="space-y-4">
+      {supportedOrigins.map((origin) => {
+        const regions = availableMicroRegions[origin] || []
+        const originConfig = getOriginConfig(origin)
+
+        if (regions.length === 0) return null
+
+        return (
+          <div key={origin} className="border rounded-lg p-4 space-y-3">
+            <h5 className="font-semibold text-sm">{origin}</h5>
+
+            <div className="space-y-2">
+              {regions.map((region) => {
+                const selected = originConfig.micro_regions.find(mr => mr.id === region.id)
+
+                return (
+                  <div key={region.id} className="flex items-center gap-3 py-1">
+                    <Checkbox
+                      id={`micro_${origin}_${region.id}`}
+                      checked={!!selected}
+                      onCheckedChange={() => toggleMicroRegion(origin, region)}
+                    />
+                    <Label
+                      htmlFor={`micro_${origin}_${region.id}`}
+                      className="flex-1 cursor-pointer font-normal text-sm"
+                    >
+                      {region.region_name_en}
+                    </Label>
+
+                    {selected && (
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1">
+                          <Checkbox
+                            id={`required_${origin}_${region.id}`}
+                            checked={selected.is_required}
+                            onCheckedChange={(checked) =>
+                              updateMicroRegionRequirement(origin, region.id, checked as boolean)
+                            }
+                          />
+                          <Label
+                            htmlFor={`required_${origin}_${region.id}`}
+                            className="text-xs cursor-pointer"
+                          >
+                            Required
+                          </Label>
+                        </div>
+
+                        {originConfig.micro_regions.length > 1 && (
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              min="0"
+                              max="100"
+                              step="5"
+                              placeholder="%"
+                              value={selected.percentage || ''}
+                              onChange={(e) => {
+                                const val = e.target.value
+                                updateMicroRegionPercentage(
+                                  origin,
+                                  region.id,
+                                  val ? Number(val) : null
+                                )
+                              }}
+                              className="w-16 h-7 text-xs"
+                            />
+                            <span className="text-xs text-muted-foreground">%</span>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+
+            {originConfig.micro_regions.length > 1 && (
+              <p className="text-xs text-muted-foreground mt-2 pt-2 border-t">
+                {originConfig.micro_regions.filter(mr => mr.percentage).length > 0
+                  ? `Total percentage: ${originConfig.micro_regions.reduce((sum, mr) => sum + (mr.percentage || 0), 0)}%`
+                  : 'Specify percentages if required for quality templates'}
+              </p>
+            )}
+          </div>
+        )
+      })}
+    </div>
+  )
+}
 
 export default function LaboratoriesPage() {
   const { profile, permissions } = useAuth()
@@ -444,7 +658,8 @@ export default function LaboratoriesPage() {
         editingLab.address,
         editingLab.neighborhood,
         editingLab.city,
-        editingLab.state
+        editingLab.state,
+        editingLab.zip_code
       ].filter(Boolean).join(', ') || editingLab.location
 
       const response = await fetch(`/api/laboratories/${editingLab.id}`, {
@@ -458,11 +673,14 @@ export default function LaboratoriesPage() {
           neighborhood: editingLab.neighborhood,
           city: editingLab.city,
           state: editingLab.state,
+          zip_code: editingLab.zip_code,
           type: editingLab.type,
           storage_capacity: editingLab.storage_capacity,
           contact_email: editingLab.contact_email,
           contact_phone: editingLab.contact_phone,
-          is_active: editingLab.is_active
+          is_active: editingLab.is_active,
+          supported_origins: (editingLab as any).supported_origins || [],
+          micro_origin_config: (editingLab as any).micro_origin_config || []
         })
       })
 
@@ -1483,7 +1701,7 @@ export default function LaboratoriesPage() {
                     placeholder="Rua do Porto 123"
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-neighborhood">Neighborhood</Label>
                     <Input
@@ -1502,6 +1720,8 @@ export default function LaboratoriesPage() {
                       placeholder="Santos"
                     />
                   </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-state">State</Label>
                     <Input
@@ -1509,6 +1729,15 @@ export default function LaboratoriesPage() {
                       value={editingLab.state || ''}
                       onChange={(e) => setEditingLab({ ...editingLab, state: e.target.value })}
                       placeholder="SP"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-zip-code">ZIP/CEP Code</Label>
+                    <Input
+                      id="edit-zip-code"
+                      value={editingLab.zip_code || ''}
+                      onChange={(e) => setEditingLab({ ...editingLab, zip_code: e.target.value })}
+                      placeholder="11010-100"
                     />
                   </div>
                 </div>
@@ -1623,6 +1852,28 @@ export default function LaboratoriesPage() {
                     Select which coffee origins this laboratory can handle
                   </p>
                 </div>
+
+                {/* Micro-Origin Configuration */}
+                {((editingLab as any).supported_origins || []).length > 0 && (
+                  <div className="pt-4 border-t space-y-3">
+                    <div>
+                      <Label className="text-sm font-semibold">Micro-Origin Requirements (Optional)</Label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Configure specific micro-regions this lab can handle for each origin
+                      </p>
+                    </div>
+                    <MicroOriginEditor
+                      supportedOrigins={((editingLab as any).supported_origins || [])}
+                      microOriginConfig={((editingLab as any).micro_origin_config || [])}
+                      onChange={(config) => {
+                        setEditingLab({
+                          ...editingLab,
+                          micro_origin_config: config
+                        } as any)
+                      }}
+                    />
+                  </div>
+                )}
 
                 {/* 3rd Party Lab Configuration */}
                 <div className="pt-4 border-t space-y-4">
