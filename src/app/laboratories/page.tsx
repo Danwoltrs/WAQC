@@ -121,7 +121,7 @@ export default function LaboratoriesPage() {
     state: '',
     zip_code: '',
     country: '',
-    type: 'lab' as 'lab' | 'hq',
+    type: 'lab' as 'lab' | 'hq' | '3rd_party_lab',
     contact_email: '',
     contact_phone: '',
     admin_email: '',
@@ -722,6 +722,7 @@ export default function LaboratoriesPage() {
                           <SelectContent>
                             <SelectItem value="lab">Laboratory</SelectItem>
                             <SelectItem value="hq">Headquarters</SelectItem>
+                            <SelectItem value="3rd_party_lab">3rd Party Lab</SelectItem>
                           </SelectContent>
                         </Select>
                       </div>
@@ -1385,7 +1386,7 @@ export default function LaboratoriesPage() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="outline" className="text-xs">
-                          {lab.type === 'hq' ? 'HQ' : 'Lab'}
+                          {lab.type === 'hq' ? 'HQ' : lab.type === '3rd_party_lab' ? '3rd Party Lab' : 'Lab'}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -1564,6 +1565,7 @@ export default function LaboratoriesPage() {
                       <SelectContent>
                         <SelectItem value="lab">Laboratory</SelectItem>
                         <SelectItem value="hq">Headquarters</SelectItem>
+                        <SelectItem value="3rd_party_lab">3rd Party Lab</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

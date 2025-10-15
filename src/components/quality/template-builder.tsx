@@ -224,13 +224,20 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         const response = await fetch(`/api/micro-regions?origin=${encodeURIComponent(origin)}`)
         if (response.ok) {
           const { microRegions } = await response.json()
-          setAvailableMicroOrigins(microRegions.map((mr: any) => ({
-            id: mr.id,
-            name: mr.region_name_en
-          })))
+          if (microRegions && Array.isArray(microRegions)) {
+            setAvailableMicroOrigins(microRegions.map((mr: any) => ({
+              id: mr.id,
+              name: mr.region_name_en
+            })))
+          } else {
+            setAvailableMicroOrigins([])
+          }
+        } else {
+          setAvailableMicroOrigins([])
         }
       } catch (err) {
         console.error('Error fetching micro-origins:', err)
+        setAvailableMicroOrigins([])
       }
     }
     fetchMicroOrigins()
