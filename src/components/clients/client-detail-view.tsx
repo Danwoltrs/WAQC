@@ -20,6 +20,7 @@ import {
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts'
+import { ClientQualityManager } from './client-quality-manager'
 
 interface ClientDetailViewProps {
   clientId: string
@@ -224,7 +225,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="specs" className="space-y-4">
-          <QualitySpecsTab specs={qualitySpecs} />
+          <ClientQualityManager clientId={clientId} clientName={client.name} />
         </TabsContent>
 
         <TabsContent value="metrics" className="space-y-4">

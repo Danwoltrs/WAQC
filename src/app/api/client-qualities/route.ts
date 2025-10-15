@@ -8,7 +8,7 @@ type ClientQualityInsert = Database['public']['Tables']['client_qualities']['Ins
 /**
  * GET /api/client-qualities
  * List client quality assignments with optional filtering
- * Query params: client_id, template_id, origin
+ * Query params: client_id, template_id, origin, is_active
  */
 export async function GET(request: NextRequest) {
   try {
@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     const client_id = searchParams.get('client_id')
     const template_id = searchParams.get('template_id')
     const origin = searchParams.get('origin')
+    const is_active = searchParams.get('is_active')
 
     // Build query
     let query = supabase
@@ -39,6 +40,8 @@ export async function GET(request: NextRequest) {
     if (client_id) query = query.eq('client_id', client_id)
     if (template_id) query = query.eq('template_id', template_id)
     if (origin) query = query.eq('origin', origin)
+    if (is_active === 'true') query = query.eq('is_active', true)
+    else if (is_active === 'false') query = query.eq('is_active', false)
 
     const { data: clientQualities, error } = await query
 
@@ -98,7 +101,10 @@ export async function POST(request: NextRequest) {
       client_id: body.client_id,
       template_id: body.template_id,
       origin: body.origin || null,
-      custom_parameters: body.custom_parameters || {}
+      custom_parameters: body.custom_parameters || {},
+      custom_name: body.custom_name || null,
+      is_active: body.is_active !== undefined ? body.is_active : true,
+      notes: body.notes || null
     }
 
     // Insert client quality assignment
