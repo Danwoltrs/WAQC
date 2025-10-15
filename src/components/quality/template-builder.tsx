@@ -143,6 +143,22 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   // Collapsible section states
   const [screenSizeExpanded, setScreenSizeExpanded] = useState(false)
   const [greenAspectExpanded, setGreenAspectExpanded] = useState(false)
+  const [roastAspectExpanded, setRoastAspectExpanded] = useState(false)
+  const [defectExpanded, setDefectExpanded] = useState(false)
+  const [defectWeightExpanded, setDefectWeightExpanded] = useState(false)
+  const [cuppingExpanded, setCuppingExpanded] = useState(false)
+  const [taintFaultExpanded, setTaintFaultExpanded] = useState(false)
+  const [taintFaultListExpanded, setTaintFaultListExpanded] = useState(false)
+
+  // Info section states
+  const [showScreenSizeInfo, setShowScreenSizeInfo] = useState(false)
+  const [showGreenAspectInfo, setShowGreenAspectInfo] = useState(false)
+  const [showRoastAspectInfo, setShowRoastAspectInfo] = useState(false)
+  const [showDefectInfo, setShowDefectInfo] = useState(false)
+  const [showQuakerInfo, setShowQuakerInfo] = useState(false)
+  const [showCuppingInfo, setShowCuppingInfo] = useState(false)
+  const [showTaintFaultInfo, setShowTaintFaultInfo] = useState(false)
+  const [showMicroRegionInfo, setShowMicroRegionInfo] = useState(false)
 
   // Template sharing controls
   const [isGlobal, setIsGlobal] = useState(template?.is_global || false)
@@ -183,7 +199,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
               setAllLaboratories(laboratories.map((lab: any) => ({
                 id: lab.id,
                 name: lab.name,
-                origin: lab.origin
+                country: lab.country
               })))
             }
           }
@@ -220,7 +236,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
   // Filter laboratories by selected origin
   const filteredLaboratories = origin
-    ? allLaboratories.filter((lab: any) => lab.origin === origin)
+    ? allLaboratories.filter((lab: any) => lab.country === origin)
     : allLaboratories
 
   // Sample size
@@ -381,6 +397,40 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     setScreenSizeConstraints(screenSizeConstraints.map(c =>
       c.screen_size === screenSize ? { ...c, [field]: value } : c
     ))
+  }
+
+  // Helper to generate screen size summary
+  const getScreenSizeSummary = () => {
+    if (screenSizeConstraints.length === 0) return ''
+    return screenSizeConstraints
+      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+      .map(c => {
+        const size = c.screen_size.replace('Screen ', 'Scr ')
+        if (c.constraint_type === 'minimum') return `${size} ≥${c.min_value}%`
+        if (c.constraint_type === 'maximum') return `${size} ≤${c.max_value}%`
+        if (c.constraint_type === 'range') return `${size} ${c.min_value}-${c.max_value}%`
+        return `${size} any`
+      })
+      .join(' | ')
+  }
+
+  // Helper to generate defect configuration summary
+  const getDefectSummary = () => {
+    if (defectConfiguration.defects.length === 0) return ''
+    const parts: string[] = []
+    const thresholds = defectConfiguration.thresholds
+
+    if (thresholds.max_primary !== undefined) {
+      parts.push(`Primary ≤${thresholds.max_primary}`)
+    }
+    if (thresholds.max_secondary !== undefined) {
+      parts.push(`Secondary ≤${thresholds.max_secondary}`)
+    }
+    if (thresholds.max_total !== undefined) {
+      parts.push(`Total ≤${thresholds.max_total}`)
+    }
+
+    return parts.join(' | ')
   }
 
   const validateForm = (): string | null => {
@@ -709,6 +759,77 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             </div>
           </div>
 
+          {/* Micro-Region Requirements */}
+          <div className="space-y-2 pt-3 border-t">
+            <Label className="text-xs font-medium">Micro-Region Requirements</Label>
+            <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+              <div className="flex-1 min-w-0">
+                {microRegionConfiguration.requirements.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">
+                    No micro-region requirements configured. Click &quot;Manage&quot; to get started.
+                  </p>
+                ) : (
+                  <div className="space-y-1.5">
+                    <p className="text-xs font-medium">
+                      {microRegionConfiguration.requirements.length} origin{microRegionConfiguration.requirements.length !== 1 ? 's' : ''} configured
+                    </p>
+                    <div className="space-y-1">
+                      {microRegionConfiguration.requirements.slice(0, 2).map((req) => (
+                        <div key={req.origin} className="flex items-center gap-2">
+                          <Badge variant="default" className="text-[10px] px-1.5 py-0.5">{req.origin}</Badge>
+                          {req.required_micro_regions.length === 0 ? (
+                            <span className="text-[11px] text-muted-foreground">Any region</span>
+                          ) : (
+                            <span className="text-[11px] text-muted-foreground">
+                              {req.required_micro_regions.length} region{req.required_micro_regions.length !== 1 ? 's' : ''}
+                              {req.allow_mix ? ' (mix allowed)' : ' (single only)'}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                      {microRegionConfiguration.requirements.length > 2 && (
+                        <p className="text-[11px] text-muted-foreground">
+                          +{microRegionConfiguration.requirements.length - 2} more...
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setMicroRegionDialogOpen(true)}
+                className="h-7 text-xs flex-shrink-0"
+              >
+                Manage
+              </Button>
+            </div>
+
+            {/* View Info - Collapsible */}
+            <div>
+              <div
+                className="flex items-center gap-2 cursor-pointer"
+                onClick={() => setShowMicroRegionInfo(!showMicroRegionInfo)}
+              >
+                {showMicroRegionInfo ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                <span className="text-xs font-medium text-muted-foreground">View Info</span>
+              </div>
+              {showMicroRegionInfo && (
+                <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                  <p>Specify micro-region requirements per origin:</p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-2">
+                    <li><strong>Origin-Specific:</strong> Define which micro-regions are acceptable for each origin (e.g., Sul de Minas for Brazil)</li>
+                    <li><strong>Mixing Rules:</strong> Control whether blending multiple micro-regions is allowed</li>
+                    <li><strong>Percentage Constraints:</strong> Set minimum/maximum percentage requirements per region</li>
+                    <li><strong>Real Regions:</strong> 70+ pre-loaded micro-regions from Brazil, Colombia, Ethiopia, Guatemala, and more</li>
+                  </ul>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Template Sharing Settings */}
           <div className="space-y-2 pt-3 border-t">
             <Label className="text-xs font-medium">Template Sharing</Label>
@@ -800,16 +921,16 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       {/* Screen Size Requirements */}
       <Card>
         <CardHeader className="pb-3 cursor-pointer" onClick={() => setScreenSizeExpanded(!screenSizeExpanded)}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {screenSizeExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              <CardTitle className="text-sm font-semibold">Screen Size Requirements</CardTitle>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {screenSizeExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+              <CardTitle className="text-sm font-semibold flex-shrink-0">Screen Size Requirements</CardTitle>
+              {!screenSizeExpanded && screenSizeConstraints.length > 0 && (
+                <span className="text-[11px] text-muted-foreground truncate">
+                  - {getScreenSizeSummary()}
+                </span>
+              )}
             </div>
-            {!screenSizeExpanded && screenSizeConstraints.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {screenSizeConstraints.length} constraint{screenSizeConstraints.length !== 1 ? 's' : ''} defined
-              </span>
-            )}
           </div>
         </CardHeader>
         {screenSizeExpanded && (
@@ -967,61 +1088,128 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         )}
       </Card>
 
-      {/* Green Aspect Configuration */}
-      <Card>
-        <CardHeader className="pb-3 cursor-pointer" onClick={() => setGreenAspectExpanded(!greenAspectExpanded)}>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {greenAspectExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-              <CardTitle className="text-sm font-semibold">Green Aspect (Raw Bean Appearance)</CardTitle>
+      {/* Green & Roast Aspect - Side by Side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Green Aspect Configuration */}
+        <Card>
+          <CardHeader className="pb-3 cursor-pointer" onClick={() => setGreenAspectExpanded(!greenAspectExpanded)}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {greenAspectExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                <CardTitle className="text-sm font-semibold">Green Aspect</CardTitle>
+                {!greenAspectExpanded && greenAspectConfiguration.wordings.length > 0 && (
+                  <span className="text-[11px] text-muted-foreground truncate">
+                    - {greenAspectConfiguration.wordings.length} levels
+                  </span>
+                )}
+              </div>
             </div>
-            {!greenAspectExpanded && greenAspectConfiguration.wordings.length > 0 && (
-              <span className="text-xs text-muted-foreground">
-                {greenAspectConfiguration.wordings.length} wording{greenAspectConfiguration.wordings.length !== 1 ? 's' : ''} configured
-              </span>
-            )}
-          </div>
-        </CardHeader>
-        {greenAspectExpanded && (
-        <CardContent className="space-y-3 pt-0">
-          <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
-            <div>
-              {greenAspectConfiguration.wordings.length === 0 ? (
-                <p className="text-xs text-muted-foreground">
-                  Not configured
-                </p>
-              ) : (
-                <div className="space-y-1.5">
-                  <div className="flex flex-wrap gap-1">
-                    {greenAspectConfiguration.wordings
-                      .sort((a, b) => a.display_order - b.display_order)
-                      .map((wording) => (
-                        <Badge key={wording.id} variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
-                          {wording.label} ({wording.value})
+          </CardHeader>
+          {greenAspectExpanded && (
+          <CardContent className="space-y-2 pt-0">
+            <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+              <div className="flex-1 min-w-0">
+                {greenAspectConfiguration.wordings.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Not configured</p>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap gap-1">
+                      {greenAspectConfiguration.wordings
+                        .sort((a, b) => a.display_order - b.display_order)
+                        .slice(0, 3)
+                        .map((wording) => (
+                          <Badge key={wording.id} variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
+                            {wording.label}
+                          </Badge>
+                        ))}
+                      {greenAspectConfiguration.wordings.length > 3 && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
+                          +{greenAspectConfiguration.wordings.length - 3}
                         </Badge>
-                      ))}
+                      )}
+                    </div>
+                    {greenAspectConfiguration.validation?.min_acceptable_value !== undefined && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Min: {greenAspectConfiguration.wordings.find(w => w.value === greenAspectConfiguration.validation?.min_acceptable_value)?.label || 'N/A'}
+                      </p>
+                    )}
                   </div>
-                  {greenAspectConfiguration.validation?.min_acceptable_value !== undefined && (
-                    <p className="text-[11px] text-muted-foreground">
-                      Min: {greenAspectConfiguration.wordings.find(w => w.value === greenAspectConfiguration.validation?.min_acceptable_value)?.label || 'N/A'}
-                    </p>
-                  )}
-                </div>
-              )}
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); setGreenAspectDialogOpen(true); }}
+                className="h-7 text-xs flex-shrink-0"
+              >
+                Edit
+              </Button>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => setGreenAspectDialogOpen(true)}
-              className="h-7 text-xs"
-            >
-              Configure
-            </Button>
-          </div>
-        </CardContent>
-        )}
-      </Card>
+          </CardContent>
+          )}
+        </Card>
+
+        {/* Roast Aspect Configuration */}
+        <Card>
+          <CardHeader className="pb-3 cursor-pointer" onClick={() => setRoastAspectExpanded(!roastAspectExpanded)}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {roastAspectExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                <CardTitle className="text-sm font-semibold">Roast Aspect</CardTitle>
+                {!roastAspectExpanded && roastAspectConfiguration.wordings.length > 0 && (
+                  <span className="text-[11px] text-muted-foreground truncate">
+                    - {roastAspectConfiguration.wordings.length} levels
+                  </span>
+                )}
+              </div>
+            </div>
+          </CardHeader>
+          {roastAspectExpanded && (
+          <CardContent className="space-y-2 pt-0">
+            <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+              <div className="flex-1 min-w-0">
+                {roastAspectConfiguration.wordings.length === 0 ? (
+                  <p className="text-xs text-muted-foreground">Not configured</p>
+                ) : (
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap gap-1">
+                      {roastAspectConfiguration.wordings
+                        .sort((a, b) => a.display_order - b.display_order)
+                        .slice(0, 3)
+                        .map((wording) => (
+                          <Badge key={wording.id} variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
+                            {wording.label}
+                          </Badge>
+                        ))}
+                      {roastAspectConfiguration.wordings.length > 3 && (
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
+                          +{roastAspectConfiguration.wordings.length - 3}
+                        </Badge>
+                      )}
+                    </div>
+                    {roastAspectConfiguration.validation?.min_acceptable_value !== undefined && (
+                      <p className="text-[11px] text-muted-foreground">
+                        Min: {roastAspectConfiguration.wordings.find(w => w.value === roastAspectConfiguration.validation?.min_acceptable_value)?.label || 'N/A'}
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); setRoastAspectDialogOpen(true); }}
+                className="h-7 text-xs flex-shrink-0"
+              >
+                Edit
+              </Button>
+            </div>
+          </CardContent>
+          )}
+        </Card>
+      </div>
 
       {/* Green Aspect Configuration Dialog */}
       <AspectConfigManager
@@ -1032,12 +1220,32 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         aspectType="green"
       />
 
+      {/* Roast Aspect Configuration Dialog */}
+      <AspectConfigManager
+        open={roastAspectDialogOpen}
+        onOpenChange={setRoastAspectDialogOpen}
+        value={roastAspectConfiguration}
+        onChange={setRoastAspectConfiguration}
+        aspectType="roast"
+      />
+
       {/* Defect Configuration (New Flexible System) */}
       <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold">Defect Configuration</CardTitle>
+        <CardHeader className="pb-3 cursor-pointer" onClick={() => setDefectExpanded(!defectExpanded)}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {defectExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+              <CardTitle className="text-sm font-semibold flex-shrink-0">Defect Configuration</CardTitle>
+              {!defectExpanded && defectConfiguration.defects.length > 0 && (
+                <span className="text-[11px] text-muted-foreground truncate">
+                  - {getDefectSummary()}
+                </span>
+              )}
+            </div>
+          </div>
         </CardHeader>
-        <CardContent className="space-y-3">
+        {defectExpanded && (
+        <CardContent className="space-y-3 pt-0">
 
           {defectConfiguration.defects.length === 0 ? (
             <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
@@ -1076,15 +1284,30 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setDefectDialogOpen(true)}
+                  onClick={(e) => { e.stopPropagation(); setDefectDialogOpen(true); }}
                   className="h-7 text-xs"
                 >
                   Configure
                 </Button>
               </div>
 
-              {/* Defect Tables - Primary and Secondary */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+              {/* Defect Weight Tables - Collapsible */}
+              <div className="border rounded-lg">
+                <div
+                  className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer bg-muted/30 rounded-t-lg"
+                  onClick={() => setDefectWeightExpanded(!defectWeightExpanded)}
+                >
+                  {defectWeightExpanded ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />}
+                  <span className="text-xs font-medium">Defect Weights</span>
+                  {!defectWeightExpanded && (
+                    <span className="text-[11px] text-muted-foreground">
+                      - {defectConfiguration.defects.filter(d => d.category === 'primary').length} primary, {defectConfiguration.defects.filter(d => d.category === 'secondary').length} secondary
+                    </span>
+                  )}
+                </div>
+                {defectWeightExpanded && (
+                <div className="p-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {/* Primary Defects Table */}
                 <div className="rounded border">
                   <div className="bg-muted/50 px-2 py-1 border-b">
@@ -1137,9 +1360,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   </div>
                 </div>
               </div>
+                </div>
+                )}
+              </div>
             </div>
           )}
         </CardContent>
+        )}
       </Card>
 
       {/* Defect Configuration Dialog */}
@@ -1204,88 +1431,15 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
       </Card>
 
-      {/* Roast Aspect Configuration */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Roast Aspect (Roasted Bean Appearance)</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            <p>Configure visual appearance terminology for roasted coffee beans:</p>
-            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
-              <li><strong>Custom Wordings:</strong> Define appearance terms (e.g., Fine, Good, Uneven)</li>
-              <li><strong>Quality Scale:</strong> Assign numeric values where higher = better appearance</li>
-              <li><strong>Validation Rules:</strong> Set minimum acceptable roast appearance standards</li>
-              <li><strong>Templates:</strong> Start with Standard (4 levels) or Detailed (7 levels) scales</li>
-            </ul>
-          </div>
-
-          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-            <div>
-              {roastAspectConfiguration.wordings.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No roast aspect wordings configured yet. Click &quot;Manage Roast Aspect&quot; to get started.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    {roastAspectConfiguration.wordings.length} wording{roastAspectConfiguration.wordings.length !== 1 ? 's' : ''} configured
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {roastAspectConfiguration.wordings
-                      .sort((a, b) => a.display_order - b.display_order)
-                      .map((wording) => (
-                        <Badge key={wording.id} variant="outline" className="font-normal">
-                          {wording.label} ({wording.value})
-                        </Badge>
-                      ))}
-                  </div>
-                  {roastAspectConfiguration.validation?.min_acceptable_value !== undefined && (
-                    <p className="text-sm text-muted-foreground">
-                      Min Acceptable: {roastAspectConfiguration.wordings.find(w => w.value === roastAspectConfiguration.validation?.min_acceptable_value)?.label || 'N/A'}
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setRoastAspectDialogOpen(true)}
-            >
-              Manage Roast Aspect
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Roast Aspect Configuration Dialog */}
-      <AspectConfigManager
-        open={roastAspectDialogOpen}
-        onOpenChange={setRoastAspectDialogOpen}
-        value={roastAspectConfiguration}
-        onChange={setRoastAspectConfiguration}
-        aspectType="roast"
-      />
-
       {/* Quaker Count Configuration */}
       <Card>
-        <CardHeader>
-          <CardTitle>Quaker Count</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Quaker Count</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            <p>Set maximum allowable quaker beans (unripe/defective beans that don&apos;t roast properly):</p>
-            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
-              <li><strong>Quakers:</strong> Unripe beans that remain pale after roasting</li>
-              <li><strong>Quality Impact:</strong> High quaker count indicates poor bean sorting</li>
-              <li><strong>Client Requirements:</strong> Some clients have strict quaker limits</li>
-              <li><strong>Flexible Sample Size:</strong> Define the roast sample size and quaker limit separately from green bean analysis</li>
-            </ul>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="roast_sample_size">Roast Sample Size (grams)</Label>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="roast_sample_size" className="text-xs font-medium">Roast Sample Size (grams)</Label>
               <Input
                 id="roast_sample_size"
                 type="number"
@@ -1293,13 +1447,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 value={roastSampleSizeGrams}
                 onChange={(e) => setRoastSampleSizeGrams(e.target.value)}
                 placeholder="300"
+                className="h-8 text-sm"
               />
-              <p className="text-xs text-muted-foreground">
-                Sample size for roast analysis (may differ from green sample size)
-              </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="max_quakers">Maximum Quakers (per {roastSampleSizeGrams}g sample)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="max_quakers" className="text-xs font-medium">Maximum Quakers (per {roastSampleSizeGrams}g)</Label>
               <Input
                 id="max_quakers"
                 type="number"
@@ -1307,89 +1459,139 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 value={maxQuakers}
                 onChange={(e) => setMaxQuakers(e.target.value)}
                 placeholder="e.g., 5"
+                className="h-8 text-sm"
               />
-              <p className="text-xs text-muted-foreground">
-                Leave empty for no quaker limit. Common ranges: 0-5 for specialty, 0-10 for commercial.
-              </p>
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="quaker_notes">Notes</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="quaker_notes" className="text-xs font-medium">Notes</Label>
               <Input
                 id="quaker_notes"
                 value={quakerNotes}
                 onChange={(e) => setQuakerNotes(e.target.value)}
-                placeholder="Client-specific quaker requirements..."
+                placeholder="Client-specific requirements..."
+                className="h-8 text-sm"
               />
             </div>
+          </div>
+
+          {/* View Info - Collapsible */}
+          <div className="border-t pt-2">
+            <div
+              className="flex items-center gap-2 cursor-pointer"
+              onClick={() => setShowQuakerInfo(!showQuakerInfo)}
+            >
+              {showQuakerInfo ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              <span className="text-xs font-medium text-muted-foreground">View Info</span>
+            </div>
+            {showQuakerInfo && (
+              <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                <p>Set maximum allowable quaker beans (unripe/defective beans that don&apos;t roast properly):</p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li><strong>Quakers:</strong> Unripe beans that remain pale after roasting</li>
+                  <li><strong>Quality Impact:</strong> High quaker count indicates poor bean sorting</li>
+                  <li><strong>Client Requirements:</strong> Some clients have strict quaker limits</li>
+                  <li><strong>Flexible Sample Size:</strong> Define the roast sample size and quaker limit separately from green bean analysis</li>
+                  <li><strong>Common Ranges:</strong> 0-5 for specialty coffee, 0-10 for commercial grades</li>
+                </ul>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
 
       {/* Cupping Attributes (New Flexible System) */}
       <Card>
-        <CardHeader>
-          <CardTitle>Cupping Attributes</CardTitle>
+        <CardHeader className="pb-3 cursor-pointer" onClick={() => setCuppingExpanded(!cuppingExpanded)}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {cuppingExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+              <CardTitle className="text-sm font-semibold flex-shrink-0">Cupping Attributes</CardTitle>
+              {!cuppingExpanded && cuppingAttributes.length > 0 && (
+                <span className="text-[11px] text-muted-foreground truncate">
+                  - Numeric: {cuppingAttributes.filter(a => a.scale.type === 'numeric').length} | Wording: {cuppingAttributes.filter(a => a.scale.type === 'wording').length}
+                </span>
+              )}
+            </div>
+          </div>
         </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="text-sm text-muted-foreground">
-              <p>Configure cupping attributes with flexible scales:</p>
-              <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
-                <li><strong>Numeric Scales:</strong> Define custom ranges (e.g., 1-5, 1-10, any min-max)</li>
-                <li><strong>Wording Scales:</strong> Create custom text-based scales with numeric values (e.g., Outstanding=10, Good=7, Poor=3)</li>
-                <li><strong>Mixed Attributes:</strong> Each attribute can use a different scale type</li>
-                <li><strong>Templates:</strong> Start with SCA, COE, or Brazil Traditional presets</li>
-              </ul>
-            </div>
-
-            <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-              <div>
-                {cuppingAttributes.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No attributes configured yet. Click &quot;Manage Attributes&quot; to get started.
+        {cuppingExpanded && (
+        <CardContent className="space-y-3 pt-0">
+          <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+            <div className="flex-1 min-w-0">
+              {cuppingAttributes.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  No attributes configured yet. Click &quot;Manage&quot; to get started.
+                </p>
+              ) : (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium">
+                    {cuppingAttributes.length} attribute{cuppingAttributes.length !== 1 ? 's' : ''} configured
                   </p>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium">
-                      {cuppingAttributes.length} attribute{cuppingAttributes.length !== 1 ? 's' : ''} configured
-                    </p>
-                    <div className="space-y-1">
-                      {cuppingAttributes.map((attr, index) => (
-                        <div key={index} className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Badge variant="outline" className="font-normal">
-                            {attr.attribute}
+                  <div className="space-y-1">
+                    {cuppingAttributes.slice(0, 3).map((attr, index) => (
+                      <div key={index} className="flex items-center gap-2">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
+                          {attr.attribute}
+                        </Badge>
+                        <span className="text-[11px] text-muted-foreground">
+                          {attr.scale.type === 'numeric'
+                            ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
+                            : `${attr.scale.options?.length || 0} options`}
+                        </span>
+                        {attr.validation_rule && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                            {formatValidationRule(attr.validation_rule, attr.scale)}
                           </Badge>
-                          <span className="text-xs">
-                            {attr.scale.type === 'numeric'
-                              ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
-                              : `${attr.scale.options?.length || 0} options`}
-                          </span>
-                          {attr.validation_rule && (
-                            <Badge variant="secondary" className="text-xs">
-                              {formatValidationRule(attr.validation_rule, attr.scale)}
-                            </Badge>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-2">
-                      Numeric: {cuppingAttributes.filter(a => a.scale.type === 'numeric').length} •
-                      Wording: {cuppingAttributes.filter(a => a.scale.type === 'wording').length} •
-                      Max Total: {cuppingAttributes
-                        .filter(a => a.scale.type === 'numeric')
-                        .reduce((sum, a) => sum + (a.scale.type === 'numeric' ? a.scale.max : 0), 0)}
-                    </p>
+                        )}
+                      </div>
+                    ))}
+                    {cuppingAttributes.length > 3 && (
+                      <p className="text-[11px] text-muted-foreground">
+                        +{cuppingAttributes.length - 3} more...
+                      </p>
+                    )}
                   </div>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => setCuppingAttributesDialogOpen(true)}
-              >
-                Manage Attributes
-              </Button>
+                  <p className="text-[11px] text-muted-foreground pt-1 border-t">
+                    Numeric: {cuppingAttributes.filter(a => a.scale.type === 'numeric').length} •
+                    Wording: {cuppingAttributes.filter(a => a.scale.type === 'wording').length} •
+                    Max Total: {cuppingAttributes
+                      .filter(a => a.scale.type === 'numeric')
+                      .reduce((sum, a) => sum + (a.scale.type === 'numeric' ? a.scale.max : 0), 0)}
+                  </p>
+                </div>
+              )}
             </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={(e) => { e.stopPropagation(); setCuppingAttributesDialogOpen(true); }}
+              className="h-7 text-xs flex-shrink-0"
+            >
+              Manage
+            </Button>
+          </div>
+
+          {/* View Info - Collapsible */}
+          <div className="border-t pt-2">
+            <div
+              className="flex items-center gap-2 cursor-pointer"
+              onClick={() => setShowCuppingInfo(!showCuppingInfo)}
+            >
+              {showCuppingInfo ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              <span className="text-xs font-medium text-muted-foreground">View Info</span>
+            </div>
+            {showCuppingInfo && (
+              <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                <p>Configure cupping attributes with flexible scales:</p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li><strong>Numeric Scales:</strong> Define custom ranges (e.g., 1-5, 1-10, any min-max)</li>
+                  <li><strong>Wording Scales:</strong> Create custom text-based scales with numeric values (e.g., Outstanding=10, Good=7, Poor=3)</li>
+                  <li><strong>Mixed Attributes:</strong> Each attribute can use a different scale type</li>
+                  <li><strong>Templates:</strong> Start with SCA, COE, or Brazil Traditional presets</li>
+                </ul>
+              </div>
+            )}
           </div>
         </CardContent>
       </Card>
@@ -1404,63 +1606,180 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
       {/* Taints and Faults (New Flexible System) */}
       <Card>
-        <CardHeader>
-          <CardTitle>Taints and Faults</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            <p>Configure taints, faults, intensity scales, and validation rules:</p>
-            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
-              <li><strong>Taints:</strong> Mild off-flavors that may be acceptable in certain grades</li>
-              <li><strong>Faults:</strong> Severe sensory defects that typically result in rejection</li>
-              <li><strong>Custom Scales:</strong> Define intensity measurement per taint/fault (numeric or wording)</li>
-              <li><strong>Validation Rules:</strong> Set count limits, intensity caps, or zero tolerance</li>
-              <li><strong>Templates:</strong> Load SCA, Specialty, Commercial, or Brazil standards</li>
-            </ul>
+        <CardHeader className="pb-3 cursor-pointer" onClick={() => setTaintFaultExpanded(!taintFaultExpanded)}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {taintFaultExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+              <CardTitle className="text-sm font-semibold flex-shrink-0">Taints and Faults</CardTitle>
+              {!taintFaultExpanded && (taintFaultConfiguration.taints.length > 0 || taintFaultConfiguration.faults.length > 0) && (
+                <span className="text-[11px] text-muted-foreground truncate">
+                  - Taints: {taintFaultConfiguration.taints.length} | Faults: {taintFaultConfiguration.faults.length}
+                  {taintFaultConfiguration.rules.zero_tolerance && ' | Zero Tolerance'}
+                </span>
+              )}
+            </div>
           </div>
-
-          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-            <div>
-              {taintFaultConfiguration.taints.length === 0 && taintFaultConfiguration.faults.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No taints or faults configured yet. Click &quot;Manage Taints & Faults&quot; to get started.
-                </p>
-              ) : (
-                <div className="space-y-1 text-sm">
+        </CardHeader>
+        {taintFaultExpanded && (
+        <CardContent className="space-y-3 pt-0">
+          {taintFaultConfiguration.taints.length === 0 && taintFaultConfiguration.faults.length === 0 ? (
+            <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+              <p className="text-xs text-muted-foreground">
+                No taints or faults configured yet. Click &quot;Manage&quot; to get started.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={(e) => { e.stopPropagation(); setTaintFaultDialogOpen(true); }}
+                className="h-7 text-xs flex-shrink-0"
+              >
+                Manage
+              </Button>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {/* Summary */}
+              <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+                <div className="space-y-0.5 text-xs">
                   <p className="font-medium">
                     {taintFaultConfiguration.taints.length + taintFaultConfiguration.faults.length} definition{(taintFaultConfiguration.taints.length + taintFaultConfiguration.faults.length) !== 1 ? 's' : ''} configured
                   </p>
-                  <p className="text-muted-foreground">
+                  <p className="text-[11px] text-muted-foreground">
                     Taints: {taintFaultConfiguration.taints.length} • Faults: {taintFaultConfiguration.faults.length}
                   </p>
                   {taintFaultConfiguration.rules.zero_tolerance ? (
-                    <p className="text-muted-foreground font-medium text-destructive">
+                    <p className="text-[11px] font-medium text-destructive">
                       Zero Tolerance Mode
                     </p>
                   ) : (
-                    (taintFaultConfiguration.rules.max_taints ||
-                      taintFaultConfiguration.rules.max_faults ||
-                      taintFaultConfiguration.rules.max_combined) && (
-                      <p className="text-muted-foreground">
-                        Rules:
-                        {taintFaultConfiguration.rules.max_taints !== undefined && ` Taints ≤${taintFaultConfiguration.rules.max_taints}`}
+                    (taintFaultConfiguration.rules.max_taints !== undefined ||
+                      taintFaultConfiguration.rules.max_faults !== undefined ||
+                      taintFaultConfiguration.rules.max_combined !== undefined) && (
+                      <p className="text-[11px] text-muted-foreground">
+                        {taintFaultConfiguration.rules.max_taints !== undefined && `Taints ≤${taintFaultConfiguration.rules.max_taints}`}
                         {taintFaultConfiguration.rules.max_faults !== undefined && ` • Faults ≤${taintFaultConfiguration.rules.max_faults}`}
                         {taintFaultConfiguration.rules.max_combined !== undefined && ` • Combined ≤${taintFaultConfiguration.rules.max_combined}`}
                       </p>
                     )
                   )}
                 </div>
-              )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={(e) => { e.stopPropagation(); setTaintFaultDialogOpen(true); }}
+                  className="h-7 text-xs flex-shrink-0"
+                >
+                  Manage
+                </Button>
+              </div>
+
+              {/* Taints & Faults Tables - Collapsible */}
+              <div className="border rounded-lg">
+                <div
+                  className="flex items-center gap-2 px-2.5 py-1.5 cursor-pointer bg-muted/30 rounded-t-lg"
+                  onClick={() => setTaintFaultListExpanded(!taintFaultListExpanded)}
+                >
+                  {taintFaultListExpanded ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />}
+                  <span className="text-xs font-medium">Configured Taints & Faults</span>
+                  {!taintFaultListExpanded && (
+                    <span className="text-[11px] text-muted-foreground">
+                      - {taintFaultConfiguration.taints.length} taints, {taintFaultConfiguration.faults.length} faults
+                    </span>
+                  )}
+                </div>
+                {taintFaultListExpanded && (
+                <div className="p-2">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                    {/* Taints Table */}
+                    <div className="rounded border">
+                      <div className="bg-muted/50 px-2 py-1 border-b">
+                        <h4 className="font-medium text-[11px]">Taints ({taintFaultConfiguration.taints.length})</h4>
+                      </div>
+                      <div className="p-2">
+                        {taintFaultConfiguration.taints.length === 0 ? (
+                          <p className="text-[11px] text-muted-foreground">None</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {taintFaultConfiguration.taints
+                              .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                              .map((taint) => (
+                                <div key={taint.name} className="flex items-center justify-between text-[11px]">
+                                  <span>{taint.name}</span>
+                                  {taint.intensity_scale && (
+                                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                      {taint.intensity_scale.type === 'numeric'
+                                        ? `${taint.intensity_scale.min}-${taint.intensity_scale.max}`
+                                        : `${taint.intensity_scale.options?.length || 0} levels`}
+                                    </Badge>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Faults Table */}
+                    <div className="rounded border">
+                      <div className="bg-muted/50 px-2 py-1 border-b">
+                        <h4 className="font-medium text-[11px]">Faults ({taintFaultConfiguration.faults.length})</h4>
+                      </div>
+                      <div className="p-2">
+                        {taintFaultConfiguration.faults.length === 0 ? (
+                          <p className="text-[11px] text-muted-foreground">None</p>
+                        ) : (
+                          <div className="space-y-1">
+                            {taintFaultConfiguration.faults
+                              .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                              .map((fault) => (
+                                <div key={fault.name} className="flex items-center justify-between text-[11px]">
+                                  <span>{fault.name}</span>
+                                  {fault.intensity_scale && (
+                                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                      {fault.intensity_scale.type === 'numeric'
+                                        ? `${fault.intensity_scale.min}-${fault.intensity_scale.max}`
+                                        : `${fault.intensity_scale.options?.length || 0} levels`}
+                                    </Badge>
+                                  )}
+                                </div>
+                              ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                )}
+              </div>
             </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setTaintFaultDialogOpen(true)}
+          )}
+
+          {/* View Info - Collapsible */}
+          <div className="border-t pt-2">
+            <div
+              className="flex items-center gap-2 cursor-pointer"
+              onClick={() => setShowTaintFaultInfo(!showTaintFaultInfo)}
             >
-              Manage Taints & Faults
-            </Button>
+              {showTaintFaultInfo ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+              <span className="text-xs font-medium text-muted-foreground">View Info</span>
+            </div>
+            {showTaintFaultInfo && (
+              <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                <p>Configure taints, faults, intensity scales, and validation rules:</p>
+                <ul className="list-disc list-inside space-y-0.5 ml-2">
+                  <li><strong>Taints:</strong> Mild off-flavors that may be acceptable in certain grades</li>
+                  <li><strong>Faults:</strong> Severe sensory defects that typically result in rejection</li>
+                  <li><strong>Custom Scales:</strong> Define intensity measurement per taint/fault (numeric or wording)</li>
+                  <li><strong>Validation Rules:</strong> Set count limits, intensity caps, or zero tolerance</li>
+                  <li><strong>Templates:</strong> Load SCA, Specialty, Commercial, or Brazil standards</li>
+                </ul>
+              </div>
+            )}
           </div>
         </CardContent>
+        )}
       </Card>
 
       {/* Taint/Fault Configuration Dialog */}
@@ -1470,62 +1789,6 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         value={taintFaultConfiguration}
         onChange={setTaintFaultConfiguration}
       />
-
-      {/* Micro-Region Requirements */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Micro-Region Requirements</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            <p>Specify micro-region requirements per origin:</p>
-            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
-              <li><strong>Origin-Specific:</strong> Define which micro-regions are acceptable for each origin (e.g., Sul de Minas for Brazil)</li>
-              <li><strong>Mixing Rules:</strong> Control whether blending multiple micro-regions is allowed</li>
-              <li><strong>Percentage Constraints:</strong> Set minimum/maximum percentage requirements per region</li>
-              <li><strong>Real Regions:</strong> 70+ pre-loaded micro-regions from Brazil, Colombia, Ethiopia, Guatemala, and more</li>
-            </ul>
-          </div>
-
-          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-            <div>
-              {microRegionConfiguration.requirements.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No micro-region requirements configured. Click &quot;Manage Micro-Regions&quot; to get started.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    {microRegionConfiguration.requirements.length} origin{microRegionConfiguration.requirements.length !== 1 ? 's' : ''} configured
-                  </p>
-                  <div className="space-y-1">
-                    {microRegionConfiguration.requirements.map((req) => (
-                      <div key={req.origin} className="flex items-center gap-2">
-                        <Badge variant="default" className="text-xs">{req.origin}</Badge>
-                        {req.required_micro_regions.length === 0 ? (
-                          <span className="text-xs text-muted-foreground">Any region</span>
-                        ) : (
-                          <span className="text-xs text-muted-foreground">
-                            {req.required_micro_regions.length} region{req.required_micro_regions.length !== 1 ? 's' : ''}
-                            {req.allow_mix ? ' (mix allowed)' : ' (single only)'}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </div>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setMicroRegionDialogOpen(true)}
-            >
-              Manage Micro-Regions
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Micro-Region Configuration Dialog */}
       <MicroRegionConfigManager
