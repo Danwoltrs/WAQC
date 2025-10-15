@@ -58,7 +58,7 @@ export async function POST(request: NextRequest) {
       .eq('id', user.id)
       .single()
 
-    if (!profile || !['global_admin', 'global_quality_admin'].includes(profile.qc_role)) {
+    if (!profile || !profile.qc_role || !['global_admin', 'global_quality_admin'].includes(profile.qc_role)) {
       return NextResponse.json({ error: 'Forbidden: Admin access required' }, { status: 403 })
     }
 
