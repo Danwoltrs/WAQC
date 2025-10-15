@@ -19,21 +19,25 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const origin = searchParams.get('origin')
 
-    // Build query with conditional origin filter
-    const { data: regions, error } = origin
-      ? await supabase
-          .from('micro_regions')
-          .select('*')
-          .eq('is_active', true)
-          .eq('origin', origin)
-          .order('origin', { ascending: true })
-          .order('display_order', { ascending: true })
-      : await supabase
-          .from('micro_regions')
-          .select('*')
-          .eq('is_active', true)
-          .order('origin', { ascending: true })
-          .order('display_order', { ascending: true })
+    // Execute query with optional origin filter
+    let regions, error
+
+    if (origin) {
+      const result = await supabase
+        .from('micro_regions')
+        .select('*')
+        .eq('is_active', true)
+        .eq('origin', origin)
+      regions = result.data
+      error = result.error
+    } else {
+      const result = await supabase
+        .from('micro_regions')
+        .select('*')
+        .eq('is_active', true)
+      regions = result.data
+      error = result.error
+    }
 
     if (error) {
       console.error('Error fetching micro-regions:', error)
