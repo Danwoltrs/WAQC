@@ -129,7 +129,6 @@ export async function PATCH(
       'neighborhood',
       'city',
       'state',
-      'zip_code',
       'type',
       'storage_capacity',
       'contact_email',
@@ -137,8 +136,7 @@ export async function PATCH(
       'is_active',
       'entrance_x_position',
       'entrance_y_position',
-      'supported_origins',
-      'micro_origin_config'
+      'supported_origins'
     ]
 
     for (const field of allowedFields) {
