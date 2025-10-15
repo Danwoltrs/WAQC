@@ -135,8 +135,7 @@ export async function PATCH(
       'contact_phone',
       'is_active',
       'entrance_x_position',
-      'entrance_y_position',
-      'supported_origins'
+      'entrance_y_position'
     ]
 
     for (const field of allowedFields) {
