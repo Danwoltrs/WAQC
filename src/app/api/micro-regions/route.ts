@@ -19,20 +19,21 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const origin = searchParams.get('origin')
 
-    // Build query
-    let query = supabase
-      .from('micro_regions')
-      .select('*')
-      .eq('is_active', true)
-      .order('origin', { ascending: true })
-      .order('display_order', { ascending: true })
-
-    // Apply origin filter if provided
-    if (origin) {
-      query = query.eq('origin', origin)
-    }
-
-    const { data: regions, error } = await query
+    // Build query with conditional origin filter
+    const { data: regions, error } = origin
+      ? await supabase
+          .from('micro_regions')
+          .select('*')
+          .eq('is_active', true)
+          .eq('origin', origin)
+          .order('origin', { ascending: true })
+          .order('display_order', { ascending: true })
+      : await supabase
+          .from('micro_regions')
+          .select('*')
+          .eq('is_active', true)
+          .order('origin', { ascending: true })
+          .order('display_order', { ascending: true })
 
     if (error) {
       console.error('Error fetching micro-regions:', error)
