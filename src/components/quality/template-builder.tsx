@@ -42,6 +42,11 @@ import {
   ROAST_ASPECT_TEMPLATES
 } from '@/types/aspect-configuration'
 import { AspectConfigManager } from './aspect-config-manager'
+import {
+  MicroRegionConfiguration,
+  createEmptyMicroRegionConfiguration
+} from '@/types/micro-region-configuration'
+import { MicroRegionConfigManager } from './micro-region-config-manager'
 
 // AttributeScale is now imported from @/types/attribute-scales as CuppingAttribute
 
@@ -68,6 +73,7 @@ interface TemplateParameters {
   }
   cupping_attributes?: CuppingAttribute[] // New flexible attribute format
   taint_fault_configuration?: TaintFaultConfiguration // New flexible taint/fault format
+  micro_region_configuration?: MicroRegionConfiguration // Micro-region requirements per origin
 }
 
 interface Template {
@@ -84,6 +90,8 @@ interface Template {
   version?: number
   parameters: TemplateParameters
   is_active?: boolean
+  is_global?: boolean
+  laboratory_id?: string | null
   created_by?: string
   created_at?: string
   updated_at?: string
@@ -126,6 +134,38 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [name, setName] = useState((template as any)?.name_en || template?.name || '')
   const [description, setDescription] = useState((template as any)?.description_en || template?.description || '')
   const [isActive, setIsActive] = useState(template?.is_active !== false)
+
+  // Template sharing controls
+  const [isGlobal, setIsGlobal] = useState(template?.is_global || false)
+  const [userLaboratoryId, setUserLaboratoryId] = useState<string | null>(null)
+  const [userLabName, setUserLabName] = useState<string>('')
+  const [userQcRole, setUserQcRole] = useState<string>('')
+
+  // Fetch user's laboratory info on mount
+  useEffect(() => {
+    async function fetchUserProfile() {
+      try {
+        const response = await fetch('/api/profile')
+        if (response.ok) {
+          const { profile } = await response.json()
+          setUserLaboratoryId(profile.laboratory_id)
+          setUserQcRole(profile.qc_role)
+
+          // Fetch lab name if user has a lab
+          if (profile.laboratory_id) {
+            const labResponse = await fetch(`/api/laboratories/${profile.laboratory_id}`)
+            if (labResponse.ok) {
+              const { laboratory } = await labResponse.json()
+              setUserLabName(laboratory.name)
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching user profile:', err)
+      }
+    }
+    fetchUserProfile()
+  }, [])
 
   // Sample size
   const [sampleSizeGrams, setSampleSizeGrams] = useState(
@@ -201,6 +241,12 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     template?.parameters.taint_fault_configuration || BRAZIL_TRADITIONAL_TAINTS_FAULTS.configuration
   )
   const [taintFaultDialogOpen, setTaintFaultDialogOpen] = useState(false)
+
+  // Micro-Region Configuration
+  const [microRegionConfiguration, setMicroRegionConfiguration] = useState<MicroRegionConfiguration>(
+    template?.parameters.micro_region_configuration || createEmptyMicroRegionConfiguration()
+  )
+  const [microRegionDialogOpen, setMicroRegionDialogOpen] = useState(false)
 
   // Convert CuppingAttribute[] to AttributeWithScale[] for the manager
   const attributesWithScale: AttributeWithScale[] = cuppingAttributes.map(attr => ({
@@ -455,6 +501,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         parameters.taint_fault_configuration = taintFaultConfiguration
       }
 
+      // Micro-Region Configuration
+      if (microRegionConfiguration.requirements.length > 0) {
+        parameters.micro_region_configuration = microRegionConfiguration
+      }
+
       const templateData: any = {
         ...(template?.id && { id: template.id }),
         name_en: name.trim(),
@@ -464,7 +515,9 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         description_pt: description.trim() || null,
         description_es: description.trim() || null,
         parameters,
-        is_active: isActive
+        is_active: isActive,
+        is_global: isGlobal,
+        laboratory_id: isGlobal ? null : userLaboratoryId // Global templates don't belong to a specific lab
       }
 
       await onSave(templateData)
@@ -518,6 +571,51 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
               placeholder="Describe the quality standards for this template..."
               className="w-full min-h-[80px] px-3 py-2 text-sm rounded-md border border-input bg-background"
             />
+          </div>
+
+          {/* Template Sharing Settings */}
+          <div className="space-y-3 pt-4 border-t">
+            <Label>Template Sharing</Label>
+            <div className="space-y-2">
+              <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
+                <input
+                  type="checkbox"
+                  id="is_global"
+                  checked={isGlobal}
+                  onChange={(e) => setIsGlobal(e.target.checked)}
+                  className="h-4 w-4 mt-0.5"
+                  disabled={userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin'}
+                />
+                <div className="flex-1">
+                  <Label htmlFor="is_global" className="font-medium">
+                    Make Global Template
+                  </Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {userQcRole === 'global_admin' || userQcRole === 'global_quality_admin'
+                      ? 'Global templates are visible to all laboratories and can be used by any QC user.'
+                      : 'Only Global Admins can create global templates.'}
+                  </p>
+                </div>
+              </div>
+
+              {!isGlobal && userLaboratoryId && (
+                <div className="p-3 rounded-lg border bg-muted/30">
+                  <p className="text-sm font-medium">Lab-Specific Template</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This template will be visible to all users in <strong>{userLabName || 'your laboratory'}</strong>.
+                  </p>
+                </div>
+              )}
+
+              {!isGlobal && !userLaboratoryId && (
+                <div className="p-3 rounded-lg border bg-muted/30">
+                  <p className="text-sm font-medium">Private Template</p>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    This template will only be visible to you (no laboratory assigned to your profile).
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="space-y-2">
@@ -1223,6 +1321,70 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         onOpenChange={setTaintFaultDialogOpen}
         value={taintFaultConfiguration}
         onChange={setTaintFaultConfiguration}
+      />
+
+      {/* Micro-Region Requirements */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Micro-Region Requirements</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="text-sm text-muted-foreground">
+            <p>Specify micro-region requirements per origin:</p>
+            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
+              <li><strong>Origin-Specific:</strong> Define which micro-regions are acceptable for each origin (e.g., Sul de Minas for Brazil)</li>
+              <li><strong>Mixing Rules:</strong> Control whether blending multiple micro-regions is allowed</li>
+              <li><strong>Percentage Constraints:</strong> Set minimum/maximum percentage requirements per region</li>
+              <li><strong>Real Regions:</strong> 70+ pre-loaded micro-regions from Brazil, Colombia, Ethiopia, Guatemala, and more</li>
+            </ul>
+          </div>
+
+          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
+            <div>
+              {microRegionConfiguration.requirements.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No micro-region requirements configured. Click &quot;Manage Micro-Regions&quot; to get started.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">
+                    {microRegionConfiguration.requirements.length} origin{microRegionConfiguration.requirements.length !== 1 ? 's' : ''} configured
+                  </p>
+                  <div className="space-y-1">
+                    {microRegionConfiguration.requirements.map((req) => (
+                      <div key={req.origin} className="flex items-center gap-2">
+                        <Badge variant="default" className="text-xs">{req.origin}</Badge>
+                        {req.required_micro_regions.length === 0 ? (
+                          <span className="text-xs text-muted-foreground">Any region</span>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">
+                            {req.required_micro_regions.length} region{req.required_micro_regions.length !== 1 ? 's' : ''}
+                            {req.allow_mix ? ' (mix allowed)' : ' (single only)'}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setMicroRegionDialogOpen(true)}
+            >
+              Manage Micro-Regions
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Micro-Region Configuration Dialog */}
+      <MicroRegionConfigManager
+        open={microRegionDialogOpen}
+        onOpenChange={setMicroRegionDialogOpen}
+        value={microRegionConfiguration}
+        onChange={setMicroRegionConfiguration}
       />
 
       {/* Actions */}

@@ -26,9 +26,14 @@ interface Template {
   version: number
   parameters: any
   is_active: boolean
+  is_global: boolean
+  laboratory_id?: string | null
   created_by: string
+  created_by_name?: string
   created_at: string
   updated_at: string
+  updated_by?: string
+  updated_by_name?: string
   usage_count?: number
 }
 
@@ -356,6 +361,8 @@ export default function QualityTemplatesPage() {
                   <thead>
                     <tr className="border-b bg-muted/50">
                       <th className="px-4 py-3 text-left text-sm font-medium">Template</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Sharing</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Created By</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Usage</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Screen Sizes</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Defects</th>
@@ -389,6 +396,35 @@ export default function QualityTemplatesPage() {
                                 </Badge>
                               )}
                               <Badge variant="outline" className="text-xs">v{template.version}</Badge>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Sharing */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm">
+                            {template.is_global ? (
+                              <Badge variant="default" className="text-xs">
+                                Global
+                              </Badge>
+                            ) : template.laboratory_id ? (
+                              <Badge variant="secondary" className="text-xs">
+                                Lab-Specific
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                Private
+                              </Badge>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Created By */}
+                        <td className="px-4 py-4">
+                          <div className="text-sm space-y-1">
+                            <div className="font-medium">{template.created_by_name || 'Unknown'}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {new Date(template.created_at).toLocaleDateString()}
                             </div>
                           </div>
                         </td>

@@ -27,10 +27,13 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Build query
+    // Build query with creator name
     let query = supabase
       .from('quality_templates')
-      .select('*')
+      .select(`
+        *,
+        creator:profiles!quality_templates_created_by_fkey(id, full_name, email)
+      `)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -52,16 +55,17 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch templates' }, { status: 500 })
     }
 
-    // Get usage counts for each template
+    // Get usage counts for each template and format creator data
     const templatesWithUsage = await Promise.all(
-      templates.map(async (template) => {
+      templates.map(async (template: any) => {
         const { count } = await supabase
           .from('client_qualities')
           .select('*', { count: 'exact', head: true })
-          .eq('template_id', (template as any).id)
+          .eq('template_id', template.id)
 
         return {
-          ...(template as any),
+          ...template,
+          created_by_name: template.creator?.full_name || template.creator?.email || 'Unknown',
           usage_count: count || 0
         }
       })
