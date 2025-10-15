@@ -137,7 +137,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [description, setDescription] = useState((template as any)?.description_en || template?.description || '')
   const [isActive, setIsActive] = useState(template?.is_active !== false)
   const [origin, setOrigin] = useState<string>((template?.parameters as any)?.origin || '')
-  const [microOrigin, setMicroOrigin] = useState<string>((template?.parameters as any)?.micro_origin || '')
+  const [selectedMicroOrigins, setSelectedMicroOrigins] = useState<string[]>(
+    (template?.parameters as any)?.micro_origins ||
+    ((template?.parameters as any)?.micro_origin ? [(template?.parameters as any)?.micro_origin] : []) // Backward compatibility
+  )
+  const [microOriginMatchType, setMicroOriginMatchType] = useState<'any' | 'all'>(
+    (template?.parameters as any)?.micro_origin_match_type || 'any'
+  )
   const [availableMicroOrigins, setAvailableMicroOrigins] = useState<Array<{ id: string; name: string }>>([])
 
   // Collapsible section states
@@ -637,12 +643,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         parameters.micro_region_configuration = microRegionConfiguration
       }
 
-      // Origin and Micro-origin
+      // Origin and Micro-origins (multi-select with blend support)
       if (origin) {
         (parameters as any).origin = origin
       }
-      if (microOrigin && microOrigin !== 'any') {
-        (parameters as any).micro_origin = microOrigin
+      if (selectedMicroOrigins.length > 0) {
+        (parameters as any).micro_origins = selectedMicroOrigins
+        (parameters as any).micro_origin_match_type = microOriginMatchType
       }
 
       const templateData: any = {
@@ -736,32 +743,90 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 </div>
 
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label htmlFor="micro_origin" className="text-xs font-medium">Micro-origin</Label>
-                    {microOrigin && microOrigin !== 'any' && (
-                      <input
-                        type="checkbox"
-                        id="require_micro_origin"
-                        className="h-3 w-3"
-                        title="Require specific micro-origin"
-                      />
-                    )}
-                  </div>
-                  <Select
-                    value={microOrigin || undefined}
-                    onValueChange={setMicroOrigin}
-                    disabled={!origin || availableMicroOrigins.length === 0}
-                  >
-                    <SelectTrigger className="h-8 text-sm">
-                      <SelectValue placeholder={origin ? "Any" : "Select origin first"} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="any">Any micro-origin</SelectItem>
-                      {availableMicroOrigins.map((mo) => (
-                        <SelectItem key={mo.id} value={mo.id}>{mo.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Label className="text-xs font-medium">Micro-origins (Blends)</Label>
+                  {!origin || availableMicroOrigins.length === 0 ? (
+                    <div className="px-2.5 py-2 rounded-lg border bg-muted/30">
+                      <p className="text-xs text-muted-foreground">
+                        {origin ? 'No micro-origins available' : 'Select origin first'}
+                      </p>
+                    </div>
+                  ) : (
+                    <Select
+                      value={selectedMicroOrigins.length === 0 ? '' : '__multi__'}
+                      onValueChange={(value) => {
+                        // This is a controlled component, we handle selection via the content
+                      }}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue>
+                          {selectedMicroOrigins.length === 0 ? (
+                            <span className="text-muted-foreground">Select regions...</span>
+                          ) : (
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-xs">{selectedMicroOrigins.length} region{selectedMicroOrigins.length !== 1 ? 's' : ''} selected</span>
+                              {selectedMicroOrigins.length > 0 && (
+                                <span className="text-[11px] text-muted-foreground">
+                                  ({availableMicroOrigins.filter(mo => selectedMicroOrigins.includes(mo.id)).map(mo => mo.name).join(', ')})
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent className="w-[300px]">
+                        <div className="p-2 space-y-2">
+                          {/* Micro-origin checkboxes */}
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                            {availableMicroOrigins.map((mo) => (
+                              <div
+                                key={mo.id}
+                                className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer"
+                                onClick={() => {
+                                  if (selectedMicroOrigins.includes(mo.id)) {
+                                    setSelectedMicroOrigins(selectedMicroOrigins.filter(id => id !== mo.id))
+                                  } else {
+                                    setSelectedMicroOrigins([...selectedMicroOrigins, mo.id])
+                                  }
+                                }}
+                              >
+                                <input
+                                  type="checkbox"
+                                  id={`micro-${mo.id}`}
+                                  checked={selectedMicroOrigins.includes(mo.id)}
+                                  onChange={() => {}}
+                                  className="h-3.5 w-3.5 pointer-events-none"
+                                />
+                                <Label htmlFor={`micro-${mo.id}`} className="text-xs font-normal cursor-pointer flex-1">
+                                  {mo.name}
+                                </Label>
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Blend matching logic */}
+                          {selectedMicroOrigins.length > 1 && (
+                            <div className="space-y-1.5 pt-2 border-t">
+                              <Label className="text-xs font-medium">Blend Matching Rule</Label>
+                              <Select value={microOriginMatchType} onValueChange={(v: 'any' | 'all') => setMicroOriginMatchType(v)}>
+                                <SelectTrigger className="h-8 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="any">Accept ANY (OR logic)</SelectItem>
+                                  <SelectItem value="all">Require ALL (AND logic)</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <p className="text-[11px] text-muted-foreground">
+                                {microOriginMatchType === 'any'
+                                  ? 'Sample passes if it contains at least one selected region'
+                                  : 'Sample passes only if it contains all selected regions'}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      </SelectContent>
+                    </Select>
+                  )}
                 </div>
               </div>
 
