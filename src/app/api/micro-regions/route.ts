@@ -72,8 +72,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert micro-region
-    // @ts-ignore - Avoid TypeScript depth error
     const { data: region, error: insertError } = await supabase
+      // @ts-ignore - Table exists but types not regenerated yet
       .from('micro_regions')
       .insert({
         origin: body.origin,
