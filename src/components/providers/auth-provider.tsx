@@ -24,10 +24,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    let isInitialLoad = true
+
     // Get initial session
     const getSession = async () => {
       const { data: { session }, error } = await supabase.auth.getSession()
-      
+
       if (error) {
         console.error('Error getting session:', error)
         setLoading(false)
@@ -45,6 +47,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setLoading(false)
       }
+
+      isInitialLoad = false
     }
 
     getSession()
@@ -53,6 +57,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
+      // Skip the initial SIGNED_IN event that fires immediately after subscription
+      // since we already handled it in getSession()
+      if (isInitialLoad && event === 'INITIAL_SESSION') {
+        return
+      }
+
       if (session?.user) {
         setUser(session.user)
         try {
