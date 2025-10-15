@@ -169,13 +169,18 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
           // Fetch all laboratories if user is global admin
           if (profile.qc_role === 'global_admin' || profile.qc_role === 'global_quality_admin') {
+            console.log('Fetching laboratories for global admin...')
             const labsResponse = await fetch('/api/laboratories')
+            console.log('Laboratories response status:', labsResponse.status)
             if (labsResponse.ok) {
               const { laboratories } = await labsResponse.json()
+              console.log('Fetched laboratories:', laboratories)
               setAllLaboratories(laboratories.map((lab: any) => ({
                 id: lab.id,
                 name: lab.name
               })))
+            } else {
+              console.error('Failed to fetch laboratories:', labsResponse.status, await labsResponse.text())
             }
           }
         }
