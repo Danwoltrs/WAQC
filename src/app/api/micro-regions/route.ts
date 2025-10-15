@@ -19,7 +19,8 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const origin = searchParams.get('origin')
 
-    // Use rpc or direct SQL to avoid TypeScript depth issues
+    // Use rpc to avoid TypeScript depth issues
+    // @ts-ignore - Function exists but types not regenerated yet
     const { data: regions, error } = await supabase.rpc('get_active_micro_regions', {
       p_origin: origin
     })
