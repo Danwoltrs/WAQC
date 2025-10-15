@@ -218,22 +218,31 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   useEffect(() => {
     async function fetchMicroOrigins() {
       if (!origin) {
+        console.log('No origin selected, clearing micro-origins')
         setAvailableMicroOrigins([])
         return
       }
+      console.log('Fetching micro-origins for origin:', origin)
       try {
         const response = await fetch(`/api/micro-regions?origin=${encodeURIComponent(origin)}`)
+        console.log('Micro-regions response status:', response.status)
         if (response.ok) {
-          const { microRegions } = await response.json()
-          if (microRegions && Array.isArray(microRegions)) {
-            setAvailableMicroOrigins(microRegions.map((mr: any) => ({
+          const data = await response.json()
+          console.log('Micro-regions data:', data)
+          const { regions } = data
+          if (regions && Array.isArray(regions)) {
+            const formatted = regions.map((mr: any) => ({
               id: mr.id,
               name: mr.region_name_en
-            })))
+            }))
+            console.log('Formatted micro-origins:', formatted)
+            setAvailableMicroOrigins(formatted)
           } else {
+            console.log('No micro-regions in response')
             setAvailableMicroOrigins([])
           }
         } else {
+          console.log('Micro-regions fetch failed with status:', response.status)
           setAvailableMicroOrigins([])
         }
       } catch (err) {
