@@ -137,7 +137,10 @@ export async function PATCH(
       'is_active',
       'supported_origins',
       'entrance_x_position',
-      'entrance_y_position'
+      'entrance_y_position',
+      'fee_per_sample',
+      'fee_currency',
+      'billing_basis'
     ]
 
     for (const field of allowedFields) {

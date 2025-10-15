@@ -43,6 +43,9 @@ interface Laboratory {
   contact_phone?: string
   is_active: boolean
   supported_origins?: string[]
+  fee_per_sample?: number
+  fee_currency?: string
+  billing_basis?: 'approved_only' | 'approved_and_rejected'
   personnel_count?: number
   created_at: string
 }
@@ -462,8 +465,11 @@ export default function LaboratoriesPage() {
         contact_email: editingLab.contact_email,
         contact_phone: editingLab.contact_phone,
         is_active: editingLab.is_active,
-        supported_origins: (editingLab as any).supported_origins || [],
-        zip_code: (editingLab as any).zip_code
+        supported_origins: editingLab.supported_origins || [],
+        zip_code: editingLab.zip_code,
+        fee_per_sample: editingLab.type === '3rd_party_lab' ? editingLab.fee_per_sample : null,
+        fee_currency: editingLab.type === '3rd_party_lab' ? editingLab.fee_currency : null,
+        billing_basis: editingLab.type === '3rd_party_lab' ? editingLab.billing_basis : null
       }
 
       console.log('Sending PATCH request with body:', requestBody)
@@ -1635,15 +1641,69 @@ export default function LaboratoriesPage() {
                   </p>
                 </div>
 
-                {/* 3rd Party Lab Configuration */}
-                <div className="pt-4 border-t space-y-4">
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2">3rd Party Lab Configuration</h4>
-                    <p className="text-xs text-muted-foreground mb-3">
-                      Configure if this is a 3rd party laboratory that we pay fees to
-                    </p>
+                {/* 3rd Party Lab Configuration - Only show when type is 3rd_party_lab */}
+                {editingLab.type === '3rd_party_lab' && (
+                  <div className="pt-4 border-t space-y-4">
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2">3rd Party Lab Configuration</h4>
+                      <p className="text-xs text-muted-foreground mb-3">
+                        Configure pricing for this 3rd party laboratory
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-fee-per-sample">Fee per Sample *</Label>
+                        <Input
+                          id="edit-fee-per-sample"
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={(editingLab as any).fee_per_sample || ''}
+                          onChange={(e) => setEditingLab({
+                            ...editingLab,
+                            fee_per_sample: e.target.value ? Number(e.target.value) : undefined
+                          } as any)}
+                          placeholder="25.00"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-fee-currency">Currency</Label>
+                        <Select
+                          value={(editingLab as any).fee_currency || 'USD'}
+                          onValueChange={(value) => setEditingLab({ ...editingLab, fee_currency: value } as any)}
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="USD">USD</SelectItem>
+                            <SelectItem value="EUR">EUR</SelectItem>
+                            <SelectItem value="BRL">BRL</SelectItem>
+                            <SelectItem value="GBP">GBP</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="edit-billing-basis">Pay For *</Label>
+                        <Select
+                          value={(editingLab as any).billing_basis || 'approved_only'}
+                          onValueChange={(value: 'approved_only' | 'approved_and_rejected') =>
+                            setEditingLab({ ...editingLab, billing_basis: value } as any)
+                          }
+                        >
+                          <SelectTrigger>
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="approved_only">Approved Only</SelectItem>
+                            <SelectItem value="approved_and_rejected">Approved + Rejected</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
 
                 <div className="flex justify-end gap-2 pt-4">
                   <Button variant="outline" onClick={() => setEditingLab(null)}>
