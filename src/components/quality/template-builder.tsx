@@ -1594,6 +1594,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             )}
           </div>
         </CardContent>
+        )}
       </Card>
 
       {/* Cupping Attributes Configuration Dialog */}
