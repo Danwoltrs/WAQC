@@ -181,6 +181,27 @@ CREATE POLICY "Admins can manage micro-regions" ON micro_regions
 GRANT SELECT ON micro_regions TO authenticated;
 
 -- ========================================
+-- RPC FUNCTION FOR API
+-- ========================================
+
+-- Create function to get active micro-regions with optional origin filter
+CREATE OR REPLACE FUNCTION get_active_micro_regions(p_origin TEXT DEFAULT NULL)
+RETURNS SETOF micro_regions
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+AS $$
+  SELECT *
+  FROM micro_regions
+  WHERE is_active = true
+    AND (p_origin IS NULL OR origin = p_origin)
+  ORDER BY origin, display_order;
+$$;
+
+-- Grant execute permission to authenticated users
+GRANT EXECUTE ON FUNCTION get_active_micro_regions(TEXT) TO authenticated;
+
+-- ========================================
 -- VERIFICATION
 -- ========================================
 

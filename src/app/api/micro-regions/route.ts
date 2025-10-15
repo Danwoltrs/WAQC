@@ -19,25 +19,10 @@ export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams
     const origin = searchParams.get('origin')
 
-    // Execute query with optional origin filter
-    // Using type assertion to avoid TypeScript depth error
-    let result: any
-
-    if (origin) {
-      result = await supabase
-        .from('micro_regions')
-        .select('*')
-        .eq('is_active', true)
-        .eq('origin', origin)
-    } else {
-      result = await supabase
-        .from('micro_regions')
-        .select('*')
-        .eq('is_active', true)
-    }
-
-    const regions = result.data
-    const error = result.error
+    // Use rpc or direct SQL to avoid TypeScript depth issues
+    const { data: regions, error } = await supabase.rpc('get_active_micro_regions', {
+      p_origin: origin
+    })
 
     if (error) {
       console.error('Error fetching micro-regions:', error)
