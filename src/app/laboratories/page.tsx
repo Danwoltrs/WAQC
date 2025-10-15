@@ -449,25 +449,29 @@ export default function LaboratoriesPage() {
         editingLab.state
       ].filter(Boolean).join(', ') || editingLab.location
 
+      const requestBody = {
+        name: editingLab.name,
+        location: location,
+        country: editingLab.country,
+        address: editingLab.address,
+        neighborhood: editingLab.neighborhood,
+        city: editingLab.city,
+        state: editingLab.state,
+        type: editingLab.type,
+        storage_capacity: editingLab.storage_capacity,
+        contact_email: editingLab.contact_email,
+        contact_phone: editingLab.contact_phone,
+        is_active: editingLab.is_active,
+        supported_origins: (editingLab as any).supported_origins || [],
+        zip_code: (editingLab as any).zip_code
+      }
+
+      console.log('Sending PATCH request with body:', requestBody)
+
       const response = await fetch(`/api/laboratories/${editingLab.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: editingLab.name,
-          location: location,
-          country: editingLab.country,
-          address: editingLab.address,
-          neighborhood: editingLab.neighborhood,
-          city: editingLab.city,
-          state: editingLab.state,
-          type: editingLab.type,
-          storage_capacity: editingLab.storage_capacity,
-          contact_email: editingLab.contact_email,
-          contact_phone: editingLab.contact_phone,
-          is_active: editingLab.is_active,
-          supported_origins: (editingLab as any).supported_origins || [],
-          zip_code: (editingLab as any).zip_code
-        })
+        body: JSON.stringify(requestBody)
       })
 
       if (response.ok) {
@@ -475,7 +479,8 @@ export default function LaboratoriesPage() {
         await loadLaboratories()
       } else {
         const error = await response.json()
-        alert(`Failed to update laboratory: ${error.error}`)
+        console.error('Update failed with error:', error)
+        alert(`Failed to update laboratory: ${error.error}${error.details ? ' - ' + error.details : ''}`)
       }
     } catch (error) {
       console.error('Error updating laboratory:', error)

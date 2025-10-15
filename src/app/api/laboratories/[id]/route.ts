@@ -146,6 +146,9 @@ export async function PATCH(
       }
     }
 
+    // Log what we're trying to update for debugging
+    console.log('Update data being sent:', JSON.stringify(updateData, null, 2))
+
     // Update laboratory
     const { data: laboratory, error: updateError } = await supabase
       .from('laboratories')
@@ -156,9 +159,12 @@ export async function PATCH(
 
     if (updateError) {
       console.error('Error updating laboratory:', updateError)
+      console.error('Update data that failed:', JSON.stringify(updateData, null, 2))
       return NextResponse.json({
         error: 'Failed to update laboratory',
-        details: updateError.message
+        details: updateError.message,
+        code: updateError.code,
+        hint: updateError.hint
       }, { status: 500 })
     }
 
