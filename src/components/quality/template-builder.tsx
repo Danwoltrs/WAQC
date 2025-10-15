@@ -92,6 +92,7 @@ interface Template {
   is_active?: boolean
   is_global?: boolean
   laboratory_id?: string | null
+  assigned_laboratories?: string[] // Multi-lab assignment
   created_by?: string
   created_at?: string
   updated_at?: string
@@ -140,11 +141,17 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [userLaboratoryId, setUserLaboratoryId] = useState<string | null>(null)
   const [userLabName, setUserLabName] = useState<string>('')
   const [userQcRole, setUserQcRole] = useState<string>('')
+  const [assignedLaboratories, setAssignedLaboratories] = useState<string[]>(
+    template?.assigned_laboratories ||
+    (template?.laboratory_id ? [template.laboratory_id] : []) // Migrate legacy laboratory_id
+  )
+  const [allLaboratories, setAllLaboratories] = useState<Array<{ id: string; name: string }>>([])
 
-  // Fetch user's laboratory info on mount
+  // Fetch user's laboratory info and all laboratories on mount
   useEffect(() => {
-    async function fetchUserProfile() {
+    async function fetchData() {
       try {
+        // Fetch user profile
         const response = await fetch('/api/profile')
         if (response.ok) {
           const { profile } = await response.json()
@@ -159,12 +166,24 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
               setUserLabName(laboratory.name)
             }
           }
+
+          // Fetch all laboratories if user is global admin
+          if (profile.qc_role === 'global_admin' || profile.qc_role === 'global_quality_admin') {
+            const labsResponse = await fetch('/api/laboratories')
+            if (labsResponse.ok) {
+              const { laboratories } = await labsResponse.json()
+              setAllLaboratories(laboratories.map((lab: any) => ({
+                id: lab.id,
+                name: lab.name
+              })))
+            }
+          }
         }
       } catch (err) {
-        console.error('Error fetching user profile:', err)
+        console.error('Error fetching data:', err)
       }
     }
-    fetchUserProfile()
+    fetchData()
   }, [])
 
   // Sample size
@@ -517,7 +536,20 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         parameters,
         is_active: isActive,
         is_global: isGlobal,
-        laboratory_id: isGlobal ? null : userLaboratoryId // Global templates don't belong to a specific lab
+        // Template assignment logic:
+        // - Global templates: no laboratory_id, no assigned_laboratories
+        // - Global admins creating lab-specific: use assigned_laboratories array
+        // - Regular lab users: use their laboratory_id, add to assigned_laboratories
+        laboratory_id: isGlobal ? null : (
+          (userQcRole === 'global_admin' || userQcRole === 'global_quality_admin')
+            ? null // Global admins use assigned_laboratories instead
+            : userLaboratoryId // Lab users use their lab ID
+        ),
+        assigned_laboratories: isGlobal ? [] : (
+          (userQcRole === 'global_admin' || userQcRole === 'global_quality_admin')
+            ? assignedLaboratories // Global admins explicitly select labs
+            : (userLaboratoryId ? [userLaboratoryId] : []) // Lab users auto-assign to their lab
+        )
       }
 
       await onSave(templateData)
@@ -582,7 +614,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   type="checkbox"
                   id="is_global"
                   checked={isGlobal}
-                  onChange={(e) => setIsGlobal(e.target.checked)}
+                  onChange={(e) => {
+                    setIsGlobal(e.target.checked)
+                    // Clear assigned labs when making global
+                    if (e.target.checked) {
+                      setAssignedLaboratories([])
+                    }
+                  }}
                   className="h-4 w-4 mt-0.5"
                   disabled={userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin'}
                 />
@@ -598,7 +636,47 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 </div>
               </div>
 
-              {!isGlobal && userLaboratoryId && (
+              {/* Multi-Lab Assignment for Global Admins */}
+              {!isGlobal && (userQcRole === 'global_admin' || userQcRole === 'global_quality_admin') && allLaboratories.length > 0 && (
+                <div className="p-3 rounded-lg border bg-muted/30 space-y-3">
+                  <div>
+                    <p className="text-sm font-medium">Assign to Specific Laboratories</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Select which laboratories can access this template. Leave empty to create a private template.
+                    </p>
+                  </div>
+                  <div className="space-y-2">
+                    {allLaboratories.map((lab) => (
+                      <div key={lab.id} className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          id={`lab-${lab.id}`}
+                          checked={assignedLaboratories.includes(lab.id)}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setAssignedLaboratories([...assignedLaboratories, lab.id])
+                            } else {
+                              setAssignedLaboratories(assignedLaboratories.filter(id => id !== lab.id))
+                            }
+                          }}
+                          className="h-4 w-4"
+                        />
+                        <Label htmlFor={`lab-${lab.id}`} className="font-normal cursor-pointer">
+                          {lab.name}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  {assignedLaboratories.length > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Selected: {assignedLaboratories.length} lab{assignedLaboratories.length !== 1 ? 's' : ''}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Lab-specific template for regular lab users */}
+              {!isGlobal && userLaboratoryId && userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin' && (
                 <div className="p-3 rounded-lg border bg-muted/30">
                   <p className="text-sm font-medium">Lab-Specific Template</p>
                   <p className="text-xs text-muted-foreground mt-1">
@@ -607,7 +685,18 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 </div>
               )}
 
-              {!isGlobal && !userLaboratoryId && (
+              {/* Private template (no labs assigned) */}
+              {!isGlobal && assignedLaboratories.length === 0 && (userQcRole === 'global_admin' || userQcRole === 'global_quality_admin') && (
+                <div className="p-3 rounded-lg border bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+                  <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Private Template</p>
+                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
+                    No laboratories assigned. This template will only be visible to you.
+                  </p>
+                </div>
+              )}
+
+              {/* Private template for users without lab */}
+              {!isGlobal && !userLaboratoryId && userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin' && (
                 <div className="p-3 rounded-lg border bg-muted/30">
                   <p className="text-sm font-medium">Private Template</p>
                   <p className="text-xs text-muted-foreground mt-1">
