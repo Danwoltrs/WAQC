@@ -146,6 +146,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [roastAspectExpanded, setRoastAspectExpanded] = useState(false)
   const [defectExpanded, setDefectExpanded] = useState(false)
   const [defectWeightExpanded, setDefectWeightExpanded] = useState(false)
+  const [moistureExpanded, setMoistureExpanded] = useState(false)
+  const [quakerExpanded, setQuakerExpanded] = useState(false)
   const [cuppingExpanded, setCuppingExpanded] = useState(false)
   const [taintFaultExpanded, setTaintFaultExpanded] = useState(false)
   const [taintFaultListExpanded, setTaintFaultListExpanded] = useState(false)
@@ -687,36 +689,50 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 />
               </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="origin" className="text-xs font-medium">Origin *</Label>
-                <Select value={origin} onValueChange={setOrigin}>
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue placeholder="Select origin..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {POPULAR_COFFEE_ORIGINS.map((o) => (
-                      <SelectItem key={o} value={o}>{o}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Origin and Micro-origin side by side */}
+              <div className="grid grid-cols-2 gap-2">
+                <div className="space-y-1.5">
+                  <Label htmlFor="origin" className="text-xs font-medium">Origin *</Label>
+                  <Select value={origin} onValueChange={setOrigin}>
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Select origin..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {POPULAR_COFFEE_ORIGINS.map((o) => (
+                        <SelectItem key={o} value={o}>{o}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
-              <div className="space-y-1.5">
-                <Label htmlFor="micro_origin" className="text-xs font-medium">Micro-origin</Label>
-                <Select
-                  value={microOrigin}
-                  onValueChange={setMicroOrigin}
-                  disabled={!origin || availableMicroOrigins.length === 0}
-                >
-                  <SelectTrigger className="h-8 text-sm">
-                    <SelectValue placeholder={origin ? "Select micro-origin..." : "Select origin first"} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableMicroOrigins.map((mo) => (
-                      <SelectItem key={mo.id} value={mo.id}>{mo.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="micro_origin" className="text-xs font-medium">Micro-origin</Label>
+                    {microOrigin && (
+                      <input
+                        type="checkbox"
+                        id="require_micro_origin"
+                        className="h-3 w-3"
+                        title="Require specific micro-origin"
+                      />
+                    )}
+                  </div>
+                  <Select
+                    value={microOrigin}
+                    onValueChange={setMicroOrigin}
+                    disabled={!origin || availableMicroOrigins.length === 0}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder={origin ? "Any" : "Select origin first"} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Any micro-origin</SelectItem>
+                      {availableMicroOrigins.map((mo) => (
+                        <SelectItem key={mo.id} value={mo.id}>{mo.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               <div className="space-y-1.5">
@@ -756,77 +772,6 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 />
                 <Label htmlFor="is_active" className="text-xs font-normal cursor-pointer">Active (available for client assignment)</Label>
               </div>
-            </div>
-          </div>
-
-          {/* Micro-Region Requirements */}
-          <div className="space-y-2 pt-3 border-t">
-            <Label className="text-xs font-medium">Micro-Region Requirements</Label>
-            <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
-              <div className="flex-1 min-w-0">
-                {microRegionConfiguration.requirements.length === 0 ? (
-                  <p className="text-xs text-muted-foreground">
-                    No micro-region requirements configured. Click &quot;Manage&quot; to get started.
-                  </p>
-                ) : (
-                  <div className="space-y-1.5">
-                    <p className="text-xs font-medium">
-                      {microRegionConfiguration.requirements.length} origin{microRegionConfiguration.requirements.length !== 1 ? 's' : ''} configured
-                    </p>
-                    <div className="space-y-1">
-                      {microRegionConfiguration.requirements.slice(0, 2).map((req) => (
-                        <div key={req.origin} className="flex items-center gap-2">
-                          <Badge variant="default" className="text-[10px] px-1.5 py-0.5">{req.origin}</Badge>
-                          {req.required_micro_regions.length === 0 ? (
-                            <span className="text-[11px] text-muted-foreground">Any region</span>
-                          ) : (
-                            <span className="text-[11px] text-muted-foreground">
-                              {req.required_micro_regions.length} region{req.required_micro_regions.length !== 1 ? 's' : ''}
-                              {req.allow_mix ? ' (mix allowed)' : ' (single only)'}
-                            </span>
-                          )}
-                        </div>
-                      ))}
-                      {microRegionConfiguration.requirements.length > 2 && (
-                        <p className="text-[11px] text-muted-foreground">
-                          +{microRegionConfiguration.requirements.length - 2} more...
-                        </p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setMicroRegionDialogOpen(true)}
-                className="h-7 text-xs flex-shrink-0"
-              >
-                Manage
-              </Button>
-            </div>
-
-            {/* View Info - Collapsible */}
-            <div>
-              <div
-                className="flex items-center gap-2 cursor-pointer"
-                onClick={() => setShowMicroRegionInfo(!showMicroRegionInfo)}
-              >
-                {showMicroRegionInfo ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-                <span className="text-xs font-medium text-muted-foreground">View Info</span>
-              </div>
-              {showMicroRegionInfo && (
-                <div className="text-xs text-muted-foreground mt-2 space-y-1">
-                  <p>Specify micro-region requirements per origin:</p>
-                  <ul className="list-disc list-inside space-y-0.5 ml-2">
-                    <li><strong>Origin-Specific:</strong> Define which micro-regions are acceptable for each origin (e.g., Sul de Minas for Brazil)</li>
-                    <li><strong>Mixing Rules:</strong> Control whether blending multiple micro-regions is allowed</li>
-                    <li><strong>Percentage Constraints:</strong> Set minimum/maximum percentage requirements per region</li>
-                    <li><strong>Real Regions:</strong> 70+ pre-loaded micro-regions from Brazil, Colombia, Ethiopia, Guatemala, and more</li>
-                  </ul>
-                </div>
-              )}
             </div>
           </div>
 
@@ -1378,41 +1323,55 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         sampleSize={parseFloat(sampleSizeGrams) || 300}
       />
 
-      {/* Moisture % */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold">Moisture %</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="moisture_min" className="text-xs font-medium">Min (%)</Label>
-              <Input
-                id="moisture_min"
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={moistureMin}
-                onChange={(e) => setMoistureMin(e.target.value)}
-                placeholder="11"
-                className="h-8 text-sm"
-              />
+      {/* Moisture % & Quaker Count - Side by Side */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Moisture % */}
+        <Card>
+          <CardHeader className="pb-3 cursor-pointer" onClick={() => setMoistureExpanded(!moistureExpanded)}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {moistureExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                <CardTitle className="text-sm font-semibold">Moisture %</CardTitle>
+                {!moistureExpanded && (moistureMin || moistureMax) && (
+                  <span className="text-[11px] text-muted-foreground truncate">
+                    - {moistureMin ? `${moistureMin}%` : '?'} to {moistureMax ? `${moistureMax}%` : '?'}
+                  </span>
+                )}
+              </div>
             </div>
+          </CardHeader>
+          {moistureExpanded && (
+          <CardContent className="space-y-2 pt-0">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="moisture_min" className="text-xs font-medium">Min (%)</Label>
+                <Input
+                  id="moisture_min"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={moistureMin}
+                  onChange={(e) => setMoistureMin(e.target.value)}
+                  placeholder="11"
+                  className="h-8 text-sm"
+                />
+              </div>
 
-            <div className="space-y-1.5">
-              <Label htmlFor="moisture_max" className="text-xs font-medium">Max (%)</Label>
-              <Input
-                id="moisture_max"
-                type="number"
-                min="0"
-                max="100"
-                step="0.1"
-                value={moistureMax}
-                onChange={(e) => setMoistureMax(e.target.value)}
-                placeholder="12"
-                className="h-8 text-sm"
-              />
+              <div className="space-y-1.5">
+                <Label htmlFor="moisture_max" className="text-xs font-medium">Max (%)</Label>
+                <Input
+                  id="moisture_max"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={moistureMax}
+                  onChange={(e) => setMoistureMax(e.target.value)}
+                  placeholder="12"
+                  className="h-8 text-sm"
+                />
+              </div>
             </div>
 
             <div className="space-y-1.5">
@@ -1427,41 +1386,54 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 </SelectContent>
               </Select>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+          )}
+        </Card>
 
-      {/* Quaker Count Configuration */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-sm font-semibold">Quaker Count</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="roast_sample_size" className="text-xs font-medium">Roast Sample Size (grams)</Label>
-              <Input
-                id="roast_sample_size"
-                type="number"
-                min="1"
-                value={roastSampleSizeGrams}
-                onChange={(e) => setRoastSampleSizeGrams(e.target.value)}
-                placeholder="300"
-                className="h-8 text-sm"
-              />
+        {/* Quaker Count */}
+        <Card>
+          <CardHeader className="pb-3 cursor-pointer" onClick={() => setQuakerExpanded(!quakerExpanded)}>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0 flex-1">
+                {quakerExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+                <CardTitle className="text-sm font-semibold">Quaker Count</CardTitle>
+                {!quakerExpanded && maxQuakers && (
+                  <span className="text-[11px] text-muted-foreground truncate">
+                    - Max {maxQuakers} per {roastSampleSizeGrams}g
+                  </span>
+                )}
+              </div>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="max_quakers" className="text-xs font-medium">Maximum Quakers (per {roastSampleSizeGrams}g)</Label>
-              <Input
-                id="max_quakers"
-                type="number"
-                min="0"
-                value={maxQuakers}
-                onChange={(e) => setMaxQuakers(e.target.value)}
-                placeholder="e.g., 5"
-                className="h-8 text-sm"
-              />
+          </CardHeader>
+          {quakerExpanded && (
+          <CardContent className="space-y-2 pt-0">
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <Label htmlFor="roast_sample_size" className="text-xs font-medium">Roast Sample Size (grams)</Label>
+                <Input
+                  id="roast_sample_size"
+                  type="number"
+                  min="1"
+                  value={roastSampleSizeGrams}
+                  onChange={(e) => setRoastSampleSizeGrams(e.target.value)}
+                  placeholder="300"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="max_quakers" className="text-xs font-medium">Maximum Quakers</Label>
+                <Input
+                  id="max_quakers"
+                  type="number"
+                  min="0"
+                  value={maxQuakers}
+                  onChange={(e) => setMaxQuakers(e.target.value)}
+                  placeholder="e.g., 5"
+                  className="h-8 text-sm"
+                />
+              </div>
             </div>
+
             <div className="space-y-1.5">
               <Label htmlFor="quaker_notes" className="text-xs font-medium">Notes</Label>
               <Input
@@ -1472,32 +1444,33 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 className="h-8 text-sm"
               />
             </div>
-          </div>
 
-          {/* View Info - Collapsible */}
-          <div className="border-t pt-2">
-            <div
-              className="flex items-center gap-2 cursor-pointer"
-              onClick={() => setShowQuakerInfo(!showQuakerInfo)}
-            >
-              {showQuakerInfo ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              <span className="text-xs font-medium text-muted-foreground">View Info</span>
-            </div>
-            {showQuakerInfo && (
-              <div className="text-xs text-muted-foreground mt-2 space-y-1">
-                <p>Set maximum allowable quaker beans (unripe/defective beans that don&apos;t roast properly):</p>
-                <ul className="list-disc list-inside space-y-0.5 ml-2">
-                  <li><strong>Quakers:</strong> Unripe beans that remain pale after roasting</li>
-                  <li><strong>Quality Impact:</strong> High quaker count indicates poor bean sorting</li>
-                  <li><strong>Client Requirements:</strong> Some clients have strict quaker limits</li>
-                  <li><strong>Flexible Sample Size:</strong> Define the roast sample size and quaker limit separately from green bean analysis</li>
-                  <li><strong>Common Ranges:</strong> 0-5 for specialty coffee, 0-10 for commercial grades</li>
-                </ul>
+            {/* View Info - Collapsible */}
+            <div className="border-t pt-2">
+              <div
+                className="flex items-center gap-2 cursor-pointer"
+                onClick={() => setShowQuakerInfo(!showQuakerInfo)}
+              >
+                {showQuakerInfo ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                <span className="text-xs font-medium text-muted-foreground">View Info</span>
               </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+              {showQuakerInfo && (
+                <div className="text-xs text-muted-foreground mt-2 space-y-1">
+                  <p>Set maximum allowable quaker beans (unripe/defective beans that don&apos;t roast properly):</p>
+                  <ul className="list-disc list-inside space-y-0.5 ml-2">
+                    <li><strong>Quakers:</strong> Unripe beans that remain pale after roasting</li>
+                    <li><strong>Quality Impact:</strong> High quaker count indicates poor bean sorting</li>
+                    <li><strong>Client Requirements:</strong> Some clients have strict quaker limits</li>
+                    <li><strong>Flexible Sample Size:</strong> Define the roast sample size and quaker limit separately from green bean analysis</li>
+                    <li><strong>Common Ranges:</strong> 0-5 for specialty coffee, 0-10 for commercial grades</li>
+                  </ul>
+                </div>
+              )}
+            </div>
+          </CardContent>
+          )}
+        </Card>
+      </div>
 
       {/* Cupping Attributes (New Flexible System) */}
       <Card>
