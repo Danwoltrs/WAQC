@@ -103,7 +103,7 @@ export async function PATCH(
       // Sample size
       'sample_size_grams',
       // Lab/global sharing
-      'laboratory_id', 'is_global',
+      'laboratory_id', 'is_global', 'assigned_laboratories',
       // Quality thresholds
       'defect_thresholds_primary', 'defect_thresholds_secondary', 'moisture_standard',
       // Cupping scale

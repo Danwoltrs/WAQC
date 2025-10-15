@@ -141,6 +141,7 @@ export async function POST(request: NextRequest) {
       // Lab/global sharing
       laboratory_id: body.laboratory_id || null,
       is_global: body.is_global || false,
+      assigned_laboratories: body.assigned_laboratories || [],
       // Quality thresholds
       defect_thresholds_primary: body.defect_thresholds_primary || null,
       defect_thresholds_secondary: body.defect_thresholds_secondary || null,

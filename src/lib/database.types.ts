@@ -5589,6 +5589,7 @@ export type Database = {
       }
       quality_templates: {
         Row: {
+          assigned_laboratories: string[] | null
           created_at: string | null
           created_by: string | null
           cupping_scale_increment: number | null
@@ -5623,6 +5624,7 @@ export type Database = {
           version: number | null
         }
         Insert: {
+          assigned_laboratories?: string[] | null
           created_at?: string | null
           created_by?: string | null
           cupping_scale_increment?: number | null
@@ -5657,6 +5659,7 @@ export type Database = {
           version?: number | null
         }
         Update: {
+          assigned_laboratories?: string[] | null
           created_at?: string | null
           created_by?: string | null
           cupping_scale_increment?: number | null

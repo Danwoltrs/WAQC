@@ -136,8 +136,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [name, setName] = useState((template as any)?.name_en || template?.name || '')
   const [description, setDescription] = useState((template as any)?.description_en || template?.description || '')
   const [isActive, setIsActive] = useState(template?.is_active !== false)
-  const [origin, setOrigin] = useState<string>('')
-  const [microOrigin, setMicroOrigin] = useState<string>('')
+  const [origin, setOrigin] = useState<string>((template?.parameters as any)?.origin || '')
+  const [microOrigin, setMicroOrigin] = useState<string>((template?.parameters as any)?.micro_origin || '')
   const [availableMicroOrigins, setAvailableMicroOrigins] = useState<Array<{ id: string; name: string }>>([])
 
   // Collapsible section states
@@ -620,6 +620,14 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       // Micro-Region Configuration
       if (microRegionConfiguration.requirements.length > 0) {
         parameters.micro_region_configuration = microRegionConfiguration
+      }
+
+      // Origin and Micro-origin
+      if (origin) {
+        (parameters as any).origin = origin
+      }
+      if (microOrigin && microOrigin !== 'any') {
+        (parameters as any).micro_origin = microOrigin
       }
 
       const templateData: any = {
