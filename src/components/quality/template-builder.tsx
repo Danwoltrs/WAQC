@@ -708,7 +708,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
                     <Label htmlFor="micro_origin" className="text-xs font-medium">Micro-origin</Label>
-                    {microOrigin && (
+                    {microOrigin && microOrigin !== 'any' && (
                       <input
                         type="checkbox"
                         id="require_micro_origin"
@@ -718,7 +718,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                     )}
                   </div>
                   <Select
-                    value={microOrigin}
+                    value={microOrigin || undefined}
                     onValueChange={setMicroOrigin}
                     disabled={!origin || availableMicroOrigins.length === 0}
                   >
@@ -726,7 +726,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                       <SelectValue placeholder={origin ? "Any" : "Select origin first"} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Any micro-origin</SelectItem>
+                      <SelectItem value="any">Any micro-origin</SelectItem>
                       {availableMicroOrigins.map((mo) => (
                         <SelectItem key={mo.id} value={mo.id}>{mo.name}</SelectItem>
                       ))}
