@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { AlertCircle, CheckCircle2, Plus, X, Save } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Plus, X, Save, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   ScreenSizeConstraint,
   ScreenSizeRequirements,
@@ -44,7 +44,8 @@ import {
 import { AspectConfigManager } from './aspect-config-manager'
 import {
   MicroRegionConfiguration,
-  createEmptyMicroRegionConfiguration
+  createEmptyMicroRegionConfiguration,
+  POPULAR_COFFEE_ORIGINS
 } from '@/types/micro-region-configuration'
 import { MicroRegionConfigManager } from './micro-region-config-manager'
 
@@ -135,6 +136,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [name, setName] = useState((template as any)?.name_en || template?.name || '')
   const [description, setDescription] = useState((template as any)?.description_en || template?.description || '')
   const [isActive, setIsActive] = useState(template?.is_active !== false)
+  const [origin, setOrigin] = useState<string>('')
+  const [microOrigin, setMicroOrigin] = useState<string>('')
+  const [availableMicroOrigins, setAvailableMicroOrigins] = useState<Array<{ id: string; name: string }>>([])
+
+  // Collapsible section states
+  const [screenSizeExpanded, setScreenSizeExpanded] = useState(false)
+  const [greenAspectExpanded, setGreenAspectExpanded] = useState(false)
 
   // Template sharing controls
   const [isGlobal, setIsGlobal] = useState(template?.is_global || false)
@@ -169,18 +177,14 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
           // Fetch all laboratories if user is global admin
           if (profile.qc_role === 'global_admin' || profile.qc_role === 'global_quality_admin') {
-            console.log('Fetching laboratories for global admin...')
             const labsResponse = await fetch('/api/laboratories')
-            console.log('Laboratories response status:', labsResponse.status)
             if (labsResponse.ok) {
               const { laboratories } = await labsResponse.json()
-              console.log('Fetched laboratories:', laboratories)
               setAllLaboratories(laboratories.map((lab: any) => ({
                 id: lab.id,
-                name: lab.name
+                name: lab.name,
+                origin: lab.origin
               })))
-            } else {
-              console.error('Failed to fetch laboratories:', labsResponse.status, await labsResponse.text())
             }
           }
         }
@@ -190,6 +194,34 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     }
     fetchData()
   }, [])
+
+  // Fetch micro-origins when origin changes
+  useEffect(() => {
+    async function fetchMicroOrigins() {
+      if (!origin) {
+        setAvailableMicroOrigins([])
+        return
+      }
+      try {
+        const response = await fetch(`/api/micro-regions?origin=${encodeURIComponent(origin)}`)
+        if (response.ok) {
+          const { microRegions } = await response.json()
+          setAvailableMicroOrigins(microRegions.map((mr: any) => ({
+            id: mr.id,
+            name: mr.region_name_en
+          })))
+        }
+      } catch (err) {
+        console.error('Error fetching micro-origins:', err)
+      }
+    }
+    fetchMicroOrigins()
+  }, [origin])
+
+  // Filter laboratories by selected origin
+  const filteredLaboratories = origin
+    ? allLaboratories.filter((lab: any) => lab.origin === origin)
+    : allLaboratories
 
   // Sample size
   const [sampleSizeGrams, setSampleSizeGrams] = useState(
@@ -353,6 +385,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
   const validateForm = (): string | null => {
     if (!name.trim()) return 'Template name is required'
+    if (!origin) return 'Origin is required'
 
     // Validate sample size
     if (sampleSizeGrams && (parseFloat(sampleSizeGrams) <= 0)) {
@@ -585,217 +618,249 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
       {/* Basic Information */}
       <Card>
-        <CardHeader>
-          <CardTitle>Basic Information</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Basic Information</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="name">Template Name *</Label>
-            <Input
-              id="name"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Standard Brazilian, Premium Colombian"
-            />
-          </div>
+        <CardContent className="space-y-3">
+          {/* Two-column layout for basic fields */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Left Column */}
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="name" className="text-xs font-medium">Template Name *</Label>
+                <Input
+                  id="name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g., Standard Brazilian"
+                  className="h-8 text-sm"
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label htmlFor="description">Description</Label>
-            <textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="Describe the quality standards for this template..."
-              className="w-full min-h-[80px] px-3 py-2 text-sm rounded-md border border-input bg-background"
-            />
+              <div className="space-y-1.5">
+                <Label htmlFor="origin" className="text-xs font-medium">Origin *</Label>
+                <Select value={origin} onValueChange={setOrigin}>
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Select origin..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {POPULAR_COFFEE_ORIGINS.map((o) => (
+                      <SelectItem key={o} value={o}>{o}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="micro_origin" className="text-xs font-medium">Micro-origin</Label>
+                <Select
+                  value={microOrigin}
+                  onValueChange={setMicroOrigin}
+                  disabled={!origin || availableMicroOrigins.length === 0}
+                >
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder={origin ? "Select micro-origin..." : "Select origin first"} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {availableMicroOrigins.map((mo) => (
+                      <SelectItem key={mo.id} value={mo.id}>{mo.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label htmlFor="sample_size" className="text-xs font-medium">Sample Size (grams)</Label>
+                <Input
+                  id="sample_size"
+                  type="number"
+                  min="1"
+                  value={sampleSizeGrams}
+                  onChange={(e) => setSampleSizeGrams(e.target.value)}
+                  placeholder="300"
+                  className="h-8 text-sm"
+                />
+              </div>
+            </div>
+
+            {/* Right Column */}
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="description" className="text-xs font-medium">Description</Label>
+                <textarea
+                  id="description"
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Describe quality standards..."
+                  className="w-full h-[120px] px-2.5 py-1.5 text-sm rounded-md border border-input bg-background resize-none"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  id="is_active"
+                  checked={isActive}
+                  onChange={(e) => setIsActive(e.target.checked)}
+                  className="h-3.5 w-3.5"
+                />
+                <Label htmlFor="is_active" className="text-xs font-normal cursor-pointer">Active (available for client assignment)</Label>
+              </div>
+            </div>
           </div>
 
           {/* Template Sharing Settings */}
-          <div className="space-y-3 pt-4 border-t">
-            <Label>Template Sharing</Label>
+          <div className="space-y-2 pt-3 border-t">
+            <Label className="text-xs font-medium">Template Sharing</Label>
             <div className="space-y-2">
-              <div className="flex items-start gap-3 p-3 rounded-lg border bg-muted/30">
-                <input
-                  type="checkbox"
-                  id="is_global"
-                  checked={isGlobal}
-                  onChange={(e) => {
-                    setIsGlobal(e.target.checked)
-                    // Clear assigned labs when making global
-                    if (e.target.checked) {
-                      setAssignedLaboratories([])
-                    }
-                  }}
-                  className="h-4 w-4 mt-0.5"
-                  disabled={userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin'}
-                />
-                <div className="flex-1">
-                  <Label htmlFor="is_global" className="font-medium">
-                    Make Global Template
-                  </Label>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    {userQcRole === 'global_admin' || userQcRole === 'global_quality_admin'
-                      ? 'Global templates are visible to all laboratories and can be used by any QC user.'
-                      : 'Only Global Admins can create global templates.'}
-                  </p>
-                </div>
-              </div>
-
               {/* Multi-Lab Assignment for Global Admins */}
-              {!isGlobal && (userQcRole === 'global_admin' || userQcRole === 'global_quality_admin') && allLaboratories.length > 0 && (
-                <div className="p-3 rounded-lg border bg-muted/30 space-y-3">
+              {(userQcRole === 'global_admin' || userQcRole === 'global_quality_admin') && filteredLaboratories.length > 0 && (
+                <div className="p-2.5 rounded-lg border bg-muted/30 space-y-2">
                   <div>
-                    <p className="text-sm font-medium">Assign to Specific Laboratories</p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Select which laboratories can access this template. Leave empty to create a private template.
+                    <p className="text-xs font-medium">Assign to Laboratories</p>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      {origin
+                        ? `Select labs for ${origin}. Leave empty for private template.`
+                        : 'Select an origin to see available laboratories.'}
                     </p>
                   </div>
-                  <div className="space-y-2">
-                    {allLaboratories.map((lab) => (
-                      <div key={lab.id} className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          id={`lab-${lab.id}`}
-                          checked={assignedLaboratories.includes(lab.id)}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setAssignedLaboratories([...assignedLaboratories, lab.id])
-                            } else {
-                              setAssignedLaboratories(assignedLaboratories.filter(id => id !== lab.id))
-                            }
-                          }}
-                          className="h-4 w-4"
-                        />
-                        <Label htmlFor={`lab-${lab.id}`} className="font-normal cursor-pointer">
-                          {lab.name}
-                        </Label>
-                      </div>
-                    ))}
-                  </div>
+                  {origin && (
+                    <div className="space-y-1.5 max-h-32 overflow-y-auto">
+                      {filteredLaboratories.map((lab: any) => (
+                        <div key={lab.id} className="flex items-center gap-2">
+                          <input
+                            type="checkbox"
+                            id={`lab-${lab.id}`}
+                            checked={assignedLaboratories.includes(lab.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setAssignedLaboratories([...assignedLaboratories, lab.id])
+                              } else {
+                                setAssignedLaboratories(assignedLaboratories.filter(id => id !== lab.id))
+                              }
+                            }}
+                            className="h-3.5 w-3.5"
+                          />
+                          <Label htmlFor={`lab-${lab.id}`} className="text-xs font-normal cursor-pointer">
+                            {lab.name}
+                          </Label>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   {assignedLaboratories.length > 0 && (
-                    <p className="text-xs text-muted-foreground">
-                      Selected: {assignedLaboratories.length} lab{assignedLaboratories.length !== 1 ? 's' : ''}
-                    </p>
+                    <div className="flex flex-wrap gap-1 pt-1 border-t">
+                      {assignedLaboratories.map(labId => {
+                        const lab = allLaboratories.find(l => l.id === labId)
+                        return lab ? (
+                          <Badge key={labId} variant="secondary" className="text-[10px] px-1.5 py-0.5">
+                            {lab.name}
+                          </Badge>
+                        ) : null
+                      })}
+                    </div>
                   )}
                 </div>
               )}
 
               {/* Lab-specific template for regular lab users */}
-              {!isGlobal && userLaboratoryId && userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin' && (
-                <div className="p-3 rounded-lg border bg-muted/30">
-                  <p className="text-sm font-medium">Lab-Specific Template</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    This template will be visible to all users in <strong>{userLabName || 'your laboratory'}</strong>.
+              {userLaboratoryId && userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin' && (
+                <div className="p-2.5 rounded-lg border bg-muted/30">
+                  <p className="text-xs font-medium">Lab-Specific Template</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Visible to all users in <strong>{userLabName || 'your laboratory'}</strong>
                   </p>
                 </div>
               )}
 
               {/* Private template (no labs assigned) */}
-              {!isGlobal && assignedLaboratories.length === 0 && (userQcRole === 'global_admin' || userQcRole === 'global_quality_admin') && (
-                <div className="p-3 rounded-lg border bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
-                  <p className="text-sm font-medium text-amber-900 dark:text-amber-100">Private Template</p>
-                  <p className="text-xs text-amber-700 dark:text-amber-300 mt-1">
-                    No laboratories assigned. This template will only be visible to you.
+              {assignedLaboratories.length === 0 && (userQcRole === 'global_admin' || userQcRole === 'global_quality_admin') && origin && (
+                <div className="p-2.5 rounded-lg border bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800">
+                  <p className="text-xs font-medium text-amber-900 dark:text-amber-100">Private Template</p>
+                  <p className="text-[11px] text-amber-700 dark:text-amber-300 mt-0.5">
+                    No labs selected. Only visible to you.
                   </p>
                 </div>
               )}
 
               {/* Private template for users without lab */}
-              {!isGlobal && !userLaboratoryId && userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin' && (
-                <div className="p-3 rounded-lg border bg-muted/30">
-                  <p className="text-sm font-medium">Private Template</p>
-                  <p className="text-xs text-muted-foreground mt-1">
-                    This template will only be visible to you (no laboratory assigned to your profile).
+              {!userLaboratoryId && userQcRole !== 'global_admin' && userQcRole !== 'global_quality_admin' && (
+                <div className="p-2.5 rounded-lg border bg-muted/30">
+                  <p className="text-xs font-medium">Private Template</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Only visible to you (no lab assigned to profile)
                   </p>
                 </div>
               )}
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="sample_size">Sample Size (grams)</Label>
-            <Input
-              id="sample_size"
-              type="number"
-              min="1"
-              value={sampleSizeGrams}
-              onChange={(e) => setSampleSizeGrams(e.target.value)}
-              placeholder="300"
-            />
-            <p className="text-xs text-muted-foreground">
-              Default: 300g. Used for proportional scaling of defect counts and point values.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="is_active"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              className="h-4 w-4"
-            />
-            <Label htmlFor="is_active">Active (available for client assignment)</Label>
           </div>
         </CardContent>
       </Card>
 
       {/* Screen Size Requirements */}
       <Card>
-        <CardHeader>
-          <CardTitle>Screen Size Requirements</CardTitle>
+        <CardHeader className="pb-3 cursor-pointer" onClick={() => setScreenSizeExpanded(!screenSizeExpanded)}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {screenSizeExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              <CardTitle className="text-sm font-semibold">Screen Size Requirements</CardTitle>
+            </div>
+            {!screenSizeExpanded && screenSizeConstraints.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {screenSizeConstraints.length} constraint{screenSizeConstraints.length !== 1 ? 's' : ''} defined
+              </span>
+            )}
+          </div>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-3">
-            <Label>Defined Constraints ({screenSizeConstraints.length})</Label>
-
+        {screenSizeExpanded && (
+        <CardContent className="space-y-3 pt-0">
+          <div className="space-y-2.5">
             {/* Display existing constraints */}
             {screenSizeConstraints.length > 0 && (
-              <div className="space-y-2">
-                {screenSizeConstraints.map((constraint) => (
-                  <div key={constraint.screen_size} className="flex items-center justify-between p-3 rounded-lg border bg-card">
-                    <div className="flex items-center gap-4 flex-1">
-                      <Badge variant="outline" className="min-w-[100px]">
-                        {constraint.screen_size}
-                      </Badge>
-                      <div className="flex items-center gap-2">
-                        <Badge variant="secondary">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Defined Constraints ({screenSizeConstraints.length})</Label>
+                <div className="space-y-1.5">
+                  {screenSizeConstraints.map((constraint) => (
+                    <div key={constraint.screen_size} className="flex items-center justify-between px-2.5 py-1.5 rounded border bg-card">
+                      <div className="flex items-center gap-3 flex-1">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5">
+                          {constraint.screen_size}
+                        </Badge>
+                        <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
                           {constraint.constraint_type}
                         </Badge>
-                        <span className="text-sm font-medium">
+                        <span className="text-xs">
                           {getConstraintDisplayText(constraint)}
                         </span>
                       </div>
+                      <button
+                        onClick={() => handleRemoveConstraint(constraint.screen_size)}
+                        className="hover:text-destructive"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
                     </div>
-                    <button
-                      onClick={() => handleRemoveConstraint(constraint.screen_size)}
-                      className="hover:text-destructive"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             )}
 
             {/* Add new constraint form */}
-            <div className="border-t pt-4 space-y-3">
-              <Label>Add Screen Size Constraint</Label>
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            <div className="border-t pt-2.5 space-y-2">
+              <Label className="text-xs">Add Constraint</Label>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
                 {/* Screen size selector */}
                 <div className="space-y-1">
-                  <Label className="text-xs">Screen Size</Label>
+                  <Label className="text-[11px] text-muted-foreground">Screen Size</Label>
                   <Select value={newConstraintScreen} onValueChange={setNewConstraintScreen}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-8 text-xs">
                       <SelectValue placeholder="Select..." />
                     </SelectTrigger>
                     <SelectContent>
                       {STANDARD_SCREEN_SIZES.filter(
                         size => !screenSizeConstraints.find(c => c.screen_size === size)
                       ).map((size) => (
-                        <SelectItem key={size} value={size}>
-                          {size}
-                        </SelectItem>
+                        <SelectItem key={size} value={size}>{size}</SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
@@ -803,24 +868,24 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
                 {/* Constraint type selector */}
                 <div className="space-y-1">
-                  <Label className="text-xs">Constraint Type</Label>
+                  <Label className="text-[11px] text-muted-foreground">Type</Label>
                   <Select value={newConstraintType} onValueChange={(v: ConstraintType) => setNewConstraintType(v)}>
-                    <SelectTrigger>
+                    <SelectTrigger className="h-8 text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="minimum">Minimum (≥)</SelectItem>
-                      <SelectItem value="maximum">Maximum (≤)</SelectItem>
+                      <SelectItem value="minimum">Min (≥)</SelectItem>
+                      <SelectItem value="maximum">Max (≤)</SelectItem>
                       <SelectItem value="range">Range</SelectItem>
-                      <SelectItem value="any">Any Amount</SelectItem>
+                      <SelectItem value="any">Any</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
 
-                {/* Value inputs (conditional based on constraint type) */}
+                {/* Value inputs */}
                 {newConstraintType === 'minimum' && (
                   <div className="space-y-1">
-                    <Label className="text-xs">Minimum %</Label>
+                    <Label className="text-[11px] text-muted-foreground">Min %</Label>
                     <Input
                       type="number"
                       min="0"
@@ -828,14 +893,15 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                       step="0.1"
                       value={newConstraintMinValue}
                       onChange={(e) => setNewConstraintMinValue(e.target.value)}
-                      placeholder="e.g., 40"
+                      placeholder="40"
+                      className="h-8 text-xs"
                     />
                   </div>
                 )}
 
                 {newConstraintType === 'maximum' && (
                   <div className="space-y-1">
-                    <Label className="text-xs">Maximum %</Label>
+                    <Label className="text-[11px] text-muted-foreground">Max %</Label>
                     <Input
                       type="number"
                       min="0"
@@ -843,7 +909,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                       step="0.1"
                       value={newConstraintMaxValue}
                       onChange={(e) => setNewConstraintMaxValue(e.target.value)}
-                      placeholder="e.g., 20"
+                      placeholder="20"
+                      className="h-8 text-xs"
                     />
                   </div>
                 )}
@@ -851,7 +918,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 {newConstraintType === 'range' && (
                   <>
                     <div className="space-y-1">
-                      <Label className="text-xs">Min %</Label>
+                      <Label className="text-[11px] text-muted-foreground">Min %</Label>
                       <Input
                         type="number"
                         min="0"
@@ -859,11 +926,12 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                         step="0.1"
                         value={newConstraintMinValue}
                         onChange={(e) => setNewConstraintMinValue(e.target.value)}
-                        placeholder="e.g., 35"
+                        placeholder="35"
+                        className="h-8 text-xs"
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Max %</Label>
+                      <Label className="text-[11px] text-muted-foreground">Max %</Label>
                       <Input
                         type="number"
                         min="0"
@@ -871,7 +939,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                         step="0.1"
                         value={newConstraintMaxValue}
                         onChange={(e) => setNewConstraintMaxValue(e.target.value)}
-                        placeholder="e.g., 45"
+                        placeholder="45"
+                        className="h-8 text-xs"
                       />
                     </div>
                   </>
@@ -882,70 +951,59 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   <Button
                     type="button"
                     variant="outline"
+                    size="sm"
                     onClick={handleAddConstraint}
                     disabled={!newConstraintScreen}
-                    className="w-full"
+                    className="w-full h-8 text-xs"
                   >
-                    <Plus className="h-4 w-4 mr-2" />
+                    <Plus className="h-3 w-3 mr-1" />
                     Add
                   </Button>
                 </div>
               </div>
             </div>
-
-            <div className="text-xs text-muted-foreground space-y-1">
-              <p><strong>Constraint Types:</strong></p>
-              <ul className="list-disc list-inside space-y-1 ml-2">
-                <li><strong>Minimum:</strong> At least X% must be this screen size (e.g., ≥45% Screen 11+)</li>
-                <li><strong>Maximum:</strong> At most X% can be this screen size (e.g., ≤5% Pan)</li>
-                <li><strong>Range:</strong> Screen size must be between min-max% (e.g., 35-45% Screen 18)</li>
-                <li><strong>Any:</strong> No constraint, just track the screen exists (e.g., Screen 15 any amount)</li>
-              </ul>
-              <p className="mt-2">During QC grading, only screens with defined constraints will be shown, reducing visual clutter.</p>
-            </div>
           </div>
         </CardContent>
+        )}
       </Card>
 
       {/* Green Aspect Configuration */}
       <Card>
-        <CardHeader>
-          <CardTitle>Green Aspect (Raw Bean Appearance)</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            <p>Configure visual appearance terminology for raw green coffee beans:</p>
-            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
-              <li><strong>Custom Wordings:</strong> Define appearance terms (e.g., Blue-Green, Greenish, Yellowish)</li>
-              <li><strong>Quality Scale:</strong> Assign numeric values where higher = better appearance</li>
-              <li><strong>Validation Rules:</strong> Set minimum acceptable appearance standards</li>
-              <li><strong>Templates:</strong> Start with Standard (9 levels) or Simplified (3 levels) scales</li>
-            </ul>
+        <CardHeader className="pb-3 cursor-pointer" onClick={() => setGreenAspectExpanded(!greenAspectExpanded)}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              {greenAspectExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+              <CardTitle className="text-sm font-semibold">Green Aspect (Raw Bean Appearance)</CardTitle>
+            </div>
+            {!greenAspectExpanded && greenAspectConfiguration.wordings.length > 0 && (
+              <span className="text-xs text-muted-foreground">
+                {greenAspectConfiguration.wordings.length} wording{greenAspectConfiguration.wordings.length !== 1 ? 's' : ''} configured
+              </span>
+            )}
           </div>
-
-          <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
+        </CardHeader>
+        {greenAspectExpanded && (
+        <CardContent className="space-y-3 pt-0">
+          <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
             <div>
               {greenAspectConfiguration.wordings.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No green aspect wordings configured yet. Click &quot;Manage Green Aspect&quot; to get started.
+                <p className="text-xs text-muted-foreground">
+                  Not configured
                 </p>
               ) : (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">
-                    {greenAspectConfiguration.wordings.length} wording{greenAspectConfiguration.wordings.length !== 1 ? 's' : ''} configured
-                  </p>
-                  <div className="flex flex-wrap gap-2">
+                <div className="space-y-1.5">
+                  <div className="flex flex-wrap gap-1">
                     {greenAspectConfiguration.wordings
                       .sort((a, b) => a.display_order - b.display_order)
                       .map((wording) => (
-                        <Badge key={wording.id} variant="outline" className="font-normal">
+                        <Badge key={wording.id} variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
                           {wording.label} ({wording.value})
                         </Badge>
                       ))}
                   </div>
                   {greenAspectConfiguration.validation?.min_acceptable_value !== undefined && (
-                    <p className="text-sm text-muted-foreground">
-                      Min Acceptable: {greenAspectConfiguration.wordings.find(w => w.value === greenAspectConfiguration.validation?.min_acceptable_value)?.label || 'N/A'}
+                    <p className="text-[11px] text-muted-foreground">
+                      Min: {greenAspectConfiguration.wordings.find(w => w.value === greenAspectConfiguration.validation?.min_acceptable_value)?.label || 'N/A'}
                     </p>
                   )}
                 </div>
@@ -954,12 +1012,15 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             <Button
               type="button"
               variant="outline"
+              size="sm"
               onClick={() => setGreenAspectDialogOpen(true)}
+              className="h-7 text-xs"
             >
-              Manage Green Aspect
+              Configure
             </Button>
           </div>
         </CardContent>
+        )}
       </Card>
 
       {/* Green Aspect Configuration Dialog */}
@@ -973,48 +1034,39 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
       {/* Defect Configuration (New Flexible System) */}
       <Card>
-        <CardHeader>
-          <CardTitle>Defect Configuration</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Defect Configuration</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="text-sm text-muted-foreground">
-            <p>Configure defects, weights, and validation thresholds:</p>
-            <ul className="list-disc list-inside space-y-1 mt-2 ml-2">
-              <li><strong>Primary Defects:</strong> Severe defects (typically weight 1.00)</li>
-              <li><strong>Secondary Defects:</strong> Minor defects (variable weights 0.1-0.5)</li>
-              <li><strong>Custom Weights:</strong> Define point values per defect</li>
-              <li><strong>Validation Thresholds:</strong> Set max limits for primary, secondary, and total</li>
-              <li><strong>Templates:</strong> Load Brazil, Colombia, Guatemala, or SCA standards</li>
-            </ul>
-          </div>
+        <CardContent className="space-y-3">
 
           {defectConfiguration.defects.length === 0 ? (
-            <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-              <p className="text-sm text-muted-foreground">
-                No defects configured yet. Click &quot;Manage Defects&quot; to get started.
+            <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+              <p className="text-xs text-muted-foreground">
+                Not configured
               </p>
               <Button
                 type="button"
                 variant="outline"
+                size="sm"
                 onClick={() => setDefectDialogOpen(true)}
+                className="h-7 text-xs"
               >
-                Manage Defects
+                Configure
               </Button>
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-2.5">
               {/* Thresholds Summary */}
-              <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
-                <div className="space-y-1 text-sm">
+              <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+                <div className="space-y-0.5 text-xs">
                   <p className="font-medium">
                     {defectConfiguration.defects.length} defect{defectConfiguration.defects.length !== 1 ? 's' : ''} configured
                   </p>
                   {(defectConfiguration.thresholds.max_primary ||
                     defectConfiguration.thresholds.max_secondary ||
                     defectConfiguration.thresholds.max_total) && (
-                    <p className="text-muted-foreground">
-                      Thresholds:
-                      {defectConfiguration.thresholds.max_primary !== undefined && ` Primary ≤${defectConfiguration.thresholds.max_primary}`}
+                    <p className="text-[11px] text-muted-foreground">
+                      {defectConfiguration.thresholds.max_primary !== undefined && `Primary ≤${defectConfiguration.thresholds.max_primary}`}
                       {defectConfiguration.thresholds.max_secondary !== undefined && ` • Secondary ≤${defectConfiguration.thresholds.max_secondary}`}
                       {defectConfiguration.thresholds.max_total !== undefined && ` • Total ≤${defectConfiguration.thresholds.max_total}`}
                     </p>
@@ -1023,31 +1075,33 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 <Button
                   type="button"
                   variant="outline"
+                  size="sm"
                   onClick={() => setDefectDialogOpen(true)}
+                  className="h-7 text-xs"
                 >
-                  Manage Defects
+                  Configure
                 </Button>
               </div>
 
               {/* Defect Tables - Primary and Secondary */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 {/* Primary Defects Table */}
-                <div className="rounded-lg border">
-                  <div className="bg-muted/50 px-4 py-2 border-b">
-                    <h4 className="font-medium text-sm">Primary Defects ({defectConfiguration.defects.filter(d => d.category === 'primary').length})</h4>
+                <div className="rounded border">
+                  <div className="bg-muted/50 px-2 py-1 border-b">
+                    <h4 className="font-medium text-[11px]">Primary ({defectConfiguration.defects.filter(d => d.category === 'primary').length})</h4>
                   </div>
-                  <div className="p-4">
+                  <div className="p-2">
                     {defectConfiguration.defects.filter(d => d.category === 'primary').length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No primary defects configured</p>
+                      <p className="text-[11px] text-muted-foreground">None</p>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         {defectConfiguration.defects
                           .filter(d => d.category === 'primary')
                           .sort((a, b) => a.display_order - b.display_order)
                           .map((defect) => (
-                            <div key={defect.name} className="flex items-center justify-between text-sm">
+                            <div key={defect.name} className="flex items-center justify-between text-[11px]">
                               <span>{defect.name}</span>
-                              <Badge variant="secondary" className="ml-2">
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
                                 {defect.weight}
                               </Badge>
                             </div>
@@ -1058,22 +1112,22 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 </div>
 
                 {/* Secondary Defects Table */}
-                <div className="rounded-lg border">
-                  <div className="bg-muted/50 px-4 py-2 border-b">
-                    <h4 className="font-medium text-sm">Secondary Defects ({defectConfiguration.defects.filter(d => d.category === 'secondary').length})</h4>
+                <div className="rounded border">
+                  <div className="bg-muted/50 px-2 py-1 border-b">
+                    <h4 className="font-medium text-[11px]">Secondary ({defectConfiguration.defects.filter(d => d.category === 'secondary').length})</h4>
                   </div>
-                  <div className="p-4">
+                  <div className="p-2">
                     {defectConfiguration.defects.filter(d => d.category === 'secondary').length === 0 ? (
-                      <p className="text-sm text-muted-foreground">No secondary defects configured</p>
+                      <p className="text-[11px] text-muted-foreground">None</p>
                     ) : (
-                      <div className="space-y-2">
+                      <div className="space-y-1">
                         {defectConfiguration.defects
                           .filter(d => d.category === 'secondary')
                           .sort((a, b) => a.display_order - b.display_order)
                           .map((defect) => (
-                            <div key={defect.name} className="flex items-center justify-between text-sm">
+                            <div key={defect.name} className="flex items-center justify-between text-[11px]">
                               <span>{defect.name}</span>
-                              <Badge variant="secondary" className="ml-2">
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
                                 {defect.weight}
                               </Badge>
                             </div>
@@ -1099,13 +1153,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
       {/* Moisture % */}
       <Card>
-        <CardHeader>
-          <CardTitle>Moisture %</CardTitle>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-sm font-semibold">Moisture %</CardTitle>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="moisture_min">Minimum Moisture (%)</Label>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="moisture_min" className="text-xs font-medium">Min (%)</Label>
               <Input
                 id="moisture_min"
                 type="number"
@@ -1114,13 +1168,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 step="0.1"
                 value={moistureMin}
                 onChange={(e) => setMoistureMin(e.target.value)}
-                placeholder="e.g., 10.0"
+                placeholder="11"
+                className="h-8 text-sm"
               />
-              <p className="text-xs text-muted-foreground">Usually around 11%</p>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="moisture_max">Maximum Moisture (%)</Label>
+            <div className="space-y-1.5">
+              <Label htmlFor="moisture_max" className="text-xs font-medium">Max (%)</Label>
               <Input
                 id="moisture_max"
                 type="number"
@@ -1129,19 +1183,19 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 step="0.1"
                 value={moistureMax}
                 onChange={(e) => setMoistureMax(e.target.value)}
-                placeholder="e.g., 12.0"
+                placeholder="12"
+                className="h-8 text-sm"
               />
-              <p className="text-xs text-muted-foreground">Usually around 12%</p>
             </div>
 
-            <div className="space-y-2">
-              <Label>Measurement Standard</Label>
+            <div className="space-y-1.5">
+              <Label className="text-xs font-medium">Standard</Label>
               <Select value={moistureStandard} onValueChange={(v: any) => setMoistureStandard(v)}>
-                <SelectTrigger>
+                <SelectTrigger className="h-8 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="coffee_industry">Coffee Industry Standard</SelectItem>
+                  <SelectItem value="coffee_industry">Coffee Industry</SelectItem>
                   <SelectItem value="iso_6673">ISO 6673</SelectItem>
                 </SelectContent>
               </Select>
