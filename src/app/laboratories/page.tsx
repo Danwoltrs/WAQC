@@ -32,6 +32,10 @@ interface Laboratory {
   name: string
   location: string
   country?: string
+  address?: string
+  neighborhood?: string
+  city?: string
+  state?: string
   type: string
   storage_capacity: number
   contact_email?: string
@@ -296,8 +300,8 @@ export default function LaboratoriesPage() {
   const handleNextStep = async () => {
     if (labCreationStep === 1) {
       // Validate basic info
-      if (!newLab.name || !newLab.address || !newLab.city || !newLab.state) {
-        alert('Please fill in laboratory name, address, city, and state')
+      if (!newLab.name || !newLab.address || !newLab.city || !newLab.state || !newLab.country) {
+        alert('Please fill in laboratory name, address, city, state, and country')
         return
       }
       setLabCreationStep(2)
@@ -435,13 +439,25 @@ export default function LaboratoriesPage() {
     if (!editingLab) return
 
     try {
+      // Auto-generate location from address fields if they exist
+      const location = [
+        editingLab.address,
+        editingLab.neighborhood,
+        editingLab.city,
+        editingLab.state
+      ].filter(Boolean).join(', ') || editingLab.location
+
       const response = await fetch(`/api/laboratories/${editingLab.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name: editingLab.name,
-          location: editingLab.location,
+          location: location,
           country: editingLab.country,
+          address: editingLab.address,
+          neighborhood: editingLab.neighborhood,
+          city: editingLab.city,
+          state: editingLab.state,
           type: editingLab.type,
           storage_capacity: editingLab.storage_capacity,
           contact_email: editingLab.contact_email,
@@ -668,13 +684,22 @@ export default function LaboratoriesPage() {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="country">Country</Label>
-                        <Input
-                          id="country"
+                        <Label htmlFor="country">Country *</Label>
+                        <Select
                           value={newLab.country}
-                          onChange={(e) => setNewLab({ ...newLab, country: e.target.value })}
-                          placeholder="Brazil"
-                        />
+                          onValueChange={(value) => setNewLab({ ...newLab, country: value })}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select country..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {ORIGIN_OPTIONS.map((origin) => (
+                              <SelectItem key={origin} value={origin}>
+                                {origin}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="type">Type</Label>
@@ -715,6 +740,40 @@ export default function LaboratoriesPage() {
                       </div>
                     </div>
 
+                    {/* Supported Origins - All Labs */}
+                    <div className="pt-4 border-t space-y-2">
+                      <Label>Supported Origins</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        {ORIGIN_OPTIONS.map((origin) => (
+                          <div key={origin} className="flex items-center gap-2">
+                            <Checkbox
+                              id={`origin_${origin}`}
+                              checked={newLab.supported_origins.includes(origin)}
+                              onCheckedChange={(checked) => {
+                                if (checked) {
+                                  setNewLab({
+                                    ...newLab,
+                                    supported_origins: [...newLab.supported_origins, origin]
+                                  })
+                                } else {
+                                  setNewLab({
+                                    ...newLab,
+                                    supported_origins: newLab.supported_origins.filter(o => o !== origin)
+                                  })
+                                }
+                              }}
+                            />
+                            <Label htmlFor={`origin_${origin}`} className="cursor-pointer font-normal">
+                              {origin}
+                            </Label>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        Select which coffee origins this laboratory can handle
+                      </p>
+                    </div>
+
                     {/* 3rd Party Lab Configuration */}
                     <div className="pt-4 border-t space-y-4">
                       <div className="flex items-center gap-2">
@@ -733,38 +792,6 @@ export default function LaboratoriesPage() {
 
                       {newLab.is_3rd_party && (
                         <div className="space-y-4 pl-6 border-l-2 border-muted">
-                          <div className="space-y-2">
-                            <Label>Supported Origins *</Label>
-                            <div className="grid grid-cols-2 gap-2">
-                              {ORIGIN_OPTIONS.map((origin) => (
-                                <div key={origin} className="flex items-center gap-2">
-                                  <Checkbox
-                                    id={`origin_${origin}`}
-                                    checked={newLab.supported_origins.includes(origin)}
-                                    onCheckedChange={(checked) => {
-                                      if (checked) {
-                                        setNewLab({
-                                          ...newLab,
-                                          supported_origins: [...newLab.supported_origins, origin]
-                                        })
-                                      } else {
-                                        setNewLab({
-                                          ...newLab,
-                                          supported_origins: newLab.supported_origins.filter(o => o !== origin)
-                                        })
-                                      }
-                                    }}
-                                  />
-                                  <Label htmlFor={`origin_${origin}`} className="cursor-pointer font-normal">
-                                    {origin}
-                                  </Label>
-                                </div>
-                              ))}
-                            </div>
-                            <p className="text-xs text-muted-foreground">
-                              Select which coffee origins this laboratory can handle
-                            </p>
-                          </div>
 
                           <div className="grid grid-cols-3 gap-4">
                             <div className="space-y-2">
@@ -1448,21 +1475,73 @@ export default function LaboratoriesPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="edit-location">Location</Label>
+                  <Label htmlFor="edit-address">Street Address</Label>
+                  <Input
+                    id="edit-address"
+                    value={editingLab.address || ''}
+                    onChange={(e) => setEditingLab({ ...editingLab, address: e.target.value })}
+                    placeholder="Rua do Porto 123"
+                  />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-neighborhood">Neighborhood</Label>
+                    <Input
+                      id="edit-neighborhood"
+                      value={editingLab.neighborhood || ''}
+                      onChange={(e) => setEditingLab({ ...editingLab, neighborhood: e.target.value })}
+                      placeholder="Centro"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-city">City</Label>
+                    <Input
+                      id="edit-city"
+                      value={editingLab.city || ''}
+                      onChange={(e) => setEditingLab({ ...editingLab, city: e.target.value })}
+                      placeholder="Santos"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-state">State</Label>
+                    <Input
+                      id="edit-state"
+                      value={editingLab.state || ''}
+                      onChange={(e) => setEditingLab({ ...editingLab, state: e.target.value })}
+                      placeholder="SP"
+                    />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="edit-location">Full Location (Read-only)</Label>
                   <Input
                     id="edit-location"
                     value={editingLab.location}
-                    onChange={(e) => setEditingLab({ ...editingLab, location: e.target.value })}
+                    disabled
+                    className="bg-muted"
                   />
+                  <p className="text-xs text-muted-foreground">
+                    Auto-generated from address fields above
+                  </p>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-country">Country</Label>
-                    <Input
-                      id="edit-country"
+                    <Select
                       value={editingLab.country || ''}
-                      onChange={(e) => setEditingLab({ ...editingLab, country: e.target.value })}
-                    />
+                      onValueChange={(value) => setEditingLab({ ...editingLab, country: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select country..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {ORIGIN_OPTIONS.map((origin) => (
+                          <SelectItem key={origin} value={origin}>
+                            {origin}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="edit-type">Type</Label>
@@ -1510,31 +1589,47 @@ export default function LaboratoriesPage() {
                   <Label htmlFor="edit-active" className="cursor-pointer">Active</Label>
                 </div>
 
+                {/* Supported Origins - All Labs */}
+                <div className="pt-4 border-t space-y-2">
+                  <Label>Supported Origins</Label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {ORIGIN_OPTIONS.map((origin) => (
+                      <div key={origin} className="flex items-center gap-2">
+                        <Checkbox
+                          id={`edit_origin_${origin}`}
+                          checked={((editingLab as any).supported_origins || []).includes(origin)}
+                          onCheckedChange={(checked) => {
+                            const currentOrigins = (editingLab as any).supported_origins || []
+                            if (checked) {
+                              setEditingLab({
+                                ...editingLab,
+                                supported_origins: [...currentOrigins, origin]
+                              } as any)
+                            } else {
+                              setEditingLab({
+                                ...editingLab,
+                                supported_origins: currentOrigins.filter((o: string) => o !== origin)
+                              } as any)
+                            }
+                          }}
+                        />
+                        <Label htmlFor={`edit_origin_${origin}`} className="cursor-pointer font-normal">
+                          {origin}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Select which coffee origins this laboratory can handle
+                  </p>
+                </div>
+
                 {/* 3rd Party Lab Configuration */}
                 <div className="pt-4 border-t space-y-4">
                   <div>
                     <h4 className="text-sm font-semibold mb-2">3rd Party Lab Configuration</h4>
                     <p className="text-xs text-muted-foreground mb-3">
                       Configure if this is a 3rd party laboratory that we pay fees to
-                    </p>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="edit-supported-origins">Supported Origins</Label>
-                    <Input
-                      id="edit-supported-origins"
-                      placeholder="Peru, Mexico, Nicaragua (comma-separated)"
-                      defaultValue={(editingLab as any).supported_origins?.join(', ') || ''}
-                      onBlur={(e) => {
-                        const origins = e.target.value
-                          .split(',')
-                          .map(o => o.trim())
-                          .filter(Boolean)
-                        setEditingLab({ ...editingLab, supported_origins: origins } as any)
-                      }}
-                    />
-                    <p className="text-xs text-muted-foreground">
-                      Coffee origins this lab can handle
                     </p>
                   </div>
                 </div>
