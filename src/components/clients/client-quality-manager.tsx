@@ -85,6 +85,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
   useEffect(() => {
     fetchClientQualities()
     fetchTemplates()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId])
 
   async function fetchClientQualities() {
@@ -339,7 +340,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
           <div className="py-12 text-center text-muted-foreground">
             <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
             <p>No quality specifications assigned to this client</p>
-            <p className="text-sm mt-2">Click "Add Quality Spec" to get started</p>
+            <p className="text-sm mt-2">Click &ldquo;Add Quality Spec&rdquo; to get started</p>
           </div>
         ) : (
           <div className="space-y-3">
