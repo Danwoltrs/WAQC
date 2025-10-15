@@ -645,11 +645,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
 
       // Origin and Micro-origins (multi-select with blend support)
       if (origin) {
-        (parameters as any).origin = origin
+        ;(parameters as any).origin = origin
       }
       if (selectedMicroOrigins.length > 0) {
-        (parameters as any).micro_origins = selectedMicroOrigins
-        (parameters as any).micro_origin_match_type = microOriginMatchType
+        ;(parameters as any).micro_origins = selectedMicroOrigins
+        ;(parameters as any).micro_origin_match_type = microOriginMatchType
       }
 
       const templateData: any = {
