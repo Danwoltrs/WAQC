@@ -97,7 +97,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Prepare client quality data
-    const clientQualityData: ClientQualityInsert = {
+    const clientQualityData: any = {
       client_id: body.client_id,
       template_id: body.template_id,
       origin: body.origin || null,
