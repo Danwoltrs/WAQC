@@ -198,6 +198,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             const labsResponse = await fetch('/api/laboratories')
             if (labsResponse.ok) {
               const { laboratories } = await labsResponse.json()
+              console.log('Fetched laboratories:', laboratories)
               setAllLaboratories(laboratories.map((lab: any) => ({
                 id: lab.id,
                 name: lab.name,
@@ -247,6 +248,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const filteredLaboratories = origin
     ? allLaboratories.filter((lab: any) => lab.country === origin)
     : allLaboratories
+
+  console.log('Origin:', origin)
+  console.log('All laboratories:', allLaboratories)
+  console.log('Filtered laboratories:', filteredLaboratories)
+  console.log('User QC Role:', userQcRole)
 
   // Sample size
   const [sampleSizeGrams, setSampleSizeGrams] = useState(
