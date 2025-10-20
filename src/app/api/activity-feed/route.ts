@@ -34,13 +34,10 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const entityType = searchParams.get('entity_type')
 
-    // Build query
+    // Build query - simplified without join to avoid TypeScript issues
     let query = supabase
       .from('activity_feed')
-      .select(`
-        *,
-        actor:profiles!activity_feed_actor_id_fkey(id, full_name)
-      `)
+      .select('*')
       .eq('laboratory_id', profile.laboratory_id)
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -60,7 +57,28 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    return NextResponse.json({ activities })
+    // Fetch actor names separately
+    const actorIds = [...new Set(activities?.map(a => a.actor_id).filter(Boolean))]
+    const actorMap = new Map()
+
+    if (actorIds.length > 0) {
+      const { data: actors } = await supabase
+        .from('profiles')
+        .select('id, full_name')
+        .in('id', actorIds as string[])
+
+      actors?.forEach(actor => {
+        actorMap.set(actor.id, actor)
+      })
+    }
+
+    // Enrich activities with actor data
+    const enrichedActivities = activities?.map(activity => ({
+      ...activity,
+      actor: activity.actor_id ? actorMap.get(activity.actor_id) : null
+    }))
+
+    return NextResponse.json({ activities: enrichedActivities })
   } catch (error) {
     console.error('Error in activity feed API:', error)
     return NextResponse.json(
