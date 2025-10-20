@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { Header } from './header'
 import { LeftSidebar } from './left-sidebar'
 import { RightSidebar } from './right-sidebar'
+import { useNotifications } from '@/hooks/use-notifications'
 import { cn } from '@/lib/utils'
 
 interface MainLayoutProps {
@@ -13,13 +14,18 @@ interface MainLayoutProps {
 export function MainLayout({ children }: MainLayoutProps) {
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [notificationsSidebarOpen, setNotificationsSidebarOpen] = useState(false)
+  const { unreadCount } = useNotifications({ unreadOnly: true, limit: 100 })
 
   return (
     <div className="h-screen flex flex-col bg-background">
       {/* Header */}
-      <Header 
+      <Header
         onMenuToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
         isMenuOpen={mobileMenuOpen}
+        onNotificationsToggle={() => setNotificationsSidebarOpen(!notificationsSidebarOpen)}
+        isNotificationsOpen={notificationsSidebarOpen}
+        unreadNotifications={unreadCount}
       />
       
       {/* Main content area */}
@@ -54,12 +60,20 @@ export function MainLayout({ children }: MainLayoutProps) {
             {children}
           </div>
         </main>
-
-        {/* Right Sidebar */}
-        <div className="hidden xl:block">
-          <RightSidebar />
-        </div>
       </div>
+
+      {/* Notifications Sidebar Overlay */}
+      {notificationsSidebarOpen && (
+        <>
+          <div
+            className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+            onClick={() => setNotificationsSidebarOpen(false)}
+          />
+          <div className="fixed right-0 top-16 bottom-0 w-80 z-50 animate-in slide-in-from-right duration-300">
+            <RightSidebar onClose={() => setNotificationsSidebarOpen(false)} />
+          </div>
+        </>
+      )}
     </div>
   )
 }

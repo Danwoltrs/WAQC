@@ -13,9 +13,12 @@ import { useAuth } from '@/components/providers/auth-provider'
 interface HeaderProps {
   onMenuToggle?: () => void
   isMenuOpen?: boolean
+  onNotificationsToggle?: () => void
+  isNotificationsOpen?: boolean
+  unreadNotifications?: number
 }
 
-export function Header({ onMenuToggle, isMenuOpen }: HeaderProps) {
+export function Header({ onMenuToggle, isMenuOpen, onNotificationsToggle, isNotificationsOpen, unreadNotifications = 0 }: HeaderProps) {
   const { theme, setTheme, resolvedTheme } = useTheme()
   const { user, profile, signOut } = useAuth()
   const [currentLanguage, setCurrentLanguage] = useState('EN')
@@ -138,10 +141,13 @@ export function Header({ onMenuToggle, isMenuOpen }: HeaderProps) {
           <Button
             variant="ghost"
             size="sm"
+            onClick={onNotificationsToggle}
             className="h-9 w-9 rounded-full relative text-white dark:text-white hover:bg-green-700 dark:hover:bg-neutral-700"
           >
             <Bell className="h-4 w-4" />
-            <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs"></span>
+            {unreadNotifications > 0 && (
+              <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs"></span>
+            )}
           </Button>
 
           {/* User menu */}
