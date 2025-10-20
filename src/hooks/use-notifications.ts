@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@/lib/supabase/client'
+import { createClient } from '@/lib/supabase-browser'
 
 export interface Notification {
   id: string
