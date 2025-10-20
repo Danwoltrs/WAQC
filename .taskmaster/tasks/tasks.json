@@ -823,6 +823,34 @@
           }
         ],
         "updatedAt": "2025-10-10T16:54:39.442Z"
+      },
+      {
+        "id": 27,
+        "title": "Regenerate TypeScript types from Supabase database schema",
+        "description": "Generate complete TypeScript type definitions from the current Supabase database schema to replace empty database.types.ts file and remove 'any' type workarounds in API endpoints.",
+        "details": "Use the Supabase CLI command 'npx supabase gen types typescript --project-id=PROJECT_ID' to generate complete TypeScript types for all database tables including the new client_qualities fields (custom_name, is_active, notes) added in Migration 043. Replace the empty src/lib/database.types.ts file with the generated types. Update src/app/api/client-qualities/route.ts to remove the 'any' type workaround on line 100 (clientQualityData: any) and use proper ClientQualityInsert type. Verify all other API endpoints using Database types are working correctly. The generated types should include all tables from migrations 001-043 including samples, client_qualities, quality_templates, users, clients, laboratories, defect_definitions, taint_fault_definitions, cupping_sessions, cupping_scores, storage_positions, certificates, and all other Phase 2 tables. Ensure proper typing for relationships and join queries used in the codebase.",
+        "testStrategy": "Run TypeScript compilation with 'npx tsc --noEmit' to verify no type errors exist. Test client-qualities API endpoints with proper typing by making POST/GET requests and verifying response structure matches generated types. Verify that all existing API endpoints continue to work without type errors. Test that the new client_qualities fields (custom_name, is_active, notes) are properly typed in both Insert and Row types. Check that relationship queries (joins with clients and quality_templates tables) have correct typing.",
+        "status": "pending",
+        "dependencies": [
+          1,
+          3
+        ],
+        "priority": "medium",
+        "subtasks": []
+      },
+      {
+        "id": 28,
+        "title": "Document Client Quality Custom Naming Feature Implementation",
+        "description": "Create comprehensive documentation for the Client Quality Custom Naming feature that is currently live in production, including migration details, API endpoints, UI components, and database type limitations.",
+        "details": "Create detailed documentation covering the complete Client Quality Custom Naming feature implementation: 1) Migration 043 analysis - document the new custom_name, is_active, and notes fields added to client_qualities table, performance indexes created (idx_client_qualities_client_id, idx_client_qualities_template_id, idx_client_qualities_active, idx_client_qualities_client_active), and enhanced RLS policies for role-based access control. 2) API endpoints documentation - document src/app/api/client-qualities/route.ts (GET with filtering by client_id/template_id/origin/is_active, POST for creating assignments with custom naming) and src/app/api/client-qualities/[id]/route.ts (GET, PATCH for updates, DELETE with usage validation). 3) UI component analysis - document src/components/clients/client-quality-manager.tsx functionality including the custom naming dialog, active/inactive toggle, template assignment workflow, and badge system for custom names. 4) Database integration - document the helper function get_client_quality_display_name() for effective name resolution and RLS policy implementation for quality managers and global admins. 5) Current limitations - document the temporary use of 'any' types in API endpoints due to database type regeneration needs (referencing task 27), particularly in client quality insertion and template cloning operations. Include code examples, field descriptions, and integration points with the existing quality template system.",
+        "testStrategy": "Test custom naming workflow end-to-end: create client quality with custom name, verify UI displays custom name vs template name correctly, test active/inactive toggle functionality, verify RLS policies restrict access appropriately by user role. Test API endpoints: GET filtering by all parameters, POST validation for duplicate assignments, PATCH updates for all allowed fields, DELETE protection when samples reference the quality spec. Verify helper function get_client_quality_display_name() returns custom name when set, falls back to template name correctly. Test edge cases: empty custom names, special characters in names, long text in notes fields. Document any 'any' type usage and verify against task 27 requirements for database type regeneration.",
+        "status": "pending",
+        "dependencies": [
+          9,
+          17
+        ],
+        "priority": "low",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -835,7 +863,7 @@
       ],
       "created": "2025-10-13T15:11:16.994Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-13T18:31:00.870Z"
+      "updated": "2025-10-15T19:46:54.506Z"
     }
   }
 }

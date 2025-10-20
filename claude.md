@@ -44,7 +44,7 @@ The primary goal is to build a robust, intuitive, and aesthetically pleasing app
 * **Structure**: Implement a three-column layout:  
   * **Left Sidebar**: Collapsible navigation menu.  
   * **Main Content Area**: The central dashboard for charts, tables, and forms.  
-  * **Right Sidebar**: A fixed sidebar for notifications, activities, and quick contacts.  
+  * **Right Sidebar**: A collapsible sidebar for notifications, activities, and quick contacts. Clickiong on the bell icon opens the side bar overlapping, coming from up down.  
 * **Theme**: The application must support both **Light Mode** and **Dark Mode**. A theme toggle should be present in the main header.  
 * **Spacing**: Use a generous and consistent spacing system (e.g., multiples of 4px or 8px) as seen in the design to create a clean, uncluttered interface.  
 * **Borders**: Use subtle borders (0.5px solid) to separate layout sections as shown in the design files.

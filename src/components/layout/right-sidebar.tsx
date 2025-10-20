@@ -1,6 +1,6 @@
 'use client'
 
-import { Bell, Calendar, Clock, AlertCircle, CheckCircle, XCircle, X } from 'lucide-react'
+import { Bell, Calendar, Clock, AlertCircle, CheckCircle, XCircle, X, AlertTriangle, Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
@@ -12,7 +12,19 @@ interface RightSidebarProps {
   onClose?: () => void
 }
 
-const getNotificationIcon = (type: 'info' | 'warning' | 'success' | 'error') => {
+const getNotificationIcon = (type: 'info' | 'warning' | 'success' | 'error', priority?: string) => {
+  // Priority badge takes precedence
+  if (priority === 'urgent') {
+    return <AlertCircle className="h-4 w-4 text-red-500" />
+  }
+  if (priority === 'normal') {
+    return <AlertTriangle className="h-4 w-4 text-amber-500" />
+  }
+  if (priority === 'info') {
+    return <Info className="h-4 w-4 text-blue-500" />
+  }
+
+  // Fallback to type-based icons
   switch (type) {
     case 'success':
       return <CheckCircle className="h-4 w-4 text-emerald-500" />
@@ -107,7 +119,7 @@ export function RightSidebar({ onClose }: RightSidebarProps) {
                 )}
               >
                 <div className="flex-shrink-0 mt-0.5">
-                  {getNotificationIcon(notification.type)}
+                  {getNotificationIcon(notification.type, notification.metadata?.priority)}
                 </div>
                 <div className="flex-1 space-y-1">
                   <h4 className="text-sm font-medium leading-none">

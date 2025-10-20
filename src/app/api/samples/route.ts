@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
+import { activities } from '@/lib/notifications'
 
 type Sample = Database['public']['Tables']['samples']['Row']
 type SampleInsert = Database['public']['Tables']['samples']['Insert']
@@ -180,6 +181,21 @@ export async function POST(request: NextRequest) {
       console.error('Error creating sample:', insertError)
       return NextResponse.json({ error: 'Failed to create sample', details: insertError.message }, { status: 500 })
     }
+
+    // Get client name for activity logging
+    const { data: client } = await supabase
+      .from('clients')
+      .select('company')
+      .eq('id', body.client_id)
+      .single()
+
+    // Log activity
+    await activities.sampleRegistered(
+      (sample as any).id,
+      (sample as any).tracking_number,
+      client?.company || 'Unknown Client',
+      body.laboratory_id
+    )
 
     return NextResponse.json({ sample }, { status: 201 })
   } catch (error) {

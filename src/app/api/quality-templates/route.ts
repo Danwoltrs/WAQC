@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
+import { activities } from '@/lib/notifications'
 
 type QualityTemplate = Database['public']['Tables']['quality_templates']['Row']
 type QualityTemplateInsert = Database['public']['Tables']['quality_templates']['Insert']
@@ -191,6 +192,20 @@ export async function POST(request: NextRequest) {
         changes_description: 'Initial version',
         created_by: user.id
       })
+
+    // Get user's laboratory for activity logging
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('laboratory_id')
+      .eq('id', user.id)
+      .single()
+
+    // Log activity
+    await activities.qualityTemplateCreated(
+      (template as any).id,
+      (template as any).name_en,
+      profile?.laboratory_id || undefined
+    )
 
     return NextResponse.json({ template }, { status: 201 })
   } catch (error) {

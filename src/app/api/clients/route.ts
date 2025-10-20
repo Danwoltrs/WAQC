@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
+import { activities } from '@/lib/notifications'
 
 type ClientInsert = Database['public']['Tables']['clients']['Insert']
 
@@ -152,6 +153,20 @@ export async function POST(request: NextRequest) {
         details: insertError.message
       }, { status: 500 })
     }
+
+    // Get user's laboratory for activity logging
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('laboratory_id')
+      .eq('id', user.id)
+      .single()
+
+    // Log activity
+    await activities.clientCreated(
+      client.id,
+      client.company,
+      profile?.laboratory_id || undefined
+    )
 
     return NextResponse.json({ client }, { status: 201 })
   } catch (error) {
