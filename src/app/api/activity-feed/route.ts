@@ -58,7 +58,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Fetch actor names separately
-    const actorIds = [...new Set(activities?.map(a => a.actor_id).filter(Boolean))]
+    const actorIds = [...new Set(activities?.map((a: any) => a.actor_id).filter(Boolean))]
     const actorMap = new Map()
 
     if (actorIds.length > 0) {
@@ -67,13 +67,13 @@ export async function GET(request: NextRequest) {
         .select('id, full_name')
         .in('id', actorIds as string[])
 
-      actors?.forEach(actor => {
+      actors?.forEach((actor: any) => {
         actorMap.set(actor.id, actor)
       })
     }
 
     // Enrich activities with actor data
-    const enrichedActivities = activities?.map(activity => ({
+    const enrichedActivities = activities?.map((activity: any) => ({
       ...activity,
       actor: activity.actor_id ? actorMap.get(activity.actor_id) : null
     }))
