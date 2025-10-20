@@ -27,9 +27,9 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const unreadOnly = searchParams.get('unread') === 'true'
 
-    // Build query
-    let query = supabase
-      .from('notifications')
+    // Build query - use type assertion to bypass TypeScript issues
+    let query: any = supabase
+      .from('notifications' as any)
       .select('*')
       .order('created_at', { ascending: false })
       .limit(limit)
@@ -101,7 +101,7 @@ export async function POST(request: NextRequest) {
 
     // Create notification
     const { data: notification, error } = await supabase
-      .from('notifications')
+      .from('notifications' as any)
       .insert({
         user_id: user_id || null,
         laboratory_id: laboratory_id || null,
@@ -158,7 +158,7 @@ export async function PATCH(request: NextRequest) {
 
     // Update notifications
     const { data: notifications, error } = await supabase
-      .from('notifications')
+      .from('notifications' as any)
       .update({ read: read !== undefined ? read : true })
       .in('id', notification_ids)
       .eq('user_id', user.id)

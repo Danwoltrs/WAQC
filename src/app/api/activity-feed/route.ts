@@ -34,9 +34,9 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const entityType = searchParams.get('entity_type')
 
-    // Build query - simplified without join to avoid TypeScript issues
-    let query = supabase
-      .from('activity_feed')
+    // Build query - use type assertion to bypass TypeScript issues
+    let query: any = supabase
+      .from('activity_feed' as any)
       .select('*')
       .eq('laboratory_id', profile.laboratory_id)
       .order('created_at', { ascending: false })
@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
 
     // Create activity entry
     const { data: activity, error } = await supabase
-      .from('activity_feed')
+      .from('activity_feed' as any)
       .insert({
         user_id: user.id,
         laboratory_id: profile?.laboratory_id || null,
