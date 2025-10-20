@@ -56,7 +56,7 @@ export function RightSidebar({ onClose }: RightSidebarProps) {
   }
 
   return (
-    <aside className="w-80 h-full border-l border-border bg-background shadow-2xl flex flex-col overflow-y-auto">
+    <aside className="w-80 border-l border-border bg-background shadow-2xl flex flex-col overflow-y-auto max-h-screen">
       {/* Header with close button */}
       <div className="flex items-center justify-between p-4 border-b border-border">
         <h2 className="text-sm font-semibold">Notifications & Activity</h2>

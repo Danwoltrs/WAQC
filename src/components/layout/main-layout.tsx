@@ -69,7 +69,7 @@ export function MainLayout({ children }: MainLayoutProps) {
             className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
             onClick={() => setNotificationsSidebarOpen(false)}
           />
-          <div className="fixed right-0 top-16 bottom-0 w-80 z-50 animate-in slide-in-from-right duration-300">
+          <div className="fixed right-0 top-0 w-80 z-50 animate-in slide-in-from-right duration-300 max-h-screen">
             <RightSidebar onClose={() => setNotificationsSidebarOpen(false)} />
           </div>
         </>
