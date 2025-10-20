@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { TemplateBuilder } from '@/components/quality/template-builder'
+import { VersionComparisonDialog } from '@/components/quality/version-comparison-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -19,7 +20,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Plus, Search, Edit, Copy, Trash2, Eye, FileText,
-  CheckCircle, XCircle, AlertCircle
+  CheckCircle, XCircle, AlertCircle, History
 } from 'lucide-react'
 
 interface Template {
@@ -58,6 +59,8 @@ export default function QualityTemplatesPage() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null)
   const [clientsUsingTemplate, setClientsUsingTemplate] = useState<any[]>([])
+  const [versionDialogOpen, setVersionDialogOpen] = useState(false)
+  const [versionComparisonTemplate, setVersionComparisonTemplate] = useState<Template | null>(null)
 
   // Helper to get display name (prefer English, fallback to legacy name)
   const getTemplateName = (template: Template) => template.name_en || template.name || ''
@@ -264,9 +267,21 @@ export default function QualityTemplatesPage() {
               <h1 className="text-3xl font-bold tracking-tight">{getTemplateName(viewingTemplate)}</h1>
               <p className="text-muted-foreground">{getTemplateDescription(viewingTemplate)}</p>
             </div>
-            <Button variant="outline" onClick={() => setViewingTemplate(null)}>
-              Back to Library
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setVersionComparisonTemplate(viewingTemplate)
+                  setVersionDialogOpen(true)
+                }}
+              >
+                <History className="h-4 w-4 mr-2" />
+                Version History
+              </Button>
+              <Button variant="outline" onClick={() => setViewingTemplate(null)}>
+                Back to Library
+              </Button>
+            </div>
           </div>
 
           <Card>
@@ -894,6 +909,16 @@ export default function QualityTemplatesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Version Comparison Dialog */}
+        {versionComparisonTemplate && (
+          <VersionComparisonDialog
+            open={versionDialogOpen}
+            onOpenChange={setVersionDialogOpen}
+            templateId={versionComparisonTemplate.id}
+            templateName={getTemplateName(versionComparisonTemplate)}
+          />
+        )}
       </div>
     </MainLayout>
   )
