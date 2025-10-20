@@ -8,6 +8,16 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
+import {
   Plus, Search, Edit, Copy, Trash2, Eye, FileText,
   CheckCircle, XCircle, AlertCircle
 } from 'lucide-react'
@@ -45,6 +55,9 @@ export default function QualityTemplatesPage() {
   const [showBuilder, setShowBuilder] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [viewingTemplate, setViewingTemplate] = useState<Template | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null)
+  const [clientsUsingTemplate, setClientsUsingTemplate] = useState<any[]>([])
 
   // Helper to get display name (prefer English, fallback to legacy name)
   const getTemplateName = (template: Template) => template.name_en || template.name || ''
@@ -126,30 +139,55 @@ export default function QualityTemplatesPage() {
   }
 
   const handleDelete = async (template: Template) => {
+    // Fetch clients using this template if it's in use
     if (template.usage_count && template.usage_count > 0) {
-      alert(`Cannot delete template "${getTemplateName(template)}" because it is currently in use by ${template.usage_count} client(s).`)
-      return
+      try {
+        const response = await fetch(`/api/quality-templates/${template.id}/clients`)
+        if (response.ok) {
+          const data = await response.json()
+          setClientsUsingTemplate(data.clients || [])
+        }
+      } catch (error) {
+        console.error('Error fetching clients:', error)
+        setClientsUsingTemplate([])
+      }
+    } else {
+      setClientsUsingTemplate([])
     }
 
-    if (!confirm(`Are you sure you want to delete template "${getTemplateName(template)}"?`)) {
-      return
-    }
+    setTemplateToDelete(template)
+    setDeleteDialogOpen(true)
+  }
+
+  const confirmDelete = async () => {
+    if (!templateToDelete) return
 
     try {
-      const response = await fetch(`/api/quality-templates/${template.id}`, {
-        method: 'DELETE'
+      // Soft delete: mark as inactive instead of hard delete
+      const response = await fetch(`/api/quality-templates/${templateToDelete.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: false })
       })
 
       if (response.ok) {
-        await loadTemplates()
+        // Update UI immediately without reloading
+        setTemplates(prevTemplates =>
+          prevTemplates.map(t =>
+            t.id === templateToDelete.id ? { ...t, is_active: false } : t
+          )
+        )
+        setDeleteDialogOpen(false)
+        setTemplateToDelete(null)
+        setClientsUsingTemplate([])
       } else {
         const error = await response.json()
-        console.error('Failed to delete template:', error)
-        alert(`Failed to delete template: ${error.error}`)
+        console.error('Failed to deactivate template:', error)
+        alert(`Failed to deactivate template: ${error.error}`)
       }
     } catch (error) {
-      console.error('Error deleting template:', error)
-      alert('Failed to delete template')
+      console.error('Error deactivating template:', error)
+      alert('Failed to deactivate template')
     }
   }
 
@@ -183,8 +221,9 @@ export default function QualityTemplatesPage() {
   const filteredTemplates = templates.filter(template => {
     const name = getTemplateName(template).toLowerCase()
     const description = getTemplateDescription(template).toLowerCase()
+    const createdBy = (template.created_by_name || '').toLowerCase()
     const query = searchQuery.toLowerCase()
-    return name.includes(query) || description.includes(query)
+    return name.includes(query) || description.includes(query) || createdBy.includes(query)
   })
 
   if (showBuilder) {
@@ -216,9 +255,10 @@ export default function QualityTemplatesPage() {
   }
 
   if (viewingTemplate) {
+    const params = viewingTemplate.parameters
     return (
       <MainLayout>
-        <div className="p-6 max-w-4xl mx-auto">
+        <div className="p-6 max-w-5xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-3xl font-bold tracking-tight">{getTemplateName(viewingTemplate)}</h1>
@@ -229,47 +269,202 @@ export default function QualityTemplatesPage() {
             </Button>
           </div>
 
-          <div className="space-y-6">
-            {/* Template Info */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Template Information</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-muted-foreground">Version:</span> v{viewingTemplate.version}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Status:</span>{' '}
-                    {viewingTemplate.is_active ? (
-                      <Badge variant="default" className="ml-1">Active</Badge>
-                    ) : (
-                      <Badge variant="secondary" className="ml-1">Inactive</Badge>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Used by:</span> {viewingTemplate.usage_count || 0} client(s)
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">Created:</span> {new Date(viewingTemplate.created_at).toLocaleDateString()}
+          <Card>
+            <CardContent className="p-6">
+              {/* Basic Info - Horizontal Layout */}
+              <div className="grid grid-cols-4 gap-4 pb-4 border-b">
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Origin</div>
+                  <div className="font-medium">{(params as any).origin || 'Not specified'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Micro-origins</div>
+                  <div className="font-medium">
+                    {(params as any).micro_origins?.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {(params as any).micro_origins.slice(0, 2).map((mo: string, idx: number) => (
+                          <Badge key={idx} variant="outline" className="text-xs px-1 py-0">
+                            {mo}
+                          </Badge>
+                        ))}
+                        {(params as any).micro_origins.length > 2 && (
+                          <Badge variant="outline" className="text-xs px-1 py-0">
+                            +{(params as any).micro_origins.length - 2}
+                          </Badge>
+                        )}
+                      </div>
+                    ) : 'Any'}
                   </div>
                 </div>
-              </CardContent>
-            </Card>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Created by</div>
+                  <div className="font-medium text-sm">{viewingTemplate.created_by_name || 'Unknown'}</div>
+                  <div className="text-xs text-muted-foreground">{new Date(viewingTemplate.created_at).toLocaleDateString()}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground mb-1">Version</div>
+                  <Badge variant="outline">v{viewingTemplate.version}</Badge>
+                </div>
+              </div>
 
-            {/* Parameters */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Quality Parameters</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                <pre className="text-sm bg-muted p-4 rounded-lg overflow-auto">
-                  {JSON.stringify(viewingTemplate.parameters, null, 2)}
-                </pre>
-              </CardContent>
-            </Card>
-          </div>
+              <div className="grid grid-cols-2 gap-6 pt-4">
+                {/* Left Column */}
+                <div className="space-y-4">
+                  {/* Screen Size Requirements */}
+                  <div className="pb-4 border-b">
+                    <h3 className="text-sm font-semibold mb-3">Screen Size Requirements</h3>
+                    {params.screen_size_requirements?.constraints?.length ? (
+                      <div className="space-y-1">
+                        {[...params.screen_size_requirements.constraints]
+                          .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                          .map((c, idx) => (
+                            <div key={idx} className="flex items-center justify-between text-xs">
+                              <span className="font-mono font-medium">{c.screen_size}</span>
+                              <span className="text-muted-foreground">
+                                {c.constraint_type === 'minimum' && `≥ ${c.min_value}%`}
+                                {c.constraint_type === 'maximum' && `≤ ${c.max_value}%`}
+                                {c.constraint_type === 'range' && `${c.min_value}-${c.max_value}%`}
+                                {c.constraint_type === 'any' && 'any'}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Not configured</p>
+                    )}
+                  </div>
+
+                  {/* Defect Thresholds */}
+                  <div className="pb-4 border-b">
+                    <h3 className="text-sm font-semibold mb-3">Defect Thresholds</h3>
+                    {params.defect_configuration?.thresholds ? (
+                      <div className="space-y-1 text-xs">
+                        {params.defect_configuration.thresholds.max_primary !== undefined && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Primary</span>
+                            <span className="font-medium">≤ {params.defect_configuration.thresholds.max_primary}</span>
+                          </div>
+                        )}
+                        {params.defect_configuration.thresholds.max_secondary !== undefined && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Secondary</span>
+                            <span className="font-medium">≤ {params.defect_configuration.thresholds.max_secondary}</span>
+                          </div>
+                        )}
+                        {params.defect_configuration.thresholds.max_total !== undefined && (
+                          <div className="flex justify-between">
+                            <span className="text-muted-foreground">Total</span>
+                            <span className="font-medium">≤ {params.defect_configuration.thresholds.max_total}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Not configured</p>
+                    )}
+                  </div>
+
+                  {/* Moisture & Quakers */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">Physical Properties</h3>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Moisture Range</span>
+                        <span className="font-medium">
+                          {params.moisture_min || '-'}% - {params.moisture_max || '-'}%
+                        </span>
+                      </div>
+                      {params.max_quakers !== undefined && (
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Max Quakers</span>
+                          <span className="font-medium">
+                            ≤ {params.max_quakers} per {params.roast_sample_size_grams || 300}g
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column */}
+                <div className="space-y-4 border-l pl-6">
+                  {/* Cupping Attributes */}
+                  <div className="pb-4 border-b">
+                    <h3 className="text-sm font-semibold mb-3">
+                      Cupping Attributes ({params.cupping_attributes?.length || 0})
+                    </h3>
+                    {params.cupping_attributes?.length ? (
+                      <div className="space-y-2 max-h-48 overflow-y-auto">
+                        {params.cupping_attributes.map((attr: any, idx: number) => (
+                          <div key={idx} className="text-xs">
+                            <div className="font-medium">{attr.attribute}</div>
+                            <div className="text-muted-foreground ml-2">
+                              {attr.scale.type === 'numeric'
+                                ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
+                                : `${attr.scale.options?.length || 0} wording levels`}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Not configured</p>
+                    )}
+                  </div>
+
+                  {/* Taints & Faults */}
+                  <div className="pb-4 border-b">
+                    <h3 className="text-sm font-semibold mb-3">Taints & Faults</h3>
+                    {params.taint_fault_configuration ? (
+                      <div className="space-y-2 text-xs">
+                        {params.taint_fault_configuration.rules?.zero_tolerance ? (
+                          <Badge variant="destructive" className="text-xs">Zero Tolerance</Badge>
+                        ) : (
+                          <>
+                            {params.taint_fault_configuration.taints?.length > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Taints</span>
+                                <span className="font-medium">{params.taint_fault_configuration.taints.length} defined</span>
+                              </div>
+                            )}
+                            {params.taint_fault_configuration.faults?.length > 0 && (
+                              <div className="flex justify-between">
+                                <span className="text-muted-foreground">Faults</span>
+                                <span className="font-medium">{params.taint_fault_configuration.faults.length} defined</span>
+                              </div>
+                            )}
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Not configured</p>
+                    )}
+                  </div>
+
+                  {/* Aspects */}
+                  <div>
+                    <h3 className="text-sm font-semibold mb-3">Visual Aspects</h3>
+                    <div className="space-y-2 text-xs">
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Green Aspect</span>
+                        <span className="font-medium">
+                          {params.green_aspect_configuration?.wordings?.length || 0} levels
+                          {params.green_aspect_configuration?.validation?.min_acceptable_value &&
+                            ` (min: ${getGreenAspectMinLabel(viewingTemplate)})`}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Roast Aspect</span>
+                        <span className="font-medium">
+                          {params.roast_aspect_configuration?.wordings?.length || 0} levels
+                          {params.roast_aspect_configuration?.validation?.min_acceptable_value &&
+                            ` (min: ${getRoastAspectMinLabel(viewingTemplate)})`}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </MainLayout>
     )
@@ -608,17 +803,15 @@ export default function QualityTemplatesPage() {
                             >
                               <Copy className="h-4 w-4" />
                             </Button>
-                            {(!template.usage_count || template.usage_count === 0) && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDelete(template)}
-                                className="text-destructive hover:text-destructive"
-                                title="Delete template"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            )}
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleDelete(template)}
+                              className="text-destructive hover:text-destructive"
+                              title="Deactivate template"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         </td>
                       </tr>
@@ -629,6 +822,78 @@ export default function QualityTemplatesPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Delete Confirmation Dialog */}
+        <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Deactivate Quality Template?</AlertDialogTitle>
+              <AlertDialogDescription>
+                {templateToDelete && (
+                  <div className="space-y-3">
+                    <p>
+                      You are about to deactivate the template{' '}
+                      <strong>{getTemplateName(templateToDelete)}</strong>.
+                    </p>
+
+                    {clientsUsingTemplate.length > 0 ? (
+                      <div className="space-y-2">
+                        <p className="font-medium text-amber-600 dark:text-amber-500">
+                          This template is currently in use by {clientsUsingTemplate.length}{' '}
+                          client{clientsUsingTemplate.length !== 1 ? 's' : ''}:
+                        </p>
+                        <div className="max-h-32 overflow-y-auto border rounded-md p-2 bg-muted/30 space-y-1">
+                          {clientsUsingTemplate.map((client: any) => (
+                            <div key={client.id} className="flex items-center justify-between text-sm">
+                              <span>{client.company || client.name}</span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto p-1 text-xs"
+                                onClick={() => {
+                                  // TODO: Navigate to client detail page
+                                  window.location.href = `/clients/${client.id}`
+                                }}
+                              >
+                                View Client
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          Deactivating this template will not affect existing client assignments,
+                          but it will no longer be available for new assignments.
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground">
+                        This template is not currently in use. It will be marked as inactive
+                        and will no longer appear in active template lists.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel
+                onClick={() => {
+                  setDeleteDialogOpen(false)
+                  setTemplateToDelete(null)
+                  setClientsUsingTemplate([])
+                }}
+              >
+                Cancel
+              </AlertDialogCancel>
+              <AlertDialogAction
+                onClick={confirmDelete}
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              >
+                Mark as Inactive
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
       </div>
     </MainLayout>
   )
