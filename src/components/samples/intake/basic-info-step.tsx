@@ -284,6 +284,19 @@ export function BasicInfoStep({
         />
       </div>
 
+      <div className="space-y-2">
+        <Label htmlFor="quality_name">Quality Name</Label>
+        <Input
+          id="quality_name"
+          value={formData.quality_name}
+          onChange={(e) => updateFormData('quality_name', e.target.value)}
+          placeholder="e.g., Alfenas Dulce, Specialty Blend (optional)"
+        />
+        <p className="text-xs text-muted-foreground">
+          Custom quality name for this sample
+        </p>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="processing_method">Processing Method</Label>
@@ -371,7 +384,18 @@ export function BasicInfoStep({
           buyer_contract_nr: formData.buyer_contract_nr,
           roaster_contract_nr: formData.roaster_contract_nr
         }}
-        onClientSelect={(clientId) => updateFormData('client_id', clientId)}
+        onClientSelect={(clientId) => {
+          // Find the selected client and auto-fill buyer field
+          const selectedClient = clients.find(c => c.id === clientId)
+          if (selectedClient) {
+            // Set client_id
+            updateFormData('client_id', clientId)
+            // Auto-fill buyer if not already set
+            if (!formData.buyer) {
+              updateFormData('buyer', selectedClient.fantasy_name || selectedClient.company || selectedClient.name)
+            }
+          }
+        }}
         autoSelect={true}
       />
 

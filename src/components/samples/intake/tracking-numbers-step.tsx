@@ -5,6 +5,9 @@ import { Input } from '@/components/ui/input'
 import { StepComponentProps } from './types'
 
 export function TrackingNumbersStep({ formData, updateFormData }: StepComponentProps) {
+  // Check if sample type is PSS (Pre-Shipment Sample)
+  const isPSS = formData.sample_type === 'pss'
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -52,26 +55,37 @@ export function TrackingNumbersStep({ formData, updateFormData }: StepComponentP
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="ico_number">ICO Number</Label>
-          <Input
-            id="ico_number"
-            value={formData.ico_number}
-            onChange={(e) => updateFormData('ico_number', e.target.value)}
-            placeholder="e.g., ICO-123456"
-          />
-        </div>
+        {/* Only show ICO Number and Container Number for SS (Shipped Sample) */}
+        {!isPSS && (
+          <>
+            <div className="space-y-2">
+              <Label htmlFor="ico_number">ICO Number</Label>
+              <Input
+                id="ico_number"
+                value={formData.ico_number}
+                onChange={(e) => updateFormData('ico_number', e.target.value)}
+                placeholder="e.g., ICO-123456"
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="container_nr">Container Number</Label>
-          <Input
-            id="container_nr"
-            value={formData.container_nr}
-            onChange={(e) => updateFormData('container_nr', e.target.value)}
-            placeholder="e.g., ABCD1234567"
-          />
-        </div>
+            <div className="space-y-2">
+              <Label htmlFor="container_nr">Container Number</Label>
+              <Input
+                id="container_nr"
+                value={formData.container_nr}
+                onChange={(e) => updateFormData('container_nr', e.target.value)}
+                placeholder="e.g., ABCD1234567"
+              />
+            </div>
+          </>
+        )}
       </div>
+
+      {isPSS && (
+        <p className="text-xs text-muted-foreground italic">
+          Container and ICO numbers are not applicable for Pre-Shipment Samples
+        </p>
+      )}
     </div>
   )
 }

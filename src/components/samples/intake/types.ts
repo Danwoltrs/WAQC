@@ -16,6 +16,8 @@ export interface FormData {
   processing_method: string
   sample_type: 'pss' | 'ss' | 'type' | ''
   linked_pss_sample_id: string
+  quality_spec_id: string
+  quality_name: string
 
   // Tracking Numbers
   wolthers_contract_nr: string
