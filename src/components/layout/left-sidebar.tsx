@@ -306,14 +306,14 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
               const Icon = item.icon
               const active = isActive(item.href)
               const hasSubmenu = item.submenu && item.submenu.length > 0
-              const submenuExpanded = expandedMenus.has(item.href)
+              const submenuExpanded = item.href ? expandedMenus.has(item.href) : false
               const submenuActive = isSubmenuActive(item.submenu)
               const filteredSubmenu = hasSubmenu
                 ? item.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
                 : []
 
               return (
-                <div key={item.href}>
+                <div key={item.href || item.title}>
                   {/* Main nav item */}
                   {hasSubmenu && filteredSubmenu.length > 0 ? (
                     <div
@@ -324,13 +324,20 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                       )}
                     >
-                      <Link href={item.href} className="flex items-center gap-3 flex-1 min-w-0">
-                        <Icon className="h-4 w-4 flex-shrink-0" />
-                        {isOpen && <span className="truncate">{item.title}</span>}
-                      </Link>
-                      {isOpen && (
+                      {item.href ? (
+                        <Link href={item.href} className="flex items-center gap-3 flex-1 min-w-0">
+                          <Icon className="h-4 w-4 flex-shrink-0" />
+                          {isOpen && <span className="truncate">{item.title}</span>}
+                        </Link>
+                      ) : (
+                        <div className="flex items-center gap-3 flex-1 min-w-0">
+                          <Icon className="h-4 w-4 flex-shrink-0" />
+                          {isOpen && <span className="truncate">{item.title}</span>}
+                        </div>
+                      )}
+                      {isOpen && item.href && (
                         <button
-                          onClick={() => toggleSubmenu(item.href)}
+                          onClick={() => toggleSubmenu(item.href!)}
                           className="p-1 hover:bg-accent/50 rounded transition-colors"
                         >
                           {submenuExpanded ? (
@@ -341,7 +348,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                         </button>
                       )}
                     </div>
-                  ) : (
+                  ) : item.href ? (
                     <Link
                       href={item.href}
                       className={cn(
@@ -364,7 +371,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                         </>
                       )}
                     </Link>
-                  )}
+                  ) : null}
 
                   {/* Submenu items */}
                   {hasSubmenu && submenuExpanded && isOpen && filteredSubmenu.length > 0 && (
@@ -432,14 +439,14 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                   const Icon = itemWithBadge.icon
                   const active = isActive(itemWithBadge.href)
                   const hasSubmenu = itemWithBadge.submenu && itemWithBadge.submenu.length > 0
-                  const submenuExpanded = expandedMenus.has(itemWithBadge.href)
+                  const submenuExpanded = itemWithBadge.href ? expandedMenus.has(itemWithBadge.href) : false
                   const submenuActive = isSubmenuActive(itemWithBadge.submenu)
                   const filteredSubmenu = hasSubmenu
                     ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
                     : []
 
                   return (
-                    <div key={itemWithBadge.href}>
+                    <div key={itemWithBadge.href || itemWithBadge.title}>
                       {/* Main nav item */}
                       {hasSubmenu && filteredSubmenu.length > 0 ? (
                         <div
@@ -450,18 +457,30 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                               : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                           )}
                         >
-                          <Link href={itemWithBadge.href} className="flex items-center gap-3 flex-1 min-w-0">
-                            <div className="relative">
-                              <Icon className="h-4 w-4 flex-shrink-0" />
-                              {!isOpen && itemWithBadge.badge && (
-                                <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
-                              )}
+                          {itemWithBadge.href ? (
+                            <Link href={itemWithBadge.href} className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="relative">
+                                <Icon className="h-4 w-4 flex-shrink-0" />
+                                {!isOpen && itemWithBadge.badge && (
+                                  <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
+                                )}
+                              </div>
+                              {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
+                            </Link>
+                          ) : (
+                            <div className="flex items-center gap-3 flex-1 min-w-0">
+                              <div className="relative">
+                                <Icon className="h-4 w-4 flex-shrink-0" />
+                                {!isOpen && itemWithBadge.badge && (
+                                  <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
+                                )}
+                              </div>
+                              {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
                             </div>
-                            {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
-                          </Link>
-                          {isOpen && (
+                          )}
+                          {isOpen && itemWithBadge.href && (
                             <button
-                              onClick={() => toggleSubmenu(itemWithBadge.href)}
+                              onClick={() => toggleSubmenu(itemWithBadge.href!)}
                               className="p-1 hover:bg-accent/50 rounded transition-colors"
                             >
                               {submenuExpanded ? (
@@ -472,7 +491,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                             </button>
                           )}
                         </div>
-                      ) : (
+                      ) : itemWithBadge.href ? (
                         <Link
                           href={itemWithBadge.href}
                           className={cn(
@@ -500,7 +519,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                             </>
                           )}
                         </Link>
-                      )}
+                      ) : null}
 
                       {/* Submenu items */}
                       {hasSubmenu && submenuExpanded && isOpen && filteredSubmenu.length > 0 && (
