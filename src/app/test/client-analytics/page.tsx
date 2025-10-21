@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ClientAnalyticsDashboard } from '@/components/clients/client-analytics-dashboard'
-import { createClient } from '@/lib/supabase-client'
+import { createClient } from '@/lib/supabase-browser'
 
 export default function TestClientAnalyticsPage() {
   const [clientId, setClientId] = useState<string>('')
