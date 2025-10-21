@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
       quality: sample.quality_name || '',
       supplier: sample.supplier || sample.exporter || '',
       storage_position: sample.storage_position || '',
-      created_at: new Date(sample.created_at).toLocaleDateString()
+      created_at: sample.created_at ? new Date(sample.created_at).toLocaleDateString() : ''
     }))
 
     // TODO: Implement actual PDF label generation
