@@ -27,7 +27,11 @@ interface Client {
   id: string
   name: string
   company: string
-  include_quality_code?: boolean
+  fantasy_name?: string
+  certificate_pattern?: {
+    has_quality_code?: boolean
+    quality_position?: 'prefix' | 'suffix'
+  }
 }
 
 interface QualityTemplate {
@@ -94,7 +98,7 @@ export function QualityAssignmentDialog({
 
       const data = await response.json()
       setSelectedClient(data.client)
-      setShowQualityCode(data.client.include_quality_code || false)
+      setShowQualityCode(data.client.certificate_pattern?.has_quality_code || false)
     } catch (error) {
       console.error('Error fetching client settings:', error)
     }
@@ -105,9 +109,9 @@ export function QualityAssignmentDialog({
     if (selectedClientId) {
       const client = clients.find(c => c.id === selectedClientId)
       if (client) {
-        console.log('Selected client:', client.name, 'include_quality_code:', client.include_quality_code)
+        console.log('Selected client:', client.name, 'has_quality_code:', client.certificate_pattern?.has_quality_code)
         setSelectedClient(client)
-        setShowQualityCode(client.include_quality_code || false)
+        setShowQualityCode(client.certificate_pattern?.has_quality_code || false)
       }
     }
   }, [selectedClientId, clients])
