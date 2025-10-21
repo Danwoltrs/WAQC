@@ -105,6 +105,7 @@ export function QualityAssignmentDialog({
     if (selectedClientId) {
       const client = clients.find(c => c.id === selectedClientId)
       if (client) {
+        console.log('Selected client:', client.name, 'include_quality_code:', client.include_quality_code)
         setSelectedClient(client)
         setShowQualityCode(client.include_quality_code || false)
       }
