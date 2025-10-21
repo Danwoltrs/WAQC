@@ -21,6 +21,7 @@ import {
 import { format } from 'date-fns'
 import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import { ClientQualityManager } from './client-quality-manager'
+import { ClientAnalyticsDashboard } from './client-analytics-dashboard'
 
 interface ClientDetailViewProps {
   clientId: string
@@ -209,11 +210,12 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
 
       {/* Tabbed Content */}
       <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-4">
+        <TabsList className="grid w-full grid-cols-5">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="samples">Samples</TabsTrigger>
           <TabsTrigger value="specs">Quality Specs</TabsTrigger>
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
+          <TabsTrigger value="metrics">Basic Metrics</TabsTrigger>
+          <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -230,6 +232,10 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
 
         <TabsContent value="metrics" className="space-y-4">
           <MetricsTab sampleMetrics={sampleMetrics} samples={samples} />
+        </TabsContent>
+
+        <TabsContent value="analytics" className="space-y-4">
+          <ClientAnalyticsDashboard clientId={clientId} clientName={client.name} />
         </TabsContent>
       </Tabs>
     </div>
