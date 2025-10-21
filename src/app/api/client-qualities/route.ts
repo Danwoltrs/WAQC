@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
       .from('client_qualities')
       .select(`
         *,
-        client:clients(id, name, company),
+        client:clients(id, name, fantasy_name, company),
         template:quality_templates(id, name, version)
       `)
       .order('created_at', { ascending: false })
