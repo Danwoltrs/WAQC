@@ -397,36 +397,43 @@ export function QualityAssignmentDialog({
             </div>
           )}
 
-          {/* Custom Name */}
+          {/* Custom Name and Quality Code */}
           <div className="space-y-2">
-            <Label htmlFor="custom-name">Custom Quality Name *</Label>
-            <Input
-              id="custom-name"
-              placeholder="e.g., Alfenas Dulce, Santos Fancy Gourmet"
-              value={customName}
-              onChange={(e) => setCustomName(e.target.value)}
-            />
-            <p className="text-sm text-muted-foreground">
-              This is how this quality will be displayed for this client
-            </p>
-          </div>
+            <div className="flex items-start gap-4">
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="custom-name">Custom Quality Name *</Label>
+                <Input
+                  id="custom-name"
+                  placeholder="e.g., Alfenas Dulce, Santos Fancy Gourmet"
+                  value={customName}
+                  onChange={(e) => setCustomName(e.target.value)}
+                />
+                <p className="text-sm text-muted-foreground">
+                  This is how this quality will be displayed for this client
+                </p>
+              </div>
 
-          {/* Quality Code (only if client has include_quality_code enabled) */}
-          {showQualityCode && (
-            <div className="space-y-2">
-              <Label htmlFor="quality-code">Quality Code (Optional)</Label>
-              <Input
-                id="quality-code"
-                placeholder="e.g., AD, SFG"
-                value={qualityCode}
-                onChange={(e) => setQualityCode(e.target.value.toUpperCase())}
-                maxLength={10}
-              />
-              <p className="text-sm text-muted-foreground">
-                Used for certificate numbering. Must be unique for this client.
-              </p>
+              {showQualityCode && (
+                <>
+                  <div className="w-px bg-border self-stretch mt-8" />
+                  <div className="w-32 space-y-2">
+                    <Label htmlFor="quality-code">Code</Label>
+                    <Input
+                      id="quality-code"
+                      placeholder="e.g., AD"
+                      value={qualityCode}
+                      onChange={(e) => setQualityCode(e.target.value.toUpperCase())}
+                      maxLength={10}
+                      className="text-center"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      For cert #
+                    </p>
+                  </div>
+                </>
+              )}
             </div>
-          )}
+          </div>
 
           {/* Notes */}
           <div className="space-y-2">
