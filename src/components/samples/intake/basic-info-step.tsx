@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Smartphone, Camera } from 'lucide-react'
+import { ClientAutoDetection } from '@/components/clients/client-auto-detection'
 import { StepComponentProps } from './types'
 import { ORIGINS, PROCESSING_METHODS } from './constants'
 
@@ -357,9 +358,26 @@ export function BasicInfoStep({
         </div>
       )}
 
+      {/* Client Auto-Detection */}
+      <ClientAutoDetection
+        metadata={{
+          exporter: formData.exporter,
+          buyer: formData.buyer,
+          roaster: formData.roaster,
+          origin: formData.origin,
+          supplier: formData.supplier,
+          wolthers_contract_nr: formData.wolthers_contract_nr,
+          exporter_contract_nr: formData.exporter_contract_nr,
+          buyer_contract_nr: formData.buyer_contract_nr,
+          roaster_contract_nr: formData.roaster_contract_nr
+        }}
+        onClientSelect={(clientId) => updateFormData('client_id', clientId)}
+        autoSelect={true}
+      />
+
       {filteredClients.length > 0 && !formData.client_id && (
         <div className="space-y-2">
-          <Label>Detected Clients</Label>
+          <Label>Quick Selection</Label>
           <div className="flex gap-2 flex-wrap">
             {filteredClients.map((client) => (
               <Badge
