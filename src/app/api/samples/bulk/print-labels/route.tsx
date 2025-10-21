@@ -27,10 +27,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'sample_ids array is required' }, { status: 400 })
     }
 
-    // Fetch samples
+    // Fetch samples with all required fields
     const { data: samples, error } = await supabase
       .from('samples')
-      .select('*')
+      .select(`
+        id,
+        tracking_number,
+        sample_type,
+        exporter,
+        supplier,
+        bags,
+        wolthers_contract_nr,
+        buyer_contract_nr,
+        container_nr,
+        oic_number,
+        client_id,
+        clients!inner (
+          id,
+          client_quality_names
+        )
+      `)
       .in('id', sample_ids)
 
     if (error) {
@@ -44,22 +60,30 @@ export async function POST(request: NextRequest) {
 
     // Generate QR codes and prepare label data
     const labelsWithQR: SampleLabelData[] = await Promise.all(
-      samples.map(async (sample) => {
+      samples.map(async (sample: any) => {
         const trackingUrl = getSampleTrackingUrl(sample.tracking_number)
         const qrCode = await generateQRCode(trackingUrl, {
-          width: 200,
+          width: 250,
           margin: 1,
         })
 
+        // Get client's custom quality name if available, otherwise use template name
+        const clientQualityNames = sample.clients?.client_quality_names || {}
+        const qualityName = clientQualityNames[sample.tracking_number] || sample.quality_name || 'N/A'
+
+        // Determine sample type (default to PSS if not set)
+        const sampleType = (sample.sample_type || 'PSS') as 'PSS' | 'Stocklot' | 'SS'
+
         return {
           tracking_number: sample.tracking_number,
-          origin: sample.origin || 'Unknown',
-          quality: sample.quality_name || '',
-          supplier: sample.supplier || sample.exporter || '',
-          storage_position: sample.storage_position || '',
-          created_at: sample.created_at
-            ? new Date(sample.created_at).toLocaleDateString()
-            : '',
+          sample_type: sampleType,
+          exporter: sample.exporter || sample.supplier || 'N/A',
+          quality_name: qualityName,
+          bags_quantity: sample.bags ? sample.bags.toString() : undefined,
+          wolthers_contract: sample.wolthers_contract_nr || undefined,
+          buyer_contract: sample.buyer_contract_nr || undefined,
+          container_number: sample.container_nr || undefined,
+          oic_number: sample.oic_number || undefined,
           qr_code: qrCode,
         }
       })

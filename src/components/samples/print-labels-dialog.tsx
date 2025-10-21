@@ -129,8 +129,8 @@ export function PrintLabelsDialog({
           <DialogTitle>Print Sample Labels</DialogTitle>
           <DialogDescription>
             Generate printable labels for {sampleIds.length} selected sample
-            {sampleIds.length !== 1 ? 's' : ''}. Labels are formatted for 3cm
-            height tin labels on A4 paper.
+            {sampleIds.length !== 1 ? 's' : ''}. Labels are formatted for 4cm
+            height with cut guides on A4 paper (fits 7 labels per page).
           </DialogDescription>
         </DialogHeader>
 
@@ -143,13 +143,12 @@ export function PrintLabelsDialog({
             <div className="flex items-center gap-2 text-sm">
               <div className="h-2 w-2 rounded-full bg-green-500" />
               <span>
-                Labels include tracking number, origin, quality, and storage
-                position
+                Type-specific fields: Exporter, Quality, Contracts, Container/OIC (SS), Bags
               </span>
             </div>
             <div className="flex items-center gap-2 text-sm">
               <div className="h-2 w-2 rounded-full bg-purple-500" />
-              <span>Format: 3cm x A4 (approximately 9-10 labels per page)</span>
+              <span>Format: 4cm x A4 with cut guides (fits 7 labels per page)</span>
             </div>
           </div>
         </div>

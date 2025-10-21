@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
+import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import {
   Select,
   SelectContent,
@@ -67,6 +68,7 @@ export default function SamplesPage() {
   const [qualityFilter, setQualityFilter] = useState<string>('')
   const [workflowStageFilter, setWorkflowStageFilter] = useState<string | null>(null)
   const [selectedSamples, setSelectedSamples] = useState<Set<string>>(new Set())
+  const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
@@ -217,25 +219,12 @@ export default function SamplesPage() {
     }
   }
 
-  const handleBulkPrintLabels = async () => {
-    try {
-      const response = await fetch('/api/samples/bulk/print-labels', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sample_ids: Array.from(selectedSamples) })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        console.log('Label data ready:', data)
-        // TODO: Open print dialog or download PDF when PDF generation is implemented
-        alert('Label generation ready. PDF implementation pending.')
-      } else {
-        console.error('Failed to generate labels')
-      }
-    } catch (error) {
-      console.error('Error printing labels:', error)
+  const handleBulkPrintLabels = () => {
+    if (selectedSamples.size === 0) {
+      alert('Please select at least one sample')
+      return
     }
+    setShowPrintDialog(true)
   }
 
   const handleBulkPrintQRTable = async () => {
@@ -341,6 +330,7 @@ export default function SamplesPage() {
   }
 
   return (
+    <>
     <MainLayout>
       <div className="p-6 space-y-6">
         {/* Header */}
@@ -369,7 +359,7 @@ export default function SamplesPage() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleBulkPrintLabels}>
                     <Printer className="h-4 w-4 mr-2" />
-                    Print Labels (3cm × A4)
+                    Print Labels (4cm × A4)
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleBulkPrintQRTable}>
                     <QrCode className="h-4 w-4 mr-2" />
@@ -644,5 +634,16 @@ export default function SamplesPage() {
         )}
       </div>
     </MainLayout>
+
+      {/* Print Labels Dialog */}
+      <PrintLabelsDialog
+        open={showPrintDialog}
+        onOpenChange={setShowPrintDialog}
+        sampleIds={Array.from(selectedSamples)}
+        onSuccess={() => {
+          setSelectedSamples(new Set())
+        }}
+      />
+    </>
   )
 }
