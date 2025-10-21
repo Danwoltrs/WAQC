@@ -188,7 +188,7 @@
         "dependencies": [
           "6"
         ],
-        "status": "in-progress",
+        "status": "done",
         "subtasks": [
           {
             "id": 1,
@@ -777,7 +777,7 @@
               7
             ],
             "details": "Create src/components/clients/client-auto-detection.tsx with algorithms for matching clients based on sample metadata (origin, supplier information, etc.), historical patterns, and confidence scoring. Integrate with sample intake workflow to suggest likely clients and allow manual override.",
-            "status": "pending",
+            "status": "deferred",
             "testStrategy": "Test auto-detection accuracy, confidence scoring, and integration with sample intake workflow",
             "parentId": "undefined"
           },
@@ -863,7 +863,7 @@
       ],
       "created": "2025-10-13T15:11:16.994Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-20T19:30:49.179Z"
+      "updated": "2025-10-21T11:56:09.078Z"
     }
   }
 }

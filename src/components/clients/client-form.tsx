@@ -9,10 +9,11 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Loader2, Save, X, Search, Building2, MapPin, Mail, Phone, AlertCircle, Plus, Trash2, Layers } from 'lucide-react'
+import { Loader2, Save, X, Search, Building2, MapPin, Mail, Phone, AlertCircle, Plus, Trash2, Layers, FileText, Eye } from 'lucide-react'
 import { Database } from '@/lib/supabase'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
+import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN, generateCertificatePreview } from '@/types/certificate-pattern'
 
 type Client = Database['public']['Tables']['clients']['Row']
 type ClientInsert = Database['public']['Tables']['clients']['Insert']
@@ -100,6 +101,9 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
   const [customOrigins, setCustomOrigins] = useState<string[]>([])
   const [newCustomOrigin, setNewCustomOrigin] = useState('')
 
+  // Certificate pattern state
+  const [certificatePattern, setCertificatePattern] = useState<CertificatePattern>(DEFAULT_CERTIFICATE_PATTERN)
+
   // Legacy search state
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
@@ -124,6 +128,11 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
         setFormData(data.client)
         setSelectedClientType(data.client.client_types?.[0] || '')
         setUseOriginPricing(data.client.has_origin_pricing || false)
+
+        // Load certificate pattern if it exists
+        if (data.client.certificate_pattern) {
+          setCertificatePattern(data.client.certificate_pattern as CertificatePattern)
+        }
 
         // Load origin pricing if it exists
         if (data.client.has_origin_pricing) {
@@ -244,6 +253,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
         price_per_sample: formData.price_per_sample ? Number(formData.price_per_sample) : null,
         price_per_pound_cents: formData.price_per_pound_cents ? Number(formData.price_per_pound_cents) : null,
         has_origin_pricing: useOriginPricing,
+        certificate_pattern: certificatePattern,
       }
 
       const url = mode === 'create' ? '/api/clients' : `/api/clients/${clientId}`
@@ -429,105 +439,286 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
         </Card>
       )}
 
-      {/* Basic Information */}
+      {/* Basic Information with Certificate Pattern */}
       <Card>
         <CardHeader>
-          <CardTitle>Basic Information</CardTitle>
+          <CardTitle>Basic Information & Certificate Configuration</CardTitle>
           <CardDescription>
-            Primary contact and company details
+            Primary contact details and certificate numbering pattern
           </CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="name">Contact Name *</Label>
-              <Input
-                id="name"
-                value={formData.name || ''}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                required
-                placeholder="John Doe"
-              />
+        <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_400px] gap-6">
+            {/* Left side: Basic Information */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="name">Contact Name *</Label>
+                  <Input
+                    id="name"
+                    value={formData.name || ''}
+                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                    required
+                    placeholder="John Doe"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="company">Company Name *</Label>
+                  <Input
+                    id="company"
+                    value={formData.company || ''}
+                    onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+                    required
+                    placeholder="Acme Coffee Co."
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="fantasy_name">Fantasy Name</Label>
+                  <Input
+                    id="fantasy_name"
+                    value={formData.fantasy_name || ''}
+                    onChange={(e) => setFormData({ ...formData, fantasy_name: e.target.value })}
+                    placeholder="Trading name or brand"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email *</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formData.email || ''}
+                    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                    required
+                    placeholder="contact@company.com"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Phone</Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    value={formData.phone || ''}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="+1 234 567 8900"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
+                <div className="space-y-2">
+                  <Label htmlFor="client_type">Client Type</Label>
+                  <Select
+                    value={selectedClientType}
+                    onValueChange={(value) => setSelectedClientType(value)}
+                  >
+                    <SelectTrigger id="client_type">
+                      <SelectValue placeholder="Select client type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {CLIENT_TYPE_OPTIONS.map((type) => (
+                        <SelectItem key={type.value} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="is_qc_client_basic">Quality Control Client</Label>
+                  <div className="flex items-center space-x-3 h-10 px-3 border rounded-md">
+                    <Checkbox
+                      id="is_qc_client_basic"
+                      checked={formData.is_qc_client || false}
+                      onCheckedChange={(checked) =>
+                        setFormData({ ...formData, is_qc_client: checked as boolean })
+                      }
+                    />
+                    <Label htmlFor="is_qc_client_basic" className="font-normal cursor-pointer">
+                      Hired us for QC services
+                    </Label>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="company">Company Name *</Label>
-              <Input
-                id="company"
-                value={formData.company || ''}
-                onChange={(e) => setFormData({ ...formData, company: e.target.value })}
-                required
-                placeholder="Acme Coffee Co."
-              />
-            </div>
+            {/* Vertical Separator */}
+            <div className="hidden lg:block bg-border" />
 
-            <div className="space-y-2">
-              <Label htmlFor="fantasy_name">Fantasy Name</Label>
-              <Input
-                id="fantasy_name"
-                value={formData.fantasy_name || ''}
-                onChange={(e) => setFormData({ ...formData, fantasy_name: e.target.value })}
-                placeholder="Trading name or brand"
-              />
-            </div>
+            {/* Right side: Certificate Pattern Configuration */}
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-sm font-semibold">
+                <FileText className="h-4 w-4" />
+                Certificate Pattern
+              </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="email">Email *</Label>
-              <Input
-                id="email"
-                type="email"
-                value={formData.email || ''}
-                onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                required
-                placeholder="contact@company.com"
-              />
-            </div>
+              {/* Quality Code Configuration */}
+              <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="has_quality_code"
+                    checked={certificatePattern.has_quality_code}
+                    onCheckedChange={(checked) =>
+                      setCertificatePattern({
+                        ...certificatePattern,
+                        has_quality_code: checked as boolean,
+                        // If enabling quality code and origin is already set to same position, switch origin
+                        origin_position:
+                          (checked as boolean) && certificatePattern.has_origin_code && certificatePattern.quality_position === certificatePattern.origin_position
+                            ? certificatePattern.quality_position === 'prefix' ? 'suffix' : 'prefix'
+                            : certificatePattern.origin_position
+                      })
+                    }
+                  />
+                  <Label htmlFor="has_quality_code" className="text-sm font-normal cursor-pointer">
+                    Include Quality Code
+                  </Label>
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="phone">Phone</Label>
-              <Input
-                id="phone"
-                type="tel"
-                value={formData.phone || ''}
-                onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                placeholder="+1 234 567 8900"
-              />
-            </div>
-          </div>
+                {certificatePattern.has_quality_code && (
+                  <div className="pl-6 space-y-2">
+                    <Label className="text-xs text-muted-foreground">Position</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={certificatePattern.quality_position === 'prefix' ? 'default' : 'outline'}
+                        onClick={() => setCertificatePattern({
+                          ...certificatePattern,
+                          quality_position: 'prefix',
+                          // If origin is also prefix, switch it to suffix
+                          origin_position: certificatePattern.has_origin_code ? 'suffix' : certificatePattern.origin_position
+                        })}
+                      >
+                        Prefix
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={certificatePattern.quality_position === 'suffix' ? 'default' : 'outline'}
+                        onClick={() => setCertificatePattern({
+                          ...certificatePattern,
+                          quality_position: 'suffix',
+                          // If origin is also suffix, switch it to prefix
+                          origin_position: certificatePattern.has_origin_code ? 'prefix' : certificatePattern.origin_position
+                        })}
+                      >
+                        Suffix
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
-            <div className="space-y-2">
-              <Label htmlFor="client_type">Client Type</Label>
-              <Select
-                value={selectedClientType}
-                onValueChange={(value) => setSelectedClientType(value)}
-              >
-                <SelectTrigger id="client_type">
-                  <SelectValue placeholder="Select client type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CLIENT_TYPE_OPTIONS.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      {type.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+              {/* Origin Code Configuration */}
+              <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="has_origin_code"
+                    checked={certificatePattern.has_origin_code}
+                    onCheckedChange={(checked) =>
+                      setCertificatePattern({
+                        ...certificatePattern,
+                        has_origin_code: checked as boolean,
+                        // If enabling origin code and quality is already set to same position, switch quality
+                        quality_position:
+                          (checked as boolean) && certificatePattern.has_quality_code && certificatePattern.origin_position === certificatePattern.quality_position
+                            ? certificatePattern.origin_position === 'prefix' ? 'suffix' : 'prefix'
+                            : certificatePattern.quality_position
+                      })
+                    }
+                  />
+                  <Label htmlFor="has_origin_code" className="text-sm font-normal cursor-pointer">
+                    Include Origin Code
+                  </Label>
+                </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="is_qc_client_basic">Quality Control Client</Label>
-              <div className="flex items-center space-x-3 h-10 px-3 border rounded-md">
-                <Checkbox
-                  id="is_qc_client_basic"
-                  checked={formData.is_qc_client || false}
-                  onCheckedChange={(checked) =>
-                    setFormData({ ...formData, is_qc_client: checked as boolean })
-                  }
+                {certificatePattern.has_origin_code && (
+                  <div className="pl-6 space-y-2">
+                    <Label className="text-xs text-muted-foreground">Position</Label>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={certificatePattern.origin_position === 'prefix' ? 'default' : 'outline'}
+                        onClick={() => setCertificatePattern({
+                          ...certificatePattern,
+                          origin_position: 'prefix',
+                          // If quality is also prefix, switch it to suffix
+                          quality_position: certificatePattern.has_quality_code ? 'suffix' : certificatePattern.quality_position
+                        })}
+                      >
+                        Prefix
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={certificatePattern.origin_position === 'suffix' ? 'default' : 'outline'}
+                        onClick={() => setCertificatePattern({
+                          ...certificatePattern,
+                          origin_position: 'suffix',
+                          // If quality is also suffix, switch it to prefix
+                          quality_position: certificatePattern.has_quality_code ? 'prefix' : certificatePattern.quality_position
+                        })}
+                      >
+                        Suffix
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Sequence Configuration */}
+              <div className="space-y-2">
+                <Label htmlFor="starting_sequence" className="text-sm">Starting Sequence Number</Label>
+                <Input
+                  id="starting_sequence"
+                  type="number"
+                  min="1"
+                  value={certificatePattern.starting_sequence}
+                  onChange={(e) => setCertificatePattern({
+                    ...certificatePattern,
+                    starting_sequence: parseInt(e.target.value) || 1
+                  })}
                 />
-                <Label htmlFor="is_qc_client_basic" className="font-normal cursor-pointer">
-                  Hired us for QC services
-                </Label>
+              </div>
+
+              {/* Sequence Padding */}
+              <div className="space-y-2">
+                <Label htmlFor="sequence_padding" className="text-sm">Sequence Padding (Digits)</Label>
+                <Input
+                  id="sequence_padding"
+                  type="number"
+                  min="3"
+                  max="10"
+                  value={certificatePattern.sequence_padding}
+                  onChange={(e) => setCertificatePattern({
+                    ...certificatePattern,
+                    sequence_padding: parseInt(e.target.value) || 6
+                  })}
+                />
+              </div>
+
+              {/* Preview */}
+              <div className="space-y-2 pt-2 border-t">
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Eye className="h-3 w-3" />
+                  Preview
+                </div>
+                <div className="p-3 bg-primary/5 border rounded-md font-mono text-sm">
+                  {generateCertificatePreview(
+                    certificatePattern,
+                    certificatePattern.has_quality_code ? 'AD' : undefined,
+                    certificatePattern.has_origin_code ? 'BR' : undefined
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Example with quality &quot;AD&quot; (Alfenas Dulce) and origin &quot;BR&quot; (Brazil)
+                </p>
               </div>
             </div>
           </div>

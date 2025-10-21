@@ -134,6 +134,7 @@ export async function POST(request: NextRequest) {
       payment_terms: body.payment_terms,
       billing_notes: body.billing_notes,
       tracking_number_format: body.tracking_number_format,
+      certificate_pattern: body.certificate_pattern, // Certificate numbering pattern
       qc_enabled: body.qc_enabled !== undefined ? body.qc_enabled : true,
       company_id: body.company_id, // Link to companies table if imported
       legacy_client_id: body.legacy_client_id // For imported clients

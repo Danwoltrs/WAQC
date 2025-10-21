@@ -156,6 +156,7 @@ export async function PATCH(
       'payment_terms',
       'billing_notes',
       'tracking_number_format',
+      'certificate_pattern',
       'qc_enabled',
       'company_id',
       'legacy_client_id'
