@@ -212,7 +212,7 @@ export function QualityAssignmentDialog({
         template_id: mode === 'from-client' ? selectedTemplateId : templateId,
         custom_name: customName.trim(),
         quality_code: qualityCode.trim() || null,
-        code_position: selectedClient?.include_quality_code ? 'suffix' : null,
+        code_position: selectedClient?.certificate_pattern?.quality_position || 'suffix',
         notes: notes.trim() || null,
         is_active: true
       }
