@@ -15,11 +15,12 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
-  Plus, Search, Edit, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye
+  Plus, Search, Edit, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye, Upload
 } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
 import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
+import { BulkOperationsDialog } from '@/components/clients/bulk-operations-dialog'
 import {
   Dialog,
   DialogContent,
@@ -90,6 +91,9 @@ export default function ClientsPage() {
   const [viewQualitiesDialog, setViewQualitiesDialog] = useState(false)
   const [viewingQualities, setViewingQualities] = useState<AssignedQuality[]>([])
   const [viewingClientName, setViewingClientName] = useState('')
+
+  // Bulk operations state
+  const [bulkOperationsDialogOpen, setBulkOperationsDialogOpen] = useState(false)
 
   useEffect(() => {
     loadClients()
@@ -278,12 +282,18 @@ export default function ClientsPage() {
               Manage your clients and their quality specifications
             </p>
           </div>
-          <Link href="/clients/new">
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Client
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => setBulkOperationsDialogOpen(true)}>
+              <Upload className="h-4 w-4 mr-2" />
+              Import/Export
             </Button>
-          </Link>
+            <Link href="/clients/new">
+              <Button>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Client
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Search */}
@@ -609,6 +619,13 @@ export default function ClientsPage() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Bulk Operations Dialog */}
+        <BulkOperationsDialog
+          open={bulkOperationsDialogOpen}
+          onOpenChange={setBulkOperationsDialogOpen}
+          onSuccess={loadClients}
+        />
       </div>
     </MainLayout>
   )

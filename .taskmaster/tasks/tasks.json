@@ -453,7 +453,7 @@
         "dependencies": [
           "9"
         ],
-        "status": "pending",
+        "status": "done",
         "subtasks": []
       },
       {
@@ -790,7 +790,7 @@
               7
             ],
             "details": "Create bulk operation components for CSV import/export, bulk client updates, and batch processing. Include data validation for imports, progress tracking for bulk operations, and error handling with detailed reporting. Support template download for CSV imports.",
-            "status": "pending",
+            "status": "in-progress",
             "testStrategy": "Test CSV import/export accuracy, bulk operation processing, and error handling",
             "parentId": "undefined"
           },
@@ -820,6 +820,15 @@
             "status": "pending",
             "testStrategy": "Execute full test suite covering all components, API endpoints, workflows, and performance benchmarks",
             "parentId": "undefined"
+          },
+          {
+            "id": 13,
+            "title": "Implement client-specific certificate numbering patterns",
+            "description": "Add certificate pattern configuration UI allowing clients to customize certificate numbers with quality/origin codes as prefix or suffix, starting sequence numbers, and year format (e.g., \"AD-098765/25\" for Blaser Trading's Alfenas Dulce)",
+            "details": "- Created database migration 048 adding certificate_pattern and certificate_config JSONB fields\n- Built three-column UI layout with vertical separator in client form\n- Implemented smart prefix/suffix conflict resolution (if one is suffix, other must be prefix)\n- Added live preview of certificate number format\n- Updated API endpoints to handle certificate_pattern field\n- Fixed TypeScript types and build errors\n- Deployed to production successfully",
+            "status": "done",
+            "dependencies": [],
+            "parentTaskId": 26
           }
         ],
         "updatedAt": "2025-10-10T16:54:39.442Z"
@@ -863,7 +872,7 @@
       ],
       "created": "2025-10-13T15:11:16.994Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-21T11:56:09.078Z"
+      "updated": "2025-10-21T15:21:47.326Z"
     }
   }
 }
