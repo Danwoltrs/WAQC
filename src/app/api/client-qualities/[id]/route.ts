@@ -79,6 +79,10 @@ export async function PATCH(
       return NextResponse.json({ error: 'Client quality not found' }, { status: 404 })
     }
 
+    if (!existing.client_id) {
+      return NextResponse.json({ error: 'Invalid client quality record' }, { status: 400 })
+    }
+
     // Validate quality_code uniqueness if being updated
     if (body.quality_code && body.quality_code !== existing.quality_code) {
       const { data: existingCode } = await supabase
