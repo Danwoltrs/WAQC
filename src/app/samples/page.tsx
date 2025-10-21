@@ -77,6 +77,7 @@ export default function SamplesPage() {
 
   useEffect(() => {
     loadSamples()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, sampleTypeFilter, workflowStageFilter])
 
   const loadSamples = async () => {
@@ -163,6 +164,7 @@ export default function SamplesPage() {
       }
     }, 300)
     return () => clearTimeout(debounce)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, originFilter, qualityFilter, dateFrom, dateTo])
 
   const handleSampleCreated = (trackingNumber: string) => {

@@ -90,6 +90,7 @@ export default function SampleDetailPage() {
     if (params.id) {
       loadSampleDetails()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id])
 
   const loadSampleDetails = async () => {
@@ -210,7 +211,7 @@ export default function SampleDetailPage() {
           <div className="text-center py-12">
             <h3 className="text-lg font-semibold mb-2">Sample not found</h3>
             <p className="text-muted-foreground mb-4">
-              The sample you're looking for doesn't exist or has been removed.
+              The sample you&apos;re looking for doesn&apos;t exist or has been removed.
             </p>
             <Button onClick={() => router.push('/samples')}>
               <ArrowLeft className="h-4 w-4 mr-2" />
