@@ -40,6 +40,11 @@ interface Template {
   is_active: boolean
   is_global: boolean
   laboratory_id?: string | null
+  laboratory?: {
+    id: string
+    name: string
+    code: string
+  } | null
   created_by: string
   created_by_name?: string
   created_at: string
@@ -646,9 +651,9 @@ export default function QualityTemplatesPage() {
                               <Badge variant="default" className="text-xs">
                                 Global
                               </Badge>
-                            ) : template.laboratory_id ? (
+                            ) : template.laboratory ? (
                               <Badge variant="secondary" className="text-xs">
-                                Lab-Specific
+                                {template.laboratory.name}
                               </Badge>
                             ) : (
                               <Badge variant="outline" className="text-xs">

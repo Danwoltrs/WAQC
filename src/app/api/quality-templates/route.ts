@@ -28,12 +28,13 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Build query with creator name
+    // Build query with creator name and laboratory
     let query = supabase
       .from('quality_templates')
       .select(`
         *,
-        creator:profiles!quality_templates_created_by_fkey(id, full_name, email)
+        creator:profiles!quality_templates_created_by_fkey(id, full_name, email),
+        laboratory:laboratories(id, name, code)
       `)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
