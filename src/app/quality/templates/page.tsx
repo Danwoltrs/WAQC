@@ -47,7 +47,7 @@ interface Template {
   updated_by?: string
   updated_by_name?: string
   usage_count?: number
-  assigned_clients?: Array<{ id: string; name: string; company: string; custom_name: string }>
+  assigned_clients?: Array<{ id: string; name: string; fantasy_name: string; company: string; custom_name: string }>
 }
 
 export default function QualityTemplatesPage() {
@@ -112,6 +112,7 @@ export default function QualityTemplatesPage() {
                   assigned_clients: clientsData.client_qualities.map((cq: any) => ({
                     id: cq.client?.id || '',
                     name: cq.client?.name || '',
+                    fantasy_name: cq.client?.fantasy_name || '',
                     company: cq.client?.company || '',
                     custom_name: cq.custom_name || ''
                   }))
@@ -671,9 +672,11 @@ export default function QualityTemplatesPage() {
                         <td className="px-4 py-4">
                           <div className="text-sm">
                             {template.assigned_clients && template.assigned_clients.length > 0 ? (
-                              <div className="space-y-1">
-                                <div className="text-xs text-muted-foreground max-w-[200px] line-clamp-2">
-                                  {template.assigned_clients.map((client) => client.name).join(', ')}
+                              <div className="space-y-2">
+                                <div className="text-xs text-muted-foreground space-y-1">
+                                  {template.assigned_clients.map((client) => (
+                                    <div key={client.id}>{client.fantasy_name || client.name}</div>
+                                  ))}
                                 </div>
                                 <Button
                                   variant="ghost"
