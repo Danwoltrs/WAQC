@@ -526,12 +526,33 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                         <div className="ml-4 mt-1 space-y-1 border-l-2 border-border pl-2">
                           {filteredSubmenu.map((subItem) => {
                             const SubIcon = subItem.icon
-                            const subActive = isActive(subItem.href)
+                            const subActive = subItem.href ? isActive(subItem.href) : false
+                            const key = subItem.href || subItem.title
 
+                            // If onClick is provided, render as button
+                            if (subItem.onClick) {
+                              return (
+                                <button
+                                  key={key}
+                                  onClick={subItem.onClick}
+                                  className={cn(
+                                    'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all w-full text-left',
+                                    subActive
+                                      ? 'bg-accent text-accent-foreground'
+                                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                                  )}
+                                >
+                                  <SubIcon className="h-4 w-4 flex-shrink-0" />
+                                  <span className="truncate">{subItem.title}</span>
+                                </button>
+                              )
+                            }
+
+                            // Otherwise render as link
                             return (
                               <Link
-                                key={subItem.href}
-                                href={subItem.href}
+                                key={key}
+                                href={subItem.href!}
                                 className={cn(
                                   'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
                                   subActive
