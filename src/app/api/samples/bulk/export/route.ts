@@ -62,7 +62,7 @@ export async function POST(request: NextRequest) {
       'Bags (MT)': sample.bags_quantity_mt || '',
       'Bag Count': sample.bag_count || '',
       'Processing Method': sample.processing_method || '',
-      'Created': new Date(sample.created_at).toLocaleString(),
+      'Created': sample.created_at ? new Date(sample.created_at).toLocaleString() : '',
       'Last Updated': sample.updated_at ? new Date(sample.updated_at).toLocaleString() : ''
     }))
 
