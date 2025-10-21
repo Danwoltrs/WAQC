@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { TemplateBuilder } from '@/components/quality/template-builder'
 import { VersionComparisonDialog } from '@/components/quality/version-comparison-dialog'
+import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -20,7 +21,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import {
   Plus, Search, Edit, Copy, Trash2, Eye, FileText,
-  CheckCircle, XCircle, AlertCircle, History
+  CheckCircle, XCircle, AlertCircle, History, UserPlus
 } from 'lucide-react'
 
 interface Template {
@@ -46,6 +47,7 @@ interface Template {
   updated_by?: string
   updated_by_name?: string
   usage_count?: number
+  assigned_clients?: Array<{ id: string; name: string; company: string; custom_name: string }>
 }
 
 export default function QualityTemplatesPage() {
@@ -61,6 +63,8 @@ export default function QualityTemplatesPage() {
   const [clientsUsingTemplate, setClientsUsingTemplate] = useState<any[]>([])
   const [versionDialogOpen, setVersionDialogOpen] = useState(false)
   const [versionComparisonTemplate, setVersionComparisonTemplate] = useState<Template | null>(null)
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
+  const [assigningTemplateId, setAssigningTemplateId] = useState<string | null>(null)
 
   // Helper to get display name (prefer English, fallback to legacy name)
   const getTemplateName = (template: Template) => template.name_en || template.name || ''
@@ -96,7 +100,31 @@ export default function QualityTemplatesPage() {
       const data = await response.json()
 
       if (response.ok) {
-        setTemplates(data.templates)
+        // Fetch assigned clients for each template
+        const templatesWithClients = await Promise.all(
+          data.templates.map(async (template: Template) => {
+            try {
+              const clientsResponse = await fetch(`/api/client-qualities?template_id=${template.id}&is_active=true`)
+              if (clientsResponse.ok) {
+                const clientsData = await clientsResponse.json()
+                return {
+                  ...template,
+                  assigned_clients: clientsData.client_qualities.map((cq: any) => ({
+                    id: cq.client?.id || '',
+                    name: cq.client?.name || '',
+                    company: cq.client?.company || '',
+                    custom_name: cq.custom_name || ''
+                  }))
+                }
+              }
+              return template
+            } catch (error) {
+              console.error(`Error fetching clients for template ${template.id}:`, error)
+              return template
+            }
+          })
+        )
+        setTemplates(templatesWithClients)
       } else {
         console.error('Failed to load templates:', data.error)
       }
@@ -573,7 +601,7 @@ export default function QualityTemplatesPage() {
                       <th className="px-4 py-3 text-left text-sm font-medium">Template</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Sharing</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Created By</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Usage</th>
+                      <th className="px-4 py-3 text-left text-sm font-medium">Assigned to</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Screen Sizes</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Defects</th>
                       <th className="px-4 py-3 text-left text-sm font-medium">Green Aspect</th>
@@ -639,24 +667,40 @@ export default function QualityTemplatesPage() {
                           </div>
                         </td>
 
-                        {/* Usage */}
+                        {/* Assigned to */}
                         <td className="px-4 py-4">
                           <div className="text-sm">
-                            {template.usage_count !== undefined && template.usage_count > 0 ? (
+                            {template.assigned_clients && template.assigned_clients.length > 0 ? (
+                              <div className="space-y-1">
+                                <div className="text-xs text-muted-foreground max-w-[200px] line-clamp-2">
+                                  {template.assigned_clients.map((client) => client.name).join(', ')}
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-auto p-0 text-xs hover:underline"
+                                  onClick={() => {
+                                    setAssigningTemplateId(template.id)
+                                    setAssignmentDialogOpen(true)
+                                  }}
+                                >
+                                  <UserPlus className="h-3 w-3 mr-1" />
+                                  Assign to client
+                                </Button>
+                              </div>
+                            ) : (
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                className="h-auto p-0 hover:underline"
+                                className="h-auto p-0 text-xs hover:underline"
                                 onClick={() => {
-                                  // TODO: Show dialog with clients using this template
-                                  alert(`View clients using "${getTemplateName(template)}"`)
+                                  setAssigningTemplateId(template.id)
+                                  setAssignmentDialogOpen(true)
                                 }}
                               >
-                                <AlertCircle className="h-3 w-3 mr-1 text-amber-500" />
-                                {template.usage_count} client{template.usage_count !== 1 ? 's' : ''}
+                                <UserPlus className="h-3 w-3 mr-1" />
+                                Assign to client
                               </Button>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">Not in use</span>
                             )}
                           </div>
                         </td>
@@ -917,6 +961,19 @@ export default function QualityTemplatesPage() {
             onOpenChange={setVersionDialogOpen}
             templateId={versionComparisonTemplate.id}
             templateName={getTemplateName(versionComparisonTemplate)}
+          />
+        )}
+
+        {/* Quality Assignment Dialog */}
+        {assigningTemplateId && (
+          <QualityAssignmentDialog
+            open={assignmentDialogOpen}
+            onOpenChange={setAssignmentDialogOpen}
+            mode="from-template"
+            templateId={assigningTemplateId}
+            onSuccess={() => {
+              loadTemplates()
+            }}
           />
         )}
       </div>

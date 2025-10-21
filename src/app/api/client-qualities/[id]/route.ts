@@ -68,10 +68,10 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
-    // Check if exists
+    // Check if exists and get client_id
     const { data: existing, error: fetchError } = await supabase
       .from('client_qualities')
-      .select('id')
+      .select('id, client_id, quality_code')
       .eq('id', id)
       .single()
 
@@ -79,9 +79,27 @@ export async function PATCH(
       return NextResponse.json({ error: 'Client quality not found' }, { status: 404 })
     }
 
+    // Validate quality_code uniqueness if being updated
+    if (body.quality_code && body.quality_code !== existing.quality_code) {
+      const { data: existingCode } = await supabase
+        .from('client_qualities')
+        .select('id')
+        .eq('client_id', existing.client_id)
+        .eq('quality_code', body.quality_code)
+        .eq('is_active', true)
+        .neq('id', id)
+        .single()
+
+      if (existingCode) {
+        return NextResponse.json({
+          error: `Quality code "${body.quality_code}" is already in use for this client`
+        }, { status: 400 })
+      }
+    }
+
     // Prepare update data
     const updateData: any = {}
-    const allowedFields = ['template_id', 'origin', 'custom_parameters', 'custom_name', 'is_active', 'notes']
+    const allowedFields = ['template_id', 'origin', 'custom_parameters', 'custom_name', 'quality_code', 'code_position', 'is_active', 'notes']
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {

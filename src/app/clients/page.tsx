@@ -15,10 +15,18 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
-  Plus, Search, Edit, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers
+  Plus, Search, Edit, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye
 } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
+import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 
 interface OriginPricing {
   id: string
@@ -27,6 +35,15 @@ interface OriginPricing {
   price_per_sample?: number
   price_per_pound_cents?: number
   currency: string
+  is_active: boolean
+}
+
+interface AssignedQuality {
+  id: string
+  custom_name: string
+  quality_code?: string
+  template_id: string
+  template_name: string
   is_active: boolean
 }
 
@@ -54,6 +71,7 @@ interface Client {
   billing_notes?: string
   has_origin_pricing?: boolean
   billing_basis?: 'approved_only' | 'approved_and_rejected'
+  assigned_qualities?: AssignedQuality[]
 }
 
 export default function ClientsPage() {
@@ -65,6 +83,13 @@ export default function ClientsPage() {
   const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
   const [originPricing, setOriginPricing] = useState<Record<string, OriginPricing[]>>({})
   const [loadingOriginPricing, setLoadingOriginPricing] = useState<Set<string>>(new Set())
+
+  // Quality assignment states
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
+  const [assigningClientId, setAssigningClientId] = useState<string | null>(null)
+  const [viewQualitiesDialog, setViewQualitiesDialog] = useState(false)
+  const [viewingQualities, setViewingQualities] = useState<AssignedQuality[]>([])
+  const [viewingClientName, setViewingClientName] = useState('')
 
   useEffect(() => {
     loadClients()
@@ -80,7 +105,33 @@ export default function ClientsPage() {
       const data = await response.json()
 
       if (response.ok) {
-        setClients(data.clients)
+        // Fetch assigned qualities for each client
+        const clientsWithQualities = await Promise.all(
+          data.clients.map(async (client: Client) => {
+            try {
+              const qualitiesResponse = await fetch(`/api/client-qualities?client_id=${client.id}&is_active=true`)
+              if (qualitiesResponse.ok) {
+                const qualitiesData = await qualitiesResponse.json()
+                return {
+                  ...client,
+                  assigned_qualities: qualitiesData.client_qualities.map((cq: any) => ({
+                    id: cq.id,
+                    custom_name: cq.custom_name || cq.template?.name_en || '',
+                    quality_code: cq.quality_code,
+                    template_id: cq.template_id,
+                    template_name: cq.template?.name_en || '',
+                    is_active: cq.is_active
+                  }))
+                }
+              }
+              return client
+            } catch (error) {
+              console.error(`Error fetching qualities for client ${client.id}:`, error)
+              return client
+            }
+          })
+        )
+        setClients(clientsWithQualities)
       } else {
         console.error('Failed to load clients:', data.error)
       }
@@ -278,6 +329,7 @@ export default function ClientsPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Client</TableHead>
+                    <TableHead>Assigned Qualities</TableHead>
                     <TableHead>Email</TableHead>
                     <TableHead>Address</TableHead>
                     <TableHead>Type</TableHead>
@@ -327,6 +379,48 @@ export default function ClientsPage() {
                               </div>
                             </div>
                           </TableCell>
+
+                          {/* Assigned Qualities */}
+                          <TableCell>
+                            <div className="space-y-2">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-auto p-0 text-xs hover:underline"
+                                onClick={() => {
+                                  setAssigningClientId(client.id)
+                                  setAssignmentDialogOpen(true)
+                                }}
+                              >
+                                <FileText className="h-3 w-3 mr-1" />
+                                Assign Quality
+                              </Button>
+                              {client.assigned_qualities && client.assigned_qualities.length > 0 && (
+                                <div className="space-y-1">
+                                  <div className="text-xs text-muted-foreground max-w-[180px] line-clamp-2">
+                                    {client.assigned_qualities.slice(0, 2).map((q) => q.custom_name).join(', ')}
+                                    {client.assigned_qualities.length > 2 && '...'}
+                                  </div>
+                                  {client.assigned_qualities.length > 2 && (
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-auto p-0 text-xs hover:underline"
+                                      onClick={() => {
+                                        setViewingQualities(client.assigned_qualities || [])
+                                        setViewingClientName(client.fantasy_name || client.name)
+                                        setViewQualitiesDialog(true)
+                                      }}
+                                    >
+                                      <Eye className="h-3 w-3 mr-1" />
+                                      View all ({client.assigned_qualities.length})
+                                    </Button>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </TableCell>
+
                           <TableCell>
                             {client.email ? (
                               <div className="flex items-center gap-2">
@@ -412,7 +506,7 @@ export default function ClientsPage() {
                         {/* Expandable Row for Origin Pricing */}
                         {isExpanded && client.has_origin_pricing && (
                           <TableRow key={`${client.id}-expanded`} className="bg-muted/50">
-                            <TableCell colSpan={7}>
+                            <TableCell colSpan={8}>
                               <div className="py-4 px-8">
                                 <h4 className="text-sm font-semibold mb-3">Origin-Specific Pricing</h4>
                                 {isLoadingPricing ? (
@@ -456,6 +550,65 @@ export default function ClientsPage() {
             </CardContent>
           </Card>
         )}
+
+        {/* Quality Assignment Dialog */}
+        {assigningClientId && (
+          <QualityAssignmentDialog
+            open={assignmentDialogOpen}
+            onOpenChange={setAssignmentDialogOpen}
+            mode="from-client"
+            clientId={assigningClientId}
+            onSuccess={() => {
+              loadClients()
+            }}
+          />
+        )}
+
+        {/* View All Qualities Dialog */}
+        <Dialog open={viewQualitiesDialog} onOpenChange={setViewQualitiesDialog}>
+          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Assigned Qualities - {viewingClientName}</DialogTitle>
+              <DialogDescription>
+                All quality specifications assigned to this client
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-4">
+              {viewingQualities.map((quality) => (
+                <Card key={quality.id} className="hover:bg-muted/50 transition-colors">
+                  <CardContent className="p-4">
+                    <div className="flex items-start justify-between">
+                      <div className="space-y-1 flex-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-semibold text-sm">{quality.custom_name}</h4>
+                          {quality.quality_code && (
+                            <Badge variant="outline" className="text-xs">
+                              {quality.quality_code}
+                            </Badge>
+                          )}
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Based on: {quality.template_name}
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          window.open(`/quality/templates?view=${quality.template_id}`, '_blank')
+                        }}
+                        className="text-xs"
+                      >
+                        <Eye className="h-3 w-3 mr-1" />
+                        View Template
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   )

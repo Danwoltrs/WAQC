@@ -996,28 +996,43 @@ export type Database = {
       client_qualities: {
         Row: {
           client_id: string | null
+          code_position: string | null
           created_at: string | null
+          custom_name: string | null
           custom_parameters: Json | null
           id: string
+          is_active: boolean | null
+          notes: string | null
           origin: string | null
+          quality_code: string | null
           template_id: string | null
           updated_at: string | null
         }
         Insert: {
           client_id?: string | null
+          code_position?: string | null
           created_at?: string | null
+          custom_name?: string | null
           custom_parameters?: Json | null
           id?: string
+          is_active?: boolean | null
+          notes?: string | null
           origin?: string | null
+          quality_code?: string | null
           template_id?: string | null
           updated_at?: string | null
         }
         Update: {
           client_id?: string | null
+          code_position?: string | null
           created_at?: string | null
+          custom_name?: string | null
           custom_parameters?: Json | null
           id?: string
+          is_active?: boolean | null
+          notes?: string | null
           origin?: string | null
+          quality_code?: string | null
           template_id?: string | null
           updated_at?: string | null
         }

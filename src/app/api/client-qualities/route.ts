@@ -96,6 +96,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate quality_code uniqueness for this client if provided
+    if (body.quality_code) {
+      const { data: existingCode } = await supabase
+        .from('client_qualities')
+        .select('id')
+        .eq('client_id', body.client_id)
+        .eq('quality_code', body.quality_code)
+        .eq('is_active', true)
+        .single()
+
+      if (existingCode) {
+        return NextResponse.json({
+          error: `Quality code "${body.quality_code}" is already in use for this client`
+        }, { status: 400 })
+      }
+    }
+
     // Prepare client quality data
     const clientQualityData: any = {
       client_id: body.client_id,
@@ -103,6 +120,8 @@ export async function POST(request: NextRequest) {
       origin: body.origin || null,
       custom_parameters: body.custom_parameters || {},
       custom_name: body.custom_name || null,
+      quality_code: body.quality_code || null,
+      code_position: body.code_position || 'suffix',
       is_active: body.is_active !== undefined ? body.is_active : true,
       notes: body.notes || null
     }
