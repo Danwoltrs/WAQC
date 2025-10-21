@@ -122,6 +122,15 @@ export async function PATCH(
       }
     }
 
+    // Sync laboratory_id with assigned_laboratories for single-lab assignments
+    if (updateData.assigned_laboratories && Array.isArray(updateData.assigned_laboratories)) {
+      if (updateData.assigned_laboratories.length === 1) {
+        updateData.laboratory_id = updateData.assigned_laboratories[0]
+      } else if (updateData.assigned_laboratories.length === 0) {
+        updateData.laboratory_id = null
+      }
+    }
+
     // Validate cupping scale if being updated
     if (updateData.cupping_scale_min !== undefined && updateData.cupping_scale_max !== undefined) {
       if ((updateData.cupping_scale_min as number) >= (updateData.cupping_scale_max as number)) {
