@@ -1,0 +1,567 @@
+'use client'
+
+import { useState, useEffect } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { MainLayout } from '@/components/layout/main-layout'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import {
+  ArrowLeft, CheckCircle, XCircle, Clock, AlertCircle, MapPin,
+  Calendar, Package, FileText, Activity, Download, Printer,
+  QrCode, Edit, Trash2, User, Building2
+} from 'lucide-react'
+import Link from 'next/link'
+
+interface Sample {
+  id: string
+  tracking_number: string
+  client_id?: string
+  supplier?: string
+  exporter?: string
+  origin: string
+  importer?: string
+  roaster?: string
+  buyer?: string
+  quality_name?: string
+  quality_spec_id?: string
+  sample_type?: string
+  status: string
+  workflow_stage?: string
+  storage_position?: string
+  bags_quantity_mt?: number
+  bag_count?: number
+  bag_weight_kg?: number
+  wolthers_contract_nr?: string
+  exporter_contract_nr?: string
+  buyer_contract_nr?: string
+  roaster_contract_nr?: string
+  ico_number?: string
+  ico_marks?: string
+  container_nr?: string
+  processing_method?: string
+  laboratory_id?: string
+  assigned_to?: string
+  created_at: string
+  updated_at?: string
+}
+
+interface QualityAssessment {
+  id: string
+  sample_id: string
+  assessment_type: string
+  status: string
+  total_score?: number
+  notes?: string
+  created_at: string
+  updated_at?: string
+}
+
+interface Certificate {
+  id: string
+  sample_id: string
+  certificate_number: string
+  status: string
+  issued_date?: string
+  created_at: string
+}
+
+interface ActivityLog {
+  id: string
+  sample_id: string
+  activity_type: string
+  description: string
+  user_name?: string
+  created_at: string
+}
+
+export default function SampleDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const [sample, setSample] = useState<Sample | null>(null)
+  const [assessments, setAssessments] = useState<QualityAssessment[]>([])
+  const [certificates, setCertificates] = useState<Certificate[]>([])
+  const [activityLog, setActivityLog] = useState<ActivityLog[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    if (params.id) {
+      loadSampleDetails()
+    }
+  }, [params.id])
+
+  const loadSampleDetails = async () => {
+    try {
+      setLoading(true)
+
+      // Load sample data
+      const sampleRes = await fetch(`/api/samples/${params.id}`)
+      const sampleData = await sampleRes.json()
+
+      if (sampleRes.ok && sampleData.sample) {
+        setSample(sampleData.sample)
+      } else {
+        console.error('Failed to load sample:', sampleData.error)
+      }
+
+      // Load quality assessments
+      const assessmentsRes = await fetch(`/api/quality-assessments?sample_id=${params.id}`)
+      const assessmentsData = await assessmentsRes.json()
+      if (assessmentsRes.ok && assessmentsData.assessments) {
+        setAssessments(assessmentsData.assessments)
+      }
+
+      // TODO: Load certificates when endpoint is available
+      // const certsRes = await fetch(`/api/certificates?sample_id=${params.id}`)
+
+      // TODO: Load activity log when endpoint is available
+      // const activityRes = await fetch(`/api/activity-log?sample_id=${params.id}`)
+
+    } catch (error) {
+      console.error('Error loading sample details:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const getStatusBadge = (status: string) => {
+    const statusConfig: Record<string, { variant: any; icon: any; label: string; className?: string }> = {
+      received: { variant: 'secondary', icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
+      in_progress: { variant: 'default', icon: AlertCircle, label: 'In Progress', className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
+      under_review: { variant: 'outline', icon: AlertCircle, label: 'Under Review', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
+      approved: { variant: 'default', icon: CheckCircle, label: 'Approved', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
+      rejected: { variant: 'destructive', icon: XCircle, label: 'Rejected', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' }
+    }
+
+    const config = statusConfig[status] || { variant: 'outline', icon: AlertCircle, label: status }
+    const Icon = config.icon
+
+    return (
+      <Badge variant={config.variant} className={`text-xs ${config.className || ''}`}>
+        <Icon className="h-3 w-3 mr-1" />
+        {config.label}
+      </Badge>
+    )
+  }
+
+  const getWorkflowTimeline = () => {
+    const stages = [
+      { key: 'received', label: 'Received', icon: CheckCircle },
+      { key: 'green_analysis', label: 'Green Analysis', icon: Package },
+      { key: 'roasting', label: 'Roasting', icon: Activity },
+      { key: 'cupping', label: 'Cupping', icon: FileText },
+      { key: 'certificate_ready', label: 'Certificate', icon: FileText },
+      { key: 'completed', label: 'Completed', icon: CheckCircle }
+    ]
+
+    const currentStageIndex = stages.findIndex(s => s.key === sample?.workflow_stage)
+
+    return (
+      <div className="space-y-4">
+        {stages.map((stage, index) => {
+          const Icon = stage.icon
+          const isCompleted = index < currentStageIndex
+          const isCurrent = index === currentStageIndex
+          const isPending = index > currentStageIndex
+
+          return (
+            <div key={stage.key} className="flex items-center gap-4">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                isCompleted ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
+                isCurrent ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
+                'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600'
+              }`}>
+                <Icon className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <div className="font-medium">{stage.label}</div>
+                {isCurrent && (
+                  <div className="text-xs text-muted-foreground">In progress</div>
+                )}
+                {isCompleted && (
+                  <div className="text-xs text-green-600 dark:text-green-400">Completed</div>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="p-6">
+          <div className="text-center py-12 text-muted-foreground">
+            Loading sample details...
+          </div>
+        </div>
+      </MainLayout>
+    )
+  }
+
+  if (!sample) {
+    return (
+      <MainLayout>
+        <div className="p-6">
+          <div className="text-center py-12">
+            <h3 className="text-lg font-semibold mb-2">Sample not found</h3>
+            <p className="text-muted-foreground mb-4">
+              The sample you're looking for doesn't exist or has been removed.
+            </p>
+            <Button onClick={() => router.push('/samples')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Samples
+            </Button>
+          </div>
+        </div>
+      </MainLayout>
+    )
+  }
+
+  return (
+    <MainLayout>
+      <div className="p-6 space-y-6">
+        {/* Header */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-4">
+            <Button variant="outline" size="sm" onClick={() => router.push('/samples')}>
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back
+            </Button>
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">{sample.tracking_number}</h1>
+              <p className="text-muted-foreground">
+                {sample.origin} {sample.quality_name && `• ${sample.quality_name}`}
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm">
+              <Download className="h-4 w-4 mr-2" />
+              Export
+            </Button>
+            <Button variant="outline" size="sm">
+              <Printer className="h-4 w-4 mr-2" />
+              Print Label
+            </Button>
+            <Button variant="outline" size="sm">
+              <QrCode className="h-4 w-4 mr-2" />
+              QR Code
+            </Button>
+            <Button variant="outline" size="sm">
+              <Edit className="h-4 w-4 mr-2" />
+              Edit
+            </Button>
+          </div>
+        </div>
+
+        {/* Status and Key Info */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardDescription>Status</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {getStatusBadge(sample.status)}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardDescription>Sample Type</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="text-sm font-medium uppercase">{sample.sample_type || '-'}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardDescription>Storage Position</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-1 text-sm font-medium">
+                <MapPin className="h-4 w-4" />
+                {sample.storage_position || 'Not assigned'}
+              </div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="pb-3">
+              <CardDescription>Created</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-1 text-sm font-medium">
+                <Calendar className="h-4 w-4" />
+                {new Date(sample.created_at).toLocaleDateString()}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Content */}
+        <Tabs defaultValue="details" className="space-y-4">
+          <TabsList>
+            <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="timeline">Timeline</TabsTrigger>
+            <TabsTrigger value="assessments">Assessments ({assessments.length})</TabsTrigger>
+            <TabsTrigger value="certificates">Certificates ({certificates.length})</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="details" className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Sample Information */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Sample Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="text-sm text-muted-foreground">Origin:</div>
+                    <div className="text-sm font-medium">{sample.origin}</div>
+
+                    <div className="text-sm text-muted-foreground">Quality:</div>
+                    <div className="text-sm font-medium">{sample.quality_name || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Processing:</div>
+                    <div className="text-sm font-medium">{sample.processing_method || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Bag Count:</div>
+                    <div className="text-sm font-medium">{sample.bag_count || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Quantity (MT):</div>
+                    <div className="text-sm font-medium">{sample.bags_quantity_mt || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Bag Weight (kg):</div>
+                    <div className="text-sm font-medium">{sample.bag_weight_kg || '-'}</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Supply Chain */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Supply Chain</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-3">
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-1">Exporter / Supplier</div>
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        <Building2 className="h-4 w-4" />
+                        {sample.exporter || sample.supplier || '-'}
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-1">Importer</div>
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        <Building2 className="h-4 w-4" />
+                        {sample.importer || '-'}
+                      </div>
+                    </div>
+
+                    <Separator />
+
+                    <div>
+                      <div className="text-sm text-muted-foreground mb-1">Roaster / Buyer</div>
+                      <div className="text-sm font-medium flex items-center gap-2">
+                        <Building2 className="h-4 w-4" />
+                        {sample.roaster || sample.buyer || '-'}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Contract Numbers */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Contract Numbers</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="text-sm text-muted-foreground">Wolthers Contract:</div>
+                    <div className="text-sm font-medium font-mono">{sample.wolthers_contract_nr || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Exporter Contract:</div>
+                    <div className="text-sm font-medium font-mono">{sample.exporter_contract_nr || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Buyer Contract:</div>
+                    <div className="text-sm font-medium font-mono">{sample.buyer_contract_nr || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Roaster Contract:</div>
+                    <div className="text-sm font-medium font-mono">{sample.roaster_contract_nr || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">ICO Number:</div>
+                    <div className="text-sm font-medium font-mono">{sample.ico_number || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">ICO Marks:</div>
+                    <div className="text-sm font-medium font-mono">{sample.ico_marks || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Container Nr:</div>
+                    <div className="text-sm font-medium font-mono">{sample.container_nr || '-'}</div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Additional Info */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Additional Information</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    <div className="text-sm text-muted-foreground">Workflow Stage:</div>
+                    <div className="text-sm font-medium">{sample.workflow_stage || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Assigned To:</div>
+                    <div className="text-sm font-medium">
+                      {sample.assigned_to ? (
+                        <div className="flex items-center gap-1">
+                          <User className="h-3 w-3" />
+                          {sample.assigned_to}
+                        </div>
+                      ) : '-'}
+                    </div>
+
+                    <div className="text-sm text-muted-foreground">Last Updated:</div>
+                    <div className="text-sm font-medium">
+                      {sample.updated_at ? new Date(sample.updated_at).toLocaleString() : '-'}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="timeline" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Workflow Timeline</CardTitle>
+                <CardDescription>Track the progress of this sample through the quality control process</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {getWorkflowTimeline()}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="assessments" className="space-y-4">
+            {assessments.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold mb-2">No assessments yet</h3>
+                  <p className="text-muted-foreground">
+                    Quality assessments will appear here once they are completed
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {assessments.map((assessment) => (
+                  <Card key={assessment.id}>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">{assessment.assessment_type}</CardTitle>
+                        <Badge>{assessment.status}</Badge>
+                      </div>
+                      <CardDescription>
+                        {new Date(assessment.created_at).toLocaleString()}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {assessment.total_score && (
+                        <div className="text-sm">
+                          <span className="text-muted-foreground">Score: </span>
+                          <span className="font-medium">{assessment.total_score}</span>
+                        </div>
+                      )}
+                      {assessment.notes && (
+                        <div className="mt-2 text-sm text-muted-foreground">
+                          {assessment.notes}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="certificates" className="space-y-4">
+            {certificates.length === 0 ? (
+              <Card>
+                <CardContent className="py-12 text-center">
+                  <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
+                  <h3 className="text-lg font-semibold mb-2">No certificates yet</h3>
+                  <p className="text-muted-foreground">
+                    Certificates will be generated after cupping is complete
+                  </p>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="grid gap-4">
+                {certificates.map((cert) => (
+                  <Card key={cert.id}>
+                    <CardHeader>
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg">{cert.certificate_number}</CardTitle>
+                        <Badge>{cert.status}</Badge>
+                      </div>
+                      <CardDescription>
+                        Issued: {cert.issued_date ? new Date(cert.issued_date).toLocaleDateString() : 'Pending'}
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <Button variant="outline" size="sm">
+                        <Download className="h-4 w-4 mr-2" />
+                        Download PDF
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="activity" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Activity Log</CardTitle>
+                <CardDescription>Complete history of actions performed on this sample</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {activityLog.length === 0 ? (
+                  <div className="text-center py-8 text-muted-foreground">
+                    No activity recorded yet
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {activityLog.map((log) => (
+                      <div key={log.id} className="flex gap-4 border-l-2 border-border pl-4 py-2">
+                        <div className="flex-1">
+                          <div className="font-medium">{log.activity_type}</div>
+                          <div className="text-sm text-muted-foreground">{log.description}</div>
+                          <div className="text-xs text-muted-foreground mt-1">
+                            {log.user_name} • {new Date(log.created_at).toLocaleString()}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </MainLayout>
+  )
+}
