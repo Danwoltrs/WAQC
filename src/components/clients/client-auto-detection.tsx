@@ -191,7 +191,7 @@ export function ClientAutoDetection({
       ].filter(Boolean)
 
       if (contractNumbers.length > 0) {
-        const contractMatches = await checkContractHistory(client.id, contractNumbers)
+        const contractMatches = await checkContractHistory(client.id, contractNumbers as string[])
         if (contractMatches > 0) {
           matchReasons.push({
             type: 'contract_match',
@@ -221,7 +221,7 @@ export function ClientAutoDetection({
       const supplierName = meta.supplier || meta.exporter
       if (supplierName && historicalData[client.id]) {
         const clientHistory = historicalData[client.id]
-        if (clientHistory.commonSuppliers.some(s =>
+        if (clientHistory.commonSuppliers.some((s: string) =>
           s.toLowerCase().includes(supplierName.toLowerCase()) ||
           supplierName.toLowerCase().includes(s.toLowerCase())
         )) {
@@ -251,7 +251,7 @@ export function ClientAutoDetection({
           name: client.name,
           company: client.company,
           fantasy_name: client.fantasy_name,
-          primary_category: client.primary_category,
+          primary_category: (client as any).primary_category || null,
           confidence: Math.min(100, confidence), // Cap at 100%
           matchReasons,
           historicalData: historicalData[client.id]
