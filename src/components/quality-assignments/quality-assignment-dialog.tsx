@@ -425,7 +425,7 @@ export function QualityAssignmentDialog({
             <p className="text-sm text-muted-foreground mt-1">Internal Display Name:</p>
             <p className="font-medium mt-1">{getPreviewName()}</p>
             <p className="text-xs text-muted-foreground mt-2">
-              Note: Certificates will show "{customName || 'the custom name'}" without the code
+              Note: Certificates will show &quot;{customName || 'the custom name'}&quot; without the code
             </p>
           </div>
         </div>
