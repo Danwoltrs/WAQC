@@ -647,19 +647,22 @@ export default function QualityTemplatesPage() {
                         {/* Sharing */}
                         <td className="px-4 py-4">
                           <div className="text-sm">
-                            {template.is_global ? (
-                              <Badge variant="default" className="text-xs">
-                                Global
-                              </Badge>
-                            ) : template.laboratory ? (
-                              <Badge variant="secondary" className="text-xs">
-                                {template.laboratory.name}
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs">
-                                Private
-                              </Badge>
-                            )}
+                            {(() => {
+                              console.log('Template:', template.name_en, 'is_global:', template.is_global, 'laboratory_id:', template.laboratory_id, 'laboratory:', template.laboratory)
+                              return template.is_global ? (
+                                <Badge variant="default" className="text-xs">
+                                  Global
+                                </Badge>
+                              ) : template.laboratory ? (
+                                <Badge variant="secondary" className="text-xs">
+                                  {template.laboratory.name}
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs">
+                                  Private (Lab ID: {template.laboratory_id || 'none'})
+                                </Badge>
+                              )
+                            })()}
                           </div>
                         </td>
 
