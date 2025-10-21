@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         creator:profiles!quality_templates_created_by_fkey(id, full_name, email),
-        laboratory:laboratories!quality_templates_laboratory_id_fkey(id, name, code)
+        laboratory:laboratories(id, name, code)
       `)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
