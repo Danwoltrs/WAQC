@@ -45,6 +45,7 @@ interface Template {
     name: string
     code: string
   } | null
+  assigned_laboratories?: string[]
   created_by: string
   created_by_name?: string
   created_at: string
@@ -647,22 +648,23 @@ export default function QualityTemplatesPage() {
                         {/* Sharing */}
                         <td className="px-4 py-4">
                           <div className="text-sm">
-                            {(() => {
-                              console.log('Template:', template.name_en, 'is_global:', template.is_global, 'laboratory_id:', template.laboratory_id, 'laboratory:', template.laboratory)
-                              return template.is_global ? (
-                                <Badge variant="default" className="text-xs">
-                                  Global
-                                </Badge>
-                              ) : template.laboratory ? (
-                                <Badge variant="secondary" className="text-xs">
-                                  {template.laboratory.name}
-                                </Badge>
-                              ) : (
-                                <Badge variant="outline" className="text-xs">
-                                  Private (Lab ID: {template.laboratory_id || 'none'})
-                                </Badge>
-                              )
-                            })()}
+                            {template.is_global ? (
+                              <Badge variant="default" className="text-xs">
+                                Global
+                              </Badge>
+                            ) : template.laboratory ? (
+                              <Badge variant="secondary" className="text-xs">
+                                {template.laboratory.name}
+                              </Badge>
+                            ) : template.assigned_laboratories && template.assigned_laboratories.length > 0 ? (
+                              <Badge variant="secondary" className="text-xs">
+                                Multi-Lab ({template.assigned_laboratories.length})
+                              </Badge>
+                            ) : (
+                              <Badge variant="outline" className="text-xs">
+                                Private
+                              </Badge>
+                            )}
                           </div>
                         </td>
 
