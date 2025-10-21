@@ -80,8 +80,25 @@ export function QualityAssignmentDialog({
   useEffect(() => {
     if (mode === 'from-client' && open) {
       fetchAvailableTemplates()
+      fetchClientSettings()
     }
   }, [mode, open, clientId])
+
+  // Fetch client settings when in from-client mode
+  const fetchClientSettings = async () => {
+    if (!clientId) return
+
+    try {
+      const response = await fetch(`/api/clients/${clientId}`)
+      if (!response.ok) throw new Error('Failed to fetch client')
+
+      const data = await response.json()
+      setSelectedClient(data.client)
+      setShowQualityCode(data.client.include_quality_code || false)
+    } catch (error) {
+      console.error('Error fetching client settings:', error)
+    }
+  }
 
   // Update client settings when client is selected
   useEffect(() => {
@@ -363,9 +380,8 @@ export function QualityAssignmentDialog({
                               selectedTemplateId === template.id ? "opacity-100" : "opacity-0"
                             )}
                           />
-                          <div>
-                            <div className="font-medium">{template.name_en}</div>
-                            <div className="text-sm text-muted-foreground">v{template.version}</div>
+                          <div className="font-medium">
+                            {template.name_en} <span className="text-sm text-muted-foreground font-normal">v{template.version}</span>
                           </div>
                         </CommandItem>
                       ))}
