@@ -15,6 +15,25 @@ export function BasicInfoStep({
   filteredClients,
   approvedPSSSamples
 }: StepComponentProps) {
+  // Filter clients by type
+  const exporters = clients.filter(c =>
+    c.client_types?.some(type =>
+      type === 'exporter' || type === 'producer_exporter' || type === 'cooperative'
+    )
+  )
+
+  const buyers = clients.filter(c =>
+    c.client_types?.some(type =>
+      type === 'importer_buyer' || type === 'roaster' || type === 'roaster_final_buyer'
+    )
+  )
+
+  const roasters = clients.filter(c =>
+    c.client_types?.some(type =>
+      type === 'roaster' || type === 'roaster_final_buyer'
+    )
+  )
+
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -67,12 +86,12 @@ export function BasicInfoStep({
         <div className="space-y-2">
           <Label htmlFor="exporter">Exporter *</Label>
           <Select
-            value={formData.exporter === '' ? 'custom' : clients.find(c => c.company === formData.exporter || c.fantasy_name === formData.exporter) ? formData.exporter : 'custom'}
+            value={formData.exporter === '' ? 'custom' : exporters.find(c => c.company === formData.exporter || c.fantasy_name === formData.exporter) ? formData.exporter : 'custom'}
             onValueChange={(value) => {
               if (value === 'new') {
                 updateFormData('exporter', '')
               } else if (value !== 'custom') {
-                const client = clients.find(c => c.company === value || c.fantasy_name === value)
+                const client = exporters.find(c => c.company === value || c.fantasy_name === value)
                 updateFormData('exporter', client?.fantasy_name || client?.company || value)
               }
             }}
@@ -82,22 +101,26 @@ export function BasicInfoStep({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="custom">Type custom name...</SelectItem>
-              <SelectItem value="new">+ Create New Client</SelectItem>
-              {clients.length > 0 && (
+              <SelectItem value="new">+ Create New Exporter</SelectItem>
+              {exporters.length > 0 ? (
                 <>
                   <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                    Existing Clients
+                    Exporters
                   </div>
-                  {clients.map((client) => (
+                  {exporters.map((client) => (
                     <SelectItem key={client.id} value={client.company}>
                       {client.fantasy_name || client.company}
                     </SelectItem>
                   ))}
                 </>
+              ) : (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  No exporters registered
+                </div>
               )}
             </SelectContent>
           </Select>
-          {(formData.exporter === '' || !clients.find(c => c.company === formData.exporter || c.fantasy_name === formData.exporter)) && (
+          {(formData.exporter === '' || !exporters.find(c => c.company === formData.exporter || c.fantasy_name === formData.exporter)) && (
             <Input
               id="exporter"
               value={formData.exporter}
@@ -110,12 +133,12 @@ export function BasicInfoStep({
         <div className="space-y-2">
           <Label htmlFor="buyer">Buyer</Label>
           <Select
-            value={formData.buyer === '' ? 'custom' : clients.find(c => c.company === formData.buyer || c.fantasy_name === formData.buyer) ? formData.buyer : 'custom'}
+            value={formData.buyer === '' ? 'custom' : buyers.find(c => c.company === formData.buyer || c.fantasy_name === formData.buyer) ? formData.buyer : 'custom'}
             onValueChange={(value) => {
               if (value === 'new') {
                 updateFormData('buyer', '')
               } else if (value !== 'custom') {
-                const client = clients.find(c => c.company === value || c.fantasy_name === value)
+                const client = buyers.find(c => c.company === value || c.fantasy_name === value)
                 updateFormData('buyer', client?.fantasy_name || client?.company || value)
               }
             }}
@@ -125,22 +148,26 @@ export function BasicInfoStep({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="custom">Type custom name...</SelectItem>
-              <SelectItem value="new">+ Create New Client</SelectItem>
-              {clients.length > 0 && (
+              <SelectItem value="new">+ Create New Buyer</SelectItem>
+              {buyers.length > 0 ? (
                 <>
                   <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                    Existing Clients
+                    Buyers & Importers
                   </div>
-                  {clients.map((client) => (
+                  {buyers.map((client) => (
                     <SelectItem key={client.id} value={client.company}>
                       {client.fantasy_name || client.company}
                     </SelectItem>
                   ))}
                 </>
+              ) : (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  No buyers registered
+                </div>
               )}
             </SelectContent>
           </Select>
-          {(formData.buyer === '' || !clients.find(c => c.company === formData.buyer || c.fantasy_name === formData.buyer)) && (
+          {(formData.buyer === '' || !buyers.find(c => c.company === formData.buyer || c.fantasy_name === formData.buyer)) && (
             <Input
               id="buyer"
               value={formData.buyer}
@@ -153,12 +180,12 @@ export function BasicInfoStep({
         <div className="space-y-2">
           <Label htmlFor="roaster">Roaster</Label>
           <Select
-            value={formData.roaster === '' ? 'custom' : clients.find(c => c.company === formData.roaster || c.fantasy_name === formData.roaster) ? formData.roaster : 'custom'}
+            value={formData.roaster === '' ? 'custom' : roasters.find(c => c.company === formData.roaster || c.fantasy_name === formData.roaster) ? formData.roaster : 'custom'}
             onValueChange={(value) => {
               if (value === 'new') {
                 updateFormData('roaster', '')
               } else if (value !== 'custom') {
-                const client = clients.find(c => c.company === value || c.fantasy_name === value)
+                const client = roasters.find(c => c.company === value || c.fantasy_name === value)
                 updateFormData('roaster', client?.fantasy_name || client?.company || value)
               }
             }}
@@ -168,22 +195,26 @@ export function BasicInfoStep({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="custom">Type custom name...</SelectItem>
-              <SelectItem value="new">+ Create New Client</SelectItem>
-              {clients.length > 0 && (
+              <SelectItem value="new">+ Create New Roaster</SelectItem>
+              {roasters.length > 0 ? (
                 <>
                   <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                    Existing Clients
+                    Roasters
                   </div>
-                  {clients.map((client) => (
+                  {roasters.map((client) => (
                     <SelectItem key={client.id} value={client.company}>
                       {client.fantasy_name || client.company}
                     </SelectItem>
                   ))}
                 </>
+              ) : (
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  No roasters registered
+                </div>
               )}
             </SelectContent>
           </Select>
-          {(formData.roaster === '' || !clients.find(c => c.company === formData.roaster || c.fantasy_name === formData.roaster)) && (
+          {(formData.roaster === '' || !roasters.find(c => c.company === formData.roaster || c.fantasy_name === formData.roaster)) && (
             <Input
               id="roaster"
               value={formData.roaster}
