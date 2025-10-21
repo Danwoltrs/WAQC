@@ -222,7 +222,7 @@ export function TemplateUsageAnalytics({ templateId }: TemplateUsageAnalyticsPro
                           innerRadius={60}
                           outerRadius={80}
                           dataKey="value"
-                          label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                          label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
                         >
                           {sampleStatusData.map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={entry.color} />
