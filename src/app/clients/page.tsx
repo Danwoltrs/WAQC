@@ -496,8 +496,13 @@ export default function ClientsPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
+                              <Link href={`/clients/${client.id}`}>
+                                <Button variant="ghost" size="sm" title="View details">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
                               <Link href={`/clients/${client.id}/edit`}>
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" title="Edit client">
                                   <Edit className="h-4 w-4" />
                                 </Button>
                               </Link>
@@ -506,6 +511,7 @@ export default function ClientsPage() {
                                 size="sm"
                                 onClick={() => handleDelete(client)}
                                 className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                title="Delete client"
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
