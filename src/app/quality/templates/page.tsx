@@ -675,40 +675,24 @@ export default function QualityTemplatesPage() {
 
                         {/* Assigned to */}
                         <td className="px-4 py-4">
-                          <div className="text-sm">
-                            {template.assigned_clients && template.assigned_clients.length > 0 ? (
-                              <div className="space-y-2">
-                                <div className="text-xs text-muted-foreground space-y-1">
-                                  {template.assigned_clients.map((client) => (
-                                    <div key={client.id}>{client.fantasy_name || client.name}</div>
-                                  ))}
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-auto p-0 text-xs hover:underline"
-                                  onClick={() => {
-                                    setAssigningTemplateId(template.id)
-                                    setAssignmentDialogOpen(true)
-                                  }}
-                                >
-                                  <UserPlus className="h-3 w-3 mr-1" />
-                                  Assign to client
-                                </Button>
+                          <div className="text-sm space-y-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-auto p-0 text-xs hover:underline"
+                              onClick={() => {
+                                setAssigningTemplateId(template.id)
+                                setAssignmentDialogOpen(true)
+                              }}
+                            >
+                              Assign to client
+                            </Button>
+                            {template.assigned_clients && template.assigned_clients.length > 0 && (
+                              <div className="text-xs text-muted-foreground space-y-1">
+                                {template.assigned_clients.map((client) => (
+                                  <div key={client.id}>{client.fantasy_name || client.name}</div>
+                                ))}
                               </div>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-auto p-0 text-xs hover:underline"
-                                onClick={() => {
-                                  setAssigningTemplateId(template.id)
-                                  setAssignmentDialogOpen(true)
-                                }}
-                              >
-                                <UserPlus className="h-3 w-3 mr-1" />
-                                Assign to client
-                              </Button>
                             )}
                           </div>
                         </td>
