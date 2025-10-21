@@ -1173,7 +1173,9 @@ export type Database = {
           pricing_model: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled: boolean | null
           state: string | null
-          tracking_number_format: string | null
+          tracking_number_format: Json | null
+          certificate_pattern: Json | null
+          certificate_config: Json | null
           updated_at: string | null
         }
         Insert: {
@@ -1206,7 +1208,9 @@ export type Database = {
           pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled?: boolean | null
           state?: string | null
-          tracking_number_format?: string | null
+          tracking_number_format?: Json | null
+          certificate_pattern?: Json | null
+          certificate_config?: Json | null
           updated_at?: string | null
         }
         Update: {
@@ -1239,7 +1243,9 @@ export type Database = {
           pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled?: boolean | null
           state?: string | null
-          tracking_number_format?: string | null
+          tracking_number_format?: Json | null
+          certificate_pattern?: Json | null
+          certificate_config?: Json | null
           updated_at?: string | null
         }
         Relationships: [
