@@ -1,9 +1,12 @@
 'use client'
 
+import { useState, useEffect } from 'react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { Smartphone, Camera } from 'lucide-react'
 import { StepComponentProps } from './types'
 import { ORIGINS, PROCESSING_METHODS } from './constants'
 
@@ -15,6 +18,15 @@ export function BasicInfoStep({
   filteredClients,
   approvedPSSSamples
 }: StepComponentProps) {
+  const [isIOS, setIsIOS] = useState(false)
+  const [showQRCode, setShowQRCode] = useState(false)
+
+  // Detect iOS
+  useEffect(() => {
+    const userAgent = window.navigator.userAgent.toLowerCase()
+    setIsIOS(/iphone|ipad|ipod/.test(userAgent))
+  }, [])
+
   // Filter clients by type
   const exporters = clients.filter(c =>
     c.client_types?.some(type =>
@@ -34,8 +46,44 @@ export function BasicInfoStep({
     )
   )
 
+  const handleMobileScan = () => {
+    // Generate QR code URL that mobile app can scan
+    const currentUrl = window.location.origin
+    const qrCodeUrl = `${currentUrl}/samples/intake/mobile-scan`
+    setShowQRCode(true)
+  }
+
   return (
     <div className="space-y-4">
+      {/* iOS Mobile Scan Option */}
+      {isIOS && (
+        <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Smartphone className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+              <div>
+                <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                  Scan Sample Sleeve with Mobile
+                </p>
+                <p className="text-xs text-blue-700 dark:text-blue-300">
+                  Use your iPhone camera to scan sample information
+                </p>
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleMobileScan}
+              className="border-blue-300 dark:border-blue-700"
+            >
+              <Camera className="h-4 w-4 mr-2" />
+              Scan Now
+            </Button>
+          </div>
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="laboratory_id">Laboratory *</Label>

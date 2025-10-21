@@ -8,12 +8,16 @@ import { CheckCircle2 } from 'lucide-react'
 interface SuccessViewProps {
   trackingNumber: string
   onReset: () => void
+  asDialog?: boolean
 }
 
-export function SuccessView({ trackingNumber, onReset }: SuccessViewProps) {
+export function SuccessView({ trackingNumber, onReset, asDialog = false }: SuccessViewProps) {
+  const Wrapper = asDialog ? 'div' : Card
+  const Content = asDialog ? 'div' : CardContent
+
   return (
-    <Card className="w-full max-w-4xl mx-auto">
-      <CardContent className="pt-6">
+    <Wrapper className={asDialog ? '' : 'w-full max-w-4xl mx-auto'}>
+      <Content className={asDialog ? '' : 'pt-6'}>
         <div className="text-center space-y-4">
           <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto" />
           <h2 className="text-2xl font-semibold">Sample Created Successfully</h2>
@@ -27,7 +31,7 @@ export function SuccessView({ trackingNumber, onReset }: SuccessViewProps) {
             Create Another Sample
           </Button>
         </div>
-      </CardContent>
-    </Card>
+      </Content>
+    </Wrapper>
   )
 }

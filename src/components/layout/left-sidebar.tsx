@@ -35,20 +35,22 @@ import { CuppingBowl } from '@/components/icons/cupping-bowl'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/components/providers/auth-provider'
+import { useSampleIntake } from '@/components/samples/sample-intake-provider'
 import { hasPermission } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 
 interface NavItem {
   title: string
-  href: string
+  href?: string
   icon: React.ComponentType<{ className?: string }>
   permission?: string
   badge?: string
   submenu?: NavItem[]
+  onClick?: () => void
 }
 
-const navigation: NavItem[] = [
+const getNavigation = (openIntakeDialog: () => void): NavItem[] => [
   {
     title: 'Dashboard',
     href: '/',
@@ -76,9 +78,9 @@ const navigation: NavItem[] = [
     submenu: [
       {
         title: 'New Sample',
-        href: '/samples/intake',
         icon: Plus,
         permission: 'create_samples',
+        onClick: openIntakeDialog,
       },
       {
         title: 'View All Samples',
@@ -183,21 +185,24 @@ interface LeftSidebarProps {
 export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   const pathname = usePathname()
   const { permissions, profile } = useAuth()
+  const { openIntakeDialog } = useSampleIntake()
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0)
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['/']))
+
+  const navigation = getNavigation(openIntakeDialog)
 
   // Auto-expand Dashboard submenu when on a submenu page
   useEffect(() => {
     const dashboardItem = navigation.find(item => item.href === '/')
     if (dashboardItem?.submenu) {
       const isOnSubmenuPage = dashboardItem.submenu.some(subItem =>
-        pathname.startsWith(subItem.href)
+        subItem.href && pathname.startsWith(subItem.href)
       )
       if (isOnSubmenuPage) {
         setExpandedMenus(prev => new Set(prev).add('/'))
       }
     }
-  }, [pathname])
+  }, [pathname, navigation])
 
   // Fetch pending access requests count
   useEffect(() => {
@@ -242,7 +247,8 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
     return nav.filter(item => !item.permission || hasPermission(permissions, item.permission))
   }
 
-  const isActive = (href: string) => {
+  const isActive = (href?: string) => {
+    if (!href) return false
     if (href === '/') {
       return pathname === '/'
     }
@@ -263,7 +269,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
 
   const isSubmenuActive = (submenu?: NavItem[]) => {
     if (!submenu) return false
-    return submenu.some(item => isActive(item.href))
+    return submenu.some(item => item.href && isActive(item.href))
   }
 
   // Add badge to Users nav item
@@ -365,12 +371,33 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                     <div className="ml-4 mt-1 space-y-1 border-l-2 border-border pl-2">
                       {filteredSubmenu.map((subItem) => {
                         const SubIcon = subItem.icon
-                        const subActive = isActive(subItem.href)
+                        const subActive = subItem.href ? isActive(subItem.href) : false
+                        const key = subItem.href || subItem.title
 
+                        // If onClick is provided, render as button
+                        if (subItem.onClick) {
+                          return (
+                            <button
+                              key={key}
+                              onClick={subItem.onClick}
+                              className={cn(
+                                'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all w-full text-left',
+                                subActive
+                                  ? 'bg-accent text-accent-foreground'
+                                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                              )}
+                            >
+                              <SubIcon className="h-4 w-4 flex-shrink-0" />
+                              <span className="truncate">{subItem.title}</span>
+                            </button>
+                          )
+                        }
+
+                        // Otherwise render as link
                         return (
                           <Link
-                            key={subItem.href}
-                            href={subItem.href}
+                            key={key}
+                            href={subItem.href!}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
                               subActive

@@ -306,13 +306,17 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   }
 
   if (success) {
-    return <SuccessView trackingNumber={generatedTrackingNumber} onReset={resetForm} />
+    return <SuccessView trackingNumber={generatedTrackingNumber} onReset={resetForm} asDialog={asDialog} />
   }
 
+  const FormWrapper = asDialog ? 'div' : Card
+  const HeaderWrapper = asDialog ? 'div' : CardHeader
+  const ContentWrapper = asDialog ? 'div' : CardContent
+
   return (
-    <Card className="w-full max-w-4xl mx-auto">
-      <CardHeader>
-        <CardTitle>Sample Intake Form</CardTitle>
+    <FormWrapper className={asDialog ? '' : 'w-full max-w-4xl mx-auto'}>
+      <HeaderWrapper className={asDialog ? 'mb-4' : ''}>
+        {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
         <div className="flex gap-2 mt-4">
           {STEPS.map((step) => (
             <div
@@ -327,9 +331,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           <p className="text-sm font-medium">{STEPS[currentStep - 1].name}</p>
           <p className="text-xs text-muted-foreground">{STEPS[currentStep - 1].description}</p>
         </div>
-      </CardHeader>
+      </HeaderWrapper>
 
-      <CardContent className="space-y-6">
+      <ContentWrapper className={asDialog ? 'space-y-6' : 'space-y-6'}>
         {error && (
           <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
             <AlertCircle className="h-4 w-4" />
@@ -412,7 +416,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             </Button>
           )}
         </div>
-      </CardContent>
-    </Card>
+      </ContentWrapper>
+    </FormWrapper>
   )
 }
