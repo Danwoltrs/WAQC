@@ -80,22 +80,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Check if assignment already exists for this client/origin combination
-    if (body.origin) {
-      const { data: existing } = await supabase
-        .from('client_qualities')
-        .select('id')
-        .eq('client_id', body.client_id)
-        .eq('origin', body.origin)
-        .single()
-
-      if (existing) {
-        return NextResponse.json({
-          error: 'Quality specification already exists for this client and origin'
-        }, { status: 400 })
-      }
-    }
-
     // Validate quality_code uniqueness for this client if provided
     if (body.quality_code) {
       const { data: existingCode } = await supabase
@@ -117,7 +101,6 @@ export async function POST(request: NextRequest) {
     const clientQualityData: any = {
       client_id: body.client_id,
       template_id: body.template_id,
-      origin: body.origin || null,
       custom_parameters: body.custom_parameters || {},
       custom_name: body.custom_name || null,
       quality_code: body.quality_code || null,

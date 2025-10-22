@@ -76,7 +76,6 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
   const [editingQuality, setEditingQuality] = useState<ClientQuality | null>(null)
   const [formData, setFormData] = useState({
     template_id: '',
-    origin: '',
     custom_name: '',
     quality_code: '',
     notes: '',
@@ -119,7 +118,6 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
       setEditingQuality(quality)
       setFormData({
         template_id: quality.template_id,
-        origin: quality.origin || '',
         custom_name: quality.custom_name || '',
         quality_code: (quality as any).quality_code || '',
         notes: quality.notes || '',
@@ -129,7 +127,6 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
       setEditingQuality(null)
       setFormData({
         template_id: '',
-        origin: '',
         custom_name: '',
         quality_code: '',
         notes: '',
@@ -144,7 +141,6 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
       const payload = {
         client_id: clientId,
         template_id: formData.template_id,
-        origin: formData.origin || null,
         custom_name: formData.custom_name || null,
         quality_code: formData.quality_code || null,
         notes: formData.notes || null,
@@ -292,44 +288,34 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                   </p>
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="custom_name">Custom Name</Label>
-                  <Input
-                    id="custom_name"
-                    value={formData.custom_name}
-                    onChange={(e) => setFormData({ ...formData, custom_name: e.target.value })}
-                    placeholder="e.g., Alfenas Dulce"
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Give this quality spec a custom name for this client
-                  </p>
-                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="col-span-2 space-y-2">
+                    <Label htmlFor="custom_name">Custom Name</Label>
+                    <Input
+                      id="custom_name"
+                      value={formData.custom_name}
+                      onChange={(e) => setFormData({ ...formData, custom_name: e.target.value })}
+                      placeholder="e.g., Alfenas Dulce"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Give this quality spec a custom name for this client
+                    </p>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="quality_code">Quality Code (Optional)</Label>
-                  <Input
-                    id="quality_code"
-                    value={formData.quality_code}
-                    onChange={(e) => setFormData({ ...formData, quality_code: e.target.value.toUpperCase() })}
-                    placeholder="e.g., AD"
-                    maxLength={4}
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    2-4 letter code for certificate numbering (e.g., &quot;AD&quot; for Alfenas Dulce)
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="origin">Origin (Optional)</Label>
-                  <Input
-                    id="origin"
-                    value={formData.origin}
-                    onChange={(e) => setFormData({ ...formData, origin: e.target.value })}
-                    placeholder="e.g., Brazil, Colombia"
-                  />
-                  <p className="text-sm text-muted-foreground">
-                    Restrict this spec to a specific origin
-                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="quality_code">Quality Code</Label>
+                    <Input
+                      id="quality_code"
+                      value={formData.quality_code}
+                      onChange={(e) => setFormData({ ...formData, quality_code: e.target.value.toUpperCase() })}
+                      placeholder="AD"
+                      maxLength={4}
+                      className="text-center font-mono"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      2-4 letters
+                    </p>
+                  </div>
                 </div>
 
                 <div className="space-y-2">
@@ -397,12 +383,6 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                   </div>
                   <div className="flex items-center gap-3 text-sm text-muted-foreground">
                     <span>Template: {quality.template.name} (v{quality.template.version})</span>
-                    {quality.origin && (
-                      <>
-                        <span>•</span>
-                        <span>Origin: {quality.origin}</span>
-                      </>
-                    )}
                     <span>•</span>
                     <span>Created {format(new Date(quality.created_at), 'MMM d, yyyy')}</span>
                   </div>
