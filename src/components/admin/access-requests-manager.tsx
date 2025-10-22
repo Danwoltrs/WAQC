@@ -254,12 +254,12 @@ export function AccessRequestsManager() {
                       <Calendar className="w-3 h-3" />
                       Processed: {new Date(request.processed_at!).toLocaleDateString()}
                     </div>
-                    {request.status === 'approved' && (
+                    {request.status === 'approved' && request.requested_role && (
                       <div className="text-sm">
-                        <span className="font-medium">Approved Role:</span> {getRoleDisplayName(request.approved_role!)}
-                        {request.approved_laboratory_id && (
+                        <span className="font-medium">Approved Role:</span> {getRoleDisplayName(request.requested_role)}
+                        {request.requested_laboratory_id && (
                           <span className="ml-2">
-                            <span className="font-medium">Lab:</span> {laboratories.find(lab => lab.id === request.approved_laboratory_id)?.name}
+                            <span className="font-medium">Lab:</span> {laboratories.find(lab => lab.id === request.requested_laboratory_id)?.name}
                           </span>
                         )}
                       </div>
