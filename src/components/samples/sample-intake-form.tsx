@@ -259,11 +259,57 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     setError(null)
 
     try {
+      // Look up exporter UUID from exporter name
+      let exporter_id: string | undefined
+      if (formData.exporter) {
+        const { data: exporterData, error: exporterError } = await supabase
+          .from('exporters')
+          .select('id')
+          .ilike('name', formData.exporter)
+          .limit(1)
+          .single()
+
+        if (exporterError) {
+          console.error('Error looking up exporter:', exporterError)
+          throw new Error('Failed to find exporter. Please check the exporter name.')
+        }
+
+        exporter_id = exporterData?.id
+      }
+
+      // Look up importer UUID from buyer name (if provided)
+      let importer_id: string | undefined
+      if (formData.buyer) {
+        const { data: importerData } = await supabase
+          .from('importers')
+          .select('id')
+          .ilike('name', formData.buyer)
+          .limit(1)
+          .maybeSingle()
+
+        importer_id = importerData?.id
+      }
+
+      // Look up roaster UUID from roaster name (if provided)
+      let roaster_id: string | undefined
+      if (formData.roaster) {
+        const { data: roasterData } = await supabase
+          .from('roasters')
+          .select('id')
+          .ilike('name', formData.roaster)
+          .limit(1)
+          .maybeSingle()
+
+        roaster_id = roasterData?.id
+      }
+
       const sampleData: Partial<SampleInsert> = {
         client_id: formData.client_id || undefined,
         laboratory_id: formData.laboratory_id,
         origin: formData.origin,
-        supplier: formData.supplier || formData.exporter,
+        exporter_id: exporter_id,
+        importer_id: importer_id,
+        roaster_id: roaster_id,
         processing_method: formData.processing_method,
         sample_type: formData.sample_type || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,
@@ -275,6 +321,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         container_nr: formData.container_nr || undefined,
         bags_quantity_mt: formData.bags_quantity_mt ? parseFloat(formData.bags_quantity_mt) : undefined,
         bag_count: formData.bag_count ? parseInt(formData.bag_count) : undefined,
+        bag_weight_kg: formData.bag_weight_kg ? parseFloat(formData.bag_weight_kg) : undefined,
+        bag_type: formData.bag_type || undefined,
         status: 'received',
         workflow_stage: 'received'
       }

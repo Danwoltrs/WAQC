@@ -66,33 +66,34 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
         </p>
       </div>
 
-      {/* Bag Type Selection */}
-      <div className="space-y-2">
-        <Label htmlFor="bag_type" className="flex items-center gap-2">
-          Type of Bag *
-          <Badge variant="secondary" className="text-xs">Required</Badge>
-        </Label>
-        <Select
-          value={formData.bag_type}
-          onValueChange={(value) => {
-            updateFormData('bag_type', value)
-            updateFormData('bag_weight_kg', '') // Reset weight when type changes
-            setCustomWeight(false)
-          }}
-        >
-          <SelectTrigger id="bag_type">
-            <SelectValue placeholder="Select bag type" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="jute_bag">Jute Bag</SelectItem>
-            <SelectItem value="pp_bag">PP Bag (Polypropylene)</SelectItem>
-            <SelectItem value="big_bag">Big Bag (1 M/T)</SelectItem>
-            <SelectItem value="bulk">Bulk (21.6 M/T Container)</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
+      {/* All bag fields in one row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Bag Type Selection */}
+        <div className="space-y-2">
+          <Label htmlFor="bag_type" className="flex items-center gap-2">
+            Type of Bag *
+            <Badge variant="secondary" className="text-xs">Required</Badge>
+          </Label>
+          <Select
+            value={formData.bag_type}
+            onValueChange={(value) => {
+              updateFormData('bag_type', value)
+              updateFormData('bag_weight_kg', '') // Reset weight when type changes
+              setCustomWeight(false)
+            }}
+          >
+            <SelectTrigger id="bag_type">
+              <SelectValue placeholder="Select bag type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="jute_bag">Jute Bag</SelectItem>
+              <SelectItem value="pp_bag">PP Bag (Polypropylene)</SelectItem>
+              <SelectItem value="big_bag">Big Bag (1 M/T)</SelectItem>
+              <SelectItem value="bulk">Bulk (21.6 M/T Container)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Bag Count */}
         <div className="space-y-2">
           <Label htmlFor="bag_count" className="flex items-center gap-2">
