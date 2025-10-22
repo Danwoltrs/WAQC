@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Input } from '@/components/ui/input'
@@ -30,23 +30,29 @@ export function BasicInfoStep({
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientType, setCreateClientType] = useState<'exporter' | 'buyer' | 'roaster'>('exporter')
 
-  // Filter clients by type (must come before useEffect that uses them)
-  const exporters = clients.filter(c =>
-    c.client_types?.some(type =>
-      type === 'exporter' || type === 'producer_exporter' || type === 'cooperative'
-    )
+  // Memoize filtered client lists to prevent unnecessary re-renders
+  const exporters = useMemo(() =>
+    clients.filter(c =>
+      c.client_types?.some(type =>
+        type === 'exporter' || type === 'producer_exporter' || type === 'cooperative'
+      )
+    ), [clients]
   )
 
-  const buyers = clients.filter(c =>
-    c.client_types?.some(type =>
-      type === 'importer_buyer' || type === 'roaster' || type === 'roaster_final_buyer'
-    )
+  const buyers = useMemo(() =>
+    clients.filter(c =>
+      c.client_types?.some(type =>
+        type === 'importer_buyer' || type === 'roaster' || type === 'roaster_final_buyer'
+      )
+    ), [clients]
   )
 
-  const roasters = clients.filter(c =>
-    c.client_types?.some(type =>
-      type === 'roaster' || type === 'roaster_final_buyer'
-    )
+  const roasters = useMemo(() =>
+    clients.filter(c =>
+      c.client_types?.some(type =>
+        type === 'roaster' || type === 'roaster_final_buyer'
+      )
+    ), [clients]
   )
 
   // Detect iOS
