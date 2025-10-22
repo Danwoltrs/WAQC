@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Smartphone, Camera } from 'lucide-react'
 import { ClientAutoDetection } from '@/components/clients/client-auto-detection'
+import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
+import { CreateClientDialog } from './create-client-dialog'
 import { StepComponentProps } from './types'
 import { ORIGINS, PROCESSING_METHODS } from './constants'
 
@@ -21,12 +23,73 @@ export function BasicInfoStep({
 }: StepComponentProps) {
   const [isIOS, setIsIOS] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
+  const [buyerQualities, setBuyerQualities] = useState<any[]>([])
+  const [loadingQualities, setLoadingQualities] = useState(false)
+  const [showLinkTemplateDialog, setShowLinkTemplateDialog] = useState(false)
+  const [selectedBuyerClient, setSelectedBuyerClient] = useState<any>(null)
+  const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
+  const [createClientType, setCreateClientType] = useState<'exporter' | 'buyer' | 'roaster'>('exporter')
 
   // Detect iOS
   useEffect(() => {
     const userAgent = window.navigator.userAgent.toLowerCase()
     setIsIOS(/iphone|ipad|ipod/.test(userAgent))
   }, [])
+
+  // Load buyer's quality templates when buyer changes
+  useEffect(() => {
+    const loadBuyerQualities = async () => {
+      if (!formData.buyer) {
+        setBuyerQualities([])
+        return
+      }
+
+      // Find the buyer client
+      const buyerClient = buyers.find(c =>
+        c.company === formData.buyer || c.fantasy_name === formData.buyer
+      )
+
+      if (!buyerClient) {
+        setBuyerQualities([])
+        setSelectedBuyerClient(null)
+        return
+      }
+
+      setSelectedBuyerClient(buyerClient)
+      setLoadingQualities(true)
+      try {
+        const response = await fetch(`/api/clients/${buyerClient.id}/quality-specifications`)
+        if (response.ok) {
+          const data = await response.json()
+          setBuyerQualities(data.specifications || [])
+        }
+      } catch (error) {
+        console.error('Error loading buyer qualities:', error)
+      } finally {
+        setLoadingQualities(false)
+      }
+    }
+
+    loadBuyerQualities()
+  }, [formData.buyer])
+
+  // Reload buyer qualities when link template dialog is closed successfully
+  const handleQualityTemplateLinked = async () => {
+    if (selectedBuyerClient) {
+      setLoadingQualities(true)
+      try {
+        const response = await fetch(`/api/clients/${selectedBuyerClient.id}/quality-specifications`)
+        if (response.ok) {
+          const data = await response.json()
+          setBuyerQualities(data.specifications || [])
+        }
+      } catch (error) {
+        console.error('Error reloading buyer qualities:', error)
+      } finally {
+        setLoadingQualities(false)
+      }
+    }
+  }
 
   // Filter clients by type
   const exporters = clients.filter(c =>
@@ -138,7 +201,8 @@ export function BasicInfoStep({
             value={formData.exporter === '' ? 'custom' : exporters.find(c => c.company === formData.exporter || c.fantasy_name === formData.exporter) ? formData.exporter : 'custom'}
             onValueChange={(value) => {
               if (value === 'new') {
-                updateFormData('exporter', '')
+                setCreateClientType('exporter')
+                setShowCreateClientDialog(true)
               } else if (value !== 'custom') {
                 const client = exporters.find(c => c.company === value || c.fantasy_name === value)
                 updateFormData('exporter', client?.fantasy_name || client?.company || value)
@@ -180,12 +244,15 @@ export function BasicInfoStep({
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="buyer">Buyer</Label>
+          <Label htmlFor="buyer">
+            Buyer {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
+          </Label>
           <Select
             value={formData.buyer === '' ? 'custom' : buyers.find(c => c.company === formData.buyer || c.fantasy_name === formData.buyer) ? formData.buyer : 'custom'}
             onValueChange={(value) => {
               if (value === 'new') {
-                updateFormData('buyer', '')
+                setCreateClientType('buyer')
+                setShowCreateClientDialog(true)
               } else if (value !== 'custom') {
                 const client = buyers.find(c => c.company === value || c.fantasy_name === value)
                 updateFormData('buyer', client?.fantasy_name || client?.company || value)
@@ -193,7 +260,7 @@ export function BasicInfoStep({
             }}
           >
             <SelectTrigger>
-              <SelectValue placeholder="Select existing or type new" />
+              <SelectValue placeholder={(formData.sample_type === 'pss' || formData.sample_type === 'ss') ? 'Select buyer (required)' : 'Select existing or type new'} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="custom">Type custom name...</SelectItem>
@@ -224,6 +291,11 @@ export function BasicInfoStep({
               placeholder="Enter buyer name"
             />
           )}
+          {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && (
+            <p className="text-xs text-muted-foreground">
+              Required for PSS/SS samples to assign quality specifications
+            </p>
+          )}
         </div>
 
         <div className="space-y-2">
@@ -232,7 +304,8 @@ export function BasicInfoStep({
             value={formData.roaster === '' ? 'custom' : roasters.find(c => c.company === formData.roaster || c.fantasy_name === formData.roaster) ? formData.roaster : 'custom'}
             onValueChange={(value) => {
               if (value === 'new') {
-                updateFormData('roaster', '')
+                setCreateClientType('roaster')
+                setShowCreateClientDialog(true)
               } else if (value !== 'custom') {
                 const client = roasters.find(c => c.company === value || c.fantasy_name === value)
                 updateFormData('roaster', client?.fantasy_name || client?.company || value)
@@ -284,18 +357,82 @@ export function BasicInfoStep({
         />
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="quality_name">Quality Name</Label>
-        <Input
-          id="quality_name"
-          value={formData.quality_name}
-          onChange={(e) => updateFormData('quality_name', e.target.value)}
-          placeholder="e.g., Alfenas Dulce, Specialty Blend (optional)"
-        />
-        <p className="text-xs text-muted-foreground">
-          Custom quality name for this sample
-        </p>
-      </div>
+      {/* Quality Specification - Only show for PSS/SS with buyer selected */}
+      {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && formData.buyer && (
+        <div className="space-y-2">
+          <Label htmlFor="quality_spec_id">
+            Quality Specification *
+          </Label>
+          {loadingQualities ? (
+            <div className="text-sm text-muted-foreground">Loading buyer qualities...</div>
+          ) : buyerQualities.length > 0 ? (
+            <Select
+              value={formData.quality_spec_id}
+              onValueChange={(value) => {
+                updateFormData('quality_spec_id', value)
+                // Auto-fill quality_name with custom_name from the selected quality
+                const selectedQuality = buyerQualities.find(q => q.id === value)
+                if (selectedQuality?.custom_name) {
+                  updateFormData('quality_name', selectedQuality.custom_name)
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select quality specification" />
+              </SelectTrigger>
+              <SelectContent>
+                {buyerQualities.map((quality) => (
+                  <SelectItem key={quality.id} value={quality.id}>
+                    {quality.custom_name || quality.quality_code || 'Unnamed Quality'}
+                    {quality.origin && ` (${quality.origin})`}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : (
+            <div className="space-y-2">
+              <div className="p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                <p className="text-sm text-yellow-900 dark:text-yellow-100">
+                  No quality specifications found for this buyer.
+                </p>
+                <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
+                  You need to link a quality template to this buyer before proceeding.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLinkTemplateDialog(true)}
+                disabled={!selectedBuyerClient}
+              >
+                + Link Quality Template to Buyer
+              </Button>
+            </div>
+          )}
+          {buyerQualities.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Select the quality specification that will be used to evaluate this sample
+            </p>
+          )}
+        </div>
+      )}
+
+      {/* Quality Name - For type samples or when no buyer is selected */}
+      {(formData.sample_type === 'type' || !formData.buyer || (!formData.sample_type)) && (
+        <div className="space-y-2">
+          <Label htmlFor="quality_name">Quality Name</Label>
+          <Input
+            id="quality_name"
+            value={formData.quality_name}
+            onChange={(e) => updateFormData('quality_name', e.target.value)}
+            placeholder="e.g., Alfenas Dulce, Specialty Blend (optional)"
+          />
+          <p className="text-xs text-muted-foreground">
+            Custom quality name for this sample
+          </p>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
@@ -416,6 +553,34 @@ export function BasicInfoStep({
           </div>
         </div>
       )}
+
+      {/* Link Quality Template Dialog */}
+      {selectedBuyerClient && (
+        <LinkQualityTemplateDialog
+          open={showLinkTemplateDialog}
+          onOpenChange={setShowLinkTemplateDialog}
+          clientId={selectedBuyerClient.id}
+          clientName={selectedBuyerClient.fantasy_name || selectedBuyerClient.company}
+          onSuccess={handleQualityTemplateLinked}
+        />
+      )}
+
+      {/* Create Client Dialog */}
+      <CreateClientDialog
+        open={showCreateClientDialog}
+        onOpenChange={setShowCreateClientDialog}
+        clientType={createClientType}
+        onSuccess={(clientName) => {
+          // Update the appropriate field based on client type
+          if (createClientType === 'exporter') {
+            updateFormData('exporter', clientName)
+          } else if (createClientType === 'buyer') {
+            updateFormData('buyer', clientName)
+          } else if (createClientType === 'roaster') {
+            updateFormData('roaster', clientName)
+          }
+        }}
+      />
     </div>
   )
 }

@@ -197,12 +197,19 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 1:
-        return !!(
+        const baseValidation = !!(
           formData.laboratory_id &&
           formData.exporter &&
           formData.origin &&
           formData.sample_type
         )
+
+        // For PSS and SS samples, buyer and quality_spec_id are required
+        if (formData.sample_type === 'pss' || formData.sample_type === 'ss') {
+          return baseValidation && !!(formData.buyer && formData.quality_spec_id)
+        }
+
+        return baseValidation
       case 2:
         return true
       case 3:
