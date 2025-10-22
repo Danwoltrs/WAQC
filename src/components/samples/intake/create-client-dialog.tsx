@@ -71,37 +71,40 @@ export function CreateClientDialog({
     setError(null)
 
     try {
-      const response = await fetch('/api/clients', {
+      // Determine API endpoint based on client type
+      const apiEndpoint = clientType === 'exporter' ? '/api/exporters' :
+                         clientType === 'buyer' ? '/api/buyers' :
+                         '/api/roasters'
+
+      const response = await fetch(apiEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          company,
-          name: company, // Use company as name if not provided
-          fantasy_name: fantasyName || company,
-          email: email || null,
-          phone: phone || null,
+          name: company,
           country: country || null,
-          client_types: [selectedType],
-          is_qc_client: true,
-          qc_enabled: true,
-          pricing_model: 'per_sample',
-          currency: 'USD'
+          region: null,
+          contact_email: email || null,
+          contact_phone: phone || null,
+          notes: fantasyName ? `Brand name: ${fantasyName}` : null
         })
       })
 
       const data = await response.json()
 
       if (!response.ok) {
-        throw new Error(data.error || 'Failed to create client')
+        throw new Error(data.error || `Failed to create ${clientType}`)
       }
 
-      // Reset form and notify parent
+      // Reset form and notify parent with the created entity's name
       resetForm()
-      onSuccess(data.client.fantasy_name || data.client.company)
+      const entityKey = clientType === 'exporter' ? 'exporter' :
+                       clientType === 'buyer' ? 'buyer' :
+                       'roaster'
+      onSuccess(data[entityKey]?.name || company)
       onOpenChange(false)
     } catch (err: any) {
-      console.error('Error creating client:', err)
-      setError(err.message || 'Failed to create client')
+      console.error(`Error creating ${clientType}:`, err)
+      setError(err.message || `Failed to create ${clientType}`)
     } finally {
       setLoading(false)
     }
