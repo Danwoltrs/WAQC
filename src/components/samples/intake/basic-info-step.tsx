@@ -360,6 +360,15 @@ export function BasicInfoStep({
         />
       </div>
 
+      {/* Show helper message if buyer selected but sample type not PSS/SS yet */}
+      {formData.buyer && selectedBuyerClient && formData.sample_type && formData.sample_type !== 'pss' && formData.sample_type !== 'ss' && (
+        <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+          <p className="text-sm text-blue-900 dark:text-blue-100">
+            Quality specifications are only required for PSS and SS sample types.
+          </p>
+        </div>
+      )}
+
       {/* Quality Specification - Only show for PSS/SS with buyer selected AND has a buyer client match */}
       {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && formData.buyer && selectedBuyerClient && (
         <div className="space-y-2">
