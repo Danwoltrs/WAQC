@@ -250,10 +250,12 @@ export function AccessRequestsManager() {
                       <Mail className="w-3 h-3" />
                       {(request as any).profiles?.email}
                     </div>
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Calendar className="w-3 h-3" />
-                      Processed: {new Date(request.processed_at!).toLocaleDateString()}
-                    </div>
+                    {request.processed_at && (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                        <Calendar className="w-3 h-3" />
+                        Processed: {new Date(request.processed_at).toLocaleDateString()}
+                      </div>
+                    )}
                     {request.status === 'approved' && request.requested_role && (
                       <div className="text-sm">
                         <span className="font-medium">Approved Role:</span> {getRoleDisplayName(request.requested_role)}
@@ -336,18 +338,20 @@ function RequestCard({
             <Mail className="w-3 h-3" />
             {(request as any).profiles?.email}
           </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar className="w-3 h-3" />
-            Requested: {new Date(request.created_at).toLocaleDateString()}
-          </div>
+          {request.created_at && (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Calendar className="w-3 h-3" />
+              Requested: {new Date(request.created_at).toLocaleDateString()}
+            </div>
+          )}
           {request.requested_role && (
             <div className="text-sm">
               <span className="font-medium">Requested Role:</span> {getRoleDisplayName(request.requested_role)}
             </div>
           )}
-          {request.justification && (
+          {request.request_message && (
             <div className="text-sm">
-              <span className="font-medium">Justification:</span> {request.justification}
+              <span className="font-medium">Message:</span> {request.request_message}
             </div>
           )}
         </div>
