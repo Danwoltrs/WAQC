@@ -238,7 +238,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               qc_enabled: true,
               qc_role: 'global_admin' as UserRole,
               is_global_admin: true,
-              laboratory_id: undefined,
+              laboratory_id: null,
+              client_id: null,
               qc_permissions: [],
               created_at: new Date().toISOString(),
               updated_at: new Date().toISOString()
