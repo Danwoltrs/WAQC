@@ -43,8 +43,11 @@ const initialFormData: FormData = {
   roaster_contract_nr: '',
   ico_number: '',
   container_nr: '',
-  bags_quantity_mt: '',
   bag_count: '',
+  bag_weight_kg: '',
+  bag_type: '',
+  bags_quantity_mt: '',
+  equivalent_60kg_bags: '',
   arrival_date: new Date().toISOString().split('T')[0],
   notes: '',
   photo_file: null
