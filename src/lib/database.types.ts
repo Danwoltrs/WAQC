@@ -6073,6 +6073,7 @@ export type Database = {
           contact_email: string | null
           contact_phone: string | null
           notes: string | null
+          client_id: string | null
           created_at: string | null
           updated_at: string | null
         }
@@ -6083,6 +6084,7 @@ export type Database = {
           contact_email?: string | null
           contact_phone?: string | null
           notes?: string | null
+          client_id?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -6093,6 +6095,43 @@ export type Database = {
           contact_email?: string | null
           contact_phone?: string | null
           notes?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      importers: {
+        Row: {
+          id: string
+          name: string
+          country: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          notes: string | null
+          client_id: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          country?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          client_id?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          country?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          client_id?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -6106,6 +6145,7 @@ export type Database = {
           contact_email: string | null
           contact_phone: string | null
           notes: string | null
+          client_id: string | null
           created_at: string | null
           updated_at: string | null
         }
@@ -6116,6 +6156,7 @@ export type Database = {
           contact_email?: string | null
           contact_phone?: string | null
           notes?: string | null
+          client_id?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -6126,6 +6167,7 @@ export type Database = {
           contact_email?: string | null
           contact_phone?: string | null
           notes?: string | null
+          client_id?: string | null
           created_at?: string | null
           updated_at?: string | null
         }
@@ -6171,8 +6213,10 @@ export type Database = {
         Row: {
           assigned_to: string | null
           bag_count: number | null
+          bag_type: Database["public"]["Enums"]["bag_type_enum"] | null
           bag_weight_kg: number | null
           bags: number | null
+          equivalent_60kg_bags: number | null
           bags_quantity_mt: number | null
           buyer_id: string | null
           buyer_legacy: string | null
@@ -6215,8 +6259,10 @@ export type Database = {
         Insert: {
           assigned_to?: string | null
           bag_count?: number | null
+          bag_type?: Database["public"]["Enums"]["bag_type_enum"] | null
           bag_weight_kg?: number | null
           bags?: number | null
+          equivalent_60kg_bags?: number | null
           bags_quantity_mt?: number | null
           buyer_id?: string | null
           buyer_legacy?: string | null
@@ -6259,8 +6305,10 @@ export type Database = {
         Update: {
           assigned_to?: string | null
           bag_count?: number | null
+          bag_type?: Database["public"]["Enums"]["bag_type_enum"] | null
           bag_weight_kg?: number | null
           bags?: number | null
+          equivalent_60kg_bags?: number | null
           bags_quantity_mt?: number | null
           buyer_id?: string | null
           buyer_legacy?: string | null
@@ -9807,6 +9855,7 @@ export type Database = {
         | "networking_event"
         | "presentation"
         | "flight_travel"
+      bag_type_enum: "jute_bag" | "pp_bag" | "big_bag" | "bulk"
       billing_basis: "approved_only" | "approved_and_rejected" | "all_samples"
       certificate_status: "draft" | "issued" | "revoked"
       client_type:
