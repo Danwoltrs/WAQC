@@ -23,13 +23,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'sample_ids array is required' }, { status: 400 })
     }
 
-    // Fetch samples
+    // Fetch samples with entity joins
     const { data: samples, error } = await supabase
       .from('samples')
       .select(`
         *,
         clients!samples_client_id_fkey(company, name),
-        laboratories!samples_laboratory_id_fkey(name, location)
+        laboratories!samples_laboratory_id_fkey(name, location),
+        supplier:suppliers(name),
+        exporter:exporters(name),
+        buyer:buyers(name),
+        roaster:roasters(name),
+        importer:buyers!samples_importer_id_fkey(name)
       `)
       .in('id', sample_ids)
       .order('created_at', { ascending: false })
@@ -40,14 +45,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Transform data for Excel export
-    const exportData = samples.map(sample => ({
+    const exportData = samples.map((sample: any) => ({
       'Tracking Number': sample.tracking_number,
       'Origin': sample.origin,
       'Quality': sample.quality_name || '',
-      'Supplier': sample.supplier || '',
-      'Exporter': sample.exporter || '',
-      'Importer': sample.importer || '',
-      'Roaster': sample.roaster || sample.buyer || '',
+      'Supplier': sample.supplier?.name || '',
+      'Exporter': sample.exporter?.name || '',
+      'Importer': sample.importer?.name || '',
+      'Buyer': sample.buyer?.name || '',
+      'Roaster': sample.roaster?.name || '',
       'Status': sample.status,
       'Workflow Stage': sample.workflow_stage || '',
       'Sample Type': sample.sample_type || '',
