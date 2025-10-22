@@ -60,24 +60,29 @@ export default function SupplierReviewPage() {
         endDate = new Date(filters.year + 1, 0, 1).toISOString()
       }
 
-      // Build query
+      // Build query with entity joins
       let query = supabase
         .from('samples')
-        .select('supplier, sample_type, status, created_at')
-        .not('supplier', 'is', null)
+        .select(`
+          sample_type,
+          status,
+          created_at,
+          supplier:suppliers(id, name)
+        `)
+        .not('supplier_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', startDate)
         .lt('created_at', endDate)
 
-      // Apply stakeholder filters
+      // Apply stakeholder filters (using IDs now)
       if (filters.supplier) {
-        query = query.eq('supplier', filters.supplier)
+        query = query.eq('supplier_id', filters.supplier)
       }
       if (filters.importer) {
-        query = query.eq('importer', filters.importer)
+        query = query.eq('importer_id', filters.importer)
       }
       if (filters.roaster) {
-        query = query.eq('roaster', filters.roaster)
+        query = query.eq('roaster_id', filters.roaster)
       }
       if (filters.client) {
         query = query.eq('client_id', filters.client)
@@ -108,13 +113,13 @@ export default function SupplierReviewPage() {
       }
 
       // Calculate insights
-      const suppliers = new Set(samples.map(s => s.supplier))
+      const suppliers = new Set(samples.map((s: any) => s.supplier?.name).filter(Boolean))
 
-      const pssSamples = samples.filter(s => s.sample_type === 'pss')
-      const ssSamples = samples.filter(s => s.sample_type === 'ss')
+      const pssSamples = samples.filter((s: any) => s.sample_type === 'pss')
+      const ssSamples = samples.filter((s: any) => s.sample_type === 'ss')
 
-      const pssApproved = pssSamples.filter(s => s.status === 'approved').length
-      const ssApproved = ssSamples.filter(s => s.status === 'approved').length
+      const pssApproved = pssSamples.filter((s: any) => s.status === 'approved').length
+      const ssApproved = ssSamples.filter((s: any) => s.status === 'approved').length
 
       const pssApprovalRate = pssSamples.length > 0
         ? Math.round((pssApproved / pssSamples.length) * 100)
@@ -127,15 +132,18 @@ export default function SupplierReviewPage() {
       // Calculate per-supplier approval rates
       const supplierMap = new Map<string, { approved: number; total: number }>()
 
-      samples.forEach(sample => {
-        const existing = supplierMap.get(sample.supplier)
+      samples.forEach((sample: any) => {
+        const supplierName = sample.supplier?.name
+        if (!supplierName) return
+
+        const existing = supplierMap.get(supplierName)
         const isApproved = sample.status === 'approved'
 
         if (existing) {
           existing.total += 1
           if (isApproved) existing.approved += 1
         } else {
-          supplierMap.set(sample.supplier, {
+          supplierMap.set(supplierName, {
             approved: isApproved ? 1 : 0,
             total: 1
           })
