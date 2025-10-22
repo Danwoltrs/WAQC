@@ -172,16 +172,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('Fetching profile for user:', userId)
 
-      // Add timeout to prevent hanging
+      // Add timeout to prevent hanging - reduced to 5 seconds for faster detection
       const timeoutPromise = new Promise<{ data: null, error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Profile fetch timeout' } }), 10000)
+        setTimeout(() => resolve({ data: null, error: { message: 'Profile fetch timeout' } }), 5000)
       )
 
-      const fetchPromise = supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
+      const fetchPromise = (async () => {
+        try {
+          return await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .single()
+        } catch (err: any) {
+          // Catch network errors immediately
+          console.error('⚠️ Network error in fetchProfile:', err)
+          return { data: null, error: { message: 'Network error', original: err } }
+        }
+      })()
 
       const { data: profileData, error } = await Promise.race([
         fetchPromise,
@@ -190,7 +198,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (error) {
         // Check if this is a network/timeout error
-        if (error.message === 'Profile fetch timeout' || error.message?.includes('Failed to fetch') || error.message?.includes('network')) {
+        if (error.message === 'Profile fetch timeout' ||
+            error.message === 'Network error' ||
+            error.message?.includes('Failed to fetch') ||
+            error.message?.includes('network') ||
+            error.message?.includes('connection')) {
           console.error('⚠️ Network error detected during profile fetch')
           setNetworkError(true)
           setLoading(false)
@@ -302,8 +314,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const userPermissions = getUserPermissions(finalProfile.qc_role as UserRole, laboratoryType)
       setPermissions(userPermissions)
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error in fetchProfile:', error)
+      // Check if this is a network error
+      if (error?.message?.includes('fetch') ||
+          error?.message?.includes('network') ||
+          error?.message?.includes('connection') ||
+          error?.name === 'TypeError') {
+        console.error('⚠️ Fatal network error in fetchProfile')
+        setNetworkError(true)
+      }
     } finally {
       setLoading(false)
     }
