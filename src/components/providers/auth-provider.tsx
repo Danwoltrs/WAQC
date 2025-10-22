@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState } from 'react'
 import { User } from '@supabase/supabase-js'
 import { supabase, type Database, type UserRole } from '@/lib/supabase'
 import { getUserPermissions } from '@/lib/auth'
+import { NetworkError } from '@/components/errors/network-error'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 
@@ -12,6 +13,7 @@ interface AuthContextType {
   profile: Profile | null
   permissions: string[]
   loading: boolean
+  networkError: boolean
   signOut: () => Promise<void>
 }
 
@@ -22,16 +24,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [permissions, setPermissions] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
+  const [networkError, setNetworkError] = useState(false)
 
   useEffect(() => {
     let isInitialLoad = true
 
     // Get initial session
     const getSession = async () => {
-      const { data: { session }, error } = await supabase.auth.getSession()
+      let session = null
 
-      if (error) {
-        console.error('Error getting session:', error)
+      try {
+        const result = await supabase.auth.getSession()
+
+        if (result.error) {
+          console.error('Error getting session:', result.error)
+          // Check if this is a network error
+          if (result.error.message?.includes('Failed to fetch') || result.error.message?.includes('network')) {
+            console.error('⚠️ Network error: Cannot connect to Supabase. Check your internet connection or firewall settings.')
+          }
+          setLoading(false)
+          return
+        }
+
+        session = result.data.session
+      } catch (err) {
+        console.error('⚠️ Fatal error connecting to Supabase:', err)
+        console.error('Your network may be blocking access to Supabase. Try using a different network or mobile hotspot.')
+        setNetworkError(true)
         setLoading(false)
         return
       }
@@ -170,7 +189,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ]) as any
 
       if (error) {
-        // Check if this is a timeout and user is a known admin
+        // Check if this is a network/timeout error
+        if (error.message === 'Profile fetch timeout' || error.message?.includes('Failed to fetch') || error.message?.includes('network')) {
+          console.error('⚠️ Network error detected during profile fetch')
+          setNetworkError(true)
+          setLoading(false)
+          return
+        }
+
+        // Fallback for global admins if profile doesn't exist but network is working
         if (error.message === 'Profile fetch timeout') {
           const { data: { user: authUser } } = await supabase.auth.getUser()
           const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(authUser?.email || '')
@@ -291,7 +318,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     profile,
     permissions,
     loading,
+    networkError,
     signOut,
+  }
+
+  // Show network error screen if Supabase is unreachable
+  if (networkError) {
+    return (
+      <NetworkError
+        title="Network Connection Error"
+        message="Unable to connect to the Wolthers QC system. This may be due to network restrictions or firewall settings blocking access to our servers."
+        onRetry={() => {
+          setNetworkError(false)
+          setLoading(true)
+          window.location.reload()
+        }}
+      />
+    )
   }
 
   return (
