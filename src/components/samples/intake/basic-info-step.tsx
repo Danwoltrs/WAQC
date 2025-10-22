@@ -30,6 +30,25 @@ export function BasicInfoStep({
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientType, setCreateClientType] = useState<'exporter' | 'buyer' | 'roaster'>('exporter')
 
+  // Filter clients by type (must come before useEffect that uses them)
+  const exporters = clients.filter(c =>
+    c.client_types?.some(type =>
+      type === 'exporter' || type === 'producer_exporter' || type === 'cooperative'
+    )
+  )
+
+  const buyers = clients.filter(c =>
+    c.client_types?.some(type =>
+      type === 'importer_buyer' || type === 'roaster' || type === 'roaster_final_buyer'
+    )
+  )
+
+  const roasters = clients.filter(c =>
+    c.client_types?.some(type =>
+      type === 'roaster' || type === 'roaster_final_buyer'
+    )
+  )
+
   // Detect iOS
   useEffect(() => {
     const userAgent = window.navigator.userAgent.toLowerCase()
@@ -90,25 +109,6 @@ export function BasicInfoStep({
       }
     }
   }
-
-  // Filter clients by type
-  const exporters = clients.filter(c =>
-    c.client_types?.some(type =>
-      type === 'exporter' || type === 'producer_exporter' || type === 'cooperative'
-    )
-  )
-
-  const buyers = clients.filter(c =>
-    c.client_types?.some(type =>
-      type === 'importer_buyer' || type === 'roaster' || type === 'roaster_final_buyer'
-    )
-  )
-
-  const roasters = clients.filter(c =>
-    c.client_types?.some(type =>
-      type === 'roaster' || type === 'roaster_final_buyer'
-    )
-  )
 
   const handleMobileScan = () => {
     // Generate QR code URL that mobile app can scan
