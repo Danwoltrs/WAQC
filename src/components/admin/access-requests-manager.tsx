@@ -138,7 +138,7 @@ export function AccessRequestsManager() {
         .from('access_requests')
         .update({
           status: 'rejected',
-          rejection_reason: reason,
+          admin_notes: reason,
           processed_at: new Date().toISOString(),
           processed_by: profile?.id
         })
@@ -264,9 +264,9 @@ export function AccessRequestsManager() {
                         )}
                       </div>
                     )}
-                    {request.status === 'rejected' && request.rejection_reason && (
+                    {request.status === 'rejected' && request.admin_notes && (
                       <div className="text-sm">
-                        <span className="font-medium">Reason:</span> {request.rejection_reason}
+                        <span className="font-medium">Reason:</span> {request.admin_notes}
                       </div>
                     )}
                   </div>
