@@ -136,6 +136,14 @@ export async function POST(request: NextRequest) {
 
     console.log('Generated tracking number:', trackingNumber, 'Type:', typeof trackingNumberData, 'Raw:', trackingNumberData)
 
+    // Calculate bag weight if both quantity and count are provided
+    let bagWeightKg: number | null = null
+    if (body.bags_quantity_mt && body.bag_count) {
+      // Convert MT to kg (multiply by 1000) and divide by bag count
+      bagWeightKg = (parseFloat(body.bags_quantity_mt) * 1000) / parseInt(body.bag_count)
+      bagWeightKg = Math.round(bagWeightKg * 100) / 100 // Round to 2 decimal places
+    }
+
     // Prepare sample data
     const sampleData: SampleInsert = {
       tracking_number: trackingNumber,
@@ -156,6 +164,7 @@ export async function POST(request: NextRequest) {
       sample_type: body.sample_type || null,
       bags_quantity_mt: body.bags_quantity_mt || null,
       bag_count: body.bag_count || null,
+      bag_weight_kg: bagWeightKg,
       processing_method: body.processing_method || null,
       workflow_stage: body.workflow_stage || 'received',
       assigned_to: body.assigned_to || null
