@@ -158,7 +158,11 @@ export function AccessRequestsManager() {
     }
   }
 
-  const getStatusBadge = (status: string) => {
+  const getStatusBadge = (status: string | null) => {
+    if (!status) {
+      return <Badge variant="outline">Unknown</Badge>
+    }
+
     switch (status) {
       case 'pending':
         return <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-200"><Clock className="w-3 h-3 mr-1" />Pending</Badge>
@@ -300,7 +304,7 @@ function RequestCard({
   onReject: (request: AccessRequest, reason?: string) => void
   actionLoading: string | null
   getRoleDisplayName: (role: string) => string
-  getStatusBadge: (status: string) => React.JSX.Element
+  getStatusBadge: (status: string | null) => React.JSX.Element
 }) {
   const [selectedRole, setSelectedRole] = useState<string>('')
   const [selectedLab, setSelectedLab] = useState<string>('')
