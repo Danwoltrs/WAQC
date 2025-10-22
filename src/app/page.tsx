@@ -14,7 +14,7 @@ interface Sample {
   id: string
   tracking_number: string
   origin: string
-  buyer: string | null
+  buyer_name: string | null
   quality_name: string | null
   status: string | null
   created_at: string | null
@@ -35,11 +35,27 @@ function DashboardContent() {
     try {
       const { data, error } = await supabase
         .from('samples')
-        .select('id, tracking_number, origin, buyer, quality_name, status, created_at')
+        .select(`
+          id,
+          tracking_number,
+          origin,
+          quality_name,
+          status,
+          created_at,
+          buyer:buyers(name)
+        `)
         .order('created_at', { ascending: false })
 
       if (error) throw error
-      setSamples(data || [])
+
+      // Transform to flatten buyer name
+      const transformedSamples = (data || []).map((sample: any) => ({
+        ...sample,
+        buyer_name: sample.buyer?.name || null,
+        buyer: undefined
+      }))
+
+      setSamples(transformedSamples)
     } catch (error) {
       console.error('Error fetching samples:', error)
     } finally {
@@ -52,25 +68,25 @@ function DashboardContent() {
     inProgress: samples.filter(s => s.status === 'in_progress').map(s => ({
       id: s.tracking_number,
       origin: s.origin,
-      client: s.buyer,
+      client: s.buyer_name,
       quality: s.quality_name || 'Standard',
     })),
     underReview: samples.filter(s => s.status === 'under_review').map(s => ({
       id: s.tracking_number,
       origin: s.origin,
-      client: s.buyer,
+      client: s.buyer_name,
       quality: s.quality_name || 'Standard',
     })),
     approved: samples.filter(s => s.status === 'approved').map(s => ({
       id: s.tracking_number,
       origin: s.origin,
-      client: s.buyer,
+      client: s.buyer_name,
       quality: s.quality_name || 'Standard',
     })),
     rejected: samples.filter(s => s.status === 'rejected').map(s => ({
       id: s.tracking_number,
       origin: s.origin,
-      client: s.buyer,
+      client: s.buyer_name,
       quality: s.quality_name || 'Standard',
     })),
   }
