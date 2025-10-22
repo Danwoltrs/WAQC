@@ -85,6 +85,11 @@ export function AccessRequestsManager() {
   const handleApprove = async (request: AccessRequest, selectedRole: string, selectedLabId?: string) => {
     setActionLoading(request.id)
     try {
+      if (!request.user_id) {
+        console.error('No user_id found for request')
+        return
+      }
+
       // Update the user's profile with the approved role and lab
       const { error: profileError } = await supabase
         .from('profiles')
