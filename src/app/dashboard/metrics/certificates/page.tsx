@@ -74,10 +74,16 @@ export default function CertificateStatisticsPage() {
 
       const { start, end } = getDateRange()
 
-      // Build query
+      // Build query with entity joins
       let query = supabase
         .from('samples')
-        .select('status, roaster, importer, bags, created_at')
+        .select(`
+          status,
+          bags_quantity_mt,
+          created_at,
+          roaster:roasters(name),
+          importer:buyers!samples_importer_id_fkey(name)
+        `)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', start)
         .lte('created_at', end)
@@ -105,32 +111,34 @@ export default function CertificateStatisticsPage() {
       let approvedCount = 0
       let rejectedCount = 0
 
-      certificates?.forEach(cert => {
-        const bags = cert.bags || 0
+      certificates?.forEach((cert: any) => {
+        const bags = cert.bags_quantity_mt || 0
         totalBags += bags
 
         if (cert.status === 'approved') approvedCount++
         else rejectedCount++
 
         // By roaster
-        if (cert.roaster) {
-          const existing = roasterMap.get(cert.roaster)
+        const roasterName = cert.roaster?.name
+        if (roasterName) {
+          const existing = roasterMap.get(roasterName)
           if (existing) {
             existing.count++
             existing.bags += bags
           } else {
-            roasterMap.set(cert.roaster, { count: 1, bags })
+            roasterMap.set(roasterName, { count: 1, bags })
           }
         }
 
         // By importer
-        if (cert.importer) {
-          const existing = importerMap.get(cert.importer)
+        const importerName = cert.importer?.name
+        if (importerName) {
+          const existing = importerMap.get(importerName)
           if (existing) {
             existing.count++
             existing.bags += bags
           } else {
-            importerMap.set(cert.importer, { count: 1, bags })
+            importerMap.set(importerName, { count: 1, bags })
           }
         }
 
