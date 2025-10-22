@@ -268,7 +268,12 @@ export function ClientAutoDetection({
 
     const { data: samples } = await supabase
       .from('samples')
-      .select('client_id, origin, supplier, created_at')
+      .select(`
+        client_id,
+        origin,
+        created_at,
+        supplier:suppliers(name)
+      `)
       .not('client_id', 'is', null)
 
     const historyMap: Record<string, any> = {}
@@ -304,8 +309,9 @@ export function ClientAutoDetection({
           history.originCounts[sample.origin] = (history.originCounts[sample.origin] || 0) + 1
         }
 
-        if (sample.supplier) {
-          history.supplierCounts[sample.supplier] = (history.supplierCounts[sample.supplier] || 0) + 1
+        const supplierName = (sample as any).supplier?.name
+        if (supplierName) {
+          history.supplierCounts[supplierName] = (history.supplierCounts[supplierName] || 0) + 1
         }
       }
 
