@@ -544,6 +544,420 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                   </div>
                 </div>
               </div>
+
+              {/* Pricing & Billing - Show inline when QC client */}
+              {formData.is_qc_client && (
+                <>
+                  <div className="border-t my-4" />
+
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2 justify-end">
+                      <Label htmlFor="use_origin_pricing" className="text-sm font-medium">
+                        Multi-Origin Pricing
+                      </Label>
+                      <Switch
+                        id="use_origin_pricing"
+                        checked={useOriginPricing}
+                        onCheckedChange={(checked) => {
+                          setUseOriginPricing(checked)
+                          if (!checked) {
+                            setOriginPricingList([])
+                          }
+                        }}
+                      />
+                    </div>
+
+                    {/* Show default pricing OR origin-specific pricing */}
+                    {!useOriginPricing ? (
+                      <>
+                        {/* Default Pricing Model - Compact Layout */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="pricing_model">Pricing Model</Label>
+                            <Select
+                              value={formData.pricing_model || 'per_sample'}
+                              onValueChange={(value: 'per_sample' | 'per_pound' | 'complimentary') =>
+                                setFormData({ ...formData, pricing_model: value })
+                              }
+                            >
+                              <SelectTrigger id="pricing_model">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="per_sample">Per Sample</SelectItem>
+                                <SelectItem value="per_pound">Per Pound (¢/lb)</SelectItem>
+                                <SelectItem value="complimentary">Complimentary</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="billing_basis">Billing Basis</Label>
+                            <Select
+                              value={formData.billing_basis || 'approved_only'}
+                              onValueChange={(value: 'approved_only' | 'approved_and_rejected') =>
+                                setFormData({ ...formData, billing_basis: value })
+                              }
+                            >
+                              <SelectTrigger id="billing_basis">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="approved_only">Approved Only</SelectItem>
+                                <SelectItem value="approved_and_rejected">Approved + Rejected</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        {formData.pricing_model === 'complimentary' && (
+                          <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                            <p className="text-sm text-blue-900 dark:text-blue-100">
+                              QC services are provided at no additional charge
+                            </p>
+                          </div>
+                        )}
+
+                        {formData.pricing_model !== 'complimentary' && (
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            {formData.pricing_model === 'per_sample' && (
+                              <div className="space-y-2">
+                                <Label htmlFor="price_per_sample">Price per Sample</Label>
+                                <Input
+                                  id="price_per_sample"
+                                  type="number"
+                                  step="0.01"
+                                  min="0"
+                                  value={formData.price_per_sample || ''}
+                                  onChange={(e) => setFormData({ ...formData, price_per_sample: e.target.value ? Number(e.target.value) : undefined })}
+                                  placeholder="50.00"
+                                />
+                              </div>
+                            )}
+
+                            {formData.pricing_model === 'per_pound' && (
+                              <div className="space-y-2">
+                                <Label htmlFor="price_per_pound_cents">Price per Pound (¢/lb)</Label>
+                                <Input
+                                  id="price_per_pound_cents"
+                                  type="number"
+                                  step="0.01"
+                                  min="0.25"
+                                  value={formData.price_per_pound_cents || ''}
+                                  onChange={(e) => setFormData({ ...formData, price_per_pound_cents: e.target.value ? Number(e.target.value) : undefined })}
+                                  placeholder="2.50"
+                                />
+                              </div>
+                            )}
+
+                            <div className="space-y-2">
+                              <Label htmlFor="currency">Currency</Label>
+                              <Select
+                                value={formData.currency || 'USD'}
+                                onValueChange={(value) => setFormData({ ...formData, currency: value })}
+                              >
+                                <SelectTrigger id="currency">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="USD">USD</SelectItem>
+                                  <SelectItem value="EUR">EUR</SelectItem>
+                                  <SelectItem value="BRL">BRL</SelectItem>
+                                  <SelectItem value="GBP">GBP</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="payment_terms">Payment Terms</Label>
+                              <Input
+                                id="payment_terms"
+                                value={formData.payment_terms || ''}
+                                onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
+                                placeholder="Net 30, Net 60, etc."
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          <div className="space-y-2">
+                            <Label htmlFor="fee_payer">Who Pays the Fee</Label>
+                            <Select
+                              value={formData.fee_payer || 'client_pays'}
+                              onValueChange={(value) => setFormData({ ...formData, fee_payer: value as any })}
+                            >
+                              <SelectTrigger id="fee_payer">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {FEE_PAYER_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+
+                        <div className="space-y-2">
+                          <Label htmlFor="billing_notes">Billing Notes</Label>
+                          <Textarea
+                            id="billing_notes"
+                            value={formData.billing_notes || ''}
+                            onChange={(e) => setFormData({ ...formData, billing_notes: e.target.value })}
+                            placeholder="Special billing instructions or notes"
+                            rows={3}
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* Multi-Origin Pricing Section */}
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Layers className="h-4 w-4 text-muted-foreground" />
+                              <h4 className="text-sm font-semibold">Origin-Specific Pricing Tiers</h4>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={addOriginPricing}
+                            >
+                              <Plus className="h-4 w-4 mr-2" />
+                              Add Origin
+                            </Button>
+                          </div>
+
+                          {loadingOriginPricing ? (
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              Loading origin pricing...
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              {originPricingList.map((pricing, index) => {
+                                const isActive = pricing.is_active !== false
+                                return (
+                                  <Card key={index} className={!isActive ? 'opacity-60' : ''}>
+                                    <CardHeader>
+                                      <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                          <MapPin className="h-4 w-4 text-muted-foreground" />
+                                          <CardTitle className="text-sm">{pricing.origin}</CardTitle>
+                                          {!isActive && <Badge variant="secondary">Inactive</Badge>}
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          size="sm"
+                                          variant="ghost"
+                                          onClick={() => removeOriginPricing(index)}
+                                        >
+                                          <Trash2 className="h-4 w-4 text-destructive" />
+                                        </Button>
+                                      </div>
+                                    </CardHeader>
+                                    <CardContent className="space-y-4">
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div className="space-y-2">
+                                          <Label htmlFor={`origin_name_${index}`}>Origin</Label>
+                                          <Select
+                                            value={pricing.origin}
+                                            onValueChange={(value) =>
+                                              updateOriginPricing(index, { origin: value })
+                                            }
+                                          >
+                                            <SelectTrigger id={`origin_name_${index}`}>
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {ORIGIN_OPTIONS.map((origin) => (
+                                                <SelectItem key={origin} value={origin}>
+                                                  {origin}
+                                                </SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+
+                                        <div className="space-y-2">
+                                          <Label htmlFor={`origin_pricing_model_${index}`}>Pricing Model</Label>
+                                          <Select
+                                            value={pricing.pricing_model}
+                                            onValueChange={(value: 'per_sample' | 'per_pound' | 'complimentary') =>
+                                              updateOriginPricing(index, { pricing_model: value })
+                                            }
+                                          >
+                                            <SelectTrigger id={`origin_pricing_model_${index}`}>
+                                              <SelectValue />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              <SelectItem value="per_sample">Per Sample</SelectItem>
+                                              <SelectItem value="per_pound">Per Pound (¢/lb)</SelectItem>
+                                              <SelectItem value="complimentary">Complimentary</SelectItem>
+                                            </SelectContent>
+                                          </Select>
+                                        </div>
+                                      </div>
+
+                                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {pricing.pricing_model === 'per_sample' && (
+                                          <div className="space-y-2">
+                                            <Label htmlFor={`origin_price_sample_${index}`}>Price per Sample</Label>
+                                            <Input
+                                              id={`origin_price_sample_${index}`}
+                                              type="number"
+                                              step="0.01"
+                                              min="0"
+                                              value={pricing.price_per_sample || ''}
+                                              onChange={(e) =>
+                                                updateOriginPricing(index, {
+                                                  price_per_sample: e.target.value ? Number(e.target.value) : undefined,
+                                                })
+                                              }
+                                              placeholder="50.00"
+                                            />
+                                          </div>
+                                        )}
+
+                                        {pricing.pricing_model === 'per_pound' && (
+                                          <div className="space-y-2">
+                                            <Label htmlFor={`origin_price_pound_${index}`}>Price per Pound (¢/lb)</Label>
+                                            <Input
+                                              id={`origin_price_pound_${index}`}
+                                              type="number"
+                                              step="0.01"
+                                              min="0.25"
+                                              value={pricing.price_per_pound_cents || ''}
+                                              onChange={(e) =>
+                                                updateOriginPricing(index, {
+                                                  price_per_pound_cents: e.target.value ? Number(e.target.value) : undefined,
+                                                })
+                                              }
+                                              placeholder="2.50"
+                                            />
+                                          </div>
+                                        )}
+                                      </div>
+
+                                      {pricing.pricing_model !== 'complimentary' && (
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                          <div className="space-y-2">
+                                            <Label htmlFor={`origin_currency_${index}`}>Currency</Label>
+                                            <Select
+                                              value={pricing.currency}
+                                              onValueChange={(value) =>
+                                                updateOriginPricing(index, { currency: value })
+                                              }
+                                            >
+                                              <SelectTrigger id={`origin_currency_${index}`}>
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="USD">USD</SelectItem>
+                                                <SelectItem value="EUR">EUR</SelectItem>
+                                                <SelectItem value="BRL">BRL</SelectItem>
+                                                <SelectItem value="GBP">GBP</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="space-y-2">
+                                            <Label htmlFor={`origin_billing_basis_${index}`}>Billing Basis</Label>
+                                            <Select
+                                              value={(pricing as any).billing_basis || 'approved_only'}
+                                              onValueChange={(value) =>
+                                                updateOriginPricing(index, { billing_basis: value } as any)
+                                              }
+                                            >
+                                              <SelectTrigger id={`origin_billing_basis_${index}`}>
+                                                <SelectValue />
+                                              </SelectTrigger>
+                                              <SelectContent>
+                                                <SelectItem value="approved_only">Approved Only</SelectItem>
+                                                <SelectItem value="approved_and_rejected">Approved + Rejected</SelectItem>
+                                              </SelectContent>
+                                            </Select>
+                                          </div>
+
+                                          <div className="space-y-2">
+                                            <Label htmlFor={`origin_payment_terms_${index}`}>Payment Terms</Label>
+                                            <Input
+                                              id={`origin_payment_terms_${index}`}
+                                              value={(pricing as any).payment_terms || ''}
+                                              onChange={(e) =>
+                                                updateOriginPricing(index, { payment_terms: e.target.value } as any)
+                                              }
+                                              placeholder="Net 30, etc."
+                                            />
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {pricing.pricing_model === 'complimentary' && (
+                                        <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                                          <p className="text-sm text-blue-900 dark:text-blue-100">
+                                            QC services for {pricing.origin} samples are complimentary
+                                          </p>
+                                        </div>
+                                      )}
+                                    </CardContent>
+                                  </Card>
+                                )
+                              })}
+                            </div>
+                          )}
+
+                          {/* Common fields for all origins */}
+                          <div className="pt-4 border-t space-y-4">
+                            <h4 className="text-sm font-semibold">Common Settings (All Origins)</h4>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              <div className="space-y-2">
+                                <Label htmlFor="fee_payer">Who Pays the Fee</Label>
+                                <Select
+                                  value={formData.fee_payer || 'client_pays'}
+                                  onValueChange={(value) => setFormData({ ...formData, fee_payer: value as any })}
+                                >
+                                  <SelectTrigger id="fee_payer">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {FEE_PAYER_OPTIONS.map((option) => (
+                                      <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              <Label htmlFor="billing_notes">Billing Notes</Label>
+                              <Textarea
+                                id="billing_notes"
+                                value={formData.billing_notes || ''}
+                                onChange={(e) => setFormData({ ...formData, billing_notes: e.target.value })}
+                                placeholder="Special billing instructions or notes"
+                                rows={3}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
+                            <p className="text-sm text-amber-900 dark:text-amber-100">
+                              <strong>Note:</strong> Origin-specific pricing applies when a sample&apos;s origin matches one of these tiers.
+                            </p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Vertical Separator */}
@@ -777,452 +1191,6 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
           </div>
         </CardContent>
       </Card>
-
-      {/* Pricing & Billing - Only show if they hired us for QC */}
-      {formData.is_qc_client && (
-        <Card>
-          <CardHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <CardTitle>Pricing & Billing</CardTitle>
-                <CardDescription>
-                  Fee structure and payment details
-                </CardDescription>
-              </div>
-              <div className="flex items-center gap-2">
-                <Label htmlFor="use_origin_pricing" className="text-sm font-medium">
-                  Multi-Origin Pricing
-                </Label>
-                <Switch
-                  id="use_origin_pricing"
-                  checked={useOriginPricing}
-                  onCheckedChange={(checked) => {
-                    setUseOriginPricing(checked)
-                    if (!checked) {
-                      setOriginPricingList([])
-                    }
-                  }}
-                />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-
-            {/* Show default pricing OR origin-specific pricing */}
-            {!useOriginPricing ? (
-              <>
-                {/* Default Pricing Model - Compact Layout */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="pricing_model">Pricing Model</Label>
-                    <Select
-                      value={formData.pricing_model || 'per_sample'}
-                      onValueChange={(value: 'per_sample' | 'per_pound' | 'complimentary') =>
-                        setFormData({ ...formData, pricing_model: value })
-                      }
-                    >
-                      <SelectTrigger id="pricing_model">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="per_sample">Per Sample</SelectItem>
-                        <SelectItem value="per_pound">Per Pound (¢/lb)</SelectItem>
-                        <SelectItem value="complimentary">Complimentary</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="billing_basis">Billing Basis</Label>
-                    <Select
-                      value={formData.billing_basis || 'approved_only'}
-                      onValueChange={(value: 'approved_only' | 'approved_and_rejected') =>
-                        setFormData({ ...formData, billing_basis: value })
-                      }
-                    >
-                      <SelectTrigger id="billing_basis">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="approved_only">Approved Only</SelectItem>
-                        <SelectItem value="approved_and_rejected">Approved + Rejected</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {formData.pricing_model === 'complimentary' && (
-                  <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-                    <p className="text-sm text-blue-900 dark:text-blue-100">
-                      QC services are provided at no additional charge
-                    </p>
-                  </div>
-                )}
-
-                {formData.pricing_model !== 'complimentary' && (
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {formData.pricing_model === 'per_sample' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="price_per_sample">Price per Sample</Label>
-                        <Input
-                          id="price_per_sample"
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          value={formData.price_per_sample || ''}
-                          onChange={(e) => setFormData({ ...formData, price_per_sample: e.target.value ? Number(e.target.value) : undefined })}
-                          placeholder="50.00"
-                        />
-                      </div>
-                    )}
-
-                    {formData.pricing_model === 'per_pound' && (
-                      <div className="space-y-2">
-                        <Label htmlFor="price_per_pound_cents">Price per Pound (¢/lb)</Label>
-                        <Input
-                          id="price_per_pound_cents"
-                          type="number"
-                          step="0.01"
-                          min="0.25"
-                          value={formData.price_per_pound_cents || ''}
-                          onChange={(e) => setFormData({ ...formData, price_per_pound_cents: e.target.value ? Number(e.target.value) : undefined })}
-                          placeholder="2.50"
-                        />
-                      </div>
-                    )}
-
-                    <div className="space-y-2">
-                      <Label htmlFor="currency">Currency</Label>
-                      <Select
-                        value={formData.currency || 'USD'}
-                        onValueChange={(value) => setFormData({ ...formData, currency: value })}
-                      >
-                        <SelectTrigger id="currency">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="USD">USD</SelectItem>
-                          <SelectItem value="EUR">EUR</SelectItem>
-                          <SelectItem value="BRL">BRL</SelectItem>
-                          <SelectItem value="GBP">GBP</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="payment_terms">Payment Terms</Label>
-                      <Input
-                        id="payment_terms"
-                        value={formData.payment_terms || ''}
-                        onChange={(e) => setFormData({ ...formData, payment_terms: e.target.value })}
-                        placeholder="Net 30, Net 60, etc."
-                      />
-                    </div>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="fee_payer">Who Pays the Fee</Label>
-                    <Select
-                      value={formData.fee_payer || 'client_pays'}
-                      onValueChange={(value) => setFormData({ ...formData, fee_payer: value as any })}
-                    >
-                      <SelectTrigger id="fee_payer">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {FEE_PAYER_OPTIONS.map((option) => (
-                          <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="billing_notes">Billing Notes</Label>
-                  <Textarea
-                    id="billing_notes"
-                    value={formData.billing_notes || ''}
-                    onChange={(e) => setFormData({ ...formData, billing_notes: e.target.value })}
-                    placeholder="Special billing instructions or notes"
-                    rows={3}
-                  />
-                </div>
-              </>
-            ) : (
-              <>
-                {/* Multi-Origin Pricing Section */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <Layers className="h-4 w-4 text-muted-foreground" />
-                      <h4 className="text-sm font-semibold">Origin-Specific Pricing Tiers</h4>
-                    </div>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      onClick={addOriginPricing}
-                    >
-                      <Plus className="h-4 w-4 mr-2" />
-                      Add Origin
-                    </Button>
-                  </div>
-
-                  {loadingOriginPricing ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading origin pricing...
-                    </div>
-                  ) : originPricingList.length === 0 ? (
-                    <div className="text-center py-8 text-muted-foreground bg-muted/50 rounded-lg border-2 border-dashed">
-                      <Layers className="h-8 w-8 mx-auto mb-2 opacity-50" />
-                      <p className="text-sm">No origin pricing configured</p>
-                      <p className="text-xs mt-1">Click &quot;Add Origin&quot; to create pricing tiers</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {originPricingList.map((pricing, index) => {
-                        const allOrigins = [...ORIGIN_OPTIONS, ...customOrigins].sort()
-
-                        return (
-                          <Card key={index} className="border-2">
-                            <CardContent className="p-4 space-y-4">
-                              <div className="flex items-center justify-between">
-                                <h5 className="text-sm font-semibold">{pricing.origin || `Origin #${index + 1}`}</h5>
-                                <div className="flex items-center gap-2">
-                                  <Label htmlFor={`origin_active_${index}`} className="text-sm">Active</Label>
-                                  <Switch
-                                    id={`origin_active_${index}`}
-                                    checked={pricing.is_active}
-                                    onCheckedChange={(checked) =>
-                                      updateOriginPricing(index, { is_active: checked })
-                                    }
-                                  />
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => removeOriginPricing(index)}
-                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                  >
-                                    <Trash2 className="h-4 w-4" />
-                                  </Button>
-                                </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                <div className="space-y-2">
-                                  <Label htmlFor={`origin_name_${index}`}>Origin Country *</Label>
-                                  <Select
-                                    value={pricing.origin}
-                                    onValueChange={(value) => {
-                                      if (value === '__add_new__') {
-                                        // Show input for new origin
-                                        const newOrigin = prompt('Enter new origin country:')
-                                        if (newOrigin && newOrigin.trim()) {
-                                          const trimmed = newOrigin.trim()
-                                          if (!allOrigins.includes(trimmed)) {
-                                            setCustomOrigins([...customOrigins, trimmed])
-                                          }
-                                          updateOriginPricing(index, { origin: trimmed })
-                                        }
-                                      } else {
-                                        updateOriginPricing(index, { origin: value })
-                                      }
-                                    }}
-                                  >
-                                    <SelectTrigger id={`origin_name_${index}`}>
-                                      <SelectValue placeholder="Select origin" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {allOrigins.map((origin) => (
-                                        <SelectItem key={origin} value={origin}>
-                                          {origin}
-                                        </SelectItem>
-                                      ))}
-                                      <SelectItem value="__add_new__">+ Add Custom Origin...</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                <div className="space-y-2">
-                                  <Label htmlFor={`origin_pricing_model_${index}`}>Pricing Model</Label>
-                                  <Select
-                                    value={pricing.pricing_model}
-                                    onValueChange={(value: 'per_sample' | 'per_pound' | 'complimentary') =>
-                                      updateOriginPricing(index, { pricing_model: value })
-                                    }
-                                  >
-                                    <SelectTrigger id={`origin_pricing_model_${index}`}>
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="per_sample">Per Sample</SelectItem>
-                                      <SelectItem value="per_pound">Per Pound</SelectItem>
-                                      <SelectItem value="complimentary">Complimentary</SelectItem>
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                {pricing.pricing_model === 'per_sample' && (
-                                  <div className="space-y-2">
-                                    <Label htmlFor={`origin_price_${index}`}>Price ({pricing.currency})</Label>
-                                    <Input
-                                      id={`origin_price_${index}`}
-                                      type="number"
-                                      step="0.01"
-                                      min="0"
-                                      value={pricing.price_per_sample || ''}
-                                      onChange={(e) =>
-                                        updateOriginPricing(index, {
-                                          price_per_sample: e.target.value ? Number(e.target.value) : undefined,
-                                        })
-                                      }
-                                      placeholder="50.00"
-                                    />
-                                  </div>
-                                )}
-
-                                {pricing.pricing_model === 'per_pound' && (
-                                  <div className="space-y-2">
-                                    <Label htmlFor={`origin_price_${index}`}>Price (¢/lb)</Label>
-                                    <Input
-                                      id={`origin_price_${index}`}
-                                      type="number"
-                                      step="0.01"
-                                      min="0.25"
-                                      value={pricing.price_per_pound_cents || ''}
-                                      onChange={(e) =>
-                                        updateOriginPricing(index, {
-                                          price_per_pound_cents: e.target.value ? Number(e.target.value) : undefined,
-                                        })
-                                      }
-                                      placeholder="2.50"
-                                    />
-                                  </div>
-                                )}
-                              </div>
-
-                              {pricing.pricing_model !== 'complimentary' && (
-                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                                  <div className="space-y-2">
-                                    <Label htmlFor={`origin_currency_${index}`}>Currency</Label>
-                                    <Select
-                                      value={pricing.currency}
-                                      onValueChange={(value) =>
-                                        updateOriginPricing(index, { currency: value })
-                                      }
-                                    >
-                                      <SelectTrigger id={`origin_currency_${index}`}>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="USD">USD</SelectItem>
-                                        <SelectItem value="EUR">EUR</SelectItem>
-                                        <SelectItem value="BRL">BRL</SelectItem>
-                                        <SelectItem value="GBP">GBP</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    <Label htmlFor={`origin_billing_basis_${index}`}>Billing Basis</Label>
-                                    <Select
-                                      value={(pricing as any).billing_basis || 'approved_only'}
-                                      onValueChange={(value) =>
-                                        updateOriginPricing(index, { billing_basis: value } as any)
-                                      }
-                                    >
-                                      <SelectTrigger id={`origin_billing_basis_${index}`}>
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="approved_only">Approved Only</SelectItem>
-                                        <SelectItem value="approved_and_rejected">Approved + Rejected</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-
-                                  <div className="space-y-2">
-                                    <Label htmlFor={`origin_payment_terms_${index}`}>Payment Terms</Label>
-                                    <Input
-                                      id={`origin_payment_terms_${index}`}
-                                      value={(pricing as any).payment_terms || ''}
-                                      onChange={(e) =>
-                                        updateOriginPricing(index, { payment_terms: e.target.value } as any)
-                                      }
-                                      placeholder="Net 30, etc."
-                                    />
-                                  </div>
-                                </div>
-                              )}
-
-                              {pricing.pricing_model === 'complimentary' && (
-                                <div className="bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
-                                  <p className="text-sm text-blue-900 dark:text-blue-100">
-                                    QC services for {pricing.origin} samples are complimentary
-                                  </p>
-                                </div>
-                              )}
-                            </CardContent>
-                          </Card>
-                        )
-                      })}
-                    </div>
-                  )}
-
-                  {/* Common fields for all origins */}
-                  <div className="pt-4 border-t space-y-4">
-                    <h4 className="text-sm font-semibold">Common Settings (All Origins)</h4>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="fee_payer">Who Pays the Fee</Label>
-                        <Select
-                          value={formData.fee_payer || 'client_pays'}
-                          onValueChange={(value) => setFormData({ ...formData, fee_payer: value as any })}
-                        >
-                          <SelectTrigger id="fee_payer">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {FEE_PAYER_OPTIONS.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label htmlFor="billing_notes">Billing Notes</Label>
-                      <Textarea
-                        id="billing_notes"
-                        value={formData.billing_notes || ''}
-                        onChange={(e) => setFormData({ ...formData, billing_notes: e.target.value })}
-                        placeholder="Special billing instructions or notes"
-                        rows={3}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded-lg p-4">
-                    <p className="text-sm text-amber-900 dark:text-amber-100">
-                      <strong>Note:</strong> Origin-specific pricing applies when a sample&apos;s origin matches one of these tiers.
-                    </p>
-                  </div>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {/* Form Actions */}
       <div className="flex items-center justify-end gap-4">
