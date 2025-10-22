@@ -77,6 +77,21 @@ interface ActivityLog {
   created_at: string
 }
 
+// Helper function to extract clean tracking number from potential JSON
+const parseTrackingNumber = (trackingNumber: string): string => {
+  try {
+    // Check if it's a JSON object string
+    if (trackingNumber.startsWith('{')) {
+      const parsed = JSON.parse(trackingNumber)
+      return parsed.pattern || trackingNumber
+    }
+    return trackingNumber
+  } catch {
+    // If parsing fails, return as-is
+    return trackingNumber
+  }
+}
+
 export default function SampleDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -234,7 +249,7 @@ export default function SampleDetailPage() {
               Back
             </Button>
             <div>
-              <h1 className="text-3xl font-bold tracking-tight">{sample.tracking_number}</h1>
+              <h1 className="text-3xl font-bold tracking-tight">{parseTrackingNumber(sample.tracking_number)}</h1>
               <p className="text-muted-foreground">
                 {sample.origin} {sample.quality_name && `• ${sample.quality_name}`}
               </p>

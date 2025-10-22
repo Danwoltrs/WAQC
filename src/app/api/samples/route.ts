@@ -152,6 +152,9 @@ export async function POST(request: NextRequest) {
       quality_spec_id: body.quality_spec_id || null,
       origin: body.origin,
       supplier: body.supplier,
+      exporter: body.exporter || null,
+      buyer: body.buyer || null,
+      roaster: body.roaster || null,
       status: body.status || 'received',
       storage_position: body.storage_position || null,
       // Phase 2 fields

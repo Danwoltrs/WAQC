@@ -58,6 +58,34 @@ interface Sample {
   created_at: string
 }
 
+// Helper function to extract clean tracking number from potential JSON
+const parseTrackingNumber = (trackingNumber: string): string => {
+  try {
+    // Check if it's a JSON object string
+    if (trackingNumber.startsWith('{')) {
+      const parsed = JSON.parse(trackingNumber)
+      return parsed.pattern || trackingNumber
+    }
+    return trackingNumber
+  } catch {
+    // If parsing fails, return as-is
+    return trackingNumber
+  }
+}
+
+// Helper function to format sample type for display
+const formatSampleType = (type: string | undefined): string => {
+  if (!type) return '-'
+  const typeMap: Record<string, string> = {
+    'pss': 'PSS',
+    'ss': 'SS',
+    'stocklot': 'Stocklot',
+    'offer': 'Offer',
+    'spot': 'Spot'
+  }
+  return typeMap[type] || type.toUpperCase()
+}
+
 export default function SamplesPage() {
   const [samples, setSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
@@ -563,6 +591,7 @@ export default function SamplesPage() {
                         />
                       </th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Sample Nr</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Origin</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Quality</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Exporter</th>
@@ -588,15 +617,17 @@ export default function SamplesPage() {
                           />
                         </td>
                         <td className="py-3 px-4">
-                          <div className="font-medium">{sample.tracking_number}</div>
-                          {sample.sample_type && (
-                            <div className="text-xs text-muted-foreground uppercase">{sample.sample_type}</div>
-                          )}
+                          <div className="font-medium">{parseTrackingNumber(sample.tracking_number)}</div>
+                        </td>
+                        <td className="py-3 px-4 text-sm">
+                          <Badge variant="outline" className="text-xs">
+                            {formatSampleType(sample.sample_type)}
+                          </Badge>
                         </td>
                         <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.exporter || sample.supplier || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.importer || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.buyer || sample.importer || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.roaster || sample.buyer || '-'}</td>
                         <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
                         <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
