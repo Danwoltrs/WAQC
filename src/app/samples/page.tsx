@@ -28,9 +28,10 @@ import {
 import {
   Plus, Search, Filter, Eye, MapPin, Calendar,
   CheckCircle, XCircle, Clock, AlertCircle, FileText,
-  Download, Printer, QrCode, MoreVertical, Users
+  Download, Printer, QrCode, MoreVertical, Users, Trash2
 } from 'lucide-react'
 import Link from 'next/link'
+import { useAuth } from '@/components/providers/auth-provider'
 
 interface Sample {
   id: string
@@ -87,6 +88,7 @@ const formatSampleType = (type: string | undefined): string => {
 }
 
 export default function SamplesPage() {
+  const { profile } = useAuth()
   const [samples, setSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -100,10 +102,14 @@ export default function SamplesPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   // Unique values for filters
   const [origins, setOrigins] = useState<string[]>([])
   const [qualities, setQualities] = useState<string[]>([])
+
+  // Check if user is global admin
+  const isGlobalAdmin = profile?.is_global_admin || profile?.qc_role === 'global_admin'
 
   useEffect(() => {
     loadSamples()
@@ -307,6 +313,117 @@ export default function SamplesPage() {
     }
   }
 
+  const handleDeleteSample = async (sample: Sample) => {
+    const sampleNumber = parseTrackingNumber(sample.tracking_number)
+
+    const confirmed = confirm(
+      `Are you sure you want to delete sample ${sampleNumber}?\n\n` +
+      `This action cannot be undone and will permanently delete:\n` +
+      `- The sample record\n` +
+      `- All quality assessments\n` +
+      `- All related certificates\n` +
+      `- All activity logs`
+    )
+
+    if (!confirmed) return
+
+    const userInput = prompt(`Please type the sample number to confirm deletion:\n${sampleNumber}`)
+
+    if (userInput !== sampleNumber) {
+      alert('Sample number does not match. Deletion cancelled.')
+      return
+    }
+
+    try {
+      setDeletingId(sample.id)
+      const response = await fetch(`/api/samples/${sample.id}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete sample')
+      }
+
+      // Remove from local state immediately
+      setSamples(prevSamples => prevSamples.filter(s => s.id !== sample.id))
+      setSelectedSamples(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(sample.id)
+        return newSet
+      })
+
+      alert(`Sample ${sampleNumber} deleted successfully`)
+    } catch (error) {
+      console.error('Error deleting sample:', error)
+      alert(error instanceof Error ? error.message : 'Failed to delete sample. Please try again.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedSamples.size === 0) {
+      alert('Please select at least one sample to delete')
+      return
+    }
+
+    const confirmed = confirm(
+      `Are you sure you want to delete ${selectedSamples.size} sample(s)?\n\n` +
+      `This action cannot be undone and will permanently delete:\n` +
+      `- All sample records\n` +
+      `- All quality assessments\n` +
+      `- All related certificates\n` +
+      `- All activity logs`
+    )
+
+    if (!confirmed) return
+
+    const confirmText = `DELETE ${selectedSamples.size} SAMPLES`
+    const userInput = prompt(`Please type "${confirmText}" to confirm bulk deletion:`)
+
+    if (userInput !== confirmText) {
+      alert('Confirmation text does not match. Deletion cancelled.')
+      return
+    }
+
+    try {
+      let successCount = 0
+      let failCount = 0
+      const sampleIds = Array.from(selectedSamples)
+
+      for (const sampleId of sampleIds) {
+        try {
+          const response = await fetch(`/api/samples/${sampleId}`, {
+            method: 'DELETE'
+          })
+
+          if (response.ok) {
+            successCount++
+            // Remove from local state immediately
+            setSamples(prev => prev.filter(s => s.id !== sampleId))
+          } else {
+            failCount++
+          }
+        } catch (error) {
+          console.error(`Error deleting sample ${sampleId}:`, error)
+          failCount++
+        }
+      }
+
+      setSelectedSamples(new Set())
+
+      if (failCount > 0) {
+        alert(`Deleted ${successCount} sample(s). ${failCount} failed.`)
+      } else {
+        alert(`Successfully deleted ${successCount} sample(s)`)
+      }
+    } catch (error) {
+      console.error('Error in bulk delete:', error)
+      alert('Failed to delete samples. Please try again.')
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: any; icon: any; label: string; className?: string }> = {
       received: { variant: 'secondary', icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -397,6 +514,15 @@ export default function SamplesPage() {
                     <Users className="h-4 w-4 mr-2" />
                     Assign to Cupper
                   </DropdownMenuItem>
+                  {isGlobalAdmin && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleBulkDelete} className="text-destructive focus:text-destructive">
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Selected
+                      </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
@@ -648,12 +774,25 @@ export default function SamplesPage() {
                           </div>
                         </td>
                         <td className="py-3 px-4">
-                          <Link href={`/samples/${sample.id}`}>
-                            <Button variant="outline" size="sm">
-                              <Eye className="h-3 w-3 mr-1" />
-                              View
-                            </Button>
-                          </Link>
+                          <div className="flex items-center gap-2">
+                            <Link href={`/samples/${sample.id}`}>
+                              <Button variant="outline" size="sm">
+                                <Eye className="h-3 w-3 mr-1" />
+                                View
+                              </Button>
+                            </Link>
+                            {isGlobalAdmin && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleDeleteSample(sample)}
+                                disabled={deletingId === sample.id}
+                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </Button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     ))}
