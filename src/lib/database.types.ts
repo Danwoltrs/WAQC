@@ -6032,6 +6032,141 @@ export type Database = {
           },
         ]
       }
+      buyers: {
+        Row: {
+          id: string
+          name: string
+          country: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          notes: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          country?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          country?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      exporters: {
+        Row: {
+          id: string
+          name: string
+          country: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          notes: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          country?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          country?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      roasters: {
+        Row: {
+          id: string
+          name: string
+          country: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          notes: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          country?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          country?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      suppliers: {
+        Row: {
+          id: string
+          name: string
+          country: string | null
+          region: string | null
+          contact_email: string | null
+          contact_phone: string | null
+          notes: string | null
+          created_at: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          id?: string
+          name: string
+          country?: string | null
+          region?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          id?: string
+          name?: string
+          country?: string | null
+          region?: string | null
+          contact_email?: string | null
+          contact_phone?: string | null
+          notes?: string | null
+          created_at?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       samples: {
         Row: {
           assigned_to: string | null
@@ -6039,7 +6174,8 @@ export type Database = {
           bag_weight_kg: number | null
           bags: number | null
           bags_quantity_mt: number | null
-          buyer: string | null
+          buyer_id: string | null
+          buyer_legacy: string | null
           buyer_contract_nr: string | null
           calculated_client_fee: number | null
           calculated_lab_fee: number | null
@@ -6049,23 +6185,27 @@ export type Database = {
           contract_number: string | null
           created_at: string | null
           destination: string | null
-          exporter: string | null
+          exporter_id: string | null
+          exporter_legacy: string | null
           exporter_contract_nr: string | null
           ico_marks: string | null
           ico_number: string | null
           id: string
-          importer: string | null
+          importer_id: string | null
+          importer_legacy: string | null
           laboratory_id: string | null
           origin: string
           processing_method: string | null
           quality_name: string | null
           quality_spec_id: string | null
-          roaster: string | null
+          roaster_id: string | null
+          roaster_legacy: string | null
           roaster_contract_nr: string | null
           sample_type: Database["public"]["Enums"]["sample_type_enum"] | null
           status: Database["public"]["Enums"]["sample_status"] | null
           storage_position: string | null
-          supplier: string
+          supplier_id: string | null
+          supplier_legacy: string | null
           supplier_type: string | null
           tracking_number: string
           updated_at: string | null
@@ -6078,7 +6218,8 @@ export type Database = {
           bag_weight_kg?: number | null
           bags?: number | null
           bags_quantity_mt?: number | null
-          buyer?: string | null
+          buyer_id?: string | null
+          buyer_legacy?: string | null
           buyer_contract_nr?: string | null
           calculated_client_fee?: number | null
           calculated_lab_fee?: number | null
@@ -6088,23 +6229,27 @@ export type Database = {
           contract_number?: string | null
           created_at?: string | null
           destination?: string | null
-          exporter?: string | null
+          exporter_id?: string | null
+          exporter_legacy?: string | null
           exporter_contract_nr?: string | null
           ico_marks?: string | null
           ico_number?: string | null
           id?: string
-          importer?: string | null
+          importer_id?: string | null
+          importer_legacy?: string | null
           laboratory_id?: string | null
           origin: string
           processing_method?: string | null
           quality_name?: string | null
           quality_spec_id?: string | null
-          roaster?: string | null
+          roaster_id?: string | null
+          roaster_legacy?: string | null
           roaster_contract_nr?: string | null
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
           status?: Database["public"]["Enums"]["sample_status"] | null
           storage_position?: string | null
-          supplier: string
+          supplier_id?: string | null
+          supplier_legacy?: string | null
           supplier_type?: string | null
           tracking_number: string
           updated_at?: string | null
@@ -6117,7 +6262,8 @@ export type Database = {
           bag_weight_kg?: number | null
           bags?: number | null
           bags_quantity_mt?: number | null
-          buyer?: string | null
+          buyer_id?: string | null
+          buyer_legacy?: string | null
           buyer_contract_nr?: string | null
           calculated_client_fee?: number | null
           calculated_lab_fee?: number | null
@@ -6127,23 +6273,27 @@ export type Database = {
           contract_number?: string | null
           created_at?: string | null
           destination?: string | null
-          exporter?: string | null
+          exporter_id?: string | null
+          exporter_legacy?: string | null
           exporter_contract_nr?: string | null
           ico_marks?: string | null
           ico_number?: string | null
           id?: string
-          importer?: string | null
+          importer_id?: string | null
+          importer_legacy?: string | null
           laboratory_id?: string | null
           origin?: string
           processing_method?: string | null
           quality_name?: string | null
           quality_spec_id?: string | null
-          roaster?: string | null
+          roaster_id?: string | null
+          roaster_legacy?: string | null
           roaster_contract_nr?: string | null
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
           status?: Database["public"]["Enums"]["sample_status"] | null
           storage_position?: string | null
-          supplier?: string
+          supplier_id?: string | null
+          supplier_legacy?: string | null
           supplier_type?: string | null
           tracking_number?: string
           updated_at?: string | null
