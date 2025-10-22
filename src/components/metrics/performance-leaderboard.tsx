@@ -64,24 +64,29 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
         endDate = new Date(year + 1, 0, 1).toISOString()
       }
 
-      // Build query
+      // Build query with entity joins
       let query = supabase
         .from('samples')
-        .select('supplier, sample_type, status, created_at')
-        .not('supplier', 'is', null)
+        .select(`
+          sample_type,
+          status,
+          created_at,
+          supplier:suppliers(name)
+        `)
+        .not('supplier_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', startDate)
         .lt('created_at', endDate)
 
-      // Apply stakeholder filters
+      // Apply stakeholder filters (using IDs now)
       if (filters?.supplier) {
-        query = query.eq('supplier', filters.supplier)
+        query = query.eq('supplier_id', filters.supplier)
       }
       if (filters?.importer) {
-        query = query.eq('importer', filters.importer)
+        query = query.eq('importer_id', filters.importer)
       }
       if (filters?.roaster) {
-        query = query.eq('roaster', filters.roaster)
+        query = query.eq('roaster_id', filters.roaster)
       }
       if (filters?.client) {
         query = query.eq('client_id', filters.client)
@@ -111,8 +116,11 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
         ssApproved: number
       }>()
 
-      samples?.forEach(sample => {
-        const existing = supplierMap.get(sample.supplier)
+      samples?.forEach((sample: any) => {
+        const supplierName = sample.supplier?.name
+        if (!supplierName) return
+
+        const existing = supplierMap.get(supplierName)
         const isPSS = sample.sample_type === 'pss'
         const isApproved = sample.status === 'approved'
 
@@ -129,7 +137,7 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
             if (isApproved) existing.ssApproved += 1
           }
         } else {
-          supplierMap.set(sample.supplier, {
+          supplierMap.set(supplierName, {
             totalSamples: 1,
             approvedSamples: isApproved ? 1 : 0,
             rejectedSamples: isApproved ? 0 : 1,
