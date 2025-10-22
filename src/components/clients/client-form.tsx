@@ -960,15 +960,18 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
               )}
             </div>
 
-            {/* Vertical Separator */}
-            <div className="hidden lg:block bg-border" />
+            {/* Certificate Pattern - Only show for QC clients */}
+            {formData.is_qc_client && (
+              <>
+                {/* Vertical Separator */}
+                <div className="hidden lg:block bg-border" />
 
-            {/* Right side: Certificate Pattern Configuration */}
-            <div className="space-y-4">
-              <div className="flex items-center gap-2 text-sm font-semibold">
-                <FileText className="h-4 w-4" />
-                Certificate Pattern
-              </div>
+                {/* Right side: Certificate Pattern Configuration */}
+                <div className="space-y-4">
+                  <div className="flex items-center gap-2 text-sm font-semibold">
+                    <FileText className="h-4 w-4" />
+                    Certificate Pattern
+                  </div>
 
               {/* Quality Code Configuration */}
               <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
@@ -1135,6 +1138,8 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                 </p>
               </div>
             </div>
+              </>
+            )}
           </div>
         </CardContent>
       </Card>
