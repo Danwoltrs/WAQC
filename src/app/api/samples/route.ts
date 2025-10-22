@@ -128,9 +128,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
     }
 
+    // Extract the tracking number string from the RPC response
+    // The RPC call returns the string directly, not wrapped in an object
+    const trackingNumber = typeof trackingNumberData === 'string'
+      ? trackingNumberData
+      : String(trackingNumberData)
+
+    console.log('Generated tracking number:', trackingNumber, 'Type:', typeof trackingNumberData, 'Raw:', trackingNumberData)
+
     // Prepare sample data
     const sampleData: SampleInsert = {
-      tracking_number: trackingNumberData,
+      tracking_number: trackingNumber,
       client_id: clientId,
       laboratory_id: body.laboratory_id,
       quality_spec_id: body.quality_spec_id || null,
@@ -198,7 +206,7 @@ export async function POST(request: NextRequest) {
     // Log activity
     await activities.sampleRegistered(
       (sample as any).id,
-      (sample as any).tracking_number,
+      trackingNumber,
       client?.company || 'Unknown Client',
       body.laboratory_id
     )
