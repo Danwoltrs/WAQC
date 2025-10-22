@@ -69,20 +69,29 @@ export default function OverviewDashboard() {
 
       let query = supabase
         .from('samples')
-        .select('supplier, importer, roaster, bags_quantity_mt, status, created_at, client_id, origin')
-        .not('supplier', 'is', null)
+        .select(`
+          bags_quantity_mt,
+          status,
+          created_at,
+          client_id,
+          origin,
+          supplier:suppliers(name),
+          importer:buyers!samples_importer_id_fkey(name),
+          roaster:roasters(name)
+        `)
+        .not('supplier_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('bags_quantity_mt', minBags)
 
-      // Apply stakeholder filters
+      // Apply stakeholder filters (using IDs now)
       if (filters.supplier) {
-        query = query.eq('supplier', filters.supplier)
+        query = query.eq('supplier_id', filters.supplier)
       }
       if (filters.importer) {
-        query = query.eq('importer', filters.importer)
+        query = query.eq('importer_id', filters.importer)
       }
       if (filters.roaster) {
-        query = query.eq('roaster', filters.roaster)
+        query = query.eq('roaster_id', filters.roaster)
       }
       if (filters.client) {
         query = query.eq('client_id', filters.client)
@@ -135,8 +144,11 @@ export default function OverviewDashboard() {
       // Calculate top performers
       const supplierMap = new Map<string, { approved: number; total: number; bags: number; origin?: string }>()
 
-      samples.forEach(sample => {
-        const existing = supplierMap.get(sample.supplier)
+      samples.forEach((sample: any) => {
+        const supplierName = sample.supplier?.name
+        if (!supplierName) return
+
+        const existing = supplierMap.get(supplierName)
         const isApproved = sample.status === 'approved'
 
         if (existing) {
@@ -144,7 +156,7 @@ export default function OverviewDashboard() {
           if (isApproved) existing.approved += 1
           existing.bags += sample.bags_quantity_mt || 0
         } else {
-          supplierMap.set(sample.supplier, {
+          supplierMap.set(supplierName, {
             approved: isApproved ? 1 : 0,
             total: 1,
             bags: sample.bags_quantity_mt || 0,
@@ -169,9 +181,13 @@ export default function OverviewDashboard() {
       // Calculate most active route
       const routeMap = new Map<string, number>()
 
-      samples.forEach(sample => {
-        if (sample.supplier && sample.importer && sample.roaster) {
-          const route = `${sample.supplier} → ${sample.importer} → ${sample.roaster}`
+      samples.forEach((sample: any) => {
+        const supplierName = sample.supplier?.name
+        const importerName = sample.importer?.name
+        const roasterName = sample.roaster?.name
+
+        if (supplierName && importerName && roasterName) {
+          const route = `${supplierName} → ${importerName} → ${roasterName}`
           const bags = sample.bags_quantity_mt || 0
           routeMap.set(route, (routeMap.get(route) || 0) + bags)
         }
@@ -187,14 +203,14 @@ export default function OverviewDashboard() {
       }
 
       // Get unique origins
-      const uniqueOrigins = [...new Set(samples.map(s => s.origin).filter(Boolean))] as string[]
+      const uniqueOrigins = [...new Set(samples.map((s: any) => s.origin).filter(Boolean))] as string[]
       setOrigins(uniqueOrigins.sort())
 
       // Calculate summary metrics
-      const totalBags = samples.reduce((sum, s) => sum + (s.bags_quantity_mt || 0), 0)
-      const approvedCount = samples.filter(s => s.status === 'approved').length
-      const activeExporters = new Set(samples.map(s => s.supplier)).size
-      const activeRoasters = new Set(samples.map(s => s.roaster).filter(Boolean)).size
+      const totalBags = samples.reduce((sum: number, s: any) => sum + (s.bags_quantity_mt || 0), 0)
+      const approvedCount = samples.filter((s: any) => s.status === 'approved').length
+      const activeExporters = new Set(samples.map((s: any) => s.supplier?.name).filter(Boolean)).size
+      const activeRoasters = new Set(samples.map((s: any) => s.roaster?.name).filter(Boolean)).size
 
       setMetrics({
         totalBags: Math.round(totalBags),
