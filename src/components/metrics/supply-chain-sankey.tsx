@@ -104,22 +104,30 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
 
       let query = supabase
         .from('samples')
-        .select('supplier, importer, roaster, bags_quantity_mt, status, created_at, client_id')
-        .not('supplier', 'is', null)
-        .not('importer', 'is', null)
-        .not('roaster', 'is', null)
+        .select(`
+          bags_quantity_mt,
+          status,
+          created_at,
+          client_id,
+          supplier:suppliers(name),
+          importer:buyers!samples_importer_id_fkey(name),
+          roaster:roasters(name)
+        `)
+        .not('supplier_id', 'is', null)
+        .not('importer_id', 'is', null)
+        .not('roaster_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('bags_quantity_mt', minBags)
 
-      // Apply stakeholder filters
+      // Apply stakeholder filters (using IDs now)
       if (filters?.supplier) {
-        query = query.eq('supplier', filters.supplier)
+        query = query.eq('supplier_id', filters.supplier)
       }
       if (filters?.importer) {
-        query = query.eq('importer', filters.importer)
+        query = query.eq('importer_id', filters.importer)
       }
       if (filters?.roaster) {
-        query = query.eq('roaster', filters.roaster)
+        query = query.eq('roaster_id', filters.roaster)
       }
       if (filters?.client) {
         query = query.eq('client_id', filters.client)
@@ -172,8 +180,14 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
         approvedSamples: number
       }>()
 
-      samples?.forEach(sample => {
-        const key = `${sample.supplier}|${sample.importer}|${sample.roaster}`
+      samples?.forEach((sample: any) => {
+        const supplierName = sample.supplier?.name
+        const importerName = sample.importer?.name
+        const roasterName = sample.roaster?.name
+
+        if (!supplierName || !importerName || !roasterName) return
+
+        const key = `${supplierName}|${importerName}|${roasterName}`
         const existing = flowMap.get(key)
 
         if (existing) {
@@ -184,9 +198,9 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
           }
         } else {
           flowMap.set(key, {
-            exporter: sample.supplier!,
-            importer: sample.importer!,
-            roaster: sample.roaster!,
+            exporter: supplierName,
+            importer: importerName,
+            roaster: roasterName,
             totalBags: sample.bags_quantity_mt || 0,
             totalSamples: 1,
             approvedSamples: sample.status === 'approved' ? 1 : 0
