@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
         quality_spec:client_qualities(custom_name, quality_code),
         supplier:suppliers(id, name, country),
         exporter:exporters(id, name, country),
-        buyer:buyers(id, name, country),
+        buyer:buyers!samples_buyer_id_fkey(id, name, country),
         roaster:roasters(id, name, country),
         importer:buyers!samples_importer_id_fkey(id, name, country)
       `)
