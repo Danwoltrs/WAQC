@@ -44,9 +44,9 @@ export function BasicInfoStep({
         return
       }
 
-      // Find the buyer client
+      // Find the buyer client - match against fantasy_name first, then company
       const buyerClient = buyers.find(c =>
-        c.company === formData.buyer || c.fantasy_name === formData.buyer
+        (c.fantasy_name || c.company) === formData.buyer
       )
 
       if (!buyerClient) {
@@ -71,7 +71,7 @@ export function BasicInfoStep({
     }
 
     loadBuyerQualities()
-  }, [formData.buyer])
+  }, [formData.buyer, buyers])
 
   // Reload buyer qualities when link template dialog is closed successfully
   const handleQualityTemplateLinked = async () => {

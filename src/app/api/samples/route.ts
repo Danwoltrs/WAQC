@@ -103,16 +103,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Validate required fields
-    if (!body.client_id || !body.laboratory_id || !body.origin || !body.supplier) {
+    if (!body.laboratory_id || !body.origin || !body.supplier) {
       return NextResponse.json({
-        error: 'Missing required fields: client_id, laboratory_id, origin, supplier'
+        error: 'Missing required fields: laboratory_id, origin, supplier'
       }, { status: 400 })
     }
+
+    // Client ID is optional - if not provided, use null for tracking number generation
+    const clientId = body.client_id || null
 
     // Generate tracking number using helper function
     const { data: trackingNumberData, error: trackingError } = await supabase
       .rpc('generate_tracking_number', {
-        p_client_id: body.client_id,
+        p_client_id: clientId,
         p_laboratory_id: body.laboratory_id,
         p_origin: body.origin
       })
@@ -125,26 +128,26 @@ export async function POST(request: NextRequest) {
     // Prepare sample data
     const sampleData: SampleInsert = {
       tracking_number: trackingNumberData,
-      client_id: body.client_id,
+      client_id: clientId,
       laboratory_id: body.laboratory_id,
-      quality_spec_id: body.quality_spec_id,
+      quality_spec_id: body.quality_spec_id || null,
       origin: body.origin,
       supplier: body.supplier,
       status: body.status || 'received',
-      storage_position: body.storage_position,
+      storage_position: body.storage_position || null,
       // Phase 2 fields
-      wolthers_contract_nr: body.wolthers_contract_nr,
-      exporter_contract_nr: body.exporter_contract_nr,
-      buyer_contract_nr: body.buyer_contract_nr,
-      roaster_contract_nr: body.roaster_contract_nr,
-      ico_number: body.ico_number,
-      container_nr: body.container_nr,
-      sample_type: body.sample_type,
-      bags_quantity_mt: body.bags_quantity_mt,
-      bag_count: body.bag_count,
-      processing_method: body.processing_method,
+      wolthers_contract_nr: body.wolthers_contract_nr || null,
+      exporter_contract_nr: body.exporter_contract_nr || null,
+      buyer_contract_nr: body.buyer_contract_nr || null,
+      roaster_contract_nr: body.roaster_contract_nr || null,
+      ico_number: body.ico_number || null,
+      container_nr: body.container_nr || null,
+      sample_type: body.sample_type || null,
+      bags_quantity_mt: body.bags_quantity_mt || null,
+      bag_count: body.bag_count || null,
+      processing_method: body.processing_method || null,
       workflow_stage: body.workflow_stage || 'received',
-      assigned_to: body.assigned_to
+      assigned_to: body.assigned_to || null
     }
 
     // Validate bag quantities if provided
