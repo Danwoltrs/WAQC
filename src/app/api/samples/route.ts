@@ -39,11 +39,9 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
-        supplier:suppliers(id, name, country),
         exporter:exporters(id, name, country),
-        buyer:buyers!samples_buyer_id_fkey(id, name, country),
-        roaster:roasters(id, name, country),
-        importer:buyers!samples_importer_id_fkey(id, name, country)
+        importer:importers(id, name, country),
+        roaster:roasters(id, name, country)
       `)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
@@ -84,23 +82,17 @@ export async function GET(request: NextRequest) {
       ...sample,
       quality_name: sample.quality_spec?.custom_name || null,
       quality_code: sample.quality_spec?.quality_code || null,
-      supplier_name: sample.supplier?.name || null,
-      supplier_country: sample.supplier?.country || null,
       exporter_name: sample.exporter?.name || null,
       exporter_country: sample.exporter?.country || null,
-      buyer_name: sample.buyer?.name || null,
-      buyer_country: sample.buyer?.country || null,
-      roaster_name: sample.roaster?.name || null,
-      roaster_country: sample.roaster?.country || null,
       importer_name: sample.importer?.name || null,
       importer_country: sample.importer?.country || null,
+      roaster_name: sample.roaster?.name || null,
+      roaster_country: sample.roaster?.country || null,
       // Remove nested objects to keep response clean
       quality_spec: undefined,
-      supplier: undefined,
       exporter: undefined,
-      buyer: undefined,
-      roaster: undefined,
-      importer: undefined
+      importer: undefined,
+      roaster: undefined
     }))
 
     return NextResponse.json({
@@ -189,11 +181,9 @@ export async function POST(request: NextRequest) {
       laboratory_id: body.laboratory_id,
       quality_spec_id: body.quality_spec_id || null,
       origin: body.origin,
-      supplier_id: body.supplier_id || null,
       exporter_id: body.exporter_id,
-      buyer_id: body.buyer_id || null,
-      roaster_id: body.roaster_id || null,
       importer_id: body.importer_id || null,
+      roaster_id: body.roaster_id || null,
       status: body.status || 'received',
       storage_position: body.storage_position || null,
       // Phase 2 fields
@@ -206,7 +196,8 @@ export async function POST(request: NextRequest) {
       sample_type: body.sample_type || null,
       bags_quantity_mt: body.bags_quantity_mt || null,
       bag_count: body.bag_count || null,
-      bag_weight_kg: bagWeightKg,
+      bag_weight_kg: body.bag_weight_kg || null,
+      bag_type: body.bag_type || null,
       processing_method: body.processing_method || null,
       workflow_stage: body.workflow_stage || 'received',
       assigned_to: body.assigned_to || null
