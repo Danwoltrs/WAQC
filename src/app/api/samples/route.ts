@@ -33,12 +33,17 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Build query with filters and join with client_qualities for quality name
+    // Build query with filters and join with related tables
     let query = supabase
       .from('samples')
       .select(`
         *,
-        quality_spec:client_qualities(custom_name, quality_code)
+        quality_spec:client_qualities(custom_name, quality_code),
+        supplier:suppliers(id, name, country),
+        exporter:exporters(id, name, country),
+        buyer:buyers(id, name, country),
+        roaster:roasters(id, name, country),
+        importer:buyers!samples_importer_id_fkey(id, name, country)
       `)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
@@ -74,13 +79,28 @@ export async function GET(request: NextRequest) {
 
     const { count } = await countQuery
 
-    // Transform samples to include quality_name at top level
+    // Transform samples to include flattened entity names
     const transformedSamples = (samples || []).map((sample: any) => ({
       ...sample,
       quality_name: sample.quality_spec?.custom_name || null,
       quality_code: sample.quality_spec?.quality_code || null,
-      // Remove the nested quality_spec to keep response clean
-      quality_spec: undefined
+      supplier_name: sample.supplier?.name || null,
+      supplier_country: sample.supplier?.country || null,
+      exporter_name: sample.exporter?.name || null,
+      exporter_country: sample.exporter?.country || null,
+      buyer_name: sample.buyer?.name || null,
+      buyer_country: sample.buyer?.country || null,
+      roaster_name: sample.roaster?.name || null,
+      roaster_country: sample.roaster?.country || null,
+      importer_name: sample.importer?.name || null,
+      importer_country: sample.importer?.country || null,
+      // Remove nested objects to keep response clean
+      quality_spec: undefined,
+      supplier: undefined,
+      exporter: undefined,
+      buyer: undefined,
+      roaster: undefined,
+      importer: undefined
     }))
 
     return NextResponse.json({
@@ -121,9 +141,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Validate required fields
-    if (!body.laboratory_id || !body.origin || !body.supplier) {
+    if (!body.laboratory_id || !body.origin || !body.exporter_id) {
       return NextResponse.json({
-        error: 'Missing required fields: laboratory_id, origin, supplier'
+        error: 'Missing required fields: laboratory_id, origin, exporter_id'
       }, { status: 400 })
     }
 
@@ -162,17 +182,18 @@ export async function POST(request: NextRequest) {
       bagWeightKg = Math.round(bagWeightKg * 100) / 100 // Round to 2 decimal places
     }
 
-    // Prepare sample data
+    // Prepare sample data with foreign key IDs
     const sampleData: SampleInsert = {
       tracking_number: trackingNumber,
       client_id: clientId,
       laboratory_id: body.laboratory_id,
       quality_spec_id: body.quality_spec_id || null,
       origin: body.origin,
-      supplier: body.supplier,
-      exporter: body.exporter || null,
-      buyer: body.buyer || null,
-      roaster: body.roaster || null,
+      supplier_id: body.supplier_id || null,
+      exporter_id: body.exporter_id,
+      buyer_id: body.buyer_id || null,
+      roaster_id: body.roaster_id || null,
+      importer_id: body.importer_id || null,
       status: body.status || 'received',
       storage_position: body.storage_position || null,
       // Phase 2 fields
