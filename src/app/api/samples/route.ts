@@ -114,13 +114,14 @@ export async function POST(request: NextRequest) {
 
     // Generate tracking number using helper function
     // Note: Function signature changed in migration 047 to support quality-based tracking
+    // TypeScript types will be regenerated in next deployment
     const { data: trackingNumberData, error: trackingError } = await supabase
       .rpc('generate_tracking_number', {
         p_client_id: clientId,
         p_origin: body.origin,
         p_quality_template_id: body.quality_spec_id || null,
         p_is_rejected: false
-      })
+      } as any)
 
     if (trackingError) {
       console.error('Error generating tracking number:', trackingError)
