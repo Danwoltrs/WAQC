@@ -34,7 +34,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let session = null
 
       try {
-        const result = await supabase.auth.getSession()
+        // Add timeout for getSession to prevent infinite hanging
+        const timeoutPromise = new Promise<any>((_, reject) =>
+          setTimeout(() => reject(new Error('Session fetch timeout')), 15000)
+        )
+
+        const sessionPromise = supabase.auth.getSession()
+
+        const result = await Promise.race([sessionPromise, timeoutPromise])
 
         if (result.error) {
           console.error('Error getting session:', result.error)
@@ -47,8 +54,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         session = result.data.session
-      } catch (err) {
+      } catch (err: any) {
         console.error('⚠️ Fatal error connecting to Supabase:', err)
+        // Only show network error screen for true network errors, not timeouts
+        if (err?.message === 'Session fetch timeout') {
+          console.error('⚠️ Slow connection detected. Continuing with longer timeout...')
+          // Don't set network error for timeout - allow the app to continue loading
+          setLoading(false)
+          return
+        }
         console.error('Your network may be blocking access to Supabase. Try using a different network or mobile hotspot.')
         setNetworkError(true)
         setLoading(false)
@@ -172,9 +186,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('Fetching profile for user:', userId)
 
-      // Add timeout to prevent hanging - reduced to 5 seconds for faster detection
+      // Add timeout to prevent hanging - 15 seconds allows for slower connections
       const timeoutPromise = new Promise<{ data: null, error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Profile fetch timeout' } }), 5000)
+        setTimeout(() => resolve({ data: null, error: { message: 'Profile fetch timeout' } }), 15000)
       )
 
       const fetchPromise = (async () => {
