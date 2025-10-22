@@ -140,7 +140,8 @@ export async function PATCH(
 
 /**
  * DELETE /api/client-qualities/[id]
- * Delete a client quality assignment
+ * Delete or deactivate a client quality assignment
+ * If the quality spec is in use by samples, it will be deactivated instead of deleted
  */
 export async function DELETE(
   request: NextRequest,
@@ -164,13 +165,28 @@ export async function DELETE(
       .eq('quality_spec_id', id)
 
     if (count && count > 0) {
+      // Deactivate instead of delete to preserve data integrity
+      const { error: updateError } = await supabase
+        .from('client_qualities')
+        .update({ is_active: false })
+        .eq('id', id)
+
+      if (updateError) {
+        console.error('Error deactivating client quality:', updateError)
+        return NextResponse.json({
+          error: 'Failed to deactivate quality specification',
+          details: updateError.message
+        }, { status: 500 })
+      }
+
       return NextResponse.json({
-        error: 'Cannot delete quality specification that is in use by samples',
-        sample_count: count
-      }, { status: 400 })
+        success: true,
+        deactivated: true,
+        message: `Quality specification has been deactivated (${count} sample(s) still using it)`
+      })
     }
 
-    // Delete client quality
+    // Delete client quality if no samples are using it
     const { error: deleteError } = await supabase
       .from('client_qualities')
       .delete()
@@ -184,7 +200,7 @@ export async function DELETE(
       }, { status: 500 })
     }
 
-    return NextResponse.json({ success: true })
+    return NextResponse.json({ success: true, deleted: true })
   } catch (error) {
     console.error('Error in DELETE /api/client-qualities/[id]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

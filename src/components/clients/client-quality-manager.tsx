@@ -78,6 +78,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
     template_id: '',
     origin: '',
     custom_name: '',
+    quality_code: '',
     notes: '',
     is_active: true
   })
@@ -120,6 +121,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
         template_id: quality.template_id,
         origin: quality.origin || '',
         custom_name: quality.custom_name || '',
+        quality_code: (quality as any).quality_code || '',
         notes: quality.notes || '',
         is_active: quality.is_active
       })
@@ -129,6 +131,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
         template_id: '',
         origin: '',
         custom_name: '',
+        quality_code: '',
         notes: '',
         is_active: true
       })
@@ -143,6 +146,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
         template_id: formData.template_id,
         origin: formData.origin || null,
         custom_name: formData.custom_name || null,
+        quality_code: formData.quality_code || null,
         notes: formData.notes || null,
         is_active: formData.is_active
       }
@@ -180,11 +184,23 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
       const response = await fetch(`/api/client-qualities/${qualityId}`, {
         method: 'DELETE'
       })
-      if (!response.ok) throw new Error('Failed to delete quality assignment')
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete quality assignment')
+      }
+
+      const result = await response.json()
+
+      // Show appropriate message based on whether it was deleted or deactivated
+      if (result.deactivated) {
+        alert(result.message || 'Quality specification has been deactivated')
+      }
+
       fetchClientQualities()
     } catch (err) {
       console.error('Error deleting quality assignment:', err)
-      alert('Failed to delete quality assignment. Please try again.')
+      alert(err instanceof Error ? err.message : 'Failed to delete quality assignment. Please try again.')
     }
   }
 
@@ -282,10 +298,24 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                     id="custom_name"
                     value={formData.custom_name}
                     onChange={(e) => setFormData({ ...formData, custom_name: e.target.value })}
-                    placeholder="e.g., Starbucks Natural Brazil 2024"
+                    placeholder="e.g., Alfenas Dulce"
                   />
                   <p className="text-sm text-muted-foreground">
                     Give this quality spec a custom name for this client
+                  </p>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="quality_code">Quality Code (Optional)</Label>
+                  <Input
+                    id="quality_code"
+                    value={formData.quality_code}
+                    onChange={(e) => setFormData({ ...formData, quality_code: e.target.value.toUpperCase() })}
+                    placeholder="e.g., AD"
+                    maxLength={4}
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    2-4 letter code for certificate numbering (e.g., &quot;AD&quot; for Alfenas Dulce)
                   </p>
                 </div>
 

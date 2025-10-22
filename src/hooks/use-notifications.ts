@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createClient } from '@/lib/supabase-browser'
+import { useAuth } from '@/components/providers/auth-provider'
 
 export interface Notification {
   id: string
@@ -36,8 +37,15 @@ export function useNotifications(options?: { unreadOnly?: boolean; limit?: numbe
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { profile, loading: authLoading } = useAuth()
 
   const fetchNotifications = useCallback(async () => {
+    // Don't fetch if profile isn't loaded yet or doesn't exist
+    if (authLoading || !profile) {
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
       const params = new URLSearchParams()
@@ -47,6 +55,12 @@ export function useNotifications(options?: { unreadOnly?: boolean; limit?: numbe
       const response = await fetch(`/api/notifications?${params.toString()}`)
 
       if (!response.ok) {
+        // Silently fail for 401/403 errors (user might not have access yet)
+        if (response.status === 401 || response.status === 403) {
+          setNotifications([])
+          setError(null)
+          return
+        }
         throw new Error('Failed to fetch notifications')
       }
 
@@ -56,10 +70,11 @@ export function useNotifications(options?: { unreadOnly?: boolean; limit?: numbe
     } catch (err) {
       console.error('Error fetching notifications:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch notifications')
+      setNotifications([]) // Set empty array on error
     } finally {
       setLoading(false)
     }
-  }, [options?.limit, options?.unreadOnly])
+  }, [options?.limit, options?.unreadOnly, profile, authLoading])
 
   const markAsRead = useCallback(async (notificationIds: string[]) => {
     try {
@@ -162,8 +177,15 @@ export function useActivityFeed(options?: { limit?: number; entityType?: string 
   const [activities, setActivities] = useState<ActivityFeedItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const { profile, loading: authLoading } = useAuth()
 
   const fetchActivities = useCallback(async () => {
+    // Don't fetch if profile isn't loaded yet or doesn't exist
+    if (authLoading || !profile) {
+      setLoading(false)
+      return
+    }
+
     try {
       setLoading(true)
       const params = new URLSearchParams()
@@ -173,6 +195,12 @@ export function useActivityFeed(options?: { limit?: number; entityType?: string 
       const response = await fetch(`/api/activity-feed?${params.toString()}`)
 
       if (!response.ok) {
+        // Silently fail for 401/403 errors (user might not have access yet)
+        if (response.status === 401 || response.status === 403) {
+          setActivities([])
+          setError(null)
+          return
+        }
         throw new Error('Failed to fetch activity feed')
       }
 
@@ -182,10 +210,11 @@ export function useActivityFeed(options?: { limit?: number; entityType?: string 
     } catch (err) {
       console.error('Error fetching activity feed:', err)
       setError(err instanceof Error ? err.message : 'Failed to fetch activity feed')
+      setActivities([]) // Set empty array on error
     } finally {
       setLoading(false)
     }
-  }, [options?.limit, options?.entityType])
+  }, [options?.limit, options?.entityType, profile, authLoading])
 
   const logActivity = useCallback(async (activity: {
     action: string

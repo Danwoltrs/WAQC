@@ -33,10 +33,13 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Build query with filters
+    // Build query with filters and join with client_qualities for quality name
     let query = supabase
       .from('samples')
-      .select('*')
+      .select(`
+        *,
+        quality_spec:client_qualities(custom_name, quality_code)
+      `)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -71,8 +74,17 @@ export async function GET(request: NextRequest) {
 
     const { count } = await countQuery
 
+    // Transform samples to include quality_name at top level
+    const transformedSamples = (samples || []).map((sample: any) => ({
+      ...sample,
+      quality_name: sample.quality_spec?.custom_name || null,
+      quality_code: sample.quality_spec?.quality_code || null,
+      // Remove the nested quality_spec to keep response clean
+      quality_spec: undefined
+    }))
+
     return NextResponse.json({
-      samples,
+      samples: transformedSamples,
       pagination: {
         total: count || 0,
         limit,
