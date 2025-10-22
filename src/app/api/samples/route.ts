@@ -91,6 +91,12 @@ export async function GET(request: NextRequest) {
         offset,
         hasMore: (offset + limit) < (count || 0)
       }
+    }, {
+      headers: {
+        'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+        'Pragma': 'no-cache',
+        'Expires': '0'
+      }
     })
   } catch (error) {
     console.error('Error in GET /api/samples:', error)
