@@ -26,7 +26,10 @@ export async function GET(
 
     const { data: sample, error } = await supabase
       .from('samples')
-      .select('*')
+      .select(`
+        *,
+        quality_name:client_qualities(custom_name)
+      `)
       .eq('id', id)
       .single()
 
@@ -38,7 +41,13 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch sample' }, { status: 500 })
     }
 
-    return NextResponse.json({ sample })
+    // Flatten the quality_name from nested object
+    const sampleWithQuality = {
+      ...sample,
+      quality_name: sample.quality_name?.custom_name || null
+    }
+
+    return NextResponse.json({ sample: sampleWithQuality })
   } catch (error) {
     console.error('Error in GET /api/samples/[id]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

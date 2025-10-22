@@ -363,7 +363,7 @@ export default function SampleDetailPage() {
                       <div className="text-sm text-muted-foreground mb-1">Importer</div>
                       <div className="text-sm font-medium flex items-center gap-2">
                         <Building2 className="h-4 w-4" />
-                        {sample.importer || '-'}
+                        {sample.buyer || '-'}
                       </div>
                     </div>
 
