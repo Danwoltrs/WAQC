@@ -357,8 +357,8 @@ export function BasicInfoStep({
         />
       </div>
 
-      {/* Quality Specification - Only show for PSS/SS with buyer selected */}
-      {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && formData.buyer && (
+      {/* Quality Specification - Only show for PSS/SS with buyer selected AND has a buyer client match */}
+      {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && formData.buyer && selectedBuyerClient && (
         <div className="space-y-2">
           <Label htmlFor="quality_spec_id">
             Quality Specification *
@@ -527,10 +527,9 @@ export function BasicInfoStep({
           if (selectedClient) {
             // Set client_id
             updateFormData('client_id', clientId)
-            // Auto-fill buyer if not already set
-            if (!formData.buyer) {
-              updateFormData('buyer', selectedClient.fantasy_name || selectedClient.company || selectedClient.name)
-            }
+            // Auto-fill buyer field with the selected client
+            const clientName = selectedClient.fantasy_name || selectedClient.company || selectedClient.name
+            updateFormData('buyer', clientName)
           }
         }}
         autoSelect={true}
