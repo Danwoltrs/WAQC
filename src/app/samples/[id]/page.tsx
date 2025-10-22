@@ -14,6 +14,7 @@ import {
   QrCode, Edit, Trash2, User, Building2
 } from 'lucide-react'
 import Link from 'next/link'
+import { useAuth } from '@/components/providers/auth-provider'
 
 interface Sample {
   id: string
@@ -95,11 +96,13 @@ const parseTrackingNumber = (trackingNumber: string): string => {
 export default function SampleDetailPage() {
   const params = useParams()
   const router = useRouter()
+  const { profile } = useAuth()
   const [sample, setSample] = useState<Sample | null>(null)
   const [assessments, setAssessments] = useState<QualityAssessment[]>([])
   const [certificates, setCertificates] = useState<Certificate[]>([])
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([])
   const [loading, setLoading] = useState(true)
+  const [deleting, setDeleting] = useState(false)
 
   useEffect(() => {
     if (params.id) {
@@ -139,6 +142,50 @@ export default function SampleDetailPage() {
       console.error('Error loading sample details:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleDelete = async () => {
+    if (!sample) return
+
+    const confirmed = confirm(
+      `Are you sure you want to delete sample ${parseTrackingNumber(sample.tracking_number)}?\n\n` +
+      `This action cannot be undone and will permanently delete:\n` +
+      `- The sample record\n` +
+      `- All quality assessments\n` +
+      `- All related certificates\n` +
+      `- All activity logs\n\n` +
+      `Type the sample number to confirm.`
+    )
+
+    if (!confirmed) return
+
+    const userInput = prompt(`Please type the sample number to confirm deletion:\n${parseTrackingNumber(sample.tracking_number)}`)
+
+    if (userInput !== parseTrackingNumber(sample.tracking_number)) {
+      alert('Sample number does not match. Deletion cancelled.')
+      return
+    }
+
+    try {
+      setDeleting(true)
+      const response = await fetch(`/api/samples/${sample.id}`, {
+        method: 'DELETE'
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to delete sample')
+      }
+
+      const data = await response.json()
+      alert(data.message || 'Sample deleted successfully')
+      router.push('/samples')
+    } catch (error) {
+      console.error('Error deleting sample:', error)
+      alert(error instanceof Error ? error.message : 'Failed to delete sample')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -272,6 +319,17 @@ export default function SampleDetailPage() {
               <Edit className="h-4 w-4 mr-2" />
               Edit
             </Button>
+            {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDelete}
+                disabled={deleting}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                {deleting ? 'Deleting...' : 'Delete'}
+              </Button>
+            )}
           </div>
         </div>
 

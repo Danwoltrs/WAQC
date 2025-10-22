@@ -157,3 +157,71 @@ export async function PATCH(
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
+
+/**
+ * DELETE /api/samples/[id]
+ * Delete a sample (global admins only)
+ */
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const supabase = await createClient()
+
+    // Check authentication
+    const { data: { user }, error: authError } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Check if user is a global admin
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_global_admin, qc_role')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile?.is_global_admin && profile?.qc_role !== 'global_admin') {
+      return NextResponse.json({
+        error: 'Forbidden: Only global admins can delete samples'
+      }, { status: 403 })
+    }
+
+    // Await params (Next.js 15)
+    const { id } = await params
+
+    // Check if sample exists
+    const { data: existingSample, error: fetchError } = await supabase
+      .from('samples')
+      .select('id, tracking_number')
+      .eq('id', id)
+      .single()
+
+    if (fetchError || !existingSample) {
+      return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+    }
+
+    // Delete sample (cascade will handle related records)
+    const { error: deleteError } = await supabase
+      .from('samples')
+      .delete()
+      .eq('id', id)
+
+    if (deleteError) {
+      console.error('Error deleting sample:', deleteError)
+      return NextResponse.json({
+        error: 'Failed to delete sample',
+        details: deleteError.message
+      }, { status: 500 })
+    }
+
+    return NextResponse.json({
+      success: true,
+      message: `Sample ${existingSample.tracking_number} deleted successfully`
+    })
+  } catch (error) {
+    console.error('Error in DELETE /api/samples/[id]:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
