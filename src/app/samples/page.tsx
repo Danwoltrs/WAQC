@@ -285,6 +285,74 @@ export default function SamplesPage() {
     }
   }
 
+  const handleBulkPrintTinSleeves = async () => {
+    if (selectedSamples.size === 0) {
+      alert('Please select at least one sample')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/samples/bulk/print-tin-sleeves', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sample_ids: Array.from(selectedSamples) })
+      })
+
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `tin-sleeves-${new Date().toISOString().split('T')[0]}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      } else {
+        const error = await response.json()
+        console.error('Failed to generate tin sleeve labels:', error)
+        alert('Failed to generate tin sleeve labels. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error printing tin sleeve labels:', error)
+      alert('Error generating tin sleeve labels. Please try again.')
+    }
+  }
+
+  const handleBulkPrintBagSleeves = async () => {
+    if (selectedSamples.size === 0) {
+      alert('Please select at least one sample')
+      return
+    }
+
+    try {
+      const response = await fetch('/api/samples/bulk/print-bag-sleeves', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sample_ids: Array.from(selectedSamples) })
+      })
+
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `bag-sleeves-${new Date().toISOString().split('T')[0]}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      } else {
+        const error = await response.json()
+        console.error('Failed to generate bag sleeve labels:', error)
+        alert('Failed to generate bag sleeve labels. Please try again.')
+      }
+    } catch (error) {
+      console.error('Error printing bag sleeve labels:', error)
+      alert('Error generating bag sleeve labels. Please try again.')
+    }
+  }
+
   const handleBulkAssign = async () => {
     // TODO: Add a dialog to select the cupper
     // For now, just show a placeholder
@@ -505,9 +573,13 @@ export default function SamplesPage() {
                     <Download className="h-4 w-4 mr-2" />
                     Export to Excel
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleBulkPrintLabels}>
+                  <DropdownMenuItem onClick={handleBulkPrintTinSleeves}>
                     <Printer className="h-4 w-4 mr-2" />
-                    Print Labels (4cm × A4)
+                    Print Tin Sleeves (4cm)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleBulkPrintBagSleeves}>
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print Bag Sleeves (4 per A4)
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleBulkPrintQRTable}>
                     <QrCode className="h-4 w-4 mr-2" />
