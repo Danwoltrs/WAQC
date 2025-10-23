@@ -12,18 +12,7 @@ export async function GET(
 
     const { data: configs, error } = await supabase
       .from('client_laboratory_config')
-      .select(`
-        id,
-        client_id,
-        laboratory_id,
-        starting_sequence,
-        notes,
-        laboratories (
-          id,
-          name,
-          location
-        )
-      `)
+      .select('*, laboratories(id, name, location)')
       .eq('client_id', id)
       .order('starting_sequence', { ascending: false })
 
