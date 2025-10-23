@@ -160,7 +160,7 @@ export async function PATCH(
 
 /**
  * DELETE /api/samples/[id]
- * Delete a sample (global admins only)
+ * Soft delete a sample (global admins only)
  */
 export async function DELETE(
   request: NextRequest,
@@ -191,10 +191,10 @@ export async function DELETE(
     // Await params (Next.js 15)
     const { id } = await params
 
-    // Check if sample exists
+    // Check if sample exists and is not already deleted
     const { data: existingSample, error: fetchError } = await supabase
       .from('samples')
-      .select('id, tracking_number')
+      .select('id, tracking_number, deleted_at')
       .eq('id', id)
       .single()
 
@@ -202,14 +202,24 @@ export async function DELETE(
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Delete sample (cascade will handle related records)
+    if (existingSample.deleted_at) {
+      return NextResponse.json({
+        error: 'Sample already deleted',
+        deleted_at: existingSample.deleted_at
+      }, { status: 400 })
+    }
+
+    // Soft delete the sample by setting deleted_at and deleted_by
     const { error: deleteError } = await supabase
       .from('samples')
-      .delete()
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: user.id
+      })
       .eq('id', id)
 
     if (deleteError) {
-      console.error('Error deleting sample:', deleteError)
+      console.error('Error soft deleting sample:', deleteError)
       return NextResponse.json({
         error: 'Failed to delete sample',
         details: deleteError.message
@@ -218,7 +228,9 @@ export async function DELETE(
 
     return NextResponse.json({
       success: true,
-      message: `Sample ${existingSample.tracking_number} deleted successfully`
+      message: `Sample ${existingSample.tracking_number} deleted successfully`,
+      deleted_by: user.id,
+      deleted_at: new Date().toISOString()
     })
   } catch (error) {
     console.error('Error in DELETE /api/samples/[id]:', error)
