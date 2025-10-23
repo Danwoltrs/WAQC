@@ -52,11 +52,7 @@ export async function GET(
         client_id,
         buyer_reference,
         exporter:exporters(name),
-        quality_spec:client_qualities(custom_name, quality_code),
-        clients (
-          id,
-          client_quality_names
-        )
+        quality_spec:client_qualities(custom_name, quality_code)
       `)
       .eq('id', id)
       .single()
@@ -68,10 +64,6 @@ export async function GET(
 
     // Get exporter name
     const exporterName = (sample as any).exporter?.name || 'N/A'
-
-    // Get client quality name (custom name from client)
-    const clientQualityNames = (sample as any).clients?.client_quality_names || {}
-    const clientQualityName = clientQualityNames[(sample as any).tracking_number]
 
     // Get full quality description
     const qualitySpec = (sample as any).quality_spec
@@ -140,7 +132,7 @@ export async function GET(
       exporter: exporterName,
       hide_exporter: (sample as any).hide_exporter_on_label || false,
       bags_display: bagsDisplay,
-      client_quality_name: clientQualityName,
+      client_quality_name: undefined,
       quality_description: qualityDescription,
       ico_number: (sample as any).oic_number,
       container_number: (sample as any).container_nr,

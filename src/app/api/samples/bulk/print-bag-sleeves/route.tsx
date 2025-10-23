@@ -51,11 +51,7 @@ export async function POST(request: NextRequest) {
         client_id,
         buyer_reference,
         exporter:exporters(name),
-        quality_spec:client_qualities(custom_name, quality_code),
-        clients (
-          id,
-          client_quality_names
-        )
+        quality_spec:client_qualities(custom_name, quality_code)
       `)
       .in('id', sample_ids)
 
@@ -88,10 +84,6 @@ export async function POST(request: NextRequest) {
     const labels: SampleBagSleeveLabelData[] = samples.map((sample: any) => {
       // Get exporter name
       const exporterName = sample.exporter?.name || 'N/A'
-
-      // Get client quality name
-      const clientQualityNames = sample.clients?.client_quality_names || {}
-      const clientQualityName = clientQualityNames[sample.tracking_number]
 
       // Get full quality description
       const qualitySpec = sample.quality_spec
@@ -154,7 +146,7 @@ export async function POST(request: NextRequest) {
         exporter: exporterName,
         hide_exporter: sample.hide_exporter_on_label || false,
         bags_display: bagsDisplay,
-        client_quality_name: clientQualityName,
+        client_quality_name: undefined,
         quality_description: qualityDescription,
         ico_number: sample.oic_number,
         container_number: sample.container_nr,

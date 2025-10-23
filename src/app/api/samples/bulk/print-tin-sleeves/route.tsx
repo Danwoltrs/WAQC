@@ -48,11 +48,7 @@ export async function POST(request: NextRequest) {
         quality_spec_id,
         client_id,
         exporter:exporters(name),
-        quality_spec:client_qualities(custom_name, quality_code),
-        clients (
-          id,
-          client_quality_names
-        )
+        quality_spec:client_qualities(custom_name, quality_code)
       `)
       .in('id', sample_ids)
 
@@ -94,10 +90,6 @@ export async function POST(request: NextRequest) {
       samples.map(async (sample: any) => {
         // Get exporter name
         const exporterName = sample.exporter?.name || 'N/A'
-
-        // Get client quality name
-        const clientQualityNames = sample.clients?.client_quality_names || {}
-        const clientQualityName = clientQualityNames[sample.tracking_number]
 
         // Get full quality description
         const qualitySpec = sample.quality_spec
@@ -146,7 +138,7 @@ export async function POST(request: NextRequest) {
           tracking_number: sample.tracking_number,
           sample_type: (sample.sample_type || 'PSS') as any,
           exporter: exporterName,
-          client_quality_name: clientQualityName,
+          client_quality_name: undefined,
           quality_description: qualityDescription,
           contracts,
           packaging,
