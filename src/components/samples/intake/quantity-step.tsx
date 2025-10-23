@@ -33,6 +33,30 @@ const BAG_WEIGHTS = {
 export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
   const [customWeight, setCustomWeight] = useState(false)
 
+  // Auto-select bag weight when bag type changes
+  useEffect(() => {
+    if (!formData.bag_type) return
+
+    // Big Bag: Auto-select 1 M/T (1000 kg)
+    if (formData.bag_type === 'big_bag') {
+      updateFormData('bag_weight_kg', '1000')
+      setCustomWeight(false)
+    }
+
+    // Bulk: Auto-select 21.6 M/T per container
+    else if (formData.bag_type === 'bulk') {
+      updateFormData('bag_weight_kg', '21600')
+      setCustomWeight(false)
+    }
+
+    // Jute/PP Bag: Auto-select based on origin
+    else if (formData.bag_type === 'jute_bag' || formData.bag_type === 'pp_bag') {
+      const isBrazil = formData.origin?.toLowerCase() === 'brazil'
+      updateFormData('bag_weight_kg', isBrazil ? '60' : '70')
+      setCustomWeight(false)
+    }
+  }, [formData.bag_type])
+
   // Calculate derived values when inputs change
   useEffect(() => {
     const bagCount = parseInt(formData.bag_count) || 0
@@ -94,10 +118,10 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
           </Select>
         </div>
 
-        {/* Bag Count */}
+        {/* Bag Count - Different behavior for Bulk */}
         <div className="space-y-2">
           <Label htmlFor="bag_count" className="flex items-center gap-2">
-            Quantity of Bags *
+            {formData.bag_type === 'bulk' ? 'Equivalent 60kg Bags *' : 'Quantity of Bags *'}
             <Badge variant="secondary" className="text-xs">Required</Badge>
           </Label>
           <Input
@@ -105,11 +129,28 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
             type="number"
             min="1"
             value={formData.bag_count}
-            onChange={(e) => updateFormData('bag_count', e.target.value)}
-            placeholder="e.g., 300"
+            onChange={(e) => {
+              const value = e.target.value
+              updateFormData('bag_count', value)
+
+              // For bulk: auto-calculate container count from 60kg bags
+              if (formData.bag_type === 'bulk' && value) {
+                const kg60Bags = parseInt(value) || 0
+                const totalKg = kg60Bags * 60
+                const totalMT = totalKg / 1000
+                const containers = Math.ceil(totalKg / 21600) // Round up to nearest container
+
+                // Store the actual container count separately for display
+                updateFormData('bulk_container_count', containers.toString())
+              }
+            }}
+            placeholder={formData.bag_type === 'bulk' ? 'e.g., 360' : 'e.g., 300'}
           />
           <p className="text-xs text-muted-foreground">
-            Number of bags/units
+            {formData.bag_type === 'bulk'
+              ? 'Number of 60kg equivalent bags'
+              : 'Number of bags/units'
+            }
           </p>
         </div>
 
@@ -213,13 +254,13 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
       )}
 
       {/* Info box for bulk */}
-      {formData.bag_type === 'bulk' && formData.bag_count && (
+      {formData.bag_type === 'bulk' && formData.bag_count && formData.bulk_container_count && (
         <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
           <p className="text-sm font-medium mb-1 text-blue-900 dark:text-blue-100">
             Bulk Container Info
           </p>
           <p className="text-xs text-blue-700 dark:text-blue-300">
-            {parseInt(formData.bag_count)} container(s) = {formData.equivalent_60kg_bags} equivalent 60kg bags
+            {formData.bag_count} equivalent 60kg bags = {formData.bulk_container_count} container(s)
           </p>
         </div>
       )}

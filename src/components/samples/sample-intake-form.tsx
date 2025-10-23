@@ -48,6 +48,7 @@ const initialFormData: FormData = {
   bag_type: '',
   bags_quantity_mt: '',
   equivalent_60kg_bags: '',
+  bulk_container_count: '',
   arrival_date: new Date().toISOString().split('T')[0],
   notes: '',
   photo_file: null

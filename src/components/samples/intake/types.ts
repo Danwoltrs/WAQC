@@ -33,6 +33,7 @@ export interface FormData {
   bag_type: 'jute_bag' | 'pp_bag' | 'big_bag' | 'bulk' | ''
   bags_quantity_mt: string // Auto-calculated
   equivalent_60kg_bags: string // Auto-calculated
+  bulk_container_count: string // Auto-calculated for bulk type
 
   // Sample Details
   arrival_date: string

@@ -59,16 +59,24 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
         <p className="text-sm font-medium">Review Your Information</p>
         <div className="grid grid-cols-2 gap-2 text-xs">
           <div>
-            <span className="text-muted-foreground">Origin:</span> {formData.origin}
+            <span className="text-muted-foreground">Origin:</span> {formData.origin || '-'}
           </div>
           <div>
-            <span className="text-muted-foreground">Supplier:</span> {formData.supplier}
+            <span className="text-muted-foreground">Supplier:</span> {formData.supplier || '-'}
           </div>
           <div>
-            <span className="text-muted-foreground">Type:</span> {formData.sample_type?.toUpperCase()}
+            <span className="text-muted-foreground">Type:</span> {formData.sample_type?.toUpperCase() || '-'}
           </div>
           <div>
-            <span className="text-muted-foreground">Quantity:</span> {formData.bags_quantity_mt || formData.bag_count || 'N/A'}
+            <span className="text-muted-foreground">Quantity:</span>{' '}
+            {formData.bags_quantity_mt
+              ? `${formData.bags_quantity_mt} MT`
+              : formData.bag_count
+                ? `${formData.bag_count} bags`
+                : 'N/A'}
+            {formData.equivalent_60kg_bags && formData.origin?.toLowerCase() === 'brazil' &&
+              ` (${formData.equivalent_60kg_bags} x 60kg)`
+            }
           </div>
         </div>
       </div>
