@@ -143,13 +143,13 @@ const managementNav: NavItem[] = [
         icon: UserPlus,
         permission: 'manage_clients',
       },
-      {
-        title: 'Quality Specs',
-        href: '/quality/templates',
-        icon: Crown,
-        permission: 'manage_quality_specs',
-      },
     ],
+  },
+  {
+    title: 'Quality Specs',
+    href: '/quality/templates',
+    icon: Crown,
+    permission: 'manage_quality_specs',
   },
   {
     title: 'Laboratories',

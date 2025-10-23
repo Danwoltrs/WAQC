@@ -2,7 +2,7 @@ import type { UserRole, Database } from './supabase'
 
 export const getUserPermissions = (qcRole: UserRole, laboratoryType?: string): string[] => {
   const basePermissions: Record<UserRole, string[]> = {
-    lab_personnel: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard'],
+    lab_personnel: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs'],
     lab_finance_manager: ['view_samples', 'view_lab_finance', 'generate_invoices', 'view_lab_dashboard'],
     lab_quality_manager: ['view_samples', 'create_samples', 'conduct_assessments', 'view_lab_dashboard', 'manage_quality_specs', 'view_lab_quality_metrics', 'manage_own_lab'],
     santos_hq_finance: ['view_samples', 'view_global_finance', 'view_all_labs', 'generate_global_reports', 'view_admin_dashboard'],
