@@ -42,7 +42,7 @@ export async function GET(
         exporter_contract_nr,
         roaster_contract_nr,
         bag_type,
-        number_of_bags,
+        bags,
         bag_weight_kg,
         equivalent_60kg_bags,
         quality_spec_id,
@@ -84,8 +84,8 @@ export async function GET(
     let bagsDisplay = 'N/A'
     if ((sample as any).bag_type === 'bulk' && (sample as any).equivalent_60kg_bags) {
       bagsDisplay = `Bulk (equiv. ${Math.round((sample as any).equivalent_60kg_bags)} bags)`
-    } else if ((sample as any).number_of_bags && (sample as any).bag_weight_kg) {
-      bagsDisplay = `${(sample as any).number_of_bags} x ${(sample as any).bag_weight_kg}kg`
+    } else if ((sample as any).bags && (sample as any).bag_weight_kg) {
+      bagsDisplay = `${(sample as any).bags} x ${(sample as any).bag_weight_kg}kg`
     }
 
     // Collect contracts

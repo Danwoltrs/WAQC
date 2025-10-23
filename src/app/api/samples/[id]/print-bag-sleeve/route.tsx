@@ -43,11 +43,11 @@ export async function GET(
         exporter_contract_nr,
         roaster_contract_nr,
         bag_type,
-        number_of_bags,
+        bags,
         bag_weight_kg,
         origin,
         container_nr,
-        oic_number,
+        ico_number,
         quality_spec_id,
         client_id,
         buyer_reference,
@@ -77,8 +77,8 @@ export async function GET(
 
     // Format bags display (origin-specific defaults: 60kg Brazil, 70kg others)
     let bagsDisplay = 'N/A'
-    if ((sample as any).number_of_bags && (sample as any).bag_weight_kg) {
-      bagsDisplay = `${(sample as any).number_of_bags} x ${(sample as any).bag_weight_kg}kg`
+    if ((sample as any).bags && (sample as any).bag_weight_kg) {
+      bagsDisplay = `${(sample as any).bags} x ${(sample as any).bag_weight_kg}kg`
 
       // Add origin indicator
       const origin = (sample as any).origin?.toLowerCase() || ''
@@ -134,7 +134,7 @@ export async function GET(
       bags_display: bagsDisplay,
       client_quality_name: undefined,
       quality_description: qualityDescription,
-      ico_number: (sample as any).oic_number,
+      ico_number: (sample as any).ico_number,
       container_number: (sample as any).container_nr,
       contracts,
       buyer_reference: (sample as any).buyer_reference,

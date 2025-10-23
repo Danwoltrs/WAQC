@@ -42,11 +42,11 @@ export async function POST(request: NextRequest) {
         exporter_contract_nr,
         roaster_contract_nr,
         bag_type,
-        number_of_bags,
+        bags,
         bag_weight_kg,
         origin,
         container_nr,
-        oic_number,
+        ico_number,
         quality_spec_id,
         client_id,
         buyer_reference,
@@ -97,8 +97,8 @@ export async function POST(request: NextRequest) {
 
       // Format bags display (origin-specific defaults)
       let bagsDisplay = 'N/A'
-      if (sample.number_of_bags && sample.bag_weight_kg) {
-        bagsDisplay = `${sample.number_of_bags} x ${sample.bag_weight_kg}kg`
+      if (sample.bags && sample.bag_weight_kg) {
+        bagsDisplay = `${sample.bags} x ${sample.bag_weight_kg}kg`
 
         // Add origin indicator
         const origin = sample.origin?.toLowerCase() || ''
@@ -148,7 +148,7 @@ export async function POST(request: NextRequest) {
         bags_display: bagsDisplay,
         client_quality_name: undefined,
         quality_description: qualityDescription,
-        ico_number: sample.oic_number,
+        ico_number: sample.ico_number,
         container_number: sample.container_nr,
         contracts,
         buyer_reference: sample.buyer_reference,
