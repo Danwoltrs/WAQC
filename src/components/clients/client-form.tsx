@@ -14,6 +14,7 @@ import { Database } from '@/lib/supabase'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN, generateCertificatePreview } from '@/types/certificate-pattern'
+import { ClientLabConfig } from './client-lab-config'
 
 type Client = Database['public']['Tables']['clients']['Row']
 type ClientInsert = Database['public']['Tables']['clients']['Insert']
@@ -1221,6 +1222,14 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Laboratory-Specific Configurations (Edit Mode Only) */}
+      {mode === 'edit' && clientId && (
+        <ClientLabConfig
+          clientId={clientId}
+          clientName={formData.company || formData.name || 'this client'}
+        />
+      )}
 
       {/* Form Actions */}
       <div className="flex items-center justify-end gap-4">
