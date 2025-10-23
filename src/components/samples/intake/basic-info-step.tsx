@@ -154,7 +154,7 @@ export function BasicInfoStep({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="laboratory_id">Laboratory *</Label>
           <Select
@@ -195,6 +195,23 @@ export function BasicInfoStep({
                   {origin}
                 </SelectItem>
               ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="sample_type">Sample Type *</Label>
+          <Select
+            value={formData.sample_type}
+            onValueChange={(value) => updateFormData('sample_type', value as any)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select type" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
+              <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
+              <SelectItem value="type">Type Sample</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -446,42 +463,23 @@ export function BasicInfoStep({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="processing_method">Processing Method</Label>
-          <Select
-            value={formData.processing_method}
-            onValueChange={(value) => updateFormData('processing_method', value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select method (optional)" />
-            </SelectTrigger>
-            <SelectContent>
-              {PROCESSING_METHODS.map((method) => (
-                <SelectItem key={method} value={method}>
-                  {method}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="sample_type">Sample Type *</Label>
-          <Select
-            value={formData.sample_type}
-            onValueChange={(value) => updateFormData('sample_type', value as any)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
-              <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
-              <SelectItem value="type">Type Sample</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+      <div className="space-y-2">
+        <Label htmlFor="processing_method">Processing Method</Label>
+        <Select
+          value={formData.processing_method}
+          onValueChange={(value) => updateFormData('processing_method', value)}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select method (optional)" />
+          </SelectTrigger>
+          <SelectContent>
+            {PROCESSING_METHODS.map((method) => (
+              <SelectItem key={method} value={method}>
+                {method}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
 
       {formData.sample_type === 'ss' && (
