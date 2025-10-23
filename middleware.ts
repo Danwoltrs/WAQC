@@ -17,18 +17,10 @@ export async function middleware(request: NextRequest) {
           return request.cookies.get(name)?.value
         },
         set(name: string, value: string, options: any) {
-          // Ensure cookie options are browser-compatible
-          const cookieOptions = {
-            ...options,
-            sameSite: 'lax' as const,
-            path: '/',
-            httpOnly: false, // Must be false for browser access
-          }
-
           request.cookies.set({
             name,
             value,
-            ...cookieOptions,
+            ...options,
           })
           response = NextResponse.next({
             request: {
@@ -38,20 +30,14 @@ export async function middleware(request: NextRequest) {
           response.cookies.set({
             name,
             value,
-            ...cookieOptions,
+            ...options,
           })
         },
         remove(name: string, options: any) {
-          const cookieOptions = {
-            ...options,
-            sameSite: 'lax' as const,
-            path: '/',
-          }
-
           request.cookies.set({
             name,
             value: '',
-            ...cookieOptions,
+            ...options,
           })
           response = NextResponse.next({
             request: {
@@ -61,7 +47,7 @@ export async function middleware(request: NextRequest) {
           response.cookies.set({
             name,
             value: '',
-            ...cookieOptions,
+            ...options,
           })
         },
       },
