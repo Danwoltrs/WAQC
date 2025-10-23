@@ -63,7 +63,12 @@ export async function POST(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching samples for tin sleeves:', error)
-      return NextResponse.json({ error: 'Failed to fetch samples' }, { status: 500 })
+      return NextResponse.json({
+        error: 'Failed to fetch samples',
+        details: error.message || String(error),
+        code: error.code,
+        hint: error.hint
+      }, { status: 500 })
     }
 
     if (!samples || samples.length === 0) {
