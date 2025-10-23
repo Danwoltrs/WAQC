@@ -34,17 +34,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let session = null
 
       try {
-        const { data, error } = await supabase.auth.getSession()
+        // Add a 60-second timeout to prevent infinite hanging
+        const timeoutPromise = new Promise<any>((_, reject) =>
+          setTimeout(() => reject(new Error('Session fetch timeout')), 60000)
+        )
 
-        if (error) {
-          console.error('Error getting session:', error)
+        const sessionPromise = supabase.auth.getSession()
+        const result = await Promise.race([sessionPromise, timeoutPromise])
+
+        if (result.error) {
+          console.error('Error getting session:', result.error)
           setLoading(false)
           return
         }
 
-        session = data.session
+        session = result.data.session
       } catch (err: any) {
         console.error('Error getting session:', err)
+        // On timeout, just continue - no session means show login
         setLoading(false)
         return
       }
@@ -166,13 +173,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[Auth] Fetching profile for user:', userId)
 
-      const { data: profileData, error } = await supabase
+      // Add 60-second timeout for profile fetch
+      const timeoutPromise = new Promise<any>((_, reject) =>
+        setTimeout(() => reject(new Error('Profile fetch timeout')), 60000)
+      )
+
+      const profilePromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .single()
 
+      const { data: profileData, error } = await Promise.race([
+        profilePromise,
+        timeoutPromise
+      ]).catch(err => {
+        if (err.message === 'Profile fetch timeout') {
+          console.warn('Profile fetch timed out, will use fallback')
+          return { data: null, error: { code: 'TIMEOUT', message: 'Profile fetch timeout' } }
+        }
+        throw err
+      })
+
       if (error) {
+        // Handle timeout with fallback for authenticated users
+        if (error.code === 'TIMEOUT' || error.message === 'Profile fetch timeout') {
+          console.warn('Profile fetch timed out, creating temporary profile')
+          const { data: { user: authUser } } = await supabase.auth.getUser()
+
+          // Create temporary profile to let user in
+          const tempProfile = {
+            id: userId,
+            email: authUser?.email || '',
+            full_name: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'User',
+            qc_enabled: true,
+            qc_role: 'lab_personnel' as UserRole,
+            is_global_admin: false,
+            laboratory_id: null,
+            client_id: null,
+            qc_permissions: [],
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          } as Profile
+
+          setProfile(tempProfile)
+          setPermissions(getUserPermissions('lab_personnel', undefined))
+          setLoading(false)
+
+          // Try to create real profile in background
+          createUserProfile(userId).catch(err =>
+            console.error('Background profile creation failed:', err)
+          )
+          return
+        }
+
         // If profile doesn't exist, try to create one
         if (error.code === 'PGRST116' || error.message?.includes('No rows returned') || error.message?.includes('JSON object requested, multiple (or no) rows returned')) {
           console.log('Profile not found, creating new profile for user')
