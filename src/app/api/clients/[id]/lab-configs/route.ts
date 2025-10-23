@@ -4,10 +4,11 @@ import { createClient } from '@/lib/supabase-server'
 // GET /api/clients/[id]/lab-configs - Get all lab configurations for a client
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
+    const { id } = await params
 
     const { data: configs, error } = await supabase
       .from('client_laboratory_config')
@@ -23,7 +24,7 @@ export async function GET(
           location
         )
       `)
-      .eq('client_id', params.id)
+      .eq('client_id', id)
       .order('starting_sequence', { ascending: false })
 
     if (error) {
@@ -41,10 +42,11 @@ export async function GET(
 // POST /api/clients/[id]/lab-configs - Create or update lab configuration
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
+    const { id } = await params
     const body = await request.json()
     const { laboratory_id, starting_sequence, notes } = body
 
@@ -66,7 +68,7 @@ export async function POST(
     const { data, error } = await supabase
       .from('client_laboratory_config')
       .upsert({
-        client_id: params.id,
+        client_id: id,
         laboratory_id,
         starting_sequence: parseInt(starting_sequence),
         notes: notes || null,
@@ -92,10 +94,11 @@ export async function POST(
 // DELETE /api/clients/[id]/lab-configs?config_id=xxx - Delete a lab configuration
 export async function DELETE(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
+    const { id } = await params
     const { searchParams } = new URL(request.url)
     const configId = searchParams.get('config_id')
 
@@ -110,7 +113,7 @@ export async function DELETE(
       .from('client_laboratory_config')
       .delete()
       .eq('id', configId)
-      .eq('client_id', params.id) // Ensure we only delete for this client
+      .eq('client_id', id) // Ensure we only delete for this client
 
     if (error) {
       console.error('Error deleting lab config:', error)
