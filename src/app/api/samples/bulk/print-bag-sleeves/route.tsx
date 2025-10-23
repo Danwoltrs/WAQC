@@ -49,7 +49,6 @@ export async function POST(request: NextRequest) {
         ico_number,
         quality_spec_id,
         client_id,
-        buyer_reference,
         exporter:exporters(name),
         quality_spec:client_qualities(custom_name, quality_code)
       `)
@@ -151,7 +150,7 @@ export async function POST(request: NextRequest) {
         ico_number: sample.ico_number,
         container_number: sample.container_nr,
         contracts,
-        buyer_reference: sample.buyer_reference,
+        buyer_reference: undefined,
         logo_url: logoBase64,
       }
     })
