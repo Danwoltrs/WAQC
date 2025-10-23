@@ -40,7 +40,7 @@ export function AccessRequestsManager() {
         .from('access_requests')
         .select(`
           *,
-          profiles:user_id (
+          profiles!user_id (
             email,
             full_name
           )
