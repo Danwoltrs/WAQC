@@ -206,7 +206,7 @@ export function LinkQualityTemplateDialog({
                     <SelectValue placeholder="Select origin (optional)" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No specific origin</SelectItem>
+                    <SelectItem value="none">No specific origin</SelectItem>
                     <SelectItem value="Brazil">Brazil</SelectItem>
                     <SelectItem value="Colombia">Colombia</SelectItem>
                     <SelectItem value="Ethiopia">Ethiopia</SelectItem>

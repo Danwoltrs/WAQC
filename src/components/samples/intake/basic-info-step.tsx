@@ -498,7 +498,7 @@ export function BasicInfoStep({
               <SelectValue placeholder="Select approved PSS sample..." />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">No linked sample</SelectItem>
+              <SelectItem value="none">No linked sample</SelectItem>
               {approvedPSSSamples.length > 0 ? (
                 approvedPSSSamples.map((sample) => (
                   <SelectItem key={sample.id} value={sample.id}>

@@ -214,7 +214,7 @@ export function CreateClientDialog({
                 <SelectValue placeholder="Select country (optional)" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="">No country selected</SelectItem>
+                <SelectItem value="none">No country selected</SelectItem>
                 <SelectItem value="Brazil">Brazil</SelectItem>
                 <SelectItem value="Colombia">Colombia</SelectItem>
                 <SelectItem value="Ethiopia">Ethiopia</SelectItem>
