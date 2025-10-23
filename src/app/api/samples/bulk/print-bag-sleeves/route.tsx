@@ -51,7 +51,6 @@ export async function POST(request: NextRequest) {
         client_id,
         buyer_reference,
         exporter:exporters(name),
-        supplier:suppliers(name),
         quality_specification:quality_specifications(
           name,
           description,
@@ -92,7 +91,7 @@ export async function POST(request: NextRequest) {
     // Prepare label data for all samples
     const labels: SampleBagSleeveLabelData[] = samples.map((sample: any) => {
       // Get exporter name
-      const exporterName = sample.exporter?.name || sample.supplier?.name || 'N/A'
+      const exporterName = sample.exporter?.name || 'N/A'
 
       // Get client quality name
       const clientQualityNames = sample.clients?.client_quality_names || {}

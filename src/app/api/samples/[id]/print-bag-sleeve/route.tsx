@@ -52,7 +52,6 @@ export async function GET(
         client_id,
         buyer_reference,
         exporter:exporters(name),
-        supplier:suppliers(name),
         quality_specification:quality_specifications(
           name,
           description,
@@ -72,7 +71,7 @@ export async function GET(
     }
 
     // Get exporter name
-    const exporterName = (sample as any).exporter?.name || (sample as any).supplier?.name || 'N/A'
+    const exporterName = (sample as any).exporter?.name || 'N/A'
 
     // Get client quality name (custom name from client)
     const clientQualityNames = (sample as any).clients?.client_quality_names || {}

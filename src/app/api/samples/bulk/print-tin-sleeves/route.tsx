@@ -48,7 +48,6 @@ export async function POST(request: NextRequest) {
         quality_spec_id,
         client_id,
         exporter:exporters(name),
-        supplier:suppliers(name),
         quality_specification:quality_specifications(
           name,
           description,
@@ -98,7 +97,7 @@ export async function POST(request: NextRequest) {
     const labelsWithQR: TinSleeveLabelData[] = await Promise.all(
       samples.map(async (sample: any) => {
         // Get exporter name
-        const exporterName = sample.exporter?.name || sample.supplier?.name || 'N/A'
+        const exporterName = sample.exporter?.name || 'N/A'
 
         // Get client quality name
         const clientQualityNames = sample.clients?.client_quality_names || {}
