@@ -88,7 +88,7 @@ export async function POST(
     }
 
     // Check for duplicate (same client, template, and origin)
-    let duplicateQuery = supabase
+    let duplicateQuery = (supabase as any)
       .from('client_qualities')
       .select('id')
       .eq('client_id', clientId)

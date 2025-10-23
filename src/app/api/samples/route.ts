@@ -34,7 +34,7 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0')
 
     // Build query with filters and join with related tables
-    let query = supabase
+    let query = (supabase as any)
       .from('samples')
       .select(`
         *,
@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count for pagination
-    let countQuery = supabase
+    let countQuery = (supabase as any)
       .from('samples')
       .select('*', { count: 'exact', head: true })
 

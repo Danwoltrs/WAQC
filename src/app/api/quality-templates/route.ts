@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0')
 
     // Build query with creator name and laboratory
-    let query = supabase
+    let query = (supabase as any)
       .from('quality_templates')
       .select(`
         *,
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     // Get usage counts for each template and format creator data
     const templatesWithUsage = await Promise.all(
       templates.map(async (template: any) => {
-        const { count } = await supabase
+        const { count } = await (supabase as any)
           .from('client_qualities')
           .select('*', { count: 'exact', head: true })
           .eq('template_id', template.id)
@@ -169,7 +169,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert template
-    const { data: template, error: insertError } = await supabase
+    const { data: template, error: insertError } = await (supabase as any)
       .from('quality_templates')
       .insert(templateData)
       .select()
@@ -195,7 +195,7 @@ export async function POST(request: NextRequest) {
       })
 
     // Get user's laboratory for activity logging
-    const { data: profile } = await supabase
+    const { data: profile } = await (supabase as any)
       .from('profiles')
       .select('laboratory_id')
       .eq('id', user.id)

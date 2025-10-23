@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const country = searchParams.get('country')
 
-    let query = supabase
+    let query = (supabase as any)
       .from('suppliers')
       .select('*')
       .order('name')
@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Supplier name is required' }, { status: 400 })
     }
 
-    const { data: supplier, error } = await supabase
+    const { data: supplier, error } = await (supabase as any)
       .from('suppliers')
       .insert({
         name: body.name,

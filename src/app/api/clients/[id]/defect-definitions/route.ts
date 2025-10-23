@@ -76,7 +76,7 @@ export async function GET(
     }
 
     // Also get global defects for this origin (client_id IS NULL)
-    let globalQuery = supabase
+    let globalQuery = (supabase as any)
       .from('defect_definitions')
       .select('*')
       .is('client_id', null)

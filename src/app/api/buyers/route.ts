@@ -19,10 +19,13 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const country = searchParams.get('country')
 
-    let query = supabase
+    // Build query - cast to any to avoid deep instantiation issues with generated types
+    const queryBuilder = (supabase as any)
       .from('buyers')
       .select('*')
       .order('name')
+
+    let query = queryBuilder
 
     if (search) {
       query = query.ilike('name', `%${search}%`)
@@ -66,7 +69,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Buyer name is required' }, { status: 400 })
     }
 
-    const { data: buyer, error } = await supabase
+    const { data: buyer, error } = await (supabase as any)
       .from('buyers')
       .insert({
         name: body.name,

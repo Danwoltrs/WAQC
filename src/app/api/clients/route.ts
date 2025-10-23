@@ -25,8 +25,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Build query
-    let query = supabase
+    // Build query - type assertion to avoid deep instantiation issues
+    let query = (supabase as any)
       .from('clients')
       .select('*')
       .order('created_at', { ascending: false })
@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
     }
 
     // Get total count for pagination
-    let countQuery = supabase
+    let countQuery = (supabase as any)
       .from('clients')
       .select('*', { count: 'exact', head: true })
 
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
 
     // Check for duplicate clients by email
     if (body.email) {
-      const { data: duplicates, error: dupError } = await supabase
+      const { data: duplicates, error: dupError } = await (supabase as any)
         .from('clients')
         .select('id, name, company, email')
         .eq('email', body.email)
@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Insert client
-    const { data: client, error: insertError } = await supabase
+    const { data: client, error: insertError } = await (supabase as any)
       .from('clients')
       .insert(clientData)
       .select()
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get user's laboratory for activity logging
-    const { data: profile } = await supabase
+    const { data: profile } = await (supabase as any)
       .from('profiles')
       .select('laboratory_id')
       .eq('id', user.id)

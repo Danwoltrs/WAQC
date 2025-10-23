@@ -26,12 +26,13 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate tracking number using database function
-    const { data: trackingNumber, error: generationError } = await supabase
+    const { data: trackingNumber, error: generationError} = await supabase
+      // @ts-ignore - RPC function parameters may not match generated types exactly
       .rpc('generate_tracking_number', {
         p_client_id: client_id,
         p_laboratory_id: laboratory_id,
         p_origin: origin || null
-      })
+      } as any)
 
     if (generationError) {
       console.error('Error generating tracking number:', generationError)

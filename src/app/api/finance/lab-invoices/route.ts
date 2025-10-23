@@ -93,7 +93,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get samples for the period
-    let samplesQuery = supabase
+    let samplesQuery = (supabase as any)
       .from('samples')
       .select('id, status, calculated_lab_fee')
       .eq('laboratory_id', laboratory_id)
@@ -109,8 +109,8 @@ export async function POST(request: NextRequest) {
 
     // Calculate counts based on billing basis
     const sampleCount = samples?.length || 0
-    const approvedCount = samples?.filter(s => s.status === 'approved').length || 0
-    const rejectedCount = samples?.filter(s => s.status === 'rejected').length || 0
+    const approvedCount = samples?.filter((s: any) => s.status === 'approved').length || 0
+    const rejectedCount = samples?.filter((s: any) => s.status === 'rejected').length || 0
 
     // Calculate total based on billing basis
     let totalAmount = 0
