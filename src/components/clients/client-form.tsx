@@ -76,10 +76,12 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
     fantasy_name: '',
     email: '',
     phone: '',
+    vat_number: '',
     address: '',
     city: '',
     state: '',
     country: '',
+    zip_code: '',
     client_types: [],
     is_qc_client: true,
     pricing_model: 'per_sample',
@@ -504,6 +506,16 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                     value={formData.phone || ''}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     placeholder="+1 234 567 8900"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="vat_number">VAT/CNPJ Number</Label>
+                  <Input
+                    id="vat_number"
+                    value={formData.vat_number || ''}
+                    onChange={(e) => setFormData({ ...formData, vat_number: e.target.value })}
+                    placeholder="12.345.678/0001-90"
                   />
                 </div>
               </div>
@@ -1153,14 +1165,26 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="address">Street Address</Label>
-            <Input
-              id="address"
-              value={formData.address || ''}
-              onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-              placeholder="123 Coffee Street"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="address">Street Address</Label>
+              <Input
+                id="address"
+                value={formData.address || ''}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
+                placeholder="123 Coffee Street"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="zip_code">ZIP/CEP Code</Label>
+              <Input
+                id="zip_code"
+                value={formData.zip_code || ''}
+                onChange={(e) => setFormData({ ...formData, zip_code: e.target.value })}
+                placeholder="01310-100"
+              />
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
