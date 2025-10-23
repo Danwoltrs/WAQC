@@ -575,14 +575,14 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
           )}
         </nav>
 
-        {/* Settings */}
-        <div className="p-2 border-t border-border">
+        {/* Settings - Temporarily disabled until page is created */}
+        {/* <div className="p-2 border-t border-border">
           <Link
             href="/settings"
             className={cn(
               'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
               isActive('/settings')
-                ? 'bg-accent text-accent-foreground' 
+                ? 'bg-accent text-accent-foreground'
                 : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
               !isOpen && 'justify-center'
             )}
@@ -590,7 +590,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
             <Settings className="h-4 w-4 flex-shrink-0" />
             {isOpen && <span>Settings</span>}
           </Link>
-        </div>
+        </div> */}
       </div>
     </aside>
   )

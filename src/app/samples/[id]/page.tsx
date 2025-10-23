@@ -39,6 +39,7 @@ interface Sample {
   bags_quantity_mt?: number
   bag_count?: number
   bag_weight_kg?: number
+  bag_type?: string
   wolthers_contract_nr?: string
   exporter_contract_nr?: string
   buyer_contract_nr?: string
@@ -407,14 +408,28 @@ export default function SampleDetailPage() {
                     <div className="text-sm text-muted-foreground">Processing:</div>
                     <div className="text-sm font-medium">{sample.processing_method || '-'}</div>
 
-                    <div className="text-sm text-muted-foreground">Bag Count:</div>
+                    <div className="text-sm text-muted-foreground">Quantity (bags):</div>
                     <div className="text-sm font-medium">{sample.bag_count || '-'}</div>
 
-                    <div className="text-sm text-muted-foreground">Quantity (MT):</div>
-                    <div className="text-sm font-medium">{sample.bags_quantity_mt || '-'}</div>
+                    <div className="text-sm text-muted-foreground">Bag Type:</div>
+                    <div className="text-sm font-medium">{sample.bag_type || '-'}</div>
 
-                    <div className="text-sm text-muted-foreground">Bag Weight (kg):</div>
-                    <div className="text-sm font-medium">{sample.bag_weight_kg || '-'}</div>
+                    <div className="text-sm text-muted-foreground">Per-bag Weight:</div>
+                    <div className="text-sm font-medium">
+                      {sample.bag_weight_kg ? `${sample.bag_weight_kg.toLocaleString()} kg` : '-'}
+                    </div>
+
+                    <div className="text-sm text-muted-foreground">Total:</div>
+                    <div className="text-sm font-medium">
+                      {sample.bags_quantity_mt ? `${sample.bags_quantity_mt} MT` : '-'}
+                    </div>
+
+                    <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
+                    <div className="text-sm font-medium">
+                      {sample.bags_quantity_mt
+                        ? `${Math.round((sample.bags_quantity_mt * 1000) / 60)} bags`
+                        : '-'}
+                    </div>
                   </div>
                 </CardContent>
               </Card>

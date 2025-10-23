@@ -256,6 +256,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
         price_per_pound_cents: formData.price_per_pound_cents ? Number(formData.price_per_pound_cents) : null,
         has_origin_pricing: useOriginPricing,
         certificate_pattern: certificatePattern,
+        tracking_number_format: certificatePattern, // Use same config for tracking numbers
       }
 
       const url = mode === 'create' ? '/api/clients' : `/api/clients/${clientId}`
