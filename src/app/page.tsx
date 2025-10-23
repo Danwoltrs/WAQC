@@ -1,11 +1,14 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
 import { supabase, type Database } from '@/lib/supabase'
 import { LoginForm } from '@/components/auth/login-form'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar, CheckCircle2, XCircle } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
@@ -21,6 +24,7 @@ interface Sample {
 }
 
 function DashboardContent() {
+  const router = useRouter()
   const { profile } = useAuth()
   const [samples, setSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
@@ -28,11 +32,21 @@ function DashboardContent() {
   const [rejectedFilter, setRejectedFilter] = useState('week')
   const [totalUsers, setTotalUsers] = useState(0)
   const [lastMonthUsers, setLastMonthUsers] = useState(0)
+  const [sampleDialogOpen, setSampleDialogOpen] = useState(false)
 
   useEffect(() => {
     fetchSamples()
     fetchUserCount()
   }, [profile])
+
+  const handleSampleCreated = (trackingNumber: string) => {
+    setSampleDialogOpen(false)
+    fetchSamples() // Refresh the samples list
+  }
+
+  const handleNewClient = () => {
+    router.push('/clients/new')
+  }
 
   const fetchUserCount = async () => {
     try {
@@ -299,8 +313,17 @@ function DashboardContent() {
       <div className="space-y-4">
         <h2 className="text-xl font-bold">Quick Actions</h2>
         <div className="flex gap-3">
-          <button className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium">
+          <button
+            onClick={() => setSampleDialogOpen(true)}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
             New Sample
+          </button>
+          <button
+            onClick={handleNewClient}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
+            New Client
           </button>
           <button className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-sm font-medium">
             Start Assessment
@@ -310,6 +333,16 @@ function DashboardContent() {
           </button>
         </div>
       </div>
+
+      {/* New Sample Dialog */}
+      <Dialog open={sampleDialogOpen} onOpenChange={setSampleDialogOpen}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Sample Intake</DialogTitle>
+          </DialogHeader>
+          <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} />
+        </DialogContent>
+      </Dialog>
 
       {/* Sample Lanes */}
       <div className="space-y-8">
