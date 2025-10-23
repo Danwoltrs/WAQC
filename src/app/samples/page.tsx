@@ -720,8 +720,8 @@ export default function SamplesPage() {
                         />
                       </th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Sample Nr</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Origin</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Quality</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Exporter</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Importer</th>
@@ -748,12 +748,12 @@ export default function SamplesPage() {
                         <td className="py-3 px-4">
                           <div className="font-medium">{parseTrackingNumber(sample.tracking_number)}</div>
                         </td>
+                        <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
                         <td className="py-3 px-4 text-sm">
                           <Badge variant="outline" className="text-xs">
                             {formatSampleType(sample.sample_type)}
                           </Badge>
                         </td>
-                        <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.exporter_name || sample.supplier || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.importer_name || sample.buyer || '-'}</td>
