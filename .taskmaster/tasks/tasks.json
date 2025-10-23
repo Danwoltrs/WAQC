@@ -881,13 +881,147 @@
         "priority": "medium",
         "subtasks": [],
         "updatedAt": "2025-10-22T15:09:09.277Z"
+      },
+      {
+        "id": "30",
+        "title": "Implement Per-Laboratory Starting Sequence Configuration",
+        "description": "Enable admins to configure different starting sequence numbers for each laboratory when working with the same client",
+        "details": "Created client_laboratory_config table to store lab-specific starting sequences. Updated generate_tracking_number() function to check lab-specific configs first before falling back to global client starting_sequence. Built API endpoints (GET/POST/DELETE /api/clients/[id]/lab-configs) and UI component in client edit screen. Each lab maintains independent continuous sequences per client across all years. Example: Brazil starts at 8900, Colombia at 5000, Guatemala at 2450 for the same client.",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [
+          "2",
+          "26"
+        ],
+        "priority": "medium",
+        "subtasks": [],
+        "updatedAt": "2025-10-23T18:20:32.419Z"
+      },
+      {
+        "id": "31",
+        "title": "Implement Sample Bag and Tin Sleeve Label Printing System",
+        "description": "Build two new label printing templates: tin sleeves (4cm height) and sample bag sleeves (4 per A4) with bulk printing, logo integration, and comprehensive sample information display including enhanced tin sleeve specifications with packaging details and bulk handling. Both labels must display client quality name (when exists) followed by full quality description below it.",
+        "status": "in-progress",
+        "dependencies": [
+          "16",
+          "30"
+        ],
+        "priority": "high",
+        "details": "Create two new PDF label components using @react-pdf/renderer: 1) Tin Sleeve Label (tin-sleeve-print.tsx): Design 4cm height labels for tin containers with enhanced specifications including: Date, Sample tracking number, Exporter, Client quality name (when exists) followed by full quality description below it, Contract references, Packaging type (jute bags, grain pro, etc), Number of bags with bulk handling logic. For bulk samples: Display equivalent to 60kg bags AND indicate bulk status (e.g., 'Bulk (equiv. 5 bags)'). Include Wolthers logo and QR code integration for sample tracking. 2) Sample Bag Sleeve Label (sample-bag-sleeve-print.tsx): Design A4 layout with 4 labels per page for sample bags with lab info moved to very bottom in small font, sample data focused at top. Include client quality name (when exists) followed by full quality description below it, Wolthers black logo (/images/logos/wolthers-logo-black.svg), lab address and contact info at bottom (Rua XV de Novembro, 94/96 3' andar, 11.010-150 Santos/SP, Phone: (13) 2127-4144, Fax: (13) 3219-1863, CNPJ: 62.298.906/0001-91), sample type selection (Type Sample/PSS/SS with optional exporter hiding), formatted date, sample tracking number, exporter name (conditionally hidden based on hide_exporter_on_label field), bag quantity with origin-specific defaults (60kg Brazil, 70kg other origins), ICO/Container numbers for SS samples, contract references (Wolthers, buyer, exporter, roaster) displayed in top right corner, support for multiple contract numbers. Create API routes: GET /api/samples/[id]/print-tin-sleeve for single tin sleeve, GET /api/samples/[id]/print-bag-sleeve for single bag sleeve, POST /api/samples/bulk/print-tin-sleeves and POST /api/samples/bulk/print-bag-sleeves for bulk printing. Integrate with existing QR code generation from /lib/qr-code.ts and follow established PDF patterns from existing sample-label.tsx. Ensure proper styling with Wolthers brand colors and Inter font family. Support laboratory-specific configurations and type sample prefix integration from Task 30.",
+        "testStrategy": "Test single tin sleeve label generation with all sample types (PSS/SS/Type), verify 4cm height formatting, QR code placement, and enhanced fields (date, client quality name followed by full quality description, packaging type, bag count with bulk indicators). Test bulk sample label display logic showing 'Bulk (equiv. X bags)' format. Test single bag sleeve label with logo rendering, lab info positioned at bottom in small font, sample data at top, and dual quality display (client quality name + full description). Test bulk printing for both formats with mixed sample types, verify proper pagination and label separation. Test hide_exporter_on_label functionality for Type samples. Validate bag quantity defaults (60kg Brazil, 70kg others) and bulk equivalency calculations. Test contract reference display logic (only show when values exist). Verify PDF generation performance with large batches (50+ samples). Test API endpoints return proper PDF headers and filename generation. Validate integration with existing sample tracking and QR code systems. Test packaging type field display and bulk handling across different sample configurations. Verify both labels always show client quality name (when exists) followed by full quality description below it.",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create Tin Sleeve Label PDF Component",
+            "description": "Create the tin-sleeve-print.tsx component for generating 4cm height tin container labels with enhanced specifications, bulk sample handling logic, and dual quality display (client quality name + full description).",
+            "dependencies": [],
+            "details": "Create src/components/print/tin-sleeve-print.tsx using @react-pdf/renderer with 4cm height layout. Include date, sample tracking number, exporter, client quality name (when exists) followed by full quality description below it (never show only one), contract references, packaging type, bag count with bulk handling logic. For bulk samples display 'Bulk (equiv. X bags)' format. Integrate Wolthers logo and QR code from existing lib/qr-code.ts patterns.",
+            "status": "done",
+            "testStrategy": "Test label generation with all sample types (PSS/SS/Type), verify 4cm height formatting, QR code placement, bulk sample display logic, and dual quality display showing client quality name followed by full description when both exist",
+            "updatedAt": "2025-10-23T18:59:33.483Z",
+            "parentId": "undefined"
+          },
+          {
+            "id": 2,
+            "title": "Create Sample Bag Sleeve Label PDF Component",
+            "description": "Create the sample-bag-sleeve-print.tsx component for generating A4 layouts with 4 labels per page, lab info at bottom in small font, sample data at top, and dual quality display.",
+            "dependencies": [],
+            "details": "Create src/components/print/sample-bag-sleeve-print.tsx using @react-pdf/renderer with A4 layout containing 4 labels per page. Focus sample data at top including client quality name (when exists) followed by full quality description below it. Move lab address/contact info to very bottom in small font (Rua XV de Novembro, 94/96 3' andar, 11.010-150 Santos/SP, Phone: (13) 2127-4144, Fax: (13) 3219-1863, CNPJ: 62.298.906/0001-91). Include Wolthers black logo, sample type selection with conditional exporter hiding, formatted date, tracking number, bag quantity with origin defaults (60kg Brazil, 70kg others), ICO/Container numbers for SS samples, contract references in top right corner.",
+            "status": "done",
+            "testStrategy": "Test A4 layout with 4 labels per page, verify lab info positioned at bottom in small font, sample data prioritized at top, conditional exporter hiding based on hide_exporter_on_label field, test origin-specific bag quantity defaults, verify dual quality display",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-23T18:59:33.485Z"
+          },
+          {
+            "id": 3,
+            "title": "Implement Single Tin Sleeve Print API Route",
+            "description": "Create the API route for generating single tin sleeve labels for individual samples.",
+            "dependencies": [
+              1
+            ],
+            "details": "Create src/app/api/samples/[id]/print-tin-sleeve/route.ts following existing PDF API patterns. Fetch sample data with all required fields (quality, contracts, packaging), validate permissions using RLS, generate PDF using tin-sleeve-print component, return proper PDF response headers. Handle error cases for missing samples or insufficient permissions.",
+            "status": "done",
+            "testStrategy": "Test API route with valid sample IDs, verify PDF generation and response headers, test error handling for invalid IDs and permissions",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-23T18:59:33.487Z"
+          },
+          {
+            "id": 4,
+            "title": "Implement Single Bag Sleeve Print API Route",
+            "description": "Create the API route for generating single sample bag sleeve labels for individual samples.",
+            "dependencies": [
+              2
+            ],
+            "details": "Create src/app/api/samples/[id]/print-bag-sleeve/route.ts following existing PDF API patterns. Fetch sample data including contracts, quality information, exporter details, and hide_exporter_on_label field. Validate user permissions, generate PDF using sample-bag-sleeve-print component, return proper PDF response with correct content-type headers.",
+            "status": "done",
+            "testStrategy": "Test single bag sleeve generation with different sample types, verify conditional field display, test permission validation",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-23T18:59:33.488Z"
+          },
+          {
+            "id": 5,
+            "title": "Implement Bulk Tin Sleeve Print API Route",
+            "description": "Create the API route for bulk printing multiple tin sleeve labels with batch processing support.",
+            "dependencies": [
+              1,
+              3
+            ],
+            "details": "Create src/app/api/samples/bulk/print-tin-sleeves/route.ts accepting POST requests with sample ID arrays. Implement batch processing to fetch multiple samples efficiently, validate bulk permissions, generate combined PDF document with multiple tin sleeve labels, handle pagination for large batches. Include proper error handling for partially failed batches.",
+            "status": "done",
+            "testStrategy": "Test bulk printing with various batch sizes, verify PDF pagination, test error handling for mixed valid/invalid sample IDs",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-23T18:59:33.490Z"
+          },
+          {
+            "id": 6,
+            "title": "Implement Bulk Bag Sleeve Print API Route",
+            "description": "Create the API route for bulk printing multiple sample bag sleeve labels with efficient batch processing.",
+            "dependencies": [
+              2,
+              4
+            ],
+            "details": "Create src/app/api/samples/bulk/print-bag-sleeves/route.ts accepting POST requests with sample ID arrays. Implement efficient batch data fetching, validate permissions for all samples, generate multi-page PDF with 4 labels per A4 page, handle proper page breaks and layout optimization. Include batch size limits and progress tracking for large requests.",
+            "status": "done",
+            "testStrategy": "Test bulk bag sleeve printing with different batch sizes, verify proper A4 page layout with 4 labels per page, test batch size limits",
+            "parentId": "undefined",
+            "updatedAt": "2025-10-23T18:59:33.492Z"
+          },
+          {
+            "id": 7,
+            "title": "Integrate Print Actions in Sample Management UI",
+            "description": "Add print buttons and bulk print functionality to existing sample management interfaces.",
+            "dependencies": [
+              3,
+              4,
+              5,
+              6
+            ],
+            "details": "Update sample list/grid components to include print action buttons for tin sleeve and bag sleeve labels. Add bulk selection checkboxes with bulk print dropdown menu. Implement print dialogs with preview options and batch size confirmation. Handle loading states during PDF generation and provide download/print options. Follow existing UI patterns from sample management components.",
+            "status": "pending",
+            "testStrategy": "Test individual and bulk print actions from sample management UI, verify loading states and error handling, test print preview functionality",
+            "parentId": "undefined"
+          },
+          {
+            "id": 8,
+            "title": "Test and Validate Complete Label Printing System",
+            "description": "Comprehensive testing of the complete label printing system including all templates, API routes, UI integration, and design refinements.",
+            "dependencies": [
+              7
+            ],
+            "details": "Perform end-to-end testing of both tin sleeve and bag sleeve label printing with design refinements. Test dual quality display (client quality name + full description) for both label types. Verify bag sleeve labels have lab info at bottom in small font with sample data prioritized at top. Test with various sample types (PSS, SS, Type), bulk samples with bag equivalent calculations, different client configurations, and laboratory-specific settings. Verify QR code generation, logo placement, font rendering, and PDF quality. Test print system under load with large batches and validate memory usage.",
+            "status": "pending",
+            "testStrategy": "End-to-end testing with all sample types, load testing with large batches, visual validation of PDF output quality with design refinements (lab info at bottom, dual quality display), memory usage monitoring",
+            "parentId": "undefined"
+          }
+        ],
+        "updatedAt": "2025-10-23T18:59:33.492Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-22T15:09:09.278Z",
-      "taskCount": 29,
-      "completedCount": 16,
+      "lastModified": "2025-10-23T18:59:33.492Z",
+      "taskCount": 31,
+      "completedCount": 17,
       "tags": [
         "master"
       ]
