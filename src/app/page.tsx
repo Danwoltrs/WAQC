@@ -26,10 +26,44 @@ function DashboardContent() {
   const [loading, setLoading] = useState(true)
   const [approvedFilter, setApprovedFilter] = useState('week')
   const [rejectedFilter, setRejectedFilter] = useState('week')
+  const [totalUsers, setTotalUsers] = useState(0)
+  const [lastMonthUsers, setLastMonthUsers] = useState(0)
 
   useEffect(() => {
     fetchSamples()
+    fetchUserCount()
   }, [profile])
+
+  const fetchUserCount = async () => {
+    try {
+      // Get total users with qc_enabled
+      const { count: totalCount, error: totalError } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('qc_enabled', true)
+
+      if (totalError) throw totalError
+
+      // Get users created last month
+      const now = new Date()
+      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0)
+
+      const { count: lastMonthCount, error: lastMonthError } = await supabase
+        .from('profiles')
+        .select('*', { count: 'exact', head: true })
+        .eq('qc_enabled', true)
+        .gte('created_at', lastMonthStart.toISOString())
+        .lte('created_at', lastMonthEnd.toISOString())
+
+      if (lastMonthError) throw lastMonthError
+
+      setTotalUsers(totalCount || 0)
+      setLastMonthUsers(lastMonthCount || 0)
+    } catch (error) {
+      console.error('Error fetching user count:', error)
+    }
+  }
 
   const fetchSamples = async () => {
     try {
@@ -204,11 +238,13 @@ function DashboardContent() {
     ? (processingTimes.reduce((a, b) => a + b, 0) / processingTimes.length).toFixed(1)
     : '0.0'
 
+  const userChange = lastMonthUsers > 0 ? `+${lastMonthUsers}` : '0'
+
   const stats = [
     { title: 'Active Samples', value: samples.filter(s => s.status === 'in_progress' || s.status === 'under_review').length.toString(), change: '+12%', icon: SampleTin, color: 'lab-icon' },
     { title: 'Pending Assessments', value: samples.filter(s => s.status === 'under_review').length.toString(), change: '-3%', icon: CuppingBowl, color: 'lab-icon' },
     { title: 'Certificates Generated', value: approvedSamples.toString(), change: '+8%', icon: FileText, color: 'lab-icon' },
-    { title: 'Total Users', value: '12', change: '+2', icon: Users, color: 'lab-icon' },
+    { title: 'Total Users', value: totalUsers.toString(), change: userChange, icon: Users, color: 'lab-icon' },
   ]
 
   if (loading) {
