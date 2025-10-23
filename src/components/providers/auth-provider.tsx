@@ -34,36 +34,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let session = null
 
       try {
-        // Add timeout for getSession to prevent infinite hanging
-        const timeoutPromise = new Promise<any>((_, reject) =>
-          setTimeout(() => reject(new Error('Session fetch timeout')), 15000)
-        )
+        const { data, error } = await supabase.auth.getSession()
 
-        const sessionPromise = supabase.auth.getSession()
-
-        const result = await Promise.race([sessionPromise, timeoutPromise])
-
-        if (result.error) {
-          console.error('Error getting session:', result.error)
-          // Check if this is a network error
-          if (result.error.message?.includes('Failed to fetch') || result.error.message?.includes('network')) {
-            console.error('⚠️ Network error: Cannot connect to Supabase. Check your internet connection or firewall settings.')
-          }
+        if (error) {
+          console.error('Error getting session:', error)
           setLoading(false)
           return
         }
 
-        session = result.data.session
+        session = data.session
       } catch (err: any) {
-        console.error('⚠️ Fatal error connecting to Supabase:', err)
-        // Only show network error screen for true network errors, not timeouts
-        if (err?.message === 'Session fetch timeout') {
-          console.error('⚠️ Slow connection detected. Continuing with longer timeout...')
-          // Don't set network error for timeout - allow the app to continue loading
-          setLoading(false)
-          return
-        }
-        setNetworkError(true)
+        console.error('Error getting session:', err)
         setLoading(false)
         return
       }
@@ -185,75 +166,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log('[Auth] Fetching profile for user:', userId)
 
-      // Add timeout to prevent hanging - 15 seconds allows for slower connections
-      const timeoutPromise = new Promise<{ data: null, error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Profile fetch timeout' } }), 15000)
-      )
-
-      const fetchPromise = (async () => {
-        try {
-          return await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', userId)
-            .single()
-        } catch (err: any) {
-          // Catch network errors immediately
-          console.error('⚠️ Network error in fetchProfile:', err)
-          return { data: null, error: { message: 'Network error', original: err } }
-        }
-      })()
-
-      const { data: profileData, error } = await Promise.race([
-        fetchPromise,
-        timeoutPromise
-      ]) as any
+      const { data: profileData, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
 
       if (error) {
-        // Check if this is a network/timeout error
-        if (error.message === 'Profile fetch timeout' ||
-            error.message === 'Network error' ||
-            error.message?.includes('Failed to fetch') ||
-            error.message?.includes('network') ||
-            error.message?.includes('connection')) {
-          console.error('⚠️ Network error detected during profile fetch')
-          setNetworkError(true)
-          setLoading(false)
-          return
-        }
-
-        // Fallback for global admins if profile doesn't exist but network is working
-        if (error.message === 'Profile fetch timeout') {
-          const { data: { user: authUser } } = await supabase.auth.getUser()
-          const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(authUser?.email || '')
-
-          if (isGlobalAdmin) {
-            console.warn('Profile fetch timed out, using fallback for global admin:', authUser?.email)
-            // Create temporary profile for global admin
-            const tempProfile = {
-              id: userId,
-              email: authUser?.email || '',
-              full_name: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'Admin',
-              qc_enabled: true,
-              qc_role: 'global_admin' as UserRole,
-              is_global_admin: true,
-              laboratory_id: null,
-              client_id: null,
-              qc_permissions: [],
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString()
-            } as Profile
-
-            setProfile(tempProfile)
-            setPermissions(getUserPermissions('global_admin', undefined))
-            setLoading(false)
-
-            // Try to create the profile in background
-            createUserProfile(userId).catch(err => console.error('Background profile creation failed:', err))
-            return
-          }
-        }
-
         // If profile doesn't exist, try to create one
         if (error.code === 'PGRST116' || error.message?.includes('No rows returned') || error.message?.includes('JSON object requested, multiple (or no) rows returned')) {
           console.log('Profile not found, creating new profile for user')
