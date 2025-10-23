@@ -4,8 +4,30 @@ import type { Database } from './database.types'
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 
-// Use SSR-compatible browser client that stores auth in cookies
-export const supabase = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey)
+// Use SSR-compatible browser client with explicit configuration
+// This ensures compatibility across all browsers (Chrome, Edge, Safari, Firefox)
+export const supabase = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    flowType: 'pkce',
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    persistSession: true,
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    storageKey: 'wolthers-qc-auth',
+  },
+  global: {
+    headers: {
+      'X-Client-Info': 'wolthers-qc-web',
+    },
+  },
+  db: {
+    schema: 'public',
+  },
+  // Increase default timeout to handle slower connections
+  realtime: {
+    timeout: 30000,
+  },
+})
 
 // Re-export Database type for convenience
 export type { Database } from './database.types'

@@ -29,14 +29,58 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isInitialLoad = true
 
+    // Check browser compatibility
+    const checkBrowserCompatibility = () => {
+      const checks = {
+        localStorage: false,
+        sessionStorage: false,
+        cookies: false,
+      }
+
+      try {
+        checks.localStorage = typeof window !== 'undefined' && window.localStorage !== undefined
+        const testKey = '__supabase_test__'
+        localStorage.setItem(testKey, 'test')
+        localStorage.removeItem(testKey)
+      } catch (e) {
+        console.error('[Auth] localStorage not available:', e)
+        checks.localStorage = false
+      }
+
+      try {
+        checks.sessionStorage = typeof window !== 'undefined' && window.sessionStorage !== undefined
+      } catch (e) {
+        checks.sessionStorage = false
+      }
+
+      checks.cookies = navigator.cookieEnabled
+
+      return checks
+    }
+
     // Get initial session
     const getSession = async () => {
       let session = null
 
       try {
-        // Add timeout for getSession to prevent infinite hanging
+        console.log('[Auth] Initializing session...')
+        console.log('[Auth] Browser:', navigator.userAgent)
+
+        const compatibility = checkBrowserCompatibility()
+        console.log('[Auth] Browser compatibility:', compatibility)
+
+        if (!compatibility.localStorage) {
+          console.error('⚠️ localStorage is not available. Authentication may not work properly.')
+          console.error('⚠️ Please ensure you are not in private/incognito mode or check browser settings.')
+        }
+
+        if (!compatibility.cookies) {
+          console.error('⚠️ Cookies are disabled. Authentication requires cookies to be enabled.')
+        }
+
+        // Increase timeout to 30 seconds for slower connections/browsers
         const timeoutPromise = new Promise<any>((_, reject) =>
-          setTimeout(() => reject(new Error('Session fetch timeout')), 15000)
+          setTimeout(() => reject(new Error('Session fetch timeout')), 30000)
         )
 
         const sessionPromise = supabase.auth.getSession()
@@ -44,22 +88,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const result = await Promise.race([sessionPromise, timeoutPromise])
 
         if (result.error) {
-          console.error('Error getting session:', result.error)
+          console.error('[Auth] Error getting session:', result.error)
           // Check if this is a network error
-          if (result.error.message?.includes('Failed to fetch') || result.error.message?.includes('network')) {
-            console.error('⚠️ Network error: Cannot connect to Supabase. Check your internet connection or firewall settings.')
+          if (result.error.message?.includes('Failed to fetch') ||
+              result.error.message?.includes('network') ||
+              result.error.message?.includes('CORS')) {
+            console.error('⚠️ Network error: Cannot connect to Supabase.')
+            console.error('⚠️ Please check:')
+            console.error('  1. Your internet connection')
+            console.error('  2. Browser extensions (ad blockers, privacy tools)')
+            console.error('  3. Corporate firewall/proxy settings')
+            setNetworkError(true)
           }
           setLoading(false)
           return
         }
 
         session = result.data.session
+        console.log('[Auth] Session retrieved:', session ? 'Active session found' : 'No active session')
       } catch (err: any) {
         console.error('⚠️ Fatal error connecting to Supabase:', err)
-        // Only show network error screen for true network errors, not timeouts
+        // Check for common browser-specific issues
         if (err?.message === 'Session fetch timeout') {
-          console.error('⚠️ Slow connection detected. Continuing with longer timeout...')
-          // Don't set network error for timeout - allow the app to continue loading
+          console.error('⚠️ Session fetch timed out after 30 seconds')
+          console.error('⚠️ This may indicate:')
+          console.error('  1. Very slow network connection')
+          console.error('  2. Browser blocking third-party cookies/storage')
+          console.error('  3. Corporate network restrictions')
+          setNetworkError(true)
           setLoading(false)
           return
         }
@@ -184,11 +240,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      console.log('Fetching profile for user:', userId)
+      console.log('[Auth] Fetching profile for user:', userId)
 
-      // Add timeout to prevent hanging - 15 seconds allows for slower connections
+      // Add timeout to prevent hanging - 30 seconds for consistency with session fetch
       const timeoutPromise = new Promise<{ data: null, error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'Profile fetch timeout' } }), 15000)
+        setTimeout(() => resolve({ data: null, error: { message: 'Profile fetch timeout' } }), 30000)
       )
 
       const fetchPromise = (async () => {
