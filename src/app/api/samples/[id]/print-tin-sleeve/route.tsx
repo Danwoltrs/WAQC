@@ -54,7 +54,7 @@ export async function GET(
           description,
           processing_method
         ),
-        clients!inner (
+        clients (
           id,
           client_quality_names
         )
