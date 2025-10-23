@@ -17,6 +17,8 @@ export type Database = {
       access_requests: {
         Row: {
           admin_notes: string | null
+          approved_laboratory_id: string | null
+          approved_role: string | null
           created_at: string | null
           id: string
           processed_at: string | null
@@ -33,6 +35,8 @@ export type Database = {
         }
         Insert: {
           admin_notes?: string | null
+          approved_laboratory_id?: string | null
+          approved_role?: string | null
           created_at?: string | null
           id?: string
           processed_at?: string | null
@@ -49,6 +53,8 @@ export type Database = {
         }
         Update: {
           admin_notes?: string | null
+          approved_laboratory_id?: string | null
+          approved_role?: string | null
           created_at?: string | null
           id?: string
           processed_at?: string | null
@@ -64,6 +70,34 @@ export type Database = {
           user_id?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "access_requests_approved_laboratory_id_fkey"
+            columns: ["approved_laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "access_requests_approved_laboratory_id_fkey"
+            columns: ["approved_laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "access_requests_approved_laboratory_id_fkey"
+            columns: ["approved_laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "access_requests_processed_by_fkey"
+            columns: ["processed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "access_requests_requested_laboratory_id_fkey"
             columns: ["requested_laboratory_id"]
@@ -83,6 +117,13 @@ export type Database = {
             columns: ["requested_laboratory_id"]
             isOneToOne: false
             referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "access_requests_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1274,6 +1315,8 @@ export type Database = {
           state: string | null
           tracking_number_format: Json | null
           updated_at: string | null
+          vat_number: string | null
+          zip_code: string | null
         }
         Insert: {
           address: string
@@ -1309,6 +1352,8 @@ export type Database = {
           state?: string | null
           tracking_number_format?: Json | null
           updated_at?: string | null
+          vat_number?: string | null
+          zip_code?: string | null
         }
         Update: {
           address?: string
@@ -1344,6 +1389,8 @@ export type Database = {
           state?: string | null
           tracking_number_format?: Json | null
           updated_at?: string | null
+          vat_number?: string | null
+          zip_code?: string | null
         }
         Relationships: [
           {
@@ -4207,7 +4254,9 @@ export type Database = {
           tax_region: string | null
           timezone: string | null
           type: string | null
+          type_sample_prefix: string | null
           updated_at: string | null
+          vat_number: string | null
           zip_code: string | null
         }
         Insert: {
@@ -4237,7 +4286,9 @@ export type Database = {
           tax_region?: string | null
           timezone?: string | null
           type?: string | null
+          type_sample_prefix?: string | null
           updated_at?: string | null
+          vat_number?: string | null
           zip_code?: string | null
         }
         Update: {
@@ -4267,7 +4318,9 @@ export type Database = {
           tax_region?: string | null
           timezone?: string | null
           type?: string | null
+          type_sample_prefix?: string | null
           updated_at?: string | null
+          vat_number?: string | null
           zip_code?: string | null
         }
         Relationships: []
@@ -6459,6 +6512,7 @@ export type Database = {
           exporter_contract_nr: string | null
           exporter_id: string | null
           exporter_legacy: string | null
+          hide_exporter_on_label: boolean | null
           ico_marks: string | null
           ico_number: string | null
           id: string
@@ -6503,6 +6557,7 @@ export type Database = {
           exporter_contract_nr?: string | null
           exporter_id?: string | null
           exporter_legacy?: string | null
+          hide_exporter_on_label?: boolean | null
           ico_marks?: string | null
           ico_number?: string | null
           id?: string
@@ -6547,6 +6602,7 @@ export type Database = {
           exporter_contract_nr?: string | null
           exporter_id?: string | null
           exporter_legacy?: string | null
+          hide_exporter_on_label?: boolean | null
           ico_marks?: string | null
           ico_number?: string | null
           id?: string
@@ -9737,6 +9793,7 @@ export type Database = {
       generate_certificate_number: {
         Args: {
           p_client_id: string
+          p_is_rejected?: boolean
           p_origin?: string
           p_quality_spec_id?: string
         }
@@ -9770,8 +9827,10 @@ export type Database = {
         Args: {
           p_client_id: string
           p_is_rejected?: boolean
-          p_origin: string
+          p_laboratory_id?: string
+          p_origin?: string
           p_quality_template_id?: string
+          p_sample_type?: string
         }
         Returns: string
       }
