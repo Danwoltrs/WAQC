@@ -258,7 +258,7 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                 {/* Lab Info (Bottom) */}
                 <View style={styles.labInfo}>
                   <Text style={styles.labName}>WOLTHERS COFFEE QUALITY CONTROL</Text>
-                  <Text style={styles.labDetail}>Rua XV de Novembro, 94/96 3' andar, 11.010-150 Santos/SP</Text>
+                  <Text style={styles.labDetail}>Rua XV de Novembro, 94/96 3&apos; andar, 11.010-150 Santos/SP</Text>
                   <Text style={styles.labDetail}>Phone: (13) 2127-4144 | Fax: (13) 3219-1863</Text>
                   <Text style={styles.labDetail}>CNPJ: 62.298.906/0001-91</Text>
                 </View>
