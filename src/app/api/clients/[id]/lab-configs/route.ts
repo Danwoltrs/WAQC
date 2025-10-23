@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
+import { createClient } from '@/lib/supabase-server'
 
 // GET /api/clients/[id]/lab-configs - Get all lab configurations for a client
 export async function GET(
