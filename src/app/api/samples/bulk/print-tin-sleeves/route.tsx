@@ -71,9 +71,15 @@ export async function POST(request: NextRequest) {
     }
 
     // Read logo file and convert to base64 (once for all labels)
-    const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.svg')
-    const logoBuffer = fs.readFileSync(logoPath)
-    const logoBase64 = `data:image/svg+xml;base64,${logoBuffer.toString('base64')}`
+    let logoBase64: string
+    try {
+      const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.svg')
+      const logoBuffer = fs.readFileSync(logoPath)
+      logoBase64 = `data:image/svg+xml;base64,${logoBuffer.toString('base64')}`
+    } catch (logoError) {
+      console.error('Error reading logo file:', logoError)
+      return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
+    }
 
     // Bag type mapping
     const bagTypeMap: Record<string, string> = {
@@ -152,15 +158,21 @@ export async function POST(request: NextRequest) {
     )
 
     // Generate PDF
-    const pdfDocument = <TinSleeveLabelDocument labels={labelsWithQR} />
-    const stream = await renderToStream(pdfDocument)
+    let pdfDocument, stream, buffer
+    try {
+      pdfDocument = <TinSleeveLabelDocument labels={labelsWithQR} />
+      stream = await renderToStream(pdfDocument)
 
-    // Convert stream to buffer
-    const chunks: Buffer[] = []
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk))
+      // Convert stream to buffer
+      const chunks: Buffer[] = []
+      for await (const chunk of stream) {
+        chunks.push(Buffer.from(chunk))
+      }
+      buffer = Buffer.concat(chunks)
+    } catch (pdfError) {
+      console.error('Error generating PDF:', pdfError)
+      return NextResponse.json({ error: 'Failed to generate PDF', details: String(pdfError) }, { status: 500 })
     }
-    const buffer = Buffer.concat(chunks)
 
     // Return PDF as response
     return new NextResponse(buffer, {
@@ -173,6 +185,9 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('Error in POST /api/samples/bulk/print-tin-sleeves:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 })
   }
 }

@@ -311,11 +311,11 @@ export default function SamplesPage() {
       } else {
         const error = await response.json()
         console.error('Failed to generate tin sleeve labels:', error)
-        alert('Failed to generate tin sleeve labels. Please try again.')
+        alert(`Failed to generate tin sleeve labels.\n\n${error.error}${error.details ? '\n\nDetails: ' + error.details : ''}`)
       }
     } catch (error) {
       console.error('Error printing tin sleeve labels:', error)
-      alert('Error generating tin sleeve labels. Please try again.')
+      alert(`Error generating tin sleeve labels.\n\n${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -345,11 +345,11 @@ export default function SamplesPage() {
       } else {
         const error = await response.json()
         console.error('Failed to generate bag sleeve labels:', error)
-        alert('Failed to generate bag sleeve labels. Please try again.')
+        alert(`Failed to generate bag sleeve labels.\n\n${error.error}${error.details ? '\n\nDetails: ' + error.details : ''}`)
       }
     } catch (error) {
       console.error('Error printing bag sleeve labels:', error)
-      alert('Error generating bag sleeve labels. Please try again.')
+      alert(`Error generating bag sleeve labels.\n\n${error instanceof Error ? error.message : String(error)}`)
     }
   }
 

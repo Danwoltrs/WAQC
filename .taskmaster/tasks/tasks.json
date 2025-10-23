@@ -915,7 +915,7 @@
             "title": "Create Tin Sleeve Label PDF Component",
             "description": "Create the tin-sleeve-print.tsx component for generating 4cm height tin container labels with enhanced specifications, bulk sample handling logic, and dual quality display (client quality name + full description).",
             "dependencies": [],
-            "details": "Create src/components/print/tin-sleeve-print.tsx using @react-pdf/renderer with 4cm height layout. Include date, sample tracking number, exporter, client quality name (when exists) followed by full quality description below it (never show only one), contract references, packaging type, bag count with bulk handling logic. For bulk samples display 'Bulk (equiv. X bags)' format. Integrate Wolthers logo and QR code from existing lib/qr-code.ts patterns.",
+            "details": "Create src/components/print/tin-sleeve-print.tsx using @react-pdf/renderer with 4cm height layout. Include date, sample tracking number, exporter, client quality name (when exists) followed by full quality description below it (never show only one), contract references, packaging type, bag count with bulk handling logic. For bulk samples display 'Bulk (equiv. X bags)' format. Integrate Wolthers logo and QR code from existing lib/qr-code.ts patterns.\n<info added on 2025-10-23T19:14:44.086Z>\nSuccessfully implemented tin-sleeve-label.tsx component with 4cm height format, integrated Wolthers logo and QR code functionality, implemented client quality name display with full description fallback, added proper packaging type and bulk bag handling logic with 'Bulk (equiv. X bags)' format, included contract references display, and resolved all TypeScript compilation errors. Component is ready for integration with the printing system.\n</info added on 2025-10-23T19:14:44.086Z>",
             "status": "done",
             "testStrategy": "Test label generation with all sample types (PSS/SS/Type), verify 4cm height formatting, QR code placement, bulk sample display logic, and dual quality display showing client quality name followed by full description when both exist",
             "updatedAt": "2025-10-23T18:59:33.483Z",
@@ -997,9 +997,10 @@
               6
             ],
             "details": "Update sample list/grid components to include print action buttons for tin sleeve and bag sleeve labels. Add bulk selection checkboxes with bulk print dropdown menu. Implement print dialogs with preview options and batch size confirmation. Handle loading states during PDF generation and provide download/print options. Follow existing UI patterns from sample management components.",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test individual and bulk print actions from sample management UI, verify loading states and error handling, test print preview functionality",
-            "parentId": "undefined"
+            "parentId": "undefined",
+            "updatedAt": "2025-10-23T19:26:54.972Z"
           },
           {
             "id": 8,
@@ -1014,12 +1015,12 @@
             "parentId": "undefined"
           }
         ],
-        "updatedAt": "2025-10-23T18:59:33.492Z"
+        "updatedAt": "2025-10-23T19:26:54.972Z"
       }
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-23T18:59:33.492Z",
+      "lastModified": "2025-10-23T19:26:54.972Z",
       "taskCount": 31,
       "completedCount": 17,
       "tags": [
