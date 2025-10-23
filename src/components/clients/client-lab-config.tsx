@@ -12,8 +12,8 @@ import { Save, AlertCircle, Info } from 'lucide-react'
 interface Laboratory {
   id: string
   name: string
-  location: string
-  country?: string
+  location: string | null
+  country?: string | null
 }
 
 interface LabConfig {
@@ -195,7 +195,7 @@ export function ClientLabConfig({ clientId, clientName }: ClientLabConfigProps) 
                   <div>
                     <p className="font-medium">{lab.name}</p>
                     <p className="text-sm text-muted-foreground">
-                      {lab.location} {lab.country && `• ${lab.country}`}
+                      {lab.location || 'Location not set'} {lab.country && `• ${lab.country}`}
                     </p>
                   </div>
                   {hasConfig && (
