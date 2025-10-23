@@ -52,11 +52,7 @@ export async function GET(
         client_id,
         buyer_reference,
         exporter:exporters(name),
-        quality_specification:quality_specifications(
-          name,
-          description,
-          processing_method
-        ),
+        quality_spec:client_qualities(custom_name, quality_code),
         clients (
           id,
           client_quality_names
@@ -78,12 +74,12 @@ export async function GET(
     const clientQualityName = clientQualityNames[(sample as any).tracking_number]
 
     // Get full quality description
-    const qualitySpec = (sample as any).quality_specification
+    const qualitySpec = (sample as any).quality_spec
     let qualityDescription = 'N/A'
     if (qualitySpec) {
       const parts = []
-      if (qualitySpec.name) parts.push(qualitySpec.name)
-      if (qualitySpec.processing_method) parts.push(qualitySpec.processing_method)
+      if (qualitySpec.custom_name) parts.push(qualitySpec.custom_name)
+      if (qualitySpec.quality_code) parts.push(qualitySpec.quality_code)
       qualityDescription = parts.join(' - ')
     }
 

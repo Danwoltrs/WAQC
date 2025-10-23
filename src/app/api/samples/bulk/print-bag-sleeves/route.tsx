@@ -51,11 +51,7 @@ export async function POST(request: NextRequest) {
         client_id,
         buyer_reference,
         exporter:exporters(name),
-        quality_specification:quality_specifications(
-          name,
-          description,
-          processing_method
-        ),
+        quality_spec:client_qualities(custom_name, quality_code),
         clients (
           id,
           client_quality_names
@@ -98,12 +94,12 @@ export async function POST(request: NextRequest) {
       const clientQualityName = clientQualityNames[sample.tracking_number]
 
       // Get full quality description
-      const qualitySpec = sample.quality_specification
+      const qualitySpec = sample.quality_spec
       let qualityDescription = 'N/A'
       if (qualitySpec) {
         const parts = []
-        if (qualitySpec.name) parts.push(qualitySpec.name)
-        if (qualitySpec.processing_method) parts.push(qualitySpec.processing_method)
+        if (qualitySpec.custom_name) parts.push(qualitySpec.custom_name)
+        if (qualitySpec.quality_code) parts.push(qualitySpec.quality_code)
         qualityDescription = parts.join(' - ')
       }
 
