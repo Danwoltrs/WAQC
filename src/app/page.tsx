@@ -76,17 +76,17 @@ function DashboardContent() {
           quality_name,
           status,
           created_at,
-          buyer:buyers(name)
+          client:clients(name)
         `)
         .order('created_at', { ascending: false })
 
       if (error) throw error
 
-      // Transform to flatten buyer name
+      // Transform to flatten client name
       const transformedSamples = (data || []).map((sample: any) => ({
         ...sample,
-        buyer_name: sample.buyer?.name || null,
-        buyer: undefined
+        buyer_name: sample.client?.name || null,
+        client: undefined
       }))
 
       setSamples(transformedSamples)
