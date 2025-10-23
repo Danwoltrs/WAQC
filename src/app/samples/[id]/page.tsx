@@ -21,12 +21,16 @@ interface Sample {
   tracking_number: string
   client_id?: string
   supplier?: string
-  exporter?: string
+  exporter_name?: string
+  exporter_country?: string
   origin: string
-  importer?: string
-  roaster?: string
+  importer_name?: string
+  importer_country?: string
+  roaster_name?: string
+  roaster_country?: string
   buyer?: string
   quality_name?: string
+  quality_code?: string
   quality_spec_id?: string
   sample_type?: string
   status: string
@@ -426,7 +430,7 @@ export default function SampleDetailPage() {
                       <div className="text-sm text-muted-foreground mb-1">Exporter / Supplier</div>
                       <div className="text-sm font-medium flex items-center gap-2">
                         <Building2 className="h-4 w-4" />
-                        {sample.exporter || sample.supplier || '-'}
+                        {sample.exporter_name || sample.supplier || '-'}
                       </div>
                     </div>
 
@@ -436,7 +440,7 @@ export default function SampleDetailPage() {
                       <div className="text-sm text-muted-foreground mb-1">Importer</div>
                       <div className="text-sm font-medium flex items-center gap-2">
                         <Building2 className="h-4 w-4" />
-                        {sample.buyer || '-'}
+                        {sample.importer_name || sample.buyer || '-'}
                       </div>
                     </div>
 
@@ -446,7 +450,7 @@ export default function SampleDetailPage() {
                       <div className="text-sm text-muted-foreground mb-1">Roaster / Buyer</div>
                       <div className="text-sm font-medium flex items-center gap-2">
                         <Building2 className="h-4 w-4" />
-                        {sample.roaster || sample.buyer || '-'}
+                        {sample.roaster_name || sample.buyer || '-'}
                       </div>
                     </div>
                   </div>

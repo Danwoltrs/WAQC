@@ -28,7 +28,10 @@ export async function GET(
       .from('samples')
       .select(`
         *,
-        quality_name:client_qualities(custom_name)
+        quality_spec:client_qualities(custom_name, quality_code),
+        exporter:exporters(id, name, country),
+        importer:importers(id, name, country),
+        roaster:roasters(id, name, country)
       `)
       .eq('id', id)
       .single()
@@ -41,13 +44,25 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch sample' }, { status: 500 })
     }
 
-    // Flatten the quality_name from nested object
-    const sampleWithQuality = {
+    // Transform sample to include flattened entity names (matching list API format)
+    const transformedSample = {
       ...sample,
-      quality_name: sample.quality_name?.custom_name || null
+      quality_name: sample.quality_spec?.custom_name || null,
+      quality_code: sample.quality_spec?.quality_code || null,
+      exporter_name: sample.exporter?.name || null,
+      exporter_country: sample.exporter?.country || null,
+      importer_name: sample.importer?.name || null,
+      importer_country: sample.importer?.country || null,
+      roaster_name: sample.roaster?.name || null,
+      roaster_country: sample.roaster?.country || null,
+      // Remove nested objects to keep response clean
+      quality_spec: undefined,
+      exporter: undefined,
+      importer: undefined,
+      roaster: undefined
     }
 
-    return NextResponse.json({ sample: sampleWithQuality })
+    return NextResponse.json({ sample: transformedSample })
   } catch (error) {
     console.error('Error in GET /api/samples/[id]:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
