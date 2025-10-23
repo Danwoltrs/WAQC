@@ -130,6 +130,7 @@ export async function PATCH(
       'city',
       'state',
       'zip_code',
+      'vat_number',
       'type',
       'storage_capacity',
       'contact_email',
@@ -140,7 +141,8 @@ export async function PATCH(
       'entrance_y_position',
       'fee_per_sample',
       'fee_currency',
-      'billing_basis'
+      'billing_basis',
+      'type_sample_prefix'
     ]
 
     for (const field of allowedFields) {

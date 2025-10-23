@@ -160,6 +160,8 @@ export async function POST(request: NextRequest) {
       neighborhood: body.neighborhood || null,
       city: body.city || null,
       state: body.state || null,
+      zip_code: body.zip_code || null,
+      vat_number: body.vat_number || null,
       type: body.type || 'lab',
       storage_capacity: body.storage_capacity || 1764,
       contact_email: body.contact_email || null,
@@ -169,7 +171,8 @@ export async function POST(request: NextRequest) {
       is_3rd_party: body.is_3rd_party || false,
       fee_per_sample: body.fee_per_sample || null,
       fee_currency: body.fee_currency || null,
-      billing_basis: body.billing_basis || null
+      billing_basis: body.billing_basis || null,
+      type_sample_prefix: body.type_sample_prefix || null
     }
 
     const { data: laboratory, error: insertError } = await supabase

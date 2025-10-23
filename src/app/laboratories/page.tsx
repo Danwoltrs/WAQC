@@ -37,6 +37,7 @@ interface Laboratory {
   city?: string
   state?: string
   zip_code?: string
+  vat_number?: string
   type: string
   storage_capacity: number
   contact_email?: string
@@ -47,6 +48,7 @@ interface Laboratory {
   fee_currency?: string
   billing_basis?: 'approved_only' | 'approved_and_rejected'
   personnel_count?: number
+  type_sample_prefix?: string
   created_at: string
 }
 
@@ -123,6 +125,7 @@ export default function LaboratoriesPage() {
     city: '',
     state: '',
     zip_code: '',
+    vat_number: '',
     country: '',
     type: 'lab' as 'lab' | 'hq' | '3rd_party_lab',
     contact_email: '',
@@ -133,7 +136,8 @@ export default function LaboratoriesPage() {
     is_3rd_party: false,
     fee_per_sample: undefined as number | undefined,
     fee_currency: 'USD' as string,
-    billing_basis: 'approved_only' as 'approved_only' | 'approved_and_rejected'
+    billing_basis: 'approved_only' as 'approved_only' | 'approved_and_rejected',
+    type_sample_prefix: ''
   })
 
   // Storage shelves state
@@ -329,6 +333,8 @@ export default function LaboratoriesPage() {
             name: newLab.name,
             location: location,
             country: newLab.country,
+            zip_code: newLab.zip_code || null,
+            vat_number: newLab.vat_number || null,
             type: newLab.type,
             storage_capacity: calculateTotalCapacity(),
             contact_email: newLab.contact_email,
@@ -337,7 +343,8 @@ export default function LaboratoriesPage() {
             is_3rd_party: newLab.is_3rd_party,
             fee_per_sample: newLab.is_3rd_party ? newLab.fee_per_sample : null,
             fee_currency: newLab.is_3rd_party ? newLab.fee_currency : null,
-            billing_basis: newLab.is_3rd_party ? newLab.billing_basis : null
+            billing_basis: newLab.is_3rd_party ? newLab.billing_basis : null,
+            type_sample_prefix: newLab.type_sample_prefix || null
           })
         })
 
@@ -697,7 +704,7 @@ export default function LaboratoriesPage() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-3 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="country">Country *</Label>
                         <Select
@@ -731,6 +738,15 @@ export default function LaboratoriesPage() {
                             <SelectItem value="3rd_party_lab">3rd Party Lab</SelectItem>
                           </SelectContent>
                         </Select>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="vat_number">VAT/CNPJ Number</Label>
+                        <Input
+                          id="vat_number"
+                          value={newLab.vat_number}
+                          onChange={(e) => setNewLab({ ...newLab, vat_number: e.target.value })}
+                          placeholder="12.345.678/0001-90"
+                        />
                       </div>
                     </div>
 
@@ -787,6 +803,21 @@ export default function LaboratoriesPage() {
                       </div>
                       <p className="text-xs text-muted-foreground">
                         Select which coffee origins this laboratory can handle
+                      </p>
+                    </div>
+
+                    {/* Type Sample Configuration */}
+                    <div className="pt-4 border-t space-y-2">
+                      <Label htmlFor="type-sample-prefix">Type Sample Prefix (Optional)</Label>
+                      <Input
+                        id="type-sample-prefix"
+                        value={newLab.type_sample_prefix}
+                        onChange={(e) => setNewLab({ ...newLab, type_sample_prefix: e.target.value.toUpperCase() })}
+                        placeholder="WA-"
+                        maxLength={10}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Prefix for type sample tracking numbers (e.g., WA- for Santos). Max 10 characters.
                       </p>
                     </div>
 
@@ -1499,7 +1530,7 @@ export default function LaboratoriesPage() {
                     placeholder="Rua do Porto 123"
                   />
                 </div>
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-4 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-neighborhood">Neighborhood</Label>
                     <Input
@@ -1527,6 +1558,15 @@ export default function LaboratoriesPage() {
                       placeholder="SP"
                     />
                   </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-zip">ZIP/CEP Code</Label>
+                    <Input
+                      id="edit-zip"
+                      value={editingLab.zip_code || ''}
+                      onChange={(e) => setEditingLab({ ...editingLab, zip_code: e.target.value })}
+                      placeholder="11010-100"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="edit-location">Full Location (Read-only)</Label>
@@ -1540,7 +1580,7 @@ export default function LaboratoriesPage() {
                     Auto-generated from address fields above
                   </p>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-3 gap-4">
                   <div className="space-y-2">
                     <Label htmlFor="edit-country">Country</Label>
                     <Select
@@ -1574,6 +1614,15 @@ export default function LaboratoriesPage() {
                         <SelectItem value="3rd_party_lab">3rd Party Lab</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="edit-vat">VAT/CNPJ Number</Label>
+                    <Input
+                      id="edit-vat"
+                      value={editingLab.vat_number || ''}
+                      onChange={(e) => setEditingLab({ ...editingLab, vat_number: e.target.value })}
+                      placeholder="12.345.678/0001-90"
+                    />
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
@@ -1638,6 +1687,21 @@ export default function LaboratoriesPage() {
                   </div>
                   <p className="text-xs text-muted-foreground">
                     Select which coffee origins this laboratory can handle
+                  </p>
+                </div>
+
+                {/* Type Sample Configuration */}
+                <div className="pt-4 border-t space-y-2">
+                  <Label htmlFor="edit-type-sample-prefix">Type Sample Prefix (Optional)</Label>
+                  <Input
+                    id="edit-type-sample-prefix"
+                    value={editingLab.type_sample_prefix || ''}
+                    onChange={(e) => setEditingLab({ ...editingLab, type_sample_prefix: e.target.value.toUpperCase() })}
+                    placeholder="WA-"
+                    maxLength={10}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Prefix for type sample tracking numbers (e.g., WA- for Santos). Max 10 characters.
                   </p>
                 </div>
 
