@@ -10,7 +10,8 @@ export async function GET(
     const supabase = await createClient()
     const { id } = await params
 
-    const { data: configs, error } = await supabase
+    // Cast to any to avoid TypeScript errors for new table not yet in types
+    const { data: configs, error } = await (supabase as any)
       .from('client_laboratory_config')
       .select('*, laboratories(id, name, location)')
       .eq('client_id', id)
@@ -54,7 +55,8 @@ export async function POST(
     }
 
     // Upsert the configuration (insert or update if exists)
-    const { data, error } = await supabase
+    // Cast to any to avoid TypeScript errors for new table not yet in types
+    const { data, error } = await (supabase as any)
       .from('client_laboratory_config')
       .upsert({
         client_id: id,
@@ -98,7 +100,8 @@ export async function DELETE(
       )
     }
 
-    const { error } = await supabase
+    // Cast to any to avoid TypeScript errors for new table not yet in types
+    const { error } = await (supabase as any)
       .from('client_laboratory_config')
       .delete()
       .eq('id', configId)
