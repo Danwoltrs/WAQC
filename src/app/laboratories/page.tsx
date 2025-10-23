@@ -419,6 +419,7 @@ export default function LaboratoriesPage() {
         city: '',
         state: '',
         zip_code: '',
+        vat_number: '',
         country: '',
         type: 'lab',
         contact_email: '',
@@ -429,7 +430,8 @@ export default function LaboratoriesPage() {
         is_3rd_party: false,
         fee_per_sample: undefined,
         fee_currency: 'USD',
-        billing_basis: 'approved_only'
+        billing_basis: 'approved_only',
+        type_sample_prefix: ''
       })
       setShelves([])
       setObstacles([])
