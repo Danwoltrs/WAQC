@@ -143,14 +143,16 @@ export async function POST(request: NextRequest) {
     const clientId = body.client_id || null
 
     // Generate tracking number using helper function
-    // Note: Function signature changed in migration 047 to support quality-based tracking
+    // Note: Function signature updated in migration 061 to support lab-specific type sample prefixes
     // TypeScript types will be regenerated in next deployment
     const { data: trackingNumberData, error: trackingError } = await supabase
       .rpc('generate_tracking_number', {
         p_client_id: clientId,
+        p_laboratory_id: body.laboratory_id,
         p_origin: body.origin,
         p_quality_template_id: body.quality_spec_id || null,
-        p_is_rejected: false
+        p_is_rejected: false,
+        p_sample_type: body.sample_type || 'pss'
       } as any)
 
     if (trackingError) {

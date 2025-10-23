@@ -38,10 +38,13 @@ interface Sample {
   tracking_number: string
   client_id?: string
   supplier?: string
-  exporter?: string
+  exporter_name?: string
+  exporter_country?: string
   origin?: string
-  importer?: string
-  roaster?: string
+  importer_name?: string
+  importer_country?: string
+  roaster_name?: string
+  roaster_country?: string
   buyer?: string
   quality_name?: string
   sample_type?: string
@@ -136,10 +139,10 @@ export default function SamplesPage() {
           filtered = filtered.filter((s: Sample) =>
             s.tracking_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.supplier?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            s.exporter?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.exporter_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.origin?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            s.importer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            s.roaster?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.importer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.roaster_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.buyer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.wolthers_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.exporter_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -752,9 +755,9 @@ export default function SamplesPage() {
                         </td>
                         <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.exporter || sample.supplier || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.buyer || sample.importer || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.roaster || sample.buyer || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.exporter_name || sample.supplier || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.importer_name || sample.buyer || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.roaster_name || '-'}</td>
                         <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
                         <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
                         <td className="py-3 px-4 text-sm">
