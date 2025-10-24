@@ -45,6 +45,7 @@ const styles = StyleSheet.create({
     borderRight: '1pt dashed #DDDDDD',
     borderBottom: '1pt dashed #DDDDDD',
     flexDirection: 'column',
+    position: 'relative',
   },
   labelContainerRight: {
     borderRight: 'none',
@@ -131,16 +132,15 @@ const styles = StyleSheet.create({
     color: '#666666',
     marginBottom: '4pt',
   },
+  qrSection: {
+    position: 'absolute',
+    bottom: '18pt',
+    right: '12pt',
+  },
   labInfo: {
     marginTop: 'auto',
     paddingTop: '6pt',
     borderTop: '0.5pt solid #EEEEEE',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-end',
-  },
-  labTextSection: {
-    flex: 1,
   },
   labName: {
     fontSize: 5,
@@ -152,9 +152,6 @@ const styles = StyleSheet.create({
     fontSize: 4.5,
     color: '#666666',
     marginBottom: '0.5pt',
-  },
-  qrSection: {
-    marginLeft: '8pt',
   },
 })
 
@@ -288,37 +285,37 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                   )}
                 </View>
 
-                {/* Lab Info (Bottom) with QR Code on Right */}
-                <View style={styles.labInfo}>
-                  <View style={styles.labTextSection}>
-                    <Text style={styles.labName}>{label.laboratory?.name.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}</Text>
-                    {label.laboratory && (
-                      <>
-                        {label.laboratory.address && (
-                          <Text style={styles.labDetail}>
-                            {label.laboratory.address}
-                            {label.laboratory.zip_code && `, ${label.laboratory.zip_code}`}
-                            {label.laboratory.city && ` ${label.laboratory.city}`}
-                            {label.laboratory.state && `/${label.laboratory.state}`}
-                          </Text>
-                        )}
-                        {(label.laboratory.phone || label.laboratory.fax) && (
-                          <Text style={styles.labDetail}>
-                            {label.laboratory.phone && `Phone: ${label.laboratory.phone}`}
-                            {label.laboratory.phone && label.laboratory.fax && ' | '}
-                            {label.laboratory.fax && `Fax: ${label.laboratory.fax}`}
-                          </Text>
-                        )}
-                        {label.laboratory.tax_id && (
-                          <Text style={styles.labDetail}>CNPJ: {label.laboratory.tax_id}</Text>
-                        )}
-                      </>
-                    )}
+                {/* QR Code (Bottom Right, above separator line) */}
+                {label.qr_code && (
+                  <View style={styles.qrSection}>
+                    <Image src={label.qr_code} style={styles.qrCode} />
                   </View>
-                  {label.qr_code && (
-                    <View style={styles.qrSection}>
-                      <Image src={label.qr_code} style={styles.qrCode} />
-                    </View>
+                )}
+
+                {/* Lab Info (Bottom) */}
+                <View style={styles.labInfo}>
+                  <Text style={styles.labName}>{label.laboratory?.name.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}</Text>
+                  {label.laboratory && (
+                    <>
+                      {label.laboratory.address && (
+                        <Text style={styles.labDetail}>
+                          {label.laboratory.address}
+                          {label.laboratory.zip_code && `, ${label.laboratory.zip_code}`}
+                          {label.laboratory.city && ` ${label.laboratory.city}`}
+                          {label.laboratory.state && `/${label.laboratory.state}`}
+                        </Text>
+                      )}
+                      {(label.laboratory.phone || label.laboratory.fax) && (
+                        <Text style={styles.labDetail}>
+                          {label.laboratory.phone && `Phone: ${label.laboratory.phone}`}
+                          {label.laboratory.phone && label.laboratory.fax && ' | '}
+                          {label.laboratory.fax && `Fax: ${label.laboratory.fax}`}
+                          </Text>
+                      )}
+                      {label.laboratory.tax_id && (
+                        <Text style={styles.labDetail}>CNPJ: {label.laboratory.tax_id}</Text>
+                      )}
+                    </>
                   )}
                 </View>
               </View>
