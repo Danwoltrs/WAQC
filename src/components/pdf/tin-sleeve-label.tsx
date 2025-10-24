@@ -69,6 +69,10 @@ const styles = StyleSheet.create({
     fontSize: 8,
     color: '#666666',
   },
+  dateLabel: {
+    fontWeight: 'bold',
+    color: '#000000',
+  },
   infoRow: {
     fontSize: 8,
     marginBottom: '2pt',
@@ -93,14 +97,8 @@ const styles = StyleSheet.create({
   qualityDescription: {
     color: '#555555',
   },
-  contractsRow: {
-    fontSize: 8,
-    color: '#555555',
-    marginTop: '1pt',
-  },
   quantityValue: {
-    fontWeight: 'bold',
-    color: '#000000',
+    color: '#555555',
   },
 })
 
@@ -133,7 +131,10 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
               {/* Header Row: Tracking Number + Date */}
               <View style={styles.headerRow}>
                 <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
-                <Text style={styles.date}>Date: {label.date}</Text>
+                <Text style={styles.date}>
+                  <Text style={styles.dateLabel}>Date: </Text>
+                  {label.date}
+                </Text>
               </View>
 
               {/* Exporter */}
@@ -154,14 +155,6 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
               <Text style={styles.infoRow}>
                 <Text style={styles.quantityValue}>{label.bags_display}</Text>
               </Text>
-
-              {/* Contracts */}
-              {label.contracts.length > 0 && (
-                <Text style={styles.contractsRow}>
-                  <Text style={styles.label}>Contracts: </Text>
-                  {label.contracts.join(' | ')}
-                </Text>
-              )}
             </View>
           </View>
         ))}

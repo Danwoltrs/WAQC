@@ -55,7 +55,8 @@ export async function GET(
           custom_name,
           quality_code,
           template:quality_templates(name_en, name_pt, name_es)
-        )
+        ),
+        laboratory:laboratories(name, address, city, state, zip_code, country, phone, fax, tax_id)
       `)
       .eq('id', id)
       .single()
@@ -112,10 +113,34 @@ export async function GET(
       contracts.push({ type: 'Roaster', value: (sample as any).roaster_contract_nr })
     }
 
-    // Read logo file and convert to base64
-    const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.svg')
+    // Read logo file and convert to base64 (PNG for better PDF compatibility)
+    const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.png')
     const logoBuffer = fs.readFileSync(logoPath)
-    const logoBase64 = `data:image/svg+xml;base64,${logoBuffer.toString('base64')}`
+    const logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
+
+    // Get laboratory information
+    const lab = (sample as any).laboratory
+    const labInfo = lab ? {
+      name: lab.name || 'Wolthers Coffee Quality Control',
+      address: lab.address || '',
+      city: lab.city || '',
+      state: lab.state || '',
+      zip_code: lab.zip_code || '',
+      country: lab.country || '',
+      phone: lab.phone || '',
+      fax: lab.fax || '',
+      tax_id: lab.tax_id || '',
+    } : {
+      name: 'Wolthers Coffee Quality Control',
+      address: '',
+      city: '',
+      state: '',
+      zip_code: '',
+      country: '',
+      phone: '',
+      fax: '',
+      tax_id: '',
+    }
 
     // Format date
     const date = new Date((sample as any).created_at).toLocaleDateString('en-GB', {
@@ -147,6 +172,7 @@ export async function GET(
       contracts,
       buyer_reference: undefined,
       logo_url: logoBase64,
+      laboratory: labInfo,
     }
 
     // Generate PDF

@@ -54,7 +54,8 @@ export async function POST(request: NextRequest) {
           custom_name,
           quality_code,
           template:quality_templates(name_en, name_pt, name_es)
-        )
+        ),
+        laboratory:laboratories(name, address, city, state, zip_code, country, phone, fax, tax_id)
       `)
       .in('id', sample_ids)
 
@@ -72,12 +73,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No samples found' }, { status: 404 })
     }
 
-    // Read logo file and convert to base64 (once for all labels)
+    // Read logo file and convert to base64 (once for all labels, PNG for better PDF compatibility)
     let logoBase64: string
     try {
-      const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.svg')
+      const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.png')
       const logoBuffer = fs.readFileSync(logoPath)
-      logoBase64 = `data:image/svg+xml;base64,${logoBuffer.toString('base64')}`
+      logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
     } catch (logoError) {
       console.error('Error reading logo file:', logoError)
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
@@ -147,6 +148,30 @@ export async function POST(request: NextRequest) {
         sampleTypeDisplay = 'SS'
       }
 
+      // Get laboratory information
+      const lab = sample.laboratory
+      const labInfo = lab ? {
+        name: lab.name || 'Wolthers Coffee Quality Control',
+        address: lab.address || '',
+        city: lab.city || '',
+        state: lab.state || '',
+        zip_code: lab.zip_code || '',
+        country: lab.country || '',
+        phone: lab.phone || '',
+        fax: lab.fax || '',
+        tax_id: lab.tax_id || '',
+      } : {
+        name: 'Wolthers Coffee Quality Control',
+        address: '',
+        city: '',
+        state: '',
+        zip_code: '',
+        country: '',
+        phone: '',
+        fax: '',
+        tax_id: '',
+      }
+
       return {
         sample_type: sampleTypeDisplay,
         date,
@@ -161,6 +186,7 @@ export async function POST(request: NextRequest) {
         contracts,
         buyer_reference: undefined,
         logo_url: logoBase64,
+        laboratory: labInfo,
       }
     })
 

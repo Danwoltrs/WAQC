@@ -16,9 +16,20 @@ export interface SampleBagSleeveLabelData {
   contracts: Array<{ type: string; value: string }> // Contract references with types
   buyer_reference?: string // Buyer reference
   logo_url: string // Wolthers logo URL
+  laboratory?: {
+    name: string
+    address: string
+    city: string
+    state: string
+    zip_code: string
+    country: string
+    phone: string
+    fax: string
+    tax_id: string
+  }
 }
 
-// Create styles for A4 page with 4 labels (2x2 grid)
+// Create styles for A4 page with 6 labels (2x3 grid)
 const styles = StyleSheet.create({
   page: {
     flexDirection: 'row',
@@ -28,7 +39,7 @@ const styles = StyleSheet.create({
   },
   labelContainer: {
     width: '50%',
-    height: '50%',
+    height: '33.33%',
     padding: '12pt',
     borderRight: '1pt dashed #DDDDDD',
     borderBottom: '1pt dashed #DDDDDD',
@@ -40,28 +51,22 @@ const styles = StyleSheet.create({
   labelContainerBottom: {
     borderBottom: 'none',
   },
-  headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+  logoSection: {
+    alignItems: 'center',
     marginBottom: '8pt',
   },
-  logoSection: {
-    width: '80pt',
-  },
   logo: {
-    width: '75pt',
-    height: '24pt',
+    width: '120pt',
+    height: 'auto',
+    objectFit: 'contain',
   },
   contractSection: {
-    flex: 1,
-    alignItems: 'flex-end',
+    marginBottom: '4pt',
   },
   contractText: {
     fontSize: 7,
     color: '#333333',
     marginBottom: '1pt',
-    textAlign: 'right',
   },
   contractLabel: {
     fontWeight: 'bold',
@@ -138,30 +143,30 @@ interface SampleBagSleeveLabelDocumentProps {
 
 /**
  * PDF Document component for printing sample bag sleeve labels
- * Format: A4 page with 4 labels (2x2 grid)
- * Includes: Logo, Sample type, Date, Tracking number, Exporter (conditional),
+ * Format: A4 page with 6 labels (2x3 grid)
+ * Includes: Logo (centered), Sample type, Date, Tracking number, Exporter (conditional),
  * Bags, Quality (client name + full description), ICO/Container (SS only),
  * Contract references, Lab info at bottom
  */
 export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocumentProps> = ({ labels }) => {
-  // Pad labels to multiples of 4 for complete pages
+  // Pad labels to multiples of 6 for complete pages
   const paddedLabels = [...labels]
-  while (paddedLabels.length % 4 !== 0) {
+  while (paddedLabels.length % 6 !== 0) {
     paddedLabels.push(null as any)
   }
 
   return (
     <Document>
-      {/* Split labels into pages of 4 */}
-      {Array.from({ length: Math.ceil(paddedLabels.length / 4) }, (_, pageIndex) => (
+      {/* Split labels into pages of 6 */}
+      {Array.from({ length: Math.ceil(paddedLabels.length / 6) }, (_, pageIndex) => (
         <Page key={pageIndex} size="A4" style={styles.page}>
-          {paddedLabels.slice(pageIndex * 4, (pageIndex + 1) * 4).map((label, index) => {
+          {paddedLabels.slice(pageIndex * 6, (pageIndex + 1) * 6).map((label, index) => {
             if (!label) {
               // Empty placeholder for incomplete pages
               const emptyStyles = [
                 styles.labelContainer,
                 ...(index % 2 === 1 ? [styles.labelContainerRight] : []),
-                ...(index >= 2 ? [styles.labelContainerBottom] : []),
+                ...(index >= 4 ? [styles.labelContainerBottom] : []),
               ]
               return (
                 <View
@@ -172,7 +177,7 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
             }
 
             const isRightColumn = index % 2 === 1
-            const isBottomRow = index >= 2
+            const isBottomRow = index >= 4
             const containerStyles = [
               styles.labelContainer,
               ...(isRightColumn ? [styles.labelContainerRight] : []),
@@ -184,25 +189,25 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                 key={index}
                 style={containerStyles}
               >
-                {/* Header Row: Logo + Contracts */}
-                <View style={styles.headerRow}>
-                  <View style={styles.logoSection}>
-                    <Image src={label.logo_url} style={styles.logo} />
-                  </View>
-                  <View style={styles.contractSection}>
-                    {label.contracts.map((contract, idx) => (
-                      <Text key={idx} style={styles.contractText}>
-                        <Text style={styles.contractLabel}>{contract.type}: </Text>
-                        {contract.value}
-                      </Text>
-                    ))}
-                    {label.buyer_reference && (
-                      <Text style={styles.contractText}>
-                        <Text style={styles.contractLabel}>Buyer: </Text>
-                        {label.buyer_reference}
-                      </Text>
-                    )}
-                  </View>
+                {/* Logo (Centered) */}
+                <View style={styles.logoSection}>
+                  <Image src={label.logo_url} style={styles.logo} />
+                </View>
+
+                {/* Contracts Section */}
+                <View style={styles.contractSection}>
+                  {label.contracts.map((contract, idx) => (
+                    <Text key={idx} style={styles.contractText}>
+                      <Text style={styles.contractLabel}>{contract.type}: </Text>
+                      {contract.value}
+                    </Text>
+                  ))}
+                  {label.buyer_reference && (
+                    <Text style={styles.contractText}>
+                      <Text style={styles.contractLabel}>Buyer: </Text>
+                      {label.buyer_reference}
+                    </Text>
+                  )}
                 </View>
 
                 {/* Main Content */}
@@ -257,10 +262,29 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
 
                 {/* Lab Info (Bottom) */}
                 <View style={styles.labInfo}>
-                  <Text style={styles.labName}>WOLTHERS COFFEE QUALITY CONTROL</Text>
-                  <Text style={styles.labDetail}>Rua XV de Novembro, 94/96 3&apos; andar, 11.010-150 Santos/SP</Text>
-                  <Text style={styles.labDetail}>Phone: (13) 2127-4144 | Fax: (13) 3219-1863</Text>
-                  <Text style={styles.labDetail}>CNPJ: 62.298.906/0001-91</Text>
+                  <Text style={styles.labName}>{label.laboratory?.name.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}</Text>
+                  {label.laboratory && (
+                    <>
+                      {label.laboratory.address && (
+                        <Text style={styles.labDetail}>
+                          {label.laboratory.address}
+                          {label.laboratory.zip_code && `, ${label.laboratory.zip_code}`}
+                          {label.laboratory.city && ` ${label.laboratory.city}`}
+                          {label.laboratory.state && `/${label.laboratory.state}`}
+                        </Text>
+                      )}
+                      {(label.laboratory.phone || label.laboratory.fax) && (
+                        <Text style={styles.labDetail}>
+                          {label.laboratory.phone && `Phone: ${label.laboratory.phone}`}
+                          {label.laboratory.phone && label.laboratory.fax && ' | '}
+                          {label.laboratory.fax && `Fax: ${label.laboratory.fax}`}
+                        </Text>
+                      )}
+                      {label.laboratory.tax_id && (
+                        <Text style={styles.labDetail}>CNPJ: {label.laboratory.tax_id}</Text>
+                      )}
+                    </>
+                  )}
                 </View>
               </View>
             )
