@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
           quality_code,
           template:quality_templates(name_en, name_pt, name_es)
         ),
-        laboratory:laboratories(name, address, city, state, zip_code, country, contact_phone, contact_email)
+        laboratory:laboratories(name, address, city, state, zip_code, country, contact_phone, contact_email, tax_id)
       `)
       .in('id', sample_ids)
 
@@ -160,7 +160,7 @@ export async function POST(request: NextRequest) {
         country: lab.country || '',
         phone: lab.contact_phone || '',
         fax: '',
-        tax_id: '',
+        tax_id: lab.tax_id || '',
       } : {
         name: 'Wolthers Coffee Quality Control',
         address: '',

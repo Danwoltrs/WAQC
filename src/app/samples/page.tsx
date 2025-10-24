@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
+import { PrintBagSleeveDialog } from '@/components/samples/print-bag-sleeve-dialog'
 import {
   Select,
   SelectContent,
@@ -102,6 +103,7 @@ export default function SamplesPage() {
   const [workflowStageFilter, setWorkflowStageFilter] = useState<string | null>(null)
   const [selectedSamples, setSelectedSamples] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
+  const [showBagSleeveDialog, setShowBagSleeveDialog] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
@@ -316,40 +318,6 @@ export default function SamplesPage() {
     } catch (error) {
       console.error('Error printing tin sleeve labels:', error)
       alert(`Error generating tin sleeve labels.\n\n${error instanceof Error ? error.message : String(error)}`)
-    }
-  }
-
-  const handleBulkPrintBagSleeves = async () => {
-    if (selectedSamples.size === 0) {
-      alert('Please select at least one sample')
-      return
-    }
-
-    try {
-      const response = await fetch('/api/samples/bulk/print-bag-sleeves', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sample_ids: Array.from(selectedSamples) })
-      })
-
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `bag-sleeves-${new Date().toISOString().split('T')[0]}.pdf`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
-      } else {
-        const error = await response.json()
-        console.error('Failed to generate bag sleeve labels:', error)
-        alert(`Failed to generate bag sleeve labels.\n\n${error.error}${error.details ? '\n\nDetails: ' + error.details : ''}`)
-      }
-    } catch (error) {
-      console.error('Error printing bag sleeve labels:', error)
-      alert(`Error generating bag sleeve labels.\n\n${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -577,9 +545,9 @@ export default function SamplesPage() {
                     <Printer className="h-4 w-4 mr-2" />
                     Print Tin Sleeves (4cm)
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleBulkPrintBagSleeves}>
+                  <DropdownMenuItem onClick={() => setShowBagSleeveDialog(true)}>
                     <Printer className="h-4 w-4 mr-2" />
-                    Print Bag Sleeves (4 per A4)
+                    Print Bag Sleeves (6 per A4)
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleBulkPrintQRTable}>
                     <QrCode className="h-4 w-4 mr-2" />
@@ -885,6 +853,16 @@ export default function SamplesPage() {
         open={showPrintDialog}
         onOpenChange={setShowPrintDialog}
         sampleIds={Array.from(selectedSamples)}
+        onSuccess={() => {
+          setSelectedSamples(new Set())
+        }}
+      />
+
+      {/* Print Bag Sleeve Dialog */}
+      <PrintBagSleeveDialog
+        open={showBagSleeveDialog}
+        onOpenChange={setShowBagSleeveDialog}
+        selectedSamples={selectedSamples}
         onSuccess={() => {
           setSelectedSamples(new Set())
         }}
