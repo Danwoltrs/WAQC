@@ -98,8 +98,7 @@ const styles = StyleSheet.create({
     color: '#555555',
   },
   quantityValue: {
-    fontWeight: 'bold',
-    color: '#000000',
+    color: '#555555',
   },
 })
 
@@ -156,6 +155,7 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
 
               {/* Quantity (Bags + MT) - Packaging included in bags_display */}
               <Text style={styles.infoRow}>
+                <Text style={styles.label}>Quantity: </Text>
                 <Text style={styles.quantityValue}>{label.bags_display}</Text>
               </Text>
             </View>
