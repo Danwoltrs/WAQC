@@ -38,13 +38,12 @@ export async function GET(
         sample_type,
         created_at,
         hide_exporter_on_label,
-        buyer_reference,
         wolthers_contract_nr,
         buyer_contract_nr,
         exporter_contract_nr,
         roaster_contract_nr,
         bag_type,
-        bags,
+        bag_count,
         bag_weight_kg,
         origin,
         container_nr,
@@ -86,8 +85,8 @@ export async function GET(
 
     // Format bags display (origin-specific defaults: 60kg Brazil, 70kg others)
     let bagsDisplay = 'N/A'
-    if ((sample as any).bags && (sample as any).bag_weight_kg) {
-      bagsDisplay = `${(sample as any).bags} x ${(sample as any).bag_weight_kg}kg`
+    if ((sample as any).bag_count != null && (sample as any).bag_weight_kg != null) {
+      bagsDisplay = `${(sample as any).bag_count} x ${(sample as any).bag_weight_kg}kg`
 
       // Add origin indicator
       const origin = (sample as any).origin?.toLowerCase() || ''
@@ -146,7 +145,7 @@ export async function GET(
       ico_number: (sample as any).ico_number,
       container_number: (sample as any).container_nr,
       contracts,
-      buyer_reference: (sample as any).buyer_reference,
+      buyer_reference: undefined,
       logo_url: logoBase64,
     }
 

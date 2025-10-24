@@ -37,13 +37,12 @@ export async function POST(request: NextRequest) {
         sample_type,
         created_at,
         hide_exporter_on_label,
-        buyer_reference,
         wolthers_contract_nr,
         buyer_contract_nr,
         exporter_contract_nr,
         roaster_contract_nr,
         bag_type,
-        bags,
+        bag_count,
         bag_weight_kg,
         origin,
         container_nr,
@@ -106,8 +105,8 @@ export async function POST(request: NextRequest) {
 
       // Format bags display (origin-specific defaults)
       let bagsDisplay = 'N/A'
-      if (sample.bags && sample.bag_weight_kg) {
-        bagsDisplay = `${sample.bags} x ${sample.bag_weight_kg}kg`
+      if (sample.bag_count != null && sample.bag_weight_kg != null) {
+        bagsDisplay = `${sample.bag_count} x ${sample.bag_weight_kg}kg`
 
         // Add origin indicator
         const origin = sample.origin?.toLowerCase() || ''
@@ -160,7 +159,7 @@ export async function POST(request: NextRequest) {
         ico_number: sample.ico_number,
         container_number: sample.container_nr,
         contracts,
-        buyer_reference: sample.buyer_reference,
+        buyer_reference: undefined,
         logo_url: logoBase64,
       }
     })

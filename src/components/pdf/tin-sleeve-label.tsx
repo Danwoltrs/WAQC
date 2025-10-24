@@ -32,20 +32,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   leftSection: {
-    width: '100pt',
-    flexDirection: 'column',
+    flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: '10pt',
+    marginRight: '12pt',
+    paddingRight: '12pt',
+    borderRight: '1pt solid #DDDDDD',
   },
   logo: {
-    width: '80pt',
-    height: '25pt',
-    marginBottom: '4pt',
+    width: '60pt',
+    height: 'auto',
+    objectFit: 'contain',
+    marginRight: '8pt',
   },
   qrCode: {
-    width: '70pt',
-    height: '70pt',
+    width: '60pt',
+    height: '60pt',
+    marginLeft: '8pt',
   },
   infoSection: {
     flex: 1,
@@ -79,16 +81,17 @@ const styles = StyleSheet.create({
   value: {
     color: '#555555',
   },
+  qualityRow: {
+    fontSize: 8,
+    marginBottom: '3pt',
+    color: '#333333',
+  },
   qualityName: {
-    fontSize: 9,
     fontWeight: 'bold',
     color: '#000000',
-    marginBottom: '1pt',
   },
   qualityDescription: {
-    fontSize: 7,
-    color: '#666666',
-    marginBottom: '2pt',
+    color: '#555555',
   },
   contractsRow: {
     fontSize: 7,
@@ -113,7 +116,7 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
       <Page size="A4" style={styles.page}>
         {labels.map((label, index) => (
           <View key={index} style={styles.labelContainer}>
-            {/* Left Section: Logo + QR Code */}
+            {/* Left Section: Logo - Separator - QR Code */}
             <View style={styles.leftSection}>
               <Image src={label.logo_url} style={styles.logo} />
               {label.qr_code && (
@@ -135,11 +138,13 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 <Text style={styles.value}>{label.exporter}</Text>
               </Text>
 
-              {/* Quality: Client Name + Full Description */}
-              {label.client_quality_name && (
-                <Text style={styles.qualityName}>{label.client_quality_name}</Text>
-              )}
-              <Text style={styles.qualityDescription}>{label.quality_description}</Text>
+              {/* Quality: Client Name - Description (inline) */}
+              <Text style={styles.qualityRow}>
+                {label.client_quality_name && (
+                  <Text style={styles.qualityName}>{label.client_quality_name} - </Text>
+                )}
+                <Text style={styles.qualityDescription}>{label.quality_description}</Text>
+              </Text>
 
               {/* Packaging */}
               <Text style={styles.infoRow}>
@@ -147,9 +152,8 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 <Text style={styles.value}>{label.packaging}</Text>
               </Text>
 
-              {/* Bags */}
+              {/* Quantity (Bags + MT) */}
               <Text style={styles.infoRow}>
-                <Text style={styles.label}>Bags: </Text>
                 <Text style={styles.value}>{label.bags_display}</Text>
               </Text>
 

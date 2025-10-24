@@ -42,8 +42,9 @@ export async function GET(
         exporter_contract_nr,
         roaster_contract_nr,
         bag_type,
-        bags,
+        bag_count,
         bag_weight_kg,
+        bags_quantity_mt,
         equivalent_60kg_bags,
         quality_spec_id,
         client_id,
@@ -89,13 +90,23 @@ export async function GET(
     }
     const packaging = bagTypeMap[(sample as any).bag_type] || 'N/A'
 
-    // Format bags display (with bulk indicator if applicable)
+    // Format bags display with quantity and MT
     let bagsDisplay = 'N/A'
-    if ((sample as any).bag_type === 'bulk' && (sample as any).equivalent_60kg_bags) {
-      bagsDisplay = `Bulk (equiv. ${Math.round((sample as any).equivalent_60kg_bags)} bags)`
-    } else if ((sample as any).bags != null && (sample as any).bag_weight_kg != null) {
-      // Check for null/undefined, not falsy (0 is a valid number of bags)
-      bagsDisplay = `${(sample as any).bags} x ${(sample as any).bag_weight_kg}kg`
+    const bagCount = (sample as any).bag_count
+    const bagWeight = (sample as any).bag_weight_kg
+    const bagType = (sample as any).bag_type
+    const quantityMT = (sample as any).bags_quantity_mt
+    const equivalent60kg = (sample as any).equivalent_60kg_bags
+
+    if (bagType === 'bulk' && equivalent60kg) {
+      // For bulk: "Quantity: equiv. 360 bags in 60 kg | 21.6 MT"
+      const mt = quantityMT || (equivalent60kg * 60 / 1000)
+      bagsDisplay = `Quantity: equiv. ${Math.round(equivalent60kg)} bags in 60 kg | ${mt.toFixed(1)} MT`
+    } else if (bagCount != null && bagWeight != null) {
+      // For regular bags: "Quantity: 320 bags in 60 kg jute bags | 19.2 MT"
+      const bagTypeName = bagType === 'jute_bag' ? 'jute bags' : bagType === 'pp_bag' ? 'PP bags' : 'bags'
+      const mt = quantityMT || (bagCount * bagWeight / 1000)
+      bagsDisplay = `Quantity: ${bagCount} bags in ${bagWeight} kg ${bagTypeName} | ${mt.toFixed(1)} MT`
     }
 
     // Collect contracts
@@ -113,7 +124,7 @@ export async function GET(
     })
 
     // Read logo file and convert to base64 (PNG for better PDF compatibility)
-    const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-green.png')
+    const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.png')
     const logoBuffer = fs.readFileSync(logoPath)
     const logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
 
