@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
-import { PrintBagSleeveDialog } from '@/components/samples/print-bag-sleeve-dialog'
 import {
   Select,
   SelectContent,
@@ -102,8 +101,8 @@ export default function SamplesPage() {
   const [qualityFilter, setQualityFilter] = useState<string>('')
   const [workflowStageFilter, setWorkflowStageFilter] = useState<string | null>(null)
   const [selectedSamples, setSelectedSamples] = useState<Set<string>>(new Set())
+  const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
-  const [showBagSleeveDialog, setShowBagSleeveDialog] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
@@ -215,20 +214,37 @@ export default function SamplesPage() {
 
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
-      setSelectedSamples(new Set(samples.map(s => s.id)))
+      const allSampleIds = new Set(samples.map(s => s.id))
+      setSelectedSamples(allSampleIds)
+      setSelectedQrCodes(allSampleIds) // Auto-select QR codes
     } else {
       setSelectedSamples(new Set())
+      setSelectedQrCodes(new Set())
     }
   }
 
   const handleSelectSample = (sampleId: string, checked: boolean) => {
     const newSelected = new Set(selectedSamples)
+    const newQrCodes = new Set(selectedQrCodes)
     if (checked) {
       newSelected.add(sampleId)
+      newQrCodes.add(sampleId) // Auto-select QR code
     } else {
       newSelected.delete(sampleId)
+      newQrCodes.delete(sampleId) // Remove QR code selection
     }
     setSelectedSamples(newSelected)
+    setSelectedQrCodes(newQrCodes)
+  }
+
+  const handleToggleQrCode = (sampleId: string, checked: boolean) => {
+    const newQrCodes = new Set(selectedQrCodes)
+    if (checked) {
+      newQrCodes.add(sampleId)
+    } else {
+      newQrCodes.delete(sampleId)
+    }
+    setSelectedQrCodes(newQrCodes)
   }
 
   const handleBulkExport = async () => {
@@ -284,6 +300,46 @@ export default function SamplesPage() {
       }
     } catch (error) {
       console.error('Error printing QR table:', error)
+    }
+  }
+
+  const handleBulkPrintBagSleeves = async () => {
+    if (selectedSamples.size === 0) {
+      alert('Please select at least one sample')
+      return
+    }
+
+    try {
+      // Create sample-specific QR code flags
+      const sampleQrConfig = Array.from(selectedSamples).map(id => ({
+        id,
+        includeQrCode: selectedQrCodes.has(id)
+      }))
+
+      const response = await fetch('/api/samples/bulk/print-bag-sleeves', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ samples: sampleQrConfig })
+      })
+
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `bag-sleeves-${new Date().toISOString().split('T')[0]}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        window.URL.revokeObjectURL(url)
+      } else {
+        const error = await response.json()
+        console.error('Failed to generate bag sleeve labels:', error)
+        alert(`Failed to generate bag sleeve labels.\n\n${error.error}${error.details ? '\n\nDetails: ' + error.details : ''}`)
+      }
+    } catch (error) {
+      console.error('Error printing bag sleeve labels:', error)
+      alert(`Error generating bag sleeve labels.\n\n${error instanceof Error ? error.message : String(error)}`)
     }
   }
 
@@ -545,7 +601,7 @@ export default function SamplesPage() {
                     <Printer className="h-4 w-4 mr-2" />
                     Print Tin Sleeves (4cm)
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={() => setShowBagSleeveDialog(true)}>
+                  <DropdownMenuItem onClick={handleBulkPrintBagSleeves}>
                     <Printer className="h-4 w-4 mr-2" />
                     Print Bag Sleeves (6 per A4)
                   </DropdownMenuItem>
@@ -759,6 +815,14 @@ export default function SamplesPage() {
                           onCheckedChange={handleSelectAll}
                         />
                       </th>
+                      {selectedSamples.size > 0 && (
+                        <th className="text-left py-3 px-4 text-sm font-semibold">
+                          <div className="flex items-center gap-1">
+                            <QrCode className="h-3 w-3" />
+                            QR
+                          </div>
+                        </th>
+                      )}
                       <th className="text-left py-3 px-4 text-sm font-semibold">Sample Nr</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Origin</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
@@ -785,6 +849,16 @@ export default function SamplesPage() {
                             onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
                           />
                         </td>
+                        {selectedSamples.size > 0 && (
+                          <td className="py-3 px-4">
+                            {selectedSamples.has(sample.id) && (
+                              <Checkbox
+                                checked={selectedQrCodes.has(sample.id)}
+                                onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
+                              />
+                            )}
+                          </td>
+                        )}
                         <td className="py-3 px-4">
                           <div className="font-medium">{parseTrackingNumber(sample.tracking_number)}</div>
                         </td>
@@ -853,16 +927,6 @@ export default function SamplesPage() {
         open={showPrintDialog}
         onOpenChange={setShowPrintDialog}
         sampleIds={Array.from(selectedSamples)}
-        onSuccess={() => {
-          setSelectedSamples(new Set())
-        }}
-      />
-
-      {/* Print Bag Sleeve Dialog */}
-      <PrintBagSleeveDialog
-        open={showBagSleeveDialog}
-        onOpenChange={setShowBagSleeveDialog}
-        selectedSamples={selectedSamples}
         onSuccess={() => {
           setSelectedSamples(new Set())
         }}

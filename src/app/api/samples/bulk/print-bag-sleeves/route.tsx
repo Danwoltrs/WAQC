@@ -23,11 +23,26 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { sample_ids, includeQrCode = false } = body
 
-    if (!sample_ids || !Array.isArray(sample_ids) || sample_ids.length === 0) {
-      return NextResponse.json({ error: 'sample_ids array is required' }, { status: 400 })
+    // Support both old format (sample_ids array with global includeQrCode) and new format (samples array with per-sample QR flags)
+    let samplesConfig: Array<{ id: string; includeQrCode: boolean }>
+
+    if (body.samples && Array.isArray(body.samples)) {
+      // New format: array of {id, includeQrCode}
+      samplesConfig = body.samples
+    } else if (body.sample_ids && Array.isArray(body.sample_ids)) {
+      // Old format: array of IDs with global includeQrCode flag
+      const { sample_ids, includeQrCode = false } = body
+      samplesConfig = sample_ids.map((id: string) => ({ id, includeQrCode }))
+    } else {
+      return NextResponse.json({ error: 'samples array or sample_ids array is required' }, { status: 400 })
     }
+
+    if (samplesConfig.length === 0) {
+      return NextResponse.json({ error: 'At least one sample is required' }, { status: 400 })
+    }
+
+    const sample_ids = samplesConfig.map(s => s.id)
 
     // Fetch samples with all required fields
     const { data: samples, error } = await supabase
@@ -173,9 +188,10 @@ export async function POST(request: NextRequest) {
         tax_id: '',
       }
 
-      // Generate QR code if requested
+      // Generate QR code if requested for this specific sample
       let qrCode: string | undefined
-      if (includeQrCode) {
+      const sampleConfig = samplesConfig.find(s => s.id === sample.id)
+      if (sampleConfig?.includeQrCode) {
         try {
           const certificateUrl = getCertificateDownloadUrl(sample.id)
           qrCode = await generateQRCode(certificateUrl, {
