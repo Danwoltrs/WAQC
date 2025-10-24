@@ -57,7 +57,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: '8pt',
-    gap: '8pt',
   },
   logo: {
     width: '120pt',
@@ -68,13 +67,23 @@ const styles = StyleSheet.create({
     width: '50pt',
     height: '50pt',
   },
-  contractSection: {
+  headerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
     marginBottom: '4pt',
+  },
+  leftColumn: {
+    flex: 1,
+  },
+  rightColumn: {
+    alignItems: 'flex-end',
   },
   contractText: {
     fontSize: 7,
     color: '#333333',
     marginBottom: '1pt',
+    textAlign: 'right',
   },
   contractLabel: {
     fontWeight: 'bold',
@@ -83,11 +92,6 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
     flexDirection: 'column',
-  },
-  typeAndDate: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: '4pt',
   },
   sampleType: {
     fontSize: 9,
@@ -131,6 +135,12 @@ const styles = StyleSheet.create({
     marginTop: 'auto',
     paddingTop: '6pt',
     borderTop: '0.5pt solid #EEEEEE',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  labTextSection: {
+    flex: 1,
   },
   labName: {
     fontSize: 5,
@@ -142,6 +152,9 @@ const styles = StyleSheet.create({
     fontSize: 4.5,
     color: '#666666',
     marginBottom: '0.5pt',
+  },
+  qrSection: {
+    marginLeft: '8pt',
   },
 })
 
@@ -197,37 +210,35 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                 key={index}
                 style={containerStyles}
               >
-                {/* Logo (Centered) with optional QR Code */}
+                {/* Logo (Centered) */}
                 <View style={styles.logoSection}>
                   <Image src={label.logo_url} style={styles.logo} />
-                  {label.qr_code && (
-                    <Image src={label.qr_code} style={styles.qrCode} />
-                  )}
                 </View>
 
-                {/* Contracts Section */}
-                <View style={styles.contractSection}>
-                  {label.contracts.map((contract, idx) => (
-                    <Text key={idx} style={styles.contractText}>
-                      <Text style={styles.contractLabel}>{contract.type}: </Text>
-                      {contract.value}
-                    </Text>
-                  ))}
-                  {label.buyer_reference && (
-                    <Text style={styles.contractText}>
-                      <Text style={styles.contractLabel}>Buyer: </Text>
-                      {label.buyer_reference}
-                    </Text>
-                  )}
+                {/* Header Row: Sample Type on Left, Date and Contracts on Right */}
+                <View style={styles.headerRow}>
+                  <View style={styles.leftColumn}>
+                    <Text style={styles.sampleType}>{label.sample_type}</Text>
+                  </View>
+                  <View style={styles.rightColumn}>
+                    <Text style={styles.date}>{label.date}</Text>
+                    {label.contracts.map((contract, idx) => (
+                      <Text key={idx} style={styles.contractText}>
+                        <Text style={styles.contractLabel}>{contract.type}: </Text>
+                        {contract.value}
+                      </Text>
+                    ))}
+                    {label.buyer_reference && (
+                      <Text style={styles.contractText}>
+                        <Text style={styles.contractLabel}>Buyer: </Text>
+                        {label.buyer_reference}
+                      </Text>
+                    )}
+                  </View>
                 </View>
 
                 {/* Main Content */}
                 <View style={styles.mainContent}>
-                  {/* Type and Date */}
-                  <View style={styles.typeAndDate}>
-                    <Text style={styles.sampleType}>{label.sample_type}</Text>
-                    <Text style={styles.date}>{label.date}</Text>
-                  </View>
 
                   {/* Tracking Number */}
                   <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
@@ -277,30 +288,37 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                   )}
                 </View>
 
-                {/* Lab Info (Bottom) */}
+                {/* Lab Info (Bottom) with QR Code on Right */}
                 <View style={styles.labInfo}>
-                  <Text style={styles.labName}>{label.laboratory?.name.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}</Text>
-                  {label.laboratory && (
-                    <>
-                      {label.laboratory.address && (
-                        <Text style={styles.labDetail}>
-                          {label.laboratory.address}
-                          {label.laboratory.zip_code && `, ${label.laboratory.zip_code}`}
-                          {label.laboratory.city && ` ${label.laboratory.city}`}
-                          {label.laboratory.state && `/${label.laboratory.state}`}
-                        </Text>
-                      )}
-                      {(label.laboratory.phone || label.laboratory.fax) && (
-                        <Text style={styles.labDetail}>
-                          {label.laboratory.phone && `Phone: ${label.laboratory.phone}`}
-                          {label.laboratory.phone && label.laboratory.fax && ' | '}
-                          {label.laboratory.fax && `Fax: ${label.laboratory.fax}`}
-                        </Text>
-                      )}
-                      {label.laboratory.tax_id && (
-                        <Text style={styles.labDetail}>CNPJ: {label.laboratory.tax_id}</Text>
-                      )}
-                    </>
+                  <View style={styles.labTextSection}>
+                    <Text style={styles.labName}>{label.laboratory?.name.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}</Text>
+                    {label.laboratory && (
+                      <>
+                        {label.laboratory.address && (
+                          <Text style={styles.labDetail}>
+                            {label.laboratory.address}
+                            {label.laboratory.zip_code && `, ${label.laboratory.zip_code}`}
+                            {label.laboratory.city && ` ${label.laboratory.city}`}
+                            {label.laboratory.state && `/${label.laboratory.state}`}
+                          </Text>
+                        )}
+                        {(label.laboratory.phone || label.laboratory.fax) && (
+                          <Text style={styles.labDetail}>
+                            {label.laboratory.phone && `Phone: ${label.laboratory.phone}`}
+                            {label.laboratory.phone && label.laboratory.fax && ' | '}
+                            {label.laboratory.fax && `Fax: ${label.laboratory.fax}`}
+                          </Text>
+                        )}
+                        {label.laboratory.tax_id && (
+                          <Text style={styles.labDetail}>CNPJ: {label.laboratory.tax_id}</Text>
+                        )}
+                      </>
+                    )}
+                  </View>
+                  {label.qr_code && (
+                    <View style={styles.qrSection}>
+                      <Image src={label.qr_code} style={styles.qrCode} />
+                    </View>
                   )}
                 </View>
               </View>
