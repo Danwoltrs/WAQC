@@ -48,7 +48,11 @@ export async function GET(
         quality_spec_id,
         client_id,
         exporter:exporters(name),
-        quality_spec:client_qualities(custom_name, quality_code)
+        quality_spec:client_qualities(
+          custom_name,
+          quality_code,
+          template:quality_templates(name_en, name_pt, name_es)
+        )
       `)
       .eq('id', id)
       .single()
@@ -61,14 +65,19 @@ export async function GET(
     // Get exporter name
     const exporterName = (sample as any).exporter?.name || 'N/A'
 
-    // Get full quality description
+    // Get client quality name and full quality description
     const qualitySpec = (sample as any).quality_spec
+    let clientQualityName: string | undefined
     let qualityDescription = 'N/A'
+
     if (qualitySpec) {
-      const parts = []
-      if (qualitySpec.custom_name) parts.push(qualitySpec.custom_name)
-      if (qualitySpec.quality_code) parts.push(qualitySpec.quality_code)
-      qualityDescription = parts.join(' - ')
+      // Client quality name is the custom_name if it exists
+      clientQualityName = qualitySpec.custom_name || undefined
+
+      // Quality description comes from the template
+      if (qualitySpec.template) {
+        qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
+      }
     }
 
     // Format packaging type
@@ -84,7 +93,8 @@ export async function GET(
     let bagsDisplay = 'N/A'
     if ((sample as any).bag_type === 'bulk' && (sample as any).equivalent_60kg_bags) {
       bagsDisplay = `Bulk (equiv. ${Math.round((sample as any).equivalent_60kg_bags)} bags)`
-    } else if ((sample as any).bags && (sample as any).bag_weight_kg) {
+    } else if ((sample as any).bags != null && (sample as any).bag_weight_kg != null) {
+      // Check for null/undefined, not falsy (0 is a valid number of bags)
       bagsDisplay = `${(sample as any).bags} x ${(sample as any).bag_weight_kg}kg`
     }
 
@@ -102,10 +112,10 @@ export async function GET(
       margin: 1,
     })
 
-    // Read logo file and convert to base64
-    const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.svg')
+    // Read logo file and convert to base64 (PNG for better PDF compatibility)
+    const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-green.png')
     const logoBuffer = fs.readFileSync(logoPath)
-    const logoBase64 = `data:image/svg+xml;base64,${logoBuffer.toString('base64')}`
+    const logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
 
     // Format date
     const date = new Date((sample as any).created_at).toLocaleDateString('en-GB', {
@@ -120,7 +130,7 @@ export async function GET(
       tracking_number: (sample as any).tracking_number,
       sample_type: ((sample as any).sample_type || 'PSS') as any,
       exporter: exporterName,
-      client_quality_name: undefined,
+      client_quality_name: clientQualityName,
       quality_description: qualityDescription,
       contracts,
       packaging,

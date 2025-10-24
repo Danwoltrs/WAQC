@@ -48,7 +48,11 @@ export async function POST(request: NextRequest) {
         quality_spec_id,
         client_id,
         exporter:exporters(name),
-        quality_spec:client_qualities(custom_name, quality_code)
+        quality_spec:client_qualities(
+          custom_name,
+          quality_code,
+          template:quality_templates(name_en, name_pt, name_es)
+        )
       `)
       .in('id', sample_ids)
 
@@ -66,12 +70,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No samples found' }, { status: 404 })
     }
 
-    // Read logo file and convert to base64 (once for all labels)
+    // Read logo file and convert to base64 (PNG for better PDF compatibility)
     let logoBase64: string
     try {
-      const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.svg')
+      const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-green.png')
       const logoBuffer = fs.readFileSync(logoPath)
-      logoBase64 = `data:image/svg+xml;base64,${logoBuffer.toString('base64')}`
+      logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
     } catch (logoError) {
       console.error('Error reading logo file:', logoError)
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
@@ -91,14 +95,19 @@ export async function POST(request: NextRequest) {
         // Get exporter name
         const exporterName = sample.exporter?.name || 'N/A'
 
-        // Get full quality description
+        // Get client quality name and full quality description
         const qualitySpec = sample.quality_spec
+        let clientQualityName: string | undefined
         let qualityDescription = 'N/A'
+
         if (qualitySpec) {
-          const parts = []
-          if (qualitySpec.custom_name) parts.push(qualitySpec.custom_name)
-          if (qualitySpec.quality_code) parts.push(qualitySpec.quality_code)
-          qualityDescription = parts.join(' - ')
+          // Client quality name is the custom_name if it exists
+          clientQualityName = qualitySpec.custom_name || undefined
+
+          // Quality description comes from the template
+          if (qualitySpec.template) {
+            qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
+          }
         }
 
         // Format packaging
@@ -108,7 +117,8 @@ export async function POST(request: NextRequest) {
         let bagsDisplay = 'N/A'
         if (sample.bag_type === 'bulk' && sample.equivalent_60kg_bags) {
           bagsDisplay = `Bulk (equiv. ${Math.round(sample.equivalent_60kg_bags)} bags)`
-        } else if (sample.bags && sample.bag_weight_kg) {
+        } else if (sample.bags != null && sample.bag_weight_kg != null) {
+          // Check for null/undefined, not falsy (0 is a valid number of bags)
           bagsDisplay = `${sample.bags} x ${sample.bag_weight_kg}kg`
         }
 
@@ -138,7 +148,7 @@ export async function POST(request: NextRequest) {
           tracking_number: sample.tracking_number,
           sample_type: (sample.sample_type || 'PSS') as any,
           exporter: exporterName,
-          client_quality_name: undefined,
+          client_quality_name: clientQualityName,
           quality_description: qualityDescription,
           contracts,
           packaging,

@@ -53,18 +53,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: '3pt',
-  },
-  date: {
-    fontSize: 7,
-    color: '#666666',
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginBottom: '4pt',
   },
   trackingNumber: {
     fontSize: 12,
     fontWeight: 'bold',
     color: '#000000',
+    marginBottom: '1pt',
+  },
+  date: {
+    fontSize: 7,
+    color: '#666666',
   },
   infoRow: {
     fontSize: 8,
@@ -122,10 +123,10 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
 
             {/* Information Section */}
             <View style={styles.infoSection}>
-              {/* Header Row: Date + Tracking Number */}
+              {/* Header Row: Tracking Number + Date */}
               <View style={styles.headerRow}>
-                <Text style={styles.date}>{label.date}</Text>
                 <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
+                <Text style={styles.date}>{label.date}</Text>
               </View>
 
               {/* Exporter */}

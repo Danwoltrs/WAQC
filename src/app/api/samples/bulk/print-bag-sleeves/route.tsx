@@ -37,6 +37,7 @@ export async function POST(request: NextRequest) {
         sample_type,
         created_at,
         hide_exporter_on_label,
+        buyer_reference,
         wolthers_contract_nr,
         buyer_contract_nr,
         exporter_contract_nr,
@@ -50,7 +51,11 @@ export async function POST(request: NextRequest) {
         quality_spec_id,
         client_id,
         exporter:exporters(name),
-        quality_spec:client_qualities(custom_name, quality_code)
+        quality_spec:client_qualities(
+          custom_name,
+          quality_code,
+          template:quality_templates(name_en, name_pt, name_es)
+        )
       `)
       .in('id', sample_ids)
 
@@ -84,14 +89,19 @@ export async function POST(request: NextRequest) {
       // Get exporter name
       const exporterName = sample.exporter?.name || 'N/A'
 
-      // Get full quality description
+      // Get client quality name and full quality description
       const qualitySpec = sample.quality_spec
+      let clientQualityName: string | undefined
       let qualityDescription = 'N/A'
+
       if (qualitySpec) {
-        const parts = []
-        if (qualitySpec.custom_name) parts.push(qualitySpec.custom_name)
-        if (qualitySpec.quality_code) parts.push(qualitySpec.quality_code)
-        qualityDescription = parts.join(' - ')
+        // Client quality name is the custom_name if it exists
+        clientQualityName = qualitySpec.custom_name || undefined
+
+        // Quality description comes from the template
+        if (qualitySpec.template) {
+          qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
+        }
       }
 
       // Format bags display (origin-specific defaults)
@@ -145,12 +155,12 @@ export async function POST(request: NextRequest) {
         exporter: exporterName,
         hide_exporter: sample.hide_exporter_on_label || false,
         bags_display: bagsDisplay,
-        client_quality_name: undefined,
+        client_quality_name: clientQualityName,
         quality_description: qualityDescription,
         ico_number: sample.ico_number,
         container_number: sample.container_nr,
         contracts,
-        buyer_reference: undefined,
+        buyer_reference: sample.buyer_reference,
         logo_url: logoBase64,
       }
     })
