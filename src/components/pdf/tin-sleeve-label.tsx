@@ -143,13 +143,15 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 <Text style={styles.value}>{label.exporter}</Text>
               </Text>
 
-              {/* Quality: Client Name - Description (inline) */}
-              <Text style={styles.qualityRow}>
-                {label.client_quality_name && (
-                  <Text style={styles.qualityName}>{label.client_quality_name} - </Text>
-                )}
-                <Text style={styles.qualityDescription}>{label.quality_description}</Text>
-              </Text>
+              {/* Quality: Client Name - Description (inline) - Hide if N/A */}
+              {(label.client_quality_name || (label.quality_description && label.quality_description !== 'N/A')) && (
+                <Text style={styles.qualityRow}>
+                  {label.client_quality_name && (
+                    <Text style={styles.qualityName}>{label.client_quality_name} - </Text>
+                  )}
+                  <Text style={styles.qualityDescription}>{label.quality_description}</Text>
+                </Text>
+              )}
 
               {/* Quantity (Bags + MT) - Packaging included in bags_display */}
               <Text style={styles.infoRow}>
