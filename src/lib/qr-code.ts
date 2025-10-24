@@ -81,3 +81,13 @@ export function getSampleTrackingUrl(trackingNumber: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
   return `${baseUrl}/samples/${trackingNumber}`
 }
+
+/**
+ * Generate a certificate download URL for QR code
+ * @param sampleId - The sample ID
+ * @returns URL string for certificate download
+ */
+export function getCertificateDownloadUrl(sampleId: string): string {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
+  return `${baseUrl}/api/samples/${sampleId}/certificate`
+}

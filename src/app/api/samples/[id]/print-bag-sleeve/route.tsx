@@ -3,15 +3,16 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
+import { generateQRCode, getCertificateDownloadUrl } from '@/lib/qr-code'
 import path from 'path'
 import fs from 'fs'
 
 /**
- * GET /api/samples/[id]/print-bag-sleeve
- * Generate a single sample bag sleeve label PDF (4 per A4 page)
+ * GET /api/samples/[id]/print-bag-sleeve?includeQrCode=true
+ * Generate a single sample bag sleeve label PDF (6 per A4 page)
  * Includes: Logo, Sample type, Date, Tracking number, Exporter (conditional),
  * Bags, Quality (client name + full description), ICO/Container (SS only),
- * Contract references, Lab info at bottom
+ * Contract references, Lab info at bottom, Optional QR code for certificate download
  */
 export async function GET(
   request: NextRequest,
@@ -28,6 +29,9 @@ export async function GET(
 
     // Await params (Next.js 15)
     const { id } = await params
+
+    // Check if QR code should be included (query parameter)
+    const includeQrCode = request.nextUrl.searchParams.get('includeQrCode') === 'true'
 
     // Fetch sample with all required fields
     const { data: sample, error } = await supabase
@@ -157,6 +161,21 @@ export async function GET(
       sampleTypeDisplay = 'SS'
     }
 
+    // Generate QR code if requested
+    let qrCode: string | undefined
+    if (includeQrCode) {
+      try {
+        const certificateUrl = getCertificateDownloadUrl(id)
+        qrCode = await generateQRCode(certificateUrl, {
+          width: 150,
+          margin: 1,
+        })
+      } catch (qrError) {
+        console.error('Error generating QR code:', qrError)
+        // Continue without QR code if generation fails
+      }
+    }
+
     // Prepare label data
     const labelData: SampleBagSleeveLabelData = {
       sample_type: sampleTypeDisplay,
@@ -172,6 +191,7 @@ export async function GET(
       contracts,
       buyer_reference: undefined,
       logo_url: logoBase64,
+      qr_code: qrCode,
       laboratory: labInfo,
     }
 

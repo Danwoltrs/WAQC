@@ -16,6 +16,7 @@ export interface SampleBagSleeveLabelData {
   contracts: Array<{ type: string; value: string }> // Contract references with types
   buyer_reference?: string // Buyer reference
   logo_url: string // Wolthers logo URL
+  qr_code?: string // Optional QR code data URL for certificate download
   laboratory?: {
     name: string
     address: string
@@ -52,13 +53,20 @@ const styles = StyleSheet.create({
     borderBottom: 'none',
   },
   logoSection: {
+    flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
     marginBottom: '8pt',
+    gap: '8pt',
   },
   logo: {
     width: '120pt',
     height: 'auto',
     objectFit: 'contain',
+  },
+  qrCode: {
+    width: '50pt',
+    height: '50pt',
   },
   contractSection: {
     marginBottom: '4pt',
@@ -189,9 +197,12 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                 key={index}
                 style={containerStyles}
               >
-                {/* Logo (Centered) */}
+                {/* Logo (Centered) with optional QR Code */}
                 <View style={styles.logoSection}>
                   <Image src={label.logo_url} style={styles.logo} />
+                  {label.qr_code && (
+                    <Image src={label.qr_code} style={styles.qrCode} />
+                  )}
                 </View>
 
                 {/* Contracts Section */}

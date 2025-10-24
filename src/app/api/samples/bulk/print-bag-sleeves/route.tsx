@@ -3,13 +3,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
+import { generateQRCode, getCertificateDownloadUrl } from '@/lib/qr-code'
 import path from 'path'
 import fs from 'fs'
 
 /**
  * POST /api/samples/bulk/print-bag-sleeves
- * Generate bulk sample bag sleeve label PDFs (4 per A4 page)
- * Body: { sample_ids: string[] }
+ * Generate bulk sample bag sleeve label PDFs (6 per A4 page)
+ * Body: { sample_ids: string[], includeQrCode?: boolean }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { sample_ids } = body
+    const { sample_ids, includeQrCode = false } = body
 
     if (!sample_ids || !Array.isArray(sample_ids) || sample_ids.length === 0) {
       return NextResponse.json({ error: 'sample_ids array is required' }, { status: 400 })
@@ -84,8 +85,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
 
-    // Prepare label data for all samples
-    const labels: SampleBagSleeveLabelData[] = samples.map((sample: any) => {
+    // Prepare label data for all samples with optional QR codes
+    const labels: SampleBagSleeveLabelData[] = await Promise.all(samples.map(async (sample: any) => {
       // Get exporter name
       const exporterName = sample.exporter?.name || 'N/A'
 
@@ -172,6 +173,21 @@ export async function POST(request: NextRequest) {
         tax_id: '',
       }
 
+      // Generate QR code if requested
+      let qrCode: string | undefined
+      if (includeQrCode) {
+        try {
+          const certificateUrl = getCertificateDownloadUrl(sample.id)
+          qrCode = await generateQRCode(certificateUrl, {
+            width: 150,
+            margin: 1,
+          })
+        } catch (qrError) {
+          console.error('Error generating QR code for sample', sample.id, ':', qrError)
+          // Continue without QR code if generation fails
+        }
+      }
+
       return {
         sample_type: sampleTypeDisplay,
         date,
@@ -186,9 +202,10 @@ export async function POST(request: NextRequest) {
         contracts,
         buyer_reference: undefined,
         logo_url: logoBase64,
+        qr_code: qrCode,
         laboratory: labInfo,
       }
-    })
+    }))
 
     // Generate PDF
     let pdfDocument, stream, buffer
