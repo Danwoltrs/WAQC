@@ -1043,6 +1043,20 @@
         ],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 34,
+        "title": "Fix Cross-Browser Authentication Issues and Improve Page Load Performance",
+        "description": "Investigate and resolve authentication failures and slow page load times across Chrome, Firefox, Safari, and Edge browsers.",
+        "details": "This task involves comprehensive cross-browser compatibility testing and performance optimization for the authentication flow and initial page loads. **Authentication Compatibility Issues**: 1) Test and fix Supabase SSR authentication flow across all target browsers (Chrome, Firefox, Safari, Edge), focusing on cookie handling differences and session persistence. 2) Investigate timeout issues in auth-provider.tsx (currently has 60s timeouts) and optimize session initialization. 3) Test Microsoft OAuth flow compatibility across browsers, ensuring proper redirect handling. 4) Add browser-specific polyfills if needed for older browser versions. 5) Implement fallback authentication strategies for browsers with strict cookie policies. **Page Load Performance Optimization**: 1) Implement code splitting using dynamic imports for non-critical components like sample dialogs and admin panels. 2) Add lazy loading for heavy components (charts, tables, sample galleries). 3) Optimize bundle size by analyzing with webpack-bundle-analyzer and removing unused dependencies. 4) Implement service worker for caching static assets and API responses. 5) Add resource preloading for critical assets (fonts, icons, initial API calls). 6) Optimize database queries in main dashboard to reduce TTFB. 7) Add compression and browser caching headers in next.config.js. **Cross-Browser Testing Setup**: 1) Create automated tests using Playwright or similar for auth flows across browsers. 2) Set up performance monitoring with Core Web Vitals tracking. 3) Add browser detection and conditional loading for problematic features. **Implementation Files**: src/lib/supabase.ts, src/components/providers/auth-provider.tsx, middleware.ts, next.config.js, and main dashboard components in src/app/page.tsx.",
+        "testStrategy": "Create comprehensive cross-browser test suite: 1) Test authentication flow (login, logout, session persistence) in Chrome, Firefox, Safari, and Edge using automated browser testing. 2) Verify Microsoft OAuth flow works consistently across all browsers. 3) Test session timeout and recovery scenarios in each browser. 4) Measure and compare page load times before and after optimizations using Lighthouse and WebPageTest. 5) Test offline authentication scenarios and fallback mechanisms. 6) Verify Core Web Vitals metrics (LCP, FID, CLS) meet performance standards across browsers. 7) Test with slow network conditions (3G simulation) to ensure authentication still works. 8) Validate that all critical user flows (sample intake, dashboard loading, navigation) work consistently across target browsers. 9) Test with disabled JavaScript and cookies to ensure graceful degradation. 10) Performance regression testing to ensure optimizations don't break existing functionality.",
+        "status": "pending",
+        "dependencies": [
+          1,
+          2
+        ],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -1055,7 +1069,7 @@
       ],
       "created": "2025-10-23T20:04:29.085Z",
       "description": "Tasks for master context",
-      "updated": "2025-10-24T12:15:42.690Z"
+      "updated": "2025-10-24T16:57:24.038Z"
     }
   }
 }

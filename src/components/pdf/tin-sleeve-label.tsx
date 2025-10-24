@@ -98,7 +98,8 @@ const styles = StyleSheet.create({
     color: '#555555',
   },
   quantityValue: {
-    color: '#555555',
+    fontWeight: 'bold',
+    color: '#000000',
   },
 })
 
@@ -115,7 +116,7 @@ interface TinSleeveLabelDocumentProps {
 export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ labels }) => {
   return (
     <Document>
-      <Page size="A4" style={styles.page}>
+      <Page size="A4" orientation="landscape" style={styles.page}>
         {labels.map((label, index) => (
           <View key={index} style={styles.labelContainer}>
             {/* Left Section: Logo - Separator - QR Code */}
