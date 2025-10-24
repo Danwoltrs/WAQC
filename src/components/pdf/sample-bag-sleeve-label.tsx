@@ -240,17 +240,23 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                     </Text>
                   )}
 
-                  {/* Bags */}
+                  {/* Quantity */}
                   <Text style={styles.infoRow}>
-                    <Text style={styles.label}>Bags: </Text>
+                    <Text style={styles.label}>Quantity: </Text>
                     <Text style={styles.value}>{label.bags_display}</Text>
                   </Text>
 
-                  {/* Quality: Client Name + Full Description */}
-                  {label.client_quality_name && (
-                    <Text style={styles.qualityName}>{label.client_quality_name}</Text>
+                  {/* Quality: Client Name + Full Description (hide if N/A) */}
+                  {(label.client_quality_name || (label.quality_description && label.quality_description !== 'N/A')) && (
+                    <>
+                      {label.client_quality_name && (
+                        <Text style={styles.qualityName}>{label.client_quality_name}</Text>
+                      )}
+                      {label.quality_description && label.quality_description !== 'N/A' && (
+                        <Text style={styles.qualityDescription}>{label.quality_description}</Text>
+                      )}
+                    </>
                   )}
-                  <Text style={styles.qualityDescription}>{label.quality_description}</Text>
 
                   {/* SS-specific fields */}
                   {label.sample_type === 'SS' && (
