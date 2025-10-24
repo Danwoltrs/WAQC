@@ -39,7 +39,7 @@ const styles = StyleSheet.create({
     borderRight: '1pt solid #DDDDDD',
   },
   logo: {
-    width: '60pt',
+    width: '120pt', // Doubled from 60pt
     height: 'auto',
     objectFit: 'contain',
     marginRight: '8pt',
@@ -66,7 +66,7 @@ const styles = StyleSheet.create({
     marginBottom: '1pt',
   },
   date: {
-    fontSize: 7,
+    fontSize: 8,
     color: '#666666',
   },
   infoRow: {
@@ -94,9 +94,13 @@ const styles = StyleSheet.create({
     color: '#555555',
   },
   contractsRow: {
-    fontSize: 7,
+    fontSize: 8,
     color: '#555555',
     marginTop: '1pt',
+  },
+  quantityValue: {
+    fontWeight: 'bold',
+    color: '#000000',
   },
 })
 
@@ -108,7 +112,7 @@ interface TinSleeveLabelDocumentProps {
  * PDF Document component for printing tin sleeve labels
  * Format: 4cm height labels for tin containers
  * Includes: Date, Sample tracking, Exporter, Quality (client name + full description),
- * Contracts, Packaging type, Bag count with bulk indicator, QR code, Wolthers logo
+ * Quantity (with packaging type and MT), Contracts, QR code, Wolthers logo
  */
 export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ labels }) => {
   return (
@@ -129,7 +133,7 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
               {/* Header Row: Tracking Number + Date */}
               <View style={styles.headerRow}>
                 <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
-                <Text style={styles.date}>{label.date}</Text>
+                <Text style={styles.date}>Date: {label.date}</Text>
               </View>
 
               {/* Exporter */}
@@ -146,15 +150,9 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 <Text style={styles.qualityDescription}>{label.quality_description}</Text>
               </Text>
 
-              {/* Packaging */}
+              {/* Quantity (Bags + MT) - Packaging included in bags_display */}
               <Text style={styles.infoRow}>
-                <Text style={styles.label}>Packaging: </Text>
-                <Text style={styles.value}>{label.packaging}</Text>
-              </Text>
-
-              {/* Quantity (Bags + MT) */}
-              <Text style={styles.infoRow}>
-                <Text style={styles.value}>{label.bags_display}</Text>
+                <Text style={styles.quantityValue}>{label.bags_display}</Text>
               </Text>
 
               {/* Contracts */}
