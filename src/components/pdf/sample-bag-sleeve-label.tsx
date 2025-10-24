@@ -134,7 +134,7 @@ const styles = StyleSheet.create({
   },
   qrSection: {
     position: 'absolute',
-    bottom: '18pt',
+    bottom: '65pt',
     right: '12pt',
   },
   labInfo: {
