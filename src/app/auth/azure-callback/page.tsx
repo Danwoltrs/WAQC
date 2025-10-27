@@ -22,74 +22,44 @@ export default function AzureCallbackPage() {
         const response = await handleAzureADRedirect()
 
         if (!response) {
-          throw new Error('No authentication response received')
+          throw new Error('No authentication response received from Microsoft')
         }
-
-        setStatus('Signing in to Wolthers QC system...')
 
         // Get user info from Azure AD
-        const { account, idToken } = response
+        const { account } = response
 
         if (!account) {
-          throw new Error('No account information received')
+          throw new Error('No account information in Microsoft response')
         }
 
-        // Send the Azure AD token to our backend to create/sign in the user
-        const apiResponse = await fetch('/api/auth/azure-signin', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            idToken,
-            account,
-          }),
-        })
+        // Extract email from account
+        const email = (account.username as string | undefined) ||
+                      (account.idTokenClaims?.email as string | undefined) ||
+                      (account.idTokenClaims?.preferred_username as string | undefined) ||
+                      ''
 
-        const data = await apiResponse.json()
-
-        if (!apiResponse.ok) {
-          throw new Error(data.error || 'Failed to sign in')
+        if (!email) {
+          throw new Error('No email found in Microsoft account')
         }
+
+        const name = account.name || email.split('@')[0]
+
+        console.log('Azure AD authentication successful:', { email, name })
 
         setStatus('Setting up your session...')
 
-        // Parse the session URL to extract the token
-        const sessionUrl = new URL(data.sessionUrl)
-        const token = sessionUrl.searchParams.get('token')
-        const type = sessionUrl.searchParams.get('type') || 'magiclink'
-
-        if (!token) {
-          throw new Error('No session token received')
-        }
-
-        // Verify the OTP token to create a Supabase session
-        const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp({
-          token_hash: token,
-          type: type as any,
-        })
-
-        if (verifyError) {
-          console.error('Session creation error:', verifyError)
-          throw new Error(`Failed to create session: ${verifyError.message}`)
-        }
-
-        if (!sessionData.session) {
-          throw new Error('No session created')
-        }
-
-        console.log('Supabase session created successfully')
-        setStatus('Redirecting to dashboard...')
-
         // Store Azure AD session info
         sessionStorage.setItem('azure_ad_authenticated', 'true')
-        sessionStorage.setItem('azure_ad_email', data.email)
-        sessionStorage.setItem('azure_ad_name', data.name || '')
+        sessionStorage.setItem('azure_ad_email', email)
+        sessionStorage.setItem('azure_ad_name', name)
 
-        // Redirect to home
-        setTimeout(() => {
-          router.push('/')
-        }, 1000)
+        // For now, just redirect - let the auth provider handle the rest
+        setStatus('Redirecting to dashboard...')
+
+        console.log('Redirecting to dashboard...')
+
+        // Redirect immediately
+        window.location.href = '/'
       } catch (err: any) {
         console.error('Azure AD callback error:', err)
         setError(err.message || 'Authentication failed')
@@ -97,10 +67,10 @@ export default function AzureCallbackPage() {
         // Reset redirect state so user can try again
         resetRedirectState()
 
-        // Redirect to login with error after 3 seconds
+        // Show error for 5 seconds before redirecting
         setTimeout(() => {
-          router.push(`/?error=${encodeURIComponent(err.message)}`)
-        }, 3000)
+          window.location.href = `/?error=${encodeURIComponent(err.message)}`
+        }, 5000)
       }
     }
 

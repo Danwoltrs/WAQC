@@ -4,14 +4,18 @@ import type { Database } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
   try {
-    const { idToken, account } = await request.json()
+    const body = await request.json()
+    const email = body.email || body.account?.username || body.account?.idTokenClaims?.email
+    const name = body.name || body.account?.name || body.account?.idTokenClaims?.name
 
-    if (!idToken || !account) {
+    if (!email) {
       return NextResponse.json(
-        { error: 'Missing authentication data' },
+        { error: 'Missing email in request' },
         { status: 400 }
       )
     }
+
+    console.log('Creating/getting user for:', { email, name })
 
     // Create Supabase Admin client using service role key
     const supabaseAdmin = createClient<Database>(
@@ -24,18 +28,6 @@ export async function POST(request: NextRequest) {
         }
       }
     )
-
-    // Extract user info from Azure AD account
-    const email = account.username || account.idTokenClaims?.email || account.idTokenClaims?.preferred_username
-    const name = account.name || account.idTokenClaims?.name
-    const azureId = account.localAccountId || account.homeAccountId
-
-    if (!email) {
-      return NextResponse.json(
-        { error: 'No email found in Azure AD account' },
-        { status: 400 }
-      )
-    }
 
     // Get or create user in Supabase Auth
     const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers()
@@ -52,8 +44,7 @@ export async function POST(request: NextRequest) {
         email,
         email_confirm: true, // Auto-confirm email since they authenticated via Azure AD
         user_metadata: {
-          full_name: name,
-          azure_ad_id: azureId,
+          full_name: name || email.split('@')[0],
         }
       })
 
