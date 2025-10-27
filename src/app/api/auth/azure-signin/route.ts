@@ -15,6 +15,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Only allow @wolthers.com emails via Microsoft authentication
+    if (!email.endsWith('@wolthers.com')) {
+      console.log('Non-Wolthers email attempted Microsoft sign-in:', email)
+      return NextResponse.json(
+        { error: 'Microsoft authentication is only available for Wolthers employees. Please contact your administrator for access.' },
+        { status: 403 }
+      )
+    }
+
     console.log('Creating/getting user for:', { email, name })
 
     // Create Supabase Admin client using service role key
@@ -41,23 +50,50 @@ export async function POST(request: NextRequest) {
     })
 
     if (createUserError) {
-      // If user already exists, fetch their ID
+      // If user already exists, fetch their ID from profiles table
       if (createUserError.code === 'email_exists' || createUserError.message?.includes('already been registered')) {
-        console.log('User already exists, fetching user ID...')
+        console.log('User already exists, fetching user ID from profiles...')
 
-        // List users and find by email
-        const { data: userList } = await supabaseAdmin.auth.admin.listUsers()
-        const existingUser = userList?.users?.find(u => u.email === email)
+        // Try to get user ID from profiles table
+        const { data: profile } = await supabaseAdmin
+          .from('profiles')
+          .select('id')
+          .eq('email', email)
+          .single()
 
-        if (existingUser) {
-          userId = existingUser.id
-          console.log('Found existing user:', userId)
+        if (profile?.id) {
+          userId = profile.id
+          console.log('Found existing user from profile:', userId)
         } else {
-          console.error('User exists but could not be found')
-          return NextResponse.json(
-            { error: 'User exists but could not be retrieved' },
-            { status: 500 }
-          )
+          console.error('User exists in auth but not in profiles, trying to list users...')
+
+          // Fallback: try to find in auth users with pagination
+          let page = 1
+          let foundUser = null
+
+          while (page <= 10 && !foundUser) { // Max 10 pages (1000 users)
+            const { data: userList } = await supabaseAdmin.auth.admin.listUsers({
+              page,
+              perPage: 100
+            })
+
+            foundUser = userList?.users?.find(u => u.email === email)
+            if (foundUser) break
+
+            if (!userList?.users || userList.users.length < 100) break
+            page++
+          }
+
+          if (foundUser) {
+            userId = foundUser.id
+            console.log('Found existing user after pagination:', userId)
+          } else {
+            console.error('User exists but could not be found in any page')
+            return NextResponse.json(
+              { error: 'User exists but could not be retrieved. Please contact support.' },
+              { status: 500 }
+            )
+          }
         }
       } else {
         // Other error creating user
