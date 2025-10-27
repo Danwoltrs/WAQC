@@ -1,15 +1,15 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
-import { signInWithAzureADRedirect } from '@/lib/azure-ad'
+import { signInWithAzureADRedirect, handleAzureADRedirect } from '@/lib/azure-ad'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Separator } from '@/components/ui/separator'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, FlaskConical, CheckCircle2 } from 'lucide-react'
 
 export function LoginForm() {
   const [email, setEmail] = useState('')
@@ -17,6 +17,68 @@ export function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [processingAzure, setProcessingAzure] = useState(false)
+  const [azureStatus, setAzureStatus] = useState('')
+
+  // Handle Azure AD redirect on mount
+  useEffect(() => {
+    const handleAzureCallback = async () => {
+      try {
+        setAzureStatus('Checking for Microsoft authentication...')
+
+        // Handle the redirect from Azure AD
+        const response = await handleAzureADRedirect()
+
+        if (!response) {
+          // No Azure AD response, normal login flow
+          return
+        }
+
+        // We have an Azure AD response, process it
+        setProcessingAzure(true)
+        setAzureStatus('Receiving Azure AD response...')
+
+        // Get user info from Azure AD
+        const { account } = response
+
+        if (!account) {
+          throw new Error('No account information in Microsoft response')
+        }
+
+        // Extract email from account
+        const userEmail = (account.username as string | undefined) ||
+                      (account.idTokenClaims?.email as string | undefined) ||
+                      (account.idTokenClaims?.preferred_username as string | undefined) ||
+                      ''
+
+        if (!userEmail) {
+          throw new Error('No email found in Microsoft account')
+        }
+
+        const name = account.name || userEmail.split('@')[0]
+
+        console.log('Azure AD authentication successful:', { email: userEmail, name })
+
+        setAzureStatus('Setting up your session...')
+
+        // Store Azure AD session info
+        sessionStorage.setItem('azure_ad_authenticated', 'true')
+        sessionStorage.setItem('azure_ad_email', userEmail)
+        sessionStorage.setItem('azure_ad_name', name)
+
+        setAzureStatus('Redirecting to dashboard...')
+
+        // Redirect to dashboard - auth provider will handle session creation
+        window.location.href = '/'
+      } catch (err: any) {
+        console.error('Azure AD callback error:', err)
+        setError(err.message || 'Authentication failed')
+        setProcessingAzure(false)
+      }
+    }
+
+    handleAzureCallback()
+  }, [])
 
   const handleEmailEnter = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && email && !showPassword) {
@@ -63,6 +125,63 @@ export function LoginForm() {
       setError(err.message || 'An unexpected error occurred')
       setLoading(false)
     }
+  }
+
+  // Show processing state when handling Azure AD callback
+  if (processingAzure) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md shadow-lg border-0 bg-card">
+          <CardHeader className="space-y-3 text-center pb-4">
+            <div className="mx-auto h-24 w-48 flex items-center justify-center mb-2">
+              <Image
+                src="/images/logos/wolthers-logo-off-white.svg"
+                alt="Wolthers Coffee Logo"
+                width={192}
+                height={72}
+                className="h-20 w-auto hidden dark:block"
+              />
+              <Image
+                src="/images/logos/wolthers-logo-green.svg"
+                alt="Wolthers Coffee Logo"
+                width={192}
+                height={72}
+                className="h-20 w-auto dark:hidden"
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="flex flex-col items-center space-y-4">
+              <div className="relative">
+                <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center">
+                  <FlaskConical className="h-10 w-10 text-primary" />
+                </div>
+                <div className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                  <CheckCircle2 className="h-5 w-5 text-primary-foreground" />
+                </div>
+              </div>
+              <div className="text-center space-y-2">
+                <h2 className="text-xl font-bold">Signing you in...</h2>
+                <p className="text-sm text-muted-foreground">Please wait while we set up your session</p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                <span className="text-sm text-muted-foreground">{azureStatus}</span>
+              </div>
+            </div>
+
+            <div className="text-center">
+              <p className="text-xs text-muted-foreground">
+                Wolthers Coffee Quality Control System
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    )
   }
 
   return (
