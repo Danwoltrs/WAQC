@@ -56,6 +56,26 @@ export function BasicInfoStep({
     ), [clients]
   )
 
+  // Get supported origins for selected laboratory
+  const supportedOrigins = useMemo(() => {
+    if (!formData.laboratory_id) return ORIGINS
+
+    const selectedLab = laboratories.find(lab => lab.id === formData.laboratory_id)
+    if (!selectedLab || !selectedLab.supported_origins || selectedLab.supported_origins.length === 0) {
+      return ORIGINS
+    }
+
+    // Filter ORIGINS to only show supported ones
+    return ORIGINS.filter(origin => selectedLab.supported_origins.includes(origin))
+  }, [formData.laboratory_id, laboratories])
+
+  // Auto-select origin if there's only one supported origin
+  useEffect(() => {
+    if (supportedOrigins.length === 1 && !formData.origin) {
+      updateFormData('origin', supportedOrigins[0])
+    }
+  }, [supportedOrigins, formData.origin, updateFormData])
+
   // Detect iOS
   useEffect(() => {
     const userAgent = window.navigator.userAgent.toLowerCase()
@@ -194,18 +214,24 @@ export function BasicInfoStep({
             <Select
               value={formData.origin}
               onValueChange={(value) => updateFormData('origin', value)}
+              disabled={supportedOrigins.length === 1}
             >
               <SelectTrigger>
                 <SelectValue placeholder="Select origin" />
               </SelectTrigger>
               <SelectContent>
-                {ORIGINS.map((origin) => (
+                {supportedOrigins.map((origin) => (
                   <SelectItem key={origin} value={origin}>
                     {origin}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
+            {supportedOrigins.length === 1 && (
+              <p className="text-xs text-muted-foreground">
+                This laboratory only handles {supportedOrigins[0]} origins
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -222,12 +248,6 @@ export function BasicInfoStep({
       {/* Rest of form - only show after sample type is selected */}
       {formData.sample_type && (
         <>
-          <div className="p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
-            <p className="text-sm font-semibold text-green-900 dark:text-green-100">
-              Step 2: Complete Sample Information
-            </p>
-          </div>
-
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="laboratory_id">Laboratory *</Label>
@@ -405,19 +425,21 @@ export function BasicInfoStep({
         </div>
       </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="supplier">Supplier Name</Label>
-        <Input
-          id="supplier"
-          value={formData.supplier}
-          onChange={(e) => updateFormData('supplier', e.target.value)}
-          placeholder="Farm or cooperative name (optional)"
-        />
-      </div>
-
-      {/* Quality Specification - Show for PSS/SS with buyer selected (required) OR for type samples (optional) */}
-      {formData.buyer && selectedBuyerClient && (formData.sample_type === 'pss' || formData.sample_type === 'ss' || formData.sample_type === 'type') && (
+      {/* Supplier and Quality Specification row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
+          <Label htmlFor="supplier">Supplier Name</Label>
+          <Input
+            id="supplier"
+            value={formData.supplier}
+            onChange={(e) => updateFormData('supplier', e.target.value)}
+            placeholder="Farm or cooperative name (optional)"
+          />
+        </div>
+
+        {/* Quality Specification - Show for PSS/SS with buyer selected (required) OR for type samples (optional) */}
+        {formData.buyer && selectedBuyerClient && (formData.sample_type === 'pss' || formData.sample_type === 'ss' || formData.sample_type === 'type') && (
+          <div className="space-y-2">
           <Label htmlFor="quality_spec_id">
             Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
           </Label>
@@ -488,8 +510,9 @@ export function BasicInfoStep({
                 : 'Select the quality specification that will be used to evaluate this sample'}
             </p>
           )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {/* Quality Name and Processing Method - same row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -569,33 +592,6 @@ export function BasicInfoStep({
 
         </>
       )}
-
-      {/* Client Auto-Detection */}
-      <ClientAutoDetection
-        metadata={{
-          exporter: formData.exporter,
-          buyer: formData.buyer,
-          roaster: formData.roaster,
-          origin: formData.origin,
-          supplier: formData.supplier,
-          wolthers_contract_nr: formData.wolthers_contract_nr,
-          exporter_contract_nr: formData.exporter_contract_nr,
-          buyer_contract_nr: formData.buyer_contract_nr,
-          roaster_contract_nr: formData.roaster_contract_nr
-        }}
-        onClientSelect={(clientId) => {
-          // Find the selected client and auto-fill buyer field
-          const selectedClient = clients.find(c => c.id === clientId)
-          if (selectedClient) {
-            // Set client_id
-            updateFormData('client_id', clientId)
-            // Auto-fill buyer field with the selected client
-            const clientName = selectedClient.fantasy_name || selectedClient.company || selectedClient.name
-            updateFormData('buyer', clientName)
-          }
-        }}
-        autoSelect={true}
-      />
 
       {filteredClients.length > 0 && !formData.client_id && (
         <div className="space-y-2">
