@@ -394,6 +394,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut()
+    // Clear Azure AD session
+    sessionStorage.removeItem('azure_ad_authenticated')
+    sessionStorage.removeItem('azure_ad_email')
+    sessionStorage.removeItem('azure_ad_name')
+    // Redirect to login page
+    window.location.href = '/'
   }
 
   const value: AuthContextType = {
