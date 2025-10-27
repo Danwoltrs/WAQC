@@ -29,33 +29,46 @@ export async function POST(request: NextRequest) {
       }
     )
 
-    // Get or create user in Supabase Auth
-    const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers()
+    // Try to create user first, handle if already exists
     let userId: string
 
-    const userExists = existingUser?.users?.find(u => u.email === email)
+    const { data: newUser, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      email_confirm: true, // Auto-confirm email since they authenticated via Azure AD
+      user_metadata: {
+        full_name: name || email.split('@')[0],
+      }
+    })
 
-    if (userExists) {
-      userId = userExists.id
-      console.log('User exists:', userId)
-    } else {
-      // Create new user in Supabase Auth
-      const { data: newUser, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
-        email,
-        email_confirm: true, // Auto-confirm email since they authenticated via Azure AD
-        user_metadata: {
-          full_name: name || email.split('@')[0],
+    if (createUserError) {
+      // If user already exists, fetch their ID
+      if (createUserError.code === 'email_exists' || createUserError.message?.includes('already been registered')) {
+        console.log('User already exists, fetching user ID...')
+
+        // List users and find by email
+        const { data: userList } = await supabaseAdmin.auth.admin.listUsers()
+        const existingUser = userList?.users?.find(u => u.email === email)
+
+        if (existingUser) {
+          userId = existingUser.id
+          console.log('Found existing user:', userId)
+        } else {
+          console.error('User exists but could not be found')
+          return NextResponse.json(
+            { error: 'User exists but could not be retrieved' },
+            { status: 500 }
+          )
         }
-      })
-
-      if (createUserError || !newUser.user) {
+      } else {
+        // Other error creating user
         console.error('Error creating user:', createUserError)
         return NextResponse.json(
           { error: 'Failed to create user account' },
           { status: 500 }
         )
       }
-
+    } else if (newUser.user) {
+      // New user created successfully
       userId = newUser.user.id
       console.log('Created new user:', userId)
 
@@ -74,6 +87,12 @@ export async function POST(request: NextRequest) {
       if (profileError) {
         console.error('Error creating profile:', profileError)
       }
+    } else {
+      console.error('Unexpected: No user data and no error')
+      return NextResponse.json(
+        { error: 'Failed to create user account' },
+        { status: 500 }
+      )
     }
 
     // Generate session token using admin API
