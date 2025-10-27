@@ -55,14 +55,14 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       marginLeft: `${8 * scaleFactor}pt`,
     },
     infoSection: {
-      flex: 1,
       flexDirection: 'column',
       justifyContent: 'center',
-      alignItems: 'center',
+      alignItems: 'flex-start',
+      marginLeft: `${24 * scaleFactor}pt`,
     },
     headerRow: {
       flexDirection: 'column',
-      alignItems: 'center',
+      alignItems: 'flex-start',
       marginBottom: `${4 * scaleFactor}pt`,
     },
     trackingNumber: {
