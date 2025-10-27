@@ -87,8 +87,23 @@ export function AccessRequestsManager() {
     try {
       if (!request.user_id) {
         console.error('No user_id found for request')
+        alert('Error: No user ID found for this request')
         return
       }
+
+      // Validate lab requirement
+      const labRequiredRoles = ['lab_personnel', 'lab_finance_manager', 'lab_quality_manager']
+      if (labRequiredRoles.includes(selectedRole) && !selectedLabId) {
+        console.error('Laboratory is required for role:', selectedRole)
+        alert('Error: Please select a laboratory for this role')
+        return
+      }
+
+      console.log('Approving request:', {
+        user_id: request.user_id,
+        role: selectedRole,
+        laboratory_id: selectedLabId
+      })
 
       // Update the user's profile with the approved role and lab
       const { error: profileError } = await supabase
@@ -102,6 +117,7 @@ export function AccessRequestsManager() {
 
       if (profileError) {
         console.error('Error updating profile:', profileError)
+        alert(`Error updating profile: ${profileError.message}`)
         return
       }
 
@@ -119,13 +135,18 @@ export function AccessRequestsManager() {
 
       if (requestError) {
         console.error('Error updating request:', requestError)
+        alert(`Error updating request: ${requestError.message}`)
         return
       }
+
+      console.log('Successfully approved request')
+      alert(`Successfully approved ${(request as any).profiles?.full_name || 'user'}`)
 
       // Refresh the requests list
       await fetchRequests()
     } catch (error) {
       console.error('Error approving request:', error)
+      alert(`Unexpected error: ${error}`)
     } finally {
       setActionLoading(null)
     }
@@ -291,14 +312,14 @@ export function AccessRequestsManager() {
   )
 }
 
-function RequestCard({ 
-  request, 
-  laboratories, 
-  onApprove, 
-  onReject, 
-  actionLoading, 
-  getRoleDisplayName, 
-  getStatusBadge 
+function RequestCard({
+  request,
+  laboratories,
+  onApprove,
+  onReject,
+  actionLoading,
+  getRoleDisplayName,
+  getStatusBadge
 }: {
   request: AccessRequest
   laboratories: Laboratory[]
@@ -309,7 +330,7 @@ function RequestCard({
   getStatusBadge: (status: string | null) => React.JSX.Element
 }) {
   const [selectedRole, setSelectedRole] = useState<string>('')
-  const [selectedLab, setSelectedLab] = useState<string>('')
+  const [selectedLab, setSelectedLab] = useState<string | undefined>(undefined)
   const [rejectionReason, setRejectionReason] = useState<string>('')
   const [showRejectForm, setShowRejectForm] = useState(false)
 
@@ -378,8 +399,8 @@ function RequestCard({
 
             {requiresLab && (
               <div>
-                <Label htmlFor={`lab-${request.id}`}>Assign Laboratory</Label>
-                <Select value={selectedLab} onValueChange={setSelectedLab}>
+                <Label htmlFor={`lab-${request.id}`}>Assign Laboratory *</Label>
+                <Select value={selectedLab || ''} onValueChange={setSelectedLab}>
                   <SelectTrigger id={`lab-${request.id}`}>
                     <SelectValue placeholder="Select a laboratory" />
                   </SelectTrigger>
@@ -391,6 +412,9 @@ function RequestCard({
                     ))}
                   </SelectContent>
                 </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Required for this role
+                </p>
               </div>
             )}
           </div>
