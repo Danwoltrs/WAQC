@@ -247,24 +247,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to create sample', details: insertError.message }, { status: 500 })
     }
 
-    // Get client name for activity logging
-    const { data: client } = await supabase
-      .from('clients')
-      .select('company')
-      .eq('id', body.client_id)
-      .single()
+    // Get client name for activity logging (only if client_id is provided)
+    let clientName = 'Unknown Client'
+    if (clientId) {
+      const { data: client } = await supabase
+        .from('clients')
+        .select('company')
+        .eq('id', clientId)
+        .single()
+
+      clientName = client?.company || 'Unknown Client'
+    }
 
     // Log activity
     await activities.sampleRegistered(
       (sample as any).id,
       trackingNumber,
-      client?.company || 'Unknown Client',
+      clientName,
       body.laboratory_id
     )
 
     return NextResponse.json({ sample }, { status: 201 })
-  } catch (error) {
+  } catch (error: any) {
     console.error('Error in POST /api/samples:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: error.message || String(error)
+    }, { status: 500 })
   }
 }

@@ -360,7 +360,10 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       const result = await response.json()
 
       if (!response.ok) {
-        throw new Error(result.error || 'Failed to create sample')
+        const errorMsg = result.details
+          ? `${result.error}: ${result.details}`
+          : (result.error || 'Failed to create sample')
+        throw new Error(errorMsg)
       }
 
       setGeneratedTrackingNumber(result.sample.tracking_number)
