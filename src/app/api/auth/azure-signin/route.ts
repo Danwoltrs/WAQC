@@ -15,15 +15,6 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Only allow @wolthers.com emails via Microsoft authentication
-    if (!email.endsWith('@wolthers.com')) {
-      console.log('Non-Wolthers email attempted Microsoft sign-in:', email)
-      return NextResponse.json(
-        { error: 'Microsoft authentication is only available for Wolthers employees. Please contact your administrator for access.' },
-        { status: 403 }
-      )
-    }
-
     console.log('Creating/getting user for:', { email, name })
 
     // Create Supabase Admin client using service role key
