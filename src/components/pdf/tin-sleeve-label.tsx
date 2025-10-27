@@ -19,7 +19,10 @@ export interface TinSleeveLabelData {
 
 // Create dynamic styles based on label size
 const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
-  const scaleFactor = size === '2.5cm' ? 0.625 : 1 // 2.5/4 = 0.625
+  // Increase scale factor for 2.5cm to use more of available height
+  // Adding 2mm bleed (2mm = 5.67pt) means we can use up to 2.9cm = 82.22pt
+  // Using 0.85 scale factor instead of 0.625 to make content larger
+  const scaleFactor = size === '2.5cm' ? 0.85 : 1
 
   return StyleSheet.create({
     page: {
@@ -28,7 +31,8 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       padding: 0,
     },
     labelContainer: {
-      height: size === '4cm' ? '113.39pt' : '70.87pt', // 4cm or 2.5cm (1cm = 28.35pt)
+      // With 2mm bleed on top and bottom, use 2.9cm total (82.22pt)
+      height: size === '4cm' ? '113.39pt' : '82.22pt', // 4cm or 2.9cm with bleed (1cm = 28.35pt)
       width: '100%',
       borderBottom: '1pt dashed #CCCCCC',
       flexDirection: 'row',

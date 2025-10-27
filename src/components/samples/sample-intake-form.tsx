@@ -332,6 +332,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         processing_method: formData.processing_method,
         sample_type: formData.sample_type || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,
+        quality_name: formData.quality_name || undefined,
         wolthers_contract_nr: formData.wolthers_contract_nr || undefined,
         exporter_contract_nr: formData.exporter_contract_nr || undefined,
         buyer_contract_nr: formData.buyer_contract_nr || undefined,

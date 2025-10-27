@@ -182,6 +182,7 @@ export async function POST(request: NextRequest) {
       client_id: clientId,
       laboratory_id: body.laboratory_id,
       quality_spec_id: body.quality_spec_id || null,
+      quality_name: body.quality_name || null,
       origin: body.origin,
       exporter_id: body.exporter_id,
       importer_id: body.importer_id || null,
