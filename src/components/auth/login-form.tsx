@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Image from 'next/image'
 import { supabase } from '@/lib/supabase'
+import { signInWithAzureADRedirect } from '@/lib/azure-ad'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -49,20 +50,12 @@ export function LoginForm() {
     setError(null)
 
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: 'azure',
-        options: {
-          scopes: 'email profile openid',
-          redirectTo: `${window.location.origin}/auth/callback`
-        }
-      })
-
-      if (error) {
-        setError(error.message)
-      }
-    } catch (err) {
-      setError('An unexpected error occurred')
-    } finally {
+      // Use direct Azure AD authentication (no Supabase intermediary)
+      await signInWithAzureADRedirect()
+      // User will be redirected to Microsoft login, then back to /auth/azure-callback
+    } catch (err: any) {
+      console.error('Microsoft login error:', err)
+      setError(err.message || 'An unexpected error occurred')
       setLoading(false)
     }
   }
