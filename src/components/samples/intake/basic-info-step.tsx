@@ -249,32 +249,27 @@ export function BasicInfoStep({
       {/* Rest of form - only show after sample type is selected */}
       {formData.sample_type && (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="laboratory_id">Laboratory *</Label>
-          <Select
-            value={formData.laboratory_id}
-            onValueChange={(value) => updateFormData('laboratory_id', value)}
-            disabled={laboratories.length === 1}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select laboratory" />
-            </SelectTrigger>
-            <SelectContent>
-              {laboratories.map((lab) => (
-                <SelectItem key={lab.id} value={lab.id}>
-                  {lab.name} - {lab.location}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {laboratories.length === 1 && (
-            <p className="text-xs text-muted-foreground">
-              Your assigned laboratory
-            </p>
+          {/* Only show laboratory selector if user has access to multiple labs */}
+          {laboratories.length > 1 && (
+            <div className="space-y-2">
+              <Label htmlFor="laboratory_id">Laboratory *</Label>
+              <Select
+                value={formData.laboratory_id}
+                onValueChange={(value) => updateFormData('laboratory_id', value)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select laboratory" />
+                </SelectTrigger>
+                <SelectContent>
+                  {laboratories.map((lab) => (
+                    <SelectItem key={lab.id} value={lab.id}>
+                      {lab.name} - {lab.location}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
           )}
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
