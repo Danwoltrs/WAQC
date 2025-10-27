@@ -66,28 +66,28 @@ export const signInWithAzureADRedirect = async (): Promise<void> => {
   if (!msal) throw new Error('MSAL not initialized')
 
   try {
-    // Check if an interaction is already in progress
-    const accounts = msal.getAllAccounts()
-    if (accounts.length > 0) {
-      // User might already be signed in, check for active session
-      console.log('User already has active account, checking session...')
-    }
-
     await msal.loginRedirect(loginRequest)
   } catch (error: any) {
     console.error('Azure AD redirect login error:', error)
 
-    // If interaction is in progress, try to handle the redirect instead
+    // If interaction is in progress, clear the state and retry
     if (error.errorCode === 'interaction_in_progress') {
-      console.log('Interaction in progress detected, attempting to handle redirect...')
+      console.log('Interaction in progress detected, clearing state...')
+
+      // Clear MSAL cache to reset state
+      sessionStorage.clear()
+      localStorage.removeItem('msal.interaction.status')
+
+      // Wait a moment for state to clear
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Try again
       try {
-        const response = await msal.handleRedirectPromise()
-        if (response) {
-          console.log('Handled pending redirect successfully')
-          return
-        }
-      } catch (redirectError) {
-        console.error('Failed to handle redirect:', redirectError)
+        await msal.loginRedirect(loginRequest)
+        return
+      } catch (retryError) {
+        console.error('Retry after clearing state failed:', retryError)
+        throw new Error('Authentication state is stuck. Please refresh the page and try again.')
       }
     }
 
