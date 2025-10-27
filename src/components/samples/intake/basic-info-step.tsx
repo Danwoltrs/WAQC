@@ -400,13 +400,19 @@ export function BasicInfoStep({
             <div className="text-sm text-muted-foreground">Loading buyer qualities...</div>
           ) : buyerQualities.length > 0 ? (
             <Select
-              value={formData.quality_spec_id}
+              value={formData.quality_spec_id || 'none'}
               onValueChange={(value) => {
-                updateFormData('quality_spec_id', value)
-                // Auto-fill quality_name with custom_name from the selected quality
-                const selectedQuality = buyerQualities.find(q => q.id === value)
-                if (selectedQuality?.custom_name) {
-                  updateFormData('quality_name', selectedQuality.custom_name)
+                // Handle "none" selection for type samples
+                if (value === 'none') {
+                  updateFormData('quality_spec_id', '')
+                  updateFormData('quality_name', '')
+                } else {
+                  updateFormData('quality_spec_id', value)
+                  // Auto-fill quality_name with custom_name from the selected quality
+                  const selectedQuality = buyerQualities.find(q => q.id === value)
+                  if (selectedQuality?.custom_name) {
+                    updateFormData('quality_name', selectedQuality.custom_name)
+                  }
                 }
               }}
             >
@@ -419,7 +425,7 @@ export function BasicInfoStep({
               </SelectTrigger>
               <SelectContent>
                 {formData.sample_type === 'type' && (
-                  <SelectItem value="">None - Use custom quality name</SelectItem>
+                  <SelectItem value="none">None - Use custom quality name</SelectItem>
                 )}
                 {buyerQualities.map((quality) => (
                   <SelectItem key={quality.id} value={quality.id}>

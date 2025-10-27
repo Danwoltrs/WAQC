@@ -333,7 +333,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         processing_method: formData.processing_method,
         sample_type: formData.sample_type || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,
-        quality_name: formData.quality_name || undefined,
+        quality_name: formData.quality_name ? formData.quality_name.trim() : undefined,
         hide_exporter_on_label: formData.hide_exporter_on_label || false,
         wolthers_contract_nr: formData.wolthers_contract_nr || undefined,
         exporter_contract_nr: formData.exporter_contract_nr || undefined,
@@ -348,6 +348,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         status: 'received',
         workflow_stage: 'received'
       }
+
+      console.log('Submitting sample with quality_name:', formData.quality_name, 'Processed:', sampleData.quality_name)
 
       const response = await fetch('/api/samples', {
         method: 'POST',

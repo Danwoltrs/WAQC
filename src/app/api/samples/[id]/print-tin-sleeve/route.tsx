@@ -143,11 +143,20 @@ export async function GET(
       year: 'numeric',
     })
 
+    // Map sample_type to display format
+    const sampleTypeMap: Record<string, 'PSS' | 'Stocklot' | 'SS' | 'Type Sample'> = {
+      'pss': 'PSS',
+      'ss': 'SS',
+      'type': 'Type Sample',
+      'stocklot': 'Stocklot'
+    }
+    const displaySampleType = sampleTypeMap[(sample as any).sample_type] || 'PSS'
+
     // Prepare label data
     const labelData: TinSleeveLabelData = {
       date,
       tracking_number: (sample as any).tracking_number,
-      sample_type: ((sample as any).sample_type || 'PSS') as any,
+      sample_type: displaySampleType,
       exporter: exporterName,
       client_quality_name: clientQualityName,
       quality_description: qualityDescription,

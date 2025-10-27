@@ -176,6 +176,9 @@ export async function POST(request: NextRequest) {
       bagWeightKg = Math.round(bagWeightKg * 100) / 100 // Round to 2 decimal places
     }
 
+    // Log quality_name for debugging
+    console.log('API received quality_name:', body.quality_name, 'Type:', typeof body.quality_name)
+
     // Prepare sample data with foreign key IDs
     const sampleData: SampleInsert = {
       tracking_number: trackingNumber,
@@ -206,6 +209,8 @@ export async function POST(request: NextRequest) {
       workflow_stage: body.workflow_stage || 'received',
       assigned_to: body.assigned_to || null
     }
+
+    console.log('Inserting sample with quality_name:', sampleData.quality_name)
 
     // Validate bag quantities if provided
     if (sampleData.bags_quantity_mt && sampleData.bags_quantity_mt <= 0) {
