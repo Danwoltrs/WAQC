@@ -817,29 +817,38 @@ export default function LaboratoriesPage() {
 
                     {/* Type Sample Configuration */}
                     <div className="pt-4 border-t space-y-2">
-                      <Label htmlFor="type-sample-prefix">Type Sample Prefix (Optional)</Label>
-                      <Input
-                        id="type-sample-prefix"
-                        value={newLab.type_sample_prefix}
-                        onChange={(e) => setNewLab({ ...newLab, type_sample_prefix: e.target.value.toUpperCase() })}
-                        placeholder="WA-"
-                        maxLength={10}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Prefix for type sample tracking numbers (e.g., WA- for Santos). Max 10 characters.
-                      </p>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="type-sample-prefix">Type Sample Prefix (Optional)</Label>
+                          <Input
+                            id="type-sample-prefix"
+                            value={newLab.type_sample_prefix}
+                            onChange={(e) => setNewLab({ ...newLab, type_sample_prefix: e.target.value.toUpperCase() })}
+                            placeholder="WA-"
+                            maxLength={10}
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Prefix for type sample tracking numbers (e.g., WA- for Santos). Max 10 characters.
+                          </p>
+                        </div>
 
-                      <Label htmlFor="type-sample-sequence-start">Type Sample Sequence Starting Nr</Label>
-                      <Input
-                        id="type-sample-sequence-start"
-                        type="number"
-                        min="1"
-                        value={newLab.type_sample_sequence_start}
-                        onChange={(e) => setNewLab({ ...newLab, type_sample_sequence_start: parseInt(e.target.value) || 1 })}
-                        placeholder="1"
-                      />
+                        <div className="space-y-2">
+                          <Label htmlFor="type-sample-sequence-start">Type Sample Sequence Starting Nr</Label>
+                          <Input
+                            id="type-sample-sequence-start"
+                            type="number"
+                            min="1"
+                            value={newLab.type_sample_sequence_start}
+                            onChange={(e) => setNewLab({ ...newLab, type_sample_sequence_start: parseInt(e.target.value) || 1 })}
+                            placeholder="1"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Starting sequence number for type samples. The sequence continues from the highest existing number or this starting value, whichever is greater.
+                          </p>
+                        </div>
+                      </div>
                       <p className="text-xs text-muted-foreground">
-                        Starting sequence number for type samples. The sequence continues from the highest existing number or this starting value, whichever is greater. Format: {newLab.type_sample_prefix || 'PREFIX-'}00001/25
+                        Format: {newLab.type_sample_prefix || 'PREFIX-'}00001/25
                       </p>
                     </div>
 
@@ -1714,29 +1723,38 @@ export default function LaboratoriesPage() {
 
                 {/* Type Sample Configuration */}
                 <div className="pt-4 border-t space-y-2">
-                  <Label htmlFor="edit-type-sample-prefix">Type Sample Prefix (Optional)</Label>
-                  <Input
-                    id="edit-type-sample-prefix"
-                    value={editingLab.type_sample_prefix || ''}
-                    onChange={(e) => setEditingLab({ ...editingLab, type_sample_prefix: e.target.value.toUpperCase() })}
-                    placeholder="WA-"
-                    maxLength={10}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Prefix for type sample tracking numbers (e.g., WA- for Santos). Max 10 characters.
-                  </p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-type-sample-prefix">Type Sample Prefix (Optional)</Label>
+                      <Input
+                        id="edit-type-sample-prefix"
+                        value={editingLab.type_sample_prefix || ''}
+                        onChange={(e) => setEditingLab({ ...editingLab, type_sample_prefix: e.target.value.toUpperCase() })}
+                        placeholder="WA-"
+                        maxLength={10}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Prefix for type sample tracking numbers (e.g., WA- for Santos). Max 10 characters.
+                      </p>
+                    </div>
 
-                  <Label htmlFor="edit-type-sample-sequence-start">Type Sample Sequence Starting Nr</Label>
-                  <Input
-                    id="edit-type-sample-sequence-start"
-                    type="number"
-                    min="1"
-                    value={editingLab.type_sample_sequence_start || 1}
-                    onChange={(e) => setEditingLab({ ...editingLab, type_sample_sequence_start: parseInt(e.target.value) || 1 })}
-                    placeholder="1"
-                  />
+                    <div className="space-y-2">
+                      <Label htmlFor="edit-type-sample-sequence-start">Type Sample Sequence Starting Nr</Label>
+                      <Input
+                        id="edit-type-sample-sequence-start"
+                        type="number"
+                        min="1"
+                        value={editingLab.type_sample_sequence_start || 1}
+                        onChange={(e) => setEditingLab({ ...editingLab, type_sample_sequence_start: parseInt(e.target.value) || 1 })}
+                        placeholder="1"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Starting sequence number for type samples. The sequence continues from the highest existing number or this starting value, whichever is greater.
+                      </p>
+                    </div>
+                  </div>
                   <p className="text-xs text-muted-foreground">
-                    Starting sequence number for type samples. The sequence continues from the highest existing number or this starting value, whichever is greater. Format: {editingLab.type_sample_prefix || 'PREFIX-'}00001/25
+                    Format: {editingLab.type_sample_prefix || 'PREFIX-'}00001/25
                   </p>
                 </div>
 
