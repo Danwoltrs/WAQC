@@ -101,7 +101,9 @@ export function AccessRequestsManager() {
 
       console.log('Approving request:', {
         user_id: request.user_id,
-        role: selectedRole,
+        requested_role: request.requested_role,
+        assigned_role: selectedRole,
+        role_changed: request.requested_role !== selectedRole,
         laboratory_id: selectedLabId
       })
 
@@ -277,13 +279,20 @@ export function AccessRequestsManager() {
                         Processed: {new Date(request.processed_at).toLocaleDateString()}
                       </div>
                     )}
-                    {request.status === 'approved' && request.requested_role && (
-                      <div className="text-sm">
-                        <span className="font-medium">Approved Role:</span> {getRoleDisplayName(request.requested_role)}
-                        {request.requested_laboratory_id && (
-                          <span className="ml-2">
-                            <span className="font-medium">Lab:</span> {laboratories.find(lab => lab.id === request.requested_laboratory_id)?.name}
-                          </span>
+                    {request.status === 'approved' && (
+                      <div className="text-sm space-y-1">
+                        <div>
+                          <span className="font-medium">Approved Role:</span> {getRoleDisplayName(request.approved_role || request.requested_role || 'Unknown')}
+                          {request.approved_laboratory_id && (
+                            <span className="ml-2">
+                              <span className="font-medium">Lab:</span> {laboratories.find(lab => lab.id === request.approved_laboratory_id)?.name}
+                            </span>
+                          )}
+                        </div>
+                        {request.requested_role && request.approved_role !== request.requested_role && (
+                          <div className="text-xs text-amber-600 dark:text-amber-400">
+                            ⚠️ Assigned different role than requested ({getRoleDisplayName(request.requested_role)})
+                          </div>
                         )}
                       </div>
                     )}
@@ -329,8 +338,9 @@ function RequestCard({
   getRoleDisplayName: (role: string) => string
   getStatusBadge: (status: string | null) => React.JSX.Element
 }) {
-  const [selectedRole, setSelectedRole] = useState<string>('')
-  const [selectedLab, setSelectedLab] = useState<string | undefined>(undefined)
+  // Pre-populate with requested role if available
+  const [selectedRole, setSelectedRole] = useState<string>(request.requested_role || '')
+  const [selectedLab, setSelectedLab] = useState<string | undefined>(request.requested_laboratory_id || undefined)
   const [rejectionReason, setRejectionReason] = useState<string>('')
   const [showRejectForm, setShowRejectForm] = useState(false)
 
@@ -382,7 +392,7 @@ function RequestCard({
         <div className="space-y-4 pt-4 border-t">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor={`role-${request.id}`}>Assign Role</Label>
+              <Label htmlFor={`role-${request.id}`}>Assign Role *</Label>
               <Select value={selectedRole} onValueChange={setSelectedRole}>
                 <SelectTrigger id={`role-${request.id}`}>
                   <SelectValue placeholder="Select a role" />
@@ -395,6 +405,11 @@ function RequestCard({
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                {request.requested_role && selectedRole !== request.requested_role
+                  ? `⚠️ Different from requested role (${getRoleDisplayName(request.requested_role)})`
+                  : 'You can assign a different role than requested'}
+              </p>
             </div>
 
             {requiresLab && (
