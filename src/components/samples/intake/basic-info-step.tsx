@@ -66,7 +66,8 @@ export function BasicInfoStep({
     }
 
     // Filter ORIGINS to only show supported ones
-    return ORIGINS.filter(origin => selectedLab.supported_origins.includes(origin))
+    const labOrigins = selectedLab.supported_origins || []
+    return ORIGINS.filter(origin => labOrigins.includes(origin))
   }, [formData.laboratory_id, laboratories])
 
   // Auto-select origin if there's only one supported origin
