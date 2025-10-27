@@ -172,7 +172,8 @@ export async function POST(request: NextRequest) {
       fee_per_sample: body.fee_per_sample || null,
       fee_currency: body.fee_currency || null,
       billing_basis: body.billing_basis || null,
-      type_sample_prefix: body.type_sample_prefix || null
+      type_sample_prefix: body.type_sample_prefix || null,
+      type_sample_sequence_start: body.type_sample_sequence_start || 1
     }
 
     const { data: laboratory, error: insertError } = await supabase

@@ -49,6 +49,7 @@ interface Laboratory {
   billing_basis?: 'approved_only' | 'approved_and_rejected'
   personnel_count?: number
   type_sample_prefix?: string
+  type_sample_sequence_start?: number
   created_at: string
 }
 
@@ -137,7 +138,8 @@ export default function LaboratoriesPage() {
     fee_per_sample: undefined as number | undefined,
     fee_currency: 'USD' as string,
     billing_basis: 'approved_only' as 'approved_only' | 'approved_and_rejected',
-    type_sample_prefix: ''
+    type_sample_prefix: '',
+    type_sample_sequence_start: 1
   })
 
   // Storage shelves state
@@ -344,7 +346,8 @@ export default function LaboratoriesPage() {
             fee_per_sample: newLab.is_3rd_party ? newLab.fee_per_sample : null,
             fee_currency: newLab.is_3rd_party ? newLab.fee_currency : null,
             billing_basis: newLab.is_3rd_party ? newLab.billing_basis : null,
-            type_sample_prefix: newLab.type_sample_prefix || null
+            type_sample_prefix: newLab.type_sample_prefix || null,
+            type_sample_sequence_start: newLab.type_sample_sequence_start || 1
           })
         })
 
@@ -431,7 +434,8 @@ export default function LaboratoriesPage() {
         fee_per_sample: undefined,
         fee_currency: 'USD',
         billing_basis: 'approved_only',
-        type_sample_prefix: ''
+        type_sample_prefix: '',
+        type_sample_sequence_start: 1
       })
       setShelves([])
       setObstacles([])
@@ -478,6 +482,7 @@ export default function LaboratoriesPage() {
         is_active: editingLab.is_active,
         supported_origins: editingLab.supported_origins || [],
         type_sample_prefix: editingLab.type_sample_prefix,
+        type_sample_sequence_start: editingLab.type_sample_sequence_start || 1,
         fee_per_sample: editingLab.type === '3rd_party_lab' ? editingLab.fee_per_sample : null,
         fee_currency: editingLab.type === '3rd_party_lab' ? editingLab.fee_currency : null,
         billing_basis: editingLab.type === '3rd_party_lab' ? editingLab.billing_basis : null
@@ -822,6 +827,19 @@ export default function LaboratoriesPage() {
                       />
                       <p className="text-xs text-muted-foreground">
                         Prefix for type sample tracking numbers (e.g., WA- for Santos). Max 10 characters.
+                      </p>
+
+                      <Label htmlFor="type-sample-sequence-start">Type Sample Sequence Starting Nr</Label>
+                      <Input
+                        id="type-sample-sequence-start"
+                        type="number"
+                        min="1"
+                        value={newLab.type_sample_sequence_start}
+                        onChange={(e) => setNewLab({ ...newLab, type_sample_sequence_start: parseInt(e.target.value) || 1 })}
+                        placeholder="1"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Starting sequence number for type samples. The sequence continues from the highest existing number or this starting value, whichever is greater. Format: {newLab.type_sample_prefix || 'PREFIX-'}00001/25
                       </p>
                     </div>
 
@@ -1706,6 +1724,19 @@ export default function LaboratoriesPage() {
                   />
                   <p className="text-xs text-muted-foreground">
                     Prefix for type sample tracking numbers (e.g., WA- for Santos). Max 10 characters.
+                  </p>
+
+                  <Label htmlFor="edit-type-sample-sequence-start">Type Sample Sequence Starting Nr</Label>
+                  <Input
+                    id="edit-type-sample-sequence-start"
+                    type="number"
+                    min="1"
+                    value={editingLab.type_sample_sequence_start || 1}
+                    onChange={(e) => setEditingLab({ ...editingLab, type_sample_sequence_start: parseInt(e.target.value) || 1 })}
+                    placeholder="1"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Starting sequence number for type samples. The sequence continues from the highest existing number or this starting value, whichever is greater. Format: {editingLab.type_sample_prefix || 'PREFIX-'}00001/25
                   </p>
                 </div>
 

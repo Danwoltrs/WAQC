@@ -142,7 +142,8 @@ export async function PATCH(
       'fee_per_sample',
       'fee_currency',
       'billing_basis',
-      'type_sample_prefix'
+      'type_sample_prefix',
+      'type_sample_sequence_start'
     ]
 
     for (const field of allowedFields) {
