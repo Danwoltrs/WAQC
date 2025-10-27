@@ -158,23 +158,41 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   }
 
   const loadLaboratories = async () => {
+    console.log('Loading laboratories. Profile:', profile)
+
     if (profile?.laboratory_id && !profile?.is_global_admin) {
+      console.log('Loading specific lab for user:', profile.laboratory_id)
       const { data, error } = await supabase
         .from('laboratories')
         .select('*')
         .eq('id', profile.laboratory_id)
+        .eq('is_active', true)
         .single()
 
+      if (error) {
+        console.error('Error loading user laboratory:', error)
+      }
+
       if (data && !error) {
+        console.log('Loaded user laboratory:', data)
         setLaboratories([data] as unknown as Laboratory[])
+      } else {
+        console.warn('No laboratory data returned for user')
       }
     } else {
+      console.log('Loading all labs (user is global admin or has no lab assigned)')
       const { data, error } = await supabase
         .from('laboratories')
         .select('*')
+        .eq('is_active', true)
         .order('name')
 
+      if (error) {
+        console.error('Error loading laboratories:', error)
+      }
+
       if (data && !error) {
+        console.log('Loaded laboratories:', data)
         setLaboratories(data as unknown as Laboratory[])
       }
     }
