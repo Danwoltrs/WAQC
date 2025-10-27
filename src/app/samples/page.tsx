@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
+import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import {
   Select,
   SelectContent,
@@ -103,6 +104,7 @@ export default function SamplesPage() {
   const [selectedSamples, setSelectedSamples] = useState<Set<string>>(new Set())
   const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
+  const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
@@ -343,38 +345,12 @@ export default function SamplesPage() {
     }
   }
 
-  const handleBulkPrintTinSleeves = async () => {
+  const handleBulkPrintTinSleeves = () => {
     if (selectedSamples.size === 0) {
       alert('Please select at least one sample')
       return
     }
-
-    try {
-      const response = await fetch('/api/samples/bulk/print-tin-sleeves', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sample_ids: Array.from(selectedSamples) })
-      })
-
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `tin-sleeves-${new Date().toISOString().split('T')[0]}.pdf`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
-      } else {
-        const error = await response.json()
-        console.error('Failed to generate tin sleeve labels:', error)
-        alert(`Failed to generate tin sleeve labels.\n\n${error.error}${error.details ? '\n\nDetails: ' + error.details : ''}`)
-      }
-    } catch (error) {
-      console.error('Error printing tin sleeve labels:', error)
-      alert(`Error generating tin sleeve labels.\n\n${error instanceof Error ? error.message : String(error)}`)
-    }
+    setShowTinLabelDialog(true)
   }
 
   const handleBulkAssign = async () => {
@@ -599,7 +575,7 @@ export default function SamplesPage() {
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleBulkPrintTinSleeves}>
                     <Printer className="h-4 w-4 mr-2" />
-                    Print Tin Sleeves (4cm)
+                    Tin Label
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleBulkPrintBagSleeves}>
                     <Printer className="h-4 w-4 mr-2" />
@@ -926,6 +902,16 @@ export default function SamplesPage() {
       <PrintLabelsDialog
         open={showPrintDialog}
         onOpenChange={setShowPrintDialog}
+        sampleIds={Array.from(selectedSamples)}
+        onSuccess={() => {
+          setSelectedSamples(new Set())
+        }}
+      />
+
+      {/* Tin Label Size Selection Dialog */}
+      <TinLabelSizeDialog
+        open={showTinLabelDialog}
+        onOpenChange={setShowTinLabelDialog}
         sampleIds={Array.from(selectedSamples)}
         onSuccess={() => {
           setSelectedSamples(new Set())

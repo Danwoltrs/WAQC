@@ -14,93 +14,99 @@ export interface TinSleeveLabelData {
   bags_display: string // Display string for bags (e.g., "Bulk (equiv. 12 bags)" or "10 x 60kg")
   qr_code?: string // Data URL for QR code
   logo_url: string // Wolthers logo URL
+  size?: '4cm' | '2.5cm' // Label size (defaults to 4cm)
 }
 
-// Create styles for 4cm height tin sleeve labels
-const styles = StyleSheet.create({
-  page: {
-    flexDirection: 'column',
-    backgroundColor: '#FFFFFF',
-    padding: 0,
-  },
-  labelContainer: {
-    height: '113.39pt', // 4cm (1cm = 28.35pt)
-    width: '100%',
-    borderBottom: '1pt dashed #CCCCCC',
-    flexDirection: 'row',
-    padding: '8pt',
-    alignItems: 'center',
-  },
-  leftSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginRight: '12pt',
-    paddingRight: '12pt',
-    borderRight: '1pt solid #DDDDDD',
-  },
-  logo: {
-    width: '120pt', // Doubled from 60pt
-    height: 'auto',
-    objectFit: 'contain',
-    marginRight: '8pt',
-  },
-  qrCode: {
-    width: '60pt',
-    height: '60pt',
-    marginLeft: '8pt',
-  },
-  infoSection: {
-    flex: 1,
-    flexDirection: 'column',
-    justifyContent: 'center',
-  },
-  headerRow: {
-    flexDirection: 'column',
-    alignItems: 'flex-start',
-    marginBottom: '4pt',
-  },
-  trackingNumber: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    color: '#000000',
-    marginBottom: '1pt',
-  },
-  date: {
-    fontSize: 8,
-    color: '#666666',
-  },
-  dateLabel: {
-    fontWeight: 'bold',
-    color: '#000000',
-  },
-  infoRow: {
-    fontSize: 8,
-    marginBottom: '2pt',
-    color: '#333333',
-  },
-  label: {
-    fontWeight: 'bold',
-    color: '#000000',
-  },
-  value: {
-    color: '#555555',
-  },
-  qualityRow: {
-    fontSize: 8,
-    marginBottom: '3pt',
-    color: '#333333',
-  },
-  qualityName: {
-    fontWeight: 'bold',
-    color: '#000000',
-  },
-  qualityDescription: {
-    color: '#555555',
-  },
-  quantityValue: {
-    color: '#555555',
-  },
-})
+// Create dynamic styles based on label size
+const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
+  const scaleFactor = size === '2.5cm' ? 0.625 : 1 // 2.5/4 = 0.625
+
+  return StyleSheet.create({
+    page: {
+      flexDirection: 'column',
+      backgroundColor: '#FFFFFF',
+      padding: 0,
+    },
+    labelContainer: {
+      height: size === '4cm' ? '113.39pt' : '70.87pt', // 4cm or 2.5cm (1cm = 28.35pt)
+      width: '100%',
+      borderBottom: '1pt dashed #CCCCCC',
+      flexDirection: 'row',
+      padding: `${8 * scaleFactor}pt`,
+      alignItems: 'center',
+      justifyContent: 'center', // Center the content horizontally
+    },
+    leftSection: {
+      flexDirection: 'row',
+      alignItems: 'center',
+      marginRight: `${12 * scaleFactor}pt`,
+      paddingRight: `${12 * scaleFactor}pt`,
+      borderRight: '1pt solid #DDDDDD',
+    },
+    logo: {
+      width: `${120 * scaleFactor}pt`,
+      height: 'auto',
+      objectFit: 'contain',
+      marginRight: `${8 * scaleFactor}pt`,
+    },
+    qrCode: {
+      width: `${60 * scaleFactor}pt`,
+      height: `${60 * scaleFactor}pt`,
+      marginLeft: `${8 * scaleFactor}pt`,
+    },
+    infoSection: {
+      flex: 1,
+      flexDirection: 'column',
+      justifyContent: 'center',
+    },
+    headerRow: {
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      marginBottom: `${4 * scaleFactor}pt`,
+    },
+    trackingNumber: {
+      fontSize: 12 * scaleFactor,
+      fontWeight: 'bold',
+      color: '#000000',
+      marginBottom: `${1 * scaleFactor}pt`,
+    },
+    date: {
+      fontSize: 8 * scaleFactor,
+      color: '#666666',
+    },
+    dateLabel: {
+      fontWeight: 'bold',
+      color: '#000000',
+    },
+    infoRow: {
+      fontSize: 8 * scaleFactor,
+      marginBottom: `${2 * scaleFactor}pt`,
+      color: '#333333',
+    },
+    label: {
+      fontWeight: 'bold',
+      color: '#000000',
+    },
+    value: {
+      color: '#555555',
+    },
+    qualityRow: {
+      fontSize: 8 * scaleFactor,
+      marginBottom: `${3 * scaleFactor}pt`,
+      color: '#333333',
+    },
+    qualityName: {
+      fontWeight: 'bold',
+      color: '#000000',
+    },
+    qualityDescription: {
+      color: '#555555',
+    },
+    quantityValue: {
+      color: '#555555',
+    },
+  })
+}
 
 interface TinSleeveLabelDocumentProps {
   labels: TinSleeveLabelData[]
@@ -108,11 +114,15 @@ interface TinSleeveLabelDocumentProps {
 
 /**
  * PDF Document component for printing tin sleeve labels
- * Format: 4cm height labels for tin containers
+ * Format: 4cm or 2.5cm height labels for tin containers (centered)
  * Includes: Date, Sample tracking, Exporter, Quality (client name + full description),
  * Quantity (with packaging type and MT), Contracts, QR code, Wolthers logo
  */
 export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ labels }) => {
+  // Get size from first label (all labels in batch should have same size)
+  const size = labels[0]?.size || '4cm'
+  const styles = createStyles(size)
+
   return (
     <Document>
       <Page size="A4" orientation="landscape" style={styles.page}>

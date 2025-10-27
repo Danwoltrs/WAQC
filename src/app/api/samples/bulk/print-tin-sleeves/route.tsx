@@ -9,8 +9,8 @@ import fs from 'fs'
 
 /**
  * POST /api/samples/bulk/print-tin-sleeves
- * Generate bulk tin sleeve label PDFs (4cm height)
- * Body: { sample_ids: string[] }
+ * Generate bulk tin sleeve label PDFs (4cm or 2.5cm height, centered)
+ * Body: { sample_ids: string[], size?: '4cm' | '2.5cm' }
  */
 export async function POST(request: NextRequest) {
   try {
@@ -23,10 +23,15 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { sample_ids } = body
+    const { sample_ids, size = '4cm' } = body
 
     if (!sample_ids || !Array.isArray(sample_ids) || sample_ids.length === 0) {
       return NextResponse.json({ error: 'sample_ids array is required' }, { status: 400 })
+    }
+
+    // Validate size parameter
+    if (size !== '4cm' && size !== '2.5cm') {
+      return NextResponse.json({ error: 'size must be either "4cm" or "2.5cm"' }, { status: 400 })
     }
 
     // Fetch samples with all required fields
@@ -166,6 +171,7 @@ export async function POST(request: NextRequest) {
           bags_display: bagsDisplay,
           qr_code: qrCode,
           logo_url: logoBase64,
+          size: size as '4cm' | '2.5cm',
         }
       })
     )
@@ -192,7 +198,7 @@ export async function POST(request: NextRequest) {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="tin-sleeves-${new Date().toISOString().split('T')[0]}.pdf"`,
+        'Content-Disposition': `attachment; filename="tin-sleeves-${size}-${new Date().toISOString().split('T')[0]}.pdf"`,
         'Content-Length': buffer.length.toString(),
       },
     })
