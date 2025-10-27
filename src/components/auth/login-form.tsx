@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Image from 'next/image'
-import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { signInWithAzureADRedirect, handleAzureADRedirect } from '@/lib/azure-ad'
+import { signInWithAzureADRedirect } from '@/lib/azure-ad'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,33 +12,11 @@ import { Separator } from '@/components/ui/separator'
 import { AlertCircle } from 'lucide-react'
 
 export function LoginForm() {
-  const router = useRouter()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [checkingRedirect, setCheckingRedirect] = useState(true)
-
-  // Check for pending Azure AD redirect on mount
-  useEffect(() => {
-    const checkForRedirect = async () => {
-      try {
-        const response = await handleAzureADRedirect()
-        if (response) {
-          // We have a redirect response, navigate to callback handler
-          router.push('/auth/azure-callback')
-          return
-        }
-      } catch (err) {
-        console.error('Error checking for redirect:', err)
-      } finally {
-        setCheckingRedirect(false)
-      }
-    }
-
-    checkForRedirect()
-  }, [router])
 
   const handleEmailEnter = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && email && !showPassword) {
@@ -70,7 +47,7 @@ export function LoginForm() {
 
   const handleMicrosoftLogin = async () => {
     // Prevent multiple simultaneous login attempts
-    if (loading || checkingRedirect) {
+    if (loading) {
       return
     }
 
@@ -83,34 +60,9 @@ export function LoginForm() {
       // User will be redirected to Microsoft login, then back to /auth/azure-callback
     } catch (err: any) {
       console.error('Microsoft login error:', err)
-
-      // Check if it's an interaction_in_progress error
-      if (err.message?.includes('interaction_in_progress')) {
-        // Clear the interaction state and try again
-        console.log('Clearing interaction state and redirecting to callback...')
-        router.push('/auth/azure-callback')
-        return
-      }
-
       setError(err.message || 'An unexpected error occurred')
       setLoading(false)
     }
-  }
-
-  // Show loading state while checking for redirect
-  if (checkingRedirect) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-sm shadow-lg border-0 bg-card">
-          <CardContent className="p-8">
-            <div className="flex flex-col items-center space-y-4">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              <p className="text-sm text-muted-foreground">Checking authentication...</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
   }
 
   return (
