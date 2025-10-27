@@ -65,11 +65,6 @@ const nextConfig = {
 
   // Enable React strict mode for better development experience
   reactStrictMode: true,
-
-  // Enable experimental features for better performance
-  experimental: {
-    optimizeCss: true, // Enable CSS optimization
-  },
 }
 
 module.exports = nextConfig

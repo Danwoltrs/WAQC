@@ -85,7 +85,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
         const result = await retryWithBackoff(
-          () => supabase.auth.getSession(),
+          async () => await supabase.auth.getSession(),
           3,
           1000,
           10000
@@ -231,128 +231,138 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('[Auth] Fetching profile for user:', userId)
 
-      // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
-      const { data: profileData, error } = await retryWithBackoff(
-        () => supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single(),
-        3,
-        1000,
-        10000
-      ).catch(err => {
-        // If all retries fail, treat as timeout
-        if (err.message === 'Request timeout' || err.message?.includes('timeout')) {
-          console.warn('Profile fetch timed out after retries, will use fallback')
-          return { data: null, error: { code: 'TIMEOUT', message: 'Profile fetch timeout' } }
-        }
-        throw err
-      })
+        // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
+        let profileData: Profile | null = null
+        let error: any = null
 
-      if (error) {
-        // Handle timeout with fallback for authenticated users
-        if (error.code === 'TIMEOUT' || error.message === 'Profile fetch timeout') {
-          console.warn('Profile fetch timed out, creating temporary profile')
-          const { data: { user: authUser } } = await supabase.auth.getUser()
-
-          // Create temporary profile to let user in
-          const tempProfile = {
-            id: userId,
-            email: authUser?.email || '',
-            full_name: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'User',
-            qc_enabled: true,
-            qc_role: 'lab_personnel' as UserRole,
-            is_global_admin: false,
-            laboratory_id: null,
-            client_id: null,
-            qc_permissions: [],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          } as Profile
-
-          setProfile(tempProfile)
-          setPermissions(getUserPermissions('lab_personnel', undefined))
-          setLoading(false)
-
-          // Try to create real profile in background
-          createUserProfile(userId).catch(err =>
-            console.error('Background profile creation failed:', err)
+        try {
+          const result = await retryWithBackoff(
+            async () => {
+              return await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', userId)
+                .single()
+            },
+            3,
+            1000,
+            10000
           )
+          profileData = result.data
+          error = result.error
+        } catch (err: any) {
+          // If all retries fail, treat as timeout
+          if (err.message === 'Request timeout' || err.message?.includes('timeout')) {
+            console.warn('Profile fetch timed out after retries, will use fallback')
+            error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
+          } else {
+            throw err
+          }
+        }
+
+        if (error) {
+          // Handle timeout with fallback for authenticated users
+          if (error.code === 'TIMEOUT' || error.message === 'Profile fetch timeout') {
+            console.warn('Profile fetch timed out, creating temporary profile')
+            const { data: { user: authUser } } = await supabase.auth.getUser()
+
+            // Create temporary profile to let user in
+            const tempProfile = {
+              id: userId,
+              email: authUser?.email || '',
+              full_name: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'User',
+              qc_enabled: true,
+              qc_role: 'lab_personnel' as UserRole,
+              is_global_admin: false,
+              laboratory_id: null,
+              client_id: null,
+              qc_permissions: [],
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            } as Profile
+
+            setProfile(tempProfile)
+            setPermissions(getUserPermissions('lab_personnel', undefined))
+            setLoading(false)
+
+            // Try to create real profile in background
+            createUserProfile(userId).catch(err =>
+              console.error('Background profile creation failed:', err)
+            )
+            return
+          }
+
+          // If profile doesn't exist, try to create one
+          if (error.code === 'PGRST116' || error.message?.includes('No rows returned') || error.message?.includes('JSON object requested, multiple (or no) rows returned')) {
+            console.log('Profile not found, creating new profile for user')
+            await createUserProfile(userId)
+            return
+          }
+
+          console.error('Error fetching profile:', {
+            fullError: error,
+            code: error?.code,
+            message: error?.message,
+            hint: error?.hint,
+            details: error?.details,
+            userId: userId
+          })
+          setLoading(false)
           return
         }
 
-        // If profile doesn't exist, try to create one
-        if (error.code === 'PGRST116' || error.message?.includes('No rows returned') || error.message?.includes('JSON object requested, multiple (or no) rows returned')) {
-          console.log('Profile not found, creating new profile for user')
+        if (profileData) {
+          // Check if QC is enabled for this user
+          if (!profileData.qc_enabled) {
+            console.log('QC not enabled for this user')
+            // For existing users, we'll show them a message instead of blocking completely
+            setProfile(profileData as Profile)
+            setLoading(false)
+            return
+          }
+        } else {
+          console.log('No profile data returned, creating new profile')
           await createUserProfile(userId)
           return
         }
 
-        console.error('Error fetching profile:', {
-          fullError: error,
-          code: error?.code,
-          message: error?.message,
-          hint: error?.hint,
-          details: error?.details,
-          userId: userId
-        })
-        setLoading(false)
-        return
-      }
+        // Ensure user has a QC role, default to lab_personnel if missing
+        let finalProfile = profileData
+        if (!profileData.qc_role) {
+          console.log('User missing QC role, setting default')
+          const { data: updatedProfile, error: updateError } = await supabase
+            .from('profiles')
+            .update({ qc_role: 'lab_personnel' })
+            .eq('id', userId)
+            .select()
+            .single()
 
-      if (profileData) {
-        // Check if QC is enabled for this user
-        if (!profileData.qc_enabled) {
-          console.log('QC not enabled for this user')
-          // For existing users, we'll show them a message instead of blocking completely
-          setProfile(profileData as Profile)
-          setLoading(false)
-          return
+          if (updateError) {
+            console.error('Error setting default QC role:', updateError)
+            // Continue with the profile as-is rather than infinite loop
+            setProfile(profileData as Profile)
+            setPermissions(getUserPermissions('lab_personnel', undefined))
+            setLoading(false)
+            return
+          } else if (updatedProfile) {
+            // Use the updated profile directly instead of recursive call
+            finalProfile = updatedProfile
+          }
         }
-      } else {
-        console.log('No profile data returned, creating new profile')
-        await createUserProfile(userId)
-        return
-      }
 
-      // Ensure user has a QC role, default to lab_personnel if missing
-      let finalProfile = profileData
-      if (!profileData.qc_role) {
-        console.log('User missing QC role, setting default')
-        const { data: updatedProfile, error: updateError } = await supabase
-          .from('profiles')
-          .update({ qc_role: 'lab_personnel' })
-          .eq('id', userId)
-          .select()
-          .single()
+        setProfile(finalProfile as Profile)
 
-        if (updateError) {
-          console.error('Error setting default QC role:', updateError)
-          // Continue with the profile as-is rather than infinite loop
-          setProfile(profileData as Profile)
-          setPermissions(getUserPermissions('lab_personnel', undefined))
-          setLoading(false)
-          return
-        } else if (updatedProfile) {
-          // Use the updated profile directly instead of recursive call
-          finalProfile = updatedProfile
+        // Get laboratory info to determine permissions
+        let laboratoryType: string | undefined
+        if (finalProfile.laboratory_id) {
+          const { data: labData } = await supabase
+            .from('laboratories')
+            .select('type')
+            .eq('id', finalProfile.laboratory_id)
+            .single()
+
+          laboratoryType = labData?.type ?? undefined
         }
-      }
-
-      setProfile(finalProfile as Profile)
-
-      // Get laboratory info to determine permissions
-      let laboratoryType: string | undefined
-      if (finalProfile.laboratory_id) {
-        const { data: labData } = await supabase
-          .from('laboratories')
-          .select('type')
-          .eq('id', finalProfile.laboratory_id)
-          .single()
-
-        laboratoryType = labData?.type ?? undefined
-      }
 
         const userPermissions = getUserPermissions(finalProfile.qc_role as UserRole, laboratoryType)
         setPermissions(userPermissions)
