@@ -36,6 +36,10 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       alignItems: 'center',
       justifyContent: 'center', // Center the content horizontally
     },
+    contentWrapper: {
+      flexDirection: 'row',
+      alignItems: 'center',
+    },
     leftSection: {
       flexDirection: 'row',
       alignItems: 'center',
@@ -58,7 +62,6 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       flexDirection: 'column',
       justifyContent: 'center',
       alignItems: 'flex-start',
-      marginLeft: `${24 * scaleFactor}pt`,
     },
     headerRow: {
       flexDirection: 'column',
@@ -129,16 +132,17 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
       <Page size="A4" orientation="landscape" style={styles.page}>
         {labels.map((label, index) => (
           <View key={index} style={styles.labelContainer}>
-            {/* Left Section: Logo - Separator - QR Code */}
-            <View style={styles.leftSection}>
-              <Image src={label.logo_url} style={styles.logo} />
-              {label.qr_code && (
-                <Image src={label.qr_code} style={styles.qrCode} />
-              )}
-            </View>
+            <View style={styles.contentWrapper}>
+              {/* Left Section: Logo - Separator - QR Code */}
+              <View style={styles.leftSection}>
+                <Image src={label.logo_url} style={styles.logo} />
+                {label.qr_code && (
+                  <Image src={label.qr_code} style={styles.qrCode} />
+                )}
+              </View>
 
-            {/* Information Section */}
-            <View style={styles.infoSection}>
+              {/* Information Section */}
+              <View style={styles.infoSection}>
               {/* Header Row: Tracking Number + Date */}
               <View style={styles.headerRow}>
                 <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
@@ -169,6 +173,7 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 <Text style={styles.label}>Quantity: </Text>
                 <Text style={styles.quantityValue}>{label.bags_display}</Text>
               </Text>
+              </View>
             </View>
           </View>
         ))}
