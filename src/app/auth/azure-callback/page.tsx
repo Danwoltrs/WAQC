@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import { handleAzureADRedirect } from '@/lib/azure-ad'
 import { supabase } from '@/lib/supabase'
+import { Card, CardContent, CardHeader } from '@/components/ui/card'
+import { FlaskConical, CheckCircle2, AlertCircle } from 'lucide-react'
 
 export default function AzureCallbackPage() {
   const router = useRouter()
@@ -102,25 +105,97 @@ export default function AzureCallbackPage() {
 
   if (error) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background">
-        <div className="max-w-md w-full p-6 bg-card rounded-lg border border-destructive">
-          <h2 className="text-xl font-bold text-destructive mb-4">Authentication Error</h2>
-          <p className="text-sm text-muted-foreground mb-4">{error}</p>
-          <p className="text-xs text-muted-foreground">Redirecting to login...</p>
-        </div>
+      <div className="min-h-screen flex items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md shadow-lg border-0 bg-card">
+          <CardHeader className="space-y-3 text-center pb-4">
+            <div className="mx-auto h-24 w-48 flex items-center justify-center mb-2">
+              <Image
+                src="/images/logos/wolthers-logo-off-white.svg"
+                alt="Wolthers Coffee Logo"
+                width={192}
+                height={72}
+                className="h-20 w-auto hidden dark:block"
+              />
+              <Image
+                src="/images/logos/wolthers-logo-green.svg"
+                alt="Wolthers Coffee Logo"
+                width={192}
+                height={72}
+                className="h-20 w-auto dark:hidden"
+              />
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-center">
+              <div className="h-16 w-16 rounded-full bg-destructive/10 flex items-center justify-center">
+                <AlertCircle className="h-8 w-8 text-destructive" />
+              </div>
+            </div>
+            <div className="text-center space-y-2">
+              <h2 className="text-xl font-bold text-destructive">Authentication Error</h2>
+              <p className="text-sm text-muted-foreground">{error}</p>
+            </div>
+            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-muted-foreground"></div>
+              <span>Redirecting to login...</span>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="max-w-md w-full p-6 bg-card rounded-lg border">
-        <div className="flex flex-col items-center space-y-4">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
-          <h2 className="text-xl font-bold">Signing you in...</h2>
-          <p className="text-sm text-muted-foreground text-center">{status}</p>
-        </div>
-      </div>
+    <div className="min-h-screen flex items-center justify-center bg-background px-4">
+      <Card className="w-full max-w-md shadow-lg border-0 bg-card">
+        <CardHeader className="space-y-3 text-center pb-4">
+          <div className="mx-auto h-24 w-48 flex items-center justify-center mb-2">
+            <Image
+              src="/images/logos/wolthers-logo-off-white.svg"
+              alt="Wolthers Coffee Logo"
+              width={192}
+              height={72}
+              className="h-20 w-auto hidden dark:block"
+            />
+            <Image
+              src="/images/logos/wolthers-logo-green.svg"
+              alt="Wolthers Coffee Logo"
+              width={192}
+              height={72}
+              className="h-20 w-auto dark:hidden"
+            />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <div className="flex flex-col items-center space-y-4">
+            <div className="relative">
+              <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center">
+                <FlaskConical className="h-10 w-10 text-primary" />
+              </div>
+              <div className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-primary flex items-center justify-center">
+                <CheckCircle2 className="h-5 w-5 text-primary-foreground" />
+              </div>
+            </div>
+            <div className="text-center space-y-2">
+              <h2 className="text-xl font-bold">Signing you in...</h2>
+              <p className="text-sm text-muted-foreground">Please wait while we set up your session</p>
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/50">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+              <span className="text-sm text-muted-foreground">{status}</span>
+            </div>
+          </div>
+
+          <div className="text-center">
+            <p className="text-xs text-muted-foreground">
+              Wolthers Coffee Quality Control System
+            </p>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
