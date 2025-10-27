@@ -99,14 +99,14 @@ export async function GET(
     const equivalent60kg = (sample as any).equivalent_60kg_bags
 
     if (bagType === 'bulk' && equivalent60kg) {
-      // For bulk: "Quantity: equiv. 360 bags in 60 kg | 21.6 MT"
+      // For bulk: "equiv. 360 bags in 60 kg | 21.6 MT"
       const mt = quantityMT || (equivalent60kg * 60 / 1000)
-      bagsDisplay = `Quantity: equiv. ${Math.round(equivalent60kg)} bags in 60 kg | ${mt.toFixed(1)} MT`
+      bagsDisplay = `equiv. ${Math.round(equivalent60kg)} bags in 60 kg | ${mt.toFixed(1)} MT`
     } else if (bagCount != null && bagWeight != null) {
-      // For regular bags: "Quantity: 320 bags in 60 kg jute bags | 19.2 MT"
+      // For regular bags: "320 bags in 60 kg jute bags | 19.2 MT"
       const bagTypeName = bagType === 'jute_bag' ? 'jute bags' : bagType === 'pp_bag' ? 'PP bags' : 'bags'
       const mt = quantityMT || (bagCount * bagWeight / 1000)
-      bagsDisplay = `Quantity: ${bagCount} bags in ${bagWeight} kg ${bagTypeName} | ${mt.toFixed(1)} MT`
+      bagsDisplay = `${bagCount} bags in ${bagWeight} kg ${bagTypeName} | ${mt.toFixed(1)} MT`
     }
 
     // Collect contracts

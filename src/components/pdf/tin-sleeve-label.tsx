@@ -58,10 +58,11 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       flex: 1,
       flexDirection: 'column',
       justifyContent: 'center',
+      alignItems: 'center',
     },
     headerRow: {
       flexDirection: 'column',
-      alignItems: 'flex-start',
+      alignItems: 'center',
       marginBottom: `${4 * scaleFactor}pt`,
     },
     trackingNumber: {
