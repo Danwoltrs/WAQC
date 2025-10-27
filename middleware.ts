@@ -8,60 +8,95 @@ export async function middleware(request: NextRequest) {
     },
   })
 
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        get(name: string) {
-          return request.cookies.get(name)?.value
-        },
-        set(name: string, value: string, options: any) {
-          request.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value,
-            ...options,
-          })
-        },
-        remove(name: string, options: any) {
-          request.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-          response = NextResponse.next({
-            request: {
-              headers: request.headers,
-            },
-          })
-          response.cookies.set({
-            name,
-            value: '',
-            ...options,
-          })
-        },
-      },
-    }
-  )
+  try {
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return request.cookies.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            // Ensure proper cookie attributes for cross-browser compatibility
+            const cookieOptions = {
+              ...options,
+              path: options?.path || '/',
+              sameSite: options?.sameSite || 'lax',
+              secure: process.env.NODE_ENV === 'production',
+            }
 
-  // Refresh session if expired - required for Server Components
-  // Use getUser() instead of getSession() to validate the JWT and refresh if needed
-  const { data: { user }, error } = await supabase.auth.getUser()
+            // Update request cookies (for subsequent middleware/handlers)
+            request.cookies.set({
+              name,
+              value,
+              ...cookieOptions,
+            })
 
-  // If there's an auth error or no user, allow the request to proceed
-  // (the API routes will handle authorization)
+            // Create new response with updated cookies
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
+            })
 
-  return response
+            // Set cookie in response
+            response.cookies.set({
+              name,
+              value,
+              ...cookieOptions,
+            })
+          },
+          remove(name: string, options: any) {
+            const cookieOptions = {
+              ...options,
+              path: options?.path || '/',
+            }
+
+            // Remove from request
+            request.cookies.set({
+              name,
+              value: '',
+              ...cookieOptions,
+            })
+
+            // Create new response
+            response = NextResponse.next({
+              request: {
+                headers: request.headers,
+              },
+            })
+
+            // Remove from response
+            response.cookies.set({
+              name,
+              value: '',
+              ...cookieOptions,
+            })
+          },
+        },
+      }
+    )
+
+    // Refresh session if expired - required for Server Components
+    // Use getUser() to validate the JWT and refresh if needed
+    // Add timeout to prevent middleware from hanging
+    const userPromise = supabase.auth.getUser()
+    const timeoutPromise = new Promise<any>((_, reject) =>
+      setTimeout(() => reject(new Error('Auth check timeout')), 5000)
+    )
+
+    await Promise.race([userPromise, timeoutPromise]).catch((err) => {
+      // Log but don't block on auth errors in middleware
+      console.warn('Middleware auth check failed:', err.message)
+    })
+
+    return response
+  } catch (error) {
+    // Log error but allow request to proceed
+    console.error('Middleware error:', error)
+    return response
+  }
 }
 
 export const config = {

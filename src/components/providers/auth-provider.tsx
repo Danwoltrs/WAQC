@@ -8,6 +8,52 @@ import { NetworkError } from '@/components/errors/network-error'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 
+// Retry utility with exponential backoff
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  maxRetries: number = 3,
+  initialDelay: number = 1000,
+  timeoutMs: number = 10000
+): Promise<T> {
+  let lastError: any
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      // Add timeout to each attempt
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), timeoutMs)
+      )
+
+      const result = await Promise.race([fn(), timeoutPromise])
+      return result
+    } catch (error: any) {
+      lastError = error
+      const isLastAttempt = attempt === maxRetries - 1
+
+      // Don't retry if it's a definitive error (not timeout/network)
+      if (
+        error?.code &&
+        error.code !== 'TIMEOUT' &&
+        !error.message?.includes('timeout') &&
+        !error.message?.includes('fetch') &&
+        !error.message?.includes('network') &&
+        !error.message?.includes('connection')
+      ) {
+        throw error
+      }
+
+      if (!isLastAttempt) {
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = initialDelay * Math.pow(2, attempt)
+        console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+      }
+    }
+  }
+
+  throw lastError
+}
+
 interface AuthContextType {
   user: User | null
   profile: Profile | null
@@ -19,6 +65,9 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// Track pending profile fetches to prevent duplicate requests
+const pendingProfileFetches = new Map<string, Promise<void>>()
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -29,18 +78,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isInitialLoad = true
 
-    // Get initial session
+    // Get initial session with retry logic
     const getSession = async () => {
       let session = null
 
       try {
-        // Add a 60-second timeout to prevent infinite hanging
-        const timeoutPromise = new Promise<any>((_, reject) =>
-          setTimeout(() => reject(new Error('Session fetch timeout')), 60000)
+        // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
+        const result = await retryWithBackoff(
+          () => supabase.auth.getSession(),
+          3,
+          1000,
+          10000
         )
-
-        const sessionPromise = supabase.auth.getSession()
-        const result = await Promise.race([sessionPromise, timeoutPromise])
 
         if (result.error) {
           console.error('Error getting session:', result.error)
@@ -50,8 +99,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         session = result.data.session
       } catch (err: any) {
-        console.error('Error getting session:', err)
-        // On timeout, just continue - no session means show login
+        console.error('Error getting session after retries:', err)
+        // On timeout/error, just continue - no session means show login
         setLoading(false)
         return
       }
@@ -170,26 +219,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    try {
-      console.log('[Auth] Fetching profile for user:', userId)
+    // Check if there's already a pending fetch for this user
+    const existingFetch = pendingProfileFetches.get(userId)
+    if (existingFetch) {
+      console.log('[Auth] Reusing existing profile fetch for user:', userId)
+      return existingFetch
+    }
 
-      // Add 60-second timeout for profile fetch
-      const timeoutPromise = new Promise<any>((_, reject) =>
-        setTimeout(() => reject(new Error('Profile fetch timeout')), 60000)
-      )
+    // Create a new fetch promise
+    const fetchPromise = (async () => {
+      try {
+        console.log('[Auth] Fetching profile for user:', userId)
 
-      const profilePromise = supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
-
-      const { data: profileData, error } = await Promise.race([
-        profilePromise,
-        timeoutPromise
-      ]).catch(err => {
-        if (err.message === 'Profile fetch timeout') {
-          console.warn('Profile fetch timed out, will use fallback')
+      // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
+      const { data: profileData, error } = await retryWithBackoff(
+        () => supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single(),
+        3,
+        1000,
+        10000
+      ).catch(err => {
+        // If all retries fail, treat as timeout
+        if (err.message === 'Request timeout' || err.message?.includes('timeout')) {
+          console.warn('Profile fetch timed out after retries, will use fallback')
           return { data: null, error: { code: 'TIMEOUT', message: 'Profile fetch timeout' } }
         }
         throw err
@@ -299,21 +354,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         laboratoryType = labData?.type ?? undefined
       }
 
-      const userPermissions = getUserPermissions(finalProfile.qc_role as UserRole, laboratoryType)
-      setPermissions(userPermissions)
-    } catch (error: any) {
-      console.error('Error in fetchProfile:', error)
-      // Check if this is a network error
-      if (error?.message?.includes('fetch') ||
-          error?.message?.includes('network') ||
-          error?.message?.includes('connection') ||
-          error?.name === 'TypeError') {
-        console.error('⚠️ Fatal network error in fetchProfile')
-        setNetworkError(true)
+        const userPermissions = getUserPermissions(finalProfile.qc_role as UserRole, laboratoryType)
+        setPermissions(userPermissions)
+      } catch (error: any) {
+        console.error('Error in fetchProfile:', error)
+        // Check if this is a network error
+        if (error?.message?.includes('fetch') ||
+            error?.message?.includes('network') ||
+            error?.message?.includes('connection') ||
+            error?.name === 'TypeError') {
+          console.error('⚠️ Fatal network error in fetchProfile')
+          setNetworkError(true)
+        }
+      } finally {
+        setLoading(false)
       }
-    } finally {
-      setLoading(false)
-    }
+    })()
+
+    // Store the promise in the pending fetches map
+    pendingProfileFetches.set(userId, fetchPromise)
+
+    // Clean up after completion
+    fetchPromise.finally(() => {
+      pendingProfileFetches.delete(userId)
+    })
+
+    return fetchPromise
   }
 
   const signOut = async () => {
