@@ -271,7 +271,8 @@ export function BasicInfoStep({
             </div>
           )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Exporter and Buyer row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="exporter">Exporter *</Label>
           <Select
@@ -372,7 +373,10 @@ export function BasicInfoStep({
             </p>
           )}
         </div>
+      </div>
 
+      {/* Roaster and Supplier row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
           <Label htmlFor="roaster">Roaster</Label>
           <Select
@@ -419,22 +423,22 @@ export function BasicInfoStep({
             />
           )}
         </div>
-      </div>
 
-      {/* Supplier and Quality Specification row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">
-          <Label htmlFor="supplier">Supplier Name</Label>
+          <Label htmlFor="supplier">Supplier Name (Optional)</Label>
           <Input
             id="supplier"
             value={formData.supplier}
             onChange={(e) => updateFormData('supplier', e.target.value)}
-            placeholder="Farm or cooperative name (optional)"
+            placeholder="Farm or cooperative name"
           />
         </div>
+      </div>
 
+      {/* Quality fields row - 3 columns */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         {/* Quality Specification - Show for PSS/SS with buyer selected (required) OR for type samples (optional) */}
-        {formData.buyer && selectedBuyerClient && (formData.sample_type === 'pss' || formData.sample_type === 'ss' || formData.sample_type === 'type') && (
+        {formData.buyer && selectedBuyerClient && (formData.sample_type === 'pss' || formData.sample_type === 'ss' || formData.sample_type === 'type') ? (
           <div className="space-y-2">
           <Label htmlFor="quality_spec_id">
             Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
@@ -507,29 +511,24 @@ export function BasicInfoStep({
             </p>
           )}
           </div>
-        )}
-      </div>
-
-      {/* Quality Name and Processing Method - same row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Quality Name - Always show as fallback/override option */}
-        {(formData.sample_type === 'type' || !formData.buyer || (!formData.sample_type) || !selectedBuyerClient) && (
-          <div className="space-y-2">
-            <Label htmlFor="quality_name">
-              Quality Name {formData.sample_type === 'type' && '(or select from buyer qualities above)'}
-            </Label>
-            <Input
-              id="quality_name"
-              value={formData.quality_name}
-              onChange={(e) => updateFormData('quality_name', e.target.value)}
-              placeholder="e.g., Alfenas Dulce, Specialty Blend, graúdo fino"
-            />
-            <p className="text-xs text-muted-foreground">
-              Custom quality name for this sample
-            </p>
-          </div>
+        ) : (
+          <div></div>
         )}
 
+        {/* Quality Name - Always show for type samples or when no buyer/quality spec */}
+        <div className="space-y-2">
+          <Label htmlFor="quality_name">
+            Quality Name {formData.sample_type === 'type' && '(Optional)'}
+          </Label>
+          <Input
+            id="quality_name"
+            value={formData.quality_name}
+            onChange={(e) => updateFormData('quality_name', e.target.value)}
+            placeholder="e.g., Alfenas Dulce, graúdo fino"
+          />
+        </div>
+
+        {/* Processing Method */}
         <div className="space-y-2">
           <Label htmlFor="processing_method">Processing Method</Label>
           <Select
