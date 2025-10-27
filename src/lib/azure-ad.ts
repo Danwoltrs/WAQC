@@ -20,12 +20,21 @@ export const loginRequest = {
 
 // Create MSAL instance
 let msalInstance: PublicClientApplication | null = null
+let msalInitPromise: Promise<void> | null = null
 
-export const getMsalInstance = () => {
+export const getMsalInstance = async (): Promise<PublicClientApplication | null> => {
   if (typeof window === 'undefined') return null
 
   if (!msalInstance) {
     msalInstance = new PublicClientApplication(msalConfig)
+    // Initialize MSAL - required before any other MSAL operations
+    msalInitPromise = msalInstance.initialize()
+  }
+
+  // Wait for initialization to complete
+  if (msalInitPromise) {
+    await msalInitPromise
+    msalInitPromise = null // Clear after first init
   }
 
   return msalInstance
@@ -33,7 +42,7 @@ export const getMsalInstance = () => {
 
 // Sign in with popup
 export const signInWithAzureAD = async (): Promise<AuthenticationResult> => {
-  const msal = getMsalInstance()
+  const msal = await getMsalInstance()
   if (!msal) throw new Error('MSAL not initialized')
 
   try {
@@ -47,7 +56,7 @@ export const signInWithAzureAD = async (): Promise<AuthenticationResult> => {
 
 // Sign in with redirect
 export const signInWithAzureADRedirect = async (): Promise<void> => {
-  const msal = getMsalInstance()
+  const msal = await getMsalInstance()
   if (!msal) throw new Error('MSAL not initialized')
 
   try {
@@ -60,7 +69,7 @@ export const signInWithAzureADRedirect = async (): Promise<void> => {
 
 // Handle redirect response
 export const handleAzureADRedirect = async (): Promise<AuthenticationResult | null> => {
-  const msal = getMsalInstance()
+  const msal = await getMsalInstance()
   if (!msal) return null
 
   try {
@@ -74,7 +83,7 @@ export const handleAzureADRedirect = async (): Promise<AuthenticationResult | nu
 
 // Get access token silently
 export const getAccessToken = async (): Promise<string | null> => {
-  const msal = getMsalInstance()
+  const msal = await getMsalInstance()
   if (!msal) return null
 
   const accounts = msal.getAllAccounts()
@@ -94,7 +103,7 @@ export const getAccessToken = async (): Promise<string | null> => {
 
 // Sign out
 export const signOutFromAzureAD = async (): Promise<void> => {
-  const msal = getMsalInstance()
+  const msal = await getMsalInstance()
   if (!msal) return
 
   const accounts = msal.getAllAccounts()
