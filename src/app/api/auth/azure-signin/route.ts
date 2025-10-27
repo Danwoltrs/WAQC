@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+import { createClient } from '@supabase/supabase-js'
 import type { Database } from '@/lib/supabase'
 
 export async function POST(request: NextRequest) {
@@ -14,38 +13,22 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    const cookieStore = await cookies()
-
-    // Create Supabase client
-    const supabase = createServerClient<Database>(
+    // Create Supabase Admin client using service role key
+    const supabaseAdmin = createClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
       {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set(name: string, value: string, options: any) {
-            try {
-              cookieStore.set({ name, value, ...options })
-            } catch (error) {
-              console.error('Error setting cookie:', name, error)
-            }
-          },
-          remove(name: string, options: any) {
-            try {
-              cookieStore.set({ name, value: '', ...options })
-            } catch (error) {
-              console.error('Error removing cookie:', name, error)
-            }
-          },
-        },
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
       }
     )
 
     // Extract user info from Azure AD account
     const email = account.username || account.idTokenClaims?.email || account.idTokenClaims?.preferred_username
     const name = account.name || account.idTokenClaims?.name
+    const azureId = account.localAccountId || account.homeAccountId
 
     if (!email) {
       return NextResponse.json(
@@ -54,67 +37,74 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Sign in or create user in Supabase
-    // First, try to sign in with OTP (passwordless)
-    const { data: otpData, error: otpError } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        shouldCreateUser: true,
-        data: {
+    // Get or create user in Supabase Auth
+    const { data: existingUser } = await supabaseAdmin.auth.admin.listUsers()
+    let userId: string
+
+    const userExists = existingUser?.users?.find(u => u.email === email)
+
+    if (userExists) {
+      userId = userExists.id
+      console.log('User exists:', userId)
+    } else {
+      // Create new user in Supabase Auth
+      const { data: newUser, error: createUserError } = await supabaseAdmin.auth.admin.createUser({
+        email,
+        email_confirm: true, // Auto-confirm email since they authenticated via Azure AD
+        user_metadata: {
           full_name: name,
-          azure_ad_id: account.localAccountId || account.homeAccountId,
-          email: email,
-        },
-      },
-    })
-
-    if (otpError) {
-      console.error('Supabase OTP error:', otpError)
-
-      // If OTP fails, try to create/update user directly
-      // Check if user exists
-      const { data: existingUser } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('email', email)
-        .single()
-
-      if (!existingUser) {
-        // Create new user profile
-        const userId = account.localAccountId || account.homeAccountId || crypto.randomUUID()
-
-        const { error: createError } = await supabase
-          .from('profiles')
-          .insert({
-            id: userId,
-            email,
-            full_name: name || email.split('@')[0],
-            qc_enabled: email.endsWith('@wolthers.com'),
-            qc_role: email.endsWith('@wolthers.com') ? 'lab_personnel' : null,
-            is_global_admin: ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(email),
-          })
-
-        if (createError) {
-          console.error('Error creating profile:', createError)
+          azure_ad_id: azureId,
         }
+      })
+
+      if (createUserError || !newUser.user) {
+        console.error('Error creating user:', createUserError)
+        return NextResponse.json(
+          { error: 'Failed to create user account' },
+          { status: 500 }
+        )
+      }
+
+      userId = newUser.user.id
+      console.log('Created new user:', userId)
+
+      // Create profile for new user
+      const { error: profileError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: userId,
+          email,
+          full_name: name || email.split('@')[0],
+          qc_enabled: email.endsWith('@wolthers.com'),
+          qc_role: email.endsWith('@wolthers.com') ? 'lab_personnel' : null,
+          is_global_admin: ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(email),
+        })
+
+      if (profileError) {
+        console.error('Error creating profile:', profileError)
       }
     }
 
-    // Create a custom session token for this Azure AD authenticated user
-    const sessionToken = Buffer.from(
-      JSON.stringify({
-        email,
-        name,
-        azureId: account.localAccountId || account.homeAccountId,
-        timestamp: Date.now(),
-      })
-    ).toString('base64')
+    // Generate session token using admin API
+    const { data: sessionData, error: sessionError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
+      email,
+    })
+
+    if (sessionError || !sessionData) {
+      console.error('Error generating session:', sessionError)
+      return NextResponse.json(
+        { error: 'Failed to create session' },
+        { status: 500 }
+      )
+    }
 
     return NextResponse.json({
       success: true,
       email,
       name,
-      sessionToken,
+      userId,
+      sessionUrl: sessionData.properties.action_link, // This contains the verification token
     })
   } catch (error: any) {
     console.error('Azure AD sign-in error:', error)

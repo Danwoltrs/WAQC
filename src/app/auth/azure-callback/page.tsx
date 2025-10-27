@@ -54,36 +54,37 @@ export default function AzureCallbackPage() {
 
         setStatus('Setting up your session...')
 
-        // Sign in to Supabase using the email
-        const email = (account.username as string | undefined) ||
-                      (account.idTokenClaims?.email as string | undefined) ||
-                      (account.idTokenClaims?.preferred_username as string | undefined) ||
-                      ''
+        // Parse the session URL to extract the token
+        const sessionUrl = new URL(data.sessionUrl)
+        const token = sessionUrl.searchParams.get('token')
+        const type = sessionUrl.searchParams.get('type') || 'magiclink'
 
-        if (!email || typeof email !== 'string') {
-          throw new Error('No email found in Azure AD account')
+        if (!token) {
+          throw new Error('No session token received')
         }
 
-        // Use magic link for passwordless authentication
-        const { error: signInError } = await supabase.auth.signInWithOtp({
-          email: email,
-          options: {
-            shouldCreateUser: true,
-            emailRedirectTo: `${window.location.origin}/`,
-          },
+        // Verify the OTP token to create a Supabase session
+        const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp({
+          token_hash: token,
+          type: type as any,
         })
 
-        if (signInError) {
-          console.error('Supabase sign-in error:', signInError)
-          // Don't throw, continue anyway as profile might exist
+        if (verifyError) {
+          console.error('Session creation error:', verifyError)
+          throw new Error(`Failed to create session: ${verifyError.message}`)
         }
 
+        if (!sessionData.session) {
+          throw new Error('No session created')
+        }
+
+        console.log('Supabase session created successfully')
         setStatus('Redirecting to dashboard...')
 
         // Store Azure AD session info
         sessionStorage.setItem('azure_ad_authenticated', 'true')
-        sessionStorage.setItem('azure_ad_email', email)
-        sessionStorage.setItem('azure_ad_name', account.name || '')
+        sessionStorage.setItem('azure_ad_email', data.email)
+        sessionStorage.setItem('azure_ad_name', data.name || '')
 
         // Redirect to home
         setTimeout(() => {
