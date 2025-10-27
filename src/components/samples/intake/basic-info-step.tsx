@@ -6,6 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Smartphone, Camera } from 'lucide-react'
 import { ClientAutoDetection } from '@/components/clients/client-auto-detection'
 import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
@@ -214,6 +215,18 @@ export function BasicInfoStep({
               <SelectItem value="type">Type Sample</SelectItem>
             </SelectContent>
           </Select>
+          {formData.sample_type === 'type' && (
+            <div className="flex items-center space-x-2 pt-1">
+              <Checkbox
+                id="hide_exporter"
+                checked={formData.hide_exporter_on_label}
+                onCheckedChange={(checked) => updateFormData('hide_exporter_on_label', checked as boolean)}
+              />
+              <Label htmlFor="hide_exporter" className="text-xs cursor-pointer">
+                Hide exporter name on labels
+              </Label>
+            </div>
+          )}
         </div>
       </div>
 
@@ -377,20 +390,11 @@ export function BasicInfoStep({
         />
       </div>
 
-      {/* Show helper message if buyer selected but sample type not PSS/SS yet */}
-      {formData.buyer && selectedBuyerClient && formData.sample_type && formData.sample_type !== 'pss' && formData.sample_type !== 'ss' && (
-        <div className="p-3 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-          <p className="text-sm text-blue-900 dark:text-blue-100">
-            Quality specifications are only required for PSS and SS sample types.
-          </p>
-        </div>
-      )}
-
-      {/* Quality Specification - Only show for PSS/SS with buyer selected AND has a buyer client match */}
-      {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && formData.buyer && selectedBuyerClient && (
+      {/* Quality Specification - Show for PSS/SS with buyer selected (required) OR for type samples (optional) */}
+      {formData.buyer && selectedBuyerClient && (formData.sample_type === 'pss' || formData.sample_type === 'ss' || formData.sample_type === 'type') && (
         <div className="space-y-2">
           <Label htmlFor="quality_spec_id">
-            Quality Specification *
+            Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
           </Label>
           {loadingQualities ? (
             <div className="text-sm text-muted-foreground">Loading buyer qualities...</div>
@@ -407,9 +411,16 @@ export function BasicInfoStep({
               }}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select quality specification" />
+                <SelectValue placeholder={
+                  formData.sample_type === 'type'
+                    ? "Select quality (optional)"
+                    : "Select quality specification"
+                } />
               </SelectTrigger>
               <SelectContent>
+                {formData.sample_type === 'type' && (
+                  <SelectItem value="">None - Use custom quality name</SelectItem>
+                )}
                 {buyerQualities.map((quality) => (
                   <SelectItem key={quality.id} value={quality.id}>
                     {quality.custom_name || quality.quality_code || 'Unnamed Quality'}
@@ -418,7 +429,7 @@ export function BasicInfoStep({
                 ))}
               </SelectContent>
             </Select>
-          ) : (
+          ) : formData.sample_type !== 'type' ? (
             <div className="space-y-2">
               <div className="p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <p className="text-sm text-yellow-900 dark:text-yellow-100">
@@ -438,24 +449,28 @@ export function BasicInfoStep({
                 + Link Quality Template to Buyer
               </Button>
             </div>
-          )}
+          ) : null}
           {buyerQualities.length > 0 && (
             <p className="text-xs text-muted-foreground">
-              Select the quality specification that will be used to evaluate this sample
+              {formData.sample_type === 'type'
+                ? 'Optional: Select a quality template or leave blank to use custom quality name'
+                : 'Select the quality specification that will be used to evaluate this sample'}
             </p>
           )}
         </div>
       )}
 
-      {/* Quality Name - For type samples or when no buyer is selected */}
-      {(formData.sample_type === 'type' || !formData.buyer || (!formData.sample_type)) && (
+      {/* Quality Name - Always show as fallback/override option */}
+      {(formData.sample_type === 'type' || !formData.buyer || (!formData.sample_type) || !selectedBuyerClient) && (
         <div className="space-y-2">
-          <Label htmlFor="quality_name">Quality Name</Label>
+          <Label htmlFor="quality_name">
+            Quality Name {formData.sample_type === 'type' && '(or select from buyer qualities above)'}
+          </Label>
           <Input
             id="quality_name"
             value={formData.quality_name}
             onChange={(e) => updateFormData('quality_name', e.target.value)}
-            placeholder="e.g., Alfenas Dulce, Specialty Blend (optional)"
+            placeholder="e.g., Alfenas Dulce, Specialty Blend, graúdo fino"
           />
           <p className="text-xs text-muted-foreground">
             Custom quality name for this sample

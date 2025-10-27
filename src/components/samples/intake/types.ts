@@ -18,6 +18,7 @@ export interface FormData {
   linked_pss_sample_id: string
   quality_spec_id: string
   quality_name: string
+  hide_exporter_on_label: boolean
 
   // Tracking Numbers
   wolthers_contract_nr: string

@@ -47,6 +47,8 @@ export async function GET(
         bags_quantity_mt,
         equivalent_60kg_bags,
         quality_spec_id,
+        quality_name,
+        hide_exporter_on_label,
         client_id,
         exporter:exporters(name),
         quality_spec:client_qualities(
@@ -63,11 +65,13 @@ export async function GET(
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Get exporter name
-    const exporterName = (sample as any).exporter?.name || 'N/A'
+    // Get exporter name (hide if hide_exporter_on_label is true)
+    const hideExporter = (sample as any).hide_exporter_on_label || false
+    const exporterName = hideExporter ? '-' : ((sample as any).exporter?.name || 'N/A')
 
     // Get client quality name and full quality description
     const qualitySpec = (sample as any).quality_spec
+    const directQualityName = (sample as any).quality_name
     let clientQualityName: string | undefined
     let qualityDescription = 'N/A'
 
@@ -79,6 +83,10 @@ export async function GET(
       if (qualitySpec.template) {
         qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
       }
+    } else if (directQualityName) {
+      // For type samples or samples without quality_spec, use quality_name directly
+      clientQualityName = directQualityName
+      qualityDescription = directQualityName
     }
 
     // Format packaging type
