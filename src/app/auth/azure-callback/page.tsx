@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Image from 'next/image'
-import { handleAzureADRedirect } from '@/lib/azure-ad'
+import { handleAzureADRedirect, resetRedirectState } from '@/lib/azure-ad'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 import { FlaskConical, CheckCircle2, AlertCircle } from 'lucide-react'
@@ -92,6 +92,9 @@ export default function AzureCallbackPage() {
       } catch (err: any) {
         console.error('Azure AD callback error:', err)
         setError(err.message || 'Authentication failed')
+
+        // Reset redirect state so user can try again
+        resetRedirectState()
 
         // Redirect to login with error after 3 seconds
         setTimeout(() => {

@@ -21,6 +21,7 @@ export const loginRequest = {
 // Create MSAL instance
 let msalInstance: PublicClientApplication | null = null
 let msalInitPromise: Promise<void> | null = null
+let redirectHandled = false
 
 export const getMsalInstance = async (): Promise<PublicClientApplication | null> => {
   if (typeof window === 'undefined') return null
@@ -38,6 +39,11 @@ export const getMsalInstance = async (): Promise<PublicClientApplication | null>
   }
 
   return msalInstance
+}
+
+// Reset redirect handled flag (for testing/debugging)
+export const resetRedirectState = () => {
+  redirectHandled = false
 }
 
 // Sign in with popup
@@ -60,9 +66,31 @@ export const signInWithAzureADRedirect = async (): Promise<void> => {
   if (!msal) throw new Error('MSAL not initialized')
 
   try {
+    // Check if an interaction is already in progress
+    const accounts = msal.getAllAccounts()
+    if (accounts.length > 0) {
+      // User might already be signed in, check for active session
+      console.log('User already has active account, checking session...')
+    }
+
     await msal.loginRedirect(loginRequest)
-  } catch (error) {
+  } catch (error: any) {
     console.error('Azure AD redirect login error:', error)
+
+    // If interaction is in progress, try to handle the redirect instead
+    if (error.errorCode === 'interaction_in_progress') {
+      console.log('Interaction in progress detected, attempting to handle redirect...')
+      try {
+        const response = await msal.handleRedirectPromise()
+        if (response) {
+          console.log('Handled pending redirect successfully')
+          return
+        }
+      } catch (redirectError) {
+        console.error('Failed to handle redirect:', redirectError)
+      }
+    }
+
     throw error
   }
 }
@@ -72,8 +100,20 @@ export const handleAzureADRedirect = async (): Promise<AuthenticationResult | nu
   const msal = await getMsalInstance()
   if (!msal) return null
 
+  // Only handle redirect once per session
+  if (redirectHandled) {
+    console.log('Redirect already handled, skipping...')
+    return null
+  }
+
   try {
     const response = await msal.handleRedirectPromise()
+
+    if (response) {
+      redirectHandled = true
+      console.log('Azure AD redirect handled successfully')
+    }
+
     return response
   } catch (error) {
     console.error('Azure AD redirect handling error:', error)
