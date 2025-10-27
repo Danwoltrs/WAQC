@@ -91,10 +91,13 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     localStorage.setItem('sample-intake-form', JSON.stringify(dataToSave))
   }, [formData])
 
-  // Client auto-detection based on exporter/buyer names
+  // Client auto-detection based on buyer/exporter names
+  // For PSS/SS samples: buyer is the client (they own quality specs)
+  // For type samples: either can be used
   useEffect(() => {
-    if (formData.exporter || formData.buyer) {
-      const searchTerm = (formData.exporter || formData.buyer).toLowerCase()
+    if (formData.buyer || formData.exporter) {
+      // Prioritize buyer for client matching (PSS/SS samples need buyer's quality specs)
+      const searchTerm = (formData.buyer || formData.exporter).toLowerCase()
       const filtered = clients.filter(client =>
         client.company.toLowerCase().includes(searchTerm) ||
         client.name.toLowerCase().includes(searchTerm)
