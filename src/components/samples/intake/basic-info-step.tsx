@@ -155,7 +155,80 @@ export function BasicInfoStep({
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      {/* Step 1: Select Sample Type First */}
+      <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+        <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">
+          Step 1: Select Sample Type
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <Label htmlFor="sample_type">Sample Type *</Label>
+            <Select
+              value={formData.sample_type}
+              onValueChange={(value) => updateFormData('sample_type', value as any)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
+                <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
+                <SelectItem value="type">Type Sample</SelectItem>
+              </SelectContent>
+            </Select>
+            {formData.sample_type === 'type' && (
+              <div className="flex items-center space-x-2 pt-1">
+                <Checkbox
+                  id="hide_exporter"
+                  checked={formData.hide_exporter_on_label}
+                  onCheckedChange={(checked) => updateFormData('hide_exporter_on_label', checked as boolean)}
+                />
+                <Label htmlFor="hide_exporter" className="text-xs cursor-pointer">
+                  Hide exporter name on labels
+                </Label>
+              </div>
+            )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="origin">Origin *</Label>
+            <Select
+              value={formData.origin}
+              onValueChange={(value) => updateFormData('origin', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select origin" />
+              </SelectTrigger>
+              <SelectContent>
+                {ORIGINS.map((origin) => (
+                  <SelectItem key={origin} value={origin}>
+                    {origin}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      </div>
+
+      {/* Show message if sample type not selected */}
+      {!formData.sample_type && (
+        <div className="p-4 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+          <p className="text-sm text-yellow-900 dark:text-yellow-100">
+            Please select a sample type above to continue with sample registration.
+          </p>
+        </div>
+      )}
+
+      {/* Rest of form - only show after sample type is selected */}
+      {formData.sample_type && (
+        <>
+          <div className="p-4 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg">
+            <p className="text-sm font-semibold text-green-900 dark:text-green-100">
+              Step 2: Complete Sample Information
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
         <div className="space-y-2">
           <Label htmlFor="laboratory_id">Laboratory *</Label>
           <Select
@@ -178,54 +251,6 @@ export function BasicInfoStep({
             <p className="text-xs text-muted-foreground">
               Your assigned laboratory
             </p>
-          )}
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="origin">Origin *</Label>
-          <Select
-            value={formData.origin}
-            onValueChange={(value) => updateFormData('origin', value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select origin" />
-            </SelectTrigger>
-            <SelectContent>
-              {ORIGINS.map((origin) => (
-                <SelectItem key={origin} value={origin}>
-                  {origin}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
-          <Label htmlFor="sample_type">Sample Type *</Label>
-          <Select
-            value={formData.sample_type}
-            onValueChange={(value) => updateFormData('sample_type', value as any)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select type" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
-              <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
-              <SelectItem value="type">Type Sample</SelectItem>
-            </SelectContent>
-          </Select>
-          {formData.sample_type === 'type' && (
-            <div className="flex items-center space-x-2 pt-1">
-              <Checkbox
-                id="hide_exporter"
-                checked={formData.hide_exporter_on_label}
-                onCheckedChange={(checked) => updateFormData('hide_exporter_on_label', checked as boolean)}
-              />
-              <Label htmlFor="hide_exporter" className="text-xs cursor-pointer">
-                Hide exporter name on labels
-              </Label>
-            </div>
           )}
         </div>
       </div>
@@ -466,41 +491,44 @@ export function BasicInfoStep({
         </div>
       )}
 
-      {/* Quality Name - Always show as fallback/override option */}
-      {(formData.sample_type === 'type' || !formData.buyer || (!formData.sample_type) || !selectedBuyerClient) && (
-        <div className="space-y-2">
-          <Label htmlFor="quality_name">
-            Quality Name {formData.sample_type === 'type' && '(or select from buyer qualities above)'}
-          </Label>
-          <Input
-            id="quality_name"
-            value={formData.quality_name}
-            onChange={(e) => updateFormData('quality_name', e.target.value)}
-            placeholder="e.g., Alfenas Dulce, Specialty Blend, graúdo fino"
-          />
-          <p className="text-xs text-muted-foreground">
-            Custom quality name for this sample
-          </p>
-        </div>
-      )}
+      {/* Quality Name and Processing Method - same row */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Quality Name - Always show as fallback/override option */}
+        {(formData.sample_type === 'type' || !formData.buyer || (!formData.sample_type) || !selectedBuyerClient) && (
+          <div className="space-y-2">
+            <Label htmlFor="quality_name">
+              Quality Name {formData.sample_type === 'type' && '(or select from buyer qualities above)'}
+            </Label>
+            <Input
+              id="quality_name"
+              value={formData.quality_name}
+              onChange={(e) => updateFormData('quality_name', e.target.value)}
+              placeholder="e.g., Alfenas Dulce, Specialty Blend, graúdo fino"
+            />
+            <p className="text-xs text-muted-foreground">
+              Custom quality name for this sample
+            </p>
+          </div>
+        )}
 
-      <div className="space-y-2">
-        <Label htmlFor="processing_method">Processing Method</Label>
-        <Select
-          value={formData.processing_method}
-          onValueChange={(value) => updateFormData('processing_method', value)}
-        >
-          <SelectTrigger>
-            <SelectValue placeholder="Select method (optional)" />
-          </SelectTrigger>
-          <SelectContent>
-            {PROCESSING_METHODS.map((method) => (
-              <SelectItem key={method} value={method}>
-                {method}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="space-y-2">
+          <Label htmlFor="processing_method">Processing Method</Label>
+          <Select
+            value={formData.processing_method}
+            onValueChange={(value) => updateFormData('processing_method', value)}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder="Select method (optional)" />
+            </SelectTrigger>
+            <SelectContent>
+              {PROCESSING_METHODS.map((method) => (
+                <SelectItem key={method} value={method}>
+                  {method}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
       {formData.sample_type === 'ss' && (
@@ -537,6 +565,9 @@ export function BasicInfoStep({
             </p>
           )}
         </div>
+      )}
+
+        </>
       )}
 
       {/* Client Auto-Detection */}
