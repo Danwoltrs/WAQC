@@ -7,6 +7,16 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 // Use SSR-compatible browser client with explicit cookie configuration
 // This ensures cross-browser compatibility (Chrome, Safari, Edge, Firefox)
 export const supabase = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
+  auth: {
+    // Use local storage for persistent sessions across browser restarts
+    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+    // Automatically refresh session when user becomes active
+    autoRefreshToken: true,
+    // Persist session even if user closes browser
+    persistSession: true,
+    // Detect when user becomes active to refresh session
+    detectSessionInUrl: true,
+  },
   cookies: {
     get(name: string) {
       // Use document.cookie for client-side cookie access

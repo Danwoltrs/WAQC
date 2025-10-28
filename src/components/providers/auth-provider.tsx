@@ -61,6 +61,7 @@ interface AuthContextType {
   loading: boolean
   networkError: boolean
   signOut: () => Promise<void>
+  getLastActivity: () => number | null
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -68,15 +69,124 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined)
 // Track pending profile fetches to prevent duplicate requests
 const pendingProfileFetches = new Map<string, Promise<void>>()
 
+// Profile cache keys for localStorage
+const PROFILE_CACHE_KEY = 'waqc_profile_cache'
+const PROFILE_CACHE_TIMESTAMP_KEY = 'waqc_profile_cache_timestamp'
+const PROFILE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+
+// Session activity tracking
+const LAST_ACTIVITY_KEY = 'waqc_last_activity'
+const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart']
+
+// Helper to get cached profile from localStorage
+function getCachedProfile(): Profile | null {
+  try {
+    if (typeof window === 'undefined') return null
+
+    const cached = localStorage.getItem(PROFILE_CACHE_KEY)
+    const timestamp = localStorage.getItem(PROFILE_CACHE_TIMESTAMP_KEY)
+
+    if (!cached || !timestamp) return null
+
+    const age = Date.now() - parseInt(timestamp)
+    if (age > PROFILE_CACHE_TTL) {
+      // Cache expired
+      localStorage.removeItem(PROFILE_CACHE_KEY)
+      localStorage.removeItem(PROFILE_CACHE_TIMESTAMP_KEY)
+      return null
+    }
+
+    return JSON.parse(cached)
+  } catch (error) {
+    console.error('Error reading profile cache:', error)
+    return null
+  }
+}
+
+// Helper to save profile to localStorage cache
+function setCachedProfile(profile: Profile | null) {
+  try {
+    if (typeof window === 'undefined') return
+
+    if (profile) {
+      localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(profile))
+      localStorage.setItem(PROFILE_CACHE_TIMESTAMP_KEY, Date.now().toString())
+    } else {
+      localStorage.removeItem(PROFILE_CACHE_KEY)
+      localStorage.removeItem(PROFILE_CACHE_TIMESTAMP_KEY)
+    }
+  } catch (error) {
+    console.error('Error saving profile cache:', error)
+  }
+}
+
+// Helper to update last activity timestamp
+function updateLastActivity() {
+  try {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(LAST_ACTIVITY_KEY, Date.now().toString())
+  } catch (error) {
+    console.error('Error updating last activity:', error)
+  }
+}
+
+// Helper to get last activity timestamp
+function getLastActivity(): number | null {
+  try {
+    if (typeof window === 'undefined') return null
+    const timestamp = localStorage.getItem(LAST_ACTIVITY_KEY)
+    return timestamp ? parseInt(timestamp) : null
+  } catch (error) {
+    console.error('Error getting last activity:', error)
+    return null
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
-  const [profile, setProfile] = useState<Profile | null>(null)
+  const [profile, setProfile] = useState<Profile | null>(() => {
+    // Try to load cached profile immediately for instant render
+    return getCachedProfile()
+  })
   const [permissions, setPermissions] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
   const [networkError, setNetworkError] = useState(false)
 
   useEffect(() => {
     let isInitialLoad = true
+    let refreshInterval: NodeJS.Timeout | null = null
+
+    // Proactive token refresh - refresh 5 minutes before expiry
+    const setupTokenRefresh = (session: any) => {
+      if (!session?.expires_at) return
+
+      // Clear existing interval
+      if (refreshInterval) {
+        clearInterval(refreshInterval)
+      }
+
+      const expiresAt = session.expires_at * 1000 // Convert to milliseconds
+      const now = Date.now()
+      const timeUntilExpiry = expiresAt - now
+
+      // Refresh 5 minutes before expiry, or immediately if less than 5 minutes left
+      const refreshTime = Math.max(0, timeUntilExpiry - (5 * 60 * 1000))
+
+      console.log(`[Auth] Token expires in ${Math.floor(timeUntilExpiry / 60000)} minutes, will refresh in ${Math.floor(refreshTime / 60000)} minutes`)
+
+      setTimeout(async () => {
+        console.log('[Auth] Proactively refreshing session token')
+        const { data, error } = await supabase.auth.refreshSession()
+
+        if (error) {
+          console.error('[Auth] Failed to refresh session:', error)
+        } else if (data.session) {
+          console.log('[Auth] Session refreshed successfully')
+          // Setup next refresh
+          setupTokenRefresh(data.session)
+        }
+      }, refreshTime)
+    }
 
     // Get initial session with retry logic
     const getSession = async () => {
@@ -161,6 +271,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (session?.user) {
         setUser(session.user)
+        // Setup proactive token refresh
+        setupTokenRefresh(session)
         try {
           await fetchProfile(session.user.id)
         } catch (error) {
@@ -188,6 +300,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (session?.user) {
         setUser(session.user)
+        // Setup proactive token refresh for new session
+        setupTokenRefresh(session)
         try {
           await fetchProfile(session.user.id)
         } catch (error) {
@@ -197,13 +311,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } else {
         setUser(null)
         setProfile(null)
+        setCachedProfile(null) // Clear cache on logout
         setPermissions([])
         setLoading(false)
       }
     })
 
-    return () => subscription.unsubscribe()
-  }, [])
+    // Set up activity tracking
+    const handleActivity = () => {
+      updateLastActivity()
+    }
+
+    // Add activity event listeners when user is logged in
+    if (user) {
+      ACTIVITY_EVENTS.forEach(event => {
+        window.addEventListener(event, handleActivity, { passive: true })
+      })
+      // Record initial activity
+      updateLastActivity()
+    }
+
+    return () => {
+      subscription.unsubscribe()
+      // Clean up refresh interval on unmount
+      if (refreshInterval) {
+        clearInterval(refreshInterval)
+      }
+      // Clean up activity listeners
+      ACTIVITY_EVENTS.forEach(event => {
+        window.removeEventListener(event, handleActivity)
+      })
+    }
+  }, [user])
 
   const createUserProfile = async (userId: string) => {
     try {
@@ -336,6 +475,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } as Profile
 
             setProfile(tempProfile)
+            setCachedProfile(tempProfile) // Cache temporary profile
             setPermissions(getUserPermissions('lab_personnel', undefined))
             setLoading(false)
 
@@ -404,7 +544,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
         }
 
-        setProfile(finalProfile as Profile)
+        const finalProfileData = finalProfile as Profile
+        setProfile(finalProfileData)
+        setCachedProfile(finalProfileData) // Cache the profile
 
         // Get laboratory info to determine permissions
         let laboratoryType: string | undefined
@@ -452,6 +594,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.removeItem('azure_ad_authenticated')
     sessionStorage.removeItem('azure_ad_email')
     sessionStorage.removeItem('azure_ad_name')
+    // Clear profile cache
+    setCachedProfile(null)
     // Redirect to login page
     window.location.href = '/'
   }
@@ -463,6 +607,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     networkError,
     signOut,
+    getLastActivity,
   }
 
   // Show network error screen if Supabase is unreachable
