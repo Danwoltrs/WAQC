@@ -213,20 +213,36 @@ export function PrintCuppingCardsDialog({
 
   // Memoize the PDF document to prevent re-creation on every render
   const pdfDocument = useMemo(() => {
-    if (!cardData) return null
+    if (!cardData) {
+      console.log('No cardData available for PDF')
+      return null
+    }
+
+    console.log('Creating PDF document with:', {
+      format: generatedFormat,
+      cardCount: cardData.length,
+      showQuality: generatedShowQuality,
+      showBuyer: generatedShowBuyer,
+      showExporter: generatedShowExporter
+    })
 
     const DocComponent = generatedFormat === 'thermal'
       ? ThermalCuppingCardDocument
       : ThermalCuppingCardA4Document
 
-    return (
-      <DocComponent
-        cards={cardData}
-        show_quality={generatedShowQuality}
-        show_buyer={generatedShowBuyer}
-        show_exporter={generatedShowExporter}
-      />
-    )
+    try {
+      return (
+        <DocComponent
+          cards={cardData}
+          show_quality={generatedShowQuality}
+          show_buyer={generatedShowBuyer}
+          show_exporter={generatedShowExporter}
+        />
+      )
+    } catch (error) {
+      console.error('Error creating PDF document:', error)
+      return null
+    }
   }, [cardData, generatedFormat, generatedShowQuality, generatedShowBuyer, generatedShowExporter])
 
   return (
@@ -406,11 +422,16 @@ export function PrintCuppingCardsDialog({
               document={pdfDocument}
               fileName={`cupping-cards-${generatedFormat}-${new Date().toISOString().split('T')[0]}.pdf`}
             >
-              {({ loading }) => (
-                <Button disabled={loading}>
-                  {loading ? 'Generating...' : `Download ${samples.length} Cards`}
-                </Button>
-              )}
+              {({ loading, error }) => {
+                if (error) {
+                  console.error('PDFDownloadLink error:', error)
+                }
+                return (
+                  <Button disabled={loading}>
+                    {loading ? 'Generating...' : error ? 'Error - Try Again' : `Download ${samples.length} Cards`}
+                  </Button>
+                )
+              }}
             </PDFDownloadLink>
           ) : (
             <Button onClick={handlePrint} disabled={isGenerating || loading}>
