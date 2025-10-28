@@ -1,6 +1,6 @@
 # Development Session Notes
 
-## Session Date: 2025-01-28
+## Session Date: 2025-01-28 & 2025-01-29
 
 ### Summary
 Completed implementation of OCR workflow for cupping card scanning and processing, plus enhanced error handling for PDF generation.
@@ -255,6 +255,26 @@ Image Upload → Sharp Preprocessing → QR Detection → Tesseract OCR
 1. **feat: extend session persistence to 30 days** (previous session)
 2. **feat: implement OCR workflow for cupping card scanning** (main OCR work)
 3. **fix: enhance error handling and logging for PDF generation** (debugging improvements)
+4. **docs: add session notes and tomorrow's action plan** (documentation)
+5. **fix: add null safety checks to PDF Text components** (2025-01-29 - fixed PDF generation error)
+
+### Latest Fix (Session 2 - 2025-01-29)
+**Problem**: PDFDownloadLink throwing error when generating cards
+- Error: TypeError in TEXT component
+- Cause: Samples without quality templates had undefined values
+- Sample "WA-045890/25" showed "No template" in UI
+
+**Solution**: Added null safety checks to all PDF Text components
+- `template_name` → fallback to 'Standard'
+- `template_scale_info` → fallback to '1-8, 0.25'
+- `sample_number` → fallback chain
+- `attributes` array → validation with defaults
+
+**Files Modified**:
+- `src/components/pdf/thermal-cupping-card.tsx`
+- `src/components/pdf/thermal-cupping-card-a4.tsx`
+
+**Status**: Fixed and committed, ready to test
 
 ---
 
