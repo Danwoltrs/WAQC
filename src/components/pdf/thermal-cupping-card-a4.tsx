@@ -209,7 +209,7 @@ export const ThermalCuppingCardA4Document: React.FC<
                   </View>
                   <View style={styles.headerInfo}>
                     <Text style={styles.companyName}>
-                      WOLTHERS COFFEE QUALITY CONTROL
+                      {card.lab_name?.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}
                     </Text>
                     <Text style={styles.sampleNumber}>
                       Sample: {card.sample_number}

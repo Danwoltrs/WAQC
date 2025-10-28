@@ -19,6 +19,7 @@ export interface ThermalCuppingCardData {
   quality_name?: string // Optional based on user selection
   buyer_name?: string // Optional based on user selection
   exporter_name?: string // Optional based on user selection
+  lab_name?: string // Laboratory name
   template_name: string
   template_scale_info: string // e.g., "1-8, 0.25"
   attributes: string[] // Array of attribute abbreviations: ["Frag", "Arom", "Body", ...]
@@ -162,7 +163,7 @@ export const ThermalCuppingCardDocument: React.FC<
               </View>
               <View style={styles.headerInfo}>
                 <Text style={styles.companyName}>
-                  WOLTHERS COFFEE QUALITY CONTROL
+                  {card.lab_name?.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}
                 </Text>
                 <Text style={styles.sampleNumber}>
                   Sample: {card.sample_number}

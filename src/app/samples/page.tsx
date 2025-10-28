@@ -66,7 +66,12 @@ interface Sample {
   // Relations that might be loaded for print dialog
   client?: {
     id: string
-    company_name: string
+    company: string
+  }
+  laboratory?: {
+    id: string
+    name: string
+    code: string
   }
   quality_spec?: {
     id: string

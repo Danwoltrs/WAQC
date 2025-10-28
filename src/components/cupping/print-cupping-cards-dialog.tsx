@@ -36,12 +36,18 @@ interface Sample {
   container_nr?: string
   client_id?: string
   quality_spec_id?: string
+  laboratory_id?: string
   origin?: string
   supplier?: string
   // Relations loaded
   client?: {
     id: string
-    company_name: string
+    company: string
+  }
+  laboratory?: {
+    id: string
+    name: string
+    code: string
   }
   quality_spec?: {
     id: string
@@ -164,8 +170,9 @@ export function PrintCuppingCardsDialog({
           ico_number: sample.ico_number,
           container_nr: sample.container_nr,
           quality_name: template?.name,
-          buyer_name: sample.client?.company_name,
+          buyer_name: sample.client?.company,
           exporter_name: sample.supplier,
+          lab_name: sample.laboratory?.name,
           template_name: template?.name || 'Standard',
           template_scale_info:
             customParams.scale_info || templateParams.scale_info || '1-8, 0.25',
@@ -219,7 +226,7 @@ export function PrintCuppingCardsDialog({
                   >
                     <span className="font-medium">{sample.tracking_number}</span>
                     <span className="text-xs text-muted-foreground">
-                      {sample.client?.company_name || 'No client'} |{' '}
+                      {sample.client?.company || 'No client'} |{' '}
                       {sample.quality_spec?.template?.name || 'No template'}
                     </span>
                   </div>

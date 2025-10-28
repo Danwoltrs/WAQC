@@ -39,9 +39,15 @@ export async function POST(request: NextRequest) {
         supplier,
         client_id,
         quality_spec_id,
+        laboratory_id,
         client:clients!samples_client_id_fkey(
           id,
-          company_name
+          company
+        ),
+        laboratory:laboratories!samples_laboratory_id_fkey(
+          id,
+          name,
+          code
         ),
         quality_spec:client_qualities!samples_quality_spec_id_fkey(
           id,
