@@ -152,17 +152,26 @@ export async function POST(request: NextRequest) {
           margin: 1,
         })
 
-        // Format date
-        const date = new Date(sample.created_at).toLocaleDateString('en-GB', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-        })
+        // Format date with short month (e.g., "28/Oct/2025")
+        const dateObj = new Date(sample.created_at)
+        const day = dateObj.getDate().toString().padStart(2, '0')
+        const month = dateObj.toLocaleDateString('en-US', { month: 'short' })
+        const year = dateObj.getFullYear()
+        const date = `${day}/${month}/${year}`
+
+        // Map sample_type to display format
+        const sampleTypeMap: Record<string, 'PSS' | 'Stocklot' | 'SS' | 'Type Sample'> = {
+          'pss': 'PSS',
+          'ss': 'SS',
+          'type': 'Type Sample',
+          'stocklot': 'Stocklot'
+        }
+        const displaySampleType = sampleTypeMap[sample.sample_type?.toLowerCase() || 'pss'] || 'PSS'
 
         return {
           date,
           tracking_number: sample.tracking_number,
-          sample_type: (sample.sample_type || 'PSS') as any,
+          sample_type: displaySampleType,
           exporter: exporterName,
           client_quality_name: clientQualityName,
           quality_description: qualityDescription,

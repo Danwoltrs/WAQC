@@ -153,18 +153,19 @@ export async function GET(
       tax_id: '',
     }
 
-    // Format date
-    const date = new Date((sample as any).created_at).toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    })
+    // Format date with short month (e.g., "28/Oct/2025")
+    const dateObj = new Date((sample as any).created_at)
+    const day = dateObj.getDate().toString().padStart(2, '0')
+    const month = dateObj.toLocaleDateString('en-US', { month: 'short' })
+    const year = dateObj.getFullYear()
+    const date = `${day}/${month}/${year}`
 
     // Determine sample type display
     let sampleTypeDisplay: 'PSS' | 'SS' | 'Type Sample' = 'PSS'
-    if ((sample as any).sample_type === 'Stocklot') {
+    const sampleType = (sample as any).sample_type?.toLowerCase()
+    if (sampleType === 'type' || sampleType === 'stocklot') {
       sampleTypeDisplay = 'Type Sample'
-    } else if ((sample as any).sample_type === 'SS') {
+    } else if (sampleType === 'ss') {
       sampleTypeDisplay = 'SS'
     }
 

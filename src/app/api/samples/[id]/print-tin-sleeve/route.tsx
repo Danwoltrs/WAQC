@@ -136,12 +136,12 @@ export async function GET(
     const logoBuffer = fs.readFileSync(logoPath)
     const logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
 
-    // Format date
-    const date = new Date((sample as any).created_at).toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    })
+    // Format date with short month (e.g., "28/Oct/2025")
+    const dateObj = new Date((sample as any).created_at)
+    const day = dateObj.getDate().toString().padStart(2, '0')
+    const month = dateObj.toLocaleDateString('en-US', { month: 'short' })
+    const year = dateObj.getFullYear()
+    const date = `${day}/${month}/${year}`
 
     // Map sample_type to display format
     const sampleTypeMap: Record<string, 'PSS' | 'Stocklot' | 'SS' | 'Type Sample'> = {
