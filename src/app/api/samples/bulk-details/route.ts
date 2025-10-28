@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
         ico_number,
         container_nr,
         origin,
-        supplier,
+        exporter_legacy,
         client_id,
         quality_spec_id,
         laboratory_id,
@@ -68,6 +68,13 @@ export async function POST(request: NextRequest) {
         { error: 'Failed to fetch sample details', details: error.message },
         { status: 500 }
       )
+    }
+
+    console.log('Fetched samples count:', samples?.length || 0)
+    if (samples && samples.length > 0) {
+      console.log('Sample 0 client:', samples[0].client)
+      console.log('Sample 0 quality_spec:', samples[0].quality_spec)
+      console.log('Sample 0 laboratory:', samples[0].laboratory)
     }
 
     return NextResponse.json({

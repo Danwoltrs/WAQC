@@ -38,7 +38,7 @@ interface Sample {
   quality_spec_id?: string
   laboratory_id?: string
   origin?: string
-  supplier?: string
+  exporter_legacy?: string
   // Relations loaded
   client?: {
     id: string
@@ -99,6 +99,8 @@ export function PrintCuppingCardsDialog({
     setLoading(true)
     try {
       const sampleIds = samples.map((s) => s.id)
+      console.log('Loading full sample data for IDs:', sampleIds)
+
       const response = await fetch('/api/samples/bulk-details', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -107,9 +109,11 @@ export function PrintCuppingCardsDialog({
 
       if (response.ok) {
         const data = await response.json()
+        console.log('Received sample details:', data.samples)
         setFullSamples(data.samples || [])
       } else {
-        console.error('Failed to load sample details')
+        const errorText = await response.text()
+        console.error('Failed to load sample details:', response.status, errorText)
         // Fallback to original samples if fetch fails
         setFullSamples(samples)
       }
@@ -171,7 +175,7 @@ export function PrintCuppingCardsDialog({
           container_nr: sample.container_nr,
           quality_name: template?.name,
           buyer_name: sample.client?.company,
-          exporter_name: sample.supplier,
+          exporter_name: sample.exporter_legacy,
           lab_name: sample.laboratory?.name,
           template_name: template?.name || 'Standard',
           template_scale_info:
@@ -217,9 +221,9 @@ export function PrintCuppingCardsDialog({
               <div className="rounded-md border p-3 text-sm text-center text-muted-foreground">
                 Loading sample details...
               </div>
-            ) : (
+            ) : fullSamples.length > 0 ? (
               <div className="max-h-[120px] overflow-y-auto rounded-md border p-3 text-sm">
-                {(fullSamples.length > 0 ? fullSamples : samples).map((sample) => (
+                {fullSamples.map((sample) => (
                   <div
                     key={sample.id}
                     className="flex items-center justify-between border-b border-border/50 py-1 last:border-0"
@@ -228,6 +232,20 @@ export function PrintCuppingCardsDialog({
                     <span className="text-xs text-muted-foreground">
                       {sample.client?.company || 'No client'} |{' '}
                       {sample.quality_spec?.template?.name || 'No template'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="max-h-[120px] overflow-y-auto rounded-md border p-3 text-sm">
+                {samples.map((sample) => (
+                  <div
+                    key={sample.id}
+                    className="flex items-center justify-between border-b border-border/50 py-1 last:border-0"
+                  >
+                    <span className="font-medium">{sample.tracking_number}</span>
+                    <span className="text-xs text-muted-foreground">
+                      Loading...
                     </span>
                   </div>
                 ))}
