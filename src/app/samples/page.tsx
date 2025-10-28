@@ -49,7 +49,7 @@ interface Sample {
   roaster_country?: string
   buyer?: string
   quality_name?: string
-  sample_type?: string
+  sample_type?: 'pss' | 'ss' | 'type'
   status: string
   workflow_stage?: string
   storage_position?: string
@@ -62,6 +62,22 @@ interface Sample {
   container_nr?: string
   laboratory_id?: string
   created_at: string
+  quality_spec_id?: string
+  // Relations that might be loaded for print dialog
+  client?: {
+    id: string
+    company_name: string
+  }
+  quality_spec?: {
+    id: string
+    template_id?: string
+    custom_parameters?: any
+    template?: {
+      id: string
+      name: string
+      parameters?: any
+    }
+  }
 }
 
 // Helper function to extract clean tracking number from potential JSON
