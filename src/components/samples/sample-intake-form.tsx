@@ -105,7 +105,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       setFilteredClients(filtered)
 
       // Auto-select if exact match
-      if (filtered.length === 1) {
+      // BUT: Don't overwrite client_id if a quality spec is already selected
+      // (quality spec selection should take precedence as it's more specific)
+      if (filtered.length === 1 && !formData.quality_spec_id) {
         setFormData(prev => ({ ...prev, client_id: filtered[0].id }))
       }
     } else {
