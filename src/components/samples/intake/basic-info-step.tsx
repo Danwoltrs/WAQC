@@ -453,12 +453,21 @@ export function BasicInfoStep({
                 if (value === 'none') {
                   updateFormData('quality_spec_id', '')
                   updateFormData('quality_name', '')
+                  // For type samples, clear client_id when no quality spec is selected
+                  if (formData.sample_type === 'type') {
+                    updateFormData('client_id', '')
+                  }
                 } else {
                   updateFormData('quality_spec_id', value)
                   // Auto-fill quality_name with custom_name from the selected quality
                   const selectedQuality = buyerQualities.find(q => q.id === value)
                   if (selectedQuality?.custom_name) {
                     updateFormData('quality_name', selectedQuality.custom_name)
+                  }
+                  // CRITICAL FIX: Always set client_id to the buyer who owns this quality spec
+                  // This ensures tracking number uses buyer's sequence, not exporter's
+                  if (selectedBuyerClient) {
+                    updateFormData('client_id', selectedBuyerClient.id)
                   }
                 }
               }}
