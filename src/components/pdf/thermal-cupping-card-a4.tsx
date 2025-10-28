@@ -21,14 +21,14 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   cardContainer: {
-    width: '24%',
+    width: '49%',
     marginRight: '1%',
     marginBottom: '1%',
     position: 'relative',
   },
   card: {
     border: '1pt solid #000000',
-    fontSize: 5,
+    fontSize: 6,
   },
   header: {
     flexDirection: 'row',
@@ -36,35 +36,35 @@ const styles = StyleSheet.create({
     padding: '2pt',
   },
   qrSection: {
-    width: '35pt',
-    marginRight: '2pt',
+    width: '50pt',
+    marginRight: '3pt',
   },
   logo: {
-    width: '35pt',
-    height: '10pt',
-    marginBottom: '1pt',
+    width: '50pt',
+    height: '15pt',
+    marginBottom: '2pt',
   },
   qrCode: {
-    width: '35pt',
-    height: '35pt',
+    width: '50pt',
+    height: '50pt',
   },
   headerInfo: {
     flex: 1,
     flexDirection: 'column',
   },
   companyName: {
-    fontSize: 5,
-    fontWeight: 'bold',
-    marginBottom: '0.5pt',
-  },
-  sampleNumber: {
     fontSize: 6,
     fontWeight: 'bold',
-    marginBottom: '0.5pt',
+    marginBottom: '1pt',
+  },
+  sampleNumber: {
+    fontSize: 7,
+    fontWeight: 'bold',
+    marginBottom: '1pt',
   },
   infoRow: {
-    fontSize: 4.5,
-    marginBottom: '0.25pt',
+    fontSize: 5.5,
+    marginBottom: '0.5pt',
     color: '#333333',
   },
   tableSection: {
@@ -76,50 +76,50 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F0F0',
   },
   cupperColumn: {
-    width: '28pt',
-    padding: '1pt',
+    width: '40pt',
+    padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 4.5,
+    fontSize: 6,
     fontWeight: 'bold',
   },
   attributeColumn: {
-    width: '14pt',
-    padding: '1pt',
+    width: '20pt',
+    padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 4.5,
+    fontSize: 6,
     fontWeight: 'bold',
     textAlign: 'center',
   },
   tableRow: {
     flexDirection: 'row',
     borderBottom: '0.5pt solid #CCCCCC',
-    minHeight: '10pt',
+    minHeight: '14pt',
   },
   cupperCell: {
-    width: '28pt',
-    padding: '1pt',
+    width: '40pt',
+    padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 4.5,
+    fontSize: 6,
   },
   attributeCell: {
-    width: '14pt',
-    padding: '1pt',
+    width: '20pt',
+    padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 4.5,
+    fontSize: 6,
     textAlign: 'center',
   },
   defectsSection: {
-    padding: '2pt',
+    padding: '3pt',
   },
   defectLabel: {
-    fontSize: 4.5,
+    fontSize: 6,
     fontWeight: 'bold',
-    marginBottom: '0.5pt',
+    marginBottom: '1pt',
   },
   defectSpace: {
-    minHeight: '8pt',
+    minHeight: '12pt',
     borderBottom: '0.5pt solid #CCCCCC',
-    marginBottom: '1pt',
+    marginBottom: '2pt',
   },
   cuttingGuide: {
     position: 'absolute',
@@ -138,13 +138,13 @@ interface ThermalCuppingCardA4DocumentProps {
 
 /**
  * PDF Document component for A4 printer cupping cards
- * Generates 12 cards per page (4x3 grid) with cutting guides
+ * Generates 8 cards per page (2x4 grid) with cutting guides
  */
 export const ThermalCuppingCardA4Document: React.FC<
   ThermalCuppingCardA4DocumentProps
 > = ({ cards, show_quality, show_buyer, show_exporter }) => {
-  // Split cards into pages (12 per page)
-  const cardsPerPage = 12
+  // Split cards into pages (8 per page)
+  const cardsPerPage = 8
   const pages: ThermalCuppingCardData[][] = []
   for (let i = 0; i < cards.length; i += cardsPerPage) {
     pages.push(cards.slice(i, i + cardsPerPage))
@@ -154,16 +154,9 @@ export const ThermalCuppingCardA4Document: React.FC<
     <Document>
       {pages.map((pageCards, pageIndex) => (
         <Page key={pageIndex} size="A4" style={styles.page}>
-          {/* Cutting Guides - 4x3 grid */}
+          {/* Cutting Guides - 2x4 grid */}
           <Svg style={{ position: 'absolute', width: '100%', height: '100%' }}>
-            {/* Vertical lines (3 lines to create 4 columns) */}
-            <Line
-              x1="25%"
-              y1="0"
-              x2="25%"
-              y2="100%"
-              style={styles.cuttingGuide}
-            />
+            {/* Vertical line (1 line to create 2 columns) */}
             <Line
               x1="50%"
               y1="0"
@@ -171,26 +164,26 @@ export const ThermalCuppingCardA4Document: React.FC<
               y2="100%"
               style={styles.cuttingGuide}
             />
-            <Line
-              x1="75%"
-              y1="0"
-              x2="75%"
-              y2="100%"
-              style={styles.cuttingGuide}
-            />
-            {/* Horizontal lines (2 lines to create 3 rows) */}
+            {/* Horizontal lines (3 lines to create 4 rows) */}
             <Line
               x1="0"
-              y1="33.33%"
+              y1="25%"
               x2="100%"
-              y2="33.33%"
+              y2="25%"
               style={styles.cuttingGuide}
             />
             <Line
               x1="0"
-              y1="66.66%"
+              y1="50%"
               x2="100%"
-              y2="66.66%"
+              y2="50%"
+              style={styles.cuttingGuide}
+            />
+            <Line
+              x1="0"
+              y1="75%"
+              x2="100%"
+              y2="75%"
               style={styles.cuttingGuide}
             />
           </Svg>

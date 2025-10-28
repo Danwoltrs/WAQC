@@ -86,14 +86,14 @@ export function PrintCuppingCardsDialog({
 
   // Load full sample data with relations when dialog opens
   useEffect(() => {
-    if (open && samples.length > 0) {
+    if (open && samples.length > 0 && fullSamples.length === 0) {
       loadFullSampleData()
     } else if (!open) {
       // Reset states when dialog closes
       setCardData(null)
       setFullSamples([])
     }
-  }, [open, samples])
+  }, [open, samples.length])
 
   const loadFullSampleData = async () => {
     setLoading(true)
