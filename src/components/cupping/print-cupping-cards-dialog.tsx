@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { PDFDownloadLink } from '@react-pdf/renderer'
 import QRCode from 'qrcode'
 import {
@@ -75,6 +75,46 @@ export function PrintCuppingCardsDialog({
     null
   )
   const [isGenerating, setIsGenerating] = useState(false)
+  const [fullSamples, setFullSamples] = useState<Sample[]>([])
+  const [loading, setLoading] = useState(false)
+
+  // Load full sample data with relations when dialog opens
+  useEffect(() => {
+    if (open && samples.length > 0) {
+      loadFullSampleData()
+    } else if (!open) {
+      // Reset states when dialog closes
+      setCardData(null)
+      setFullSamples([])
+    }
+  }, [open, samples])
+
+  const loadFullSampleData = async () => {
+    setLoading(true)
+    try {
+      const sampleIds = samples.map((s) => s.id)
+      const response = await fetch('/api/samples/bulk-details', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sample_ids: sampleIds }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setFullSamples(data.samples || [])
+      } else {
+        console.error('Failed to load sample details')
+        // Fallback to original samples if fetch fails
+        setFullSamples(samples)
+      }
+    } catch (error) {
+      console.error('Error loading sample details:', error)
+      // Fallback to original samples if error occurs
+      setFullSamples(samples)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   // Generate QR codes and prepare card data
   const generateCards = async () => {
@@ -82,7 +122,10 @@ export function PrintCuppingCardsDialog({
     try {
       const cards: ThermalCuppingCardData[] = []
 
-      for (const sample of samples) {
+      // Use fullSamples which have all relations loaded
+      const samplesToUse = fullSamples.length > 0 ? fullSamples : samples
+
+      for (const sample of samplesToUse) {
         // Get quality template attributes
         const template = sample.quality_spec?.template
         const customParams = sample.quality_spec?.custom_parameters || {}
@@ -163,20 +206,26 @@ export function PrintCuppingCardsDialog({
             <Label className="text-sm font-semibold">
               Selected Samples: {samples.length}
             </Label>
-            <div className="max-h-[120px] overflow-y-auto rounded-md border p-3 text-sm">
-              {samples.map((sample) => (
-                <div
-                  key={sample.id}
-                  className="flex items-center justify-between border-b border-border/50 py-1 last:border-0"
-                >
-                  <span className="font-medium">{sample.tracking_number}</span>
-                  <span className="text-xs text-muted-foreground">
-                    {sample.client?.company_name || 'No client'} |{' '}
-                    {sample.quality_spec?.template?.name || 'No template'}
-                  </span>
-                </div>
-              ))}
-            </div>
+            {loading ? (
+              <div className="rounded-md border p-3 text-sm text-center text-muted-foreground">
+                Loading sample details...
+              </div>
+            ) : (
+              <div className="max-h-[120px] overflow-y-auto rounded-md border p-3 text-sm">
+                {(fullSamples.length > 0 ? fullSamples : samples).map((sample) => (
+                  <div
+                    key={sample.id}
+                    className="flex items-center justify-between border-b border-border/50 py-1 last:border-0"
+                  >
+                    <span className="font-medium">{sample.tracking_number}</span>
+                    <span className="text-xs text-muted-foreground">
+                      {sample.client?.company_name || 'No client'} |{' '}
+                      {sample.quality_spec?.template?.name || 'No template'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Card Information Options */}
@@ -321,8 +370,10 @@ export function PrintCuppingCardsDialog({
               )}
             </PDFDownloadLink>
           ) : (
-            <Button onClick={handlePrint} disabled={isGenerating}>
-              {isGenerating
+            <Button onClick={handlePrint} disabled={isGenerating || loading}>
+              {loading
+                ? 'Loading...'
+                : isGenerating
                 ? 'Generating...'
                 : `Print ${samples.length} Card${samples.length !== 1 ? 's' : ''}`}
             </Button>
