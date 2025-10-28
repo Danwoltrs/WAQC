@@ -131,70 +131,96 @@ export function PrintCuppingCardsDialog({
   // Generate QR codes and prepare card data
   const generateCards = async () => {
     setIsGenerating(true)
+    setIsReadyForDownload(false)
+    setCardData(null) // Clear previous card data
+
     try {
       const cards: ThermalCuppingCardData[] = []
 
       // Use fullSamples which have all relations loaded
       const samplesToUse = fullSamples.length > 0 ? fullSamples : samples
 
+      console.log('Generating cards for samples:', samplesToUse.length)
+      console.log('First sample data:', samplesToUse[0])
+
       for (const sample of samplesToUse) {
-        // Get quality template attributes
-        const template = sample.quality_spec?.template
-        const customParams = sample.quality_spec?.custom_parameters || {}
-        const templateParams = template?.parameters || {}
+        try {
+          // Get quality template attributes
+          const template = sample.quality_spec?.template
+          const customParams = sample.quality_spec?.custom_parameters || {}
+          const templateParams = template?.parameters || {}
 
-        // Extract cupping attributes from template
-        // This is a simplified version - in reality, you'd parse the full template structure
-        const attributes =
-          customParams.cupping_attributes ||
-          templateParams.cupping_attributes || [
-            'Frag',
-            'Arom',
-            'Body',
-            'Acid',
-            'Swet',
-            'Bal',
-            'Fin',
-          ]
+          // Extract cupping attributes from template
+          // This is a simplified version - in reality, you'd parse the full template structure
+          const attributes =
+            customParams.cupping_attributes ||
+            templateParams.cupping_attributes || [
+              'Frag',
+              'Arom',
+              'Body',
+              'Acid',
+              'Swet',
+              'Bal',
+              'Fin',
+            ]
 
-        // Generate QR code
-        const qrData = {
-          sample_id: sample.id,
-          tracking_number: sample.tracking_number,
-          type: 'cupping_card',
+          console.log(`Generating QR code for sample ${sample.tracking_number}`)
+
+          // Generate QR code
+          const qrData = {
+            sample_id: sample.id,
+            tracking_number: sample.tracking_number,
+            type: 'cupping_card',
+          }
+          const qrCodeDataUrl = await QRCode.toDataURL(JSON.stringify(qrData), {
+            width: 200,
+            margin: 1,
+            errorCorrectionLevel: 'M',
+          })
+
+          const cardData = {
+            sample_id: sample.id,
+            sample_number: sample.tracking_number,
+            tracking_number: sample.tracking_number,
+            sample_type: sample.sample_type,
+            ico_number: sample.ico_number,
+            container_nr: sample.container_nr,
+            quality_name: template?.name,
+            buyer_name: sample.client?.company,
+            exporter_name: sample.exporter_legacy,
+            lab_name: sample.laboratory?.name,
+            template_name: template?.name || 'Standard',
+            template_scale_info:
+              customParams.scale_info || templateParams.scale_info || '1-8, 0.25',
+            attributes,
+            num_cuppers: parseInt(numCuppers),
+            qr_code: qrCodeDataUrl,
+            // logo_url: '/logo.png', // Add if you have a logo
+          }
+
+          console.log(`Card data for ${sample.tracking_number}:`, cardData)
+          cards.push(cardData)
+        } catch (sampleError) {
+          console.error(`Error generating card for sample ${sample.tracking_number}:`, sampleError)
+          // Continue with other samples even if one fails
         }
-        const qrCodeDataUrl = await QRCode.toDataURL(JSON.stringify(qrData), {
-          width: 200,
-          margin: 1,
-        })
+      }
 
-        cards.push({
-          sample_id: sample.id,
-          sample_number: sample.tracking_number,
-          tracking_number: sample.tracking_number,
-          sample_type: sample.sample_type,
-          ico_number: sample.ico_number,
-          container_nr: sample.container_nr,
-          quality_name: template?.name,
-          buyer_name: sample.client?.company,
-          exporter_name: sample.exporter_legacy,
-          lab_name: sample.laboratory?.name,
-          template_name: template?.name || 'Standard',
-          template_scale_info:
-            customParams.scale_info || templateParams.scale_info || '1-8, 0.25',
-          attributes,
-          num_cuppers: parseInt(numCuppers),
-          qr_code: qrCodeDataUrl,
-          // logo_url: '/logo.png', // Add if you have a logo
-        })
+      if (cards.length === 0) {
+        throw new Error('No cards were generated successfully')
       }
 
       setCardData(cards)
       setIsReadyForDownload(true)
-      console.log('Cards generated successfully:', cards.length)
+      console.log('✅ Cards generated successfully:', cards.length)
+      console.log('📊 Card data ready for PDF:', cards)
     } catch (error) {
-      console.error('Error generating cards:', error)
+      console.error('❌ Error generating cards:', error)
+      setCardData(null)
       setIsReadyForDownload(false)
+
+      // Show error to user
+      alert(`Failed to generate cupping cards: ${error instanceof Error ? error.message : 'Unknown error'}`)
     } finally {
       setIsGenerating(false)
     }
@@ -202,6 +228,11 @@ export function PrintCuppingCardsDialog({
 
   // Handle print button click
   const handlePrint = () => {
+    // Ensure we have full sample data before generating
+    if (loading || fullSamples.length === 0) {
+      console.warn('Cannot generate cards: sample data still loading')
+      return
+    }
     setIsReadyForDownload(false)
     generateCards()
   }
@@ -378,7 +409,7 @@ export function PrintCuppingCardsDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          {isReadyForDownload && cardData ? (
+          {isReadyForDownload && cardData && cardData.length > 0 ? (
             <PDFDownloadLink
               document={
                 outputFormat === 'thermal' ? (
@@ -401,11 +432,16 @@ export function PrintCuppingCardsDialog({
             >
               {({ loading, error }) => {
                 if (error) {
-                  console.error('PDFDownloadLink error:', error)
+                  console.error('🔴 PDFDownloadLink error:', error)
+                  console.error('Card data at error time:', cardData)
+                  console.error('Output format:', outputFormat)
+                }
+                if (loading) {
+                  console.log('⏳ PDF is being generated...')
                 }
                 return (
-                  <Button disabled={loading}>
-                    {loading ? 'Generating PDF...' : error ? 'Error - Try Again' : `Download ${samples.length} Cards`}
+                  <Button disabled={loading || !!error}>
+                    {loading ? 'Generating PDF...' : error ? `Error - ${error.message || 'Try Again'}` : `Download ${cardData.length} Card${cardData.length !== 1 ? 's' : ''}`}
                   </Button>
                 )
               }}
