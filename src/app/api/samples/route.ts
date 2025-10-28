@@ -80,7 +80,9 @@ export async function GET(request: NextRequest) {
     // Transform samples to include flattened entity names
     const transformedSamples = (samples || []).map((sample: any) => ({
       ...sample,
-      quality_name: sample.quality_spec?.custom_name || null,
+      // Prioritize sample's own quality_name (for type samples or custom entries),
+      // fall back to quality_spec's custom_name
+      quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
       quality_code: sample.quality_spec?.quality_code || null,
       exporter_name: sample.exporter?.name || null,
       exporter_country: sample.exporter?.country || null,
