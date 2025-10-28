@@ -83,12 +83,7 @@ export function PrintCuppingCardsDialog({
   const [isGenerating, setIsGenerating] = useState(false)
   const [fullSamples, setFullSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(false)
-
-  // Capture settings at generation time to prevent re-renders
-  const [generatedFormat, setGeneratedFormat] = useState<'thermal' | 'pdf'>('thermal')
-  const [generatedShowQuality, setGeneratedShowQuality] = useState(true)
-  const [generatedShowBuyer, setGeneratedShowBuyer] = useState(true)
-  const [generatedShowExporter, setGeneratedShowExporter] = useState(true)
+  const [isReadyForDownload, setIsReadyForDownload] = useState(false)
 
   // Load full sample data with relations when dialog opens
   useEffect(() => {
@@ -98,6 +93,7 @@ export function PrintCuppingCardsDialog({
       // Reset states when dialog closes
       setCardData(null)
       setFullSamples([])
+      setIsReadyForDownload(false)
     }
   }, [open, samples.length])
 
@@ -194,8 +190,11 @@ export function PrintCuppingCardsDialog({
       }
 
       setCardData(cards)
+      setIsReadyForDownload(true)
+      console.log('Cards generated successfully:', cards.length)
     } catch (error) {
       console.error('Error generating cards:', error)
+      setIsReadyForDownload(false)
     } finally {
       setIsGenerating(false)
     }
@@ -203,47 +202,9 @@ export function PrintCuppingCardsDialog({
 
   // Handle print button click
   const handlePrint = () => {
-    // Capture current settings before generation
-    setGeneratedFormat(outputFormat)
-    setGeneratedShowQuality(showQuality)
-    setGeneratedShowBuyer(showBuyer)
-    setGeneratedShowExporter(showExporter)
+    setIsReadyForDownload(false)
     generateCards()
   }
-
-  // Memoize the PDF document to prevent re-creation on every render
-  const pdfDocument = useMemo(() => {
-    if (!cardData) {
-      console.log('No cardData available for PDF')
-      return null
-    }
-
-    console.log('Creating PDF document with:', {
-      format: generatedFormat,
-      cardCount: cardData.length,
-      showQuality: generatedShowQuality,
-      showBuyer: generatedShowBuyer,
-      showExporter: generatedShowExporter
-    })
-
-    const DocComponent = generatedFormat === 'thermal'
-      ? ThermalCuppingCardDocument
-      : ThermalCuppingCardA4Document
-
-    try {
-      return (
-        <DocComponent
-          cards={cardData}
-          show_quality={generatedShowQuality}
-          show_buyer={generatedShowBuyer}
-          show_exporter={generatedShowExporter}
-        />
-      )
-    } catch (error) {
-      console.error('Error creating PDF document:', error)
-      return null
-    }
-  }, [cardData, generatedFormat, generatedShowQuality, generatedShowBuyer, generatedShowExporter])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -306,7 +267,7 @@ export function PrintCuppingCardsDialog({
                 <Checkbox
                   id="show-quality"
                   checked={showQuality}
-                  disabled={!!cardData}
+                  disabled={isReadyForDownload}
                   onCheckedChange={(checked) =>
                     setShowQuality(checked as boolean)
                   }
@@ -322,7 +283,7 @@ export function PrintCuppingCardsDialog({
                 <Checkbox
                   id="show-buyer"
                   checked={showBuyer}
-                  disabled={!!cardData}
+                  disabled={isReadyForDownload}
                   onCheckedChange={(checked) =>
                     setShowBuyer(checked as boolean)
                   }
@@ -338,7 +299,7 @@ export function PrintCuppingCardsDialog({
                 <Checkbox
                   id="show-exporter"
                   checked={showExporter}
-                  disabled={!!cardData}
+                  disabled={isReadyForDownload}
                   onCheckedChange={(checked) =>
                     setShowExporter(checked as boolean)
                   }
@@ -356,8 +317,8 @@ export function PrintCuppingCardsDialog({
           {/* Number of Cuppers */}
           <div className="space-y-2">
             <Label htmlFor="num-cuppers">Number of Cuppers (Rows on card)</Label>
-            <Select value={numCuppers} onValueChange={setNumCuppers} disabled={!!cardData}>
-              <SelectTrigger id="num-cuppers" disabled={!!cardData}>
+            <Select value={numCuppers} onValueChange={setNumCuppers} disabled={isReadyForDownload}>
+              <SelectTrigger id="num-cuppers" disabled={isReadyForDownload}>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -382,7 +343,7 @@ export function PrintCuppingCardsDialog({
                   name="output"
                   value="thermal"
                   checked={outputFormat === 'thermal'}
-                  disabled={!!cardData}
+                  disabled={isReadyForDownload}
                   onChange={(e) =>
                     setOutputFormat(e.target.value as 'thermal' | 'pdf')
                   }
@@ -399,7 +360,7 @@ export function PrintCuppingCardsDialog({
                   name="output"
                   value="pdf"
                   checked={outputFormat === 'pdf'}
-                  disabled={!!cardData}
+                  disabled={isReadyForDownload}
                   onChange={(e) =>
                     setOutputFormat(e.target.value as 'thermal' | 'pdf')
                   }
@@ -417,10 +378,26 @@ export function PrintCuppingCardsDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          {cardData && pdfDocument ? (
+          {isReadyForDownload && cardData ? (
             <PDFDownloadLink
-              document={pdfDocument}
-              fileName={`cupping-cards-${generatedFormat}-${new Date().toISOString().split('T')[0]}.pdf`}
+              document={
+                outputFormat === 'thermal' ? (
+                  <ThermalCuppingCardDocument
+                    cards={cardData}
+                    show_quality={showQuality}
+                    show_buyer={showBuyer}
+                    show_exporter={showExporter}
+                  />
+                ) : (
+                  <ThermalCuppingCardA4Document
+                    cards={cardData}
+                    show_quality={showQuality}
+                    show_buyer={showBuyer}
+                    show_exporter={showExporter}
+                  />
+                )
+              }
+              fileName={`cupping-cards-${outputFormat}-${new Date().toISOString().split('T')[0]}.pdf`}
             >
               {({ loading, error }) => {
                 if (error) {
@@ -428,7 +405,7 @@ export function PrintCuppingCardsDialog({
                 }
                 return (
                   <Button disabled={loading}>
-                    {loading ? 'Generating...' : error ? 'Error - Try Again' : `Download ${samples.length} Cards`}
+                    {loading ? 'Generating PDF...' : error ? 'Error - Try Again' : `Download ${samples.length} Cards`}
                   </Button>
                 )
               }}
