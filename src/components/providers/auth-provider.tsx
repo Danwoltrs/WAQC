@@ -72,7 +72,7 @@ const pendingProfileFetches = new Map<string, Promise<void>>()
 // Profile cache keys for localStorage
 const PROFILE_CACHE_KEY = 'waqc_profile_cache'
 const PROFILE_CACHE_TIMESTAMP_KEY = 'waqc_profile_cache_timestamp'
-const PROFILE_CACHE_TTL = 5 * 60 * 1000 // 5 minutes
+const PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours - profile changes rarely, keep cached longer
 
 // Session activity tracking
 const LAST_ACTIVITY_KEY = 'waqc_last_activity'
@@ -155,14 +155,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     let isInitialLoad = true
     let refreshInterval: NodeJS.Timeout | null = null
+    let hourlyRefreshInterval: NodeJS.Timeout | null = null
 
-    // Proactive token refresh - refresh 5 minutes before expiry
+    // Proactive token refresh - keeps session alive for 30 days
     const setupTokenRefresh = (session: any) => {
       if (!session?.expires_at) return
 
-      // Clear existing interval
+      // Clear existing intervals
       if (refreshInterval) {
         clearInterval(refreshInterval)
+      }
+      if (hourlyRefreshInterval) {
+        clearInterval(hourlyRefreshInterval)
       }
 
       const expiresAt = session.expires_at * 1000 // Convert to milliseconds
@@ -174,8 +178,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log(`[Auth] Token expires in ${Math.floor(timeUntilExpiry / 60000)} minutes, will refresh in ${Math.floor(refreshTime / 60000)} minutes`)
 
+      // Primary refresh: just before token expiry
       setTimeout(async () => {
-        console.log('[Auth] Proactively refreshing session token')
+        console.log('[Auth] Proactively refreshing session token (expiry-based)')
         const { data, error } = await supabase.auth.refreshSession()
 
         if (error) {
@@ -186,6 +191,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setupTokenRefresh(data.session)
         }
       }, refreshTime)
+
+      // Backup refresh: every hour to ensure 30-day session persistence
+      // This keeps the refresh token active even if user leaves tab open for days
+      hourlyRefreshInterval = setInterval(async () => {
+        console.log('[Auth] Hourly session refresh to maintain 30-day persistence')
+        const { data, error } = await supabase.auth.refreshSession()
+
+        if (error) {
+          console.error('[Auth] Hourly refresh failed:', error)
+        } else if (data.session) {
+          console.log('[Auth] Hourly refresh successful')
+        }
+      }, 60 * 60 * 1000) // Every hour
+    }
+
+    // Refresh session when user returns to tab (for long-term persistence)
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible' && user) {
+        const lastActivity = getLastActivity()
+        if (lastActivity) {
+          const timeSinceActivity = Date.now() - lastActivity
+          // If user was away for more than 5 minutes, refresh session
+          if (timeSinceActivity > 5 * 60 * 1000) {
+            console.log('[Auth] User returned after being away, refreshing session')
+            const { data, error } = await supabase.auth.refreshSession()
+            if (error) {
+              console.error('[Auth] Failed to refresh on return:', error)
+            } else if (data.session) {
+              console.log('[Auth] Session refreshed on user return')
+            }
+          }
+        }
+      }
     }
 
     // Get initial session with retry logic
@@ -327,20 +365,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ACTIVITY_EVENTS.forEach(event => {
         window.addEventListener(event, handleActivity, { passive: true })
       })
+      // Add visibility change listener for session refresh on return
+      document.addEventListener('visibilitychange', handleVisibilityChange)
       // Record initial activity
       updateLastActivity()
     }
 
     return () => {
       subscription.unsubscribe()
-      // Clean up refresh interval on unmount
+      // Clean up refresh intervals on unmount
       if (refreshInterval) {
         clearInterval(refreshInterval)
+      }
+      if (hourlyRefreshInterval) {
+        clearInterval(hourlyRefreshInterval)
       }
       // Clean up activity listeners
       ACTIVITY_EVENTS.forEach(event => {
         window.removeEventListener(event, handleActivity)
       })
+      // Clean up visibility listener
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
   }, [user])
 
