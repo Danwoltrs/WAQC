@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
+import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
 import {
   Select,
   SelectContent,
@@ -105,6 +106,7 @@ export default function SamplesPage() {
   const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
+  const [showCuppingCardsDialog, setShowCuppingCardsDialog] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
@@ -343,6 +345,14 @@ export default function SamplesPage() {
       console.error('Error printing bag sleeve labels:', error)
       alert(`Error generating bag sleeve labels.\n\n${error instanceof Error ? error.message : String(error)}`)
     }
+  }
+
+  const handleBulkPrintCuppingCards = () => {
+    if (selectedSamples.size === 0) {
+      alert('Please select at least one sample')
+      return
+    }
+    setShowCuppingCardsDialog(true)
   }
 
   const handleBulkPrintTinSleeves = () => {
@@ -584,6 +594,10 @@ export default function SamplesPage() {
                   <DropdownMenuItem onClick={handleBulkPrintQRTable}>
                     <QrCode className="h-4 w-4 mr-2" />
                     Print QR Table (Thermal)
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={handleBulkPrintCuppingCards}>
+                    <FileText className="h-4 w-4 mr-2" />
+                    Print Cupping Cards
                   </DropdownMenuItem>
                   <DropdownMenuItem onClick={handleBulkAssign}>
                     <Users className="h-4 w-4 mr-2" />
@@ -916,6 +930,13 @@ export default function SamplesPage() {
         onSuccess={() => {
           setSelectedSamples(new Set())
         }}
+      />
+
+      {/* Print Cupping Cards Dialog */}
+      <PrintCuppingCardsDialog
+        open={showCuppingCardsDialog}
+        onOpenChange={setShowCuppingCardsDialog}
+        samples={samples.filter((s) => selectedSamples.has(s.id))}
       />
     </>
   )
