@@ -143,11 +143,19 @@ interface ThermalCuppingCardA4DocumentProps {
 export const ThermalCuppingCardA4Document: React.FC<
   ThermalCuppingCardA4DocumentProps
 > = ({ cards, show_quality, show_buyer, show_exporter }) => {
+  // Ensure all cards have valid attributes array
+  const validatedCards = cards.map(card => ({
+    ...card,
+    attributes: Array.isArray(card.attributes) && card.attributes.length > 0
+      ? card.attributes
+      : ['Frag', 'Arom', 'Body', 'Acid', 'Swet', 'Bal', 'Fin']
+  }))
+
   // Split cards into pages (8 per page)
   const cardsPerPage = 8
   const pages: ThermalCuppingCardData[][] = []
-  for (let i = 0; i < cards.length; i += cardsPerPage) {
-    pages.push(cards.slice(i, i + cardsPerPage))
+  for (let i = 0; i < validatedCards.length; i += cardsPerPage) {
+    pages.push(validatedCards.slice(i, i + cardsPerPage))
   }
 
   return (
@@ -205,7 +213,7 @@ export const ThermalCuppingCardA4Document: React.FC<
                       {card.lab_name?.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}
                     </Text>
                     <Text style={styles.sampleNumber}>
-                      Sample: {card.sample_number}
+                      Sample: {card.sample_number || card.tracking_number || 'Unknown'}
                     </Text>
                     {/* SS samples must show ICO and Container Nr */}
                     {card.sample_type === 'ss' && (
@@ -238,8 +246,7 @@ export const ThermalCuppingCardA4Document: React.FC<
                       </Text>
                     )}
                     <Text style={styles.infoRow}>
-                      Template: {card.template_name} ({card.template_scale_info}
-                      )
+                      Template: {card.template_name || 'Standard'} ({card.template_scale_info || '1-8, 0.25'})
                     </Text>
                   </View>
                 </View>
