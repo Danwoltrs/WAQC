@@ -563,7 +563,10 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     }
 
     // Validate taint/fault configuration
-    if (taintFaultConfiguration.taints.length > 0 || taintFaultConfiguration.faults.length > 0) {
+    const hasDefects = (taintFaultConfiguration.defects && taintFaultConfiguration.defects.length > 0) ||
+                       (taintFaultConfiguration.taints && taintFaultConfiguration.taints.length > 0) ||
+                       (taintFaultConfiguration.faults && taintFaultConfiguration.faults.length > 0)
+    if (hasDefects) {
       const { validateTaintFaultConfiguration } = require('@/types/taint-fault-configuration')
       const taintFaultValidation = validateTaintFaultConfiguration(taintFaultConfiguration)
       if (!taintFaultValidation.valid) {
@@ -636,7 +639,10 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       parameters.cupping_attributes = cuppingAttributes
 
       // Taint/Fault Configuration (new flexible format)
-      if (taintFaultConfiguration.taints.length > 0 || taintFaultConfiguration.faults.length > 0) {
+      const hasTaintFaultConfig = (taintFaultConfiguration.defects && taintFaultConfiguration.defects.length > 0) ||
+                                   (taintFaultConfiguration.taints && taintFaultConfiguration.taints.length > 0) ||
+                                   (taintFaultConfiguration.faults && taintFaultConfiguration.faults.length > 0)
+      if (hasTaintFaultConfig) {
         parameters.taint_fault_configuration = taintFaultConfiguration
       }
 
@@ -1673,18 +1679,35 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {taintFaultExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
               <CardTitle className="text-sm font-semibold flex-shrink-0">Taints and Faults</CardTitle>
-              {!taintFaultExpanded && (taintFaultConfiguration.taints.length > 0 || taintFaultConfiguration.faults.length > 0) && (
-                <span className="text-[11px] text-muted-foreground truncate">
-                  - Taints: {taintFaultConfiguration.taints.length} | Faults: {taintFaultConfiguration.faults.length}
-                  {taintFaultConfiguration.rules.zero_tolerance && ' | Zero Tolerance'}
-                </span>
-              )}
+              {!taintFaultExpanded && (() => {
+                const defectCount = taintFaultConfiguration.defects?.length || 0
+                const taintCount = taintFaultConfiguration.taints?.length || 0
+                const faultCount = taintFaultConfiguration.faults?.length || 0
+                const totalCount = defectCount || (taintCount + faultCount)
+
+                return totalCount > 0 && (
+                  <span className="text-[11px] text-muted-foreground truncate">
+                    {defectCount > 0 ? (
+                      `- ${defectCount} Defects`
+                    ) : (
+                      `- Taints: ${taintCount} | Faults: ${faultCount}`
+                    )}
+                    {taintFaultConfiguration.rules.zero_tolerance && ' | Zero Tolerance'}
+                  </span>
+                )
+              })()}
             </div>
           </div>
         </CardHeader>
         {taintFaultExpanded && (
         <CardContent className="space-y-3 pt-0">
-          {taintFaultConfiguration.taints.length === 0 && taintFaultConfiguration.faults.length === 0 ? (
+          {(() => {
+            const defectCount = taintFaultConfiguration.defects?.length || 0
+            const taintCount = taintFaultConfiguration.taints?.length || 0
+            const faultCount = taintFaultConfiguration.faults?.length || 0
+            const hasNoConfig = defectCount === 0 && taintCount === 0 && faultCount === 0
+
+            return hasNoConfig ? (
             <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
               <p className="text-xs text-muted-foreground">
                 No taints or faults configured yet. Click &quot;Manage&quot; to get started.
@@ -1705,10 +1728,17 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
               <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
                 <div className="space-y-0.5 text-xs">
                   <p className="font-medium">
-                    {taintFaultConfiguration.taints.length + taintFaultConfiguration.faults.length} definition{(taintFaultConfiguration.taints.length + taintFaultConfiguration.faults.length) !== 1 ? 's' : ''} configured
+                    {(() => {
+                      const totalDefs = defectCount || (taintCount + faultCount)
+                      return `${totalDefs} definition${totalDefs !== 1 ? 's' : ''} configured`
+                    })()}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
-                    Taints: {taintFaultConfiguration.taints.length} • Faults: {taintFaultConfiguration.faults.length}
+                    {defectCount > 0 ? (
+                      `${defectCount} Defects (Intensity-Based)`
+                    ) : (
+                      `Taints: ${taintCount} • Faults: ${faultCount}`
+                    )}
                   </p>
                   {taintFaultConfiguration.rules.zero_tolerance ? (
                     <p className="text-[11px] font-medium text-destructive">
@@ -1744,105 +1774,114 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   onClick={() => setTaintFaultListExpanded(!taintFaultListExpanded)}
                 >
                   {taintFaultListExpanded ? <ChevronDown className="h-3.5 w-3.5 flex-shrink-0" /> : <ChevronRight className="h-3.5 w-3.5 flex-shrink-0" />}
-                  <span className="text-xs font-medium">Configured Taints & Faults</span>
+                  <span className="text-xs font-medium">
+                    {defectCount > 0 ? 'Configured Defects' : 'Configured Taints & Faults'}
+                  </span>
                   {!taintFaultListExpanded && (
                     <span className="text-[11px] text-muted-foreground">
-                      - {taintFaultConfiguration.taints.length} taints, {taintFaultConfiguration.faults.length} faults
+                      {defectCount > 0 ? (
+                        `- ${defectCount} defects`
+                      ) : (
+                        `- ${taintCount} taints, ${faultCount} faults`
+                      )}
                     </span>
                   )}
                 </div>
                 {taintFaultListExpanded && (
                 <div className="p-2">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                    {/* Taints Table */}
-                    <div className="rounded border">
-                      <div className="bg-muted/50 px-2 py-1 border-b">
-                        <h4 className="font-medium text-[11px]">Taints ({taintFaultConfiguration.taints.length})</h4>
-                      </div>
-                      <div className="p-2">
-                        {taintFaultConfiguration.taints.length === 0 ? (
-                          <p className="text-[11px] text-muted-foreground">None</p>
-                        ) : (
-                          <div className="space-y-1">
-                            {taintFaultConfiguration.taints
-                              .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-                              .map((taint) => (
-                                <div key={taint.name} className="flex items-center justify-between text-[11px]">
-                                  <span>{taint.name}</span>
-                                  {taint.scale && (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                      {taint.scale.type === 'numeric'
-                                        ? `${taint.scale.min}-${taint.scale.max}`
-                                        : `${taint.scale.options?.length || 0} levels`}
-                                    </Badge>
-                                  )}
-                                </div>
-                              ))}
+                  {defectCount > 0 ? (
+                    // New intensity-based defects
+                    <div className="space-y-1">
+                      {taintFaultConfiguration.defects
+                        ?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                        .map((defect) => (
+                          <div key={defect.name} className="flex items-center justify-between text-[11px] p-2 rounded border bg-card">
+                            <span className="font-medium">{defect.name}</span>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                {defect.intensity_scale.type === 'numeric'
+                                  ? `${defect.intensity_scale.min}-${defect.intensity_scale.max}`
+                                  : `${defect.intensity_scale.options?.length || 0} levels`}
+                              </Badge>
+                              <span className="text-[10px] text-muted-foreground">
+                                Threshold: {defect.taint_threshold}
+                              </span>
+                            </div>
                           </div>
-                        )}
-                      </div>
+                        ))}
                     </div>
+                  ) : (
+                    // Legacy taints and faults
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {/* Taints Table */}
+                      <div className="rounded border">
+                        <div className="bg-muted/50 px-2 py-1 border-b">
+                          <h4 className="font-medium text-[11px]">Taints ({taintCount})</h4>
+                        </div>
+                        <div className="p-2">
+                          {taintCount === 0 ? (
+                            <p className="text-[11px] text-muted-foreground">None</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {taintFaultConfiguration.taints
+                                ?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                                .map((taint) => (
+                                  <div key={taint.name} className="flex items-center justify-between text-[11px]">
+                                    <span>{taint.name}</span>
+                                    {taint.scale && (
+                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                        {taint.scale.type === 'numeric'
+                                          ? `${taint.scale.min}-${taint.scale.max}`
+                                          : `${taint.scale.options?.length || 0} levels`}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
 
-                    {/* Faults Table */}
-                    <div className="rounded border">
-                      <div className="bg-muted/50 px-2 py-1 border-b">
-                        <h4 className="font-medium text-[11px]">Faults ({taintFaultConfiguration.faults.length})</h4>
-                      </div>
-                      <div className="p-2">
-                        {taintFaultConfiguration.faults.length === 0 ? (
-                          <p className="text-[11px] text-muted-foreground">None</p>
-                        ) : (
-                          <div className="space-y-1">
-                            {taintFaultConfiguration.faults
-                              .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-                              .map((fault) => (
-                                <div key={fault.name} className="flex items-center justify-between text-[11px]">
-                                  <span>{fault.name}</span>
-                                  {fault.scale && (
-                                    <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                      {fault.scale.type === 'numeric'
-                                        ? `${fault.scale.min}-${fault.scale.max}`
-                                        : `${fault.scale.options?.length || 0} levels`}
-                                    </Badge>
-                                  )}
-                                </div>
-                              ))}
-                          </div>
-                        )}
+                      {/* Faults Table */}
+                      <div className="rounded border">
+                        <div className="bg-muted/50 px-2 py-1 border-b">
+                          <h4 className="font-medium text-[11px]">Faults ({faultCount})</h4>
+                        </div>
+                        <div className="p-2">
+                          {faultCount === 0 ? (
+                            <p className="text-[11px] text-muted-foreground">None</p>
+                          ) : (
+                            <div className="space-y-1">
+                              {taintFaultConfiguration.faults
+                                ?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                                .map((fault) => (
+                                  <div key={fault.name} className="flex items-center justify-between text-[11px]">
+                                    <span>{fault.name}</span>
+                                    {fault.scale && (
+                                      <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                        {fault.scale.type === 'numeric'
+                                          ? `${fault.scale.min}-${fault.scale.max}`
+                                          : `${fault.scale.options?.length || 0} levels`}
+                                      </Badge>
+                                    )}
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
                 )}
               </div>
             </div>
-          )}
-
-          {/* View Info - Collapsible */}
-          <div className="border-t pt-2">
-            <div
-              className="flex items-center gap-2 cursor-pointer"
-              onClick={() => setShowTaintFaultInfo(!showTaintFaultInfo)}
-            >
-              {showTaintFaultInfo ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-              <span className="text-xs font-medium text-muted-foreground">View Info</span>
-            </div>
-            {showTaintFaultInfo && (
-              <div className="text-xs text-muted-foreground mt-2 space-y-1">
-                <p>Configure taints, faults, intensity scales, and validation rules:</p>
-                <ul className="list-disc list-inside space-y-0.5 ml-2">
-                  <li><strong>Taints:</strong> Mild off-flavors that may be acceptable in certain grades</li>
-                  <li><strong>Faults:</strong> Severe sensory defects that typically result in rejection</li>
-                  <li><strong>Custom Scales:</strong> Define intensity measurement per taint/fault (numeric or wording)</li>
-                  <li><strong>Validation Rules:</strong> Set count limits, intensity caps, or zero tolerance</li>
-                  <li><strong>Templates:</strong> Load SCA, Specialty, Commercial, or Brazil standards</li>
-                </ul>
-              </div>
-            )}
-          </div>
+          )
+          })()}
         </CardContent>
         )}
       </Card>
+
 
       {/* Taint/Fault Configuration Dialog */}
       <TaintFaultConfigManager
