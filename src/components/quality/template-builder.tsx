@@ -353,6 +353,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   // Convert CuppingAttribute[] to AttributeWithScale[] for the manager
   const attributesWithScale: AttributeWithScale[] = cuppingAttributes.map(attr => ({
     attribute: attr.attribute,
+    abbreviation: attr.abbreviation, // Include abbreviation for editing
     scale: attr.scale,
     validation_rule: attr.validation_rule
   }))
