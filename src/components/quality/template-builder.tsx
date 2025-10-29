@@ -1599,8 +1599,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   </p>
                   <div className="grid grid-cols-3 gap-2">
                     {cuppingAttributes.map((attr, index) => (
-                      <div key={index} className="flex items-center justify-between gap-2">
-                        <div className="flex items-center gap-1">
+                      <div key={index} className="flex items-center gap-2">
+                        <div className="flex items-center gap-1 flex-1 min-w-0">
                           <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
                             {attr.attribute}
                           </Badge>
@@ -1610,7 +1610,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                             </Badge>
                           )}
                         </div>
-                        <span className="text-[11px] text-muted-foreground whitespace-nowrap">
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">
                           {attr.scale.type === 'numeric'
                             ? `${attr.scale.min}-${attr.scale.max}`
                             : `${attr.scale.options?.length || 0} opt`}
