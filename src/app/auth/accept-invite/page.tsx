@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { CheckCircle2, XCircle, Loader2 } from 'lucide-react'
 
-export default function AcceptInvitePage() {
+function AcceptInviteContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const token = searchParams.get('token')
@@ -283,5 +283,23 @@ export default function AcceptInvitePage() {
         </CardContent>
       </Card>
     </div>
+  )
+}
+
+export default function AcceptInvitePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-background">
+          <Card className="w-full max-w-md">
+            <CardContent className="flex items-center justify-center py-12">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </CardContent>
+          </Card>
+        </div>
+      }
+    >
+      <AcceptInviteContent />
+    </Suspense>
   )
 }
