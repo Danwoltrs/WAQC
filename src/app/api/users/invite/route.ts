@@ -1,17 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { Resend } from 'resend'
 
 /**
  * User Invitation API Endpoint
  *
- * Sends professional invitation emails to new users with account creation links.
- * Can use either Resend or Supabase's email service based on configuration.
+ * Creates user invitations with secure tokens for account creation.
+ * Returns invitation URL for manual sharing - no email service required.
  */
-
-// Initialize email service based on available configuration
-const useResend = !!process.env.RESEND_API_KEY
-const resend = useResend ? new Resend(process.env.RESEND_API_KEY) : null
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -88,60 +83,20 @@ export async function POST(request: NextRequest) {
     // Create invitation URL
     const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/accept-invite?token=${invitationToken}`
 
-    // Send invitation email using configured service
-    try {
-      if (useResend && resend) {
-        // Use Resend for email delivery
-        await resend.emails.send({
-          from: process.env.RESEND_FROM_EMAIL || 'Wolthers QC <onboarding@resend.dev>',
-          to: email,
-          subject: 'Welcome to Wolthers Quality Control System',
-          html: generateInvitationEmail({
-            firstName: first_name,
-            lastName: last_name,
-            inviteUrl,
-            role: qc_role,
-          }),
-        })
-      } else {
-        // Use Supabase Auth email (simpler, no additional cost)
-        // For now, we'll just create the invitation and the user can be notified through other means
-        // Or implement Supabase's email service here
-        console.log('Invitation created. Email service not configured.')
-        console.log('Invitation URL:', inviteUrl)
-
-        // In production, you could use Supabase's email functionality:
-        // https://supabase.com/docs/guides/auth/auth-email-templates
-
-        // For development, just log the URL
-        if (process.env.NODE_ENV === 'development') {
-          console.log('\n=== INVITATION EMAIL ===')
-          console.log(`To: ${email}`)
-          console.log(`Name: ${first_name} ${last_name}`)
-          console.log(`Role: ${qc_role}`)
-          console.log(`Invitation URL: ${inviteUrl}`)
-          console.log('========================\n')
-        }
-      }
-    } catch (emailError) {
-      console.error('Error sending invitation email:', emailError)
-      // Delete invitation if email fails
-      await supabaseAdmin
-        .from('user_invitations')
-        .delete()
-        .eq('invitation_token', invitationToken)
-
-      return NextResponse.json(
-        { error: 'Failed to send invitation email' },
-        { status: 500 }
-      )
-    }
+    // Log invitation details for manual sharing
+    console.log('\n=== USER INVITATION CREATED ===')
+    console.log(`To: ${email}`)
+    console.log(`Name: ${first_name} ${last_name}`)
+    console.log(`Role: ${qc_role}`)
+    console.log(`Invitation URL: ${inviteUrl}`)
+    console.log(`Expires: ${expiresAt.toISOString()}`)
+    console.log('===============================\n')
 
     return NextResponse.json({
       success: true,
-      message: 'Invitation sent successfully',
-      // Include invitation URL for testing/manual sharing when email service is not configured
-      invitationUrl: !useResend ? inviteUrl : undefined,
+      message: 'Invitation created successfully',
+      invitationUrl: inviteUrl,
+      expiresAt: expiresAt.toISOString(),
     })
   } catch (error) {
     console.error('Error in invite endpoint:', error)
@@ -149,119 +104,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-/**
- * Generate professional HTML email template for user invitation
- */
-function generateInvitationEmail({
-  firstName,
-  lastName,
-  inviteUrl,
-  role,
-}: {
-  firstName: string
-  lastName: string
-  inviteUrl: string
-  role: string
-}) {
-  return `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Welcome to Wolthers QC</title>
-</head>
-<body style="margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f5f5;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 40px 20px;">
-    <tr>
-      <td align="center">
-        <table width="600" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-          <!-- Header with Logo -->
-          <tr>
-            <td style="padding: 40px 40px 30px; text-align: center; background: linear-gradient(135deg, #2A2A2A 0%, #1a1a1a 100%); border-radius: 8px 8px 0 0;">
-              <img src="${process.env.NEXT_PUBLIC_APP_URL}/wolthers-logo-green.png" alt="Wolthers Logo" style="height: 60px; margin-bottom: 20px;" />
-              <h1 style="margin: 0; color: #ffffff; font-size: 24px; font-weight: 600;">Welcome to Wolthers QC</h1>
-            </td>
-          </tr>
-
-          <!-- Body Content -->
-          <tr>
-            <td style="padding: 40px;">
-              <p style="margin: 0 0 16px; color: #2A2A2A; font-size: 16px; line-height: 24px;">
-                Hello ${firstName} ${lastName},
-              </p>
-
-              <p style="margin: 0 0 24px; color: #2A2A2A; font-size: 16px; line-height: 24px;">
-                You have been invited to join the Wolthers Quality Control System as a <strong>${getRoleLabel(role)}</strong>.
-                Our platform provides comprehensive coffee quality assessment and management tools for our global laboratory network.
-              </p>
-
-              <p style="margin: 0 0 32px; color: #2A2A2A; font-size: 16px; line-height: 24px;">
-                Click the button below to create your account and get started:
-              </p>
-
-              <!-- CTA Button -->
-              <table width="100%" cellpadding="0" cellspacing="0">
-                <tr>
-                  <td align="center">
-                    <a href="${inviteUrl}" style="display: inline-block; padding: 14px 32px; background: linear-gradient(135deg, #6BE6D3 0%, #7DBBFF 100%); color: #2A2A2A; text-decoration: none; font-weight: 600; font-size: 16px; border-radius: 6px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-                      Create Your Account
-                    </a>
-                  </td>
-                </tr>
-              </table>
-
-              <p style="margin: 32px 0 0; color: #666666; font-size: 14px; line-height: 20px;">
-                This invitation link will expire in 7 days. If you have any questions or need assistance,
-                please contact your system administrator.
-              </p>
-
-              <!-- Manual Link (fallback) -->
-              <p style="margin: 24px 0 0; padding: 16px; background-color: #f9f9f9; border-radius: 6px; color: #666666; font-size: 12px; line-height: 18px; word-break: break-all;">
-                If the button above doesn't work, copy and paste this link into your browser:<br/>
-                <a href="${inviteUrl}" style="color: #7DBBFF;">${inviteUrl}</a>
-              </p>
-            </td>
-          </tr>
-
-          <!-- Footer -->
-          <tr>
-            <td style="padding: 30px 40px; background-color: #f9f9f9; border-radius: 0 0 8px 8px; text-align: center;">
-              <p style="margin: 0 0 8px; color: #666666; font-size: 14px; line-height: 20px; font-weight: 600;">
-                Wolthers Coffee Quality Control
-              </p>
-              <p style="margin: 0; color: #999999; font-size: 12px; line-height: 18px;">
-                Santos HQ • Buenaventura • Guatemala City • Peru
-              </p>
-              <p style="margin: 12px 0 0; color: #999999; font-size: 12px; line-height: 18px;">
-                © ${new Date().getFullYear()} Wolthers. All rights reserved.
-              </p>
-            </td>
-          </tr>
-        </table>
-      </td>
-    </tr>
-  </table>
-</body>
-</html>
-  `
-}
-
-/**
- * Get user-friendly role label
- */
-function getRoleLabel(role: string): string {
-  const labels: Record<string, string> = {
-    lab_personnel: 'Lab Personnel',
-    lab_finance_manager: 'Lab Finance Manager',
-    lab_quality_manager: 'Lab Administrator',
-    santos_hq_finance: 'Santos HQ Finance',
-    global_finance_admin: 'Global Finance Administrator',
-    global_quality_admin: 'Global Quality Administrator',
-    global_admin: 'Global Administrator',
-    client: 'Client',
-    supplier: 'Supplier',
-    buyer: 'Buyer',
-  }
-  return labels[role] || role
-}

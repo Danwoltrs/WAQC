@@ -328,13 +328,24 @@ export function UserManagementPanel() {
         throw new Error(data.error || 'Failed to send invitation')
       }
 
-      // Show success message
+      // Show success message with invitation URL
       if (data.invitationUrl) {
-        // Email service not configured - show the invitation URL
-        const message = `Invitation created!\n\nShare this link with ${inviteForm.email}:\n\n${data.invitationUrl}\n\n(Copy the link from your browser console)`
-        alert(message)
-      } else {
-        alert(`Invitation email sent to ${inviteForm.email}!`)
+        // Copy URL to clipboard
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(data.invitationUrl)
+          alert(
+            `Invitation created for ${inviteForm.email}!\n\n` +
+              `The invitation link has been copied to your clipboard.\n\n` +
+              `Share it with the user to complete their account setup.\n\n` +
+              `Link expires: ${new Date(data.expiresAt).toLocaleDateString()}`
+          )
+        } else {
+          alert(
+            `Invitation created for ${inviteForm.email}!\n\n` +
+              `Share this link:\n${data.invitationUrl}\n\n` +
+              `Link expires: ${new Date(data.expiresAt).toLocaleDateString()}`
+          )
+        }
       }
 
       setInviteDialogOpen(false)
