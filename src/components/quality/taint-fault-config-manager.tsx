@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -43,9 +43,39 @@ export function TaintFaultConfigManager({
   value,
   onChange
 }: TaintFaultConfigManagerProps) {
-  const [config, setConfig] = useState<TaintFaultConfiguration>(value)
+  // Ensure backward compatibility with old templates
+  const normalizedValue: TaintFaultConfiguration = {
+    defects: value.defects || [],
+    deduction_formula: value.deduction_formula || {
+      taint_multiplier: 0.5,
+      fault_multiplier: 2.0
+    },
+    rules: value.rules || {},
+    notes: value.notes || '',
+    // Keep legacy fields if they exist
+    taints: value.taints,
+    faults: value.faults
+  }
+
+  const [config, setConfig] = useState<TaintFaultConfiguration>(normalizedValue)
   const [error, setError] = useState<string | null>(null)
   const [editingDefectId, setEditingDefectId] = useState<string | null>(null)
+
+  // Update config when value prop changes (e.g., when editing existing template)
+  useEffect(() => {
+    const normalized: TaintFaultConfiguration = {
+      defects: value.defects || [],
+      deduction_formula: value.deduction_formula || {
+        taint_multiplier: 0.5,
+        fault_multiplier: 2.0
+      },
+      rules: value.rules || {},
+      notes: value.notes || '',
+      taints: value.taints,
+      faults: value.faults
+    }
+    setConfig(normalized)
+  }, [value])
 
   const handleConfigChange = (newConfig: TaintFaultConfiguration) => {
     setConfig(newConfig)
