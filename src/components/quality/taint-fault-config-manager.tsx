@@ -20,7 +20,8 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Plus, X, AlertCircle, Check } from 'lucide-react'
+import { Plus, X, AlertCircle, Check, ChevronDown, ChevronUp } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   TaintFaultConfiguration,
   TaintFaultDefect,
@@ -60,6 +61,7 @@ export function TaintFaultConfigManager({
   const [config, setConfig] = useState<TaintFaultConfiguration>(normalizedValue)
   const [error, setError] = useState<string | null>(null)
   const [editingDefectId, setEditingDefectId] = useState<string | null>(null)
+  const [rulesExpanded, setRulesExpanded] = useState(false)
 
   // Update config when value prop changes (e.g., when editing existing template)
   useEffect(() => {
@@ -394,23 +396,201 @@ export function TaintFaultConfigManager({
 
           {/* Rules Section */}
           <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Rules:</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <ul className="list-disc list-inside space-y-2 text-sm">
-                <li>Intensity 0 = No defect present</li>
-                <li>Taint Range = Minor defect, sample may still pass</li>
-                <li>Fault Range = Major defect, sample typically fails</li>
-                <li>Some defects are ALWAYS faults (e.g., {config.defects.filter(isAlwaysFault).map(d => d.name).join(', ') || 'None'})</li>
-              </ul>
-
-              <div className="mt-4 p-3 bg-muted/30 rounded-md">
-                <p className="text-sm font-medium mb-1">Example:</p>
-                <p className="text-xs text-muted-foreground">&quot;Green&quot; defect at intensity 2 = Taint (acceptable)</p>
-                <p className="text-xs text-muted-foreground">&quot;Green&quot; defect at intensity 3 = Fault (reject sample)</p>
+            <CardHeader
+              className="cursor-pointer hover:bg-muted/30 transition-colors"
+              onClick={() => setRulesExpanded(!rulesExpanded)}
+            >
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle className="text-base">Sample Validation Rules</CardTitle>
+                  <CardDescription className="text-xs mt-1">
+                    {config.rules.zero_tolerance && 'Zero tolerance mode'}
+                    {config.rules.max_taints && `Max ${config.rules.max_taints} taint${config.rules.max_taints > 1 ? 's' : ''}`}
+                    {config.rules.max_taints && config.rules.max_faults && ', '}
+                    {config.rules.max_faults !== undefined && `Max ${config.rules.max_faults} fault${config.rules.max_faults > 1 ? 's' : ''}`}
+                    {config.rules.max_combined && `Max ${config.rules.max_combined} combined`}
+                    {!config.rules.zero_tolerance && !config.rules.max_taints && !config.rules.max_faults && !config.rules.max_combined && 'No limits configured'}
+                  </CardDescription>
+                </div>
+                {rulesExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
               </div>
-            </CardContent>
+            </CardHeader>
+
+            {rulesExpanded && (
+              <CardContent className="space-y-6">
+                {/* Static Explanation */}
+                <div>
+                  <p className="text-sm font-medium mb-2">How it works:</p>
+                  <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
+                    <li>Intensity 0 = No defect present</li>
+                    <li>Taint Range = Minor defect, sample may still pass</li>
+                    <li>Fault Range = Major defect, sample typically fails</li>
+                    <li>Some defects are ALWAYS faults (e.g., {config.defects.filter(isAlwaysFault).map(d => d.name).join(', ') || 'None'})</li>
+                  </ul>
+
+                  <div className="mt-3 p-3 bg-muted/30 rounded-md">
+                    <p className="text-sm font-medium mb-1">Example:</p>
+                    <p className="text-xs text-muted-foreground">&quot;Green&quot; defect at intensity 2 = Taint (acceptable)</p>
+                    <p className="text-xs text-muted-foreground">&quot;Green&quot; defect at intensity 3 = Fault (reject sample)</p>
+                  </div>
+                </div>
+
+                {/* Editable Validation Rules */}
+                <div className="border-t pt-4">
+                  <p className="text-sm font-medium mb-3">Acceptance Criteria:</p>
+
+                  <div className="space-y-4">
+                    {/* Zero Tolerance Toggle */}
+                    <div className="flex items-center space-x-3 p-3 border rounded-md bg-muted/10">
+                      <Checkbox
+                        id="zero_tolerance"
+                        checked={config.rules.zero_tolerance || false}
+                        onCheckedChange={(checked) => {
+                          handleConfigChange({
+                            ...config,
+                            rules: {
+                              ...config.rules,
+                              zero_tolerance: checked as boolean,
+                              // Clear other limits when enabling zero tolerance
+                              ...(checked ? { max_taints: undefined, max_faults: undefined, max_combined: undefined } : {})
+                            }
+                          })
+                        }}
+                      />
+                      <div className="flex-1">
+                        <Label htmlFor="zero_tolerance" className="text-sm font-medium cursor-pointer">
+                          Zero Tolerance Mode
+                        </Label>
+                        <p className="text-xs text-muted-foreground">No taints or faults acceptable</p>
+                      </div>
+                    </div>
+
+                    {!config.rules.zero_tolerance && (
+                      <>
+                        {/* Count Limits */}
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="max_taints" className="text-sm">Max Taints</Label>
+                            <Input
+                              id="max_taints"
+                              type="number"
+                              min="0"
+                              placeholder="No limit"
+                              value={config.rules.max_taints ?? ''}
+                              onChange={(e) => {
+                                const value = e.target.value === '' ? undefined : parseInt(e.target.value)
+                                handleConfigChange({
+                                  ...config,
+                                  rules: { ...config.rules, max_taints: value }
+                                })
+                              }}
+                              className="h-9"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="max_faults" className="text-sm">Max Faults</Label>
+                            <Input
+                              id="max_faults"
+                              type="number"
+                              min="0"
+                              placeholder="No limit"
+                              value={config.rules.max_faults ?? ''}
+                              onChange={(e) => {
+                                const value = e.target.value === '' ? undefined : parseInt(e.target.value)
+                                handleConfigChange({
+                                  ...config,
+                                  rules: { ...config.rules, max_faults: value }
+                                })
+                              }}
+                              className="h-9"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="max_combined" className="text-sm">Max Combined</Label>
+                            <Input
+                              id="max_combined"
+                              type="number"
+                              min="0"
+                              placeholder="No limit"
+                              value={config.rules.max_combined ?? ''}
+                              onChange={(e) => {
+                                const value = e.target.value === '' ? undefined : parseInt(e.target.value)
+                                handleConfigChange({
+                                  ...config,
+                                  rules: { ...config.rules, max_combined: value }
+                                })
+                              }}
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Intensity Limits */}
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-2">
+                            <Label htmlFor="max_taint_intensity" className="text-sm">Max Taint Intensity</Label>
+                            <Input
+                              id="max_taint_intensity"
+                              type="number"
+                              min="1"
+                              placeholder="No limit"
+                              value={config.rules.max_taint_intensity ?? ''}
+                              onChange={(e) => {
+                                const value = e.target.value === '' ? undefined : parseInt(e.target.value)
+                                handleConfigChange({
+                                  ...config,
+                                  rules: { ...config.rules, max_taint_intensity: value }
+                                })
+                              }}
+                              className="h-9"
+                            />
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label htmlFor="max_fault_intensity" className="text-sm">Max Fault Intensity</Label>
+                            <Input
+                              id="max_fault_intensity"
+                              type="number"
+                              min="1"
+                              placeholder="No limit"
+                              value={config.rules.max_fault_intensity ?? ''}
+                              onChange={(e) => {
+                                const value = e.target.value === '' ? undefined : parseInt(e.target.value)
+                                handleConfigChange({
+                                  ...config,
+                                  rules: { ...config.rules, max_fault_intensity: value }
+                                })
+                              }}
+                              className="h-9"
+                            />
+                          </div>
+                        </div>
+
+                        {/* Validation Message */}
+                        <div className="space-y-2">
+                          <Label htmlFor="validation_message" className="text-sm">Custom Validation Message</Label>
+                          <Input
+                            id="validation_message"
+                            placeholder="e.g., 'SCA standard: Max 2 taints, max 1 fault'"
+                            value={config.rules.validation_message ?? ''}
+                            onChange={(e) => {
+                              const value = e.target.value || undefined
+                              handleConfigChange({
+                                ...config,
+                                rules: { ...config.rules, validation_message: value }
+                              })
+                            }}
+                            className="h-9"
+                          />
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            )}
           </Card>
 
           {/* Deduction Formula */}
