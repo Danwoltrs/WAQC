@@ -119,6 +119,8 @@ export function UserManagementPanel() {
     qc_role: '' as UserRole | '',
     laboratory_id: '',
     is_cupper: false,
+    is_q_grader: false,
+    qc_enabled: false,
   })
 
   useEffect(() => {
@@ -327,6 +329,8 @@ export function UserManagementPanel() {
         qc_role: '',
         laboratory_id: '',
         is_cupper: false,
+        is_q_grader: false,
+        qc_enabled: false,
       })
     } catch (error) {
       console.error('Error inviting user:', error)
@@ -672,18 +676,37 @@ export function UserManagementPanel() {
               </Select>
             </div>
 
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="invite-cupper"
-                checked={inviteForm.is_cupper}
-                onCheckedChange={(checked) =>
-                  setInviteForm({ ...inviteForm, is_cupper: checked as boolean })
-                }
-              />
-              <Label htmlFor="invite-cupper" className="flex items-center gap-2">
-                <Coffee className="h-4 w-4" />
-                Designate as Cupper
-              </Label>
+            <div className="flex items-center gap-6">
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="invite-cupper"
+                  checked={inviteForm.is_cupper}
+                  onCheckedChange={(checked) =>
+                    setInviteForm({ ...inviteForm, is_cupper: checked as boolean })
+                  }
+                />
+                <Label htmlFor="invite-cupper">Cupper</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="invite-q-grader"
+                  checked={inviteForm.is_q_grader}
+                  onCheckedChange={(checked) =>
+                    setInviteForm({ ...inviteForm, is_q_grader: checked as boolean })
+                  }
+                />
+                <Label htmlFor="invite-q-grader">Q Grader</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="invite-qc-access"
+                  checked={inviteForm.qc_enabled}
+                  onCheckedChange={(checked) =>
+                    setInviteForm({ ...inviteForm, qc_enabled: checked as boolean })
+                  }
+                />
+                <Label htmlFor="invite-qc-access">QC Access</Label>
+              </div>
             </div>
           </div>
 

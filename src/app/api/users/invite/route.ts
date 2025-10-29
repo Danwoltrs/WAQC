@@ -25,7 +25,7 @@ const supabaseAdmin = createClient(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json()
-    const { email, first_name, last_name, qc_role, laboratory_id, is_cupper } = body
+    const { email, first_name, last_name, qc_role, laboratory_id, is_cupper, is_q_grader, qc_enabled } = body
 
     // Validate required fields
     if (!email || !first_name || !last_name || !qc_role) {
@@ -68,6 +68,8 @@ export async function POST(request: NextRequest) {
       qc_role,
       laboratory_id: laboratory_id || null,
       is_cupper: is_cupper || false,
+      is_q_grader: is_q_grader || false,
+      qc_enabled: qc_enabled || false,
       invitation_token: invitationToken,
       expires_at: expiresAt.toISOString(),
       status: 'pending',
