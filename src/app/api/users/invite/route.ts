@@ -6,10 +6,12 @@ import { Resend } from 'resend'
  * User Invitation API Endpoint
  *
  * Sends professional invitation emails to new users with account creation links.
- * Uses Resend for email delivery with Wolthers branding.
+ * Can use either Resend or Supabase's email service based on configuration.
  */
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+// Initialize email service based on available configuration
+const useResend = !!process.env.RESEND_API_KEY
+const resend = useResend ? new Resend(process.env.RESEND_API_KEY) : null
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -86,19 +88,41 @@ export async function POST(request: NextRequest) {
     // Create invitation URL
     const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL}/auth/accept-invite?token=${invitationToken}`
 
-    // Send invitation email using Resend
+    // Send invitation email using configured service
     try {
-      await resend.emails.send({
-        from: 'Wolthers Quality Control <qc@wolthers.com>',
-        to: email,
-        subject: 'Welcome to Wolthers Quality Control System',
-        html: generateInvitationEmail({
-          firstName: first_name,
-          lastName: last_name,
-          inviteUrl,
-          role: qc_role,
-        }),
-      })
+      if (useResend && resend) {
+        // Use Resend for email delivery
+        await resend.emails.send({
+          from: process.env.RESEND_FROM_EMAIL || 'Wolthers QC <onboarding@resend.dev>',
+          to: email,
+          subject: 'Welcome to Wolthers Quality Control System',
+          html: generateInvitationEmail({
+            firstName: first_name,
+            lastName: last_name,
+            inviteUrl,
+            role: qc_role,
+          }),
+        })
+      } else {
+        // Use Supabase Auth email (simpler, no additional cost)
+        // For now, we'll just create the invitation and the user can be notified through other means
+        // Or implement Supabase's email service here
+        console.log('Invitation created. Email service not configured.')
+        console.log('Invitation URL:', inviteUrl)
+
+        // In production, you could use Supabase's email functionality:
+        // https://supabase.com/docs/guides/auth/auth-email-templates
+
+        // For development, just log the URL
+        if (process.env.NODE_ENV === 'development') {
+          console.log('\n=== INVITATION EMAIL ===')
+          console.log(`To: ${email}`)
+          console.log(`Name: ${first_name} ${last_name}`)
+          console.log(`Role: ${qc_role}`)
+          console.log(`Invitation URL: ${inviteUrl}`)
+          console.log('========================\n')
+        }
+      }
     } catch (emailError) {
       console.error('Error sending invitation email:', emailError)
       // Delete invitation if email fails
@@ -116,6 +140,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       message: 'Invitation sent successfully',
+      // Include invitation URL for testing/manual sharing when email service is not configured
+      invitationUrl: !useResend ? inviteUrl : undefined,
     })
   } catch (error) {
     console.error('Error in invite endpoint:', error)

@@ -322,11 +322,21 @@ export function UserManagementPanel() {
         body: JSON.stringify(inviteForm),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to send invitation')
+        throw new Error(data.error || 'Failed to send invitation')
       }
 
-      alert(`Invitation sent to ${inviteForm.email}!`)
+      // Show success message
+      if (data.invitationUrl) {
+        // Email service not configured - show the invitation URL
+        const message = `Invitation created!\n\nShare this link with ${inviteForm.email}:\n\n${data.invitationUrl}\n\n(Copy the link from your browser console)`
+        alert(message)
+      } else {
+        alert(`Invitation email sent to ${inviteForm.email}!`)
+      }
+
       setInviteDialogOpen(false)
       setInviteForm({
         email: '',
