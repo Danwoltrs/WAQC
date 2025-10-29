@@ -41,6 +41,9 @@ import {
   Edit,
   Coffee,
   Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react'
 import { supabase, type Database } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -102,6 +105,8 @@ export function UserManagementPanel() {
   const [editDialogOpen, setEditDialogOpen] = useState(false)
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
   const [actionLoading, setActionLoading] = useState(false)
+  const [sortColumn, setSortColumn] = useState<string | null>(null)
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc')
 
   // Form states for editing
   const [editForm, setEditForm] = useState({
@@ -341,17 +346,77 @@ export function UserManagementPanel() {
     }
   }
 
-  const filteredUsers = users.filter((user) => {
-    const searchLower = searchQuery.toLowerCase()
-    const firstName = user.first_name || user.full_name?.split(' ')[0] || ''
-    const lastName = user.last_name || user.full_name?.split(' ').slice(1).join(' ') || ''
-    return (
-      firstName.toLowerCase().includes(searchLower) ||
-      lastName.toLowerCase().includes(searchLower) ||
-      user.email.toLowerCase().includes(searchLower) ||
-      user.qc_role?.toLowerCase().includes(searchLower)
+  const handleSort = (column: string) => {
+    if (sortColumn === column) {
+      // Toggle direction if same column
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')
+    } else {
+      // New column, default to asc
+      setSortColumn(column)
+      setSortDirection('asc')
+    }
+  }
+
+  const getSortIcon = (column: string) => {
+    if (sortColumn !== column) {
+      return <ArrowUpDown className="ml-2 h-4 w-4" />
+    }
+    return sortDirection === 'asc' ? (
+      <ArrowUp className="ml-2 h-4 w-4" />
+    ) : (
+      <ArrowDown className="ml-2 h-4 w-4" />
     )
-  })
+  }
+
+  const filteredUsers = users
+    .filter((user) => {
+      const searchLower = searchQuery.toLowerCase()
+      const firstName = user.first_name || user.full_name?.split(' ')[0] || ''
+      const lastName = user.last_name || user.full_name?.split(' ').slice(1).join(' ') || ''
+      return (
+        firstName.toLowerCase().includes(searchLower) ||
+        lastName.toLowerCase().includes(searchLower) ||
+        user.email.toLowerCase().includes(searchLower) ||
+        user.qc_role?.toLowerCase().includes(searchLower)
+      )
+    })
+    .sort((a, b) => {
+      if (!sortColumn) return 0
+
+      let aValue: any
+      let bValue: any
+
+      switch (sortColumn) {
+        case 'role':
+          aValue = a.qc_role || ''
+          bValue = b.qc_role || ''
+          break
+        case 'laboratory':
+          const aLab = laboratories.find((l) => l.id === a.laboratory_id)
+          const bLab = laboratories.find((l) => l.id === b.laboratory_id)
+          aValue = aLab?.code || ''
+          bValue = bLab?.code || ''
+          break
+        case 'cupper':
+          aValue = a.is_cupper ? 1 : 0
+          bValue = b.is_cupper ? 1 : 0
+          break
+        case 'qc_access':
+          aValue = a.qc_enabled ? 1 : 0
+          bValue = b.qc_enabled ? 1 : 0
+          break
+        case 'q_grader':
+          aValue = a.is_q_grader ? 1 : 0
+          bValue = b.is_q_grader ? 1 : 0
+          break
+        default:
+          return 0
+      }
+
+      if (aValue < bValue) return sortDirection === 'asc' ? -1 : 1
+      if (aValue > bValue) return sortDirection === 'asc' ? 1 : -1
+      return 0
+    })
 
   if (!canManageUsers()) {
     return (
@@ -404,11 +469,51 @@ export function UserManagementPanel() {
                   <TableRow>
                     <TableHead>Name</TableHead>
                     <TableHead>Email</TableHead>
-                    <TableHead>Role</TableHead>
-                    <TableHead>Laboratory</TableHead>
-                    <TableHead>Cupper</TableHead>
-                    <TableHead>QC Access</TableHead>
-                    <TableHead>Q Grader</TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => handleSort('role')}
+                    >
+                      <div className="flex items-center">
+                        Role
+                        {getSortIcon('role')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => handleSort('laboratory')}
+                    >
+                      <div className="flex items-center">
+                        Laboratory
+                        {getSortIcon('laboratory')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => handleSort('cupper')}
+                    >
+                      <div className="flex items-center">
+                        Cupper
+                        {getSortIcon('cupper')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => handleSort('qc_access')}
+                    >
+                      <div className="flex items-center">
+                        QC Access
+                        {getSortIcon('qc_access')}
+                      </div>
+                    </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => handleSort('q_grader')}
+                    >
+                      <div className="flex items-center">
+                        Q Grader
+                        {getSortIcon('q_grader')}
+                      </div>
+                    </TableHead>
                     <TableHead>Created</TableHead>
                     {profile?.qc_role === 'global_admin' && <TableHead>Last Login</TableHead>}
                     <TableHead>Actions</TableHead>

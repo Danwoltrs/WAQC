@@ -33,8 +33,10 @@ export default function AcceptInvitePage() {
   }, [token])
 
   const fetchInvitation = async () => {
+    if (!token) return
+
     try {
-      const { data, error } = await supabase
+      const { data, error} = await supabase
         .from('user_invitations')
         .select('*')
         .eq('invitation_token', token)
