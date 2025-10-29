@@ -147,13 +147,41 @@ interface ThermalCuppingCardDocumentProps {
 export const ThermalCuppingCardDocument: React.FC<
   ThermalCuppingCardDocumentProps
 > = ({ cards, show_quality, show_buyer, show_exporter }) => {
-  // Ensure all cards have valid attributes array
-  const validatedCards = cards.map(card => ({
-    ...card,
-    attributes: Array.isArray(card.attributes) && card.attributes.length > 0
+  // Ensure all cards have valid attributes array with valid string values
+  const validatedCards = cards.map(card => {
+    // Process and validate attributes
+    let validAttributes = (Array.isArray(card.attributes) && card.attributes.length > 0
       ? card.attributes
       : ['Frag', 'Arom', 'Body', 'Acid', 'Swet', 'Bal', 'Fin']
-  }))
+    )
+      .filter(attr => attr != null && attr !== '') // Remove null, undefined, empty strings
+      .map(attr => String(attr).trim()) // Ensure all are strings and trimmed
+      .filter(attr => attr.length > 0) // Remove any that became empty after trim
+
+    // Fallback if all attributes were invalid
+    if (validAttributes.length === 0) {
+      validAttributes = ['Frag', 'Arom', 'Body', 'Acid', 'Swet', 'Bal', 'Fin']
+    }
+
+    return {
+      ...card,
+      attributes: validAttributes,
+      // Ensure all text fields are safe strings with proper defaults
+      sample_id: String(card.sample_id || ''),
+      sample_number: String(card.sample_number || card.tracking_number || 'Unknown'),
+      tracking_number: String(card.tracking_number || 'Unknown'),
+      lab_name: card.lab_name ? String(card.lab_name) : undefined,
+      ico_number: card.ico_number ? String(card.ico_number) : undefined,
+      container_nr: card.container_nr ? String(card.container_nr) : undefined,
+      quality_name: card.quality_name ? String(card.quality_name) : undefined,
+      buyer_name: card.buyer_name ? String(card.buyer_name) : undefined,
+      exporter_name: card.exporter_name ? String(card.exporter_name) : undefined,
+      template_name: String(card.template_name || 'Standard'),
+      template_scale_info: String(card.template_scale_info || '1-8, 0.25'),
+      num_cuppers: Number(card.num_cuppers) || 5,
+      qr_code: String(card.qr_code || ''),
+    }
+  })
 
   return (
     <Document>

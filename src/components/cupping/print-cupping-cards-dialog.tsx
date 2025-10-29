@@ -150,11 +150,37 @@ export function PrintCuppingCardsDialog({
           const customParams = sample.quality_spec?.custom_parameters || {}
           const templateParams = template?.parameters || {}
 
-          // Extract cupping attributes from template
-          // This is a simplified version - in reality, you'd parse the full template structure
-          const attributes =
-            customParams.cupping_attributes ||
-            templateParams.cupping_attributes || [
+          console.log(`Processing sample ${sample.tracking_number}:`, {
+            template_name: template?.name,
+            customParams,
+            templateParams
+          })
+
+          // Extract cupping attributes from template with multiple fallback strategies
+          let attributes: string[] = []
+
+          // Strategy 1: Check custom_parameters.cupping_attributes
+          if (customParams.cupping_attributes && Array.isArray(customParams.cupping_attributes)) {
+            attributes = customParams.cupping_attributes
+          }
+          // Strategy 2: Check template.parameters.cupping_attributes
+          else if (templateParams.cupping_attributes && Array.isArray(templateParams.cupping_attributes)) {
+            attributes = templateParams.cupping_attributes
+          }
+          // Strategy 3: Check for attributes array directly
+          else if (customParams.attributes && Array.isArray(customParams.attributes)) {
+            attributes = customParams.attributes
+          }
+          else if (templateParams.attributes && Array.isArray(templateParams.attributes)) {
+            attributes = templateParams.attributes
+          }
+          // Strategy 4: Parse from methodology-specific parameters
+          else if (templateParams.scaa_attributes || templateParams.sca_attributes) {
+            attributes = templateParams.scaa_attributes || templateParams.sca_attributes
+          }
+          // Fallback: Default SCA attributes
+          else {
+            attributes = [
               'Frag',
               'Arom',
               'Body',
@@ -163,7 +189,9 @@ export function PrintCuppingCardsDialog({
               'Bal',
               'Fin',
             ]
+          }
 
+          console.log(`Extracted attributes for ${sample.tracking_number}:`, attributes)
           console.log(`Generating QR code for sample ${sample.tracking_number}`)
 
           // Generate QR code
