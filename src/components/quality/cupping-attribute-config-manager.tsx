@@ -51,12 +51,24 @@ import {
   type CuppingAttributeTemplate
 } from '@/types/cupping-templates'
 
+export interface DefectScaleConfig {
+  taint_max_intensity: number
+  fault_max_intensity: number
+  taint_multiplier: number
+  fault_multiplier: number
+}
+
 export interface AttributeWithScale {
   id?: string // Unique ID for drag-and-drop
   attribute: string
   abbreviation?: string // Short form for cupping card printing (4-5 chars max)
   scale: AttributeScaleType
   validation_rule?: AttributeValidationRule
+}
+
+export interface CuppingAttributeConfig {
+  attributes: AttributeWithScale[]
+  defect_config?: DefectScaleConfig
 }
 
 // Sortable Attribute Card Component
@@ -294,6 +306,14 @@ export function CuppingAttributeConfigManager({
   )
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
 
+  // Defect scale configuration
+  const [defectConfig, setDefectConfig] = useState<DefectScaleConfig>({
+    taint_max_intensity: 5,
+    fault_max_intensity: 5,
+    taint_multiplier: 0.5,
+    fault_multiplier: 2.0,
+  })
+
   // Drag and drop sensors
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -479,6 +499,142 @@ export function CuppingAttributeConfigManager({
                     </DndContext>
                   </>
                 )}
+              </CardContent>
+            </Card>
+
+            {/* Defects Scale Configuration */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Taints & Faults Configuration</CardTitle>
+                <CardDescription>
+                  Configure intensity scales and multipliers for defect deductions
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Scales */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* Taint Scale */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">
+                        Taint
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">Minor defect, may pass</span>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Max Intensity</Label>
+                      <Select
+                        value={defectConfig.taint_max_intensity.toString()}
+                        onValueChange={(val) =>
+                          setDefectConfig({ ...defectConfig, taint_max_intensity: parseInt(val) })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[3, 4, 5, 6, 7, 8, 9, 10].map(val => (
+                            <SelectItem key={val} value={val.toString()}>
+                              0 - {val}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Multiplier (for deductions)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="5"
+                        value={defectConfig.taint_multiplier}
+                        onChange={(e) =>
+                          setDefectConfig({
+                            ...defectConfig,
+                            taint_multiplier: parseFloat(e.target.value) || 0
+                          })
+                        }
+                        className="text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Typically 0.5 for taints
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Fault Scale */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Badge variant="outline" className="bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                        Fault
+                      </Badge>
+                      <span className="text-xs text-muted-foreground">Major defect, typically fails</span>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Max Intensity</Label>
+                      <Select
+                        value={defectConfig.fault_max_intensity.toString()}
+                        onValueChange={(val) =>
+                          setDefectConfig({ ...defectConfig, fault_max_intensity: parseInt(val) })
+                        }
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {[3, 4, 5, 6, 7, 8, 9, 10].map(val => (
+                            <SelectItem key={val} value={val.toString()}>
+                              0 - {val}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label className="text-sm">Multiplier (for deductions)</Label>
+                      <Input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="5"
+                        value={defectConfig.fault_multiplier}
+                        onChange={(e) =>
+                          setDefectConfig({
+                            ...defectConfig,
+                            fault_multiplier: parseFloat(e.target.value) || 0
+                          })
+                        }
+                        className="text-sm"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Typically 2.0 for faults
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Deduction Formula */}
+                <div className="rounded-md bg-muted p-4 space-y-2">
+                  <Label className="text-sm font-semibold">Deduction Formula</Label>
+                  <code className="text-xs block">
+                    Points deducted = (Cups affected / Total cups) × Intensity × Multiplier
+                  </code>
+                  <div className="grid grid-cols-2 gap-4 mt-3 text-xs">
+                    <div>
+                      <span className="font-medium">Taint Multiplier:</span>
+                      <Badge variant="outline" className="ml-2">
+                        {defectConfig.taint_multiplier}
+                      </Badge>
+                    </div>
+                    <div>
+                      <span className="font-medium">Fault Multiplier:</span>
+                      <Badge variant="outline" className="ml-2">
+                        {defectConfig.fault_multiplier}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
               </CardContent>
             </Card>
 
