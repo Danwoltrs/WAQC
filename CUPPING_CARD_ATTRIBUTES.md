@@ -102,9 +102,9 @@ Extracted attributes for XXX-YYYY: ["Dolçura", "Cuerpo", ...]
 Since the cupping card table columns are narrow (20pt for A4, 32pt for thermal), attribute names are automatically abbreviated to fit:
 
 ### A4 Format (Letter size)
-- **Max Length**: 4 characters
-- **Column Width**: 20pt
-- **Font Size**: 6pt
+- **Max Length**: 6 characters
+- **Column Width**: 30pt
+- **Font Size**: 7pt
 
 ### Thermal Format
 - **Max Length**: 5 characters
@@ -200,6 +200,13 @@ When creating or editing a quality template:
 4. **UI improvements** - Added abbreviation input field in quality template builder
 5. **Backward compatibility** - System handles both legacy (string) and new (object with abbreviation) attribute formats
 6. **Documentation** - Complete guide on how to use user-defined abbreviations
+
+### 2025-01-29 (Layout & Rendering Fixes)
+1. **Fixed button flickering** - Added key prop to PDFDownloadLink to prevent constant re-rendering
+2. **Increased A4 card sizes** - Column widths: 30pt (was 20pt), Font: 7pt (was 6pt), Max abbr: 6 chars (was 4)
+3. **Bold labels** - Quality:, Buyer:, Template:, ICO:, Container: labels now render in bold with values in regular font
+4. **Improved readability** - Increased cupper column width to 50pt, attribute cells to 30pt
+5. **Better space utilization** - Cards now use more of the available A4 space
 
 ## Next Steps
 

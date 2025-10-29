@@ -84,6 +84,7 @@ export function PrintCuppingCardsDialog({
   const [fullSamples, setFullSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(false)
   const [isReadyForDownload, setIsReadyForDownload] = useState(false)
+  const [pdfKey, setPdfKey] = useState(0) // Force PDF regeneration only when needed
 
   // Load full sample data with relations when dialog opens
   useEffect(() => {
@@ -258,6 +259,7 @@ export function PrintCuppingCardsDialog({
 
       setCardData(cards)
       setIsReadyForDownload(true)
+      setPdfKey(prev => prev + 1) // Increment key to trigger PDF regeneration
       console.log('✅ Cards generated successfully:', cards.length)
       console.log('📊 Card data ready for PDF:', cards)
     } catch (error) {
@@ -457,6 +459,7 @@ export function PrintCuppingCardsDialog({
           </Button>
           {isReadyForDownload && cardData && cardData.length > 0 ? (
             <PDFDownloadLink
+              key={pdfKey}
               document={
                 outputFormat === 'thermal' ? (
                   <ThermalCuppingCardDocument

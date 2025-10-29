@@ -15,7 +15,7 @@ import { ThermalCuppingCardData, AttributeForCard } from './thermal-cupping-card
  * Intelligently abbreviates attribute names to fit in narrow columns
  * Priority: 1) User-defined abbreviation, 2) Known abbreviations, 3) Smart truncation
  */
-function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number = 4): string {
+function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number = 6): string {
   // Handle AttributeForCard object format
   if (typeof attr === 'object' && attr !== null) {
     // Priority 1: Use user-defined abbreviation if provided
@@ -125,9 +125,12 @@ const styles = StyleSheet.create({
     marginBottom: '1pt',
   },
   infoRow: {
-    fontSize: 5.5,
+    fontSize: 6.5,
     marginBottom: '0.5pt',
     color: '#333333',
+  },
+  infoLabel: {
+    fontWeight: 'bold',
   },
   tableSection: {
     borderBottom: '1pt solid #000000',
@@ -138,17 +141,17 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F0F0',
   },
   cupperColumn: {
-    width: '40pt',
+    width: '50pt',
     padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 6,
+    fontSize: 7,
     fontWeight: 'bold',
   },
   attributeColumn: {
-    width: '20pt',
+    width: '30pt',
     padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 6,
+    fontSize: 7,
     fontWeight: 'bold',
     textAlign: 'center',
   },
@@ -158,16 +161,16 @@ const styles = StyleSheet.create({
     minHeight: '14pt',
   },
   cupperCell: {
-    width: '40pt',
+    width: '50pt',
     padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 6,
+    fontSize: 7,
   },
   attributeCell: {
-    width: '20pt',
+    width: '30pt',
     padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 6,
+    fontSize: 7,
     textAlign: 'center',
   },
   defectsSection: {
@@ -331,33 +334,33 @@ export const ThermalCuppingCardA4Document: React.FC<
                       <>
                         {card.ico_number && (
                           <Text style={styles.infoRow}>
-                            ICO: {card.ico_number}
+                            <Text style={styles.infoLabel}>ICO:</Text> {card.ico_number}
                           </Text>
                         )}
                         {card.container_nr && (
                           <Text style={styles.infoRow}>
-                            Container: {card.container_nr}
+                            <Text style={styles.infoLabel}>Container:</Text> {card.container_nr}
                           </Text>
                         )}
                       </>
                     )}
                     {show_quality && card.quality_name && (
                       <Text style={styles.infoRow}>
-                        Quality: {card.quality_name}
+                        <Text style={styles.infoLabel}>Quality:</Text> {card.quality_name}
                       </Text>
                     )}
                     {show_buyer && card.buyer_name && (
                       <Text style={styles.infoRow}>
-                        Buyer: {card.buyer_name}
+                        <Text style={styles.infoLabel}>Buyer:</Text> {card.buyer_name}
                       </Text>
                     )}
                     {show_exporter && card.exporter_name && (
                       <Text style={styles.infoRow}>
-                        Exporter: {card.exporter_name}
+                        <Text style={styles.infoLabel}>Exporter:</Text> {card.exporter_name}
                       </Text>
                     )}
                     <Text style={styles.infoRow}>
-                      Template: {card.template_name || 'Standard'} ({card.template_scale_info || '1-8, 0.25'})
+                      <Text style={styles.infoLabel}>Template:</Text> {card.template_name || 'Standard'} ({card.template_scale_info || '1-8, 0.25'})
                     </Text>
                   </View>
                 </View>
@@ -371,7 +374,7 @@ export const ThermalCuppingCardA4Document: React.FC<
                     </View>
                     {card.attributes.map((attr, attrIndex) => (
                       <View key={attrIndex} style={styles.attributeColumn}>
-                        <Text>{abbreviateAttribute(attr, 4)}</Text>
+                        <Text>{abbreviateAttribute(attr, 6)}</Text>
                       </View>
                     ))}
                   </View>
