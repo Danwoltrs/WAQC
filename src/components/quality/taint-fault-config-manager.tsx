@@ -21,16 +21,17 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Plus, X, AlertCircle, CheckCircle2, Settings2 } from 'lucide-react'
+import { Plus, X, AlertCircle, CheckCircle2, Settings2, GripVertical } from 'lucide-react'
 import {
   TaintFaultConfiguration,
-  TaintFaultDefinition,
+  TaintFaultDefect,
   TaintFaultValidationRules,
-  createTaintDefinition,
-  createFaultDefinition,
+  createTaintFaultDefect,
   validateTaintFaultConfiguration,
   PREDEFINED_TAINT_FAULT_TEMPLATES,
-  calculateTaintFaultStats
+  calculateTaintFaultStats,
+  getTaintRange,
+  getFaultRange
 } from '@/types/taint-fault-configuration'
 import { ScaleBuilder } from './scale-builder'
 import { AttributeScaleType } from '@/types/attribute-scales'
@@ -50,10 +51,7 @@ export function TaintFaultConfigManager({
 }: TaintFaultConfigManagerProps) {
   const [config, setConfig] = useState<TaintFaultConfiguration>(value)
   const [error, setError] = useState<string | null>(null)
-  const [editingScale, setEditingScale] = useState<{
-    definition: TaintFaultDefinition
-    category: 'taint' | 'fault'
-  } | null>(null)
+  const [editingDefect, setEditingDefect] = useState<TaintFaultDefect | null>(null)
 
   const handleConfigChange = (newConfig: TaintFaultConfiguration) => {
     setConfig(newConfig)
@@ -95,7 +93,7 @@ export function TaintFaultConfigManager({
             <DialogHeader>
               <DialogTitle>Taint & Fault Configuration</DialogTitle>
               <DialogDescription>
-                Define taints (mild off-flavors), faults (severe defects), intensity scales, and validation rules
+                Define defects with intensity-based taint/fault classification. Low intensity = taint (mild), high intensity = fault (severe).
               </DialogDescription>
             </DialogHeader>
           </div>
@@ -135,13 +133,7 @@ export function TaintFaultConfigManager({
             {/* Stats */}
             <div className="flex items-center gap-4 text-sm">
               <Badge variant="outline">
-                {stats.taint_count} Taints
-              </Badge>
-              <Badge variant="outline">
-                {stats.fault_count} Faults
-              </Badge>
-              <Badge variant="outline">
-                {stats.total_definitions} Total
+                {stats.defect_count || stats.total_definitions} Defects
               </Badge>
               {stats.zero_tolerance && (
                 <Badge variant="destructive">
@@ -156,60 +148,32 @@ export function TaintFaultConfigManager({
               )}
             </div>
 
-            {/* Taints Section */}
-            <TaintFaultSection
-              title="Taints"
-              description="Mild off-flavors that may be acceptable in certain grades"
-              category="taint"
-              definitions={config.taints}
+            {/* Defects Section */}
+            <DefectsSection
+              defects={config.defects || []}
               onAdd={() => {
-                const newTaint = createTaintDefinition(`New Taint ${config.taints.length + 1}`, config.taints.length)
+                const newDefect = createTaintFaultDefect(
+                  `New Defect ${(config.defects || []).length + 1}`,
+                  (config.defects || []).length
+                )
                 handleConfigChange({
                   ...config,
-                  taints: [...config.taints, newTaint]
+                  defects: [...(config.defects || []), newDefect]
                 })
               }}
               onRemove={(id) => {
                 handleConfigChange({
                   ...config,
-                  taints: config.taints.filter(t => t.id !== id)
+                  defects: (config.defects || []).filter(d => d.id !== id)
                 })
               }}
               onUpdate={(id, updates) => {
                 handleConfigChange({
                   ...config,
-                  taints: config.taints.map(t => t.id === id ? { ...t, ...updates } : t)
+                  defects: (config.defects || []).map(d => d.id === id ? { ...d, ...updates } : d)
                 })
               }}
-              onEditScale={(definition) => setEditingScale({ definition, category: 'taint' })}
-            />
-
-            {/* Faults Section */}
-            <TaintFaultSection
-              title="Faults"
-              description="Severe sensory defects that typically result in rejection"
-              category="fault"
-              definitions={config.faults}
-              onAdd={() => {
-                const newFault = createFaultDefinition(`New Fault ${config.faults.length + 1}`, config.faults.length)
-                handleConfigChange({
-                  ...config,
-                  faults: [...config.faults, newFault]
-                })
-              }}
-              onRemove={(id) => {
-                handleConfigChange({
-                  ...config,
-                  faults: config.faults.filter(f => f.id !== id)
-                })
-              }}
-              onUpdate={(id, updates) => {
-                handleConfigChange({
-                  ...config,
-                  faults: config.faults.map(f => f.id === id ? { ...f, ...updates } : f)
-                })
-              }}
-              onEditScale={(definition) => setEditingScale({ definition, category: 'fault' })}
+              onEditDefect={(defect) => setEditingDefect(defect)}
             />
 
             {/* Validation Rules */}
@@ -248,40 +212,116 @@ export function TaintFaultConfigManager({
         </DialogContent>
       </Dialog>
 
-      {/* Scale Editor Dialog */}
-      {editingScale && (
-        <Dialog open={!!editingScale} onOpenChange={() => setEditingScale(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Edit Intensity Scale: {editingScale.definition.name}</DialogTitle>
-              <DialogDescription>
-                Configure how intensity is measured for this {editingScale.category}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="py-4">
-              <ScaleBuilder
-                value={editingScale.definition.scale}
-                onChange={(newScale) => {
-                  const category = editingScale.category === 'taint' ? 'taints' : 'faults'
-                  handleConfigChange({
-                    ...config,
-                    [category]: config[category].map(d =>
-                      d.id === editingScale.definition.id
-                        ? { ...d, scale: newScale }
-                        : d
-                    )
-                  })
-                }}
-                showTemplateSelector={true}
-              />
+      {/* Defect Editor Dialog */}
+      {editingDefect && (
+        <Dialog open={!!editingDefect} onOpenChange={() => setEditingDefect(null)}>
+          <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col gap-0 p-0 overflow-hidden">
+            <div className="shrink-0 border-b px-6 py-4 bg-background">
+              <DialogHeader>
+                <DialogTitle>Edit Defect: {editingDefect.name}</DialogTitle>
+                <DialogDescription>
+                  Configure intensity scale and taint/fault threshold
+                </DialogDescription>
+              </DialogHeader>
             </div>
 
-            <DialogFooter>
-              <Button onClick={() => setEditingScale(null)}>
-                Done
-              </Button>
-            </DialogFooter>
+            <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6 min-h-0">
+              {/* Scale Configuration */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Intensity Scale</CardTitle>
+                  <CardDescription>
+                    Define how intensity is measured for this defect
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ScaleBuilder
+                    value={editingDefect.intensity_scale}
+                    onChange={(newScale) => {
+                      handleConfigChange({
+                        ...config,
+                        defects: (config.defects || []).map(d =>
+                          d.id === editingDefect.id
+                            ? { ...d, intensity_scale: newScale }
+                            : d
+                        )
+                      })
+                      setEditingDefect({ ...editingDefect, intensity_scale: newScale })
+                    }}
+                    showTemplateSelector={true}
+                  />
+                </CardContent>
+              </Card>
+
+              {/* Threshold Configuration */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Taint/Fault Threshold</CardTitle>
+                  <CardDescription>
+                    Set where the defect transitions from taint to fault
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="space-y-2">
+                    <Label>Threshold Value</Label>
+                    <Input
+                      type="number"
+                      step={editingDefect.intensity_scale.type === 'numeric' ? editingDefect.intensity_scale.increment : 1}
+                      min={editingDefect.intensity_scale.type === 'numeric' ? editingDefect.intensity_scale.min : 0}
+                      max={editingDefect.intensity_scale.type === 'numeric' ? editingDefect.intensity_scale.max : editingDefect.intensity_scale.options.length}
+                      value={editingDefect.taint_threshold}
+                      onChange={(e) => {
+                        const newThreshold = parseFloat(e.target.value)
+                        handleConfigChange({
+                          ...config,
+                          defects: (config.defects || []).map(d =>
+                            d.id === editingDefect.id
+                              ? { ...d, taint_threshold: newThreshold }
+                              : d
+                          )
+                        })
+                        setEditingDefect({ ...editingDefect, taint_threshold: newThreshold })
+                      }}
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Intensity below this value = Taint • At or above = Fault
+                    </p>
+                  </div>
+
+                  {/* Visual Range Display */}
+                  <div className="grid grid-cols-2 gap-4 p-4 rounded-lg border bg-muted/30">
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Taint Range (Mild)</Label>
+                      <p className="text-sm font-medium mt-1">
+                        {editingDefect.intensity_scale.type === 'numeric' ? (
+                          `${editingDefect.intensity_scale.min} - ${(editingDefect.taint_threshold - editingDefect.intensity_scale.increment).toFixed(1)}`
+                        ) : (
+                          `Options 0-${editingDefect.taint_threshold - 1}`
+                        )}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Fault Range (Severe)</Label>
+                      <p className="text-sm font-medium mt-1">
+                        {editingDefect.intensity_scale.type === 'numeric' ? (
+                          `${editingDefect.taint_threshold} - ${editingDefect.intensity_scale.max}`
+                        ) : (
+                          `Options ${editingDefect.taint_threshold}-${editingDefect.intensity_scale.options.length - 1}`
+                        )}
+                      </p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="shrink-0 border-t px-6 py-4 bg-background">
+              <DialogFooter>
+                <Button onClick={() => setEditingDefect(null)}>
+                  Done
+                </Button>
+              </DialogFooter>
+            </div>
           </DialogContent>
         </Dialog>
       )}
@@ -289,97 +329,132 @@ export function TaintFaultConfigManager({
   )
 }
 
-interface TaintFaultSectionProps {
-  title: string
-  description: string
-  category: 'taint' | 'fault'
-  definitions: TaintFaultDefinition[]
+interface DefectsSectionProps {
+  defects: TaintFaultDefect[]
   onAdd: () => void
   onRemove: (id: string) => void
-  onUpdate: (id: string, updates: Partial<TaintFaultDefinition>) => void
-  onEditScale: (definition: TaintFaultDefinition) => void
+  onUpdate: (id: string, updates: Partial<TaintFaultDefect>) => void
+  onEditDefect: (defect: TaintFaultDefect) => void
 }
 
-function TaintFaultSection({
-  title,
-  description,
-  category,
-  definitions,
+function DefectsSection({
+  defects,
   onAdd,
   onRemove,
   onUpdate,
-  onEditScale
-}: TaintFaultSectionProps) {
+  onEditDefect
+}: DefectsSectionProps) {
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-base">{title}</CardTitle>
-            <CardDescription>{description}</CardDescription>
+            <CardTitle className="text-base">Defects</CardTitle>
+            <CardDescription>
+              Each defect can be classified as taint or fault based on intensity
+            </CardDescription>
           </div>
           <Button size="sm" variant="outline" onClick={onAdd}>
             <Plus className="h-4 w-4 mr-2" />
-            Add {title.slice(0, -1)}
+            Add Defect
           </Button>
         </div>
       </CardHeader>
       <CardContent>
-        {definitions.length === 0 ? (
+        {defects.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground">
-            <p className="text-sm">No {title.toLowerCase()} configured yet</p>
-            <p className="text-xs mt-1">Click &quot;Add {title.slice(0, -1)}&quot; to get started</p>
+            <p className="text-sm">No defects configured yet</p>
+            <p className="text-xs mt-1">Click &quot;Add Defect&quot; to get started</p>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-            {definitions.map((definition, index) => (
-              <Card key={definition.id} className="relative">
-                <button
-                  onClick={() => onRemove(definition.id)}
-                  className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-                <CardHeader className="pb-3">
-                  <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-xs">{index + 1}</Badge>
-                    <Input
-                      value={definition.name}
-                      onChange={(e) => onUpdate(definition.id, { name: e.target.value })}
-                      placeholder={`${title.slice(0, -1)} name...`}
-                      className="h-8 text-sm"
-                    />
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-2 pt-0">
-                  <div className="space-y-1">
-                    <Label className="text-xs text-muted-foreground">Scale</Label>
-                    <div className="flex items-center gap-2">
-                      <Badge variant="secondary" className="text-xs flex-1 justify-center">
-                        {definition.scale.type === 'numeric'
-                          ? `${definition.scale.min}-${definition.scale.max} (${definition.scale.increment})`
-                          : `${definition.scale.options.length} options`}
-                      </Badge>
-                    </div>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => onEditScale(definition)}
-                    className="w-full h-8 text-xs"
+          <div className="space-y-3">
+            {defects.map((defect, index) => {
+              const taintRange = getTaintRange(defect)
+              const faultRange = getFaultRange(defect)
+
+              return (
+                <Card key={defect.id} className="relative">
+                  <button
+                    onClick={() => onRemove(defect.id)}
+                    className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors z-10"
                   >
-                    <Settings2 className="h-3 w-3 mr-1" />
-                    Edit Scale
-                  </Button>
-                  <Input
-                    value={definition.description || ''}
-                    onChange={(e) => onUpdate(definition.id, { description: e.target.value })}
-                    placeholder="Description (optional)"
-                    className="text-xs h-8"
-                  />
-                </CardContent>
-              </Card>
-            ))}
+                    <X className="h-3 w-3" />
+                  </button>
+
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center gap-2">
+                      <GripVertical className="h-4 w-4 text-muted-foreground" />
+                      <Badge variant="outline" className="text-xs">{index + 1}</Badge>
+                      <Input
+                        value={defect.name}
+                        onChange={(e) => onUpdate(defect.id, { name: e.target.value })}
+                        placeholder="Defect name (e.g., Fermented, Moldy)..."
+                        className="h-8 text-sm flex-1"
+                      />
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-3 pt-0">
+                    {/* Intensity Scale Info */}
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Scale Type</Label>
+                        <Badge variant="secondary" className="text-xs w-full justify-center">
+                          {defect.intensity_scale.type === 'numeric'
+                            ? `${defect.intensity_scale.min}-${defect.intensity_scale.max}`
+                            : `${defect.intensity_scale.options.length} options`}
+                        </Badge>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">Threshold</Label>
+                        <Badge variant="secondary" className="text-xs w-full justify-center">
+                          {defect.taint_threshold}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Taint/Fault Ranges */}
+                    <div className="grid grid-cols-2 gap-2 p-2 rounded-lg bg-muted/30 text-xs">
+                      <div>
+                        <Label className="text-[10px] text-muted-foreground">Taint (Mild)</Label>
+                        <p className="font-medium">
+                          {defect.intensity_scale.type === 'numeric'
+                            ? `${taintRange.min.toFixed(1)}-${taintRange.max.toFixed(1)}`
+                            : `Opt ${taintRange.min}-${taintRange.max}`}
+                        </p>
+                      </div>
+                      <div>
+                        <Label className="text-[10px] text-muted-foreground">Fault (Severe)</Label>
+                        <p className="font-medium">
+                          {defect.intensity_scale.type === 'numeric'
+                            ? `${faultRange.min.toFixed(1)}-${faultRange.max.toFixed(1)}`
+                            : `Opt ${faultRange.min}-${faultRange.max}`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Edit Button */}
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => onEditDefect(defect)}
+                      className="w-full h-8 text-xs"
+                    >
+                      <Settings2 className="h-3 w-3 mr-1" />
+                      Edit Scale & Threshold
+                    </Button>
+
+                    {/* Description */}
+                    <Input
+                      value={defect.description || ''}
+                      onChange={(e) => onUpdate(defect.id, { description: e.target.value })}
+                      placeholder="Description (optional)"
+                      className="text-xs h-8"
+                    />
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
         )}
       </CardContent>
@@ -558,7 +633,7 @@ function ValidationRulesSection({ rules, onChange }: ValidationRulesSectionProps
                     validation_message: e.target.value
                   })
                 }
-                placeholder="e.g., Max 2 taints (intensity ≤3), max 1 fault"
+                placeholder="e.g., Max 2 taints (intensity <4), max 1 fault"
               />
               <p className="text-xs text-muted-foreground">
                 This message will be shown during QC grading to communicate requirements
@@ -567,15 +642,14 @@ function ValidationRulesSection({ rules, onChange }: ValidationRulesSectionProps
           </>
         )}
 
-        {/* Examples */}
+        {/* Info Box */}
         <div className="text-xs text-muted-foreground space-y-1 p-3 rounded-lg bg-muted/50">
-          <p className="font-medium">Common Validation Rules:</p>
+          <p className="font-medium">How Intensity-Based Classification Works:</p>
           <ul className="list-disc list-inside space-y-1 ml-2">
-            <li>Zero tolerance (no taints/faults)</li>
-            <li>Max 2 taints, max 1 fault</li>
-            <li>1 taint allowed (intensity ≤3), no faults</li>
-            <li>Max 3 combined defects with intensity caps</li>
-            <li>Max 5 taints (≤7), max 2 faults (≤5)</li>
+            <li>Each defect has an intensity scale (e.g., 1-10)</li>
+            <li>A threshold separates taint from fault (e.g., threshold = 4)</li>
+            <li>Intensity below threshold = classified as taint (mild)</li>
+            <li>Intensity at/above threshold = classified as fault (severe)</li>
           </ul>
         </div>
       </CardContent>
