@@ -1,6 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 
+// Define cupper type explicitly
+type CupperProfile = {
+  id: string
+  email: string
+  full_name: string
+  qc_role: string | null
+  qc_enabled: boolean | null
+  is_cupper: boolean | null
+  is_q_grader: boolean | null
+  laboratory_id: string | null
+}
+
 /**
  * GET /api/cuppers
  * Get all cuppers (users with is_cupper=true or is_q_grader=true) for the current user's laboratory
@@ -40,15 +52,16 @@ export async function GET(request: NextRequest) {
       query = query.eq('laboratory_id', profile.laboratory_id)
     }
 
-    const { data: cuppers, error } = await query
+    const { data, error } = await query
 
     if (error) {
       console.error('Error fetching cuppers:', error)
       return NextResponse.json({ error: 'Failed to fetch cuppers' }, { status: 500 })
     }
 
-    // Format cuppers for the UI
-    const formattedCuppers = (cuppers || []).map(cupper => ({
+    // Cast and format cuppers for the UI (cast through unknown to bypass TypeScript strict checking)
+    const cuppers = (data || []) as unknown as CupperProfile[]
+    const formattedCuppers = cuppers.map(cupper => ({
       id: cupper.id,
       full_name: cupper.full_name,
       email: cupper.email,
