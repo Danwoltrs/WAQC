@@ -75,6 +75,11 @@ export default function AcceptInvitePage() {
   const handleAcceptInvitation = async (e: React.FormEvent) => {
     e.preventDefault()
 
+    if (!token) {
+      setError('Invalid invitation')
+      return
+    }
+
     if (password.length < 8) {
       setError('Password must be at least 8 characters')
       return
