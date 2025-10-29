@@ -92,7 +92,7 @@ function SortableAttributeCard({
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
+    transition: isDragging ? transition : 'transform 150ms cubic-bezier(0.25, 0.46, 0.45, 0.94)',
     opacity: isDragging ? 0.5 : 1,
   }
 
@@ -301,7 +301,7 @@ export function CuppingAttributeConfigManager({
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
-        distance: 8, // Start drag after moving 8px (prevents accidental drags)
+        distance: 4, // Start drag after moving 4px (more responsive)
       },
     }),
     useSensor(KeyboardSensor, {
@@ -500,8 +500,8 @@ export function CuppingAttributeConfigManager({
                       {/* Drag Overlay - shows the dragged item */}
                       <DragOverlay
                         dropAnimation={{
-                          duration: 200,
-                          easing: 'cubic-bezier(0.18, 0.67, 0.6, 1.22)',
+                          duration: 150,
+                          easing: 'cubic-bezier(0.25, 0.46, 0.45, 0.94)',
                         }}
                       >
                         {activeId ? (
