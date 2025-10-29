@@ -1597,9 +1597,9 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   <p className="text-xs font-medium">
                     {cuppingAttributes.length} attribute{cuppingAttributes.length !== 1 ? 's' : ''} configured
                   </p>
-                  <div className="grid grid-cols-3 gap-x-6 gap-y-1" style={{ gridAutoFlow: 'column' }}>
+                  <div className="grid grid-cols-3 gap-x-6 gap-y-1.5" style={{ gridAutoFlow: 'column', gridTemplateRows: `repeat(${Math.ceil(cuppingAttributes.length / 3)}, auto)` }}>
                     {cuppingAttributes.map((attr, index) => (
-                      <div key={index} className="text-xs">
+                      <div key={index} className="text-xs truncate">
                         <span className="font-semibold">{attr.attribute}</span>
                         {attr.abbreviation && (
                           <span className="text-muted-foreground"> - {attr.abbreviation}</span>
