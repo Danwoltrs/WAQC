@@ -1597,20 +1597,18 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   <p className="text-xs font-medium">
                     {cuppingAttributes.length} attribute{cuppingAttributes.length !== 1 ? 's' : ''} configured
                   </p>
-                  <div className="grid grid-cols-3 gap-2">
+                  <div className="grid grid-cols-3 gap-x-4 gap-y-1" style={{ gridAutoFlow: 'column' }}>
                     {cuppingAttributes.map((attr, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 flex-1 min-w-0">
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
-                            {attr.attribute}
+                      <div key={index} className="flex items-center gap-1.5 overflow-hidden">
+                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal flex-shrink-0">
+                          {attr.attribute}
+                        </Badge>
+                        {attr.abbreviation && (
+                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 font-normal flex-shrink-0">
+                            {attr.abbreviation}
                           </Badge>
-                          {attr.abbreviation && (
-                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 font-normal">
-                              {attr.abbreviation}
-                            </Badge>
-                          )}
-                        </div>
-                        <span className="text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0">
+                        )}
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap flex-shrink-0 ml-auto">
                           {attr.scale.type === 'numeric'
                             ? `${attr.scale.min}-${attr.scale.max}`
                             : `${attr.scale.options?.length || 0} opt`}
