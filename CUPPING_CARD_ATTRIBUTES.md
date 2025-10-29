@@ -111,11 +111,18 @@ Since the cupping card table columns are narrow (20pt for A4, 32pt for thermal),
 - **Column Width**: 32pt
 - **Font Size**: 7pt
 
-### Abbreviation Logic
+### Abbreviation Logic (Priority Order)
 
-The system uses a two-strategy approach:
+The system uses a three-tier priority system for abbreviations:
 
-1. **Known Coffee Terms** - Pre-defined abbreviations for common attributes:
+1. **User-Defined Abbreviations** (HIGHEST PRIORITY)
+   - Set when creating/editing quality templates
+   - Each attribute has an optional "Abbreviation" field
+   - Example: "Dolçura" → User enters "Dolç"
+   - These are stored in the template and automatically used on cards
+
+2. **Known Coffee Terms** (FALLBACK)
+   - Pre-defined abbreviations for common attributes:
    - "Dolçura" → "Dolç" (A4) / "Dolçu" (Thermal)
    - "Cuerpo" → "Cuer" (A4) / "Cuerp" (Thermal)
    - "Acidez" → "Acid" (both)
@@ -124,34 +131,75 @@ The system uses a two-strategy approach:
    - "Fragancia" → "Frag" (both)
    - "Balance" → "Bal" (both)
 
-2. **Smart Truncation** - For unknown terms, takes the first N characters:
-   - This preserves special characters (ç, á, etc.)
+3. **Smart Truncation** (LAST RESORT)
+   - For attributes without user-defined or known abbreviations
+   - Takes the first N characters
+   - Preserves special characters (ç, á, etc.)
    - Maintains readability
-   - Capitalizes first letter if original is capitalized
 
-### Adding Custom Abbreviations
+### How to Set Custom Abbreviations
 
-To add your own known abbreviations, edit the `knownAbbreviations` dictionary in:
-- `src/components/pdf/thermal-cupping-card-a4.tsx`
-- `src/components/pdf/thermal-cupping-card.tsx`
+#### In Quality Template Builder
 
-Example:
-```typescript
-const knownAbbreviations: Record<string, string> = {
-  'Dolçura': 'Dolç',
-  'Meu Atributo': 'MAtb',  // Add your custom mapping here
-  // ...
+When creating or editing a quality template:
+
+1. Navigate to **Quality Templates**
+2. Create new or edit existing template
+3. In the **Cupping Attributes** section, click "Add Attribute" or edit existing
+4. For each attribute:
+   - **Attribute Name**: Full name (e.g., "Dolçura")
+   - **Abbreviation**: Your custom short form (e.g., "Dolç")
+   - Max 5 characters recommended
+5. Save the template
+
+#### Example Template Configuration
+
+```json
+{
+  "cupping_attributes": [
+    {
+      "attribute": "Dolçura",
+      "abbreviation": "Dolç",
+      "scale": { "type": "numeric", "min": 0, "max": 10, "increment": 0.25 }
+    },
+    {
+      "attribute": "Cuerpo",
+      "abbreviation": "Cuer",
+      "scale": { "type": "numeric", "min": 0, "max": 10, "increment": 0.25 }
+    },
+    {
+      "attribute": "Acidez",
+      "abbreviation": "Acid",
+      "scale": { "type": "numeric", "min": 0, "max": 10, "increment": 0.25 }
+    }
+  ]
 }
 ```
 
-## Fixes Applied (2025-01-29)
+### Benefits of User-Defined Abbreviations
 
+- **Language Flexibility**: Works with any language (Spanish, Portuguese, English, etc.)
+- **Custom Methodologies**: Support proprietary or regional cupping methods
+- **Consistency**: Same abbreviations across all labs and cuppers
+- **No Code Changes**: Administrators can configure without developer intervention
+
+## Updates Applied
+
+### 2025-01-29 (Initial Fix)
 1. **Fixed TEXT component errors** - Added comprehensive null safety for all text fields
 2. **Enhanced attribute extraction** - Multiple fallback strategies for finding attributes
 3. **Better validation** - Filters out invalid attribute values before PDF rendering
 4. **Type safety** - Ensured all required fields have proper defaults
 5. **Logging** - Added detailed console logging for debugging
 6. **Automatic abbreviation** - Intelligent attribute name shortening for table fit
+
+### 2025-01-29 (User-Defined Abbreviations)
+1. **Added abbreviation field to quality templates** - Users can now define custom abbreviations in the template builder
+2. **Updated CuppingAttribute interface** - Added optional `abbreviation` field to attribute definition
+3. **Enhanced abbreviation logic** - Three-tier priority system: user-defined → known terms → smart truncation
+4. **UI improvements** - Added abbreviation input field in quality template builder
+5. **Backward compatibility** - System handles both legacy (string) and new (object with abbreviation) attribute formats
+6. **Documentation** - Complete guide on how to use user-defined abbreviations
 
 ## Next Steps
 

@@ -36,6 +36,7 @@ import {
 
 export interface AttributeWithScale {
   attribute: string
+  abbreviation?: string // Short form for cupping card printing (4-5 chars max)
   scale: AttributeScaleType
   validation_rule?: AttributeValidationRule
 }
@@ -195,14 +196,25 @@ export function CuppingAttributeConfigManager({
                           <X className="h-3 w-3" />
                         </button>
                         <CardHeader className="pb-3">
-                          <Input
-                            value={attr.attribute}
-                            onChange={(e) =>
-                              handleUpdateAttribute(index, { attribute: e.target.value })
-                            }
-                            placeholder="Attribute name..."
-                            className="h-8 text-sm font-medium pr-6"
-                          />
+                          <div className="space-y-2">
+                            <Input
+                              value={attr.attribute}
+                              onChange={(e) =>
+                                handleUpdateAttribute(index, { attribute: e.target.value })
+                              }
+                              placeholder="Attribute name..."
+                              className="h-8 text-sm font-medium pr-6"
+                            />
+                            <Input
+                              value={attr.abbreviation || ''}
+                              onChange={(e) =>
+                                handleUpdateAttribute(index, { abbreviation: e.target.value })
+                              }
+                              placeholder="Abbr. (4-5 chars)"
+                              maxLength={5}
+                              className="h-7 text-xs"
+                            />
+                          </div>
                           <div className="flex items-center gap-2 mt-2">
                             <Badge variant="outline" className="text-xs">
                               {attr.scale.type === 'numeric' ? 'Numeric' : 'Wording'}

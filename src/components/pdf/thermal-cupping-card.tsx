@@ -10,10 +10,20 @@ import {
 
 /**
  * Intelligently abbreviates attribute names to fit in narrow columns
- * Prioritizes readability while keeping names short (4-5 characters)
+ * Priority: 1) User-defined abbreviation, 2) Known abbreviations, 3) Smart truncation
  */
-function abbreviateAttribute(attr: string, maxLength: number = 5): string {
-  if (!attr) return ''
+function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number = 5): string {
+  // Handle AttributeForCard object format
+  if (typeof attr === 'object' && attr !== null) {
+    // Priority 1: Use user-defined abbreviation if provided
+    if (attr.abbreviation && attr.abbreviation.trim().length > 0) {
+      return attr.abbreviation.trim().substring(0, maxLength)
+    }
+    // Otherwise use the name
+    attr = attr.name
+  }
+
+  if (!attr || typeof attr !== 'string') return ''
 
   const trimmed = attr.trim()
 
@@ -22,7 +32,7 @@ function abbreviateAttribute(attr: string, maxLength: number = 5): string {
     return trimmed
   }
 
-  // Common coffee attribute abbreviations (preserve known ones)
+  // Priority 2: Common coffee attribute abbreviations (fallback if no user abbreviation)
   const knownAbbreviations: Record<string, string> = {
     'Fragancia': 'Frag',
     'Fragrance': 'Frag',
@@ -55,9 +65,15 @@ function abbreviateAttribute(attr: string, maxLength: number = 5): string {
     }
   }
 
-  // Strategy 1: Just take first maxLength characters (simple truncation)
+  // Priority 3: Smart truncation - take first maxLength characters
   // This preserves special characters and readability
   return trimmed.substring(0, maxLength)
+}
+
+// Attribute with optional user-defined abbreviation
+export interface AttributeForCard {
+  name: string
+  abbreviation?: string // User-defined abbreviation from quality template
 }
 
 // Thermal cupping card data interface
@@ -74,7 +90,7 @@ export interface ThermalCuppingCardData {
   lab_name?: string // Laboratory name
   template_name: string
   template_scale_info: string // e.g., "1-8, 0.25"
-  attributes: string[] // Array of attribute abbreviations: ["Frag", "Arom", "Body", ...]
+  attributes: (string | AttributeForCard)[] // Array of attributes with optional abbreviations
   num_cuppers: number // Number of cupper rows to show
   qr_code: string // Data URL for QR code
   logo_url?: string // Optional Wolthers logo
@@ -199,20 +215,41 @@ interface ThermalCuppingCardDocumentProps {
 export const ThermalCuppingCardDocument: React.FC<
   ThermalCuppingCardDocumentProps
 > = ({ cards, show_quality, show_buyer, show_exporter }) => {
-  // Ensure all cards have valid attributes array with valid string values
+  // Ensure all cards have valid attributes array
   const validatedCards = cards.map(card => {
-    // Process and validate attributes
+    // Process and validate attributes (can be strings or AttributeForCard objects)
     let validAttributes = (Array.isArray(card.attributes) && card.attributes.length > 0
       ? card.attributes
       : ['Frag', 'Arom', 'Body', 'Acid', 'Swet', 'Bal', 'Fin']
     )
-      .filter(attr => attr != null && attr !== '') // Remove null, undefined, empty strings
-      .map(attr => String(attr).trim()) // Ensure all are strings and trimmed
-      .filter(attr => attr.length > 0) // Remove any that became empty after trim
+      .filter(attr => {
+        if (attr == null) return false
+        if (typeof attr === 'string') return attr.trim().length > 0
+        if (typeof attr === 'object') return attr.name && attr.name.trim().length > 0
+        return false
+      })
+      .map(attr => {
+        // Convert to consistent format
+        if (typeof attr === 'string') {
+          return { name: attr.trim(), abbreviation: undefined }
+        }
+        return {
+          name: attr.name.trim(),
+          abbreviation: attr.abbreviation || undefined
+        }
+      })
 
     // Fallback if all attributes were invalid
     if (validAttributes.length === 0) {
-      validAttributes = ['Frag', 'Arom', 'Body', 'Acid', 'Swet', 'Bal', 'Fin']
+      validAttributes = [
+        { name: 'Frag', abbreviation: undefined },
+        { name: 'Arom', abbreviation: undefined },
+        { name: 'Body', abbreviation: undefined },
+        { name: 'Acid', abbreviation: undefined },
+        { name: 'Swet', abbreviation: undefined },
+        { name: 'Bal', abbreviation: undefined },
+        { name: 'Fin', abbreviation: undefined }
+      ]
     }
 
     return {

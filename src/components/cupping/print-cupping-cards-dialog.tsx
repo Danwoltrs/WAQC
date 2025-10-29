@@ -156,40 +156,58 @@ export function PrintCuppingCardsDialog({
             templateParams
           })
 
-          // Extract cupping attributes from template with multiple fallback strategies
-          let attributes: string[] = []
+          // Extract cupping attributes with abbreviations from template
+          let cuppingAttributes = []
 
-          // Strategy 1: Check custom_parameters.cupping_attributes
+          // Strategy 1: Check custom_parameters.cupping_attributes (new format with abbreviations)
           if (customParams.cupping_attributes && Array.isArray(customParams.cupping_attributes)) {
-            attributes = customParams.cupping_attributes
+            cuppingAttributes = customParams.cupping_attributes
           }
-          // Strategy 2: Check template.parameters.cupping_attributes
+          // Strategy 2: Check template.parameters.cupping_attributes (new format with abbreviations)
           else if (templateParams.cupping_attributes && Array.isArray(templateParams.cupping_attributes)) {
-            attributes = templateParams.cupping_attributes
+            cuppingAttributes = templateParams.cupping_attributes
           }
-          // Strategy 3: Check for attributes array directly
+          // Strategy 3: Check for attributes array directly (legacy format - just strings)
           else if (customParams.attributes && Array.isArray(customParams.attributes)) {
-            attributes = customParams.attributes
+            cuppingAttributes = customParams.attributes.map((attr: any) =>
+              typeof attr === 'string' ? { attribute: attr } : attr
+            )
           }
           else if (templateParams.attributes && Array.isArray(templateParams.attributes)) {
-            attributes = templateParams.attributes
+            cuppingAttributes = templateParams.attributes.map((attr: any) =>
+              typeof attr === 'string' ? { attribute: attr } : attr
+            )
           }
           // Strategy 4: Parse from methodology-specific parameters
           else if (templateParams.scaa_attributes || templateParams.sca_attributes) {
-            attributes = templateParams.scaa_attributes || templateParams.sca_attributes
+            const attrs = templateParams.scaa_attributes || templateParams.sca_attributes
+            cuppingAttributes = Array.isArray(attrs) ? attrs.map((attr: any) =>
+              typeof attr === 'string' ? { attribute: attr } : attr
+            ) : []
           }
           // Fallback: Default SCA attributes
           else {
-            attributes = [
-              'Frag',
-              'Arom',
-              'Body',
-              'Acid',
-              'Swet',
-              'Bal',
-              'Fin',
+            cuppingAttributes = [
+              { attribute: 'Frag' },
+              { attribute: 'Arom' },
+              { attribute: 'Body' },
+              { attribute: 'Acid' },
+              { attribute: 'Swet' },
+              { attribute: 'Bal' },
+              { attribute: 'Fin' },
             ]
           }
+
+          // Build attributes array with user-defined abbreviations
+          const attributes = cuppingAttributes.map((attr: any) => {
+            if (typeof attr === 'string') {
+              return { name: attr, abbreviation: undefined }
+            }
+            return {
+              name: attr.attribute || attr.name || 'Unknown',
+              abbreviation: attr.abbreviation || undefined
+            }
+          })
 
           console.log(`Extracted attributes for ${sample.tracking_number}:`, attributes)
           console.log(`Generating QR code for sample ${sample.tracking_number}`)

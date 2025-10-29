@@ -60,6 +60,7 @@ export interface AttributeValidationRule {
  */
 export interface CuppingAttribute {
   attribute: string // Attribute name (e.g., "Fragrance/Aroma", "Flavor")
+  abbreviation?: string // Short form for printing (e.g., "Frag", "Dolç", "Acid") - 4-5 chars max
   scale: AttributeScaleType // Either numeric or wording scale
   min_score?: number // Deprecated - use validation_rule instead
   validation_rule?: AttributeValidationRule // Optional validation rule for acceptable scores
