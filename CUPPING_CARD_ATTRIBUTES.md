@@ -97,6 +97,53 @@ Processing sample XXX-YYYY:
 Extracted attributes for XXX-YYYY: ["Dolçura", "Cuerpo", ...]
 ```
 
+## Automatic Attribute Abbreviation
+
+Since the cupping card table columns are narrow (20pt for A4, 32pt for thermal), attribute names are automatically abbreviated to fit:
+
+### A4 Format (Letter size)
+- **Max Length**: 4 characters
+- **Column Width**: 20pt
+- **Font Size**: 6pt
+
+### Thermal Format
+- **Max Length**: 5 characters
+- **Column Width**: 32pt
+- **Font Size**: 7pt
+
+### Abbreviation Logic
+
+The system uses a two-strategy approach:
+
+1. **Known Coffee Terms** - Pre-defined abbreviations for common attributes:
+   - "Dolçura" → "Dolç" (A4) / "Dolçu" (Thermal)
+   - "Cuerpo" → "Cuer" (A4) / "Cuerp" (Thermal)
+   - "Acidez" → "Acid" (both)
+   - "Umami" → "Umam" (A4) / "Umami" (Thermal)
+   - "Finish" → "Fin" (A4) / "Finsh" (Thermal)
+   - "Fragancia" → "Frag" (both)
+   - "Balance" → "Bal" (both)
+
+2. **Smart Truncation** - For unknown terms, takes the first N characters:
+   - This preserves special characters (ç, á, etc.)
+   - Maintains readability
+   - Capitalizes first letter if original is capitalized
+
+### Adding Custom Abbreviations
+
+To add your own known abbreviations, edit the `knownAbbreviations` dictionary in:
+- `src/components/pdf/thermal-cupping-card-a4.tsx`
+- `src/components/pdf/thermal-cupping-card.tsx`
+
+Example:
+```typescript
+const knownAbbreviations: Record<string, string> = {
+  'Dolçura': 'Dolç',
+  'Meu Atributo': 'MAtb',  // Add your custom mapping here
+  // ...
+}
+```
+
 ## Fixes Applied (2025-01-29)
 
 1. **Fixed TEXT component errors** - Added comprehensive null safety for all text fields
@@ -104,6 +151,7 @@ Extracted attributes for XXX-YYYY: ["Dolçura", "Cuerpo", ...]
 3. **Better validation** - Filters out invalid attribute values before PDF rendering
 4. **Type safety** - Ensured all required fields have proper defaults
 5. **Logging** - Added detailed console logging for debugging
+6. **Automatic abbreviation** - Intelligent attribute name shortening for table fit
 
 ## Next Steps
 

@@ -8,6 +8,58 @@ import {
   Image,
 } from '@react-pdf/renderer'
 
+/**
+ * Intelligently abbreviates attribute names to fit in narrow columns
+ * Prioritizes readability while keeping names short (4-5 characters)
+ */
+function abbreviateAttribute(attr: string, maxLength: number = 5): string {
+  if (!attr) return ''
+
+  const trimmed = attr.trim()
+
+  // If already short enough, return as-is
+  if (trimmed.length <= maxLength) {
+    return trimmed
+  }
+
+  // Common coffee attribute abbreviations (preserve known ones)
+  const knownAbbreviations: Record<string, string> = {
+    'Fragancia': 'Frag',
+    'Fragrance': 'Frag',
+    'Aroma': 'Arom',
+    'Sabor': 'Sabor',
+    'Flavor': 'Flavr',
+    'Retrogusto': 'Retro',
+    'Aftertaste': 'After',
+    'Acidez': 'Acidz',
+    'Acidity': 'Acid',
+    'Cuerpo': 'Cuerp',
+    'Body': 'Body',
+    'Balance': 'Bal',
+    'Dulzura': 'Dulz',
+    'Dulçura': 'Dolçu',
+    'Sweetness': 'Sweet',
+    'Uniformidad': 'Unifm',
+    'Uniformity': 'Unifm',
+    'Taza Limpia': 'Limpa',
+    'Clean Cup': 'Clean',
+    'Finish': 'Finsh',
+    'Umami': 'Umami',
+  }
+
+  // Check for exact match (case-insensitive)
+  const lowerAttr = trimmed.toLowerCase()
+  for (const [full, abbr] of Object.entries(knownAbbreviations)) {
+    if (full.toLowerCase() === lowerAttr) {
+      return abbr
+    }
+  }
+
+  // Strategy 1: Just take first maxLength characters (simple truncation)
+  // This preserves special characters and readability
+  return trimmed.substring(0, maxLength)
+}
+
 // Thermal cupping card data interface
 export interface ThermalCuppingCardData {
   sample_id: string
@@ -247,7 +299,7 @@ export const ThermalCuppingCardDocument: React.FC<
                 </View>
                 {card.attributes.map((attr, attrIndex) => (
                   <View key={attrIndex} style={styles.attributeColumn}>
-                    <Text>{attr}</Text>
+                    <Text>{abbreviateAttribute(attr, 5)}</Text>
                   </View>
                 ))}
               </View>

@@ -11,6 +11,58 @@ import {
 } from '@react-pdf/renderer'
 import { ThermalCuppingCardData } from './thermal-cupping-card'
 
+/**
+ * Intelligently abbreviates attribute names to fit in narrow columns
+ * Prioritizes readability while keeping names short (3-4 characters)
+ */
+function abbreviateAttribute(attr: string, maxLength: number = 4): string {
+  if (!attr) return ''
+
+  const trimmed = attr.trim()
+
+  // If already short enough, return as-is
+  if (trimmed.length <= maxLength) {
+    return trimmed
+  }
+
+  // Common coffee attribute abbreviations (preserve known ones)
+  const knownAbbreviations: Record<string, string> = {
+    'Fragancia': 'Frag',
+    'Fragrance': 'Frag',
+    'Aroma': 'Arom',
+    'Sabor': 'Sabr',
+    'Flavor': 'Flvr',
+    'Retrogusto': 'Retg',
+    'Aftertaste': 'Aftr',
+    'Acidez': 'Acid',
+    'Acidity': 'Acid',
+    'Cuerpo': 'Cuer',
+    'Body': 'Body',
+    'Balance': 'Bal',
+    'Dulzura': 'Dulz',
+    'Dulçura': 'Dolç',
+    'Sweetness': 'Swet',
+    'Uniformidad': 'Unif',
+    'Uniformity': 'Unif',
+    'Taza Limpia': 'Limp',
+    'Clean Cup': 'Cln',
+    'Finish': 'Fin',
+    'Umami': 'Umam',
+  }
+
+  // Check for exact match (case-insensitive)
+  const lowerAttr = trimmed.toLowerCase()
+  for (const [full, abbr] of Object.entries(knownAbbreviations)) {
+    if (full.toLowerCase() === lowerAttr) {
+      return abbr
+    }
+  }
+
+  // Strategy 1: Just take first maxLength characters (simple truncation)
+  // This preserves special characters and readability
+  return trimmed.substring(0, maxLength)
+}
+
 // Create styles for A4 multi-card layout (12 cards per page, 4x3 grid)
 const styles = StyleSheet.create({
   page: {
@@ -288,7 +340,7 @@ export const ThermalCuppingCardA4Document: React.FC<
                     </View>
                     {card.attributes.map((attr, attrIndex) => (
                       <View key={attrIndex} style={styles.attributeColumn}>
-                        <Text>{attr}</Text>
+                        <Text>{abbreviateAttribute(attr, 4)}</Text>
                       </View>
                     ))}
                   </View>
