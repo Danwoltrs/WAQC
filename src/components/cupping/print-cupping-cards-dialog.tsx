@@ -285,6 +285,29 @@ export function PrintCuppingCardsDialog({
     generateCards()
   }
 
+  // Memoize the PDF document to prevent constant regeneration
+  const pdfDocument = useMemo(() => {
+    if (!isReadyForDownload || !cardData || cardData.length === 0) {
+      return null
+    }
+
+    return outputFormat === 'thermal' ? (
+      <ThermalCuppingCardDocument
+        cards={cardData}
+        show_quality={showQuality}
+        show_buyer={showBuyer}
+        show_exporter={showExporter}
+      />
+    ) : (
+      <ThermalCuppingCardA4Document
+        cards={cardData}
+        show_quality={showQuality}
+        show_buyer={showBuyer}
+        show_exporter={showExporter}
+      />
+    )
+  }, [isReadyForDownload, cardData, outputFormat, showQuality, showBuyer, showExporter])
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
@@ -457,26 +480,10 @@ export function PrintCuppingCardsDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          {isReadyForDownload && cardData && cardData.length > 0 ? (
+          {isReadyForDownload && pdfDocument ? (
             <PDFDownloadLink
               key={pdfKey}
-              document={
-                outputFormat === 'thermal' ? (
-                  <ThermalCuppingCardDocument
-                    cards={cardData}
-                    show_quality={showQuality}
-                    show_buyer={showBuyer}
-                    show_exporter={showExporter}
-                  />
-                ) : (
-                  <ThermalCuppingCardA4Document
-                    cards={cardData}
-                    show_quality={showQuality}
-                    show_buyer={showBuyer}
-                    show_exporter={showExporter}
-                  />
-                )
-              }
+              document={pdfDocument}
               fileName={`cupping-cards-${outputFormat}-${new Date().toISOString().split('T')[0]}.pdf`}
             >
               {({ loading, error }) => {
@@ -485,12 +492,9 @@ export function PrintCuppingCardsDialog({
                   console.error('Card data at error time:', cardData)
                   console.error('Output format:', outputFormat)
                 }
-                if (loading) {
-                  console.log('⏳ PDF is being generated...')
-                }
                 return (
                   <Button disabled={loading || !!error}>
-                    {loading ? 'Generating PDF...' : error ? `Error - ${error.message || 'Try Again'}` : `Download ${cardData.length} Card${cardData.length !== 1 ? 's' : ''}`}
+                    {loading ? 'Generating PDF...' : error ? `Error - ${error.message || 'Try Again'}` : `Download ${cardData ? cardData.length : 0} Card${cardData && cardData.length !== 1 ? 's' : ''}`}
                   </Button>
                 )
               }}
