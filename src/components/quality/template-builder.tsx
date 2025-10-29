@@ -1597,27 +1597,24 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   <p className="text-xs font-medium">
                     {cuppingAttributes.length} attribute{cuppingAttributes.length !== 1 ? 's' : ''} configured
                   </p>
-                  <div className="space-y-1">
+                  <div className="grid grid-cols-3 gap-2">
                     {cuppingAttributes.map((attr, index) => (
-                      <div key={index} className="flex items-center gap-2">
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
-                          {attr.attribute}
-                        </Badge>
-                        {attr.abbreviation && (
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 font-normal">
-                            {attr.abbreviation}
+                      <div key={index} className="flex flex-col gap-1">
+                        <div className="flex items-center gap-1">
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
+                            {attr.attribute}
                           </Badge>
-                        )}
+                          {attr.abbreviation && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5 font-normal">
+                              {attr.abbreviation}
+                            </Badge>
+                          )}
+                        </div>
                         <span className="text-[11px] text-muted-foreground">
                           {attr.scale.type === 'numeric'
                             ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
                             : `${attr.scale.options?.length || 0} options`}
                         </span>
-                        {attr.validation_rule && (
-                          <Badge variant="secondary" className="text-[10px] px-1.5 py-0.5">
-                            {formatValidationRule(attr.validation_rule, attr.scale)}
-                          </Badge>
-                        )}
                       </div>
                     ))}
                   </div>
