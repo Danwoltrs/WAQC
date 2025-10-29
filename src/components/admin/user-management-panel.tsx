@@ -48,6 +48,7 @@ type Profile = Database['public']['Tables']['profiles']['Row'] & {
   first_name?: string | null
   last_name?: string | null
   is_cupper?: boolean | null
+  is_q_grader?: boolean | null
   last_login_at?: string | null
 }
 
@@ -108,8 +109,6 @@ export function UserManagementPanel() {
     email: '',
     qc_role: '' as UserRole | '',
     laboratory_id: '',
-    is_cupper: false,
-    qc_enabled: false,
   })
 
   // Form states for invitation
@@ -199,8 +198,6 @@ export function UserManagementPanel() {
       email: user.email,
       qc_role: (user.qc_role as UserRole) || '',
       laboratory_id: user.laboratory_id || '',
-      is_cupper: user.is_cupper || false,
-      qc_enabled: user.qc_enabled || false,
     })
     setEditDialogOpen(true)
   }
@@ -239,8 +236,6 @@ export function UserManagementPanel() {
           full_name: `${editForm.first_name} ${editForm.last_name}`, // Keep full_name in sync
           qc_role: editForm.qc_role,
           laboratory_id: editForm.laboratory_id || null,
-          is_cupper: editForm.is_cupper,
-          qc_enabled: editForm.qc_enabled,
           updated_at: new Date().toISOString(),
         })
         .eq('id', selectedUser.id)
@@ -260,6 +255,31 @@ export function UserManagementPanel() {
       alert('An error occurred. Please try again.')
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  const handleToggleField = async (
+    userId: string,
+    field: 'is_cupper' | 'qc_enabled' | 'is_q_grader',
+    currentValue: boolean
+  ) => {
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({ [field]: !currentValue, updated_at: new Date().toISOString() })
+        .eq('id', userId)
+
+      if (error) {
+        console.error(`Error toggling ${field}:`, error)
+        alert(`Failed to update. Please try again.`)
+        return
+      }
+
+      // Refresh user list
+      await fetchUsers()
+    } catch (error) {
+      console.error(`Error in handleToggleField:`, error)
+      alert('An error occurred. Please try again.')
     }
   }
 
@@ -382,6 +402,8 @@ export function UserManagementPanel() {
                     <TableHead>Role</TableHead>
                     <TableHead>Laboratory</TableHead>
                     <TableHead>Cupper</TableHead>
+                    <TableHead>QC Access</TableHead>
+                    <TableHead>Q Grader</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -389,7 +411,7 @@ export function UserManagementPanel() {
                 <TableBody>
                   {filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                      <TableCell colSpan={10} className="text-center text-muted-foreground">
                         No users found
                       </TableCell>
                     </TableRow>
@@ -431,15 +453,29 @@ export function UserManagementPanel() {
                               <span className="text-sm text-muted-foreground">—</span>
                             )}
                           </TableCell>
-                          <TableCell>
-                            {user.is_cupper ? (
-                              <Badge variant="outline" className="gap-1">
-                                <Coffee className="h-3 w-3" />
-                                Cupper
-                              </Badge>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">—</span>
-                            )}
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={user.is_cupper || false}
+                              onCheckedChange={() =>
+                                handleToggleField(user.id, 'is_cupper', user.is_cupper || false)
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={user.qc_enabled || false}
+                              onCheckedChange={() =>
+                                handleToggleField(user.id, 'qc_enabled', user.qc_enabled || false)
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={user.is_q_grader || false}
+                              onCheckedChange={() =>
+                                handleToggleField(user.id, 'is_q_grader', user.is_q_grader || false)
+                              }
+                            />
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-1 text-sm text-muted-foreground">
@@ -539,31 +575,6 @@ export function UserManagementPanel() {
                   ))}
                 </SelectContent>
               </Select>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="edit-cupper"
-                checked={editForm.is_cupper}
-                onCheckedChange={(checked) =>
-                  setEditForm({ ...editForm, is_cupper: checked as boolean })
-                }
-              />
-              <Label htmlFor="edit-cupper" className="flex items-center gap-2">
-                <Coffee className="h-4 w-4" />
-                Designate as Cupper
-              </Label>
-            </div>
-
-            <div className="flex items-center space-x-2">
-              <Checkbox
-                id="edit-enabled"
-                checked={editForm.qc_enabled}
-                onCheckedChange={(checked) =>
-                  setEditForm({ ...editForm, qc_enabled: checked as boolean })
-                }
-              />
-              <Label htmlFor="edit-enabled">QC Access Enabled</Label>
             </div>
           </div>
 
