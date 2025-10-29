@@ -1680,15 +1680,16 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
               {taintFaultExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
               <CardTitle className="text-sm font-semibold flex-shrink-0">Taints and Faults</CardTitle>
               {!taintFaultExpanded && (() => {
+                const activeDefectCount = taintFaultConfiguration.defects?.filter(d => d.active).length || 0
                 const defectCount = taintFaultConfiguration.defects?.length || 0
                 const taintCount = taintFaultConfiguration.taints?.length || 0
                 const faultCount = taintFaultConfiguration.faults?.length || 0
-                const totalCount = defectCount || (taintCount + faultCount)
+                const totalCount = activeDefectCount || (taintCount + faultCount)
 
                 return totalCount > 0 && (
                   <span className="text-[11px] text-muted-foreground truncate">
                     {defectCount > 0 ? (
-                      `- ${defectCount} Defects`
+                      `- ${activeDefectCount} Active Defect${activeDefectCount !== 1 ? 's' : ''}`
                     ) : (
                       `- Taints: ${taintCount} | Faults: ${faultCount}`
                     )}
@@ -1729,13 +1730,14 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 <div className="space-y-0.5 text-xs">
                   <p className="font-medium">
                     {(() => {
-                      const totalDefs = defectCount || (taintCount + faultCount)
-                      return `${totalDefs} definition${totalDefs !== 1 ? 's' : ''} configured`
+                      const activeDefectCount = taintFaultConfiguration.defects?.filter(d => d.active).length || 0
+                      const totalDefs = activeDefectCount || (taintCount + faultCount)
+                      return `${totalDefs} active definition${totalDefs !== 1 ? 's' : ''} configured`
                     })()}
                   </p>
                   <p className="text-[11px] text-muted-foreground">
                     {defectCount > 0 ? (
-                      `${defectCount} Defects (Intensity-Based)`
+                      `${taintFaultConfiguration.defects?.filter(d => d.active).length || 0} Active Defects (Intensity-Based)`
                     ) : (
                       `Taints: ${taintCount} • Faults: ${faultCount}`
                     )}
@@ -1780,7 +1782,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   {!taintFaultListExpanded && (
                     <span className="text-[11px] text-muted-foreground">
                       {defectCount > 0 ? (
-                        `- ${defectCount} defects`
+                        `- ${taintFaultConfiguration.defects?.filter(d => d.active).length || 0} active defect${(taintFaultConfiguration.defects?.filter(d => d.active).length || 0) !== 1 ? 's' : ''}`
                       ) : (
                         `- ${taintCount} taints, ${faultCount} faults`
                       )}
@@ -1790,23 +1792,26 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 {taintFaultListExpanded && (
                 <div className="p-2">
                   {defectCount > 0 ? (
-                    // New simplified defects
-                    <div className="space-y-1">
+                    // New simplified defects in 2-column grid
+                    <div className="grid grid-cols-2 gap-2">
                       {taintFaultConfiguration.defects
-                        ?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                        ?.filter(d => d.active)
+                        .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
                         .map((defect) => (
-                          <div key={defect.name} className="flex items-center justify-between text-[11px] p-2 rounded border bg-card">
+                          <div key={defect.name} className="flex flex-col gap-1 text-[11px] p-2 rounded border bg-card">
                             <span className="font-medium">{defect.name}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] text-muted-foreground">
+                            <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
+                              <span>
                                 Taint: {defect.taint_range ? `${defect.taint_range.min}-${defect.taint_range.max}` : '-'}
                               </span>
-                              <span className="text-[10px] text-muted-foreground">
+                              <span>
                                 Fault: {defect.fault_range.min}-{defect.fault_range.max}
                               </span>
-                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                Max: {defect.max_intensity}
-                              </Badge>
+                              <div className="flex items-center gap-1 mt-0.5">
+                                <Badge variant="secondary" className="text-[9px] px-1 py-0">
+                                  Max: {defect.max_intensity}
+                                </Badge>
+                              </div>
                             </div>
                           </div>
                         ))}
