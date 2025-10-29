@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { formatDistanceToNow } from 'date-fns'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -44,6 +45,8 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
+  CheckCircle2,
+  Copy,
 } from 'lucide-react'
 import { supabase, type Database } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -215,7 +218,7 @@ export function UserManagementPanel() {
 
     // Validate role permissions
     if (editForm.qc_role && !canPromoteToRole(editForm.qc_role as UserRole)) {
-      alert('You do not have permission to assign this role.')
+      toast.error('You do not have permission to assign this role.')
       return
     }
 
@@ -230,7 +233,7 @@ export function UserManagementPanel() {
       labRequiredRoles.includes(editForm.qc_role as UserRole) &&
       !editForm.laboratory_id
     ) {
-      alert('Please select a laboratory for this role.')
+      toast.error('Please select a laboratory for this role.')
       return
     }
 
@@ -250,17 +253,17 @@ export function UserManagementPanel() {
 
       if (error) {
         console.error('Error updating user:', error)
-        alert('Failed to update user. Please try again.')
+        toast.error('Failed to update user. Please try again.')
         return
       }
 
       setEditDialogOpen(false)
       // Refresh the user list to show updated data
       await fetchUsers()
-      alert('User updated successfully!')
+      toast.success('User updated successfully!')
     } catch (error) {
       console.error('Error in handleUpdateUser:', error)
-      alert('An error occurred. Please try again.')
+      toast.error('An error occurred. Please try again.')
     } finally {
       setActionLoading(false)
     }
@@ -279,22 +282,23 @@ export function UserManagementPanel() {
 
       if (error) {
         console.error(`Error toggling ${field}:`, error)
-        alert(`Failed to update. Please try again.`)
+        toast.error(`Failed to update. Please try again.`)
         return
       }
 
       // Refresh user list
       await fetchUsers()
+      toast.success('User updated successfully')
     } catch (error) {
       console.error(`Error in handleToggleField:`, error)
-      alert('An error occurred. Please try again.')
+      toast.error('An error occurred. Please try again.')
     }
   }
 
   const handleInviteUser = async () => {
     // Validate role permissions
     if (inviteForm.qc_role && !canPromoteToRole(inviteForm.qc_role as UserRole)) {
-      alert('You do not have permission to assign this role.')
+      toast.error('You do not have permission to assign this role.')
       return
     }
 
@@ -309,7 +313,7 @@ export function UserManagementPanel() {
       labRequiredRoles.includes(inviteForm.qc_role as UserRole) &&
       !inviteForm.laboratory_id
     ) {
-      alert('Please select a laboratory for this role.')
+      toast.error('Please select a laboratory for this role.')
       return
     }
 
@@ -339,18 +343,32 @@ export function UserManagementPanel() {
         // Copy URL to clipboard
         if (navigator.clipboard && window.isSecureContext) {
           await navigator.clipboard.writeText(data.invitationUrl)
-          alert(
-            `Invitation created for ${inviteForm.email}!\n\n` +
-              `The invitation link has been copied to your clipboard.\n\n` +
-              `Share it with the user to complete their account setup.\n\n` +
-              `Link expires: ${new Date(data.expiresAt).toLocaleDateString()}`
-          )
+          toast.success('Invitation Created!', {
+            description: (
+              <div className="space-y-2">
+                <p className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  <span>Invitation for <strong>{inviteForm.email}</strong></span>
+                </p>
+                <p className="flex items-center gap-2">
+                  <Copy className="h-4 w-4" />
+                  <span>Link copied to clipboard</span>
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Share the link to complete account setup
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Expires: {new Date(data.expiresAt).toLocaleDateString()}
+                </p>
+              </div>
+            ),
+            duration: 6000,
+          })
         } else {
-          alert(
-            `Invitation created for ${inviteForm.email}!\n\n` +
-              `Share this link:\n${data.invitationUrl}\n\n` +
-              `Link expires: ${new Date(data.expiresAt).toLocaleDateString()}`
-          )
+          toast.success('Invitation Created!', {
+            description: `Invitation for ${inviteForm.email}. Link expires: ${new Date(data.expiresAt).toLocaleDateString()}`,
+            duration: 6000,
+          })
         }
       }
 
@@ -367,7 +385,7 @@ export function UserManagementPanel() {
       })
     } catch (error) {
       console.error('Error inviting user:', error)
-      alert('Failed to send invitation. Please try again.')
+      toast.error('Failed to send invitation. Please try again.')
     } finally {
       setActionLoading(false)
     }

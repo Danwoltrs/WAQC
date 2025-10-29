@@ -5,6 +5,7 @@ import { ThemeProvider } from "@/components/providers/theme-provider"
 import { AuthProvider } from "@/components/providers/auth-provider"
 import { SampleIntakeProvider } from "@/components/samples/sample-intake-provider"
 import { Toaster } from "@/components/ui/toaster"
+import { Toaster as Sonner } from "sonner"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -41,6 +42,7 @@ export default function RootLayout({
             <SampleIntakeProvider>
               {children}
               <Toaster />
+              <Sonner richColors />
             </SampleIntakeProvider>
           </AuthProvider>
         </ThemeProvider>
