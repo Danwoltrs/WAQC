@@ -92,6 +92,7 @@ export interface ThermalCuppingCardData {
   template_scale_info: string // e.g., "1-8, 0.25"
   attributes: (string | AttributeForCard)[] // Array of attributes with optional abbreviations
   num_cuppers: number // Number of cupper rows to show
+  cuppers?: string[] // Optional pre-assigned cupper names
   qr_code: string // Data URL for QR code
   logo_url?: string // Optional Wolthers logo
 }
@@ -345,7 +346,7 @@ export const ThermalCuppingCardDocument: React.FC<
               {Array.from({ length: card.num_cuppers }).map((_, rowIndex) => (
                 <View key={rowIndex} style={styles.tableRow}>
                   <View style={styles.cupperCell}>
-                    <Text>{''}</Text>
+                    <Text>{card.cuppers && card.cuppers[rowIndex] ? card.cuppers[rowIndex] : ''}</Text>
                   </View>
                   {card.attributes.map((_, attrIndex) => (
                     <View key={attrIndex} style={styles.attributeCell}>

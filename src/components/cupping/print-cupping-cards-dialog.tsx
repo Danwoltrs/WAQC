@@ -61,16 +61,24 @@ interface Sample {
   }
 }
 
+interface Cupper {
+  id: string
+  full_name: string
+  email: string
+}
+
 interface PrintCuppingCardsDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   samples: Sample[]
+  assignedCuppers?: Cupper[]
 }
 
 export function PrintCuppingCardsDialog({
   open,
   onOpenChange,
   samples,
+  assignedCuppers = [],
 }: PrintCuppingCardsDialogProps) {
   const [showQuality, setShowQuality] = useState(true)
   const [showBuyer, setShowBuyer] = useState(true)
@@ -240,7 +248,8 @@ export function PrintCuppingCardsDialog({
             template_scale_info:
               customParams.scale_info || templateParams.scale_info || '1-8, 0.25',
             attributes,
-            num_cuppers: parseInt(numCuppers),
+            num_cuppers: assignedCuppers.length > 0 ? assignedCuppers.length : parseInt(numCuppers),
+            cuppers: assignedCuppers.length > 0 ? assignedCuppers.map(c => c.full_name) : undefined,
             qr_code: qrCodeDataUrl,
             // logo_url: '/logo.png', // Add if you have a logo
           }

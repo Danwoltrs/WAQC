@@ -384,7 +384,7 @@ export const ThermalCuppingCardA4Document: React.FC<
                     (_, rowIndex) => (
                       <View key={rowIndex} style={styles.tableRow}>
                         <View style={styles.cupperCell}>
-                          <Text>{''}</Text>
+                          <Text>{card.cuppers && card.cuppers[rowIndex] ? card.cuppers[rowIndex] : ''}</Text>
                         </View>
                         {card.attributes.map((_, attrIndex) => (
                           <View key={attrIndex} style={styles.attributeCell}>

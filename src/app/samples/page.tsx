@@ -980,6 +980,7 @@ export default function SamplesPage() {
         open={showCuppingCardsDialog}
         onOpenChange={setShowCuppingCardsDialog}
         samples={samples.filter((s) => selectedSamples.has(s.id))}
+        assignedCuppers={assignedCuppers}
       />
 
       {/* Assign Cuppers Dialog */}
