@@ -1,0 +1,733 @@
+'use client'
+
+import React, { useState, useEffect } from 'react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
+import { Checkbox } from '@/components/ui/checkbox'
+import {
+  User,
+  Mail,
+  Calendar,
+  Clock,
+  Shield,
+  Building2,
+  UserPlus,
+  Edit,
+  Coffee,
+  Search,
+} from 'lucide-react'
+import { supabase, type Database } from '@/lib/supabase'
+import { useAuth } from '@/components/providers/auth-provider'
+import { formatDistanceToNow } from 'date-fns'
+
+type Profile = Database['public']['Tables']['profiles']['Row'] & {
+  first_name?: string | null
+  last_name?: string | null
+  is_cupper?: boolean | null
+  last_login_at?: string | null
+}
+
+type Laboratory = Database['public']['Tables']['laboratories']['Row']
+
+type UserRole =
+  | 'lab_personnel'
+  | 'lab_finance_manager'
+  | 'lab_quality_manager'
+  | 'santos_hq_finance'
+  | 'global_finance_admin'
+  | 'global_quality_admin'
+  | 'global_admin'
+  | 'client'
+  | 'supplier'
+  | 'buyer'
+
+const ROLE_HIERARCHY: Record<UserRole, number> = {
+  lab_personnel: 1,
+  lab_finance_manager: 2,
+  lab_quality_manager: 3, // Lab Admin level
+  santos_hq_finance: 4,
+  global_finance_admin: 5,
+  global_quality_admin: 6,
+  global_admin: 7, // Highest level
+  client: 0,
+  supplier: 0,
+  buyer: 0,
+}
+
+const ROLE_LABELS: Record<UserRole, string> = {
+  lab_personnel: 'Lab Personnel',
+  lab_finance_manager: 'Lab Finance Manager',
+  lab_quality_manager: 'Lab Admin',
+  santos_hq_finance: 'Santos HQ Finance',
+  global_finance_admin: 'Global Finance Admin',
+  global_quality_admin: 'Global Quality Admin',
+  global_admin: 'Global Admin',
+  client: 'Client',
+  supplier: 'Supplier',
+  buyer: 'Buyer',
+}
+
+export function UserManagementPanel() {
+  const { profile } = useAuth()
+  const [users, setUsers] = useState<Profile[]>([])
+  const [laboratories, setLaboratories] = useState<Laboratory[]>([])
+  const [loading, setLoading] = useState(true)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedUser, setSelectedUser] = useState<Profile | null>(null)
+  const [editDialogOpen, setEditDialogOpen] = useState(false)
+  const [inviteDialogOpen, setInviteDialogOpen] = useState(false)
+  const [actionLoading, setActionLoading] = useState(false)
+
+  // Form states for editing
+  const [editForm, setEditForm] = useState({
+    first_name: '',
+    last_name: '',
+    email: '',
+    qc_role: '' as UserRole | '',
+    laboratory_id: '',
+    is_cupper: false,
+    qc_enabled: false,
+  })
+
+  // Form states for invitation
+  const [inviteForm, setInviteForm] = useState({
+    email: '',
+    first_name: '',
+    last_name: '',
+    qc_role: '' as UserRole | '',
+    laboratory_id: '',
+    is_cupper: false,
+  })
+
+  useEffect(() => {
+    if (canManageUsers()) {
+      fetchUsers()
+      fetchLaboratories()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile])
+
+  const canManageUsers = (): boolean => {
+    if (!profile) return false
+    const role = profile.qc_role as UserRole
+    // Global admins and lab admins can manage users
+    return role === 'global_admin' || role === 'lab_quality_manager'
+  }
+
+  const canPromoteToRole = (targetRole: UserRole): boolean => {
+    if (!profile?.qc_role) return false
+    const currentRole = profile.qc_role as UserRole
+    const currentLevel = ROLE_HIERARCHY[currentRole]
+    const targetLevel = ROLE_HIERARCHY[targetRole]
+
+    // Global admins can promote anyone to any role
+    if (currentRole === 'global_admin') return true
+
+    // Lab admins cannot promote to their own level or higher
+    if (currentRole === 'lab_quality_manager') {
+      return targetLevel < ROLE_HIERARCHY.lab_quality_manager
+    }
+
+    return false
+  }
+
+  const fetchUsers = async () => {
+    setLoading(true)
+    try {
+      let query = supabase.from('profiles').select('*').eq('qc_enabled', true)
+
+      // Lab admins only see their lab's users
+      if (profile?.qc_role === 'lab_quality_manager' && profile?.laboratory_id) {
+        query = query.eq('laboratory_id', profile.laboratory_id)
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false })
+
+      if (error) {
+        console.error('Error fetching users:', error)
+        return
+      }
+
+      setUsers(data as Profile[])
+    } catch (error) {
+      console.error('Error in fetchUsers:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const fetchLaboratories = async () => {
+    try {
+      const { data, error } = await supabase.from('laboratories').select('*').order('name')
+
+      if (error) {
+        console.error('Error fetching laboratories:', error)
+        return
+      }
+
+      setLaboratories(data as Laboratory[])
+    } catch (error) {
+      console.error('Error in fetchLaboratories:', error)
+    }
+  }
+
+  const openEditDialog = (user: Profile) => {
+    setSelectedUser(user)
+    setEditForm({
+      first_name: user.first_name || user.full_name?.split(' ')[0] || '',
+      last_name: user.last_name || user.full_name?.split(' ').slice(1).join(' ') || '',
+      email: user.email,
+      qc_role: (user.qc_role as UserRole) || '',
+      laboratory_id: user.laboratory_id || '',
+      is_cupper: user.is_cupper || false,
+      qc_enabled: user.qc_enabled || false,
+    })
+    setEditDialogOpen(true)
+  }
+
+  const handleUpdateUser = async () => {
+    if (!selectedUser) return
+
+    // Validate role permissions
+    if (editForm.qc_role && !canPromoteToRole(editForm.qc_role as UserRole)) {
+      alert('You do not have permission to assign this role.')
+      return
+    }
+
+    // Validate lab requirement
+    const labRequiredRoles: UserRole[] = [
+      'lab_personnel',
+      'lab_finance_manager',
+      'lab_quality_manager',
+    ]
+    if (
+      editForm.qc_role &&
+      labRequiredRoles.includes(editForm.qc_role as UserRole) &&
+      !editForm.laboratory_id
+    ) {
+      alert('Please select a laboratory for this role.')
+      return
+    }
+
+    setActionLoading(true)
+    try {
+      const { error } = await supabase
+        .from('profiles')
+        .update({
+          first_name: editForm.first_name,
+          last_name: editForm.last_name,
+          full_name: `${editForm.first_name} ${editForm.last_name}`, // Keep full_name in sync
+          qc_role: editForm.qc_role,
+          laboratory_id: editForm.laboratory_id || null,
+          is_cupper: editForm.is_cupper,
+          qc_enabled: editForm.qc_enabled,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', selectedUser.id)
+
+      if (error) {
+        console.error('Error updating user:', error)
+        alert('Failed to update user. Please try again.')
+        return
+      }
+
+      alert('User updated successfully!')
+      setEditDialogOpen(false)
+      fetchUsers()
+    } catch (error) {
+      console.error('Error in handleUpdateUser:', error)
+      alert('An error occurred. Please try again.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleInviteUser = async () => {
+    // Validate role permissions
+    if (inviteForm.qc_role && !canPromoteToRole(inviteForm.qc_role as UserRole)) {
+      alert('You do not have permission to assign this role.')
+      return
+    }
+
+    // Validate lab requirement
+    const labRequiredRoles: UserRole[] = [
+      'lab_personnel',
+      'lab_finance_manager',
+      'lab_quality_manager',
+    ]
+    if (
+      inviteForm.qc_role &&
+      labRequiredRoles.includes(inviteForm.qc_role as UserRole) &&
+      !inviteForm.laboratory_id
+    ) {
+      alert('Please select a laboratory for this role.')
+      return
+    }
+
+    setActionLoading(true)
+    try {
+      // Call API endpoint to send invitation email
+      const response = await fetch('/api/users/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(inviteForm),
+      })
+
+      if (!response.ok) {
+        throw new Error('Failed to send invitation')
+      }
+
+      alert(`Invitation sent to ${inviteForm.email}!`)
+      setInviteDialogOpen(false)
+      setInviteForm({
+        email: '',
+        first_name: '',
+        last_name: '',
+        qc_role: '',
+        laboratory_id: '',
+        is_cupper: false,
+      })
+    } catch (error) {
+      console.error('Error inviting user:', error)
+      alert('Failed to send invitation. Please try again.')
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const filteredUsers = users.filter((user) => {
+    const searchLower = searchQuery.toLowerCase()
+    const firstName = user.first_name || user.full_name?.split(' ')[0] || ''
+    const lastName = user.last_name || user.full_name?.split(' ').slice(1).join(' ') || ''
+    return (
+      firstName.toLowerCase().includes(searchLower) ||
+      lastName.toLowerCase().includes(searchLower) ||
+      user.email.toLowerCase().includes(searchLower) ||
+      user.qc_role?.toLowerCase().includes(searchLower)
+    )
+  })
+
+  const getRoleBadgeColor = (role: string): string => {
+    switch (role) {
+      case 'global_admin':
+        return 'bg-red-500 hover:bg-red-600'
+      case 'global_quality_admin':
+      case 'global_finance_admin':
+        return 'bg-orange-500 hover:bg-orange-600'
+      case 'lab_quality_manager':
+        return 'bg-blue-500 hover:bg-blue-600'
+      case 'lab_finance_manager':
+        return 'bg-indigo-500 hover:bg-indigo-600'
+      case 'lab_personnel':
+        return 'bg-green-500 hover:bg-green-600'
+      default:
+        return 'bg-gray-500 hover:bg-gray-600'
+    }
+  }
+
+  if (!canManageUsers()) {
+    return (
+      <Card>
+        <CardContent className="p-6">
+          <p className="text-muted-foreground">You do not have permission to manage users.</p>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  return (
+    <>
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <Shield className="h-5 w-5" />
+                User Management
+              </CardTitle>
+              <CardDescription>
+                Manage users, roles, permissions, and cupper designations
+              </CardDescription>
+            </div>
+            <Button onClick={() => setInviteDialogOpen(true)}>
+              <UserPlus className="mr-2 h-4 w-4" />
+              Invite User
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {/* Search */}
+          <div className="mb-4 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Search by name, email, or role..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          </div>
+
+          {/* Users Table */}
+          {loading ? (
+            <div className="flex items-center justify-center py-8">
+              <p className="text-muted-foreground">Loading users...</p>
+            </div>
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Name</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Role</TableHead>
+                    <TableHead>Laboratory</TableHead>
+                    <TableHead>Cupper</TableHead>
+                    <TableHead>Last Login</TableHead>
+                    <TableHead>Created</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredUsers.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-muted-foreground">
+                        No users found
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    filteredUsers.map((user) => {
+                      const firstName = user.first_name || user.full_name?.split(' ')[0] || ''
+                      const lastName =
+                        user.last_name || user.full_name?.split(' ').slice(1).join(' ') || ''
+                      const lab = laboratories.find((l) => l.id === user.laboratory_id)
+
+                      return (
+                        <TableRow key={user.id}>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <User className="h-4 w-4 text-muted-foreground" />
+                              <span className="font-medium">
+                                {firstName} {lastName}
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Mail className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-sm text-muted-foreground">{user.email}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge className={getRoleBadgeColor(user.qc_role || '')}>
+                              {ROLE_LABELS[(user.qc_role as UserRole) || 'lab_personnel']}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            {lab ? (
+                              <div className="flex items-center gap-2">
+                                <Building2 className="h-3 w-3 text-muted-foreground" />
+                                <span className="text-sm">{lab.name}</span>
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {user.is_cupper ? (
+                              <Badge variant="outline" className="gap-1">
+                                <Coffee className="h-3 w-3" />
+                                Cupper
+                              </Badge>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {user.last_login_at ? (
+                              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                                <Clock className="h-3 w-3" />
+                                {formatDistanceToNow(new Date(user.last_login_at), {
+                                  addSuffix: true,
+                                })}
+                              </div>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">Never</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              {user.created_at
+                                ? new Date(user.created_at).toLocaleDateString()
+                                : '—'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => openEditDialog(user)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Edit User Dialog */}
+      <Dialog open={editDialogOpen} onOpenChange={setEditDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Edit User</DialogTitle>
+            <DialogDescription>Update user information, role, and permissions</DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="edit-first-name">First Name</Label>
+                <Input
+                  id="edit-first-name"
+                  value={editForm.first_name}
+                  onChange={(e) => setEditForm({ ...editForm, first_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="edit-last-name">Last Name</Label>
+                <Input
+                  id="edit-last-name"
+                  value={editForm.last_name}
+                  onChange={(e) => setEditForm({ ...editForm, last_name: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-email">Email</Label>
+              <Input id="edit-email" value={editForm.email} disabled />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-role">Role</Label>
+              <Select
+                value={editForm.qc_role}
+                onValueChange={(value) => setEditForm({ ...editForm, qc_role: value as UserRole })}
+              >
+                <SelectTrigger id="edit-role">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ROLE_LABELS) as UserRole[])
+                    .filter((role) => canPromoteToRole(role))
+                    .map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {ROLE_LABELS[role]}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="edit-laboratory">Laboratory</Label>
+              <Select
+                value={editForm.laboratory_id}
+                onValueChange={(value) => setEditForm({ ...editForm, laboratory_id: value })}
+              >
+                <SelectTrigger id="edit-laboratory">
+                  <SelectValue placeholder="Select laboratory" />
+                </SelectTrigger>
+                <SelectContent>
+                  {laboratories.map((lab) => (
+                    <SelectItem key={lab.id} value={lab.id}>
+                      {lab.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="edit-cupper"
+                checked={editForm.is_cupper}
+                onCheckedChange={(checked) =>
+                  setEditForm({ ...editForm, is_cupper: checked as boolean })
+                }
+              />
+              <Label htmlFor="edit-cupper" className="flex items-center gap-2">
+                <Coffee className="h-4 w-4" />
+                Designate as Cupper
+              </Label>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="edit-enabled"
+                checked={editForm.qc_enabled}
+                onCheckedChange={(checked) =>
+                  setEditForm({ ...editForm, qc_enabled: checked as boolean })
+                }
+              />
+              <Label htmlFor="edit-enabled">QC Access Enabled</Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleUpdateUser} disabled={actionLoading}>
+              {actionLoading ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Invite User Dialog */}
+      <Dialog open={inviteDialogOpen} onOpenChange={setInviteDialogOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Invite New User</DialogTitle>
+            <DialogDescription>
+              Send a professional invitation email with account creation link
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="invite-email">Email Address</Label>
+              <Input
+                id="invite-email"
+                type="email"
+                placeholder="user@example.com"
+                value={inviteForm.email}
+                onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="invite-first-name">First Name</Label>
+                <Input
+                  id="invite-first-name"
+                  value={inviteForm.first_name}
+                  onChange={(e) => setInviteForm({ ...inviteForm, first_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="invite-last-name">Last Name</Label>
+                <Input
+                  id="invite-last-name"
+                  value={inviteForm.last_name}
+                  onChange={(e) => setInviteForm({ ...inviteForm, last_name: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="invite-role">Role</Label>
+              <Select
+                value={inviteForm.qc_role}
+                onValueChange={(value) =>
+                  setInviteForm({ ...inviteForm, qc_role: value as UserRole })
+                }
+              >
+                <SelectTrigger id="invite-role">
+                  <SelectValue placeholder="Select role" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(Object.keys(ROLE_LABELS) as UserRole[])
+                    .filter((role) => canPromoteToRole(role))
+                    .map((role) => (
+                      <SelectItem key={role} value={role}>
+                        {ROLE_LABELS[role]}
+                      </SelectItem>
+                    ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="invite-laboratory">Laboratory</Label>
+              <Select
+                value={inviteForm.laboratory_id}
+                onValueChange={(value) => setInviteForm({ ...inviteForm, laboratory_id: value })}
+              >
+                <SelectTrigger id="invite-laboratory">
+                  <SelectValue placeholder="Select laboratory" />
+                </SelectTrigger>
+                <SelectContent>
+                  {laboratories.map((lab) => (
+                    <SelectItem key={lab.id} value={lab.id}>
+                      {lab.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="invite-cupper"
+                checked={inviteForm.is_cupper}
+                onCheckedChange={(checked) =>
+                  setInviteForm({ ...inviteForm, is_cupper: checked as boolean })
+                }
+              />
+              <Label htmlFor="invite-cupper" className="flex items-center gap-2">
+                <Coffee className="h-4 w-4" />
+                Designate as Cupper
+              </Label>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setInviteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleInviteUser} disabled={actionLoading}>
+              {actionLoading ? 'Sending...' : 'Send Invitation'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
+}
