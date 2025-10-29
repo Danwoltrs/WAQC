@@ -11,6 +11,7 @@ import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
+import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
 import {
   Select,
   SelectContent,
@@ -128,10 +129,19 @@ export default function SamplesPage() {
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
   const [showCuppingCardsDialog, setShowCuppingCardsDialog] = useState(false)
+  const [showAssignCuppersDialog, setShowAssignCuppersDialog] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Track assigned cuppers for selected samples
+  const [assignedCuppers, setAssignedCuppers] = useState<Array<{
+    id: string
+    full_name: string
+    email: string
+  }>>([])
+  const [cuppersAssigned, setCuppersAssigned] = useState(false)
 
   // Unique values for filters
   const [origins, setOrigins] = useState<string[]>([])
@@ -235,31 +245,6 @@ export default function SamplesPage() {
   const handleSampleCreated = (trackingNumber: string) => {
     setDialogOpen(false)
     loadSamples()
-  }
-
-  const handleSelectAll = (checked: boolean) => {
-    if (checked) {
-      const allSampleIds = new Set(samples.map(s => s.id))
-      setSelectedSamples(allSampleIds)
-      setSelectedQrCodes(allSampleIds) // Auto-select QR codes
-    } else {
-      setSelectedSamples(new Set())
-      setSelectedQrCodes(new Set())
-    }
-  }
-
-  const handleSelectSample = (sampleId: string, checked: boolean) => {
-    const newSelected = new Set(selectedSamples)
-    const newQrCodes = new Set(selectedQrCodes)
-    if (checked) {
-      newSelected.add(sampleId)
-      newQrCodes.add(sampleId) // Auto-select QR code
-    } else {
-      newSelected.delete(sampleId)
-      newQrCodes.delete(sampleId) // Remove QR code selection
-    }
-    setSelectedSamples(newSelected)
-    setSelectedQrCodes(newQrCodes)
   }
 
   const handleToggleQrCode = (sampleId: string, checked: boolean) => {
@@ -384,35 +369,54 @@ export default function SamplesPage() {
     setShowTinLabelDialog(true)
   }
 
-  const handleBulkAssign = async () => {
-    // TODO: Add a dialog to select the cupper
-    // For now, just show a placeholder
-    const assigned_to = prompt('Enter cupper user ID (temporary - will be replaced with proper dialog):')
-    if (!assigned_to) return
-
-    try {
-      const response = await fetch('/api/samples/bulk/assign', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          sample_ids: Array.from(selectedSamples),
-          assigned_to
-        })
-      })
-
-      if (response.ok) {
-        const data = await response.json()
-        alert(data.message)
-        loadSamples() // Reload to show updated assignments
-        setSelectedSamples(new Set()) // Clear selection
-      } else {
-        const error = await response.json()
-        alert(`Error: ${error.error}`)
-      }
-    } catch (error) {
-      console.error('Error assigning samples:', error)
-      alert('Failed to assign samples')
+  const handleBulkAssign = () => {
+    if (selectedSamples.size === 0) {
+      alert('Please select at least one sample')
+      return
     }
+    setShowAssignCuppersDialog(true)
+  }
+
+  const handleCuppersAssigned = (cupperIds: string[], cuppers: Array<{ id: string; full_name: string; email: string }>) => {
+    setAssignedCuppers(cuppers)
+    setCuppersAssigned(true)
+    console.log('Cuppers assigned:', cuppers)
+
+    // Show success message
+    const cupperNames = cuppers.map(c => c.full_name).join(', ')
+    alert(`Successfully assigned ${cuppers.length} cupper${cuppers.length !== 1 ? 's' : ''} to ${selectedSamples.size} sample${selectedSamples.size !== 1 ? 's' : ''}:\n\n${cupperNames}`)
+  }
+
+  // Reset cupper assignment when sample selection changes
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const allSampleIds = new Set(samples.map(s => s.id))
+      setSelectedSamples(allSampleIds)
+      setSelectedQrCodes(allSampleIds) // Auto-select QR codes
+    } else {
+      setSelectedSamples(new Set())
+      setSelectedQrCodes(new Set())
+    }
+    // Reset cupper assignment
+    setAssignedCuppers([])
+    setCuppersAssigned(false)
+  }
+
+  const handleSelectSample = (sampleId: string, checked: boolean) => {
+    const newSelected = new Set(selectedSamples)
+    const newQrCodes = new Set(selectedQrCodes)
+    if (checked) {
+      newSelected.add(sampleId)
+      newQrCodes.add(sampleId) // Auto-select QR code
+    } else {
+      newSelected.delete(sampleId)
+      newQrCodes.delete(sampleId) // Remove QR code selection
+    }
+    setSelectedSamples(newSelected)
+    setSelectedQrCodes(newQrCodes)
+    // Reset cupper assignment when selection changes
+    setAssignedCuppers([])
+    setCuppersAssigned(false)
   }
 
   const handleDeleteSample = async (sample: Sample) => {
@@ -601,6 +605,32 @@ export default function SamplesPage() {
                 <DropdownMenuContent align="end">
                   <DropdownMenuLabel>Bulk Actions</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+
+                  {/* Cupper Assignment - Priority Action */}
+                  <DropdownMenuItem onClick={handleBulkAssign}>
+                    <Users className="h-4 w-4 mr-2" />
+                    {cuppersAssigned
+                      ? `Reassign Cuppers (${assignedCuppers.length} assigned)`
+                      : 'Assign Cuppers'}
+                  </DropdownMenuItem>
+
+                  {/* Print Actions - Only shown after cuppers assigned */}
+                  {cuppersAssigned && (
+                    <>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleBulkPrintCuppingCards}>
+                        <FileText className="h-4 w-4 mr-2" />
+                        Print Cupping Cards
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={handleBulkPrintQRTable}>
+                        <QrCode className="h-4 w-4 mr-2" />
+                        Print QR Table (Thermal)
+                      </DropdownMenuItem>
+                    </>
+                  )}
+
+                  {/* Other Print Actions */}
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={handleBulkExport}>
                     <Download className="h-4 w-4 mr-2" />
                     Export to Excel
@@ -613,18 +643,8 @@ export default function SamplesPage() {
                     <Printer className="h-4 w-4 mr-2" />
                     Print Bag Sleeves (6 per A4)
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleBulkPrintQRTable}>
-                    <QrCode className="h-4 w-4 mr-2" />
-                    Print QR Table (Thermal)
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleBulkPrintCuppingCards}>
-                    <FileText className="h-4 w-4 mr-2" />
-                    Print Cupping Cards
-                  </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleBulkAssign}>
-                    <Users className="h-4 w-4 mr-2" />
-                    Assign to Cupper
-                  </DropdownMenuItem>
+
+                  {/* Admin Actions */}
                   {isGlobalAdmin && (
                     <>
                       <DropdownMenuSeparator />
@@ -960,6 +980,14 @@ export default function SamplesPage() {
         open={showCuppingCardsDialog}
         onOpenChange={setShowCuppingCardsDialog}
         samples={samples.filter((s) => selectedSamples.has(s.id))}
+      />
+
+      {/* Assign Cuppers Dialog */}
+      <AssignCuppersDialog
+        open={showAssignCuppersDialog}
+        onOpenChange={setShowAssignCuppersDialog}
+        sampleCount={selectedSamples.size}
+        onAssign={handleCuppersAssigned}
       />
     </>
   )
