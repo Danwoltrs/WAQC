@@ -21,6 +21,18 @@ const supabaseAdmin = createClient(
 
 export async function POST(request: NextRequest) {
   try {
+    // Get the current user's session
+    const authHeader = request.headers.get('authorization')
+    const token = authHeader?.replace('Bearer ', '')
+
+    let currentUserId: string | null = null
+    if (token) {
+      const { data: { user }, error: authError } = await supabaseAdmin.auth.getUser(token)
+      if (!authError && user) {
+        currentUserId = user.id
+      }
+    }
+
     const body = await request.json()
     const { email, first_name, last_name, qc_role, laboratory_id, is_cupper, is_q_grader, qc_enabled } = body
 
@@ -70,6 +82,7 @@ export async function POST(request: NextRequest) {
       invitation_token: invitationToken,
       expires_at: expiresAt.toISOString(),
       status: 'pending',
+      invited_by: currentUserId,
     })
 
     if (inviteError) {

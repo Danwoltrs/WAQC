@@ -315,10 +315,16 @@ export function UserManagementPanel() {
 
     setActionLoading(true)
     try {
+      // Get current session for authentication
+      const { data: { session } } = await supabase.auth.getSession()
+
       // Call API endpoint to send invitation email
       const response = await fetch('/api/users/invite', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+        },
         body: JSON.stringify(inviteForm),
       })
 
