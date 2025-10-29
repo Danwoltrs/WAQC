@@ -2,7 +2,7 @@
   "master": {
     "tasks": [
       {
-        "id": "1",
+        "id": 1,
         "title": "Extend Database Schema with Phase 2 Tables",
         "description": "Create new database migration to add all Phase 2 required tables including defect_definitions, taint_fault_definitions, cupping_scale_configs, storage_positions, and certificate_number_configs tables",
         "details": "Create database/migrations/003_phase2_schema.sql file. Add tables: defect_definitions (client_id, defect_name, point_value, category, origin), taint_fault_definitions (origin, type, name, severity_levels), cupping_scale_configs (client_id, quality_id, scale_type, increment, min_score), cupping_attribute_definitions (client_id, quality_id, attribute_name, required), storage_positions (lab_id, shelf, column, row, capacity_per_position, current_samples), certificate_number_configs (client_id, format_pattern), quality_parameters (flexible parameter definitions), and 15+ other tables from PRD requirements. Include proper foreign key constraints, indexes, and RLS policies.\n<info added on 2025-10-08T18:22:46.435Z>\nI'll analyze the codebase to understand the current implementation and provide context-aware task update information.Migration file successfully created with comprehensive Phase 2 schema implementation. File contains 969 lines including 27 new tables covering all major Phase 2 requirements: client-specific defect definitions, origin-based taint/fault configurations, flexible cupping scale systems, complete storage management infrastructure, certificate tracking and delivery systems, quality parameter templates, roast profile management, sample transfer capabilities, notification systems, lab capability definitions, pricing structures, and API integration support. Implementation includes 5 new enum types for data consistency, 61 RLS policies providing role-based security controls, comprehensive indexing for performance optimization, and helper functions for common operations. All tables follow established naming conventions and foreign key relationships from existing schema. Ready for deployment and testing.\n</info added on 2025-10-08T18:22:46.435Z>",
@@ -14,7 +14,7 @@
         "updatedAt": "2025-10-08T18:23:05.251Z"
       },
       {
-        "id": "2",
+        "id": 2,
         "title": "Update Existing Tables with Phase 2 Fields",
         "description": "Extend existing samples, quality_assessments, clients, and other tables with new Phase 2 fields including contract numbers, workflow stages, and client-specific configurations",
         "details": "Add to samples table: wolthers_contract_nr, exporter_contract_nr, buyer_contract_nr, roaster_contract_nr, ico_number, container_nr, sample_type, bags_quantity_mt, bag_count, processing_method, workflow_stage, assigned_to. Add to clients: notification_emails, certificate_delivery_timing, tracking_number_format. Add to quality_assessments: sample_size_grams, moisture_standard, defect_photos. Update laboratories with storage_layout, tax_region. Add proper indexes and constraints.\n<info added on 2025-10-08T18:27:49.228Z>\nI'll analyze the codebase to understand the current database structure and migration patterns before updating the task details.**IMPLEMENTATION COMPLETED - Migration 004_update_existing_tables.sql successfully created (270 lines)**\n\nSuccessfully extended all 4 target tables with comprehensive Phase 2 functionality:\n\n**SAMPLES TABLE ENHANCEMENTS:**\n- Added 12 new fields including all contract numbers (wolthers_contract_nr, exporter_contract_nr, buyer_contract_nr, roaster_contract_nr), ico_number, container_nr, sample_type enum, bags_quantity_mt, bag_count, processing_method, workflow_stage, and assigned_to\n- Implemented 10 optimized indexes for efficient querying on contract numbers, sample type, workflow stage\n- Added positive value constraints for bag quantities\n- Created workflow_stage validation trigger with proper state transitions (received → green_analysis → roasting → cupping → review → certified/rejected)\n\n**CLIENTS TABLE ENHANCEMENTS:**\n- Added notification_emails array for multi-recipient certificate delivery\n- Added certificate_delivery_timing enum (upon_approval, manual_request, scheduled)\n- Added tracking_number_format with flexible template support using placeholders: {lab}, {year}, {seq:05d}, {client_code}, {origin}\n\n**QUALITY_ASSESSMENTS TABLE ENHANCEMENTS:**\n- Added sample_size_grams with default 350g and validation constraint (100-1000g range)\n- Added moisture_standard enum supporting coffee_industry and iso_6673 standards\n- Added defect_photos array for storing Supabase storage URLs\n\n**LABORATORIES TABLE ENHANCEMENTS:**\n- Added storage_layout JSONB field for flexible shelf configuration\n- Added tax_region for regional tax calculations\n- Updated Santos HQ with actual 4-shelf layout configuration (343 positions, 14,406 sample capacity)\n\n**ADVANCED HELPER FUNCTIONS:**\n- Created generate_tracking_number() function with smart template processing and automatic sequence generation\n- Created validate_workflow_stage_transition() trigger function ensuring proper workflow progression\n\n**DATA MIGRATION & INTEGRITY:**\n- Migrated existing samples to appropriate workflow_stage based on current status\n- Set default sample_size_grams for existing quality assessments\n- Implemented comprehensive verification queries with assertion testing\n\n**ADDITIONAL FIX:**\n- Resolved syntax error in 003_phase2_schema.sql line 89: Replaced invalid UNIQUE constraint with proper partial unique indexes for taint_fault_definitions table ensuring proper constraint handling for both global and client-specific definitions.\n</info added on 2025-10-08T18:27:49.228Z>",
@@ -28,7 +28,7 @@
         "updatedAt": "2025-10-08T18:28:05.252Z"
       },
       {
-        "id": "3",
+        "id": 3,
         "title": "Create Sample Intake API Endpoints",
         "description": "Build RESTful API endpoints for sample management including creation, tracking number generation, quality spec assignment, and bulk operations",
         "details": "Create src/app/api/samples/route.ts with POST (create sample), GET (list with filters including Quality filter). Create src/app/api/samples/[id]/route.ts with GET, PATCH. Add src/app/api/samples/[id]/assign-storage/route.ts, src/app/api/samples/[id]/print-label/route.ts, src/app/api/samples/tracking-numbers/route.ts for client-specific format generation. Implement auto-detection logic for client/quality assignment. Support Dunkin format (B-12345-25), Ahold format (SAG-12345-25). Include proper validation, error handling, and RLS enforcement.\n<info added on 2025-10-08T18:32:50.996Z>\nI need to explore the project structure to understand the current implementation and provide an accurate update to the task details.**Implementation Status Update:**\n\nAll 5 planned API endpoints have been successfully implemented and are fully functional:\n\n1. **src/app/api/samples/route.ts** - Core samples endpoint with POST for sample creation using generate_tracking_number() database function and GET with comprehensive filtering (status, client_id, laboratory_id, origin, quality_spec_id, sample_type, workflow_stage) and pagination support\n\n2. **src/app/api/samples/[id]/route.ts** - Individual sample management with GET for retrieval and PATCH for updates with workflow stage validation and all Phase 2 field support\n\n3. **src/app/api/samples/[id]/assign-storage/route.ts** - Storage position assignment with capacity checking, laboratory validation, and storage_positions array management\n\n4. **src/app/api/samples/[id]/print-label/route.ts** - Label generation for 3cm x A4 pre-cut labels including QR code data with sample_id, tracking_number, and type fields\n\n5. **src/app/api/samples/tracking-numbers/route.ts** - Tracking number generation and validation supporting client-specific formats (Dunkin B-12345-25, Ahold SAG-12345-25) via database template function\n\n**Database Integration:**\n- Updated src/lib/supabase.ts with complete Phase 2 samples table schema including 12 new fields: wolthers_contract_nr, exporter_contract_nr, buyer_contract_nr, roaster_contract_nr, ico_number, container_nr, sample_type, bags_quantity_mt, bag_count, processing_method, workflow_stage, assigned_to\n- All endpoints utilize Supabase Auth validation and RLS enforcement through server-side client\n- Comprehensive error handling with proper HTTP status codes and detailed error messages\n\n**Security & Validation:**\n- Supabase Auth validation on all endpoints\n- Row-level security enforcement through server-side client\n- Input validation for required fields and positive number constraints\n- Workflow stage transition validation preventing invalid state changes\n\n**Auto-Detection Features:**\n- Quality specification auto-assignment based on client_id and origin matching\n- Client-specific tracking number format detection through database templates\n- Storage position capacity checking with automatic cleanup of previous assignments\n\nTask is complete with full feature coverage as specified in the original requirements.\n</info added on 2025-10-08T18:32:50.996Z>",
@@ -42,7 +42,7 @@
         "updatedAt": "2025-10-08T18:33:11.501Z"
       },
       {
-        "id": "4",
+        "id": 4,
         "title": "Build Multi-Step Sample Intake Form",
         "description": "Create comprehensive sample intake form with client auto-detection, quality assignment, and contract number tracking",
         "details": "Create src/components/samples/sample-intake-form.tsx with multi-step wizard: Basic Info (exporter autocomplete, buyer, roaster, origin, processing method, sample type), Tracking Numbers (all contract fields with validation), Quantity (M/T display priority, bag types), Sample Details (arrival date, photo upload, notes). Implement client auto-detection based on exporter/buyer names. Add quality specification auto-assignment. Include form state persistence to prevent data loss. Make responsive for desktop/tablet. Add real-time validation against client database.",
@@ -55,7 +55,7 @@
         "subtasks": []
       },
       {
-        "id": "5",
+        "id": 5,
         "title": "Implement Storage Management System",
         "description": "Build visual storage grid interface for Santos HQ lab with 72 positions supporting 42 samples per position (3,024 total capacity)",
         "details": "Create src/components/storage/storage-grid.tsx with visual representation of Santos HQ layout: Shelf 1 (6x3 front left), Shelf 2 (6x3 front right), Shelf 3 (4x3 back right), Shelf 4 (8x3 back left). Each position holds 3 stacks × 7 tins front/back = 42 samples. Implement drag-drop sample placement, real-time occupancy display, color coding by sample age (green <7 days, yellow 7-30, red >30). Add sample hover preview, search functionality, storage history tracking. Support for other lab configurations (Buenaventura, Guatemala, Peru) with flexible shelf layouts.",
@@ -68,7 +68,7 @@
         "subtasks": []
       },
       {
-        "id": "6",
+        "id": 6,
         "title": "Create Client-Specific Defect Configuration System",
         "description": "Build interface for lab managers to configure defects per client with custom names, point values, and primary/secondary categories",
         "details": "Create src/components/quality/defect-config-manager.tsx for lab managers and global managers to add/edit/remove defects per client. Support Brazil examples: Full black (1.0), Partial Black (0.5 moved from Category 2), Severe Broca (0.2). Allow custom defect names per client, configurable point values per origin, primary/secondary categorization. Include defect equivalency calculator for different sample sizes. Create src/app/api/defect-definitions/route.ts for CRUD operations. Add validation to prevent removal of defects in use.",
@@ -153,7 +153,7 @@
         ]
       },
       {
-        "id": "7",
+        "id": 7,
         "title": "Build Green Bean Analysis Interface",
         "description": "Create green bean quality assessment form with client-specific defects, dynamic screen sizes, and automatic out-of-spec warnings",
         "details": "Create src/components/assessments/green-bean-analysis.tsx with dynamic sections: Client-specific defect classification (based on quality spec), screen size analysis (show only needed screens like Pan 17/18), physical properties (moisture with Coffee Industry Standards vs ISO 6673). Include real-time compliance checking with red/yellow/green indicators. Add photo upload for severe defects, automatic defect equivalency calculation, override capability with justification. Auto-save every 30 seconds. Mobile/tablet optimized interface with calculator widget.",
@@ -166,7 +166,7 @@
         "subtasks": []
       },
       {
-        "id": "8",
+        "id": 8,
         "title": "Implement Roast Analysis Interface",
         "description": "Create roast profile recording interface with automatic date/time capture and quaker counting",
         "details": "Create src/components/assessments/roast-analysis.tsx with required fields: roast date/time (auto-captured), number of cups prepared. Optional fields: batch size, target/actual roast level (colorimeter or descriptive), roast time, first crack time, Agtron score. Quaker counting with increment/decrement buttons, photo upload, threshold indicators (<3 specialty, <8 Dunkin, configurable per client). Sample preparation tracking (cooling time, rest time, grind setting, cupping schedule). Integration with quality_assessments table or separate roast_profiles table.",
@@ -179,7 +179,7 @@
         "subtasks": []
       },
       {
-        "id": "9",
+        "id": 9,
         "title": "Build Quality Template Management System",
         "description": "Create comprehensive quality template builder with client-specific parameters and flexible attribute configuration",
         "details": "Create src/components/quality/template-builder.tsx for creating reusable quality templates. Support parameter configuration: screen size requirements (Pan, Peas 9-11, 12-20 or specific like 17/18), defect thresholds (primary/secondary), moisture content standards selection, cupping scale configuration (1-5, 1-7, 1-10), custom cupping attributes (add/remove Flavor, Aftertaste, Balance, etc.). Template management: library view, clone functionality, versioning, usage statistics. Create src/app/api/quality-templates/route.ts with full CRUD operations.",
@@ -292,7 +292,7 @@
         "updatedAt": "2025-10-13T14:54:32.136Z"
       },
       {
-        "id": "10",
+        "id": 10,
         "title": "Implement Origin-Specific Taints and Faults System",
         "description": "Build system for configuring taints and faults per origin with client-specific customization options",
         "details": "Create src/components/quality/taints-faults-config.tsx for lab managers to configure per-origin taints (Brazil: Harsh, Grassy/green, Woody, Past crop, Fruity, Dirty) and faults (Hard riado, Phenol rio, Fermented, Earthy, Moldy). Support client-specific customization of severity levels and point deductions. Create src/app/api/taint-fault-definitions/route.ts. Integration with cupping interface for defect recording. Version tracking for changes to taint/fault definitions.",
@@ -369,20 +369,107 @@
       {
         "id": "11",
         "title": "Create Digital Cupping Session Interface",
-        "description": "Build real-time collaborative cupping interface with client-specific scales and custom attributes",
-        "details": "Create src/components/cupping/digital-cupping-session.tsx with session setup wizard: sample selection, cupper assignment (min 2), session type, cupping form selection, scale configuration, attribute selection, privacy settings. Cupping interface with tabbed layout (sample nr or container nr titles), client-specific attributes, configurable scales (1-5, 1-7, 1-10), increment levels (0.25, 0.5, 1.0). Real-time collaboration with live score updates, discrepancy detection, automatic averaging to closest increment. Rich text notes, descriptor tags, finalize cupping (changes status to Under Review).",
-        "testStrategy": "Test real-time score synchronization, test discrepancy detection, test session management, test attribute customization, verify privacy settings",
-        "priority": "high",
-        "dependencies": [
-          "9",
-          "10",
-          "36"
-        ],
+        "description": "Build comprehensive cupping system with three input methods: OCR scanning (printed cards), real-time digital cupping interface, and future iOS app support. Support three session types: Calibration (digital only), Type Sample, and PSS/SS with quality validation.",
         "status": "in-progress",
-        "subtasks": []
+        "dependencies": [
+          9,
+          10,
+          36
+        ],
+        "priority": "high",
+        "details": "Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). Current progress: ✅ Cupper assignment dialog, ✅ Print cupping cards (thermal/A4), ✅ OCR scanning infrastructure, ⏳ Digital interface pending.",
+        "testStrategy": "Test OCR accuracy and score extraction from handwritten cards, test real-time collaboration and score synchronization in digital interface, test calibration session patterns (Square, Pyramid, Custom), test quality template validation for PSS/SS samples, test simultaneous cupping and grading workflows, verify certificate generation triggers",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Create cupping session setup wizard",
+            "description": "Build session creation wizard to configure session type, participants, samples, and input method preferences",
+            "dependencies": [],
+            "details": "Create src/components/cupping/cupping-session-wizard.tsx with multi-step form: 1) Session type selection (Calibration, Type Sample, PSS/SS), 2) Sample selection with validation, 3) Cupper assignment (min 2 for collaborative sessions), 4) Input method selection (Digital, OCR Cards, Mixed), 5) Session configuration (cup patterns for calibration, quality template validation settings). Handle session creation via API call to cupping_sessions table with proper metadata.",
+            "status": "pending",
+            "testStrategy": "Test session creation flow for all three session types, verify cupper assignment validation, test sample validation against session type requirements"
+          },
+          {
+            "id": 2,
+            "title": "Implement digital cupping interface core layout",
+            "description": "Create main digital cupping interface with tabbed sample layout and score input grid",
+            "dependencies": [
+              1
+            ],
+            "details": "Create src/components/cupping/digital-cupping-interface.tsx with tabbed layout showing sample numbers/container numbers as tab titles. Implement score input grid with client-specific attributes (loaded from quality templates), configurable scales (1-5, 1-7, 1-10), increment levels (0.25, 0.5, 1.0). Include rich text notes section, descriptor tag system, and session completion controls. Use existing cupping_scores table structure for data persistence.",
+            "status": "pending",
+            "testStrategy": "Test score input validation and persistence, test tab navigation between samples, verify attribute customization from quality templates"
+          },
+          {
+            "id": 3,
+            "title": "Build real-time collaboration system",
+            "description": "Implement live score synchronization between multiple cuppers using Supabase realtime",
+            "dependencies": [
+              2
+            ],
+            "details": "Implement Supabase realtime subscriptions for cupping_scores table to sync scores between participants. Create live score display with cupper identification, implement discrepancy detection (flag scores outside threshold ranges), add privacy toggle for hiding individual scores until session completion. Handle automatic score averaging to nearest increment level as specified in session configuration.",
+            "status": "pending",
+            "testStrategy": "Test real-time score synchronization between multiple browser sessions, test discrepancy detection accuracy, verify privacy controls and score revelation timing"
+          },
+          {
+            "id": 4,
+            "title": "Create calibration session interface",
+            "description": "Build specialized interface for calibration sessions with cup pattern displays",
+            "dependencies": [
+              2
+            ],
+            "details": "Create src/components/cupping/calibration-session-interface.tsx with support for cup patterns: Square (2x2), Pyramid (triangular arrangement), Custom (2:2:3:3 or user-defined). Display visual cup layout guides, handle multiple rounds per session, focus on cupper alignment rather than sample evaluation. No certificate generation - sessions are for training and calibration purposes only.",
+            "status": "pending",
+            "testStrategy": "Test cup pattern rendering and layout accuracy, test multi-round session management, verify calibration-specific scoring workflows"
+          },
+          {
+            "id": 5,
+            "title": "Implement quality template validation for PSS/SS",
+            "description": "Build validation system to check cupping scores against quality template requirements",
+            "dependencies": [
+              2
+            ],
+            "details": "Create validation logic in src/lib/cupping/quality-validation.ts to check PSS/SS sample scores against quality template thresholds. Validate required attributes are scored, check min/max scale values, flag out-of-spec results. Integrate with existing quality_specifications and quality_templates tables. Auto-generate pass/fail status for certificate generation workflow.",
+            "status": "pending",
+            "testStrategy": "Test validation accuracy against various quality templates, test threshold checking for different attribute scales, verify integration with certificate generation workflow"
+          },
+          {
+            "id": 6,
+            "title": "Create session management and coordination",
+            "description": "Build system to coordinate simultaneous cupping and grading workflows on same samples",
+            "dependencies": [
+              3
+            ],
+            "details": "Implement session coordination logic allowing parallel workflows: one user cupping (any method), another user grading (screen size, visual defects). Both workflows update same sample record in coordination. Create status tracking system to ensure both processes complete before certificate generation for PSS/SS samples. Update sample status accordingly throughout process.",
+            "status": "pending",
+            "testStrategy": "Test parallel workflow coordination, verify sample status updates from multiple concurrent processes, test completion synchronization for certificate triggering"
+          },
+          {
+            "id": 7,
+            "title": "Enhance OCR workflow integration",
+            "description": "Improve OCR card processing workflow to integrate with new session types and validation",
+            "dependencies": [
+              5
+            ],
+            "details": "Update existing OCR scanning components (src/components/cupping/scan-cupping-cards-dialog.tsx) to integrate with new session management system. Route OCR results through quality validation for PSS/SS samples, handle session type determination from scanned cards, improve cupper identification from handwritten names on cards using fuzzy matching against profiles table.",
+            "status": "pending",
+            "testStrategy": "Test OCR integration with session management, test cupper name recognition accuracy, verify quality validation routing for OCR-scanned PSS/SS samples"
+          },
+          {
+            "id": 8,
+            "title": "Create session history and reporting",
+            "description": "Build interface to view completed cupping sessions with score summaries and reports",
+            "dependencies": [
+              6
+            ],
+            "details": "Create src/components/cupping/session-history.tsx to display completed sessions with filtering by date range, session type, cuppers, samples. Show session summaries with average scores, discrepancy reports, participant statistics. For Type Sample sessions, generate basic cupping reports. Link to certificate generation for completed PSS/SS sessions.",
+            "status": "pending",
+            "testStrategy": "Test session filtering and search functionality, verify score summaries and calculations, test report generation for different session types"
+          }
+        ]
       },
       {
-        "id": "12",
+        "id": 12,
         "title": "Build Cupping Session Management API",
         "description": "Create RESTful API endpoints for cupping session creation, score submission, and real-time collaboration",
         "details": "Create src/app/api/cupping/sessions/route.ts with POST (create session), GET (list sessions). Create src/app/api/cupping/sessions/[id]/route.ts with GET, PATCH. Add src/app/api/cupping/sessions/[id]/scores/route.ts for score submission/retrieval with automatic averaging. Implement real-time subscriptions using Supabase Realtime for live score updates. Support discrepancy detection with configurable thresholds per client/quality. Include session finalization logic that updates sample status to 'under_review'.",
@@ -395,7 +482,7 @@
         "subtasks": []
       },
       {
-        "id": "13",
+        "id": 13,
         "title": "Implement Certificate Generation Engine",
         "description": "Build automated PDF certificate generation with client-specific formats and country flag branding",
         "details": "Create src/lib/certificate-generator.ts using react-pdf or similar. Support client-specific certificate number formats (CERT-BRA-2025-0001, CA-25-001). Include lab country flag branding (Brazil for Brazil lab, Peru for Peru lab). Generate professional PDF layout with Wolthers branding, green color scheme. Sections: header (logo, lab info, cert number), sample details (all contract numbers, tracking info), quality assessment results (screen distribution, defects), cupping results (aggregate/average scores to closest increment), signatures (digital signature, QR code, auth code). Multi-language support (EN, PT, ES). Create src/app/api/certificates/generate/route.ts.",
@@ -409,7 +496,7 @@
         "subtasks": []
       },
       {
-        "id": "14",
+        "id": 14,
         "title": "Create Certificate Distribution System",
         "description": "Build email delivery system with client-specific timing preferences and download portal",
         "details": "Create src/lib/certificate-mailer.ts for email delivery with client-configurable timing (end of day vs batch by batch). Email templates with Wolthers branding, delivery tracking (sent, opened, bounced), retry logic. Create src/components/certificates/certificate-portal.tsx for client dashboard with searchable table, filters (date range, tracking number, origin, status), download buttons (PDF, Excel), bulk download (ZIP), certificate preview modal. Create src/app/api/certificates/[id]/pdf/route.ts, src/app/api/certificates/verify/route.ts for verification.",
@@ -422,7 +509,7 @@
         "subtasks": []
       },
       {
-        "id": "15",
+        "id": 15,
         "title": "Build Sample Tracking Dashboard",
         "description": "Create comprehensive sample tracking interface with Quality filter and all contract number fields",
         "details": "Create src/components/samples/sample-tracking-dashboard.tsx with searchable table/grid view. Filters: status, date range, client/exporter, importer, Quality (between Client and Importer), laboratory location, sample type. Sample detail view with complete timeline (received → assessment → cupping → certificate), storage location, quality specification, assessment results, certificates, activity log, all contract numbers. Bulk actions: Excel export, print labels (3cm x A4 for tins), print QR code table for cupping (thermal printer), move to storage, assign to cupper. Mobile-responsive with color-coded status indicators.",
@@ -435,7 +522,7 @@
         "subtasks": []
       },
       {
-        "id": "16",
+        "id": 16,
         "title": "Implement QR Code and Label Printing System",
         "description": "Build printing system for sample labels and cupping QR code tables with thermal printer support",
         "details": "Create src/lib/label-printer.ts and src/components/printing/label-print-dialog.tsx for 3cm height x A4 width pre-cut labels containing: Exporter, Quality, Certificate Nr, Date, QR Code. Create src/components/printing/qr-table-print.tsx for thermal printer QR code tables with: Date received, Client, Quality, Sample nr (PSS) or ICO nr (SS), Contract nr (user selectable: Wolthers, buyers, sellers), optional supplier name toggle. Include 4 rows for cupper names, columns for Frag/Arom/Body/Acid/Swtn/Bala/Fini or custom attributes, Taints and Faults columns. Create src/app/api/samples/[id]/print-label/route.ts and print-qr-table/route.ts.",
@@ -448,7 +535,7 @@
         "subtasks": []
       },
       {
-        "id": "17",
+        "id": 17,
         "title": "Create Client Quality Assignment Interface",
         "description": "Build interface for assigning and customizing quality specifications per client with inheritance system",
         "details": "Create src/components/quality/client-quality-assignment.tsx for sales managers to assign quality specs to clients. Support client type classification (Exporter/Coop, Buyer/Importer, Importer/Roaster), origin specification (country, region, micro-lot), processing method, sample type (PSS, SS, Type). Quality inheritance: Global Template → Client Template → Sample-Specific with override capability and justification tracking. Bulk import from CSV/Excel, quality library per client grouped by origin/processing/sample type. Create src/app/api/client-qualities/route.ts with full CRUD operations.",
@@ -461,7 +548,7 @@
         "subtasks": []
       },
       {
-        "id": "18",
+        "id": 18,
         "title": "Implement Laboratory Configuration System",
         "description": "Build lab creation wizard with flexible storage configuration and pricing management",
         "details": "Create src/components/admin/lab-configuration-wizard.tsx for global admins to configure new laboratories. Lab identification (name, location, timezone, contact info, lab code), capabilities (services offered, equipment, staff count, daily capacity), flexible storage configuration (shelves, columns/rows per shelf, position layout, samples per position, naming convention). Financial settings with per-client pricing (0.35-1 USD c/lb or USD per sample), third party lab fees (20 USD per sample), invoice numbering, tax information (BVI for own labs). Create src/app/api/laboratories/route.ts with configuration management.",
@@ -474,7 +561,7 @@
         "subtasks": []
       },
       {
-        "id": "19",
+        "id": 19,
         "title": "Build Cross-Lab Sample Transfer System",
         "description": "Create sample transfer management system for moving samples between laboratories",
         "details": "Create src/components/samples/sample-transfer.tsx with transfer request system: sample selection, destination lab choice, reason selection (specialized equipment, capacity, client preference), estimated arrival, special handling instructions. Transfer approval workflow with destination lab approval/rejection, transfer completion tracking (shipped with tracking number, received, storage location update). Transfer history timeline, custody chain for audit, current location visibility. Create src/app/api/sample-transfers/route.ts for transfer management. Update sample ownership and tracking.",
@@ -487,7 +574,7 @@
         "subtasks": []
       },
       {
-        "id": "20",
+        "id": 20,
         "title": "Create Notifications and Activity Feed System",
         "description": "Build comprehensive notification system with real-time activity feed for laboratory coordination",
         "details": "Create src/components/notifications/notification-center.tsx in right sidebar with notification types: sample-related (assigned, ready for cupping, approaching deadline, out of spec, storage capacity warnings), cupping-related (session invitations, starting reminders, score discrepancies, completion), certificate-related (generated, delivery failed, verification requested), administrative (access requests, new users, maintenance). Implement notification delivery via in-app (right sidebar), email digest (daily/real-time preference), browser push (opt-in). Create src/components/layout/activity-feed.tsx with real-time updates via Supabase subscriptions, time grouping, user avatars, clickable navigation.",
@@ -500,7 +587,7 @@
         "subtasks": []
       },
       {
-        "id": "21",
+        "id": 21,
         "title": "Implement Sample Analytics Dashboard",
         "description": "Build comprehensive analytics dashboard for sample processing performance and quality trends",
         "status": "pending",
@@ -610,7 +697,7 @@
         ]
       },
       {
-        "id": "22",
+        "id": 22,
         "title": "Build Quality Trends Analysis System",
         "description": "Create quality trends analysis with comparative metrics across origins and suppliers",
         "details": "Create src/components/analytics/quality-trends-analysis.tsx with quality metrics: average cupping scores by origin country, processing method, supplier/exporter, time period. Defect trends over time (client-specific defects), screen size consistency, moisture compliance rates. Comparative analysis: side-by-side origin comparison, supplier performance ranking, seasonal quality variations, year-over-year trends. Visualizations: multi-line charts for comparisons, box plots for score distributions, radar charts for flavor profiles. Integration with existing Sankey diagrams for half/one-way flow (buyers from traders like Nespresso > Blaser > Nespresso).",
@@ -623,7 +710,7 @@
         "subtasks": []
       },
       {
-        "id": "23",
+        "id": 23,
         "title": "Create API Integration System",
         "description": "Build RESTful API endpoints for external system integration with authentication and rate limiting",
         "details": "Create comprehensive API system: src/app/api/external/ with endpoints for GET /api/certificates/:id (retrieve certificate data), GET /api/certificates/:id/pdf (download PDF), POST /api/certificates/verify (verify authenticity). Add API key management in src/components/admin/api-key-manager.tsx, rate limiting (100 requests/minute per user), webhook support for real-time notifications. Create src/lib/api-auth.ts for API authentication, input sanitization, CSRF protection. Document API with OpenAPI specification. Include audit logging for all external API access.",
@@ -636,7 +723,7 @@
         "subtasks": []
       },
       {
-        "id": "24",
+        "id": 24,
         "title": "Implement Enhanced Security and Audit System",
         "description": "Build comprehensive security enhancements including audit logging and data protection",
         "details": "Create src/lib/audit-logger.ts for logging all data modifications (defect config changes, attribute modifications, quality template updates, sample status changes). Implement enhanced input sanitization for contract number fields, file upload validation (type, size limits), encrypted storage for sensitive client data. Create src/lib/security.ts with CSRF token protection, secure QR code generation with tamper detection, regular security audit tools. Add src/components/admin/audit-log-viewer.tsx for viewing system audit trails with filtering and export capabilities.",
@@ -649,7 +736,7 @@
         "subtasks": []
       },
       {
-        "id": "25",
+        "id": 25,
         "title": "Optimize Performance and Add Mobile Enhancements",
         "description": "Implement performance optimizations and mobile/tablet enhancements for lab operations",
         "details": "Implement performance optimizations: pagination for sample lists (50 per page), localStorage caching for quality templates/defect definitions/client configs, lazy loading for sample galleries, debounced search inputs (300ms), database indexing for sample_tracking_number/client_id/status/created_at/quality columns. Virtual scrolling for storage grid with 3,024 samples capacity. Mobile/tablet enhancements: touch-optimized cupping interface, responsive sample intake form, tablet-specific storage grid interface, progressive enhancement for mobile features. Add service worker for offline capability preparation. Implement Redis caching strategy planning for Phase 3.",
@@ -663,7 +750,7 @@
         "subtasks": []
       },
       {
-        "id": "26",
+        "id": 26,
         "title": "Create Client Management System",
         "description": "Build comprehensive client management system with legacy integration, search capabilities, and client-specific configurations for quality control specifications.",
         "details": "Create src/components/clients/client-management-interface.tsx with advanced search functionality that queries trips.wolthers.com legacy tables directly via shared Supabase database. Implement client search with fuzzy matching (name, company, fantasy_name, email), auto-detection for sample intake workflow, and import capabilities from legacy system. Create src/components/clients/client-search-dialog.tsx for selecting existing clients during sample intake. Build src/components/clients/client-configuration-manager.tsx for managing quality specifications, defect configurations, email preferences, and notification settings per client. Create src/components/clients/client-auto-detection.tsx for intelligent client matching based on sample metadata. Enhance existing API endpoints: GET /api/clients/search with advanced filtering and sorting, POST /api/clients with validation and duplicate detection, PUT /api/clients/:id for updates. Add src/app/api/clients/search/route.ts specifically for legacy database searches using existing import endpoint pattern. Create src/components/clients/client-detail-view.tsx showing complete client profile, associated samples, quality specs, and performance metrics. Implement client-specific configuration inheritance system: Global Template → Client Template → Sample-Specific with override tracking. Add notification preference management (email timing, delivery methods, certificate formats). Support bulk client operations and CSV import/export functionality.",
@@ -841,7 +928,7 @@
         "updatedAt": "2025-10-21T18:54:59.636Z"
       },
       {
-        "id": "27",
+        "id": 27,
         "title": "Regenerate TypeScript types from Supabase database schema",
         "description": "Generate complete TypeScript type definitions from the current Supabase database schema to replace empty database.types.ts file and remove 'any' type workarounds in API endpoints.",
         "details": "Use the Supabase CLI command 'npx supabase gen types typescript --project-id=PROJECT_ID' to generate complete TypeScript types for all database tables including the new client_qualities fields (custom_name, is_active, notes) added in Migration 043. Replace the empty src/lib/database.types.ts file with the generated types. Update src/app/api/client-qualities/route.ts to remove the 'any' type workaround on line 100 (clientQualityData: any) and use proper ClientQualityInsert type. Verify all other API endpoints using Database types are working correctly. The generated types should include all tables from migrations 001-043 including samples, client_qualities, quality_templates, users, clients, laboratories, defect_definitions, taint_fault_definitions, cupping_sessions, cupping_scores, storage_positions, certificates, and all other Phase 2 tables. Ensure proper typing for relationships and join queries used in the codebase.",
@@ -855,7 +942,7 @@
         "subtasks": []
       },
       {
-        "id": "28",
+        "id": 28,
         "title": "Document Client Quality Custom Naming Feature Implementation",
         "description": "Create comprehensive documentation for the Client Quality Custom Naming feature that is currently live in production, including migration details, API endpoints, UI components, and database type limitations.",
         "details": "Create detailed documentation covering the complete Client Quality Custom Naming feature implementation: 1) Migration 043 analysis - document the new custom_name, is_active, and notes fields added to client_qualities table, performance indexes created (idx_client_qualities_client_id, idx_client_qualities_template_id, idx_client_qualities_active, idx_client_qualities_client_active), and enhanced RLS policies for role-based access control. 2) API endpoints documentation - document src/app/api/client-qualities/route.ts (GET with filtering by client_id/template_id/origin/is_active, POST for creating assignments with custom naming) and src/app/api/client-qualities/[id]/route.ts (GET, PATCH for updates, DELETE with usage validation). 3) UI component analysis - document src/components/clients/client-quality-manager.tsx functionality including the custom naming dialog, active/inactive toggle, template assignment workflow, and badge system for custom names. 4) Database integration - document the helper function get_client_quality_display_name() for effective name resolution and RLS policy implementation for quality managers and global admins. 5) Current limitations - document the temporary use of 'any' types in API endpoints due to database type regeneration needs (referencing task 27), particularly in client quality insertion and template cloning operations. Include code examples, field descriptions, and integration points with the existing quality template system.",
@@ -869,7 +956,7 @@
         "subtasks": []
       },
       {
-        "id": "29",
+        "id": 29,
         "title": "Fix Sample Display Issues: Quality Name and Importer Not Showing in Samples List",
         "description": "Resolve display issues in the samples list where quality specification names and importer information are not rendering correctly.",
         "details": "Investigate and fix the sample display issues in the samples tracking dashboard where quality names and importer fields are not showing. This involves: 1) Debugging the SQL queries in the samples list API to ensure proper JOIN operations with the quality_specifications and clients tables, 2) Verifying the database schema relationships between samples, quality_specifications, and clients tables, 3) Checking the frontend component rendering logic in src/components/samples/sample-tracking-dashboard.tsx to ensure quality and importer data is properly mapped and displayed, 4) Implementing proper null handling for cases where quality specs or importer data might be missing, 5) Adding loading states and error handling for failed data fetches, 6) Ensuring the Quality filter column is properly populated and functional. Review the existing queries in src/app/api/samples/route.ts to verify JOIN statements and data serialization. Check for any missing foreign key relationships or improper field mappings that could cause data not to display.",
@@ -884,7 +971,7 @@
         "updatedAt": "2025-10-22T15:09:09.277Z"
       },
       {
-        "id": "30",
+        "id": 30,
         "title": "Implement Per-Laboratory Starting Sequence Configuration",
         "description": "Enable admins to configure different starting sequence numbers for each laboratory when working with the same client",
         "details": "Created client_laboratory_config table to store lab-specific starting sequences. Updated generate_tracking_number() function to check lab-specific configs first before falling back to global client starting_sequence. Built API endpoints (GET/POST/DELETE /api/clients/[id]/lab-configs) and UI component in client edit screen. Each lab maintains independent continuous sequences per client across all years. Example: Brazil starts at 8900, Colombia at 5000, Guatemala at 2450 for the same client.",
@@ -899,7 +986,7 @@
         "updatedAt": "2025-10-23T18:20:32.419Z"
       },
       {
-        "id": "31",
+        "id": 31,
         "title": "Implement Sample Bag and Tin Sleeve Label Printing System",
         "description": "Build two new label printing templates: tin sleeves (4cm height) and sample bag sleeves (4 per A4) with bulk printing, logo integration, and comprehensive sample information display including enhanced tin sleeve specifications with packaging details and bulk handling. Both labels must display client quality name (when exists) followed by full quality description below it.",
         "status": "done",
@@ -1019,7 +1106,7 @@
         "updatedAt": "2025-10-23T19:26:54.972Z"
       },
       {
-        "id": "32",
+        "id": 32,
         "title": "Fix Tin Sleeve Label Layout Issues and Missing Data",
         "description": "Resolve four critical issues with tin sleeve label layout: move tracking number to left side with date below it, display Wolthers logo which is currently not showing, fix bags display showing N/A instead of actual count, and show complete quality description including client quality name and processing method.",
         "details": "Fix tin sleeve label layout and data display issues in src/components/pdf/tin-sleeve-label.tsx and src/app/api/samples/[id]/print-tin-sleeve/route.tsx: 1) **Layout Fix**: Modify the header row structure to move tracking number to left side with date below it (currently tracking number is on right side). Update styles.headerRow to vertical layout and adjust positioning. 2) **Logo Display Fix**: Investigate why Wolthers logo (wolthers-logo-black.svg) is not showing on labels. The logo_url is being set correctly with base64 encoding, check if there are SVG rendering issues in @react-pdf/renderer. Consider converting SVG to PNG for better PDF compatibility. 3) **Bags Display Fix**: Fix the bags_display logic that's showing 'N/A' instead of actual bag counts. Update the bagsDisplay calculation in line 84-89 to properly handle cases where sample.bags or sample.bag_weight_kg exist but are not being displayed correctly. Ensure the query includes all necessary bag-related fields. 4) **Complete Quality Description**: Update the quality description display to show client quality name (custom_name from client_qualities) prominently followed by the full quality specification including processing method. Currently showing truncated descriptions like 'Alfenas Dulce - AD' instead of complete specs. Update the SQL query to include processing_method and other quality specification details from the quality_specifications table via client_qualities relationship.",
@@ -1032,7 +1119,7 @@
         "subtasks": []
       },
       {
-        "id": "33",
+        "id": 33,
         "title": "Fix QR Code URL for Sample Tracking",
         "description": "Verify and fix the QR code URL generation on tin sleeve labels to ensure they point to the correct sample tracking page URL.",
         "details": "Current QR codes are being generated using the `getSampleTrackingUrl` function in `src/lib/qr-code.ts` which creates URLs in the format `${baseUrl}/samples/${trackingNumber}`. However, the sample detail page is actually located at `/samples/[id]` not `/samples/[trackingNumber]`. Investigation and testing is needed to determine if the URL should resolve to the tracking number or the sample ID. Fix the QR code URL generation to either: 1) Update the route structure to support tracking number lookup at `/samples/[trackingNumber]`, or 2) Modify `getSampleTrackingUrl` to generate URLs that use the sample ID instead. Also verify that the QR codes on tin sleeve labels (printed via `/api/samples/[id]/print-tin-sleeve` and `/api/samples/bulk/print-tin-sleeves`) resolve to the correct sample detail page when scanned. Test the QR code scanning functionality end-to-end to ensure proper user experience.",
@@ -1046,7 +1133,7 @@
         "subtasks": []
       },
       {
-        "id": "34",
+        "id": 34,
         "title": "Fix Cross-Browser Authentication Issues and Improve Page Load Performance",
         "description": "Investigate and resolve authentication failures and slow page load times across Chrome, Firefox, Safari, and Edge browsers.",
         "status": "done",
@@ -1119,7 +1206,7 @@
         "updatedAt": "2025-10-27T12:50:06.134Z"
       },
       {
-        "id": "35",
+        "id": 35,
         "title": "Add tin label size selection dialog and centered layout",
         "description": "Implement a size selection dialog for tin labels and center the label content for better visual appearance on small tins.",
         "details": "1. Update the button text in src/app/samples/page.tsx line 600-603 from 'Print Tin Sleeves (4cm)' to 'Tin Label'. 2. Create a new dialog component src/components/samples/tin-label-size-dialog.tsx with radio button options for '4cm height' and '2.5cm height' using shadcn/ui Dialog and RadioGroup components. 3. Modify handleBulkPrintTinSleeves function (line 346) to open the dialog instead of directly generating PDF. 4. Create a new variant of tin-sleeve-label.tsx component that supports both 4cm (113.39pt) and 2.5cm (70.87pt) heights with responsive content scaling. 5. Update the labelContainer styling to use 'justify-center' instead of 'justify-start' for centered content alignment. 6. Implement size-specific PDF generation logic that adjusts dimensions, font sizes, and spacing proportionally. 7. Add proper TypeScript interfaces for the new size options and dialog props. 8. Ensure the dialog follows the existing design system with proper theming support for light/dark modes using the established color palette.",
@@ -1195,7 +1282,7 @@
         "updatedAt": "2025-10-27T12:21:44.316Z"
       },
       {
-        "id": "36",
+        "id": 36,
         "title": "Create Comprehensive User Management System with Role-Based Access Control",
         "description": "Build a complete user management interface with hierarchical permission system, role-based access control, per-lab RLS field access, cupper designation functionality, and user invitation system for external accounts.",
         "status": "done",
@@ -1281,7 +1368,9 @@
       "completedCount": 22,
       "tags": [
         "master"
-      ]
+      ],
+      "created": "2025-10-29T18:52:33.498Z",
+      "description": "Tasks for master context"
     }
   }
 }

@@ -425,23 +425,46 @@ export function PrintCuppingCardsDialog({
             </div>
           </div>
 
-          {/* Number of Cuppers */}
-          <div className="space-y-2">
-            <Label htmlFor="num-cuppers">Number of Cuppers (Rows on card)</Label>
-            <Select value={numCuppers} onValueChange={setNumCuppers} disabled={isReadyForDownload}>
-              <SelectTrigger id="num-cuppers" disabled={isReadyForDownload}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="3">3 Cuppers</SelectItem>
-                <SelectItem value="4">4 Cuppers</SelectItem>
-                <SelectItem value="5">5 Cuppers</SelectItem>
-                <SelectItem value="6">6 Cuppers</SelectItem>
-                <SelectItem value="7">7 Cuppers</SelectItem>
-                <SelectItem value="8">8 Cuppers</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
+          {/* Number of Cuppers - Only show if no cuppers are assigned */}
+          {assignedCuppers.length === 0 && (
+            <div className="space-y-2">
+              <Label htmlFor="num-cuppers">Number of Cuppers (Rows on card)</Label>
+              <Select value={numCuppers} onValueChange={setNumCuppers} disabled={isReadyForDownload}>
+                <SelectTrigger id="num-cuppers" disabled={isReadyForDownload}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="3">3 Cuppers</SelectItem>
+                  <SelectItem value="4">4 Cuppers</SelectItem>
+                  <SelectItem value="5">5 Cuppers</SelectItem>
+                  <SelectItem value="6">6 Cuppers</SelectItem>
+                  <SelectItem value="7">7 Cuppers</SelectItem>
+                  <SelectItem value="8">8 Cuppers</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+
+          {/* Show assigned cuppers summary */}
+          {assignedCuppers.length > 0 && (
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold">
+                Assigned Cuppers: {assignedCuppers.length}
+              </Label>
+              <div className="rounded-md border p-3 text-sm">
+                <div className="flex flex-wrap gap-2">
+                  {assignedCuppers.map((cupper, index) => (
+                    <span
+                      key={cupper.id}
+                      className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
+                    >
+                      {cupper.full_name.split(' ')[0]}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Output Format */}
           <div className="space-y-2">

@@ -269,12 +269,16 @@ export const ThermalCuppingCardA4Document: React.FC<
   const cardsPerPage = 8
   const pages: ThermalCuppingCardData[][] = []
   for (let i = 0; i < validatedCards.length; i += cardsPerPage) {
-    pages.push(validatedCards.slice(i, i + cardsPerPage))
+    const pageCards = validatedCards.slice(i, i + cardsPerPage)
+    // Only add pages that have cards
+    if (pageCards.length > 0) {
+      pages.push(pageCards)
+    }
   }
 
   return (
     <Document>
-      {pages.map((pageCards, pageIndex) => (
+      {pages.filter(pageCards => pageCards.length > 0).map((pageCards, pageIndex) => (
         <Page key={pageIndex} size="A4" style={styles.page}>
           {/* Cutting Guides - 2x4 grid */}
           <Svg style={{ position: 'absolute', width: '100%', height: '100%' }}>
