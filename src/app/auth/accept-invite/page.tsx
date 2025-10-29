@@ -50,6 +50,12 @@ export default function AcceptInvitePage() {
       }
 
       // Check if invitation has expired
+      if (!data.expires_at) {
+        setError('Invalid invitation data')
+        setLoading(false)
+        return
+      }
+
       const expiresAt = new Date(data.expires_at)
       if (expiresAt < new Date()) {
         setError('This invitation has expired')
