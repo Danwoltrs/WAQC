@@ -21,6 +21,8 @@ interface Cupper {
   email: string
   laboratory_id?: string
   qc_role?: string
+  is_cupper?: boolean
+  is_q_grader?: boolean
 }
 
 interface AssignCuppersDialogProps {
@@ -49,12 +51,14 @@ export function AssignCuppersDialog({
   const loadCuppers = async () => {
     setLoading(true)
     try {
-      const response = await fetch('/api/profiles?role=lab_personnel&limit=50')
+      const response = await fetch('/api/cuppers')
       if (response.ok) {
         const data = await response.json()
-        setCuppers(data.profiles || [])
+        setCuppers(data.cuppers || [])
       } else {
-        console.error('Failed to load cuppers')
+        console.error('Failed to load cuppers:', response.status, response.statusText)
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Error details:', errorData)
       }
     } catch (error) {
       console.error('Error loading cuppers:', error)
@@ -142,9 +146,14 @@ export function AssignCuppersDialog({
                     <div className="flex-1">
                       <div className="flex items-center gap-2">
                         <span className="font-medium">{cupper.full_name}</span>
-                        {cupper.qc_role && (
+                        {cupper.is_q_grader && (
+                          <Badge variant="default" className="text-xs bg-primary">
+                            Q Grader
+                          </Badge>
+                        )}
+                        {cupper.is_cupper && !cupper.is_q_grader && (
                           <Badge variant="outline" className="text-xs">
-                            {cupper.qc_role.replace('_', ' ')}
+                            Cupper
                           </Badge>
                         )}
                       </div>
