@@ -97,7 +97,7 @@ export function UserManagementPanel() {
   const { profile } = useAuth()
   const [users, setUsers] = useState<Profile[]>([])
   const [laboratories, setLaboratories] = useState<Laboratory[]>([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -257,9 +257,10 @@ export function UserManagementPanel() {
         return
       }
 
-      alert('User updated successfully!')
       setEditDialogOpen(false)
-      fetchUsers()
+      // Refresh the user list to show updated data
+      await fetchUsers()
+      alert('User updated successfully!')
     } catch (error) {
       console.error('Error in handleUpdateUser:', error)
       alert('An error occurred. Please try again.')
@@ -332,24 +333,6 @@ export function UserManagementPanel() {
       user.qc_role?.toLowerCase().includes(searchLower)
     )
   })
-
-  const getRoleBadgeColor = (role: string): string => {
-    switch (role) {
-      case 'global_admin':
-        return 'bg-red-500 hover:bg-red-600'
-      case 'global_quality_admin':
-      case 'global_finance_admin':
-        return 'bg-orange-500 hover:bg-orange-600'
-      case 'lab_quality_manager':
-        return 'bg-blue-500 hover:bg-blue-600'
-      case 'lab_finance_manager':
-        return 'bg-indigo-500 hover:bg-indigo-600'
-      case 'lab_personnel':
-        return 'bg-green-500 hover:bg-green-600'
-      default:
-        return 'bg-gray-500 hover:bg-gray-600'
-    }
-  }
 
   if (!canManageUsers()) {
     return (
@@ -446,15 +429,15 @@ export function UserManagementPanel() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge className={getRoleBadgeColor(user.qc_role || '')}>
+                            <span className="text-sm">
                               {ROLE_LABELS[(user.qc_role as UserRole) || 'lab_personnel']}
-                            </Badge>
+                            </span>
                           </TableCell>
                           <TableCell>
                             {lab ? (
                               <div className="flex items-center gap-2">
                                 <Building2 className="h-3 w-3 text-muted-foreground" />
-                                <span className="text-sm">{lab.name}</span>
+                                <span className="text-sm">{lab.code}</span>
                               </div>
                             ) : (
                               <span className="text-sm text-muted-foreground">—</span>
