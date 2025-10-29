@@ -34,7 +34,6 @@ import {
   User,
   Mail,
   Calendar,
-  Clock,
   Shield,
   Building2,
   UserPlus,
@@ -44,7 +43,6 @@ import {
 } from 'lucide-react'
 import { supabase, type Database } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
-import { formatDistanceToNow } from 'date-fns'
 
 type Profile = Database['public']['Tables']['profiles']['Row'] & {
   first_name?: string | null
@@ -97,7 +95,6 @@ export function UserManagementPanel() {
   const { profile } = useAuth()
   const [users, setUsers] = useState<Profile[]>([])
   const [laboratories, setLaboratories] = useState<Laboratory[]>([])
-  const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedUser, setSelectedUser] = useState<Profile | null>(null)
   const [editDialogOpen, setEditDialogOpen] = useState(false)
@@ -158,7 +155,6 @@ export function UserManagementPanel() {
   }
 
   const fetchUsers = async () => {
-    setLoading(true)
     try {
       let query = supabase.from('profiles').select('*').eq('qc_enabled', true)
 
@@ -177,8 +173,6 @@ export function UserManagementPanel() {
       setUsers(data as Profile[])
     } catch (error) {
       console.error('Error in fetchUsers:', error)
-    } finally {
-      setLoading(false)
     }
   }
 
@@ -379,12 +373,7 @@ export function UserManagementPanel() {
           </div>
 
           {/* Users Table */}
-          {loading ? (
-            <div className="flex items-center justify-center py-8">
-              <p className="text-muted-foreground">Loading users...</p>
-            </div>
-          ) : (
-            <div className="rounded-md border">
+          <div className="rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -393,7 +382,6 @@ export function UserManagementPanel() {
                     <TableHead>Role</TableHead>
                     <TableHead>Laboratory</TableHead>
                     <TableHead>Cupper</TableHead>
-                    <TableHead>Last Login</TableHead>
                     <TableHead>Created</TableHead>
                     <TableHead>Actions</TableHead>
                   </TableRow>
@@ -454,18 +442,6 @@ export function UserManagementPanel() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {user.last_login_at ? (
-                              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                                <Clock className="h-3 w-3" />
-                                {formatDistanceToNow(new Date(user.last_login_at), {
-                                  addSuffix: true,
-                                })}
-                              </div>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">Never</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
                             <div className="flex items-center gap-1 text-sm text-muted-foreground">
                               <Calendar className="h-3 w-3" />
                               {user.created_at
@@ -489,7 +465,6 @@ export function UserManagementPanel() {
                 </TableBody>
               </Table>
             </div>
-          )}
         </CardContent>
       </Card>
 
