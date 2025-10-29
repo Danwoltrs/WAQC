@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import { formatDistanceToNow } from 'date-fns'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -409,6 +410,7 @@ export function UserManagementPanel() {
                     <TableHead>QC Access</TableHead>
                     <TableHead>Q Grader</TableHead>
                     <TableHead>Created</TableHead>
+                    {profile?.qc_role === 'global_admin' && <TableHead>Last Login</TableHead>}
                     <TableHead>Actions</TableHead>
                   </TableRow>
                 </TableHeader>
@@ -489,6 +491,17 @@ export function UserManagementPanel() {
                                 : '—'}
                             </div>
                           </TableCell>
+                          {profile?.qc_role === 'global_admin' && (
+                            <TableCell>
+                              <span className="text-sm text-muted-foreground">
+                                {user.last_login_at
+                                  ? formatDistanceToNow(new Date(user.last_login_at), {
+                                      addSuffix: true,
+                                    })
+                                  : 'Never'}
+                              </span>
+                            </TableCell>
+                          )}
                           <TableCell>
                             <Button
                               variant="ghost"
