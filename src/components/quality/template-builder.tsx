@@ -1792,26 +1792,20 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 {taintFaultListExpanded && (
                 <div className="p-2">
                   {defectCount > 0 ? (
-                    // New simplified defects in 2-column grid
-                    <div className="grid grid-cols-2 gap-2">
+                    // New simplified defects in responsive grid
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-1.5">
                       {taintFaultConfiguration.defects
                         ?.filter(d => d.active)
                         .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
                         .map((defect) => (
-                          <div key={defect.name} className="flex flex-col gap-1 text-[11px] p-2 rounded border bg-card">
-                            <span className="font-medium">{defect.name}</span>
-                            <div className="flex flex-col gap-0.5 text-[10px] text-muted-foreground">
-                              <span>
-                                Taint: {defect.taint_range ? `${defect.taint_range.min}-${defect.taint_range.max}` : '-'}
-                              </span>
-                              <span>
-                                Fault: {defect.fault_range.min}-{defect.fault_range.max}
-                              </span>
-                              <div className="flex items-center gap-1 mt-0.5">
-                                <Badge variant="secondary" className="text-[9px] px-1 py-0">
-                                  Max: {defect.max_intensity}
-                                </Badge>
-                              </div>
+                          <div key={defect.name} className="flex flex-col gap-0.5 text-[10px] p-1.5 rounded border bg-card">
+                            <span className="font-medium text-[11px]">{defect.name}</span>
+                            <div className="flex flex-col gap-0 text-[9px] text-muted-foreground">
+                              <span>T: {defect.taint_range ? `${defect.taint_range.min}-${defect.taint_range.max}` : '-'}</span>
+                              <span>F: {defect.fault_range.min}-{defect.fault_range.max}</span>
+                              <Badge variant="secondary" className="text-[8px] px-1 py-0 mt-0.5 w-fit">
+                                Max: {defect.max_intensity}
+                              </Badge>
                             </div>
                           </div>
                         ))}
