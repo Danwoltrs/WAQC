@@ -21,7 +21,24 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Plus, X, Settings2, CheckCircle2, Copy } from 'lucide-react'
+import { Plus, X, Settings2, CheckCircle2, Copy, GripVertical } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from '@dnd-kit/core'
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import { ScaleBuilder } from './scale-builder'
 import {
   AttributeScaleType,
@@ -35,10 +52,227 @@ import {
 } from '@/types/cupping-templates'
 
 export interface AttributeWithScale {
+  id?: string // Unique ID for drag-and-drop
   attribute: string
   abbreviation?: string // Short form for cupping card printing (4-5 chars max)
   scale: AttributeScaleType
   validation_rule?: AttributeValidationRule
+}
+
+// Sortable Attribute Card Component
+interface SortableAttributeCardProps {
+  attr: AttributeWithScale
+  index: number
+  editingIndex: number | null
+  onRemove: () => void
+  onUpdate: (updates: Partial<AttributeWithScale>) => void
+  onToggleEdit: () => void
+  onDuplicate: () => void
+}
+
+function SortableAttributeCard({
+  attr,
+  index,
+  editingIndex,
+  onRemove,
+  onUpdate,
+  onToggleEdit,
+  onDuplicate,
+}: SortableAttributeCardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: attr.id || `attr-${index}` })
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+  }
+
+  return (
+    <Card ref={setNodeRef} style={style} className="relative">
+      {/* Drag Handle */}
+      <button
+        {...listeners}
+        {...attributes}
+        className="absolute top-2 left-2 text-muted-foreground hover:text-foreground transition-colors cursor-grab active:cursor-grabbing z-10"
+      >
+        <GripVertical className="h-4 w-4" />
+      </button>
+
+      {/* Remove Button */}
+      <button
+        onClick={onRemove}
+        className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors z-10"
+      >
+        <X className="h-3 w-3" />
+      </button>
+
+      <CardHeader className="pb-3 pl-8">
+        <div className="space-y-2">
+          <Input
+            value={attr.attribute}
+            onChange={(e) => onUpdate({ attribute: e.target.value })}
+            placeholder="Attribute name..."
+            className="h-8 text-sm font-medium pr-6"
+          />
+          <Input
+            value={attr.abbreviation || ''}
+            onChange={(e) => onUpdate({ abbreviation: e.target.value })}
+            placeholder="Abbr. (4-5 chars)"
+            maxLength={5}
+            className="h-7 text-xs"
+          />
+        </div>
+        <div className="flex items-center gap-2 mt-2">
+          <Badge variant="outline" className="text-xs">
+            {attr.scale.type === 'numeric' ? 'Numeric' : 'Wording'}
+          </Badge>
+          {attr.scale.type === 'numeric' ? (
+            <span className="text-xs text-muted-foreground">
+              {attr.scale.min}-{attr.scale.max} (step {attr.scale.increment})
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">
+              {attr.scale.options?.length || 0} options
+            </span>
+          )}
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        {/* Validation Rule */}
+        <div className="space-y-2 border-t pt-3">
+          <Label className="text-xs text-muted-foreground">Acceptable Range</Label>
+          <Select
+            value={attr.validation_rule?.type || 'none'}
+            onValueChange={(value) => {
+              if (value === 'none') {
+                onUpdate({ validation_rule: undefined })
+              } else {
+                const validValues = getScaleValidValues(attr.scale)
+                const minVal = validValues[Math.floor(validValues.length / 2)]
+                onUpdate({
+                  validation_rule: {
+                    type: value as 'minimum' | 'range',
+                    min_value: minVal,
+                    max_value: value === 'range' ? validValues[0] : undefined
+                  }
+                })
+              }
+            }}
+          >
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No Validation</SelectItem>
+              <SelectItem value="minimum">Minimum (≥)</SelectItem>
+              <SelectItem value="range">Range</SelectItem>
+            </SelectContent>
+          </Select>
+
+          {attr.validation_rule && (
+            <div className="space-y-2">
+              {/* Min Value */}
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">
+                  {attr.validation_rule.type === 'minimum' ? 'Minimum' : 'Min'}
+                </Label>
+                <Select
+                  value={attr.validation_rule.min_value.toString()}
+                  onValueChange={(value) => {
+                    onUpdate({
+                      validation_rule: {
+                        ...attr.validation_rule!,
+                        min_value: parseFloat(value)
+                      }
+                    })
+                  }}
+                >
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getScaleValidValues(attr.scale).map((val) => {
+                      const label = getScoreLabel(val, attr.scale)
+                      return (
+                        <SelectItem key={val} value={val.toString()}>
+                          {val}
+                          {label && attr.scale.type === 'wording' && ` (${label})`}
+                        </SelectItem>
+                      )
+                    })}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Max Value (only for range) */}
+              {attr.validation_rule.type === 'range' && (
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Max</Label>
+                  <Select
+                    value={attr.validation_rule.max_value?.toString() || ''}
+                    onValueChange={(value) => {
+                      onUpdate({
+                        validation_rule: {
+                          ...attr.validation_rule!,
+                          max_value: parseFloat(value)
+                        }
+                      })
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getScaleValidValues(attr.scale)
+                        .filter((val) => val > attr.validation_rule!.min_value)
+                        .map((val) => {
+                          const label = getScoreLabel(val, attr.scale)
+                          return (
+                            <SelectItem key={val} value={val.toString()}>
+                              {val}
+                              {label && attr.scale.type === 'wording' && ` (${label})`}
+                            </SelectItem>
+                          )
+                        })}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={onToggleEdit}
+            className="flex-1 h-8 text-xs"
+          >
+            <Settings2 className="h-3 w-3 mr-1" />
+            {editingIndex === index ? 'Hide' : 'Edit'} Scale
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onDuplicate}
+            className="h-8"
+          >
+            <Copy className="h-3 w-3" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  )
 }
 
 interface CuppingAttributeConfigManagerProps {
@@ -54,8 +288,19 @@ export function CuppingAttributeConfigManager({
   value,
   onChange
 }: CuppingAttributeConfigManagerProps) {
-  const [attributes, setAttributes] = useState<AttributeWithScale[]>(value)
+  // Ensure all attributes have unique IDs for drag-and-drop
+  const [attributes, setAttributes] = useState<AttributeWithScale[]>(
+    value.map((attr, i) => ({ ...attr, id: attr.id || `attr-${Date.now()}-${i}` }))
+  )
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  )
 
   const handleSave = () => {
     onChange(attributes)
@@ -68,15 +313,31 @@ export function CuppingAttributeConfigManager({
     onOpenChange(false)
   }
 
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event
+
+    if (over && active.id !== over.id) {
+      setAttributes((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id)
+        const newIndex = items.findIndex((item) => item.id === over.id)
+        return arrayMove(items, oldIndex, newIndex)
+      })
+    }
+  }
+
   const handleLoadTemplate = (templateId: string) => {
     const template = CUPPING_ATTRIBUTE_TEMPLATES.find(t => t.id === templateId)
     if (template) {
-      setAttributes(template.attributes)
+      setAttributes(template.attributes.map((attr, i) => ({
+        ...attr,
+        id: `attr-${Date.now()}-${i}`
+      })))
     }
   }
 
   const handleAddAttribute = () => {
     const newAttr: AttributeWithScale = {
+      id: `attr-${Date.now()}-${attributes.length}`,
       attribute: `New Attribute ${attributes.length + 1}`,
       scale: {
         type: 'numeric',
@@ -186,180 +447,37 @@ export function CuppingAttributeConfigManager({
                     <p className="text-xs mt-1">Click &quot;Add Attribute&quot; or load a template</p>
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {attributes.map((attr, index) => (
-                      <Card key={index} className="relative">
-                        <button
-                          onClick={() => handleRemoveAttribute(index)}
-                          className="absolute top-2 right-2 text-muted-foreground hover:text-destructive transition-colors z-10"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                        <CardHeader className="pb-3">
-                          <div className="space-y-2">
-                            <Input
-                              value={attr.attribute}
-                              onChange={(e) =>
-                                handleUpdateAttribute(index, { attribute: e.target.value })
-                              }
-                              placeholder="Attribute name..."
-                              className="h-8 text-sm font-medium pr-6"
+                  <>
+                    <p className="text-xs text-muted-foreground mb-3 flex items-center gap-1">
+                      <GripVertical className="h-3 w-3" />
+                      Drag and drop to reorder attributes
+                    </p>
+                    <DndContext
+                      sensors={sensors}
+                      collisionDetection={closestCenter}
+                      onDragEnd={handleDragEnd}
+                    >
+                      <SortableContext
+                        items={attributes.map(attr => attr.id || '')}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                          {attributes.map((attr, index) => (
+                            <SortableAttributeCard
+                              key={attr.id}
+                              attr={attr}
+                              index={index}
+                              editingIndex={editingIndex}
+                              onRemove={() => handleRemoveAttribute(index)}
+                              onUpdate={(updates) => handleUpdateAttribute(index, updates)}
+                              onToggleEdit={() => setEditingIndex(editingIndex === index ? null : index)}
+                              onDuplicate={() => handleDuplicateAttribute(index)}
                             />
-                            <Input
-                              value={attr.abbreviation || ''}
-                              onChange={(e) =>
-                                handleUpdateAttribute(index, { abbreviation: e.target.value })
-                              }
-                              placeholder="Abbr. (4-5 chars)"
-                              maxLength={5}
-                              className="h-7 text-xs"
-                            />
-                          </div>
-                          <div className="flex items-center gap-2 mt-2">
-                            <Badge variant="outline" className="text-xs">
-                              {attr.scale.type === 'numeric' ? 'Numeric' : 'Wording'}
-                            </Badge>
-                            {attr.scale.type === 'numeric' ? (
-                              <span className="text-xs text-muted-foreground">
-                                {attr.scale.min}-{attr.scale.max} (step {attr.scale.increment})
-                              </span>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">
-                                {attr.scale.options?.length || 0} options
-                              </span>
-                            )}
-                          </div>
-                        </CardHeader>
-                        <CardContent className="space-y-3 pt-0">
-                          {/* Validation Rule */}
-                          <div className="space-y-2 border-t pt-3">
-                            <Label className="text-xs text-muted-foreground">Acceptable Range</Label>
-                            <Select
-                              value={attr.validation_rule?.type || 'none'}
-                              onValueChange={(value) => {
-                                if (value === 'none') {
-                                  handleUpdateAttribute(index, { validation_rule: undefined })
-                                } else {
-                                  const validValues = getScaleValidValues(attr.scale)
-                                  const minVal = validValues[Math.floor(validValues.length / 2)]
-                                  handleUpdateAttribute(index, {
-                                    validation_rule: {
-                                      type: value as 'minimum' | 'range',
-                                      min_value: minVal,
-                                      max_value: value === 'range' ? validValues[0] : undefined
-                                    }
-                                  })
-                                }
-                              }}
-                            >
-                              <SelectTrigger className="h-8 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">No Validation</SelectItem>
-                                <SelectItem value="minimum">Minimum (≥)</SelectItem>
-                                <SelectItem value="range">Range</SelectItem>
-                              </SelectContent>
-                            </Select>
-
-                            {attr.validation_rule && (
-                              <div className="space-y-2">
-                                {/* Min Value */}
-                                <div className="space-y-1">
-                                  <Label className="text-xs text-muted-foreground">
-                                    {attr.validation_rule.type === 'minimum' ? 'Minimum' : 'Min'}
-                                  </Label>
-                                  <Select
-                                    value={attr.validation_rule.min_value.toString()}
-                                    onValueChange={(value) => {
-                                      handleUpdateAttribute(index, {
-                                        validation_rule: {
-                                          ...attr.validation_rule!,
-                                          min_value: parseFloat(value)
-                                        }
-                                      })
-                                    }}
-                                  >
-                                    <SelectTrigger className="h-8 text-xs">
-                                      <SelectValue />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      {getScaleValidValues(attr.scale).map((val) => {
-                                        const label = getScoreLabel(val, attr.scale)
-                                        return (
-                                          <SelectItem key={val} value={val.toString()}>
-                                            {val}
-                                            {label && attr.scale.type === 'wording' && ` (${label})`}
-                                          </SelectItem>
-                                        )
-                                      })}
-                                    </SelectContent>
-                                  </Select>
-                                </div>
-
-                                {/* Max Value (only for range) */}
-                                {attr.validation_rule.type === 'range' && (
-                                  <div className="space-y-1">
-                                    <Label className="text-xs text-muted-foreground">Max</Label>
-                                    <Select
-                                      value={attr.validation_rule.max_value?.toString() || ''}
-                                      onValueChange={(value) => {
-                                        handleUpdateAttribute(index, {
-                                          validation_rule: {
-                                            ...attr.validation_rule!,
-                                            max_value: parseFloat(value)
-                                          }
-                                        })
-                                      }}
-                                    >
-                                      <SelectTrigger className="h-8 text-xs">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {getScaleValidValues(attr.scale)
-                                          .filter((val) => val > attr.validation_rule!.min_value)
-                                          .map((val) => {
-                                            const label = getScoreLabel(val, attr.scale)
-                                            return (
-                                              <SelectItem key={val} value={val.toString()}>
-                                                {val}
-                                                {label && attr.scale.type === 'wording' && ` (${label})`}
-                                              </SelectItem>
-                                            )
-                                          })}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="flex gap-2">
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => setEditingIndex(editingIndex === index ? null : index)}
-                              className="flex-1 h-8 text-xs"
-                            >
-                              <Settings2 className="h-3 w-3 mr-1" />
-                              {editingIndex === index ? 'Hide' : 'Edit'} Scale
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDuplicateAttribute(index)}
-                              className="h-8"
-                            >
-                              <Copy className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </div>
+                          ))}
+                        </div>
+                      </SortableContext>
+                    </DndContext>
+                  </>
                 )}
               </CardContent>
             </Card>
