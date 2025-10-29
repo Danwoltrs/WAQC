@@ -1,19 +1,14 @@
 /**
- * Taint and Fault Configuration System
- *
- * Provides complete flexibility for defining taints, faults, intensity scales,
- * and validation rules per quality template and client.
+ * Simplified Taint and Fault Configuration System
  *
  * Features:
- * - Intensity-based classification: defects transition from taint to fault based on intensity
- * - Flexible intensity scales (numeric or wording) per defect
- * - Configurable taint/fault threshold per defect
- * - Complex validation rules (count limits, intensity limits, combined totals)
- * - Zero tolerance mode
- * - Predefined templates for common quality grades
+ * - Simple intensity-based classification with numeric ranges
+ * - Defects can be taints (mild) at low intensity, faults (severe) at high intensity
+ * - Some defects are "always faults" (no taint range)
+ * - Deduction formula with configurable multipliers
  */
 
-import { AttributeScaleType, NumericScale, WordingScale, createNumericScale } from './attribute-scales'
+import { AttributeScaleType, createNumericScale } from './attribute-scales'
 
 /**
  * Category of sensory defect based on intensity
@@ -21,29 +16,32 @@ import { AttributeScaleType, NumericScale, WordingScale, createNumericScale } fr
 export type TaintFaultCategory = 'taint' | 'fault'
 
 /**
- * Individual defect definition with intensity-based classification
+ * Simplified defect definition with intensity ranges
  *
- * A defect can be BOTH a taint and a fault depending on intensity:
- * - Low intensity (< taint_threshold) = Taint (mild off-flavor)
- * - High intensity (>= taint_threshold) = Fault (severe defect)
+ * A defect can be:
+ * - A taint (mild) when intensity is within taint_range
+ * - A fault (severe) when intensity is within fault_range
+ * - Always a fault if taint_range is null
  */
 export interface TaintFaultDefect {
   /** Unique identifier within the template */
   id: string
-  /** Display name (e.g., "Fermented", "Earthy", "Rancid", "Moldy") */
+  /** Display name (e.g., "Fermented", "Earthy", "Quaker") */
   name: string
-  /** Intensity scale configuration (numeric or wording) */
-  intensity_scale: AttributeScaleType
   /**
-   * Threshold for taint/fault classification
-   * - If intensity < taint_threshold: classified as TAINT
-   * - If intensity >= taint_threshold: classified as FAULT
-   * For numeric scales, this is a number (e.g., 5 on a 0-10 scale)
-   * For wording scales, this is the option index (e.g., option 3 out of 5)
+   * Taint intensity range (null if this defect is always a fault)
+   * Example: { min: 0, max: 2 } means intensity 0-2 = taint
    */
-  taint_threshold: number
-  /** Optional description */
-  description?: string
+  taint_range: { min: number; max: number } | null
+  /**
+   * Fault intensity range
+   * Example: { min: 3, max: 5 } means intensity 3-5 = fault
+   */
+  fault_range: { min: number; max: number }
+  /** Maximum intensity value (typically 5 or 10) */
+  max_intensity: number
+  /** Whether this defect is actively used in QC */
+  active: boolean
   /** Display order */
   display_order: number
 }
@@ -59,6 +57,17 @@ export interface TaintFaultDefinition {
   scale: AttributeScaleType
   description?: string
   display_order: number
+}
+
+/**
+ * Deduction formula configuration
+ * Points deducted = (Cups affected / Total cups) × Intensity × Multiplier
+ */
+export interface DeductionFormula {
+  /** Multiplier for taints (typically 0.5) */
+  taint_multiplier: number
+  /** Multiplier for faults (typically 2.0) */
+  fault_multiplier: number
 }
 
 /**
@@ -85,8 +94,10 @@ export interface TaintFaultValidationRules {
  * Complete taint/fault configuration for a quality template
  */
 export interface TaintFaultConfiguration {
-  /** List of defect definitions with intensity-based taint/fault classification */
+  /** List of defect definitions */
   defects: TaintFaultDefect[]
+  /** Deduction formula for score calculation */
+  deduction_formula: DeductionFormula
   /** Validation rules */
   rules: TaintFaultValidationRules
   /** Notes about this configuration */
@@ -115,35 +126,44 @@ export interface TaintFaultTemplate {
 export function createEmptyTaintFaultConfiguration(): TaintFaultConfiguration {
   return {
     defects: [],
+    deduction_formula: {
+      taint_multiplier: 0.5,
+      fault_multiplier: 2.0
+    },
     rules: {},
     notes: ''
   }
 }
 
 /**
- * Create a new defect with intensity-based taint/fault classification
+ * Create a new defect with default ranges
+ * Default: max_intensity=5, taint range 0-2, fault range 3-5
  */
 export function createTaintFaultDefect(
   name: string,
   displayOrder: number = 0,
-  intensityScale?: AttributeScaleType,
-  taintThreshold?: number
+  options?: {
+    maxIntensity?: number
+    taintRange?: { min: number; max: number } | null
+    faultRange?: { min: number; max: number }
+  }
 ): TaintFaultDefect {
-  const scale = intensityScale || createNumericScale(1, 10, 0.5)
-
-  // Default threshold: middle of the scale for numeric, halfway point for wording
-  let defaultThreshold: number
-  if (scale.type === 'numeric') {
-    defaultThreshold = (scale.min + scale.max) / 2
-  } else {
-    defaultThreshold = Math.floor(scale.options.length / 2)
+  const maxIntensity = options?.maxIntensity ?? 5
+  const taintRange = options?.taintRange !== undefined
+    ? options.taintRange
+    : { min: 0, max: 2 }
+  const faultRange = options?.faultRange ?? {
+    min: taintRange ? taintRange.max + 1 : 1,
+    max: maxIntensity
   }
 
   return {
     id: `defect_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     name,
-    intensity_scale: scale,
-    taint_threshold: taintThreshold ?? defaultThreshold,
+    taint_range: taintRange,
+    fault_range: faultRange,
+    max_intensity: maxIntensity,
+    active: true,
     display_order: displayOrder
   }
 }
@@ -190,42 +210,33 @@ export function createFaultDefinition(
 export function classifyDefectIntensity(
   defect: TaintFaultDefect,
   intensity: number
-): TaintFaultCategory {
-  return intensity < defect.taint_threshold ? 'taint' : 'fault'
+): TaintFaultCategory | null {
+  // If defect has no taint range, it's always a fault
+  if (!defect.taint_range) {
+    if (intensity >= defect.fault_range.min && intensity <= defect.fault_range.max) {
+      return 'fault'
+    }
+    return null // Intensity outside valid range
+  }
+
+  // Check if intensity falls in taint range
+  if (intensity >= defect.taint_range.min && intensity <= defect.taint_range.max) {
+    return 'taint'
+  }
+
+  // Check if intensity falls in fault range
+  if (intensity >= defect.fault_range.min && intensity <= defect.fault_range.max) {
+    return 'fault'
+  }
+
+  return null // Intensity 0 or outside defined ranges
 }
 
 /**
- * Get the taint range for a defect (values below threshold)
+ * Check if a defect is "always a fault" (has no taint range)
  */
-export function getTaintRange(defect: TaintFaultDefect): { min: number; max: number } {
-  if (defect.intensity_scale.type === 'numeric') {
-    return {
-      min: defect.intensity_scale.min,
-      max: defect.taint_threshold - defect.intensity_scale.increment
-    }
-  } else {
-    return {
-      min: 0,
-      max: defect.taint_threshold - 1
-    }
-  }
-}
-
-/**
- * Get the fault range for a defect (values at or above threshold)
- */
-export function getFaultRange(defect: TaintFaultDefect): { min: number; max: number } {
-  if (defect.intensity_scale.type === 'numeric') {
-    return {
-      min: defect.taint_threshold,
-      max: defect.intensity_scale.max
-    }
-  } else {
-    return {
-      min: defect.taint_threshold,
-      max: defect.intensity_scale.options.length - 1
-    }
-  }
+export function isAlwaysFault(defect: TaintFaultDefect): boolean {
+  return defect.taint_range === null
 }
 
 /**
@@ -246,54 +257,82 @@ export function validateTaintFaultConfiguration(
     return { valid: false, error: 'Duplicate defect names found' }
   }
 
-  // Validate each defect's scale and threshold
-  const { validateScale } = require('./attribute-scales')
+  // Validate each defect's ranges
   for (const defect of defects) {
-    // Validate intensity scale
-    const scaleValidation = validateScale(defect.intensity_scale)
-    if (!scaleValidation.valid) {
-      return { valid: false, error: `Defect "${defect.name}": ${scaleValidation.error}` }
+    // Validate max intensity
+    if (defect.max_intensity <= 0) {
+      return { valid: false, error: `Defect "${defect.name}": Max intensity must be positive` }
     }
 
-    // Validate threshold is within scale range
-    if (defect.intensity_scale.type === 'numeric') {
-      if (defect.taint_threshold < defect.intensity_scale.min || defect.taint_threshold > defect.intensity_scale.max) {
+    // Validate taint range (if present)
+    if (defect.taint_range) {
+      if (defect.taint_range.min < 0 || defect.taint_range.max > defect.max_intensity) {
         return {
           valid: false,
-          error: `Defect "${defect.name}": Taint threshold (${defect.taint_threshold}) must be within scale range (${defect.intensity_scale.min}-${defect.intensity_scale.max})`
+          error: `Defect "${defect.name}": Taint range must be within 0-${defect.max_intensity}`
         }
       }
-    } else {
-      if (defect.taint_threshold < 0 || defect.taint_threshold > defect.intensity_scale.options.length) {
+      if (defect.taint_range.min > defect.taint_range.max) {
+        return { valid: false, error: `Defect "${defect.name}": Taint range min cannot exceed max` }
+      }
+    }
+
+    // Validate fault range
+    if (defect.fault_range.min < 0 || defect.fault_range.max > defect.max_intensity) {
+      return {
+        valid: false,
+        error: `Defect "${defect.name}": Fault range must be within 0-${defect.max_intensity}`
+      }
+    }
+    if (defect.fault_range.min > defect.fault_range.max) {
+      return { valid: false, error: `Defect "${defect.name}": Fault range min cannot exceed max` }
+    }
+
+    // Validate that ranges don't overlap
+    if (defect.taint_range) {
+      if (defect.taint_range.max >= defect.fault_range.min) {
         return {
           valid: false,
-          error: `Defect "${defect.name}": Taint threshold (${defect.taint_threshold}) must be within option count (0-${defect.intensity_scale.options.length})`
+          error: `Defect "${defect.name}": Taint and fault ranges cannot overlap`
         }
       }
     }
   }
 
   // Legacy validation for backward compatibility
-  const allLegacyNames = [
-    ...legacyTaints.map(t => t.name.toLowerCase()),
-    ...legacyFaults.map(f => f.name.toLowerCase())
-  ]
-  const uniqueLegacyNames = new Set(allLegacyNames)
-  if (allLegacyNames.length !== uniqueLegacyNames.size) {
-    return { valid: false, error: 'Duplicate taint/fault names found' }
-  }
+  if (legacyTaints.length > 0 || legacyFaults.length > 0) {
+    const { validateScale } = require('./attribute-scales')
+    const allLegacyNames = [
+      ...legacyTaints.map(t => t.name.toLowerCase()),
+      ...legacyFaults.map(f => f.name.toLowerCase())
+    ]
+    const uniqueLegacyNames = new Set(allLegacyNames)
+    if (allLegacyNames.length !== uniqueLegacyNames.size) {
+      return { valid: false, error: 'Duplicate taint/fault names found' }
+    }
 
-  for (const taint of legacyTaints) {
-    const scaleValidation = validateScale(taint.scale)
-    if (!scaleValidation.valid) {
-      return { valid: false, error: `Taint "${taint.name}": ${scaleValidation.error}` }
+    for (const taint of legacyTaints) {
+      const scaleValidation = validateScale(taint.scale)
+      if (!scaleValidation.valid) {
+        return { valid: false, error: `Taint "${taint.name}": ${scaleValidation.error}` }
+      }
+    }
+
+    for (const fault of legacyFaults) {
+      const scaleValidation = validateScale(fault.scale)
+      if (!scaleValidation.valid) {
+        return { valid: false, error: `Fault "${fault.name}": ${scaleValidation.error}` }
+      }
     }
   }
 
-  for (const fault of legacyFaults) {
-    const scaleValidation = validateScale(fault.scale)
-    if (!scaleValidation.valid) {
-      return { valid: false, error: `Fault "${fault.name}": ${scaleValidation.error}` }
+  // Validate deduction formula
+  if (config.deduction_formula) {
+    if (config.deduction_formula.taint_multiplier < 0) {
+      return { valid: false, error: 'Taint multiplier must be non-negative' }
+    }
+    if (config.deduction_formula.fault_multiplier < 0) {
+      return { valid: false, error: 'Fault multiplier must be non-negative' }
     }
   }
 
@@ -356,80 +395,115 @@ export function calculateTaintFaultStats(config: TaintFaultConfiguration) {
  * Predefined Templates
  */
 
-// SCA Standard - Specialty Coffee Association standard (NEW FORMAT)
-export const SCA_STANDARD_TAINTS_FAULTS: TaintFaultTemplate = {
-  id: 'sca-standard',
-  name: 'SCA Standard (Intensity-Based)',
-  description: 'Specialty Coffee Association standard with intensity-based taint/fault classification (1-10 scale, threshold at 4)',
+// Client A Custom - Matches the screenshot example
+export const CLIENT_A_CUSTOM: TaintFaultTemplate = {
+  id: 'client-a-custom',
+  name: 'Client A Custom',
+  description: 'Custom template with mixed taint/fault ranges and always-fault defects',
   configuration: {
     defects: [
-      createTaintFaultDefect('Fermented', 0, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Earthy', 1, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Phenolic', 2, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Chemical', 3, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Musty', 4, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Woody', 5, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Rancid', 6, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Moldy', 7, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Sour', 8, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Stinker', 9, createNumericScale(1, 10, 0.5), 4)
+      createTaintFaultDefect('Fermented', 0, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Sour/Acetic', 1, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Green', 2, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Earthy', 3, { maxIntensity: 5, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 5 } }),
+      createTaintFaultDefect('Quaker', 4, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } }),
+      createTaintFaultDefect('Phenolic', 5, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } }),
+      createTaintFaultDefect('Stinker', 6, { maxIntensity: 5, taintRange: null, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Chemical', 7, { maxIntensity: 5, taintRange: { min: 0, max: 1 }, faultRange: { min: 2, max: 5 } }),
+      createTaintFaultDefect('Musty/Moldy', 8, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Woody', 9, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } })
     ],
+    deduction_formula: {
+      taint_multiplier: 0.5,
+      fault_multiplier: 2.0
+    },
+    rules: {},
+    notes: 'Example: "Green" defect at intensity 2 = Taint (acceptable), intensity 3 = Fault (reject sample)'
+  }
+}
+
+// SCA Standard - Specialty Coffee Association standard
+export const SCA_STANDARD_TAINTS_FAULTS: TaintFaultTemplate = {
+  id: 'sca-standard',
+  name: 'SCA Standard',
+  description: 'Specialty Coffee Association standard (0-5 scale)',
+  configuration: {
+    defects: [
+      createTaintFaultDefect('Fermented', 0, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Earthy', 1, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Phenolic', 2, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Chemical', 3, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Musty', 4, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Woody', 5, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Rancid', 6, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Moldy', 7, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Sour', 8, { maxIntensity: 5, taintRange: { min: 0, max: 2 }, faultRange: { min: 3, max: 5 } }),
+      createTaintFaultDefect('Stinker', 9, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } })
+    ],
+    deduction_formula: {
+      taint_multiplier: 0.5,
+      fault_multiplier: 2.0
+    },
     rules: {
       max_taints: 2,
       max_faults: 1,
-      max_taint_intensity: 3,
-      validation_message: 'SCA standard: Max 2 taints (intensity <4), max 1 fault (intensity ≥4)'
+      validation_message: 'SCA standard: Max 2 taints, max 1 fault'
     },
-    notes: 'Standard SCA cupping protocol. Intensity <4 = taint (mild), ≥4 = fault (severe)'
+    notes: 'Standard SCA cupping protocol'
   }
 }
 
 // Specialty Grade - High quality requirements
 export const SPECIALTY_GRADE_TAINTS_FAULTS: TaintFaultTemplate = {
   id: 'specialty-grade',
-  name: 'Specialty Grade (Intensity-Based)',
-  description: 'Strict requirements for specialty grade coffee with minimal tolerance (1-8 scale, threshold at 2.5)',
+  name: 'Specialty Grade',
+  description: 'Strict requirements for specialty grade coffee with minimal tolerance',
   configuration: {
     defects: [
-      createTaintFaultDefect('Fermented', 0, createNumericScale(1, 8, 0.5), 2.5),
-      createTaintFaultDefect('Earthy', 1, createNumericScale(1, 8, 0.5), 2.5),
-      createTaintFaultDefect('Musty', 2, createNumericScale(1, 8, 0.5), 2.5),
-      createTaintFaultDefect('Rancid', 3, createNumericScale(1, 8, 0.5), 2.5),
-      createTaintFaultDefect('Moldy', 4, createNumericScale(1, 8, 0.5), 2.5)
+      createTaintFaultDefect('Fermented', 0, { maxIntensity: 5, taintRange: { min: 0, max: 1 }, faultRange: { min: 2, max: 5 } }),
+      createTaintFaultDefect('Earthy', 1, { maxIntensity: 5, taintRange: { min: 0, max: 1 }, faultRange: { min: 2, max: 5 } }),
+      createTaintFaultDefect('Musty', 2, { maxIntensity: 5, taintRange: { min: 0, max: 1 }, faultRange: { min: 2, max: 5 } }),
+      createTaintFaultDefect('Rancid', 3, { maxIntensity: 5, taintRange: { min: 0, max: 1 }, faultRange: { min: 2, max: 5 } }),
+      createTaintFaultDefect('Moldy', 4, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } })
     ],
+    deduction_formula: {
+      taint_multiplier: 0.5,
+      fault_multiplier: 3.0
+    },
     rules: {
       max_taints: 1,
       max_faults: 0,
-      max_taint_intensity: 2,
-      validation_message: 'Specialty grade: Max 1 light taint (intensity <2.5), no faults'
+      validation_message: 'Specialty grade: Max 1 light taint, no faults'
     },
-    notes: 'High quality specialty coffee. Intensity <2.5 = taint (mild), ≥2.5 = fault (severe)'
+    notes: 'High quality specialty coffee with minimal tolerance'
   }
 }
 
 // Commercial Grade - More permissive
 export const COMMERCIAL_GRADE_TAINTS_FAULTS: TaintFaultTemplate = {
   id: 'commercial-grade',
-  name: 'Commercial Grade (Intensity-Based)',
-  description: 'Standard commercial coffee with moderate tolerance (1-10 scale, threshold at 6)',
+  name: 'Commercial Grade',
+  description: 'Standard commercial coffee with moderate tolerance (0-10 scale)',
   configuration: {
     defects: [
-      createTaintFaultDefect('Fermented', 0, createNumericScale(1, 10, 1), 6),
-      createTaintFaultDefect('Earthy', 1, createNumericScale(1, 10, 1), 6),
-      createTaintFaultDefect('Phenolic', 2, createNumericScale(1, 10, 1), 6),
-      createTaintFaultDefect('Woody', 3, createNumericScale(1, 10, 1), 6),
-      createTaintFaultDefect('Musty', 4, createNumericScale(1, 10, 1), 6),
-      createTaintFaultDefect('Rancid', 5, createNumericScale(1, 10, 1), 6),
-      createTaintFaultDefect('Moldy', 6, createNumericScale(1, 10, 1), 6),
-      createTaintFaultDefect('Sour', 7, createNumericScale(1, 10, 1), 6)
+      createTaintFaultDefect('Fermented', 0, { maxIntensity: 10, taintRange: { min: 0, max: 5 }, faultRange: { min: 6, max: 10 } }),
+      createTaintFaultDefect('Earthy', 1, { maxIntensity: 10, taintRange: { min: 0, max: 5 }, faultRange: { min: 6, max: 10 } }),
+      createTaintFaultDefect('Phenolic', 2, { maxIntensity: 10, taintRange: { min: 0, max: 5 }, faultRange: { min: 6, max: 10 } }),
+      createTaintFaultDefect('Woody', 3, { maxIntensity: 10, taintRange: { min: 0, max: 5 }, faultRange: { min: 6, max: 10 } }),
+      createTaintFaultDefect('Musty', 4, { maxIntensity: 10, taintRange: { min: 0, max: 5 }, faultRange: { min: 6, max: 10 } }),
+      createTaintFaultDefect('Rancid', 5, { maxIntensity: 10, taintRange: { min: 0, max: 5 }, faultRange: { min: 6, max: 10 } }),
+      createTaintFaultDefect('Moldy', 6, { maxIntensity: 10, taintRange: { min: 0, max: 5 }, faultRange: { min: 6, max: 10 } }),
+      createTaintFaultDefect('Sour', 7, { maxIntensity: 10, taintRange: { min: 0, max: 5 }, faultRange: { min: 6, max: 10 } })
     ],
+    deduction_formula: {
+      taint_multiplier: 0.3,
+      fault_multiplier: 1.5
+    },
     rules: {
       max_combined: 5,
-      max_taint_intensity: 5,
-      max_fault_intensity: 8,
-      validation_message: 'Commercial grade: Max 5 combined defects (intensity <6 = taint, ≥6 = fault)'
+      validation_message: 'Commercial grade: Max 5 combined defects'
     },
-    notes: 'Standard commercial coffee. Intensity <6 = taint, ≥6 = fault'
+    notes: 'Standard commercial coffee with moderate tolerance'
   }
 }
 
@@ -440,12 +514,16 @@ export const ZERO_TOLERANCE_TAINTS_FAULTS: TaintFaultTemplate = {
   description: 'Premium quality with no taints or faults acceptable',
   configuration: {
     defects: [
-      createTaintFaultDefect('Fermented', 0, createNumericScale(1, 5, 0.5), 3),
-      createTaintFaultDefect('Earthy', 1, createNumericScale(1, 5, 0.5), 3),
-      createTaintFaultDefect('Phenolic', 2, createNumericScale(1, 5, 0.5), 3),
-      createTaintFaultDefect('Rancid', 3, createNumericScale(1, 5, 0.5), 3),
-      createTaintFaultDefect('Moldy', 4, createNumericScale(1, 5, 0.5), 3)
+      createTaintFaultDefect('Fermented', 0, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } }),
+      createTaintFaultDefect('Earthy', 1, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } }),
+      createTaintFaultDefect('Phenolic', 2, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } }),
+      createTaintFaultDefect('Rancid', 3, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } }),
+      createTaintFaultDefect('Moldy', 4, { maxIntensity: 5, taintRange: null, faultRange: { min: 1, max: 5 } })
     ],
+    deduction_formula: {
+      taint_multiplier: 0.0,
+      fault_multiplier: 10.0
+    },
     rules: {
       zero_tolerance: true,
       validation_message: 'Zero tolerance: No taints or faults acceptable'
@@ -457,29 +535,32 @@ export const ZERO_TOLERANCE_TAINTS_FAULTS: TaintFaultTemplate = {
 // Brazil Traditional - Country-specific
 export const BRAZIL_TRADITIONAL_TAINTS_FAULTS: TaintFaultTemplate = {
   id: 'brazil-traditional',
-  name: 'Brazil Traditional (Intensity-Based)',
-  description: 'Traditional Brazilian classification (1-10 scale, threshold at 4)',
+  name: 'Brazil Traditional',
+  description: 'Traditional Brazilian classification (0-10 scale)',
   configuration: {
     defects: [
-      createTaintFaultDefect('Harsh', 0, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Grassy/green', 1, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Woody', 2, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Past crop', 3, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Fruity', 4, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Dirty', 5, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Hard (riado)', 6, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Phenol (rio)', 7, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Fermented', 8, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Earthy', 9, createNumericScale(1, 10, 0.5), 4),
-      createTaintFaultDefect('Moldy', 10, createNumericScale(1, 10, 0.5), 4)
+      createTaintFaultDefect('Harsh', 0, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Grassy/green', 1, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Woody', 2, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Past crop', 3, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Fruity', 4, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Dirty', 5, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Hard (riado)', 6, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Phenol (rio)', 7, { maxIntensity: 10, taintRange: null, faultRange: { min: 1, max: 10 } }),
+      createTaintFaultDefect('Fermented', 8, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Earthy', 9, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } }),
+      createTaintFaultDefect('Moldy', 10, { maxIntensity: 10, taintRange: { min: 0, max: 3 }, faultRange: { min: 4, max: 10 } })
     ],
+    deduction_formula: {
+      taint_multiplier: 0.5,
+      fault_multiplier: 2.0
+    },
     rules: {
       max_taints: 2,
       max_faults: 1,
-      max_taint_intensity: 3.5,
-      validation_message: 'Brazil traditional: Max 2 taints (intensity <4), max 1 fault (intensity ≥4)'
+      validation_message: 'Brazil traditional: Max 2 taints, max 1 fault'
     },
-    notes: 'Traditional Brazilian coffee classification. Intensity <4 = taint, ≥4 = fault'
+    notes: 'Traditional Brazilian coffee classification'
   }
 }
 
@@ -487,6 +568,7 @@ export const BRAZIL_TRADITIONAL_TAINTS_FAULTS: TaintFaultTemplate = {
  * List of all predefined templates
  */
 export const PREDEFINED_TAINT_FAULT_TEMPLATES: TaintFaultTemplate[] = [
+  CLIENT_A_CUSTOM,
   SCA_STANDARD_TAINTS_FAULTS,
   SPECIALTY_GRADE_TAINTS_FAULTS,
   COMMERCIAL_GRADE_TAINTS_FAULTS,
@@ -510,7 +592,9 @@ export function cloneTaintFaultDefect(
   return {
     ...defect,
     id: `defect_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    name: `${defect.name} (copy)`
+    name: `${defect.name} (copy)`,
+    taint_range: defect.taint_range ? { ...defect.taint_range } : null,
+    fault_range: { ...defect.fault_range }
   }
 }
 

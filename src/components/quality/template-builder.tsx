@@ -1790,7 +1790,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 {taintFaultListExpanded && (
                 <div className="p-2">
                   {defectCount > 0 ? (
-                    // New intensity-based defects
+                    // New simplified defects
                     <div className="space-y-1">
                       {taintFaultConfiguration.defects
                         ?.sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
@@ -1798,14 +1798,15 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                           <div key={defect.name} className="flex items-center justify-between text-[11px] p-2 rounded border bg-card">
                             <span className="font-medium">{defect.name}</span>
                             <div className="flex items-center gap-2">
-                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                                {defect.intensity_scale.type === 'numeric'
-                                  ? `${defect.intensity_scale.min}-${defect.intensity_scale.max}`
-                                  : `${defect.intensity_scale.options?.length || 0} levels`}
-                              </Badge>
                               <span className="text-[10px] text-muted-foreground">
-                                Threshold: {defect.taint_threshold}
+                                Taint: {defect.taint_range ? `${defect.taint_range.min}-${defect.taint_range.max}` : '-'}
                               </span>
+                              <span className="text-[10px] text-muted-foreground">
+                                Fault: {defect.fault_range.min}-{defect.fault_range.max}
+                              </span>
+                              <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                                Max: {defect.max_intensity}
+                              </Badge>
                             </div>
                           </div>
                         ))}
