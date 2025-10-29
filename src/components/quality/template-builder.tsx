@@ -1800,13 +1800,9 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                         .map((defect) => (
                           <div key={defect.name} className="flex flex-col gap-0.5 text-[10px] p-1.5 rounded border bg-card">
                             <span className="font-medium text-[11px]">{defect.name}</span>
-                            <div className="flex flex-col gap-0 text-[9px] text-muted-foreground">
-                              <span>T: {defect.taint_range ? `${defect.taint_range.min}-${defect.taint_range.max}` : '-'}</span>
-                              <span>F: {defect.fault_range.min}-{defect.fault_range.max}</span>
-                              <Badge variant="secondary" className="text-[8px] px-1 py-0 mt-0.5 w-fit">
-                                Max: {defect.max_intensity}
-                              </Badge>
-                            </div>
+                            <span className="text-[9px] text-muted-foreground">
+                              Max: {defect.max_intensity} | T: {defect.taint_range ? `${defect.taint_range.min}-${defect.taint_range.max}` : '-'} | F: {defect.fault_range.min}-{defect.fault_range.max}
+                            </span>
                           </div>
                         ))}
                     </div>
