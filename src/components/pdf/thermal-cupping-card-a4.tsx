@@ -141,10 +141,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#F0F0F0',
   },
   cupperColumn: {
-    width: '50pt',
+    width: '60pt',
     padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
   },
   attributeColumn: {
@@ -161,10 +161,10 @@ const styles = StyleSheet.create({
     minHeight: '18pt',
   },
   cupperCell: {
-    width: '50pt',
+    width: '60pt',
     padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 10,
+    fontSize: 9,
   },
   attributeCell: {
     width: '30pt',
@@ -329,6 +329,12 @@ export const ThermalCuppingCardA4Document: React.FC<
                     <Text style={styles.sampleNumber}>
                       Sample: {card.sample_number || card.tracking_number || 'Unknown'}
                     </Text>
+                    {/* Sample Type */}
+                    {card.sample_type && (
+                      <Text style={styles.infoRow}>
+                        <Text style={styles.infoLabel}>Type:</Text> {card.sample_type.toUpperCase()}
+                      </Text>
+                    )}
                     {/* SS samples must show ICO and Container Nr */}
                     {card.sample_type === 'ss' && (
                       <>

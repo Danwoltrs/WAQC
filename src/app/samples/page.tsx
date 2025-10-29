@@ -382,9 +382,8 @@ export default function SamplesPage() {
     setCuppersAssigned(true)
     console.log('Cuppers assigned:', cuppers)
 
-    // Show success message
-    const cupperNames = cuppers.map(c => c.full_name).join(', ')
-    alert(`Successfully assigned ${cuppers.length} cupper${cuppers.length !== 1 ? 's' : ''} to ${selectedSamples.size} sample${selectedSamples.size !== 1 ? 's' : ''}:\n\n${cupperNames}`)
+    // Automatically open print cupping cards dialog
+    setShowCuppingCardsDialog(true)
   }
 
   // Reset cupper assignment when sample selection changes

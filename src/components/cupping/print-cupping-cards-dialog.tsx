@@ -84,7 +84,7 @@ export function PrintCuppingCardsDialog({
   const [showBuyer, setShowBuyer] = useState(true)
   const [showExporter, setShowExporter] = useState(true)
   const [numCuppers, setNumCuppers] = useState('5')
-  const [outputFormat, setOutputFormat] = useState<'thermal' | 'pdf'>('thermal')
+  const [outputFormat, setOutputFormat] = useState<'thermal' | 'pdf'>('pdf')
   const [cardData, setCardData] = useState<ThermalCuppingCardData[] | null>(
     null
   )
@@ -249,7 +249,7 @@ export function PrintCuppingCardsDialog({
               customParams.scale_info || templateParams.scale_info || '1-8, 0.25',
             attributes,
             num_cuppers: assignedCuppers.length > 0 ? assignedCuppers.length : parseInt(numCuppers),
-            cuppers: assignedCuppers.length > 0 ? assignedCuppers.map(c => c.full_name) : undefined,
+            cuppers: assignedCuppers.length > 0 ? assignedCuppers.map(c => c.full_name.split(' ')[0]) : undefined,
             qr_code: qrCodeDataUrl,
             // logo_url: '/logo.png', // Add if you have a logo
           }

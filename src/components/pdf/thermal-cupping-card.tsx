@@ -294,6 +294,12 @@ export const ThermalCuppingCardDocument: React.FC<
                 <Text style={styles.sampleNumber}>
                   Sample: {card.sample_number || card.tracking_number || 'Unknown'}
                 </Text>
+                {/* Sample Type */}
+                {card.sample_type && (
+                  <Text style={styles.infoRow}>
+                    Type: {card.sample_type.toUpperCase()}
+                  </Text>
+                )}
                 {/* SS samples must show ICO and Container Nr */}
                 {card.sample_type === 'ss' && (
                   <>

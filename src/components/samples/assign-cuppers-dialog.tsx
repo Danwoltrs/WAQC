@@ -12,8 +12,15 @@ import {
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Badge } from '@/components/ui/badge'
-import { Users, CheckCircle2 } from 'lucide-react'
+import { Users, CheckCircle2, Check } from 'lucide-react'
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table'
 
 interface Cupper {
   id: string
@@ -54,7 +61,10 @@ export function AssignCuppersDialog({
       const response = await fetch('/api/cuppers')
       if (response.ok) {
         const data = await response.json()
-        setCuppers(data.cuppers || [])
+        const loadedCuppers = data.cuppers || []
+        setCuppers(loadedCuppers)
+        // Pre-select all cuppers
+        setSelectedCuppers(new Set(loadedCuppers.map((c: Cupper) => c.id)))
       } else {
         console.error('Failed to load cuppers:', response.status, response.statusText)
         const errorData = await response.json().catch(() => ({}))
@@ -115,7 +125,7 @@ export function AssignCuppersDialog({
             </div>
           )}
 
-          {/* Cuppers List */}
+          {/* Cuppers Table */}
           {loading ? (
             <div className="text-center py-8 text-muted-foreground">
               Loading cuppers...
@@ -125,44 +135,47 @@ export function AssignCuppersDialog({
               No cuppers available
             </div>
           ) : (
-            <div className="space-y-2 max-h-[400px] overflow-y-auto">
+            <div className="space-y-2">
               <Label className="text-sm font-semibold">
                 Available Cuppers ({cuppers.length})
               </Label>
-              <div className="space-y-2">
-                {cuppers.map((cupper) => (
-                  <div
-                    key={cupper.id}
-                    className={`flex items-center space-x-3 rounded-md border p-3 cursor-pointer transition-colors hover:bg-muted ${
-                      selectedCuppers.has(cupper.id) ? 'bg-muted border-primary' : ''
-                    }`}
-                    onClick={() => handleToggleCupper(cupper.id)}
-                  >
-                    <Checkbox
-                      checked={selectedCuppers.has(cupper.id)}
-                      onCheckedChange={() => handleToggleCupper(cupper.id)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium">{cupper.full_name}</span>
-                        {cupper.is_q_grader && (
-                          <Badge variant="default" className="text-xs bg-primary">
-                            Q Grader
-                          </Badge>
-                        )}
-                        {cupper.is_cupper && !cupper.is_q_grader && (
-                          <Badge variant="outline" className="text-xs">
-                            Cupper
-                          </Badge>
-                        )}
-                      </div>
-                      <span className="text-xs text-muted-foreground">
-                        {cupper.email}
-                      </span>
-                    </div>
-                  </div>
-                ))}
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12"></TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead className="w-24 text-center">Q Grader</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {cuppers.map((cupper) => (
+                      <TableRow
+                        key={cupper.id}
+                        className={`cursor-pointer ${
+                          selectedCuppers.has(cupper.id) ? 'bg-muted' : ''
+                        }`}
+                        onClick={() => handleToggleCupper(cupper.id)}
+                      >
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedCuppers.has(cupper.id)}
+                            onCheckedChange={() => handleToggleCupper(cupper.id)}
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {cupper.full_name}
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {cupper.is_q_grader && (
+                            <Check className="h-4 w-4 mx-auto text-primary" />
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}

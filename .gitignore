@@ -65,3 +65,9 @@ dev-debug.log
 # Task files
 # tasks.json
 # tasks/ 
+
+# Backup files
+*.bak
+
+# Local documents
+Documents/
