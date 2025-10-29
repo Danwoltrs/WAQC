@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { AlertCircle, CheckCircle2, Plus, X, Save, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Plus, X, Save, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   ScreenSizeConstraint,
   ScreenSizeRequirements,
@@ -155,7 +155,6 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [moistureExpanded, setMoistureExpanded] = useState(false)
   const [quakerExpanded, setQuakerExpanded] = useState(false)
   const [cuppingExpanded, setCuppingExpanded] = useState(false)
-  const [cuppingAttrPage, setCuppingAttrPage] = useState(0) // For paginating through attributes (3 at a time)
   const [taintFaultExpanded, setTaintFaultExpanded] = useState(false)
   const [taintFaultListExpanded, setTaintFaultListExpanded] = useState(false)
 
@@ -1594,39 +1593,12 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                 </p>
               ) : (
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <p className="text-xs font-medium">
-                      {cuppingAttributes.length} attribute{cuppingAttributes.length !== 1 ? 's' : ''} configured
-                    </p>
-                    {cuppingAttributes.length > 3 && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0"
-                          onClick={() => setCuppingAttrPage(p => Math.max(0, p - 1))}
-                          disabled={cuppingAttrPage === 0}
-                        >
-                          <ChevronLeft className="h-3 w-3" />
-                        </Button>
-                        <span className="text-[10px] text-muted-foreground px-1">
-                          {cuppingAttrPage + 1}/{Math.ceil(cuppingAttributes.length / 3)}
-                        </span>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 w-6 p-0"
-                          onClick={() => setCuppingAttrPage(p => Math.min(Math.ceil(cuppingAttributes.length / 3) - 1, p + 1))}
-                          disabled={cuppingAttrPage >= Math.ceil(cuppingAttributes.length / 3) - 1}
-                        >
-                          <ChevronRight className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
+                  <p className="text-xs font-medium">
+                    {cuppingAttributes.length} attribute{cuppingAttributes.length !== 1 ? 's' : ''} configured
+                  </p>
                   <div className="space-y-1">
-                    {cuppingAttributes.slice(cuppingAttrPage * 3, (cuppingAttrPage + 1) * 3).map((attr, index) => (
-                      <div key={cuppingAttrPage * 3 + index} className="flex items-center gap-2">
+                    {cuppingAttributes.map((attr, index) => (
+                      <div key={index} className="flex items-center gap-2">
                         <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 font-normal">
                           {attr.attribute}
                         </Badge>
