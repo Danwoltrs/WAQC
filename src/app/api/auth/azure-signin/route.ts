@@ -122,16 +122,15 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use admin API to generate a signup link, which includes the hashed_token
-    // We'll exchange this for a session
+    // Use admin API to generate a magic link (works for existing users)
+    // This includes the hashed_token we can use to verify and create a session
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'signup',
+      type: 'magiclink',
       email,
-      password: crypto.randomUUID(), // Generate a random password (won't be used)
     })
 
     if (linkError || !linkData) {
-      console.error('Error generating session link:', linkError)
+      console.error('Error generating magic link:', linkError)
       console.error('Full error:', JSON.stringify(linkError, null, 2))
       return NextResponse.json(
         { error: 'Failed to create session: ' + (linkError?.message || 'Unknown error') },
@@ -168,9 +167,8 @@ export async function POST(request: NextRequest) {
     )
 
     const { data: sessionData, error: verifyError } = await supabaseClient.auth.verifyOtp({
-      type: 'signup',
+      type: 'email',
       token_hash: hashed_token,
-      email,
     })
 
     if (verifyError || !sessionData.session) {
