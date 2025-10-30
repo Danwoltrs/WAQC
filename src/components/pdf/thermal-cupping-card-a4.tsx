@@ -72,7 +72,7 @@ function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number 
 }
 
 // Create styles for A4 multi-card layout (8 cards per page, 2x4 grid)
-// Design: One thick outer border for guillotine cutting
+// Design: Thick borders show exactly where to cut with guillotine
 const styles = StyleSheet.create({
   page: {
     flexDirection: 'row',
@@ -80,15 +80,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFFFFF',
     padding: '0pt',
     position: 'relative',
-    border: '2pt solid #000000', // ONE THICK OUTER BORDER for guillotine
   },
   cardContainer: {
     width: '50%',
     position: 'relative',
   },
   card: {
-    borderRight: '0.5pt solid #CCCCCC', // Thin internal borders for visual separation only
-    borderBottom: '0.5pt solid #CCCCCC',
+    border: '2pt solid #000000', // THICK BLACK BORDER shows cutting lines
     fontSize: 6,
   },
   header: {
