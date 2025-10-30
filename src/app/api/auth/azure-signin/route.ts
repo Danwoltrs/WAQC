@@ -138,8 +138,21 @@ export async function POST(request: NextRequest) {
       )
     }
 
+    // Create a regular Supabase client (not admin) for signing in
+    // signInWithPassword requires a regular client, not service role
+    const supabaseClient = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
     // Sign in with the temporary password to get a real session
-    const { data: sessionData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+    const { data: sessionData, error: signInError } = await supabaseClient.auth.signInWithPassword({
       email,
       password: tempPassword,
     })
@@ -147,7 +160,7 @@ export async function POST(request: NextRequest) {
     if (signInError || !sessionData.session) {
       console.error('Error signing in:', signInError)
       return NextResponse.json(
-        { error: 'Failed to create session' },
+        { error: 'Failed to create session: ' + (signInError?.message || 'Unknown error') },
         { status: 500 }
       )
     }
