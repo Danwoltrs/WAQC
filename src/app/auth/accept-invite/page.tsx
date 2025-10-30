@@ -72,7 +72,7 @@ function AcceptInviteContent() {
     }
   }
 
-  const handleAcceptInvitation = async (e: React.FormEvent) => {
+  const handlePasswordSignup = async (e: React.FormEvent) => {
     e.preventDefault()
 
     if (!token) {
@@ -94,7 +94,8 @@ function AcceptInviteContent() {
     setError(null)
 
     try {
-      // Create the user account
+      // Create the user account with password
+      // The database trigger will automatically create the profile and accept the invitation
       const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: invitation.email,
         password: password,
@@ -113,46 +114,46 @@ function AcceptInviteContent() {
         throw new Error('Failed to create user account')
       }
 
-      // Update the user's profile with invitation data
-      const { error: profileError } = await supabase.from('profiles').upsert({
-        id: authData.user.id,
-        email: invitation.email,
-        first_name: invitation.first_name,
-        last_name: invitation.last_name,
-        full_name: `${invitation.first_name} ${invitation.last_name}`,
-        qc_role: invitation.qc_role,
-        laboratory_id: invitation.laboratory_id,
-        is_cupper: invitation.is_cupper || false,
-        is_q_grader: invitation.is_q_grader || false,
-        qc_enabled: invitation.qc_enabled !== false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      })
-
-      if (profileError) throw profileError
-
-      // Mark invitation as accepted
-      const { error: updateError } = await supabase
-        .from('user_invitations')
-        .update({
-          status: 'accepted',
-          accepted_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        })
-        .eq('invitation_token', token)
-
-      if (updateError) throw updateError
-
       setSuccess(true)
 
-      // Redirect to login after 3 seconds
+      // Redirect to dashboard after 2 seconds
       setTimeout(() => {
-        router.push('/auth/login')
-      }, 3000)
+        router.push('/dashboard')
+      }, 2000)
     } catch (err: any) {
       console.error('Error accepting invitation:', err)
       setError(err.message || 'Failed to create account. Please try again.')
     } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleMicrosoftSignup = async () => {
+    if (!token) {
+      setError('Invalid invitation')
+      return
+    }
+
+    setSubmitting(true)
+    setError(null)
+
+    try {
+      // Sign in with Microsoft OAuth
+      // The database trigger will automatically create the profile and accept the invitation
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+        provider: 'azure',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+          scopes: 'email profile openid',
+        },
+      })
+
+      if (oauthError) throw oauthError
+
+      // OAuth redirect will happen automatically
+    } catch (err: any) {
+      console.error('Error with Microsoft sign-in:', err)
+      setError(err.message || 'Failed to sign in with Microsoft. Please try again.')
       setSubmitting(false)
     }
   }
@@ -200,7 +201,7 @@ function AcceptInviteContent() {
             </div>
             <CardTitle className="text-center">Account Created Successfully!</CardTitle>
             <CardDescription className="text-center">
-              Your account has been created. Redirecting to login...
+              Your account has been created. Redirecting to dashboard...
             </CardDescription>
           </CardHeader>
         </Card>
@@ -218,7 +219,7 @@ function AcceptInviteContent() {
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleAcceptInvitation} className="space-y-4">
+          <div className="space-y-4">
             <div className="space-y-2">
               <Label>Name</Label>
               <Input
@@ -237,49 +238,91 @@ function AcceptInviteContent() {
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Create Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Minimum 8 characters"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="confirm-password">Confirm Password</Label>
-              <Input
-                id="confirm-password"
-                type="password"
-                placeholder="Re-enter password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={8}
-              />
-            </div>
-
             {error && (
               <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
                 {error}
               </div>
             )}
 
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Creating Account...
-                </>
-              ) : (
-                'Create Account'
-              )}
-            </Button>
-          </form>
+            {/* Microsoft OAuth Option */}
+            <div className="space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full"
+                onClick={handleMicrosoftSignup}
+                disabled={submitting}
+              >
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Signing in...
+                  </>
+                ) : (
+                  <>
+                    <svg className="mr-2 h-4 w-4" viewBox="0 0 23 23">
+                      <path fill="#f35325" d="M0 0h11v11H0z" />
+                      <path fill="#81bc06" d="M12 0h11v11H12z" />
+                      <path fill="#05a6f0" d="M0 12h11v11H0z" />
+                      <path fill="#ffba08" d="M12 12h11v11H12z" />
+                    </svg>
+                    Continue with Microsoft
+                  </>
+                )}
+              </Button>
+            </div>
+
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <span className="w-full border-t" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">
+                  Or continue with password
+                </span>
+              </div>
+            </div>
+
+            {/* Password Form */}
+            <form onSubmit={handlePasswordSignup} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="password">Create Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Minimum 8 characters"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={8}
+                />
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <Input
+                  id="confirm-password"
+                  type="password"
+                  placeholder="Re-enter password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  minLength={8}
+                />
+              </div>
+
+              <Button type="submit" className="w-full" disabled={submitting}>
+                {submitting ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating Account...
+                  </>
+                ) : (
+                  'Create Account'
+                )}
+              </Button>
+            </form>
+          </div>
         </CardContent>
       </Card>
     </div>

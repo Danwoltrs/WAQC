@@ -59,17 +59,43 @@ export function LoginForm() {
 
         console.log('Azure AD authentication successful:', { email: userEmail, name })
 
-        setAzureStatus('Setting up your session...')
+        setAzureStatus('Creating your session...')
 
-        // Store Azure AD session info
-        sessionStorage.setItem('azure_ad_authenticated', 'true')
-        sessionStorage.setItem('azure_ad_email', userEmail)
-        sessionStorage.setItem('azure_ad_name', name)
+        // Call backend to create session
+        const apiResponse = await fetch('/api/auth/azure-signin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: userEmail, name }),
+        })
 
-        setAzureStatus('Redirecting to dashboard...')
+        if (!apiResponse.ok) {
+          const data = await apiResponse.json()
+          throw new Error(data.error || 'Failed to create session')
+        }
 
-        // Redirect to dashboard - auth provider will handle session creation
-        window.location.href = '/'
+        const data = await apiResponse.json()
+        console.log('Session tokens received:', { email: data.email, userId: data.userId })
+
+        setAzureStatus('Establishing session...')
+
+        // Set the session using the tokens from the backend
+        const { error: sessionError } = await supabase.auth.setSession({
+          access_token: data.session.access_token,
+          refresh_token: data.session.refresh_token,
+        })
+
+        if (sessionError) {
+          console.error('Error setting session:', sessionError)
+          throw new Error('Failed to establish session: ' + sessionError.message)
+        }
+
+        console.log('Session established successfully')
+        setAzureStatus('Success! Redirecting...')
+
+        // Wait a moment for session to be fully established
+        await new Promise(resolve => setTimeout(resolve, 500))
+
+        window.location.href = '/dashboard'
       } catch (err: any) {
         console.error('Azure AD callback error:', err)
         setError(err.message || 'Authentication failed')
@@ -117,9 +143,9 @@ export function LoginForm() {
     setError(null)
 
     try {
-      // Use direct Azure AD authentication (no Supabase intermediary)
+      // Use direct Azure AD authentication (via MSAL)
       await signInWithAzureADRedirect()
-      // User will be redirected to Microsoft login, then back to /auth/azure-callback
+      // User will be redirected to Microsoft login, then back here
     } catch (err: any) {
       console.error('Microsoft login error:', err)
       setError(err.message || 'An unexpected error occurred')

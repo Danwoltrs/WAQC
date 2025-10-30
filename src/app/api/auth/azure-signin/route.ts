@@ -122,26 +122,32 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate session token using admin API
-    const { data: sessionData, error: sessionError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
-      email,
+    // Create a session for the user using admin API
+    const { data: sessionData, error: sessionError } = await supabaseAdmin.auth.admin.createSession({
+      user_id: userId,
     })
 
     if (sessionError || !sessionData) {
-      console.error('Error generating session:', sessionError)
+      console.error('Error creating session:', sessionError)
       return NextResponse.json(
         { error: 'Failed to create session' },
         { status: 500 }
       )
     }
 
+    console.log('Session created successfully for user:', userId)
+
     return NextResponse.json({
       success: true,
       email,
       name,
       userId,
-      sessionUrl: sessionData.properties.action_link, // This contains the verification token
+      session: {
+        access_token: sessionData.session.access_token,
+        refresh_token: sessionData.session.refresh_token,
+        expires_at: sessionData.session.expires_at,
+        expires_in: sessionData.session.expires_in,
+      },
     })
   } catch (error: any) {
     console.error('Azure AD sign-in error:', error)

@@ -230,81 +230,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const getSession = async () => {
       let session = null
 
-      // Check if there's an Azure AD session that needs to be converted to Supabase session
-      const azureAuthenticated = sessionStorage.getItem('azure_ad_authenticated')
-      const azureEmail = sessionStorage.getItem('azure_ad_email')
+      try {
+        // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
+        const result = await retryWithBackoff(
+          async () => await supabase.auth.getSession(),
+          3,
+          1000,
+          10000
+        )
 
-      if (azureAuthenticated === 'true' && azureEmail) {
-        console.log('Found Azure AD session, creating Supabase session...')
-
-        try {
-          // Call backend to create/get user and generate session
-          const response = await fetch('/api/auth/azure-signin', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              email: azureEmail,
-              name: sessionStorage.getItem('azure_ad_name') || azureEmail.split('@')[0],
-            }),
-          })
-
-          if (response.ok) {
-            const data = await response.json()
-            console.log('Backend session created:', data)
-
-            // Parse session URL and verify OTP to create session
-            if (data.sessionUrl) {
-              const sessionUrl = new URL(data.sessionUrl)
-              const token = sessionUrl.searchParams.get('token')
-              const type = sessionUrl.searchParams.get('type') || 'magiclink'
-
-              if (token) {
-                const { data: sessionData, error: verifyError } = await supabase.auth.verifyOtp({
-                  token_hash: token,
-                  type: type as any,
-                })
-
-                if (!verifyError && sessionData.session) {
-                  console.log('Supabase session created from Azure AD')
-                  session = sessionData.session
-
-                  // Clear Azure AD flags after successful conversion
-                  sessionStorage.removeItem('azure_ad_authenticated')
-                }
-              }
-            }
-          }
-        } catch (error) {
-          console.error('Error converting Azure AD session:', error)
-          // Clear flags on error
-          sessionStorage.removeItem('azure_ad_authenticated')
-        }
-      }
-
-      // If no session from Azure AD, try normal session check
-      if (!session) {
-        try {
-          // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
-          const result = await retryWithBackoff(
-            async () => await supabase.auth.getSession(),
-            3,
-            1000,
-            10000
-          )
-
-          if (result.error) {
-            console.error('Error getting session:', result.error)
-            setLoading(false)
-            return
-          }
-
-          session = result.data.session
-        } catch (err: any) {
-          console.error('Error getting session after retries:', err)
-          // On timeout/error, just continue - no session means show login
+        if (result.error) {
+          console.error('Error getting session:', result.error)
           setLoading(false)
           return
         }
+
+        session = result.data.session
+      } catch (err: any) {
+        console.error('Error getting session after retries:', err)
+        // On timeout/error, just continue - no session means show login
+        setLoading(false)
+        return
       }
 
       if (session?.user) {
@@ -635,10 +581,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     await supabase.auth.signOut()
-    // Clear Azure AD session
-    sessionStorage.removeItem('azure_ad_authenticated')
-    sessionStorage.removeItem('azure_ad_email')
-    sessionStorage.removeItem('azure_ad_name')
     // Clear profile cache
     setCachedProfile(null)
     // Redirect to login page
