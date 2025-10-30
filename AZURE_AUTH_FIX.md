@@ -174,8 +174,14 @@ await supabaseAdmin.auth.admin.updateUserById(userId, {
   password: tempPassword,
 })
 
+// Create regular client for sign-in (signInWithPassword requires anon key, not service role)
+const supabaseClient = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+)
+
 // Sign in with temporary password to get session
-const { data: sessionData } = await supabaseAdmin.auth.signInWithPassword({
+const { data: sessionData } = await supabaseClient.auth.signInWithPassword({
   email,
   password: tempPassword,
 })
@@ -192,6 +198,8 @@ Returns:
 - Temporary password approach generates real, reliable session tokens
 - Password is never exposed to client (generated and used server-side only)
 - More reliable than magic link/OTP verification flow
+
+**Important:** `signInWithPassword()` requires a regular Supabase client with the anon key, NOT the admin client with service role key. Using the admin client will result in authentication errors.
 
 ### Session Setting
 
