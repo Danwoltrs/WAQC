@@ -540,11 +540,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
-    // Clear profile cache
-    setCachedProfile(null)
-    // Redirect to login page
-    window.location.href = '/'
+    try {
+      // Sign out from Supabase
+      await supabase.auth.signOut()
+
+      // Clear all cached data
+      setCachedProfile(null)
+
+      // Clear all localStorage items related to auth
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem(PROFILE_CACHE_KEY)
+        localStorage.removeItem(PROFILE_CACHE_TIMESTAMP_KEY)
+        localStorage.removeItem(LAST_ACTIVITY_KEY)
+
+        // Clear Azure AD/MSAL cache
+        sessionStorage.clear()
+      }
+
+      // Reset state
+      setUser(null)
+      setProfile(null)
+      setPermissions([])
+
+      // Hard redirect to login page (clears all React state)
+      window.location.href = '/'
+    } catch (error) {
+      console.error('Error during sign out:', error)
+      // Even if there's an error, redirect to login
+      window.location.href = '/'
+    }
   }
 
   const value: AuthContextType = {
