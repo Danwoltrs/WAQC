@@ -122,48 +122,41 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create a temporary password for server-side session generation
-    const tempPassword = crypto.randomUUID()
-
-    // Update user with temporary password
-    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
-      password: tempPassword,
-    })
-
-    if (updateError) {
-      console.error('Error updating user password:', updateError)
-      return NextResponse.json(
-        { error: 'Failed to prepare session' },
-        { status: 500 }
-      )
-    }
-
-    // Create a regular Supabase client (not admin) for signing in
-    // signInWithPassword requires a regular client, not service role
-    const supabaseClient = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
-
-    // Sign in with the temporary password to get a real session
-    const { data: sessionData, error: signInError } = await supabaseClient.auth.signInWithPassword({
+    // Use admin API to generate a magic link which contains valid tokens
+    // This bypasses the normal sign-in flow and avoids RLS policy issues
+    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+      type: 'magiclink',
       email,
-      password: tempPassword,
+      options: {
+        redirectTo: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
+      }
     })
 
-    if (signInError || !sessionData.session) {
-      console.error('Error signing in:', signInError)
+    if (linkError || !linkData) {
+      console.error('Error generating session link:', linkError)
       return NextResponse.json(
-        { error: 'Failed to create session: ' + (signInError?.message || 'Unknown error') },
+        { error: 'Failed to create session: ' + (linkError?.message || 'Unknown error') },
         { status: 500 }
       )
     }
+
+    // Extract tokens from the magic link
+    const url = new URL(linkData.properties.action_link)
+    const access_token = url.searchParams.get('access_token')
+    const refresh_token = url.searchParams.get('refresh_token')
+    const expires_at_str = url.searchParams.get('expires_at')
+    const expires_in_str = url.searchParams.get('expires_in')
+
+    if (!access_token || !refresh_token) {
+      console.error('Missing tokens in generated link')
+      return NextResponse.json(
+        { error: 'Failed to extract session tokens' },
+        { status: 500 }
+      )
+    }
+
+    const expires_at = expires_at_str ? parseInt(expires_at_str) : null
+    const expires_in = expires_in_str ? parseInt(expires_in_str) : null
 
     console.log('Session created successfully for user:', userId)
 
@@ -173,10 +166,10 @@ export async function POST(request: NextRequest) {
       name,
       userId,
       session: {
-        access_token: sessionData.session.access_token,
-        refresh_token: sessionData.session.refresh_token,
-        expires_at: sessionData.session.expires_at,
-        expires_in: sessionData.session.expires_in,
+        access_token,
+        refresh_token,
+        expires_at,
+        expires_in,
       },
     })
   } catch (error: any) {
