@@ -198,7 +198,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         // Single attempt with 5s timeout - Supabase handles retries internally
         const result = await withTimeout(
-          () => supabase.auth.getSession(),
+          async () => await supabase.auth.getSession(),
           5000,
           'Session fetch timeout'
         )
@@ -384,7 +384,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         try {
           const result = await withTimeout(
-            () => supabase
+            async () => await supabase
               .from('profiles')
               .select('*')
               .eq('id', userId)
