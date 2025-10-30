@@ -122,107 +122,34 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create session tokens by directly calling Supabase REST API with service role
-    // This bypasses all auth methods that trigger RLS
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!,
-          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
-        },
-        body: JSON.stringify({
-          email,
-          password: Math.random().toString(36), // Doesn't matter, service role bypasses it
-        }),
-      }
+    // Set a temporary password that the client will use to sign in
+    const tempPassword = Math.random().toString(36).slice(-20) + Math.random().toString(36).slice(-20)
+
+    console.log('Setting temporary password for user')
+
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      { password: tempPassword }
     )
 
-    if (!response.ok) {
-      // If password method doesn't work, generate a recovery link and extract tokens from URL
-      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-        type: 'recovery',
-        email,
-      })
-
-      if (linkError || !linkData) {
-        console.error('Error generating recovery link:', linkError)
-        return NextResponse.json(
-          { error: 'Failed to create session' },
-          { status: 500 }
-        )
-      }
-
-      console.log('Generated recovery link, properties:', Object.keys(linkData.properties))
-      console.log('Action link:', linkData.properties.action_link)
-
-      // Extract access and refresh tokens from the URL fragment
-      const actionLink = linkData.properties.action_link
-
-      // Check if tokens are in the URL hash
-      const url = new URL(actionLink)
-      const fragment = url.hash.substring(1) // Remove the # symbol
-      const params = new URLSearchParams(fragment)
-
-      console.log('Fragment params:', Array.from(params.keys()))
-
-      let access_token = params.get('access_token')
-      let refresh_token = params.get('refresh_token')
-      let expires_in = parseInt(params.get('expires_in') || '3600')
-      let expires_at = Math.floor(Date.now() / 1000) + expires_in
-
-      // If not in fragment, check query string
-      if (!access_token || !refresh_token) {
-        const queryParams = new URLSearchParams(url.search)
-        console.log('Query params:', Array.from(queryParams.keys()))
-
-        access_token = queryParams.get('access_token') || access_token
-        refresh_token = queryParams.get('refresh_token') || refresh_token
-      }
-
-      if (!access_token || !refresh_token) {
-        console.error('Failed to extract tokens from recovery link')
-        console.error('Full link data:', JSON.stringify(linkData, null, 2))
-        return NextResponse.json(
-          { error: 'Failed to create session tokens' },
-          { status: 500 }
-        )
-      }
-
-      console.log('Session tokens extracted successfully')
-
-      return NextResponse.json({
-        success: true,
-        email,
-        name,
-        userId,
-        session: {
-          access_token,
-          refresh_token,
-          expires_at,
-          expires_in,
-        },
-      })
+    if (updateError) {
+      console.error('Error setting temporary password:', updateError)
+      return NextResponse.json(
+        { error: 'Failed to prepare authentication' },
+        { status: 500 }
+      )
     }
 
-    const sessionData = await response.json()
-    const { access_token, refresh_token, expires_at, expires_in } = sessionData
+    console.log('Temporary password set successfully')
 
-    console.log('Session created successfully for user:', userId)
-
+    // Return the temporary password to the client
+    // The client will use this to sign in with signInWithPassword
     return NextResponse.json({
       success: true,
       email,
       name,
       userId,
-      session: {
-        access_token,
-        refresh_token,
-        expires_at,
-        expires_in,
-      },
+      tempPassword, // Client will use this to sign in
     })
   } catch (error: any) {
     console.error('Azure AD sign-in error:', error)

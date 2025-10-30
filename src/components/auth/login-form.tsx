@@ -74,22 +74,22 @@ export function LoginForm() {
         }
 
         const data = await apiResponse.json()
-        console.log('Session tokens received:', { email: data.email, userId: data.userId })
+        console.log('Temporary credentials received:', { email: data.email, userId: data.userId })
 
-        setAzureStatus('Establishing session...')
+        setAzureStatus('Signing in...')
 
-        // Set the session using the tokens from the backend
-        const { error: sessionError } = await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
+        // Sign in with the temporary password using Supabase client
+        const { error: signInError } = await supabase.auth.signInWithPassword({
+          email: data.email,
+          password: data.tempPassword,
         })
 
-        if (sessionError) {
-          console.error('Error setting session:', sessionError)
-          throw new Error('Failed to establish session: ' + sessionError.message)
+        if (signInError) {
+          console.error('Error signing in:', signInError)
+          throw new Error('Failed to sign in: ' + signInError.message)
         }
 
-        console.log('Session established successfully')
+        console.log('Signed in successfully')
         setAzureStatus('Success! Redirecting...')
 
         // Wait a moment for session to be fully established
