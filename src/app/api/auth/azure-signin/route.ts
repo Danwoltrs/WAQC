@@ -154,19 +154,8 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Verify the OTP/token to create a session (using the anon client, not admin)
-    const supabaseClient = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        auth: {
-          autoRefreshToken: false,
-          persistSession: false
-        }
-      }
-    )
-
-    const { data: sessionData, error: verifyError } = await supabaseClient.auth.verifyOtp({
+    // Verify the OTP/token to create a session (using admin client to bypass RLS)
+    const { data: sessionData, error: verifyError } = await supabaseAdmin.auth.verifyOtp({
       type: 'email',
       token_hash: hashed_token,
     })
