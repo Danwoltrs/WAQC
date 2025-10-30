@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
           participants: [user.id],
           sample_ids: [sample_id],
           session_type: 'digital',
-          status: 'in_progress',
+          status: 'active',
         })
         .select('id')
         .single()
