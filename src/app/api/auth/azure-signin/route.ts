@@ -122,53 +122,39 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use admin API to generate a magic link (works for existing users)
-    // This includes the hashed_token we can use to verify and create a session
-    const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
+    // Generate an access token using admin.updateUserById
+    // This sets a temporary password and returns a session
+    const tempPassword = Math.random().toString(36).slice(-16) + Math.random().toString(36).slice(-16)
+
+    const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+      userId,
+      { password: tempPassword }
+    )
+
+    if (updateError) {
+      console.error('Error updating user password:', updateError)
+      return NextResponse.json(
+        { error: 'Failed to create session: ' + updateError.message },
+        { status: 500 }
+      )
+    }
+
+    // Now sign in with the temporary password using admin client
+    // This bypasses RLS and creates a proper session
+    const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
       email,
+      password: tempPassword,
     })
 
-    if (linkError || !linkData) {
-      console.error('Error generating magic link:', linkError)
-      console.error('Full error:', JSON.stringify(linkError, null, 2))
+    if (signInError || !signInData.session) {
+      console.error('Error signing in with temp password:', signInError)
       return NextResponse.json(
-        { error: 'Failed to create session: ' + (linkError?.message || 'Unknown error') },
+        { error: 'Failed to create session: ' + (signInError?.message || 'Unknown error') },
         { status: 500 }
       )
     }
 
-    console.log('Link data keys:', Object.keys(linkData))
-    console.log('Properties:', linkData.properties ? Object.keys(linkData.properties) : 'no properties')
-
-    // The linkData contains hashed_token that we can use to verify OTP
-    // TypeScript doesn't know about this property, so we need to access it carefully
-    const properties = linkData.properties as any
-    const hashed_token = properties?.hashed_token || properties?.token_hash
-
-    if (!hashed_token) {
-      console.error('No hashed token in response:', JSON.stringify(linkData, null, 2))
-      return NextResponse.json(
-        { error: 'Failed to get token from link generation' },
-        { status: 500 }
-      )
-    }
-
-    // Verify the OTP/token to create a session (using admin client to bypass RLS)
-    const { data: sessionData, error: verifyError } = await supabaseAdmin.auth.verifyOtp({
-      type: 'email',
-      token_hash: hashed_token,
-    })
-
-    if (verifyError || !sessionData.session) {
-      console.error('Error verifying OTP:', verifyError)
-      return NextResponse.json(
-        { error: 'Failed to create session: ' + (verifyError?.message || 'Unknown error') },
-        { status: 500 }
-      )
-    }
-
-    const { access_token, refresh_token, expires_at, expires_in } = sessionData.session
+    const { access_token, refresh_token, expires_at, expires_in } = signInData.session
 
     console.log('Session created successfully for user:', userId)
 
