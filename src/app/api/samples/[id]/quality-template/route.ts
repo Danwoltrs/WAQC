@@ -7,7 +7,7 @@ import { createClient } from '@/lib/supabase-server'
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
@@ -18,7 +18,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const sampleId = params.id
+    const { id: sampleId } = await params
 
     // Fetch sample with quality specification and template
     const { data: sample, error: sampleError } = await supabase

@@ -8,7 +8,7 @@ import { createClient } from '@/lib/supabase-server'
  */
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
@@ -19,7 +19,7 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const sampleId = params.id
+    const { id: sampleId } = await params
     const body = await request.json()
     const { green_bean_data, roast_data } = body
 
@@ -126,7 +126,7 @@ export async function POST(
  */
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const supabase = await createClient()
@@ -137,7 +137,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const sampleId = params.id
+    const { id: sampleId } = await params
 
     // Fetch quality assessment
     const { data: assessment, error: assessmentError } = await supabase
