@@ -26,10 +26,11 @@ This complex flow was unreliable and often failed, leaving users without proper 
 2. MSAL redirects to Azure AD login
 3. Azure AD redirects back to app with authentication
 4. Backend creates/fetches user via Admin API
-5. **Backend generates actual session tokens via `admin.createSession()`**
-6. Frontend receives access_token and refresh_token
-7. **Frontend directly sets session via `supabase.auth.setSession()`**
-8. Session persists correctly with cookies and localStorage
+5. **Backend generates temporary UUID password and updates user**
+6. **Backend signs in with temporary password to get real session tokens**
+7. Frontend receives access_token and refresh_token
+8. **Frontend directly sets session via `supabase.auth.setSession()`**
+9. Session persists correctly with cookies and localStorage
 
 ### Key Changes
 
@@ -44,11 +45,22 @@ const { data: sessionData } = await supabaseAdmin.auth.admin.generateLink({
 return { sessionUrl: sessionData.properties.action_link }
 ```
 
-**After:** Creates actual session tokens
+**After:** Creates session via temporary password
 ```typescript
-const { data: sessionData } = await supabaseAdmin.auth.admin.createSession({
-  user_id: userId,
+// Create temporary password
+const tempPassword = crypto.randomUUID()
+
+// Update user with temporary password
+await supabaseAdmin.auth.admin.updateUserById(userId, {
+  password: tempPassword,
 })
+
+// Sign in to get real session
+const { data: sessionData } = await supabaseAdmin.auth.signInWithPassword({
+  email,
+  password: tempPassword,
+})
+
 return {
   session: {
     access_token: sessionData.session.access_token,
@@ -151,12 +163,21 @@ await supabase.auth.setSession({
 
 ## Technical Details
 
-### Admin Session Creation API
+### Temporary Password Session Creation
 
 ```typescript
-// Creates a real session with JWT tokens
-await supabaseAdmin.auth.admin.createSession({
-  user_id: userId
+// Generate temporary UUID password
+const tempPassword = crypto.randomUUID()
+
+// Update user with temporary password via Admin API
+await supabaseAdmin.auth.admin.updateUserById(userId, {
+  password: tempPassword,
+})
+
+// Sign in with temporary password to get session
+const { data: sessionData } = await supabaseAdmin.auth.signInWithPassword({
+  email,
+  password: tempPassword,
 })
 ```
 
@@ -165,6 +186,12 @@ Returns:
 - `refresh_token`: Token to renew access_token
 - `expires_at`: Unix timestamp when session expires
 - `expires_in`: Seconds until expiration
+
+**Why this approach:**
+- The `admin.createSession()` method doesn't exist in Supabase JS client
+- Temporary password approach generates real, reliable session tokens
+- Password is never exposed to client (generated and used server-side only)
+- More reliable than magic link/OTP verification flow
 
 ### Session Setting
 
