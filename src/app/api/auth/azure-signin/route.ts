@@ -122,13 +122,30 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Create a session for the user using admin API
-    const { data: sessionData, error: sessionError } = await supabaseAdmin.auth.admin.createSession({
-      user_id: userId,
+    // Create a temporary password for server-side session generation
+    const tempPassword = crypto.randomUUID()
+
+    // Update user with temporary password
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+      password: tempPassword,
     })
 
-    if (sessionError || !sessionData) {
-      console.error('Error creating session:', sessionError)
+    if (updateError) {
+      console.error('Error updating user password:', updateError)
+      return NextResponse.json(
+        { error: 'Failed to prepare session' },
+        { status: 500 }
+      )
+    }
+
+    // Sign in with the temporary password to get a real session
+    const { data: sessionData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
+      email,
+      password: tempPassword,
+    })
+
+    if (signInError || !sessionData.session) {
+      console.error('Error signing in:', signInError)
       return NextResponse.json(
         { error: 'Failed to create session' },
         { status: 500 }
