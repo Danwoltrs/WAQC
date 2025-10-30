@@ -231,12 +231,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       let session = null
 
       try {
-        // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
+        // Use retry logic with 3s timeout per attempt (2 attempts = max 6s total)
         const result = await retryWithBackoff(
           async () => await supabase.auth.getSession(),
-          3,
+          2,
           1000,
-          10000
+          3000
         )
 
         if (result.error) {
@@ -415,7 +415,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('[Auth] Fetching profile for user:', userId)
 
-        // Use retry logic with 10s timeout per attempt (3 attempts = max 30s total)
+        // Use retry logic with 3s timeout per attempt (2 attempts = max 6s total)
         let profileData: Profile | null = null
         let error: any = null
 
@@ -428,9 +428,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 .eq('id', userId)
                 .single()
             },
-            3,
+            2,
             1000,
-            10000
+            3000
           )
           profileData = result.data
           error = result.error
