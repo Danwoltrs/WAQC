@@ -21,6 +21,7 @@ interface CuppingTemplate {
   taint_threshold: number
   max_intensity: number
   cups_per_sample: number
+  discrepancy_threshold: number
 }
 
 // Defect data
