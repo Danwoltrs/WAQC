@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Minus, Plus, X, Save, Eye, EyeOff, Users, AlertTriangle } from 'lucide-react'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType } from '@/types/attribute-scales'
-import { createClient } from '@/lib/supabase-client'
+import { createClient } from '@/lib/supabase-browser'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 
