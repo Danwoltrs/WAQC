@@ -143,7 +143,9 @@ export async function POST(request: NextRequest) {
     console.log('Properties:', linkData.properties ? Object.keys(linkData.properties) : 'no properties')
 
     // The linkData contains hashed_token that we can use to verify OTP
-    const hashed_token = linkData.properties?.hashed_token || linkData.properties?.token_hash
+    // TypeScript doesn't know about this property, so we need to access it carefully
+    const properties = linkData.properties as any
+    const hashed_token = properties?.hashed_token || properties?.token_hash
 
     if (!hashed_token) {
       console.error('No hashed token in response:', JSON.stringify(linkData, null, 2))
