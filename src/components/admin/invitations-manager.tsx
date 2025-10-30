@@ -42,6 +42,8 @@ import {
 type Invitation = Database['public']['Tables']['user_invitations']['Row']
 
 type InvitationWithInviter = Invitation & {
+  first_name: string
+  last_name: string
   inviter_name?: string | null
 }
 
@@ -206,8 +208,8 @@ export function InvitationsManager() {
     const searchLower = searchQuery.toLowerCase()
     return (
       invitation.email.toLowerCase().includes(searchLower) ||
-      invitation.first_name?.toLowerCase().includes(searchLower) ||
-      invitation.last_name?.toLowerCase().includes(searchLower) ||
+      invitation.first_name.toLowerCase().includes(searchLower) ||
+      invitation.last_name.toLowerCase().includes(searchLower) ||
       invitation.inviter_name?.toLowerCase().includes(searchLower)
     )
   })
