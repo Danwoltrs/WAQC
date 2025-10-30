@@ -6049,6 +6049,7 @@ export type Database = {
           assigned_laboratories: string[] | null
           created_at: string | null
           created_by: string | null
+          cupping_discrepancy_threshold: number | null
           cupping_scale_increment: number | null
           cupping_scale_max: number | null
           cupping_scale_min: number | null
@@ -6085,6 +6086,7 @@ export type Database = {
           assigned_laboratories?: string[] | null
           created_at?: string | null
           created_by?: string | null
+          cupping_discrepancy_threshold?: number | null
           cupping_scale_increment?: number | null
           cupping_scale_max?: number | null
           cupping_scale_min?: number | null
@@ -6121,6 +6123,7 @@ export type Database = {
           assigned_laboratories?: string[] | null
           created_at?: string | null
           created_by?: string | null
+          cupping_discrepancy_threshold?: number | null
           cupping_scale_increment?: number | null
           cupping_scale_max?: number | null
           cupping_scale_min?: number | null

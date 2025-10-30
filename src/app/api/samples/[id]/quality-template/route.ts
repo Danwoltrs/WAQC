@@ -35,7 +35,8 @@ export async function GET(
           quality_templates!template_id (
             id,
             name,
-            parameters
+            parameters,
+            cupping_discrepancy_threshold
           )
         )
       `)
@@ -115,6 +116,7 @@ export async function GET(
       max_intensity: customParams.max_intensity || templateParams.max_intensity || 7,
       cups_per_sample: customParams.cups_per_sample || templateParams.cups_per_sample || 5,
       scale_info: customParams.scale_info || templateParams.scale_info || '1-8, 0.25',
+      discrepancy_threshold: template.cupping_discrepancy_threshold || 1.0,
     }
 
     return NextResponse.json({

@@ -43,6 +43,7 @@ interface CuppingTemplate {
   taint_threshold: number // e.g., 3 (1-3 = taint, 4+ = fault)
   max_intensity: number // e.g., 7
   cups_per_sample: number
+  discrepancy_threshold: number // e.g., 1.0 (points difference to flag discrepancy)
 }
 
 // Other cuppers' scores for real-time collaboration
@@ -263,8 +264,8 @@ export function DigitalCuppingInterface({
       const avg = allValues.reduce((a, b) => a + b, 0) / allValues.length
       const maxDiff = Math.max(...allValues.map(v => Math.abs(v - avg)))
 
-      // Flag if difference > 1.0 points from average
-      if (maxDiff > 1.0) {
+      // Flag if difference exceeds template's threshold
+      if (maxDiff > template.discrepancy_threshold) {
         detected.push({
           attribute: attr.attribute,
           your_score: myScore.value,
