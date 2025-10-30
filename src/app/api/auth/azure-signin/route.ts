@@ -155,20 +155,36 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      console.log('Generated recovery link')
+      console.log('Generated recovery link, properties:', Object.keys(linkData.properties))
+      console.log('Action link:', linkData.properties.action_link)
 
       // Extract access and refresh tokens from the URL fragment
-      const url = new URL(linkData.properties.action_link)
+      const actionLink = linkData.properties.action_link
+
+      // Check if tokens are in the URL hash
+      const url = new URL(actionLink)
       const fragment = url.hash.substring(1) // Remove the # symbol
       const params = new URLSearchParams(fragment)
 
-      const access_token = params.get('access_token')
-      const refresh_token = params.get('refresh_token')
-      const expires_in = parseInt(params.get('expires_in') || '3600')
-      const expires_at = Math.floor(Date.now() / 1000) + expires_in
+      console.log('Fragment params:', Array.from(params.keys()))
+
+      let access_token = params.get('access_token')
+      let refresh_token = params.get('refresh_token')
+      let expires_in = parseInt(params.get('expires_in') || '3600')
+      let expires_at = Math.floor(Date.now() / 1000) + expires_in
+
+      // If not in fragment, check query string
+      if (!access_token || !refresh_token) {
+        const queryParams = new URLSearchParams(url.search)
+        console.log('Query params:', Array.from(queryParams.keys()))
+
+        access_token = queryParams.get('access_token') || access_token
+        refresh_token = queryParams.get('refresh_token') || refresh_token
+      }
 
       if (!access_token || !refresh_token) {
         console.error('Failed to extract tokens from recovery link')
+        console.error('Full link data:', JSON.stringify(linkData, null, 2))
         return NextResponse.json(
           { error: 'Failed to create session tokens' },
           { status: 500 }
