@@ -34,19 +34,17 @@ export default function CuppingPage() {
     try {
       setLoading(true)
       const params = new URLSearchParams()
-      // Show samples that have been graded and are ready for cupping
-      // For now, we'll show samples with status 'approved' or a custom 'graded' status
       params.append('limit', '50')
+
+      // Cupping can happen independently of grading
+      // Show samples that are ready for cupping (status: 'cupping')
+      params.append('status', 'cupping')
 
       const response = await fetch(`/api/samples?${params}`)
       const data = await response.json()
 
       if (response.ok) {
-        // Filter to show only graded samples (you may want to add a specific status for this)
-        const gradedSamples = data.samples.filter((s: Sample) =>
-          s.status === 'approved' || s.status === 'in_progress'
-        )
-        setSamples(gradedSamples)
+        setSamples(data.samples)
       } else {
         console.error('Failed to load samples:', data.error)
       }
@@ -81,7 +79,7 @@ export default function CuppingPage() {
               <Coffee className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
               <h3 className="text-lg font-semibold mb-2">No samples ready for cupping</h3>
               <p className="text-muted-foreground">
-                Graded samples will appear here when ready for cupping
+                Samples with assigned cuppers will appear here
               </p>
             </CardContent>
           </Card>

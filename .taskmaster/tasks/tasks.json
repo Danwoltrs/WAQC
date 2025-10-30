@@ -372,9 +372,9 @@
         "description": "Build comprehensive cupping system with three input methods: OCR scanning (printed cards), real-time digital cupping interface, and future iOS app support. Support three session types: Calibration (digital only), Type Sample, and PSS/SS with quality validation.",
         "status": "in-progress",
         "dependencies": [
-          9,
-          10,
-          36
+          "9",
+          "10",
+          "36"
         ],
         "priority": "high",
         "details": "Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). Current progress: ✅ Cupper assignment dialog, ✅ Print cupping cards (thermal/A4), ✅ OCR scanning infrastructure, ⏳ Digital interface pending.",
@@ -382,144 +382,66 @@
         "subtasks": [
           {
             "id": 1,
-            "title": "Create cupping session setup wizard",
-            "description": "Build session creation wizard to configure session type, participants, samples, and input method preferences",
+            "title": "Create cupping session management components",
+            "description": "Build the core components for managing cupping sessions including session creation, participant management, and session configuration",
             "dependencies": [],
-            "details": "Create src/components/cupping/cupping-session-wizard.tsx with multi-step form: 1) Session type selection (Calibration, Type Sample, PSS/SS), 2) Sample selection with validation, 3) Cupper assignment (min 2 for collaborative sessions), 4) Input method selection (Digital, OCR Cards, Mixed), 5) Session configuration (cup patterns for calibration, quality template validation settings). Handle session creation via API call to cupping_sessions table with proper metadata.",
-            "status": "pending",
-            "testStrategy": "Test session creation flow for all three session types, verify cupper assignment validation, test sample validation against session type requirements"
+            "details": "Create src/components/cupping/cupping-session-manager.tsx with session state management, participant assignment interface, and session configuration options. Include components for session type selection (Calibration, Type Sample, PSS/SS), sample assignment validation, and cupper role management with minimum 2 cuppers requirement for collaborative sessions.\n<info added on 2025-10-30T17:02:48.759Z>\nI'll analyze the current codebase to understand the existing infrastructure and provide an informed update for this subtask.Based on the comprehensive codebase analysis and the task context, here's the update that should be appended to the subtask details:\n\nProgress Update (2025-01-30): Successfully completed Phase 1 foundational analysis and type definition creation. Analyzed existing cupping infrastructure including print-cupping-cards-dialog.tsx cupper assignment system, QR generation patterns, and cupping_sessions table schema in database.types.ts. Created comprehensive type definitions in src/types/cupping-session.ts covering all four sample types (TYPE, PSS, SS, CALIBRATION), input methods (digital, OCR, iOS, mixed), session statuses, and complete data structures for sessions, scores, and validation.\n\nKey architectural decisions established: Four distinct sample types with calibration requiring special UX flow, mixed input method support for simultaneous OCR and digital entry, privacy toggles for individual cupper scores, and integrated quality validation workflow for PSS/SS samples. Confirmed existing cupping infrastructure in src/components/cupping/ directory includes OCR validation dialog, scan cupping cards dialog, and print dialog with cupper assignment capabilities.\n\nReady to proceed with implementation of cupping-session-manager.tsx component leveraging existing cupper assignment patterns from print-cupping-cards-dialog.tsx and integrating with confirmed cupping_sessions database table structure.\n</info added on 2025-10-30T17:02:48.759Z>",
+            "status": "in-progress",
+            "testStrategy": "Test session creation with different types, test participant assignment validation, test minimum cupper requirements",
+            "updatedAt": "2025-10-30T16:59:44.693Z",
+            "parentId": "undefined"
           },
           {
             "id": 2,
-            "title": "Implement digital cupping interface core layout",
-            "description": "Create main digital cupping interface with tabbed sample layout and score input grid",
+            "title": "Implement real-time digital cupping interface",
+            "description": "Build the collaborative digital cupping interface with live score synchronization and discrepancy detection",
             "dependencies": [
               1
             ],
-            "details": "Create src/components/cupping/digital-cupping-interface.tsx with tabbed layout showing sample numbers/container numbers as tab titles. Implement score input grid with client-specific attributes (loaded from quality templates), configurable scales (1-5, 1-7, 1-10), increment levels (0.25, 0.5, 1.0). Include rich text notes section, descriptor tag system, and session completion controls. Use existing cupping_scores table structure for data persistence.",
+            "details": "Create src/components/cupping/digital-cupping-interface.tsx with real-time scoring UI, live sync capabilities using Supabase Realtime, discrepancy detection algorithms, and rich note-taking functionality. Include cup-by-cup scoring grid, attribute scoring (fragrance, flavor, aftertaste, etc.), and automatic score validation with conflict highlighting.",
             "status": "pending",
-            "testStrategy": "Test score input validation and persistence, test tab navigation between samples, verify attribute customization from quality templates"
+            "testStrategy": "Test real-time sync between multiple cuppers, test discrepancy detection accuracy, test note synchronization",
+            "parentId": "undefined"
           },
           {
             "id": 3,
-            "title": "Build real-time collaboration system",
-            "description": "Implement live score synchronization between multiple cuppers using Supabase realtime",
+            "title": "Build OCR integration for handwritten cupping cards",
+            "description": "Implement OCR processing system for extracting scores from scanned handwritten cupping cards",
             "dependencies": [
-              2
+              1
             ],
-            "details": "Implement Supabase realtime subscriptions for cupping_scores table to sync scores between participants. Create live score display with cupper identification, implement discrepancy detection (flag scores outside threshold ranges), add privacy toggle for hiding individual scores until session completion. Handle automatic score averaging to nearest increment level as specified in session configuration.",
+            "details": "Create src/lib/ocr/cupping-card-processor.ts to process scanned cupping cards, extract handwritten scores with 95%+ accuracy requirement, validate extracted data against session parameters, and integrate with existing QR code system. Include error handling for illegible handwriting and manual correction interface.",
             "status": "pending",
-            "testStrategy": "Test real-time score synchronization between multiple browser sessions, test discrepancy detection accuracy, verify privacy controls and score revelation timing"
+            "testStrategy": "Test OCR accuracy with various handwriting styles, test QR code integration, test manual correction workflow",
+            "parentId": "undefined"
           },
           {
             "id": 4,
-            "title": "Create calibration session interface",
-            "description": "Build specialized interface for calibration sessions with cup pattern displays",
+            "title": "Create cupping session validation and quality control",
+            "description": "Implement comprehensive validation system for cupping sessions with quality template compliance and certificate generation triggers",
             "dependencies": [
-              2
+              2,
+              3
             ],
-            "details": "Create src/components/cupping/calibration-session-interface.tsx with support for cup patterns: Square (2x2), Pyramid (triangular arrangement), Custom (2:2:3:3 or user-defined). Display visual cup layout guides, handle multiple rounds per session, focus on cupper alignment rather than sample evaluation. No certificate generation - sessions are for training and calibration purposes only.",
+            "details": "Create src/lib/cupping/session-validator.ts with validation logic for different session types, quality template compliance checking for PSS/SS sessions, automatic certificate generation triggers, and session completion workflows. Include validation for minimum cupper requirements, score consistency checks, and mandatory field validation based on session type.",
             "status": "pending",
-            "testStrategy": "Test cup pattern rendering and layout accuracy, test multi-round session management, verify calibration-specific scoring workflows"
+            "testStrategy": "Test validation logic for each session type, test quality template compliance, test certificate generation triggers",
+            "parentId": "undefined"
           },
           {
             "id": 5,
-            "title": "Implement quality template validation for PSS/SS",
-            "description": "Build validation system to check cupping scores against quality template requirements",
+            "title": "Implement cupping session reporting and analytics",
+            "description": "Build comprehensive reporting system for cupping sessions with analytics, performance metrics, and export capabilities",
             "dependencies": [
-              2
+              4
             ],
-            "details": "Create validation logic in src/lib/cupping/quality-validation.ts to check PSS/SS sample scores against quality template thresholds. Validate required attributes are scored, check min/max scale values, flag out-of-spec results. Integrate with existing quality_specifications and quality_templates tables. Auto-generate pass/fail status for certificate generation workflow.",
+            "details": "Create src/components/cupping/session-reports.tsx with detailed session analytics, cupper performance metrics, score distribution analysis, and export functionality to PDF/Excel. Include comparative analysis between cuppers, historical performance tracking, and calibration session effectiveness metrics. Support filtering by date range, cupper, session type, and sample origin.",
             "status": "pending",
-            "testStrategy": "Test validation accuracy against various quality templates, test threshold checking for different attribute scales, verify integration with certificate generation workflow"
-          },
-          {
-            "id": 6,
-            "title": "Create session management and coordination",
-            "description": "Build system to coordinate simultaneous cupping and grading workflows on same samples",
-            "dependencies": [
-              3
-            ],
-            "details": "Implement session coordination logic allowing parallel workflows: one user cupping (any method), another user grading (screen size, visual defects). Both workflows update same sample record in coordination. Create status tracking system to ensure both processes complete before certificate generation for PSS/SS samples. Update sample status accordingly throughout process.",
-            "status": "pending",
-            "testStrategy": "Test parallel workflow coordination, verify sample status updates from multiple concurrent processes, test completion synchronization for certificate triggering"
-          },
-          {
-            "id": 7,
-            "title": "Enhance OCR workflow integration",
-            "description": "Improve OCR card processing workflow to integrate with new session types and validation",
-            "dependencies": [
-              5
-            ],
-            "details": "Update existing OCR scanning components (src/components/cupping/scan-cupping-cards-dialog.tsx) to integrate with new session management system. Route OCR results through quality validation for PSS/SS samples, handle session type determination from scanned cards, improve cupper identification from handwritten names on cards using fuzzy matching against profiles table.",
-            "status": "pending",
-            "testStrategy": "Test OCR integration with session management, test cupper name recognition accuracy, verify quality validation routing for OCR-scanned PSS/SS samples"
-          },
-          {
-            "id": 8,
-            "title": "Create session history and reporting",
-            "description": "Build interface to view completed cupping sessions with score summaries and reports",
-            "dependencies": [
-              6
-            ],
-            "details": "Create src/components/cupping/session-history.tsx to display completed sessions with filtering by date range, session type, cuppers, samples. Show session summaries with average scores, discrepancy reports, participant statistics. For Type Sample sessions, generate basic cupping reports. Link to certificate generation for completed PSS/SS sessions.",
-            "status": "pending",
-            "testStrategy": "Test session filtering and search functionality, verify score summaries and calculations, test report generation for different session types"
-          },
-          {
-            "id": 9,
-            "title": "Create Digital Cupping Interface Components",
-            "description": "Build the core React components for the digital cupping interface including cupping form, score input controls, and real-time collaboration features.",
-            "dependencies": [],
-            "details": "Create src/components/cupping/digital-cupping-interface.tsx with score input controls for fragrance/aroma, flavor, aftertaste, acidity, body, balance, uniformity, clean cup, sweetness, and overall scores. Include notes text areas, defect tracking, and final score calculation. Implement touch-optimized controls for tablet use with circular navigation patterns similar to iPad design requirements.",
-            "status": "pending",
-            "testStrategy": "Test score input validation, test touch controls on tablets, test score calculation accuracy, verify real-time updates"
-          },
-          {
-            "id": 10,
-            "title": "Implement Real-time Score Synchronization",
-            "description": "Build real-time collaboration system for multiple cuppers to work simultaneously with live score updates and conflict detection.",
-            "dependencies": [
-              9
-            ],
-            "details": "Create src/lib/cupping-realtime.ts using Supabase Realtime subscriptions for live score synchronization between multiple cuppers. Implement conflict detection when cuppers have significant score discrepancies (>1.5 points), privacy toggles to hide/show scores during session, and cupper presence indicators. Add notification system for discrepancies and session state changes.",
-            "status": "pending",
-            "testStrategy": "Test multi-cupper collaboration, test discrepancy detection thresholds, test privacy toggle functionality, verify real-time synchronization performance"
-          },
-          {
-            "id": 11,
-            "title": "Create Session Type Management System",
-            "description": "Build system to handle three cupping session types: Calibration, Type Sample, and PSS/SS with different validation rules and workflows.",
-            "dependencies": [
-              10
-            ],
-            "details": "Create src/components/cupping/session-type-manager.tsx to handle session type selection and configuration. Implement Calibration Sessions (digital only, no certificates, display cup patterns), Type Sample Cupping (any input method, basic reports), and PSS/SS Sample Cupping (quality template validation, certificate generation). Add session workflow logic and validation rules per type.",
-            "status": "pending",
-            "testStrategy": "Test session type workflows, test calibration patterns display, test quality template validation for PSS/SS sessions, verify certificate generation triggers"
-          },
-          {
-            "id": 12,
-            "title": "Build Digital Cupping Session Management",
-            "description": "Create session creation, management, and completion workflows with proper state management and data persistence.",
-            "dependencies": [
-              11
-            ],
-            "details": "Create src/components/cupping/session-manager.tsx for creating new cupping sessions, assigning cuppers, managing session state (setup, in-progress, completed), and handling session completion workflows. Implement session templates, cupper assignment with minimum 2 cuppers requirement, session timing and duration tracking, and automatic save functionality with draft support.",
-            "status": "pending",
-            "testStrategy": "Test session creation workflow, test cupper assignment validation, test automatic save functionality, verify session state transitions"
-          },
-          {
-            "id": 13,
-            "title": "Integrate OCR and Digital Workflows",
-            "description": "Connect the existing OCR scanning system with the new digital interface to support hybrid cupping workflows.",
-            "dependencies": [
-              12
-            ],
-            "details": "Create src/lib/cupping-workflow-integration.ts to seamlessly integrate OCR scanning results with digital cupping interface. Support workflow where some cuppers use printed cards (OCR) while others use digital interface in same session. Implement score merging logic, validation of OCR results against digital scores, and unified session completion regardless of input method used.",
-            "status": "pending",
-            "testStrategy": "Test hybrid workflow functionality, test score merging accuracy, test OCR-digital validation, verify unified session completion"
+            "testStrategy": "Test report generation accuracy, test export functionality, test analytics calculations, verify performance metrics",
+            "parentId": "undefined"
           }
-        ]
+        ],
+        "updatedAt": "2025-10-30T16:59:44.693Z"
       },
       {
         "id": 12,
@@ -1416,13 +1338,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-29T15:25:15.994Z",
+      "lastModified": "2025-10-30T16:59:44.696Z",
       "taskCount": 36,
       "completedCount": 22,
       "tags": [
         "master"
       ],
-      "created": "2025-10-29T18:52:33.498Z",
+      "created": "2025-10-30T17:01:43.127Z",
       "description": "Tasks for master context"
     }
   }

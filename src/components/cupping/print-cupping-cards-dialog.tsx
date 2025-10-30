@@ -137,6 +137,40 @@ export function PrintCuppingCardsDialog({
     }
   }
 
+  // Update sample statuses to 'cupping'
+  const updateSampleStatuses = async (sampleIds: string[]) => {
+    try {
+      console.log('Updating sample statuses to "cupping" for:', sampleIds)
+
+      // Update all samples in parallel
+      const updatePromises = sampleIds.map(async (id) => {
+        const response = await fetch(`/api/samples/${id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'cupping' }),
+        })
+
+        if (!response.ok) {
+          const error = await response.text()
+          console.error(`Failed to update status for sample ${id}:`, error)
+          return { id, success: false, error }
+        }
+
+        return { id, success: true }
+      })
+
+      const results = await Promise.all(updatePromises)
+      const successCount = results.filter(r => r.success).length
+
+      console.log(`✅ Updated ${successCount}/${sampleIds.length} samples to "cupping" status`)
+
+      return successCount === sampleIds.length
+    } catch (error) {
+      console.error('Error updating sample statuses:', error)
+      return false
+    }
+  }
+
   // Generate QR codes and prepare card data
   const generateCards = async () => {
     setIsGenerating(true)
@@ -267,6 +301,11 @@ export function PrintCuppingCardsDialog({
       }
 
       setCardData(cards)
+
+      // Update sample statuses to 'cupping' after successful card generation
+      const sampleIds = samplesToUse.map(s => s.id)
+      await updateSampleStatuses(sampleIds)
+
       setIsReadyForDownload(true)
       setPdfKey(prev => prev + 1) // Increment key to trigger PDF regeneration
       console.log('✅ Cards generated successfully:', cards.length)

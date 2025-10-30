@@ -83,6 +83,9 @@ export function InvitationsManager() {
   }
 
   const fetchInvitations = async () => {
+    // Prevent multiple concurrent requests
+    if (loading) return
+
     try {
       setLoading(true)
 

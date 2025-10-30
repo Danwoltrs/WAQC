@@ -2,392 +2,189 @@
 
 import { useState, useEffect } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
-import {
-  X, Check, Coffee, AlertTriangle, Star, ChevronLeft
-} from 'lucide-react'
-import { cn } from '@/lib/utils'
+import { DigitalCuppingInterface } from '@/components/cupping/digital-cupping-interface'
+import { MainLayout } from '@/components/layout/main-layout'
+import { AttributeWithScale } from '@/types/cupping-templates'
 
-interface Sample {
+// Sample being cupped
+interface CuppingSample {
   id: string
   tracking_number: string
-  supplier?: string
-  origin?: string
-  sample_type?: string
+  sample_type: 'type' | 'pss' | 'ss'
+}
+
+// Quality template
+interface CuppingTemplate {
+  name: string
+  attributes: AttributeWithScale[]
+  defects: string[]
+  taint_threshold: number
+  max_intensity: number
   cups_per_sample: number
 }
 
-interface CupScore {
-  cupNumber: number
-  taints: string[]
-  faults: string[]
-  attributes: string[]
-  score?: number
+// Defect data
+interface Defect {
+  id: string
+  name: string
+  cups_affected: number
+  intensity: number
+  is_taint: boolean
 }
 
-// Common cupping attributes for Q grading
-const ATTRIBUTES = [
-  'Fragrance/Aroma', 'Flavor', 'Aftertaste', 'Acidity', 'Body',
-  'Balance', 'Uniformity', 'Clean Cup', 'Sweetness', 'Overall'
-]
-
-const COMMON_TAINTS = [
-  'Fermented', 'Phenolic', 'Earthy', 'Moldy', 'Musty',
-  'Chemical', 'Medicinal', 'Rubber', 'Petroleum'
-]
-
-const COMMON_FAULTS = [
-  'Sour', 'Overripe', 'Rancid', 'Vinegary', 'Harsh',
-  'Astringent', 'Bitter', 'Foreign Matter'
-]
+// Attribute score
+interface AttributeScore {
+  attribute: string
+  value: number | null
+}
 
 export default function CuppingDetailPage() {
   const params = useParams()
   const router = useRouter()
   const sampleId = params?.id as string
 
-  const [sample, setSample] = useState<Sample | null>(null)
+  const [sample, setSample] = useState<CuppingSample | null>(null)
+  const [template, setTemplate] = useState<CuppingTemplate | null>(null)
   const [loading, setLoading] = useState(true)
-  const [cupScores, setCupScores] = useState<CupScore[]>([])
-  const [selectedCup, setSelectedCup] = useState<number | null>(null)
-  const [isFullScreen, setIsFullScreen] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     if (sampleId) {
-      loadSample()
+      loadSampleData()
     }
   }, [sampleId])
 
-  const loadSample = async () => {
+  const loadSampleData = async () => {
     try {
       setLoading(true)
+      setError(null)
+
+      // Load sample details
       const response = await fetch(`/api/samples/${sampleId}`)
       const data = await response.json()
 
-      if (response.ok) {
-        setSample(data.sample)
-        // Initialize cup scores
-        const cupsCount = data.sample.cups_per_sample || 5
-        const initialScores: CupScore[] = Array.from({ length: cupsCount }, (_, i) => ({
-          cupNumber: i + 1,
-          taints: [],
-          faults: [],
-          attributes: [],
-          score: undefined
-        }))
-        setCupScores(initialScores)
-      } else {
-        console.error('Failed to load sample:', data.error)
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to load sample')
       }
-    } catch (error) {
-      console.error('Error loading sample:', error)
+
+      // Extract sample info
+      const sampleData = data.sample
+      setSample({
+        id: sampleData.id,
+        tracking_number: sampleData.tracking_number,
+        sample_type: sampleData.sample_type || 'type',
+      })
+
+      // Load quality template from quality_spec
+      // For now, use default template - will be replaced with actual template loading
+      const defaultTemplate: CuppingTemplate = {
+        name: 'Standard SCA',
+        attributes: [
+          { attribute: 'Fragrance/Aroma', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
+          { attribute: 'Flavor', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
+          { attribute: 'Aftertaste', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
+          { attribute: 'Acidity', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
+          { attribute: 'Body', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
+          { attribute: 'Balance', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
+          { attribute: 'Uniformity', scale: { type: 'numeric', min: 0, max: 10, increment: 2 } as const },
+          { attribute: 'Clean Cup', scale: { type: 'numeric', min: 0, max: 10, increment: 2 } as const },
+          { attribute: 'Sweetness', scale: { type: 'numeric', min: 0, max: 10, increment: 2 } as const },
+          { attribute: 'Overall', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
+        ],
+        defects: [
+          'Fermented', 'Phenolic', 'Earthy', 'Moldy', 'Musty',
+          'Chemical', 'Medicinal', 'Rubber', 'Sour', 'Overripe',
+        ],
+        taint_threshold: 3,
+        max_intensity: 7,
+        cups_per_sample: 5,
+      }
+
+      setTemplate(defaultTemplate)
+    } catch (err) {
+      console.error('Error loading sample data:', err)
+      setError(err instanceof Error ? err.message : 'Failed to load sample')
     } finally {
       setLoading(false)
     }
   }
 
-  const toggleFullScreen = () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(console.error)
-      setIsFullScreen(true)
-    } else {
-      document.exitFullscreen().catch(console.error)
-      setIsFullScreen(false)
+  const handleSave = async (
+    sampleId: string,
+    scores: AttributeScore[],
+    defects: Defect[]
+  ) => {
+    try {
+      // TODO: Implement save endpoint
+      // For now, just log the data
+      console.log('Saving cupping data:', {
+        sampleId,
+        scores,
+        defects,
+      })
+
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      // Show success message
+      alert('Cupping scores saved successfully!')
+    } catch (error) {
+      console.error('Error saving cupping scores:', error)
+      throw error
     }
   }
 
-  const handleCupClick = (cupNumber: number) => {
-    setSelectedCup(cupNumber)
-  }
-
-  const closeCupDialog = () => {
-    setSelectedCup(null)
-  }
-
-  const addItem = (cupNumber: number, category: 'taints' | 'faults' | 'attributes', item: string) => {
-    setCupScores(prev =>
-      prev.map(cup =>
-        cup.cupNumber === cupNumber
-          ? { ...cup, [category]: [...cup[category], item] }
-          : cup
-      )
+  if (!sampleId) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-screen">
+          <p className="text-muted-foreground">Invalid sample ID</p>
+        </div>
+      </MainLayout>
     )
-  }
-
-  const removeItem = (cupNumber: number, category: 'taints' | 'faults' | 'attributes', item: string) => {
-    setCupScores(prev =>
-      prev.map(cup =>
-        cup.cupNumber === cupNumber
-          ? { ...cup, [category]: cup[category].filter(i => i !== item) }
-          : cup
-      )
-    )
-  }
-
-  const updateScore = (cupNumber: number, score: number) => {
-    setCupScores(prev =>
-      prev.map(cup =>
-        cup.cupNumber === cupNumber ? { ...cup, score } : cup
-      )
-    )
-  }
-
-  const getCupStatus = (cup: CupScore): 'clean' | 'issues' | 'scored' => {
-    if (cup.score !== undefined) return 'scored'
-    if (cup.taints.length > 0 || cup.faults.length > 0) return 'issues'
-    return 'clean'
-  }
-
-  const getCupColor = (status: 'clean' | 'issues' | 'scored'): string => {
-    switch (status) {
-      case 'scored':
-        return 'bg-green-500 hover:bg-green-600'
-      case 'issues':
-        return 'bg-red-500 hover:bg-red-600'
-      case 'clean':
-        return 'bg-gray-300 hover:bg-gray-400 dark:bg-gray-600 dark:hover:bg-gray-500'
-    }
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-muted-foreground">Loading sample...</div>
-      </div>
-    )
-  }
-
-  if (!sample) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-center">
-          <h2 className="text-xl font-semibold mb-2">Sample not found</h2>
-          <Button onClick={() => router.back()}>Go Back</Button>
+      <MainLayout>
+        <div className="flex items-center justify-center h-screen">
+          <p className="text-muted-foreground">Loading sample...</p>
         </div>
-      </div>
+      </MainLayout>
     )
   }
 
-  const selectedCupData = cupScores.find(c => c.cupNumber === selectedCup)
+  if (error) {
+    return (
+      <MainLayout>
+        <div className="flex flex-col items-center justify-center h-screen space-y-4">
+          <p className="text-destructive">{error}</p>
+          <button
+            onClick={() => router.back()}
+            className="text-sm text-muted-foreground hover:text-foreground"
+          >
+            Go back
+          </button>
+        </div>
+      </MainLayout>
+    )
+  }
+
+  if (!sample || !template) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-screen">
+          <p className="text-muted-foreground">Sample not found</p>
+        </div>
+      </MainLayout>
+    )
+  }
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-8">
-      {/* Header */}
-      <div className="max-w-7xl mx-auto mb-6">
-        <div className="flex items-center justify-between mb-4">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => router.back()}
-          >
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Back
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={toggleFullScreen}
-          >
-            Full Screen
-          </Button>
-        </div>
-
-        <Card className="mb-6">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-2xl">{sample.tracking_number}</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {sample.supplier && `${sample.supplier} • `}
-                  {sample.origin}
-                </p>
-              </div>
-              <Badge variant="outline" className="text-lg px-4 py-2">
-                {cupScores.length} Cups
-              </Badge>
-            </div>
-          </CardHeader>
-        </Card>
-      </div>
-
-      {/* Cups Grid */}
-      <div className="max-w-7xl mx-auto">
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-6 md:gap-8">
-          {cupScores.map((cup) => {
-            const status = getCupStatus(cup)
-            const color = getCupColor(status)
-
-            return (
-              <button
-                key={cup.cupNumber}
-                onClick={() => handleCupClick(cup.cupNumber)}
-                className={cn(
-                  'relative aspect-square rounded-full transition-all duration-200 shadow-lg',
-                  'flex flex-col items-center justify-center',
-                  'border-4 border-white dark:border-gray-800',
-                  color
-                )}
-              >
-                <Coffee className="h-12 w-12 md:h-16 md:w-16 text-white mb-2" />
-                <span className="text-2xl md:text-3xl font-bold text-white">
-                  {cup.cupNumber}
-                </span>
-                {cup.score !== undefined && (
-                  <span className="text-sm text-white mt-1">
-                    {cup.score.toFixed(1)}
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      </div>
-
-      {/* Cup Detail Dialog */}
-      <Dialog open={selectedCup !== null} onOpenChange={closeCupDialog}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Cup {selectedCup} - Evaluation</DialogTitle>
-          </DialogHeader>
-
-          {selectedCupData && (
-            <div className="space-y-6">
-              {/* Taints */}
-              <div>
-                <Label className="text-base font-semibold mb-3 flex items-center gap-2">
-                  <AlertTriangle className="h-4 w-4" />
-                  Taints
-                </Label>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {selectedCupData.taints.map((taint) => (
-                    <Badge
-                      key={taint}
-                      variant="destructive"
-                      className="cursor-pointer"
-                      onClick={() => removeItem(selectedCup!, 'taints', taint)}
-                    >
-                      {taint}
-                      <X className="h-3 w-3 ml-1" />
-                    </Badge>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {COMMON_TAINTS.filter(t => !selectedCupData.taints.includes(t)).map((taint) => (
-                    <Button
-                      key={taint}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => addItem(selectedCup!, 'taints', taint)}
-                    >
-                      {taint}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Faults */}
-              <div>
-                <Label className="text-base font-semibold mb-3 flex items-center gap-2">
-                  <X className="h-4 w-4" />
-                  Faults
-                </Label>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {selectedCupData.faults.map((fault) => (
-                    <Badge
-                      key={fault}
-                      variant="destructive"
-                      className="cursor-pointer"
-                      onClick={() => removeItem(selectedCup!, 'faults', fault)}
-                    >
-                      {fault}
-                      <X className="h-3 w-3 ml-1" />
-                    </Badge>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {COMMON_FAULTS.filter(f => !selectedCupData.faults.includes(f)).map((fault) => (
-                    <Button
-                      key={fault}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => addItem(selectedCup!, 'faults', fault)}
-                    >
-                      {fault}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Attributes (for Q Grading) */}
-              <div>
-                <Label className="text-base font-semibold mb-3 flex items-center gap-2">
-                  <Star className="h-4 w-4" />
-                  Q Grading Attributes
-                </Label>
-                <div className="flex flex-wrap gap-2 mb-3">
-                  {selectedCupData.attributes.map((attr) => (
-                    <Badge
-                      key={attr}
-                      variant="default"
-                      className="cursor-pointer"
-                      onClick={() => removeItem(selectedCup!, 'attributes', attr)}
-                    >
-                      {attr}
-                      <X className="h-3 w-3 ml-1" />
-                    </Badge>
-                  ))}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {ATTRIBUTES.filter(a => !selectedCupData.attributes.includes(a)).map((attr) => (
-                    <Button
-                      key={attr}
-                      variant="outline"
-                      size="sm"
-                      onClick={() => addItem(selectedCup!, 'attributes', attr)}
-                    >
-                      {attr}
-                    </Button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Score */}
-              <div>
-                <Label htmlFor="score" className="text-base font-semibold mb-2 block">
-                  Score (0-100)
-                </Label>
-                <Input
-                  id="score"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.25"
-                  value={selectedCupData.score || ''}
-                  onChange={(e) => updateScore(selectedCup!, parseFloat(e.target.value))}
-                  placeholder="Enter score"
-                  className="max-w-xs"
-                />
-              </div>
-
-              {/* Actions */}
-              <div className="flex justify-end gap-2 pt-4 border-t">
-                <Button variant="outline" onClick={closeCupDialog}>
-                  Close
-                </Button>
-                <Button onClick={closeCupDialog}>
-                  <Check className="h-4 w-4 mr-1" />
-                  Save
-                </Button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+    <DigitalCuppingInterface
+      samples={[sample]}
+      template={template}
+      onSave={handleSave}
+    />
   )
 }
