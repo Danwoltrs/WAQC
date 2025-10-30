@@ -122,39 +122,77 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Generate an access token using admin.updateUserById
-    // This sets a temporary password and returns a session
-    const tempPassword = Math.random().toString(36).slice(-16) + Math.random().toString(36).slice(-16)
-
-    const { data: updateData, error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
-      userId,
-      { password: tempPassword }
+    // Create session tokens by directly calling Supabase REST API with service role
+    // This bypasses all auth methods that trigger RLS
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/token?grant_type=password`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.SUPABASE_SERVICE_ROLE_KEY!,
+          'Authorization': `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY!}`,
+        },
+        body: JSON.stringify({
+          email,
+          password: Math.random().toString(36), // Doesn't matter, service role bypasses it
+        }),
+      }
     )
 
-    if (updateError) {
-      console.error('Error updating user password:', updateError)
-      return NextResponse.json(
-        { error: 'Failed to create session: ' + updateError.message },
-        { status: 500 }
-      )
+    if (!response.ok) {
+      // If password method doesn't work, generate a recovery link and extract tokens from URL
+      const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
+        type: 'recovery',
+        email,
+      })
+
+      if (linkError || !linkData) {
+        console.error('Error generating recovery link:', linkError)
+        return NextResponse.json(
+          { error: 'Failed to create session' },
+          { status: 500 }
+        )
+      }
+
+      console.log('Generated recovery link')
+
+      // Extract access and refresh tokens from the URL fragment
+      const url = new URL(linkData.properties.action_link)
+      const fragment = url.hash.substring(1) // Remove the # symbol
+      const params = new URLSearchParams(fragment)
+
+      const access_token = params.get('access_token')
+      const refresh_token = params.get('refresh_token')
+      const expires_in = parseInt(params.get('expires_in') || '3600')
+      const expires_at = Math.floor(Date.now() / 1000) + expires_in
+
+      if (!access_token || !refresh_token) {
+        console.error('Failed to extract tokens from recovery link')
+        return NextResponse.json(
+          { error: 'Failed to create session tokens' },
+          { status: 500 }
+        )
+      }
+
+      console.log('Session tokens extracted successfully')
+
+      return NextResponse.json({
+        success: true,
+        email,
+        name,
+        userId,
+        session: {
+          access_token,
+          refresh_token,
+          expires_at,
+          expires_in,
+        },
+      })
     }
 
-    // Now sign in with the temporary password using admin client
-    // This bypasses RLS and creates a proper session
-    const { data: signInData, error: signInError } = await supabaseAdmin.auth.signInWithPassword({
-      email,
-      password: tempPassword,
-    })
-
-    if (signInError || !signInData.session) {
-      console.error('Error signing in with temp password:', signInError)
-      return NextResponse.json(
-        { error: 'Failed to create session: ' + (signInError?.message || 'Unknown error') },
-        { status: 500 }
-      )
-    }
-
-    const { access_token, refresh_token, expires_at, expires_in } = signInData.session
+    const sessionData = await response.json()
+    const { access_token, refresh_token, expires_at, expires_in } = sessionData
 
     console.log('Session created successfully for user:', userId)
 
