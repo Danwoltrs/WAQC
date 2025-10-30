@@ -531,7 +531,21 @@ export function DigitalCuppingInterface({
                   </div>
 
                   <div className="text-center">
-                    <div className="text-4xl font-bold mb-2">{value.toFixed(2)}</div>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={value}
+                      onChange={(e) => {
+                        const v = parseFloat(e.target.value)
+                        if (!isNaN(v) && v >= attr.scale.min && v <= attr.scale.max) {
+                          updateScore(selectedAttributeForEdit, v)
+                        }
+                      }}
+                      className="text-4xl font-bold mb-2 text-center w-full bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-ring rounded px-2"
+                      step={attr.scale.increment}
+                      min={attr.scale.min}
+                      max={attr.scale.max}
+                    />
                     <div className="text-sm text-muted-foreground">
                       ({attr.scale.min} - {attr.scale.max}, {attr.scale.increment})
                     </div>
@@ -656,9 +670,23 @@ export function DigitalCuppingInterface({
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
                       <label className="text-sm font-medium">Cups Affected</label>
-                      <span className="text-2xl font-bold">
-                        {defect.cups_affected}/{template.cups_per_sample}
-                      </span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={defect.cups_affected}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value)
+                          if (!isNaN(v) && v >= 0 && v <= template.cups_per_sample) {
+                            updateDefect(defect.id, { cups_affected: v })
+                          }
+                        }}
+                        className="text-2xl font-bold text-center w-24 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-ring rounded px-2"
+                        min={0}
+                        max={template.cups_per_sample}
+                      />
+                    </div>
+                    <div className="text-center text-sm text-muted-foreground">
+                      of {template.cups_per_sample} cups
                     </div>
                     <Slider
                       value={[defect.cups_affected]}
@@ -690,9 +718,23 @@ export function DigitalCuppingInterface({
                   <div className="space-y-3">
                     <div className="flex justify-between items-center">
                       <label className="text-sm font-medium">Intensity</label>
-                      <span className="text-2xl font-bold">
-                        {defect.intensity}/{template.max_intensity}
-                      </span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={defect.intensity}
+                        onChange={(e) => {
+                          const v = parseInt(e.target.value)
+                          if (!isNaN(v) && v >= 0 && v <= template.max_intensity) {
+                            updateDefect(defect.id, { intensity: v })
+                          }
+                        }}
+                        className="text-2xl font-bold text-center w-24 bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-ring rounded px-2"
+                        min={0}
+                        max={template.max_intensity}
+                      />
+                    </div>
+                    <div className="text-center text-sm text-muted-foreground">
+                      of {template.max_intensity} max
                     </div>
                     <Slider
                       value={[defect.intensity]}
