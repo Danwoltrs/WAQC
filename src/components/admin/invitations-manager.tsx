@@ -206,8 +206,8 @@ export function InvitationsManager() {
     const searchLower = searchQuery.toLowerCase()
     return (
       invitation.email.toLowerCase().includes(searchLower) ||
-      invitation.first_name.toLowerCase().includes(searchLower) ||
-      invitation.last_name.toLowerCase().includes(searchLower) ||
+      invitation.first_name?.toLowerCase().includes(searchLower) ||
+      invitation.last_name?.toLowerCase().includes(searchLower) ||
       invitation.inviter_name?.toLowerCase().includes(searchLower)
     )
   })
