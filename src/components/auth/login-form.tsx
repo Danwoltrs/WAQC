@@ -79,7 +79,7 @@ export function LoginForm() {
         setAzureStatus('Signing in...')
 
         // Sign in with the temporary password using Supabase client
-        const { error: signInError } = await supabase.auth.signInWithPassword({
+        const { data: sessionData, error: signInError } = await supabase.auth.signInWithPassword({
           email: data.email,
           password: data.tempPassword,
         })
@@ -89,13 +89,16 @@ export function LoginForm() {
           throw new Error('Failed to sign in: ' + signInError.message)
         }
 
-        console.log('Signed in successfully')
-        setAzureStatus('Success! Redirecting...')
+        if (!sessionData?.session) {
+          throw new Error('No session created after sign in')
+        }
 
-        // Wait a moment for session to be fully established
-        await new Promise(resolve => setTimeout(resolve, 500))
+        console.log('Signed in successfully, session established')
+        setAzureStatus('Success!')
 
-        window.location.href = '/dashboard'
+        // Session is established, the auth provider will detect this change
+        // and the page will re-render automatically showing the dashboard content
+        // No need for manual redirect - React will handle the re-render
       } catch (err: any) {
         console.error('Azure AD callback error:', err)
         setError(err.message || 'Authentication failed')

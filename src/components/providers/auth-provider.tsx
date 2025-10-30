@@ -8,50 +8,17 @@ import { NetworkError } from '@/components/errors/network-error'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 
-// Retry utility with exponential backoff
-async function retryWithBackoff<T>(
+// Simple timeout wrapper - let Supabase handle retries internally
+async function withTimeout<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  initialDelay: number = 1000,
-  timeoutMs: number = 10000
+  timeoutMs: number = 5000,
+  errorMessage: string = 'Request timeout'
 ): Promise<T> {
-  let lastError: any
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error(errorMessage)), timeoutMs)
+  )
 
-  for (let attempt = 0; attempt < maxRetries; attempt++) {
-    try {
-      // Add timeout to each attempt
-      const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), timeoutMs)
-      )
-
-      const result = await Promise.race([fn(), timeoutPromise])
-      return result
-    } catch (error: any) {
-      lastError = error
-      const isLastAttempt = attempt === maxRetries - 1
-
-      // Don't retry if it's a definitive error (not timeout/network)
-      if (
-        error?.code &&
-        error.code !== 'TIMEOUT' &&
-        !error.message?.includes('timeout') &&
-        !error.message?.includes('fetch') &&
-        !error.message?.includes('network') &&
-        !error.message?.includes('connection')
-      ) {
-        throw error
-      }
-
-      if (!isLastAttempt) {
-        // Exponential backoff: 1s, 2s, 4s
-        const delay = initialDelay * Math.pow(2, attempt)
-        console.log(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`)
-        await new Promise(resolve => setTimeout(resolve, delay))
-      }
-    }
-  }
-
-  throw lastError
+  return Promise.race([fn(), timeoutPromise])
 }
 
 interface AuthContextType {
@@ -226,17 +193,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Get initial session with retry logic
+    // Get initial session
     const getSession = async () => {
-      let session = null
-
       try {
-        // Use retry logic with 3s timeout per attempt (2 attempts = max 6s total)
-        const result = await retryWithBackoff(
-          async () => await supabase.auth.getSession(),
-          2,
-          1000,
-          3000
+        // Single attempt with 5s timeout - Supabase handles retries internally
+        const result = await withTimeout(
+          () => supabase.auth.getSession(),
+          5000,
+          'Session fetch timeout'
         )
 
         if (result.error) {
@@ -245,25 +209,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        session = result.data.session
-      } catch (err: any) {
-        console.error('Error getting session after retries:', err)
-        // On timeout/error, just continue - no session means show login
-        setLoading(false)
-        return
-      }
+        const session = result.data.session
 
-      if (session?.user) {
-        setUser(session.user)
-        // Setup proactive token refresh
-        setupTokenRefresh(session)
-        try {
-          await fetchProfile(session.user.id)
-        } catch (error) {
-          console.error('Failed to fetch profile during session setup:', error)
+        if (session?.user) {
+          setUser(session.user)
+          // Setup proactive token refresh
+          setupTokenRefresh(session)
+          try {
+            await fetchProfile(session.user.id)
+          } catch (error) {
+            console.error('Failed to fetch profile during session setup:', error)
+            setLoading(false)
+          }
+        } else {
           setLoading(false)
         }
-      } else {
+      } catch (err: any) {
+        console.error('Error getting session:', err)
+        // On timeout/error, show login
         setLoading(false)
       }
 
@@ -415,29 +378,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('[Auth] Fetching profile for user:', userId)
 
-        // Use retry logic with 3s timeout per attempt (2 attempts = max 6s total)
+        // Single attempt with 5s timeout - Supabase handles retries internally
         let profileData: Profile | null = null
         let error: any = null
 
         try {
-          const result = await retryWithBackoff(
-            async () => {
-              return await supabase
-                .from('profiles')
-                .select('*')
-                .eq('id', userId)
-                .single()
-            },
-            2,
-            1000,
-            3000
+          const result = await withTimeout(
+            () => supabase
+              .from('profiles')
+              .select('*')
+              .eq('id', userId)
+              .single(),
+            5000,
+            'Profile fetch timeout'
           )
           profileData = result.data
           error = result.error
         } catch (err: any) {
-          // If all retries fail, treat as timeout
-          if (err.message === 'Request timeout' || err.message?.includes('timeout')) {
-            console.warn('Profile fetch timed out after retries, will use fallback')
+          // If timeout, use fallback
+          if (err.message === 'Profile fetch timeout' || err.message?.includes('timeout')) {
+            console.warn('Profile fetch timed out, will use fallback')
             error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
           } else {
             throw err
