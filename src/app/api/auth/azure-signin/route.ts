@@ -122,41 +122,64 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Use admin API to generate a magic link which contains valid tokens
-    // This bypasses the normal sign-in flow and avoids RLS policy issues
+    // Use admin API to generate a signup link, which includes the hashed_token
+    // We'll exchange this for a session
     const { data: linkData, error: linkError } = await supabaseAdmin.auth.admin.generateLink({
-      type: 'magiclink',
+      type: 'signup',
       email,
-      options: {
-        redirectTo: process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000',
-      }
+      password: crypto.randomUUID(), // Generate a random password (won't be used)
     })
 
     if (linkError || !linkData) {
       console.error('Error generating session link:', linkError)
+      console.error('Full error:', JSON.stringify(linkError, null, 2))
       return NextResponse.json(
         { error: 'Failed to create session: ' + (linkError?.message || 'Unknown error') },
         { status: 500 }
       )
     }
 
-    // Extract tokens from the magic link
-    const url = new URL(linkData.properties.action_link)
-    const access_token = url.searchParams.get('access_token')
-    const refresh_token = url.searchParams.get('refresh_token')
-    const expires_at_str = url.searchParams.get('expires_at')
-    const expires_in_str = url.searchParams.get('expires_in')
+    console.log('Link data keys:', Object.keys(linkData))
+    console.log('Properties:', linkData.properties ? Object.keys(linkData.properties) : 'no properties')
 
-    if (!access_token || !refresh_token) {
-      console.error('Missing tokens in generated link')
+    // The linkData contains hashed_token that we can use to verify OTP
+    const hashed_token = linkData.properties?.hashed_token || linkData.properties?.token_hash
+
+    if (!hashed_token) {
+      console.error('No hashed token in response:', JSON.stringify(linkData, null, 2))
       return NextResponse.json(
-        { error: 'Failed to extract session tokens' },
+        { error: 'Failed to get token from link generation' },
         { status: 500 }
       )
     }
 
-    const expires_at = expires_at_str ? parseInt(expires_at_str) : null
-    const expires_in = expires_in_str ? parseInt(expires_in_str) : null
+    // Verify the OTP/token to create a session (using the anon client, not admin)
+    const supabaseClient = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false
+        }
+      }
+    )
+
+    const { data: sessionData, error: verifyError } = await supabaseClient.auth.verifyOtp({
+      type: 'signup',
+      token_hash: hashed_token,
+      email,
+    })
+
+    if (verifyError || !sessionData.session) {
+      console.error('Error verifying OTP:', verifyError)
+      return NextResponse.json(
+        { error: 'Failed to create session: ' + (verifyError?.message || 'Unknown error') },
+        { status: 500 }
+      )
+    }
+
+    const { access_token, refresh_token, expires_at, expires_in } = sessionData.session
 
     console.log('Session created successfully for user:', userId)
 
