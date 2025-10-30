@@ -6,9 +6,12 @@ import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
-import { Minus, Plus, X, Save } from 'lucide-react'
+import { Minus, Plus, X, Save, Eye, EyeOff, Users, AlertTriangle } from 'lucide-react'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType } from '@/types/attribute-scales'
+import { createClient } from '@/lib/supabase-client'
+import { Switch } from '@/components/ui/switch'
+import { Label } from '@/components/ui/label'
 
 // Defect with intensity-based classification
 interface Defect {
@@ -42,6 +45,23 @@ interface CuppingTemplate {
   cups_per_sample: number
 }
 
+// Other cuppers' scores for real-time collaboration
+interface CupperScore {
+  cupper_id: string
+  cupper_name: string
+  scores: Record<string, number>
+  updated_at: string
+}
+
+// Discrepancy info
+interface Discrepancy {
+  attribute: string
+  your_score: number
+  other_scores: number[]
+  avg_score: number
+  max_diff: number
+}
+
 interface DigitalCuppingInterfaceProps {
   samples: CuppingSample[]
   template: CuppingTemplate
@@ -58,6 +78,13 @@ export function DigitalCuppingInterface({
   const [defects, setDefects] = useState<Record<string, Defect[]>>({})
   const [selectedDefectForEdit, setSelectedDefectForEdit] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+
+  // Real-time collaboration state
+  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [otherCuppersScores, setOtherCuppersScores] = useState<CupperScore[]>([])
+  const [showOtherScores, setShowOtherScores] = useState(false)
+  const [discrepancies, setDiscrepancies] = useState<Discrepancy[]>([])
+  const [activeCuppers, setActiveCuppers] = useState<string[]>([])
 
   // Mobile-specific state
   const [selectedAttributeForEdit, setSelectedAttributeForEdit] = useState<string | null>(null)
@@ -91,6 +118,166 @@ export function DigitalCuppingInterface({
     setDefects(initialDefects)
   }, [samples, template])
 
+  // Supabase Realtime subscription for live collaboration
+  useEffect(() => {
+    if (!activeSampleId) return
+
+    const supabase = createClient()
+    let channel: ReturnType<typeof supabase.channel> | null = null
+
+    const setupRealtime = async () => {
+      try {
+        // Get current user
+        const { data: { user } } = await supabase.auth.getUser()
+        if (!user) return
+
+        // Fetch or create session for this sample
+        const { data: session } = await supabase
+          .from('cupping_sessions')
+          .select('id')
+          .contains('sample_ids', [activeSampleId])
+          .eq('session_type', 'digital')
+          .single()
+
+        if (session) {
+          setSessionId(session.id)
+
+          // Load existing scores from other cuppers
+          const { data: allScores } = await supabase
+            .from('cupping_scores')
+            .select(`
+              cupper_id,
+              scores,
+              updated_at,
+              profiles:cupper_id (
+                full_name
+              )
+            `)
+            .eq('session_id', session.id)
+            .eq('sample_id', activeSampleId)
+            .neq('cupper_id', user.id)
+
+          if (allScores) {
+            const otherScores: CupperScore[] = allScores.map((score: any) => ({
+              cupper_id: score.cupper_id,
+              cupper_name: score.profiles?.full_name || 'Unknown',
+              scores: score.scores,
+              updated_at: score.updated_at,
+            }))
+            setOtherCuppersScores(otherScores)
+            detectDiscrepancies(otherScores)
+          }
+
+          // Subscribe to real-time updates
+          channel = supabase
+            .channel(`cupping-session-${session.id}`)
+            .on(
+              'postgres_changes',
+              {
+                event: '*',
+                schema: 'public',
+                table: 'cupping_scores',
+                filter: `session_id=eq.${session.id}`,
+              },
+              async (payload) => {
+                console.log('Real-time cupping score update:', payload)
+
+                // Ignore our own updates
+                if (payload.new && (payload.new as any).cupper_id === user.id) {
+                  return
+                }
+
+                // Fetch updated profile info
+                if (payload.new) {
+                  const { data: profile } = await supabase
+                    .from('profiles')
+                    .select('full_name')
+                    .eq('id', (payload.new as any).cupper_id)
+                    .single()
+
+                  const newScore: CupperScore = {
+                    cupper_id: (payload.new as any).cupper_id,
+                    cupper_name: profile?.full_name || 'Unknown',
+                    scores: (payload.new as any).scores,
+                    updated_at: (payload.new as any).updated_at,
+                  }
+
+                  setOtherCuppersScores(prev => {
+                    const filtered = prev.filter(s => s.cupper_id !== newScore.cupper_id)
+                    const updated = [...filtered, newScore]
+                    detectDiscrepancies(updated)
+                    return updated
+                  })
+
+                  // Update active cuppers list
+                  setActiveCuppers(prev => {
+                    if (!prev.includes(newScore.cupper_id)) {
+                      return [...prev, newScore.cupper_id]
+                    }
+                    return prev
+                  })
+                }
+              }
+            )
+            .subscribe()
+
+          console.log('Subscribed to cupping session:', session.id)
+        }
+      } catch (error) {
+        console.error('Error setting up realtime:', error)
+      }
+    }
+
+    setupRealtime()
+
+    // Cleanup subscription
+    return () => {
+      if (channel) {
+        supabase.removeChannel(channel)
+        console.log('Unsubscribed from cupping session')
+      }
+    }
+  }, [activeSampleId])
+
+  // Discrepancy detection function
+  const detectDiscrepancies = (otherScores: CupperScore[]) => {
+    if (otherScores.length === 0) {
+      setDiscrepancies([])
+      return
+    }
+
+    const myScores = scores[activeSampleId] || []
+    const detected: Discrepancy[] = []
+
+    template.attributes.forEach(attr => {
+      const myScore = myScores.find(s => s.attribute === attr.attribute)
+      if (!myScore || myScore.value === null) return
+
+      const otherValues = otherScores
+        .map(s => s.scores[attr.attribute])
+        .filter(v => v !== undefined && v !== null)
+
+      if (otherValues.length === 0) return
+
+      const allValues = [...otherValues, myScore.value]
+      const avg = allValues.reduce((a, b) => a + b, 0) / allValues.length
+      const maxDiff = Math.max(...allValues.map(v => Math.abs(v - avg)))
+
+      // Flag if difference > 1.0 points from average
+      if (maxDiff > 1.0) {
+        detected.push({
+          attribute: attr.attribute,
+          your_score: myScore.value,
+          other_scores: otherValues,
+          avg_score: avg,
+          max_diff: maxDiff,
+        })
+      }
+    })
+
+    setDiscrepancies(detected)
+  }
+
   // Get current sample data
   const activeSample = samples.find(s => s.id === activeSampleId)
   const activeSampleScores = scores[activeSampleId] || []
@@ -98,12 +285,21 @@ export function DigitalCuppingInterface({
 
   // Update attribute score
   const updateScore = (attribute: string, value: number) => {
-    setScores(prev => ({
-      ...prev,
-      [activeSampleId]: prev[activeSampleId].map(score =>
-        score.attribute === attribute ? { ...score, value } : score
-      ),
-    }))
+    setScores(prev => {
+      const updated = {
+        ...prev,
+        [activeSampleId]: prev[activeSampleId].map(score =>
+          score.attribute === attribute ? { ...score, value } : score
+        ),
+      }
+
+      // Trigger discrepancy detection after score update
+      if (otherCuppersScores.length > 0) {
+        setTimeout(() => detectDiscrepancies(otherCuppersScores), 100)
+      }
+
+      return updated
+    })
   }
 
   // Add defect
@@ -198,7 +394,7 @@ export function DigitalCuppingInterface({
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header with Sample Tabs */}
+      {/* Header with Sample Tabs and Collaboration Controls */}
       <div className="border-b bg-card">
         <div className="flex items-center justify-between p-4">
           <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="flex-1">
@@ -210,10 +406,47 @@ export function DigitalCuppingInterface({
               ))}
             </TabsList>
           </Tabs>
-          <Button onClick={handleSave} disabled={isSaving}>
-            <Save className="h-4 w-4 mr-2" />
-            {isSaving ? 'Saving...' : 'Save'}
-          </Button>
+
+          {/* Collaboration Controls */}
+          <div className="flex items-center gap-4">
+            {/* Active Cuppers Indicator */}
+            {otherCuppersScores.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">
+                  {otherCuppersScores.length + 1} cupper{otherCuppersScores.length > 0 ? 's' : ''}
+                </span>
+              </div>
+            )}
+
+            {/* Discrepancy Warning */}
+            {discrepancies.length > 0 && (
+              <Badge variant="destructive" className="gap-1">
+                <AlertTriangle className="h-3 w-3" />
+                {discrepancies.length} discrepanc{discrepancies.length !== 1 ? 'ies' : 'y'}
+              </Badge>
+            )}
+
+            {/* Privacy Toggle */}
+            {otherCuppersScores.length > 0 && (
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="show-others"
+                  checked={showOtherScores}
+                  onCheckedChange={setShowOtherScores}
+                />
+                <Label htmlFor="show-others" className="text-sm cursor-pointer flex items-center gap-1">
+                  {showOtherScores ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  {showOtherScores ? 'Showing' : 'Hidden'}
+                </Label>
+              </div>
+            )}
+
+            <Button onClick={handleSave} disabled={isSaving}>
+              <Save className="h-4 w-4 mr-2" />
+              {isSaving ? 'Saving...' : 'Save'}
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -224,6 +457,33 @@ export function DigitalCuppingInterface({
           <div className="text-sm text-muted-foreground">
             {template.name} • {template.cups_per_sample} cups per sample
           </div>
+
+          {/* Discrepancies Panel - Show if there are discrepancies */}
+          {discrepancies.length > 0 && (
+            <Card className="p-6 border-destructive bg-destructive/5">
+              <div className="flex items-center gap-2 mb-4">
+                <AlertTriangle className="h-5 w-5 text-destructive" />
+                <h2 className="text-lg font-semibold">Score Discrepancies Detected</h2>
+              </div>
+              <div className="space-y-3">
+                {discrepancies.map((disc) => (
+                  <div key={disc.attribute} className="flex items-center justify-between p-3 bg-background rounded-lg border border-destructive/20">
+                    <div>
+                      <div className="font-medium">{disc.attribute}</div>
+                      <div className="text-sm text-muted-foreground">
+                        Your score: {disc.your_score.toFixed(2)} | Average: {disc.avg_score.toFixed(2)} | Diff: ±{disc.max_diff.toFixed(2)}
+                      </div>
+                    </div>
+                    {showOtherScores && (
+                      <div className="text-sm text-muted-foreground">
+                        Others: {disc.other_scores.map(s => s.toFixed(2)).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+          )}
 
           {/* Attributes Section */}
           <Card className="p-6">

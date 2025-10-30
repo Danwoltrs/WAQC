@@ -137,23 +137,43 @@ export function PrintCuppingCardsDialog({
     }
   }
 
-  // Update sample statuses to 'cupping'
+  // Update sample statuses to 'cupping' and mark roasted
   const updateSampleStatuses = async (sampleIds: string[]) => {
     try {
       console.log('Updating sample statuses to "cupping" for:', sampleIds)
 
-      // Update all samples in parallel
+      // Update all samples and create quality assessments in parallel
       const updatePromises = sampleIds.map(async (id) => {
-        const response = await fetch(`/api/samples/${id}`, {
+        // Update sample status
+        const statusResponse = await fetch(`/api/samples/${id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: 'cupping' }),
         })
 
-        if (!response.ok) {
-          const error = await response.text()
+        if (!statusResponse.ok) {
+          const error = await statusResponse.text()
           console.error(`Failed to update status for sample ${id}:`, error)
           return { id, success: false, error }
+        }
+
+        // Create or update quality assessment with roast_data
+        // This marks the "roasted" step as complete
+        const assessmentResponse = await fetch(`/api/samples/${id}/quality-assessment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roast_data: {
+              roasted: true,
+              roasted_at: new Date().toISOString(),
+              ready_for_cupping: true,
+            },
+          }),
+        })
+
+        if (!assessmentResponse.ok) {
+          console.warn(`Failed to update quality assessment for sample ${id}`)
+          // Don't fail the entire operation if assessment update fails
         }
 
         return { id, success: true }

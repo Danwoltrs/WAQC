@@ -75,32 +75,15 @@ export default function CuppingDetailPage() {
         sample_type: sampleData.sample_type || 'type',
       })
 
-      // Load quality template from quality_spec
-      // For now, use default template - will be replaced with actual template loading
-      const defaultTemplate: CuppingTemplate = {
-        name: 'Standard SCA',
-        attributes: [
-          { attribute: 'Fragrance/Aroma', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
-          { attribute: 'Flavor', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
-          { attribute: 'Aftertaste', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
-          { attribute: 'Acidity', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
-          { attribute: 'Body', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
-          { attribute: 'Balance', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
-          { attribute: 'Uniformity', scale: { type: 'numeric', min: 0, max: 10, increment: 2 } as const },
-          { attribute: 'Clean Cup', scale: { type: 'numeric', min: 0, max: 10, increment: 2 } as const },
-          { attribute: 'Sweetness', scale: { type: 'numeric', min: 0, max: 10, increment: 2 } as const },
-          { attribute: 'Overall', scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 } as const },
-        ],
-        defects: [
-          'Fermented', 'Phenolic', 'Earthy', 'Moldy', 'Musty',
-          'Chemical', 'Medicinal', 'Rubber', 'Sour', 'Overripe',
-        ],
-        taint_threshold: 3,
-        max_intensity: 7,
-        cups_per_sample: 5,
+      // Load quality template from the sample's quality specification
+      const templateResponse = await fetch(`/api/samples/${sampleId}/quality-template`)
+      const templateData = await templateResponse.json()
+
+      if (!templateResponse.ok) {
+        throw new Error(templateData.error || 'Failed to load quality template')
       }
 
-      setTemplate(defaultTemplate)
+      setTemplate(templateData.template)
     } catch (err) {
       console.error('Error loading sample data:', err)
       setError(err instanceof Error ? err.message : 'Failed to load sample')
@@ -115,19 +98,24 @@ export default function CuppingDetailPage() {
     defects: Defect[]
   ) => {
     try {
-      // TODO: Implement save endpoint
-      // For now, just log the data
-      console.log('Saving cupping data:', {
-        sampleId,
-        scores,
-        defects,
+      const response = await fetch('/api/cupping/scores/save-digital', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sample_id: sampleId,
+          scores,
+          defects,
+        }),
       })
 
-      // Simulate API call
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const data = await response.json()
 
-      // Show success message
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save cupping scores')
+      }
+
       alert('Cupping scores saved successfully!')
+      return data
     } catch (error) {
       console.error('Error saving cupping scores:', error)
       throw error
