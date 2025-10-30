@@ -44,6 +44,7 @@ type Invitation = Database['public']['Tables']['user_invitations']['Row']
 type InvitationWithInviter = Invitation & {
   first_name: string
   last_name: string
+  qc_role: string
   inviter_name?: string | null
 }
 
