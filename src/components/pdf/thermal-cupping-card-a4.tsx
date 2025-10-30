@@ -6,8 +6,6 @@ import {
   View,
   StyleSheet,
   Image,
-  Svg,
-  Line,
 } from '@react-pdf/renderer'
 import { ThermalCuppingCardData, AttributeForCard } from './thermal-cupping-card'
 
@@ -73,23 +71,24 @@ function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number 
   return trimmed.substring(0, maxLength)
 }
 
-// Create styles for A4 multi-card layout (12 cards per page, 4x3 grid)
+// Create styles for A4 multi-card layout (8 cards per page, 2x4 grid)
+// Design: One thick outer border for guillotine cutting
 const styles = StyleSheet.create({
   page: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     backgroundColor: '#FFFFFF',
-    padding: '8pt',
+    padding: '0pt',
     position: 'relative',
+    border: '2pt solid #000000', // ONE THICK OUTER BORDER for guillotine
   },
   cardContainer: {
-    width: '49%',
-    marginRight: '1%',
-    marginBottom: '1%',
+    width: '50%',
     position: 'relative',
   },
   card: {
-    border: '1pt solid #000000',
+    borderRight: '0.5pt solid #CCCCCC', // Thin internal borders for visual separation only
+    borderBottom: '0.5pt solid #CCCCCC',
     fontSize: 6,
   },
   header: {
@@ -186,12 +185,6 @@ const styles = StyleSheet.create({
     borderBottom: '0.5pt solid #CCCCCC',
     marginBottom: '2pt',
   },
-  cuttingGuide: {
-    position: 'absolute',
-    stroke: '#CCCCCC',
-    strokeWidth: 0.5,
-    strokeDasharray: '2 2',
-  },
 })
 
 interface ThermalCuppingCardA4DocumentProps {
@@ -280,41 +273,7 @@ export const ThermalCuppingCardA4Document: React.FC<
     <Document>
       {pages.filter(pageCards => pageCards.length > 0).map((pageCards, pageIndex) => (
         <Page key={pageIndex} size="A4" style={styles.page}>
-          {/* Cutting Guides - 2x4 grid */}
-          <Svg style={{ position: 'absolute', width: '100%', height: '100%' }}>
-            {/* Vertical line (1 line to create 2 columns) */}
-            <Line
-              x1="50%"
-              y1="0"
-              x2="50%"
-              y2="100%"
-              style={styles.cuttingGuide}
-            />
-            {/* Horizontal lines (3 lines to create 4 rows) */}
-            <Line
-              x1="0"
-              y1="25%"
-              x2="100%"
-              y2="25%"
-              style={styles.cuttingGuide}
-            />
-            <Line
-              x1="0"
-              y1="50%"
-              x2="100%"
-              y2="50%"
-              style={styles.cuttingGuide}
-            />
-            <Line
-              x1="0"
-              y1="75%"
-              x2="100%"
-              y2="75%"
-              style={styles.cuttingGuide}
-            />
-          </Svg>
-
-          {/* Cards */}
+          {/* Cards - 2x4 grid with one thick outer border for guillotine cutting */}
           {pageCards.map((card, cardIndex) => (
             <View key={cardIndex} style={styles.cardContainer}>
               <View style={styles.card}>
@@ -330,30 +289,16 @@ export const ThermalCuppingCardA4Document: React.FC<
                     <Text style={styles.companyName}>
                       {card.lab_name?.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}
                     </Text>
+                    {/* Sample Type and Identifier - Bold type followed by number/ICO */}
                     <Text style={styles.sampleNumber}>
-                      Sample: {card.sample_number || card.tracking_number || 'Unknown'}
+                      <Text style={{ fontWeight: 'bold' }}>
+                        {card.sample_type ? card.sample_type.toUpperCase() : 'TYPE'}:
+                      </Text>{' '}
+                      {card.sample_type === 'ss'
+                        ? (card.ico_number || card.container_nr || card.sample_number || card.tracking_number || 'Unknown')
+                        : (card.sample_number || card.tracking_number || 'Unknown')
+                      }
                     </Text>
-                    {/* Sample Type */}
-                    {card.sample_type && (
-                      <Text style={styles.infoRow}>
-                        <Text style={styles.infoLabel}>Type:</Text> {card.sample_type.toUpperCase()}
-                      </Text>
-                    )}
-                    {/* SS samples must show ICO and Container Nr */}
-                    {card.sample_type === 'ss' && (
-                      <>
-                        {card.ico_number && (
-                          <Text style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>ICO:</Text> {card.ico_number}
-                          </Text>
-                        )}
-                        {card.container_nr && (
-                          <Text style={styles.infoRow}>
-                            <Text style={styles.infoLabel}>Container:</Text> {card.container_nr}
-                          </Text>
-                        )}
-                      </>
-                    )}
                     {show_quality && card.quality_name && (
                       <Text style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Quality:</Text> {card.quality_name}

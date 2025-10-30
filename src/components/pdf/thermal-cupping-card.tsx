@@ -291,30 +291,16 @@ export const ThermalCuppingCardDocument: React.FC<
                 <Text style={styles.companyName}>
                   {card.lab_name?.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}
                 </Text>
+                {/* Sample Type and Identifier - Bold type followed by number/ICO */}
                 <Text style={styles.sampleNumber}>
-                  Sample: {card.sample_number || card.tracking_number || 'Unknown'}
+                  <Text style={{ fontWeight: 'bold' }}>
+                    {card.sample_type ? card.sample_type.toUpperCase() : 'TYPE'}:
+                  </Text>{' '}
+                  {card.sample_type === 'ss'
+                    ? (card.ico_number || card.container_nr || card.sample_number || card.tracking_number || 'Unknown')
+                    : (card.sample_number || card.tracking_number || 'Unknown')
+                  }
                 </Text>
-                {/* Sample Type */}
-                {card.sample_type && (
-                  <Text style={styles.infoRow}>
-                    Type: {card.sample_type.toUpperCase()}
-                  </Text>
-                )}
-                {/* SS samples must show ICO and Container Nr */}
-                {card.sample_type === 'ss' && (
-                  <>
-                    {card.ico_number && (
-                      <Text style={styles.infoRow}>
-                        ICO: {card.ico_number}
-                      </Text>
-                    )}
-                    {card.container_nr && (
-                      <Text style={styles.infoRow}>
-                        Container: {card.container_nr}
-                      </Text>
-                    )}
-                  </>
-                )}
                 {show_quality && card.quality_name && (
                   <Text style={styles.infoRow}>
                     Quality: {card.quality_name}
