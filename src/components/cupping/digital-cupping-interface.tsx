@@ -514,8 +514,9 @@ export function DigitalCuppingInterface({
               const attr = template.attributes.find(a => a.attribute === selectedAttributeForEdit)
               if (!attr || attr.scale.type !== 'numeric') return null
 
+              const scale = attr.scale
               const score = activeSampleScores.find(s => s.attribute === selectedAttributeForEdit)
-              const value = score?.value ?? attr.scale.min
+              const value = score?.value ?? scale.min
 
               return (
                 <>
@@ -537,17 +538,17 @@ export function DigitalCuppingInterface({
                       value={value}
                       onChange={(e) => {
                         const v = parseFloat(e.target.value)
-                        if (!isNaN(v) && v >= attr.scale.min && v <= attr.scale.max) {
+                        if (!isNaN(v) && v >= scale.min && v <= scale.max) {
                           updateScore(selectedAttributeForEdit, v)
                         }
                       }}
                       className="text-4xl font-bold mb-2 text-center w-full bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-ring rounded px-2"
-                      step={attr.scale.increment}
-                      min={attr.scale.min}
-                      max={attr.scale.max}
+                      step={scale.increment}
+                      min={scale.min}
+                      max={scale.max}
                     />
                     <div className="text-sm text-muted-foreground">
-                      ({attr.scale.min} - {attr.scale.max}, {attr.scale.increment})
+                      ({scale.min} - {scale.max}, {scale.increment})
                     </div>
                   </div>
 
@@ -555,9 +556,9 @@ export function DigitalCuppingInterface({
                     <Slider
                       value={[value]}
                       onValueChange={([v]) => updateScore(selectedAttributeForEdit, v)}
-                      min={attr.scale.min}
-                      max={attr.scale.max}
-                      step={attr.scale.increment}
+                      min={scale.min}
+                      max={scale.max}
+                      step={scale.increment}
                       className="w-full"
                     />
 
@@ -565,7 +566,7 @@ export function DigitalCuppingInterface({
                       <Button
                         variant="outline"
                         className="flex-1 h-12"
-                        onClick={() => decrementScore(selectedAttributeForEdit, attr.scale)}
+                        onClick={() => decrementScore(selectedAttributeForEdit, scale)}
                       >
                         <Minus className="h-5 w-5" />
                       </Button>
@@ -574,19 +575,19 @@ export function DigitalCuppingInterface({
                         value={value}
                         onChange={(e) => {
                           const v = parseFloat(e.target.value)
-                          if (!isNaN(v) && v >= attr.scale.min && v <= attr.scale.max) {
+                          if (!isNaN(v) && v >= scale.min && v <= scale.max) {
                             updateScore(selectedAttributeForEdit, v)
                           }
                         }}
                         className="w-24 px-3 py-2 text-center border rounded text-lg font-semibold"
-                        step={attr.scale.increment}
-                        min={attr.scale.min}
-                        max={attr.scale.max}
+                        step={scale.increment}
+                        min={scale.min}
+                        max={scale.max}
                       />
                       <Button
                         variant="outline"
                         className="flex-1 h-12"
-                        onClick={() => incrementScore(selectedAttributeForEdit, attr.scale)}
+                        onClick={() => incrementScore(selectedAttributeForEdit, scale)}
                       >
                         <Plus className="h-5 w-5" />
                       </Button>
