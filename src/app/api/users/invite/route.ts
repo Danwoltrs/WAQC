@@ -126,50 +126,118 @@ export async function POST(request: NextRequest) {
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1.0">
               <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; }
-                .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-                .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 8px 8px 0 0; }
-                .content { background: white; padding: 30px; border: 1px solid #e0e0e0; border-top: none; border-radius: 0 0 8px 8px; }
-                .button { display: inline-block; background: #667eea; color: white; padding: 14px 28px; text-decoration: none; border-radius: 6px; font-weight: 600; margin: 20px 0; }
-                .button:hover { background: #5568d3; }
-                .footer { text-align: center; margin-top: 30px; color: #666; font-size: 14px; }
-                .info-box { background: #f8f9fa; border-left: 4px solid #667eea; padding: 15px; margin: 20px 0; }
-                .expires { color: #dc3545; font-weight: 600; }
+                body {
+                  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                  line-height: 1.6;
+                  color: #333;
+                  background-color: #f5f5f5;
+                  margin: 0;
+                  padding: 0;
+                }
+                .container {
+                  max-width: 600px;
+                  margin: 40px auto;
+                  background: white;
+                  border-radius: 12px;
+                  overflow: hidden;
+                  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+                }
+                .header {
+                  background: #427244;
+                  color: white;
+                  padding: 40px 30px;
+                  text-align: center;
+                }
+                .logo {
+                  max-width: 200px;
+                  height: auto;
+                  margin-bottom: 20px;
+                }
+                .content {
+                  background: white;
+                  padding: 40px 30px;
+                }
+                .button {
+                  display: inline-block;
+                  background: #427244;
+                  color: white !important;
+                  padding: 16px 32px;
+                  text-decoration: none;
+                  border-radius: 8px;
+                  font-weight: 600;
+                  margin: 24px 0;
+                  transition: background 0.3s ease;
+                }
+                .button:hover {
+                  background: #356034;
+                }
+                .footer {
+                  background: #F7DF96;
+                  padding: 30px;
+                  text-align: center;
+                  color: #427244;
+                  font-size: 14px;
+                }
+                .info-box {
+                  background: #f8fdf9;
+                  border-left: 4px solid #427244;
+                  padding: 20px;
+                  margin: 24px 0;
+                  border-radius: 4px;
+                }
+                .expires {
+                  color: #dc3545;
+                  font-weight: 600;
+                  background: #fff5f5;
+                  padding: 12px;
+                  border-radius: 6px;
+                  border-left: 4px solid #dc3545;
+                }
+                .greeting {
+                  color: #427244;
+                  margin-top: 0;
+                  font-size: 24px;
+                }
               </style>
             </head>
             <body>
               <div class="container">
                 <div class="header">
-                  <h1 style="margin: 0; font-size: 28px;">Welcome to Wolthers QC</h1>
+                  <img src="${process.env.NEXT_PUBLIC_APP_URL}/images/logos/wolthers-logo-green.png" alt="Wolthers Logo" class="logo">
+                  <h1 style="margin: 0; font-size: 32px; font-weight: 700;">Welcome to Wolthers QC</h1>
                 </div>
                 <div class="content">
-                  <h2 style="color: #333; margin-top: 0;">Hello ${first_name},</h2>
-                  <p>${inviterName} has invited you to join the Wolthers Quality Control system.</p>
+                  <h2 class="greeting">Hello ${first_name},</h2>
+                  <p style="font-size: 16px; color: #555;">${inviterName} has invited you to join the Wolthers Quality Control system.</p>
 
                   <div class="info-box">
-                    <strong>Your Role:</strong> ${qc_role.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}<br>
-                    <strong>Account Type:</strong> ${qc_enabled ? 'QC Access Enabled' : 'Standard Access'}
-                    ${is_cupper ? '<br><strong>Designation:</strong> Cupper' : ''}
-                    ${is_q_grader ? '<br><strong>Certification:</strong> Q Grader' : ''}
+                    <p style="margin: 0; line-height: 1.8;">
+                      <strong style="color: #427244;">Your Role:</strong> ${qc_role.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}<br>
+                      <strong style="color: #427244;">Account Type:</strong> ${qc_enabled ? 'QC Access Enabled' : 'Standard Access'}
+                      ${is_cupper ? '<br><strong style="color: #427244;">Designation:</strong> Cupper' : ''}
+                      ${is_q_grader ? '<br><strong style="color: #427244;">Certification:</strong> Q Grader' : ''}
+                    </p>
                   </div>
 
-                  <p>To complete your registration and set up your account, please click the button below:</p>
+                  <p style="font-size: 16px; color: #555;">To complete your registration and set up your account, please click the button below:</p>
 
                   <div style="text-align: center;">
                     <a href="${inviteUrl}" class="button">Accept Invitation & Create Account</a>
                   </div>
 
-                  <p class="expires">⏰ This invitation expires on ${expiresAt.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+                  <div class="expires">
+                    <strong>⏰ Expires:</strong> ${expiresAt.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                  </div>
 
-                  <p style="font-size: 14px; color: #666; margin-top: 30px;">
+                  <p style="font-size: 13px; color: #888; margin-top: 30px; line-height: 1.6;">
                     If the button doesn't work, copy and paste this link into your browser:<br>
-                    <a href="${inviteUrl}" style="color: #667eea; word-break: break-all;">${inviteUrl}</a>
+                    <a href="${inviteUrl}" style="color: #427244; word-break: break-all;">${inviteUrl}</a>
                   </p>
                 </div>
                 <div class="footer">
-                  <p>Wolthers Quality Control System<br>
-                  <a href="https://wolthers.com" style="color: #667eea;">wolthers.com</a></p>
-                  <p style="font-size: 12px; color: #999;">If you didn't expect this invitation, you can safely ignore this email.</p>
+                  <p style="margin: 0 0 10px 0; font-weight: 600; font-size: 16px;">Wolthers Quality Control System</p>
+                  <p style="margin: 0;"><a href="https://wolthers.com" style="color: #427244; text-decoration: none; font-weight: 500;">wolthers.com</a></p>
+                  <p style="font-size: 12px; color: #427244; margin-top: 15px; opacity: 0.8;">If you didn't expect this invitation, you can safely ignore this email.</p>
                 </div>
               </div>
             </body>
