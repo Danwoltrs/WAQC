@@ -218,9 +218,6 @@ export async function POST(request: NextRequest) {
                   <img src="${process.env.NEXT_PUBLIC_APP_URL}/images/logos/wolthers-logo-off-white.png" alt="Wolthers Logo" class="logo" style="margin: 0;">
                 </div>
                 <div class="content">
-                  <div style="margin-bottom: 24px;">
-                    <span class="reminder-badge">Reminder</span>
-                  </div>
                   <h2 class="greeting">Hello ${existingInvitation.first_name},</h2>
                   <p style="font-size: 16px; color: #555;">This is a reminder that you have been invited to join the Wolthers Quality Control system by ${resenderName}.</p>
 
