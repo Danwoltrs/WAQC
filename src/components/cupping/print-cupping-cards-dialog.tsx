@@ -72,6 +72,7 @@ interface PrintCuppingCardsDialogProps {
   onOpenChange: (open: boolean) => void
   samples: Sample[]
   assignedCuppers?: Cupper[]
+  onSuccess?: () => void
 }
 
 export function PrintCuppingCardsDialog({
@@ -79,6 +80,7 @@ export function PrintCuppingCardsDialog({
   onOpenChange,
   samples,
   assignedCuppers = [],
+  onSuccess,
 }: PrintCuppingCardsDialogProps) {
   const [showQuality, setShowQuality] = useState(true)
   const [showBuyer, setShowBuyer] = useState(true)
@@ -137,56 +139,36 @@ export function PrintCuppingCardsDialog({
     }
   }
 
-  // Update sample statuses to 'cupping' and mark roasted
+  // Move samples to cupping stage and mark as roasted (for PSS/SS/Type samples)
   const updateSampleStatuses = async (sampleIds: string[]) => {
     try {
-      console.log('Updating sample statuses to "cupping" for:', sampleIds)
+      console.log('Moving samples to cupping stage:', sampleIds)
 
-      // Update all samples and create quality assessments in parallel
-      const updatePromises = sampleIds.map(async (id) => {
-        // Update sample status
-        const statusResponse = await fetch(`/api/samples/${id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ status: 'cupping' }),
-        })
-
-        if (!statusResponse.ok) {
-          const error = await statusResponse.text()
-          console.error(`Failed to update status for sample ${id}:`, error)
-          return { id, success: false, error }
-        }
-
-        // Create or update quality assessment with roast_data
-        // This marks the "roasted" step as complete
-        const assessmentResponse = await fetch(`/api/samples/${id}/quality-assessment`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            roast_data: {
-              roasted: true,
-              roasted_at: new Date().toISOString(),
-              ready_for_cupping: true,
-            },
-          }),
-        })
-
-        if (!assessmentResponse.ok) {
-          console.warn(`Failed to update quality assessment for sample ${id}`)
-          // Don't fail the entire operation if assessment update fails
-        }
-
-        return { id, success: true }
+      const response = await fetch('/api/samples/bulk/move-to-cupping', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sample_ids: sampleIds }),
       })
 
-      const results = await Promise.all(updatePromises)
-      const successCount = results.filter(r => r.success).length
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Failed to move samples to cupping:', errorData)
 
-      console.log(`✅ Updated ${successCount}/${sampleIds.length} samples to "cupping" status`)
+        // Handle partial success (207 status)
+        if (response.status === 207) {
+          console.warn('Some samples failed to update:', errorData.failures)
+          return false
+        }
 
-      return successCount === sampleIds.length
+        return false
+      }
+
+      const data = await response.json()
+      console.log('✅ Successfully moved samples to cupping stage:', data)
+
+      return true
     } catch (error) {
-      console.error('Error updating sample statuses:', error)
+      console.error('Error moving samples to cupping stage:', error)
       return false
     }
   }
@@ -324,7 +306,12 @@ export function PrintCuppingCardsDialog({
 
       // Update sample statuses to 'cupping' after successful card generation
       const sampleIds = samplesToUse.map(s => s.id)
-      await updateSampleStatuses(sampleIds)
+      const updateSuccess = await updateSampleStatuses(sampleIds)
+
+      if (updateSuccess && onSuccess) {
+        // Call success callback to refresh the samples list
+        onSuccess()
+      }
 
       setIsReadyForDownload(true)
       setPdfKey(prev => prev + 1) // Increment key to trigger PDF regeneration
