@@ -202,26 +202,26 @@ export async function POST(request: NextRequest) {
                   font-size: 24px;
                 }
                 .reminder-badge {
-                  background: #F7DF96;
-                  color: #427244;
-                  padding: 8px 16px;
-                  border-radius: 6px;
-                  font-size: 13px;
-                  font-weight: 700;
+                  color: #4a4a4a;
+                  font-size: 11px;
+                  font-weight: 500;
                   display: inline-block;
-                  margin-bottom: 16px;
-                  letter-spacing: 0.5px;
+                  margin-bottom: 12px;
+                  letter-spacing: 0.3px;
+                  text-transform: uppercase;
                 }
               </style>
             </head>
             <body>
               <div class="container">
                 <div class="header">
-                  <img src="${process.env.NEXT_PUBLIC_APP_URL}/images/logos/wolthers-logo-green.png" alt="Wolthers Logo" class="logo">
+                  <img src="${process.env.NEXT_PUBLIC_APP_URL}/images/logos/wolthers-logo-off-white.png" alt="Wolthers Logo" class="logo">
                   <h1 style="margin: 0; font-size: 32px; font-weight: 700;">Invitation Reminder</h1>
                 </div>
                 <div class="content">
-                  <span class="reminder-badge">⚠️ REMINDER</span>
+                  <div style="margin-bottom: 24px;">
+                    <span class="reminder-badge">Reminder</span>
+                  </div>
                   <h2 class="greeting">Hello ${existingInvitation.first_name},</h2>
                   <p style="font-size: 16px; color: #555;">This is a reminder that you have been invited to join the Wolthers Quality Control system by ${resenderName}.</p>
 

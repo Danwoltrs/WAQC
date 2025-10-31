@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
             <body>
               <div class="container">
                 <div class="header">
-                  <img src="${process.env.NEXT_PUBLIC_APP_URL}/images/logos/wolthers-logo-green.png" alt="Wolthers Logo" class="logo">
+                  <img src="${process.env.NEXT_PUBLIC_APP_URL}/images/logos/wolthers-logo-off-white.png" alt="Wolthers Logo" class="logo">
                   <h1 style="margin: 0; font-size: 32px; font-weight: 700;">Welcome to Wolthers QC</h1>
                 </div>
                 <div class="content">
