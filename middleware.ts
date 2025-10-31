@@ -81,16 +81,19 @@ export async function middleware(request: NextRequest) {
     // Refresh session if expired - required for Server Components
     // Use getUser() to validate the JWT and refresh if needed
     // Add timeout to prevent middleware from hanging
+    // IMPORTANT: This is non-blocking - we proceed even if auth check fails
     const userPromise = supabase.auth.getUser()
     const timeoutPromise = new Promise<any>((_, reject) =>
-      setTimeout(() => reject(new Error('Auth check timeout')), 5000)
+      setTimeout(() => reject(new Error('Auth check timeout')), 15000)
     )
 
-    await Promise.race([userPromise, timeoutPromise]).catch((err) => {
+    // Don't await - let this run in background
+    Promise.race([userPromise, timeoutPromise]).catch((err) => {
       // Log but don't block on auth errors in middleware
       console.warn('Middleware auth check failed:', err.message)
     })
 
+    // Return immediately without waiting for auth check
     return response
   } catch (error) {
     // Log error but allow request to proceed

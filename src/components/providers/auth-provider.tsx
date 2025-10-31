@@ -193,41 +193,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Get initial session
-    const getSession = async () => {
-      try {
-        // Single attempt with 5s timeout - Supabase handles retries internally
-        const result = await withTimeout(
-          async () => await supabase.auth.getSession(),
-          5000,
-          'Session fetch timeout'
-        )
+    // Get initial session with retry logic
+    const getSession = async (retries = 3) => {
+      for (let attempt = 0; attempt < retries; attempt++) {
+        try {
+          if (attempt > 0) {
+            console.log(`[Auth] Retry attempt ${attempt + 1}/${retries} for getSession`)
+            // Exponential backoff: 1s, 2s, 4s
+            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)))
+          }
 
-        if (result.error) {
-          console.error('Error getting session:', result.error)
-          setLoading(false)
-          return
-        }
+          // 15s timeout per attempt - longer for production environments with slower connections
+          const result = await withTimeout(
+            async () => await supabase.auth.getSession(),
+            15000,
+            'Session fetch timeout'
+          )
 
-        const session = result.data.session
+          if (result.error) {
+            console.error('Error getting session:', result.error)
+            // Don't retry on explicit errors, only on timeouts
+            setLoading(false)
+            return
+          }
 
-        if (session?.user) {
-          setUser(session.user)
-          // Setup proactive token refresh
-          setupTokenRefresh(session)
-          try {
-            await fetchProfile(session.user.id)
-          } catch (error) {
-            console.error('Failed to fetch profile during session setup:', error)
+          const session = result.data.session
+
+          if (session?.user) {
+            console.log('[Auth] Session retrieved successfully')
+            setUser(session.user)
+            // Setup proactive token refresh
+            setupTokenRefresh(session)
+            try {
+              await fetchProfile(session.user.id)
+            } catch (error) {
+              console.error('Failed to fetch profile during session setup:', error)
+              setLoading(false)
+            }
+          } else {
+            console.log('[Auth] No active session found')
             setLoading(false)
           }
-        } else {
-          setLoading(false)
+
+          // Success - break out of retry loop
+          break
+        } catch (err: any) {
+          console.error(`[Auth] Error getting session (attempt ${attempt + 1}/${retries}):`, err)
+
+          // If this was the last attempt, show login
+          if (attempt === retries - 1) {
+            console.error('[Auth] All retry attempts failed')
+            setLoading(false)
+          }
+          // Otherwise, loop continues to next retry
         }
-      } catch (err: any) {
-        console.error('Error getting session:', err)
-        // On timeout/error, show login
-        setLoading(false)
       }
 
       isInitialLoad = false
@@ -389,7 +408,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .select('*')
               .eq('id', userId)
               .single(),
-            5000,
+            15000,
             'Profile fetch timeout'
           )
           profileData = result.data

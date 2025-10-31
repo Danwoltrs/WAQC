@@ -153,17 +153,130 @@
         ]
       },
       {
-        "id": 7,
+        "id": "7",
         "title": "Build Green Bean Analysis Interface",
         "description": "Create green bean quality assessment form with client-specific defects, dynamic screen sizes, and automatic out-of-spec warnings",
-        "details": "Create src/components/assessments/green-bean-analysis.tsx with dynamic sections: Client-specific defect classification (based on quality spec), screen size analysis (show only needed screens like Pan 17/18), physical properties (moisture with Coffee Industry Standards vs ISO 6673). Include real-time compliance checking with red/yellow/green indicators. Add photo upload for severe defects, automatic defect equivalency calculation, override capability with justification. Auto-save every 30 seconds. Mobile/tablet optimized interface with calculator widget.",
-        "testStrategy": "Test defect calculations accuracy, test screen size distribution validation, test photo upload/compression, test auto-save functionality",
-        "priority": "high",
+        "status": "pending",
         "dependencies": [
-          "6"
+          6
         ],
-        "status": "done",
-        "subtasks": []
+        "priority": "high",
+        "details": "Complete rebuild of src/app/assessment/grading/[id]/page.tsx to implement comprehensive green bean analysis. Current implementation is basic and insufficient - only has screen sizes, moisture %, total defects (primary/secondary), color grade, and aroma notes. Need to replace with detailed client-specific defect classification system from quality_spec using DefectConfiguration types (src/types/defect-configuration.ts). Implement detailed defect counting by individual type (black, sour, broken, etc.) with proper weight calculations and equivalency. Add dynamic screen size distribution with real-time validation against quality template requirements. Expand physical properties: moisture with standard selection (coffee_industry vs iso_6673 enum), density, water activity. Include photo upload for defects with compression to defect_photos array. Add real-time compliance checking with visual indicators (red/yellow/green). Implement auto-save every 30 seconds. Add calculator widget for defect equivalency using helper functions from defect-configuration.ts. Make mobile/tablet optimized interface. This is now a parallel workflow - green bean analysis happens independently of cupping workflow (commit 4c1be0f).",
+        "testStrategy": "Test detailed defect calculations using DefectConfiguration helper functions, test screen size distribution validation, test photo upload/compression to quality_assessments.defect_photos, test auto-save functionality, test compliance status indicators, test moisture standard selection enum",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Design comprehensive DefectConfiguration interface integration",
+            "description": "Analyze and implement integration with existing DefectConfiguration types from src/types/defect-configuration.ts",
+            "dependencies": [],
+            "details": "Study the existing DefectConfiguration types and helper functions in src/types/defect-configuration.ts. Plan how to integrate client-specific defect templates from quality_spec into the grading interface. Map the predefined templates (BRAZIL_SCA_DEFECTS, COLOMBIA_STANDARD_DEFECTS, etc.) to quality template parameters. Design how to load and display defects dynamically based on client quality specifications.",
+            "status": "pending",
+            "testStrategy": "Verify defect template loading, test client-specific defect configuration retrieval"
+          },
+          {
+            "id": 2,
+            "title": "Rebuild grading page structure with comprehensive sections",
+            "description": "Complete restructure of src/app/assessment/grading/[id]/page.tsx with proper sectioned layout",
+            "dependencies": [
+              1
+            ],
+            "details": "Replace the current basic grading interface with comprehensive sections: 1) Client-specific defect classification (using DefectConfiguration), 2) Dynamic screen size distribution with real-time validation, 3) Expanded physical properties (moisture with standard selection, density, water activity), 4) Photo upload section, 5) Real-time compliance checking display, 6) Calculator widget section. Use proper TypeScript interfaces matching quality_assessments table structure.",
+            "status": "pending",
+            "testStrategy": "Test section rendering, test data structure alignment with database schema"
+          },
+          {
+            "id": 3,
+            "title": "Implement detailed defect counting system with weight calculations",
+            "description": "Build individual defect counting interface with real-time equivalency calculations",
+            "dependencies": [
+              2
+            ],
+            "details": "Create defect counting interface that displays all defects from the client's DefectConfiguration. Show primary and secondary defects separately with proper display_order. For each defect, provide count input and show weight multiplier and calculated equivalents. Use calculateDefectEquivalents, calculatePrimaryDefects, calculateSecondaryDefects helper functions. Display running totals with visual indicators when approaching thresholds.",
+            "status": "pending",
+            "testStrategy": "Test defect equivalency calculations, test threshold validation, test primary/secondary categorization"
+          },
+          {
+            "id": 4,
+            "title": "Add photo upload functionality for defect documentation",
+            "description": "Implement photo upload with compression for severe defects documentation",
+            "dependencies": [
+              2
+            ],
+            "details": "Add photo upload capability that stores images in the defect_photos array field of quality_assessments table. Implement client-side image compression before upload. Allow multiple photos per assessment. Provide photo preview and management interface. Connect to Supabase storage for actual file storage with proper references in the defect_photos array.",
+            "status": "pending",
+            "testStrategy": "Test photo upload and compression, test multiple photo handling, test Supabase storage integration"
+          },
+          {
+            "id": 5,
+            "title": "Implement moisture standard selection and physical properties",
+            "description": "Add expanded physical properties section with moisture standard enum selection",
+            "dependencies": [
+              2
+            ],
+            "details": "Expand physical properties beyond just moisture percentage. Add moisture_standard selection using the enum values (coffee_industry, iso_6673) from database. Add density and water_activity fields to the interface. Update the quality_assessments API to store moisture_standard properly. Provide helpful labels explaining the difference between standards.",
+            "status": "pending",
+            "testStrategy": "Test moisture standard enum selection, test additional physical property inputs, test API integration"
+          },
+          {
+            "id": 6,
+            "title": "Build real-time compliance checking with visual indicators",
+            "description": "Implement compliance status checking with red/yellow/green visual feedback",
+            "dependencies": [
+              3,
+              5
+            ],
+            "details": "Use validateDefectCounts function to check defect totals against quality template thresholds. Implement visual indicators (red/yellow/green) for out-of-spec conditions. Update compliance_status enum field in quality_assessments table. Show detailed violation messages when thresholds are exceeded. Provide real-time feedback as user enters defect counts.",
+            "status": "pending",
+            "testStrategy": "Test compliance validation logic, test visual indicator accuracy, test compliance_status enum handling"
+          },
+          {
+            "id": 7,
+            "title": "Add auto-save functionality every 30 seconds",
+            "description": "Implement automatic form data persistence to prevent data loss",
+            "dependencies": [
+              2
+            ],
+            "details": "Add auto-save functionality that saves form data every 30 seconds to prevent data loss. Store intermediate data in quality_assessments.green_bean_data JSON field. Provide visual feedback when auto-save occurs. Handle network failures gracefully. Allow manual save override.",
+            "status": "pending",
+            "testStrategy": "Test auto-save timing, test data persistence, test network failure handling"
+          },
+          {
+            "id": 8,
+            "title": "Create defect equivalency calculator widget",
+            "description": "Build interactive calculator for defect weight calculations and conversions",
+            "dependencies": [
+              3
+            ],
+            "details": "Create a calculator widget that allows users to quickly calculate defect equivalencies using the helper functions from defect-configuration.ts. Allow input of defect counts and show real-time calculations. Provide conversion between actual counts and full defect equivalents. Make it easily accessible within the grading interface.",
+            "status": "pending",
+            "testStrategy": "Test calculator accuracy, test real-time calculations, test widget accessibility"
+          },
+          {
+            "id": 9,
+            "title": "Optimize interface for mobile and tablet devices",
+            "description": "Ensure responsive design works well on iPad and mobile devices",
+            "dependencies": [
+              2,
+              3,
+              4
+            ],
+            "details": "Optimize the rebuilt interface for mobile and tablet use. Ensure defect counting interface works well with touch input. Make photo upload touch-friendly. Optimize screen size distribution input for mobile. Test on various screen sizes and ensure usability on iPad specifically since this is a key target device.",
+            "status": "pending",
+            "testStrategy": "Test responsive design on multiple device sizes, test touch interactions, test iPad-specific usability"
+          },
+          {
+            "id": 10,
+            "title": "Update API integration for comprehensive data structure",
+            "description": "Modify API calls to handle the expanded data structure and new fields",
+            "dependencies": [
+              6,
+              7
+            ],
+            "details": "Update the API integration to properly handle the expanded green_bean_data JSON structure. Ensure moisture_standard enum is saved correctly. Handle defect_photos array properly. Update compliance_status field. Modify the quality assessment creation to include all new fields. Ensure backward compatibility with existing data.",
+            "status": "pending",
+            "testStrategy": "Test API data persistence, test enum field handling, test JSON structure validation, test backward compatibility"
+          }
+        ]
       },
       {
         "id": 8,
@@ -385,7 +498,7 @@
             "title": "Create cupping session management components",
             "description": "Build the core components for managing cupping sessions including session creation, participant management, and session configuration",
             "dependencies": [],
-            "details": "Create src/components/cupping/cupping-session-manager.tsx with session state management, participant assignment interface, and session configuration options. Include components for session type selection (Calibration, Type Sample, PSS/SS), sample assignment validation, and cupper role management with minimum 2 cuppers requirement for collaborative sessions.\n<info added on 2025-10-30T17:02:48.759Z>\nI'll analyze the current codebase to understand the existing infrastructure and provide an informed update for this subtask.Based on the comprehensive codebase analysis and the task context, here's the update that should be appended to the subtask details:\n\nProgress Update (2025-01-30): Successfully completed Phase 1 foundational analysis and type definition creation. Analyzed existing cupping infrastructure including print-cupping-cards-dialog.tsx cupper assignment system, QR generation patterns, and cupping_sessions table schema in database.types.ts. Created comprehensive type definitions in src/types/cupping-session.ts covering all four sample types (TYPE, PSS, SS, CALIBRATION), input methods (digital, OCR, iOS, mixed), session statuses, and complete data structures for sessions, scores, and validation.\n\nKey architectural decisions established: Four distinct sample types with calibration requiring special UX flow, mixed input method support for simultaneous OCR and digital entry, privacy toggles for individual cupper scores, and integrated quality validation workflow for PSS/SS samples. Confirmed existing cupping infrastructure in src/components/cupping/ directory includes OCR validation dialog, scan cupping cards dialog, and print dialog with cupper assignment capabilities.\n\nReady to proceed with implementation of cupping-session-manager.tsx component leveraging existing cupper assignment patterns from print-cupping-cards-dialog.tsx and integrating with confirmed cupping_sessions database table structure.\n</info added on 2025-10-30T17:02:48.759Z>\n<info added on 2025-10-30T18:56:54.969Z>\nCOMPLETED (2025-10-30): Full Digital Cupping Interface implementation delivered with comprehensive workflow integration. Successfully built desktop/mobile responsive interface (src/components/cupping/digital-cupping-interface.tsx, 1000+ lines) featuring slider controls, tap-to-edit number inputs, defect management system with intensity classification, and real-time score calculation. Implemented critical workflow connection where print dialog automatically updates sample status to 'cupping' enabling seamless transition to cupping workflow independent of grading status. Created comprehensive documentation (.docs/CUPPING_WORKFLOW_IMPLEMENTATION.md, 1,072 lines) covering complete implementation details, design patterns, and next phase requirements. Ready for API endpoint implementation phase.\n</info added on 2025-10-30T18:56:54.969Z>",
+            "details": "Create src/components/cupping/cupping-session-manager.tsx with session state management, participant assignment interface, and session configuration options. Include components for session type selection (Calibration, Type Sample, PSS/SS), sample assignment validation, and cupper role management with minimum 2 cuppers requirement for collaborative sessions.\n<info added on 2025-10-30T17:02:48.759Z>\nI'll analyze the current codebase to understand the existing infrastructure and provide an informed update for this subtask.Based on the comprehensive codebase analysis and the task context, here's the update that should be appended to the subtask details:\n\nProgress Update (2025-01-30): Successfully completed Phase 1 foundational analysis and type definition creation. Analyzed existing cupping infrastructure including print-cupping-cards-dialog.tsx cupper assignment system, QR generation patterns, and cupping_sessions table schema in database.types.ts. Created comprehensive type definitions in src/types/cupping-session.ts covering all four sample types (TYPE, PSS, SS, CALIBRATION), input methods (digital, OCR, iOS, mixed), session statuses, and complete data structures for sessions, scores, and validation.\n\nKey architectural decisions established: Four distinct sample types with calibration requiring special UX flow, mixed input method support for simultaneous OCR and digital entry, privacy toggles for individual cupper scores, and integrated quality validation workflow for PSS/SS samples. Confirmed existing cupping infrastructure in src/components/cupping/ directory includes OCR validation dialog, scan cupping cards dialog, and print dialog with cupper assignment capabilities.\n\nReady to proceed with implementation of cupping-session-manager.tsx component leveraging existing cupper assignment patterns from print-cupping-cards-dialog.tsx and integrating with confirmed cupping_sessions database table structure.\n</info added on 2025-10-30T17:02:48.759Z>\n<info added on 2025-10-30T18:56:54.969Z>\nCOMPLETED (2025-10-30): Full Digital Cupping Interface implementation delivered with comprehensive workflow integration. Successfully built desktop/mobile responsive interface (src/components/cupping/digital-cupping-interface.tsx, 1000+ lines) featuring slider controls, tap-to-edit number inputs, defect management system with intensity classification, and real-time score calculation. Implemented critical workflow connection where print dialog automatically updates sample status to 'cupping' enabling seamless transition to cupping workflow independent of grading status. Created comprehensive documentation (.docs/CUPPING_WORKFLOW_IMPLEMENTATION.md, 1,072 lines) covering complete implementation details, design patterns, and next phase requirements. Ready for API endpoint implementation phase.\n</info added on 2025-10-30T18:56:54.969Z>\n<info added on 2025-10-31T12:18:54.539Z>\nI'll analyze the codebase to understand the current implementation and provide a comprehensive update for this subtask.Workflow Transition Bug Fix Complete (2025-10-31): Resolved critical issue where printing cupping cards attempted to set invalid workflow_stage='cupping' causing database constraint violations. Implemented comprehensive solution involving new API endpoint /api/samples/bulk/move-to-cupping that properly handles sequential workflow transitions (received → roasting → cupping) while respecting database validation constraints. Key architectural changes: 1) Separated green bean analysis from main workflow as independent parallel process tracked in quality_assessments.green_bean_data, 2) Created migration 088_fix_workflow_stages.sql updating workflow validation function to remove green_analysis stage, 3) Added auto-roasting capability for PSS/SS/Type samples when transitioning to cupping, 4) Implemented onSuccess callback in print dialog to refresh samples list ensuring UI consistency. This enables parallel workflows where green bean analysis and cupping can proceed independently without blocking each other, fixing the core workflow bottleneck that prevented cupping session initialization.\n</info added on 2025-10-31T12:18:54.539Z>",
             "status": "done",
             "testStrategy": "Test session creation with different types, test participant assignment validation, test minimum cupper requirements",
             "updatedAt": "2025-10-30T18:57:21.029Z",
@@ -1339,13 +1452,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-10-30T19:21:27.313Z",
+      "lastModified": "2025-10-31T12:20:38.737Z",
       "taskCount": 36,
-      "completedCount": 22,
+      "completedCount": 21,
       "tags": [
         "master"
       ],
-      "created": "2025-10-30T19:41:32.823Z",
+      "created": "2025-10-31T12:21:18.647Z",
       "description": "Tasks for master context"
     }
   }
