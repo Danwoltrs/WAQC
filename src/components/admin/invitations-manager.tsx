@@ -75,7 +75,7 @@ export function InvitationsManager() {
       fetchInvitations()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [profile])
+  }, [profile?.id, profile?.qc_role]) // Only re-run when user ID or role changes
 
   const canManageInvitations = (): boolean => {
     if (!profile) return false
@@ -90,12 +90,14 @@ export function InvitationsManager() {
       setLoading(true)
 
       // Fetch invitations with inviter information
+      // Filter to only show QC invitations (those with a laboratory_id)
       let query = supabase
         .from('user_invitations')
         .select(`
           *,
           inviter:invited_by(first_name, last_name)
         `)
+        .not('laboratory_id', 'is', null) // Only QC invitations have laboratory_id
         .order('created_at', { ascending: false })
 
       const { data, error } = await query
