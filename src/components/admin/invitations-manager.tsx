@@ -211,6 +211,11 @@ export function InvitationsManager() {
   }
 
   const filteredInvitations = invitations.filter((invitation) => {
+    // Hide cancelled invitations
+    if (invitation.status === 'cancelled') {
+      return false
+    }
+
     const searchLower = searchQuery.toLowerCase()
     return (
       invitation.email.toLowerCase().includes(searchLower) ||
