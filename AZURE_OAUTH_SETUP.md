@@ -23,47 +23,55 @@ We've switched from custom MSAL to **Supabase's built-in Azure OAuth** for faste
 
 ### 1. Get Azure AD Credentials
 
-From your Azure AD App Registration (screenshot #4):
+From your Azure AD App Registration (created Oct 2024):
 - **Application (client) ID**: `0cb5605e-296c-426d-bbba-d6d6d582fe33`
 - **Directory (tenant) ID**: `b8218f6f-5191-4a79-8937-fac3bd38ee1c`
-- **Client Secret**: You'll need to create one in Azure portal
+- **Client Secret**: `050f1031-c96b-4727-9317-4d9db9ab2cbf` (created Jan 2025)
 
-### 2. Create Client Secret (If Not Done)
+### 2. Configure Supabase Azure Provider (IMPORTANT - DO THIS NOW)
 
-1. Go to Azure Portal → App registrations → Wolthers QC System
-2. Click "Certificates & secrets"
-3. Click "+ New client secret"
-4. Description: "Supabase OAuth"
-5. Expires: 24 months (or your preference)
-6. Click "Add"
-7. **COPY THE SECRET VALUE IMMEDIATELY** (you won't see it again)
-
-### 3. Configure Supabase Azure Provider
-
-1. Go to Supabase Dashboard → Authentication → Providers
+1. Go to https://supabase.com/dashboard/project/ojyonxplpmhvcgaycznc/auth/providers
 2. Find "Azure" in the list
 3. Click to expand Azure settings
-4. Fill in:
+4. Fill in EXACTLY as shown:
    - **Enabled**: ON (toggle to green)
    - **Client ID**: `0cb5605e-296c-426d-bbba-d6d6d582fe33`
-   - **Client Secret**: [paste the secret you copied]
+   - **Client Secret**: `050f1031-c96b-4727-9317-4d9db9ab2cbf`
    - **Azure Tenant ID**: `b8218f6f-5191-4a79-8937-fac3bd38ee1c`
 
 5. Click "Save"
 
-### 4. Verify Redirect URLs
+**✅ Updated Jan 2025**: These credentials match the Azure AD app "Wolthers QC System" created with proper Supabase redirect URIs.
 
-Your Azure App should have these redirect URLs (already configured based on screenshot #1):
+### 3. Configure Azure AD Redirect URIs
 
+Your Azure AD App Registration needs these redirect URIs:
+
+**For Development:**
 ```
-✅ https://qc.wolthers.com/auth/callback
-✅ https://qc.wolthers.com
-✅ https://qc.wolthers.com/**
+http://localhost:3000/auth/callback
+https://ojyonxplpmhvcgaycznc.supabase.co/auth/v1/callback
 ```
 
-Supabase will automatically use: `https://qc.wolthers.com/auth/callback`
+**For Production:**
+```
+https://qc.wolthers.com/auth/callback
+https://ojyonxplpmhvcgaycznc.supabase.co/auth/v1/callback
+```
 
-### 5. Test the Flow
+**To add these:**
+1. Go to Azure Portal → Azure Active Directory → App registrations
+2. Find app with Client ID: `0cb5605e-296c-426d-bbba-d6d6d582fe33`
+3. Click "Authentication" in the left menu
+4. Under "Platform configurations" → Click **"Add a platform"** → Select **"Web"**
+5. Add all the URIs above (the SPA platform won't work for OAuth 2.0 code flow)
+6. Click "Save"
+
+**⚠️ IMPORTANT**: Make sure redirect URIs are added as **Web** platform type, NOT "Single-page application" (SPA).
+
+**⚠️ IMPORTANT**: The Supabase callback URI (`https://ojyonxplpmhvcgaycznc.supabase.co/auth/v1/callback`) is REQUIRED. This is where Azure redirects after authentication.
+
+### 4. Test the Flow
 
 1. Clear browser cache and cookies
 2. Go to https://qc.wolthers.com
@@ -85,7 +93,7 @@ qc.wolthers.com
   → You're logged in!
 ```
 
-### 6. Verify Session Persistence
+### 5. Verify Session Persistence
 
 After logging in:
 - Open DevTools → Application → Storage
@@ -100,16 +108,16 @@ After logging in:
 **Cause**: Old custom endpoint still being cached
 **Fix**: Hard refresh with `Cmd+Shift+R` (Mac) or `Ctrl+Shift+R` (Windows)
 
-### "Invalid client credentials"
-**Cause**: Client ID or Secret is wrong
+### "Invalid client credentials" or "Application not found"
+**Cause**: Client ID or Secret is wrong in Supabase
 **Fix**:
-1. Verify Client ID in Supabase matches Azure: `0cb5605e-296c-426d-bbba-d6d6d582fe33`
-2. Regenerate client secret in Azure if needed
-3. Update secret in Supabase
+1. Verify Client ID in Supabase matches .env.local: `0cb5605e-296c-426d-bbba-d6d6d582fe33`
+2. Verify Client Secret in Supabase: `050f1031-c96b-4727-9317-4d9db9ab2cbf`
+3. Verify Tenant ID: `b8218f6f-5191-4a79-8937-fac3bd38ee1c`
 
 ### "Redirect URI mismatch"
 **Cause**: Azure app doesn't allow the Supabase callback URL
-**Fix**: Add `https://qc.wolthers.com/auth/callback` to Azure app redirect URLs
+**Fix**: Add `https://ojyonxplpmhvcgaycznc.supabase.co/auth/v1/callback` to Azure app redirect URLs (see step 3 above)
 
 ### Still seeing 0 B storage
 **Cause**: Authentication not completing successfully
@@ -128,9 +136,10 @@ Your `.env.local` should have (no changes needed):
 NEXT_PUBLIC_SUPABASE_URL=https://ojyonxplpmhvcgaycznc.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 
-# Azure AD (OPTIONAL - only needed if you add custom MSAL features later)
+# Azure AD (for reference - actual credentials stored in Supabase Dashboard)
 NEXT_PUBLIC_AZURE_AD_CLIENT_ID=0cb5605e-296c-426d-bbba-d6d6d582fe33
 NEXT_PUBLIC_AZURE_AD_TENANT_ID=b8218f6f-5191-4a79-8937-fac3bd38ee1c
+AZURE_AD_CLIENT_SECRET=050f1031-c96b-4727-9317-4d9db9ab2cbf
 ```
 
 **Note**: With Supabase OAuth, the Azure credentials are stored in Supabase Dashboard, NOT in your `.env` file. This is more secure.
@@ -166,13 +175,23 @@ await supabase.auth.signInWithOAuth({
 4. **Session management**: Automatic token refresh and session persistence
 5. **Audit trail**: All auth events logged in Supabase
 
-## Next Steps
+## Summary of Required Actions
 
-1. Configure Azure provider in Supabase (see step 3 above)
-2. Wait for deployment to finish (~2-3 minutes)
-3. Test login at https://qc.wolthers.com
-4. Verify storage shows data (not 0 B)
-5. Test session persistence
+**IMMEDIATE (Do this now):**
+1. ✅ Go to https://supabase.com/dashboard/project/ojyonxplpmhvcgaycznc/auth/providers
+2. ✅ Configure Azure provider with credentials from step 2 above
+3. ✅ Verify Azure AD redirect URIs include `https://ojyonxplpmhvcgaycznc.supabase.co/auth/v1/callback`
+
+**THEN:**
+4. Test login at http://localhost:3000 (or https://qc.wolthers.com if deployed)
+5. Verify storage shows data (not 0 B) after login
+6. Test session persistence by refreshing and closing/reopening browser
+
+**Current Status (Updated Jan 31, 2025):**
+- ✅ Local .env.local updated with correct credentials
+- ✅ Azure AD app has Supabase callback URI configured
+- ⏳ Waiting for Supabase dashboard configuration
+- ⚠️ Need to change redirect URI platform from SPA to Web in Azure
 
 ---
 
