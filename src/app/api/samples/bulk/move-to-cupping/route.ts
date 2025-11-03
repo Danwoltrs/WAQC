@@ -1,6 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 
+// Type definition for sample with all valid sample_type values
+type SampleType = 'pss' | 'ss' | 'type' | 'specialty' | null
+
+interface SampleData {
+  id: string
+  tracking_number: string
+  workflow_stage: string | null
+  sample_type: SampleType
+}
+
 /**
  * POST /api/samples/bulk/move-to-cupping
  * Move samples to analysis stage (green grading + cupping can be done simultaneously)
@@ -40,14 +50,17 @@ export async function POST(request: NextRequest) {
             return { id, success: false, error: 'Sample not found' }
           }
 
-          const currentStage = sample.workflow_stage || 'received'
-          console.log(`Sample ${sample.tracking_number}: current stage = ${currentStage}, type = ${sample.sample_type}`)
+          // Cast to our type that includes 'specialty'
+          const sampleData = sample as SampleData
+
+          const currentStage = sampleData.workflow_stage || 'received'
+          console.log(`Sample ${sampleData.tracking_number}: current stage = ${currentStage}, type = ${sampleData.sample_type}`)
 
           // For PSS/SS/Type samples: received → analysis (green grading + cupping together)
           // For Specialty samples: received → (stay received until manually moved to roasting)
-          if (sample.sample_type === 'specialty') {
+          if (sampleData.sample_type === 'specialty') {
             // Specialty samples stay at 'received' - roasting is done manually when ready
-            console.log(`Sample ${sample.tracking_number} is specialty type - staying at received stage for manual roasting`)
+            console.log(`Sample ${sampleData.tracking_number} is specialty type - staying at received stage for manual roasting`)
             return { id, success: true, message: 'Specialty sample - roasting must be done manually' }
           }
 
@@ -83,17 +96,17 @@ export async function POST(request: NextRequest) {
               })
 
             if (assessmentError) {
-              console.warn(`Failed to update quality assessment for ${sample.tracking_number}:`, assessmentError)
+              console.warn(`Failed to update quality assessment for ${sampleData.tracking_number}:`, assessmentError)
               // Don't fail the entire operation
             }
 
-            console.log(`✅ Sample ${sample.tracking_number} moved to analysis stage`)
+            console.log(`✅ Sample ${sampleData.tracking_number} moved to analysis stage`)
             return { id, success: true, final_stage: 'analysis' }
           } else if (currentStage === 'analysis') {
-            console.log(`Sample ${sample.tracking_number} already at analysis stage`)
+            console.log(`Sample ${sampleData.tracking_number} already at analysis stage`)
             return { id, success: true, message: 'Already at analysis stage' }
           } else {
-            console.log(`Sample ${sample.tracking_number} at unexpected stage ${currentStage}`)
+            console.log(`Sample ${sampleData.tracking_number} at unexpected stage ${currentStage}`)
             return { id, success: false, error: `Sample at unexpected stage: ${currentStage}` }
           }
         } catch (error) {
