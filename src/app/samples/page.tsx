@@ -34,6 +34,7 @@ import {
   Download, Printer, QrCode, MoreVertical, Users, Trash2
 } from 'lucide-react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
 
 interface Sample {
@@ -116,6 +117,7 @@ const formatSampleType = (type: string | undefined): string => {
 
 export default function SamplesPage() {
   const { profile } = useAuth()
+  const router = useRouter()
   const [samples, setSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -981,8 +983,9 @@ export default function SamplesPage() {
         samples={samples.filter((s) => selectedSamples.has(s.id))}
         assignedCuppers={assignedCuppers}
         onSuccess={() => {
-          loadSamples()
-          setSelectedSamples(new Set())
+          // Navigate to batch grading page with selected sample IDs
+          const sampleIds = Array.from(selectedSamples).join(',')
+          router.push(`/assessment/grading/batch?ids=${sampleIds}`)
         }}
       />
 
