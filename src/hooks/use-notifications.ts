@@ -250,6 +250,9 @@ export function useActivityFeed(options?: { limit?: number; entityType?: string 
   }, [])
 
   useEffect(() => {
+    // Only fetch if we have a profile
+    if (!profile || authLoading) return
+
     fetchActivities()
 
     // Set up real-time subscription
@@ -272,7 +275,8 @@ export function useActivityFeed(options?: { limit?: number; entityType?: string 
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchActivities])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, authLoading]) // Only re-run when profile ID or auth loading state changes
 
   return {
     activities,
