@@ -21,7 +21,9 @@ interface PositionAssignmentDialogProps {
 interface Client {
   id: string
   name: string
-  contact_name: string
+  company: string
+  fantasy_name: string | null
+  client_types: string[]
 }
 
 export function PositionAssignmentDialog({
@@ -56,7 +58,12 @@ export function PositionAssignmentDialog({
       const data = await response.json()
 
       if (response.ok) {
-        setClients(data.clients || [])
+        // Filter to only show buyers (importer_buyer, roaster, final_buyer, roaster_final_buyer)
+        const buyerTypes = ['importer_buyer', 'roaster', 'final_buyer', 'roaster_final_buyer']
+        const buyerClients = (data.clients || []).filter((client: Client) =>
+          client.client_types && client.client_types.some(type => buyerTypes.includes(type))
+        )
+        setClients(buyerClients)
       } else {
         console.error('Failed to load clients:', data.error)
       }
@@ -199,12 +206,10 @@ export function PositionAssignmentDialog({
                           <User className="h-4 w-4" />
                         </div>
                         <div className="flex-1 text-left">
-                          <div className="font-medium">{client.name}</div>
-                          {client.contact_name && (
-                            <div className="text-xs text-muted-foreground">
-                              {client.contact_name}
-                            </div>
-                          )}
+                          <div className="font-medium">{client.fantasy_name || client.company}</div>
+                          <div className="text-xs text-muted-foreground">
+                            Contact: {client.name}
+                          </div>
                         </div>
                       </button>
                     ))
