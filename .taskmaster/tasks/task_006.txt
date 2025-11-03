@@ -1,6 +1,6 @@
 # Task ID: 6
 # Title: Create Client-Specific Defect Configuration System
-# Status: pending
+# Status: done
 # Dependencies: 1
 # Priority: high
 # Description: Build interface for lab managers to configure defects per client with custom names, point values, and primary/secondary categories
@@ -28,25 +28,25 @@ Update defect_definitions table schema to replace single-language columns with m
 ### Details:
 Implement GET /api/defect-definitions (list all), GET /api/defect-definitions/[id] (single defect), POST /api/defect-definitions (create), PUT /api/defect-definitions/[id] (update), DELETE /api/defect-definitions/[id] (delete). Include validation to prevent deletion of defects currently in use by samples. Add endpoints for client-specific configurations: GET/POST/PUT/DELETE /api/clients/[id]/defect-configs. Implement proper error handling and response formatting.
 
-## 8. Create defect configuration management interface [pending]
+## 8. Create defect configuration management interface [done]
 ### Dependencies: 6.2
 ### Description: Build React component src/components/quality/defect-config-manager.tsx for lab managers to configure client-specific defects with intuitive UI
 ### Details:
 Create comprehensive interface with client selector dropdown, defect library view showing available defects, client-specific configuration panel. Support adding/editing defect names, point values, primary/secondary categorization. Include Brazil-specific examples (Full Black 1.0, Partial Black 0.5, Severe Broca 0.2). Implement drag-and-drop for easy defect assignment, bulk edit capabilities, and real-time preview of changes. Use shadcn/ui components for consistent styling.
 
-## 9. Implement defect equivalency calculator [pending]
+## 9. Implement defect equivalency calculator [done]
 ### Dependencies: 6.3
 ### Description: Build calculator component for converting defect counts between different sample sizes with accurate point value scaling
 ### Details:
 Create src/components/quality/defect-equivalency-calculator.tsx component that calculates equivalent defect counts when converting between sample sizes (300g standard to other weights). Include mathematical formulas for proportional scaling, rounding rules for fractional defects, and display comparison tables. Support batch calculations for multiple defects simultaneously. Integrate with defect configuration system to use client-specific point values.
 
-## 10. Add defect configuration validation and usage tracking [pending]
+## 10. Add defect configuration validation and usage tracking [done]
 ### Dependencies: 6.4
 ### Description: Implement validation system to prevent removal of defects in active use and add usage tracking for defect configurations
 ### Details:
 Create validation logic that checks if defects are referenced in existing quality assessments before allowing deletion. Implement usage tracking to show which clients use specific defects and how frequently. Add warning dialogs when attempting to modify defects with existing usage. Create audit trail for defect configuration changes including user, timestamp, and change details. Implement soft delete option for defects that cannot be hard deleted.
 
-## 11. Integration with assessment workflow and thermal printer [pending]
+## 11. Integration with assessment workflow and thermal printer [done]
 ### Dependencies: 6.3, 6.4
 ### Description: Connect defect configuration system with quality assessment forms and thermal printer for label generation with QR codes
 ### Details:

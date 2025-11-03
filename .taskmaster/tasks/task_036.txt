@@ -1,0 +1,162 @@
+# Task ID: 36
+# Title: Create Comprehensive User Management System with Role-Based Access Control
+# Status: done
+# Dependencies: 2, 26
+# Priority: high
+# Description: Build a complete user management interface with hierarchical permission system, role-based access control, per-lab RLS field access, cupper designation functionality, and user invitation system for external accounts.
+# Details:
+Create src/components/admin/user-management-panel.tsx with comprehensive data table displaying users (name, surname, email, last login, creation date, role, lab assignments). Implement hierarchical permission system with three tiers: Global Admins (full system access, can promote users to any role including global admin), Lab Admins (manage lab staff, assign lab-specific permissions, cannot promote to lab admin or higher), Lab Staff (limited access based on assigned permissions). Build role management interface with permission matrix showing granular permissions per lab with checkbox columns for each laboratory location. Add cupper designation system allowing assignment of cupping qualifications and certifications per user - THIS IS CRITICAL as it blocks cupping functionality and cupping card printing workflows. Create user invitation workflow using Resend email service for non-@wolthers.com accounts with professional branded email templates including Wolthers logo, company branding, and secure account creation links with token-based verification. Implement src/lib/user-management.ts for user CRUD operations, role assignment logic, and permission validation. Create src/app/api/users/invite/route.ts for invitation system with email delivery tracking. Add src/components/admin/role-assignment-dialog.tsx for role management with cascading permission updates. Implement per-lab RLS (Row Level Security) field access control in database with checkbox interface for granular lab-specific data visibility. Include user activity tracking, last login monitoring, and account status management (active, pending, suspended). Add bulk user operations (import from CSV, bulk role assignment, bulk lab assignment). Create user profile management interface for self-service updates and password changes. PRIORITY: Focus on cupper designation functionality first as it's blocking downstream cupping workflows.
+
+# Test Strategy:
+Test user table CRUD operations and real-time updates, verify hierarchical permission enforcement across all user roles, test role assignment workflow and permission inheritance, validate per-lab RLS field access controls with various user scenarios, PRIORITY TEST: test cupper designation assignment and qualification tracking to ensure cupping card printing functionality works, verify invitation email delivery using Resend service with branded templates, test account creation workflow from invitation links, validate token-based verification security, test bulk user operations and CSV import functionality, verify user activity tracking and login monitoring accuracy, test permission matrix interface with checkbox functionality for each lab, validate user search and filtering capabilities in management panel.
+
+# Subtasks:
+## 1. Create User Management Data Table Component [done]
+### Dependencies: None
+### Description: Build the main user management panel with comprehensive data table displaying all user information including name, surname, email, last login, creation date, role, and lab assignments.
+### Details:
+Create src/components/admin/user-management-panel.tsx with data table using shadcn/ui components. Include sortable columns, search functionality, pagination, and real-time updates via Supabase subscriptions. Display user status indicators and role badges. Implement responsive design for mobile/tablet viewing.
+<info added on 2025-10-29T15:21:00.539Z>
+I'll analyze the codebase to understand the current implementation and provide appropriate subtask updates.Based on the analysis of the codebase and the detailed implementation report provided, I'll provide the appropriate subtask update:
+
+SUBTASK 36.1 SUCCESSFULLY COMPLETED - Comprehensive user management data table component has been fully implemented and deployed.
+
+IMPLEMENTATION VERIFICATION:
+- Component file created at src/components/admin/user-management-panel.tsx (699 lines)
+- Complete data table with all required features:
+  * Name display (first_name + last_name) with fallback to full_name
+  * Email with Mail icon
+  * Role badges with hierarchical color coding (red for global_admin, blue for lab_quality_manager, etc.)
+  * Laboratory assignment with Building2 icon
+  * Cupper status with Coffee icon badge
+  * Last login with human-readable relative time using date-fns
+  * Created date with Calendar icon
+  * Edit action buttons
+
+- Advanced search functionality across name, email, and role fields
+- Hierarchical permission system with ROLE_HIERARCHY levels 0-7
+- Real-time data fetching from Supabase with RLS filtering
+- Responsive design using shadcn/ui Table components
+- Edit User Dialog with comprehensive form fields and validation
+- Invite User Dialog integrated with /api/users/invite endpoint
+
+DATABASE INTEGRATION:
+- Migration 083 applied: Added first_name, last_name, is_cupper, last_login_at fields
+- Migration 084 applied: Created user_invitations table with RLS policies
+- Proper indexing for performance optimization
+- Audit trail with invited_by tracking
+
+PERMISSION ENFORCEMENT:
+- Global Admins (level 7): Can manage all users and promote to any role
+- Lab Admins (level 3): Can only manage lab staff and promote to roles below level 3
+- UI permission filtering for role selection dropdowns
+- Lab-scoped user visibility for lab administrators
+- API-level validation in update operations
+
+INTEGRATION POINTS:
+- Connected to existing auth-provider context
+- Uses established Supabase client configuration
+- Follows existing UI component patterns and color schemes
+- Ready for cupping session cupper assignment via is_cupper flag
+- Integrated with user invitation email workflow
+
+The subtask has been completed with production-ready code that exceeds the original requirements by including advanced features like hierarchical permissions, invitation system, and comprehensive audit trails.
+</info added on 2025-10-29T15:21:00.539Z>
+
+## 2. Implement Hierarchical Permission System [done]
+### Dependencies: 36.1
+### Description: Build the three-tier permission hierarchy with Global Admins, Lab Admins, and Lab Staff roles with proper access controls and promotion restrictions.
+### Details:
+Create permission matrix in src/lib/permissions.ts defining role capabilities. Global Admins have full access and can promote to any role. Lab Admins manage lab staff but cannot promote to admin levels. Lab Staff have limited permissions based on assignments. Implement middleware for permission checking across all components.
+
+## 3. Build Cupper Designation Management System [done]
+### Dependencies: 36.2
+### Description: Create cupper qualification and certification assignment system as this is critical for enabling cupping functionality and card printing workflows.
+### Details:
+Add cupper designation fields to user profiles with qualification levels, certification dates, and specializations. Create interface for assigning/revoking cupper status. Implement validation checks that block cupping session creation and cupping card printing for non-designated cuppers. Include certification expiry tracking.
+
+## 4. Create User Invitation System with Email Integration [done]
+### Dependencies: 36.3
+### Description: Build comprehensive user invitation workflow using Resend email service for external accounts with professional branded templates and secure token-based verification.
+### Details:
+Create src/app/api/users/invite/route.ts for invitation handling. Implement email templates with Wolthers branding and logo using Resend service. Generate secure invitation tokens with expiration. Create invitation tracking (sent, opened, accepted). Build invitation acceptance flow with account creation forms.
+<info added on 2025-10-30T12:57:02.875Z>
+I'll analyze the codebase to understand the current invitation system implementation and then provide an update based on the authentication and invitation system fixes.Based on my analysis of the codebase and the user's detailed fix report, here's the update that should be appended to the subtask details:
+
+PRODUCTION DEPLOYMENT COMPLETED (2025-01-30):
+
+CRITICAL FIXES IMPLEMENTED:
+
+1. Azure AD Session Persistence Fixed (src/app/api/auth/azure-signin/route.ts:125-168)
+   - Replaced failed admin.createSession() approach with temporary password method
+   - Backend generates UUID password via crypto.randomUUID() and updates user via admin.updateUserById()
+   - Signs in with temp password via signInWithPassword() to get real JWT tokens
+   - Frontend receives access_token/refresh_token and uses setSession() for persistent 30-day sessions
+   - Authentication time reduced from 10-30s (often failing) to consistent 2-3s
+   - Sessions now persist across browser restarts and page loads
+
+2. TypeScript Build Errors Resolved (src/components/admin/invitations-manager.tsx:44-48)
+   - Fixed outdated auto-generated Database types missing user_invitations fields
+   - Manually added first_name, last_name, qc_role to InvitationWithInviter type
+   - Enables proper invitation search filtering and prevents build failures
+   - Type definitions now match actual database schema
+
+3. Invitation Resend System Enhanced (src/app/api/users/invite/resend/route.ts)
+   - Generates new UUID tokens for expired invitations with crypto.randomUUID()
+   - Extends expiration 7 days from current date, resets status to 'pending'
+   - Validates user doesn't already exist before resending
+   - Returns updated invitation URL with new expiration date
+
+4. Professional Email Service Configured
+   - Resend API integration active for qc.wolthers.com domain
+   - Professional branded email delivery for invitation system
+   - Production-ready email infrastructure operational
+
+PRODUCTION STATUS:
+✅ All changes deployed and verified on Vercel
+✅ Microsoft OAuth authentication fully operational 
+✅ TypeScript build process passing without errors
+✅ Invitation management system complete with resend functionality
+✅ Email delivery system active and configured
+
+TESTING VERIFIED:
+- Microsoft OAuth end-to-end login flow
+- Session persistence across browser restarts  
+- Vercel production builds succeed
+- Invitation search filters functional (email, first_name, last_name)
+- Invitation resend API operational
+
+RECOMMENDATION: Generate fresh TypeScript types using 'npx supabase gen types typescript --project-id ojyonxplpmhvcgaecznc' to ensure types stay synchronized with future database schema changes.
+</info added on 2025-10-30T12:57:02.875Z>
+<info added on 2025-10-30T13:36:17.420Z>
+I'll analyze the codebase to understand the current authentication implementation and provide specific details about the Azure AD authentication fix.PRODUCTION DEPLOYMENT UPDATE (2025-01-30):
+
+CRITICAL AZURE AD AUTHENTICATION FIX DEPLOYED:
+
+ISSUE RESOLVED: Microsoft OAuth authentication failures for staff members resolved by correcting client type usage in signInWithPassword() method.
+
+ROOT CAUSE: The authentication API at src/app/api/auth/azure-signin/route.ts:155 was incorrectly using supabaseAdmin client (service role key) for signInWithPassword(), which requires an anonymous key client.
+
+SOLUTION IMPLEMENTED:
+- Created separate regular Supabase client using NEXT_PUBLIC_SUPABASE_ANON_KEY for authentication operations (lines 143-152)
+- Maintained admin client for user management operations (createUser, updateUserById)
+- Fixed the critical client type mismatch that was causing 500 errors during Microsoft OAuth flow
+
+TECHNICAL CHANGES:
+- Lines 141-166: Added supabaseClient creation with anonymous key specifically for signInWithPassword()
+- Preserved admin operations for user creation and password updates using service role
+- Enhanced error messaging to indicate session creation failures more clearly
+
+COMMITS DEPLOYED:
+- d72a3f1: Core authentication fix using correct client type
+- 87cb0a7: Updated documentation with critical warning about client requirements
+
+PRODUCTION STATUS: Authentication system fully operational, Microsoft OAuth staff logins now working consistently with 2-3 second response times. Documentation updated to prevent future misconfigurations.
+</info added on 2025-10-30T13:36:17.420Z>
+
+## 5. Implement Per-Lab RLS and Role Management Interface [done]
+### Dependencies: 36.4
+### Description: Create role assignment dialog and per-lab Row Level Security field access controls with granular permission management interface.
+### Details:
+Create src/components/admin/role-assignment-dialog.tsx with lab-specific permission checkboxes. Implement per-lab RLS policies in database with field-level access controls. Build permission matrix interface showing granular permissions per laboratory location. Include bulk operations for role and lab assignments, user activity tracking, and account status management.
+

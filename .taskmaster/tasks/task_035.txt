@@ -1,0 +1,43 @@
+# Task ID: 35
+# Title: Add tin label size selection dialog and centered layout
+# Status: done
+# Dependencies: None
+# Priority: medium
+# Description: Implement a size selection dialog for tin labels and center the label content for better visual appearance on small tins.
+# Details:
+1. Update the button text in src/app/samples/page.tsx line 600-603 from 'Print Tin Sleeves (4cm)' to 'Tin Label'. 2. Create a new dialog component src/components/samples/tin-label-size-dialog.tsx with radio button options for '4cm height' and '2.5cm height' using shadcn/ui Dialog and RadioGroup components. 3. Modify handleBulkPrintTinSleeves function (line 346) to open the dialog instead of directly generating PDF. 4. Create a new variant of tin-sleeve-label.tsx component that supports both 4cm (113.39pt) and 2.5cm (70.87pt) heights with responsive content scaling. 5. Update the labelContainer styling to use 'justify-center' instead of 'justify-start' for centered content alignment. 6. Implement size-specific PDF generation logic that adjusts dimensions, font sizes, and spacing proportionally. 7. Add proper TypeScript interfaces for the new size options and dialog props. 8. Ensure the dialog follows the existing design system with proper theming support for light/dark modes using the established color palette.
+
+# Test Strategy:
+Test button text change is visible on samples page. Test dialog opens when 'Tin Label' button is clicked. Test both size options can be selected and generate different PDF outputs. Verify 4cm labels maintain existing functionality and appearance. Verify 2.5cm labels scale content appropriately with smaller dimensions. Test content centering works correctly for both sizes. Test dialog cancellation returns to previous state. Test PDF generation with bulk selected samples for both sizes. Verify labels print correctly on actual tin containers with proper centering and no content overflow.
+
+# Subtasks:
+## 1. Update button text from 'Print Tin Sleeves (4cm)' to 'Tin Label' [done]
+### Dependencies: None
+### Description: Modify the button text in the samples page to reflect the new tin label functionality with size selection.
+### Details:
+Update the button text in src/app/samples/page.tsx at lines 600-603, changing from 'Print Tin Sleeves (4cm)' to 'Tin Label'. This prepares the UI for the new size selection dialog functionality.
+
+## 2. Create tin label size selection dialog component [done]
+### Dependencies: None
+### Description: Build a new dialog component with radio button options for selecting tin label sizes (4cm and 2.5cm heights).
+### Details:
+Create src/components/samples/tin-label-size-dialog.tsx using shadcn/ui Dialog and RadioGroup components. Include radio button options for '4cm height' and '2.5cm height'. Implement proper TypeScript interfaces for size options and dialog props. Ensure dialog follows existing design system with light/dark mode theming support.
+
+## 3. Modify handleBulkPrintTinSleeves function to open size selection dialog [done]
+### Dependencies: 35.1, 35.2
+### Description: Update the existing print function to show the size selection dialog instead of directly generating PDF.
+### Details:
+Modify handleBulkPrintTinSleeves function at line 346 in src/app/samples/page.tsx to open the new size selection dialog. Replace direct PDF generation with dialog trigger. Handle dialog state management and size selection callback.
+
+## 4. Create size-responsive tin sleeve label component variant [done]
+### Dependencies: 35.2
+### Description: Develop a new variant of the tin sleeve label component that supports both 4cm and 2.5cm heights with proportional content scaling.
+### Details:
+Create a new variant of tin-sleeve-label.tsx component supporting both 4cm (113.39pt) and 2.5cm (70.87pt) heights. Implement responsive content scaling with size-specific font sizes and spacing. Update labelContainer styling to use 'justify-center' instead of 'justify-start' for centered content alignment.
+
+## 5. Implement size-specific PDF generation logic [done]
+### Dependencies: 35.3, 35.4
+### Description: Build the PDF generation logic that creates different sized labels based on user selection with proper dimension and content adjustments.
+### Details:
+Implement size-specific PDF generation logic that adjusts dimensions, font sizes, and spacing proportionally for both 4cm and 2.5cm options. Ensure 4cm labels maintain existing functionality and appearance while 2.5cm labels scale content appropriately. Handle the selected size from dialog and generate corresponding PDF output.
+

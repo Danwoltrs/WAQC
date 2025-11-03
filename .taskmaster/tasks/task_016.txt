@@ -1,6 +1,6 @@
 # Task ID: 16
 # Title: Implement QR Code and Label Printing System
-# Status: pending
+# Status: done
 # Dependencies: 15
 # Priority: medium
 # Description: Build printing system for sample labels and cupping QR code tables with thermal printer support

@@ -1,0 +1,11 @@
+# Task ID: 29
+# Title: Fix Sample Display Issues: Quality Name and Importer Not Showing in Samples List
+# Status: done
+# Dependencies: 15, 3
+# Priority: medium
+# Description: Resolve display issues in the samples list where quality specification names and importer information are not rendering correctly.
+# Details:
+Investigate and fix the sample display issues in the samples tracking dashboard where quality names and importer fields are not showing. This involves: 1) Debugging the SQL queries in the samples list API to ensure proper JOIN operations with the quality_specifications and clients tables, 2) Verifying the database schema relationships between samples, quality_specifications, and clients tables, 3) Checking the frontend component rendering logic in src/components/samples/sample-tracking-dashboard.tsx to ensure quality and importer data is properly mapped and displayed, 4) Implementing proper null handling for cases where quality specs or importer data might be missing, 5) Adding loading states and error handling for failed data fetches, 6) Ensuring the Quality filter column is properly populated and functional. Review the existing queries in src/app/api/samples/route.ts to verify JOIN statements and data serialization. Check for any missing foreign key relationships or improper field mappings that could cause data not to display.
+
+# Test Strategy:
+Test the samples list display with various data scenarios: samples with and without assigned quality specifications, samples with different importer configurations, and edge cases with null/missing data. Verify the Quality filter functionality works correctly. Test the API endpoints directly to ensure proper data structure is returned. Validate that all sample list columns display correct information including quality names and importer details. Test with different user roles to ensure RLS policies don't interfere with data display. Perform integration tests on the complete sample tracking workflow to ensure no regressions.

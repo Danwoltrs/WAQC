@@ -1,0 +1,11 @@
+# Task ID: 30
+# Title: Implement Per-Laboratory Starting Sequence Configuration
+# Status: done
+# Dependencies: 2, 26
+# Priority: medium
+# Description: Enable admins to configure different starting sequence numbers for each laboratory when working with the same client
+# Details:
+Created client_laboratory_config table to store lab-specific starting sequences. Updated generate_tracking_number() function to check lab-specific configs first before falling back to global client starting_sequence. Built API endpoints (GET/POST/DELETE /api/clients/[id]/lab-configs) and UI component in client edit screen. Each lab maintains independent continuous sequences per client across all years. Example: Brazil starts at 8900, Colombia at 5000, Guatemala at 2450 for the same client.
+
+# Test Strategy:
+

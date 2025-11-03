@@ -1,0 +1,11 @@
+# Task ID: 33
+# Title: Fix QR Code URL for Sample Tracking
+# Status: pending
+# Dependencies: 16, 31
+# Priority: medium
+# Description: Verify and fix the QR code URL generation on tin sleeve labels to ensure they point to the correct sample tracking page URL.
+# Details:
+Current QR codes are being generated using the `getSampleTrackingUrl` function in `src/lib/qr-code.ts` which creates URLs in the format `${baseUrl}/samples/${trackingNumber}`. However, the sample detail page is actually located at `/samples/[id]` not `/samples/[trackingNumber]`. Investigation and testing is needed to determine if the URL should resolve to the tracking number or the sample ID. Fix the QR code URL generation to either: 1) Update the route structure to support tracking number lookup at `/samples/[trackingNumber]`, or 2) Modify `getSampleTrackingUrl` to generate URLs that use the sample ID instead. Also verify that the QR codes on tin sleeve labels (printed via `/api/samples/[id]/print-tin-sleeve` and `/api/samples/bulk/print-tin-sleeves`) resolve to the correct sample detail page when scanned. Test the QR code scanning functionality end-to-end to ensure proper user experience.
+
+# Test Strategy:
+Test QR code generation for both single and bulk tin sleeve printing, scan generated QR codes with mobile device to verify they resolve to correct sample detail page, test both existing tracking number format URLs and any new routing implementation, verify QR codes work across different sample types (PSS/SS/Type), test with various tracking number formats including JSON-formatted tracking numbers, validate that sample detail page loads correctly when accessed via QR code URL

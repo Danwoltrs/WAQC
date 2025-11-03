@@ -1,0 +1,43 @@
+# Task ID: 34
+# Title: Fix Cross-Browser Authentication Issues and Improve Page Load Performance
+# Status: done
+# Dependencies: 1, 2
+# Priority: high
+# Description: Investigate and resolve authentication failures and slow page load times across Chrome, Firefox, Safari, and Edge browsers.
+# Details:
+CRITICAL AUTHENTICATION FIXES IDENTIFIED: Based on deep dive analysis, the authentication failures ('Fetch API cannot load due to access control checks', 'TypeError: Load failed') are caused by specific configuration issues in the codebase. **IMMEDIATE FIXES REQUIRED**: 1) Fix missing cookie configuration in createBrowserClient (src/lib/supabase.ts:9) - currently using default config without proper SameSite, Secure, Path settings for cross-browser compatibility. 2) Reduce excessive 60s timeouts to 10s and add retry logic with exponential backoff (auth-provider.tsx:38-39, 177-178). 3) Implement request deduplication for fetchProfile function to prevent race conditions from multiple simultaneous calls. 4) Add proper cookie handling options to middleware.ts createServerClient for consistent session management across browsers. 5) Handle browser-specific cookie policies (Safari strict mode, Chrome SameSite enforcement). **SPECIFIC FILE CHANGES**: src/lib/supabase.ts - Add cookie options {sameSite: 'lax', secure: true, path: '/'} to createBrowserClient. auth-provider.tsx - Replace 60s timeouts with 10s + retry mechanism, add fetchProfile deduplication. middleware.ts - Enhance cookie configuration for cross-browser compatibility. **PAGE LOAD PERFORMANCE**: Implement code splitting, lazy loading, service worker caching, and bundle optimization as originally planned. **CROSS-BROWSER TESTING**: Create Playwright test suite focusing on cookie handling differences across Chrome, Firefox, Safari, Edge.
+
+# Test Strategy:
+
+
+# Subtasks:
+## 1. Fix Browser Client Cookie Configuration [pending]
+### Dependencies: None
+### Description: Update createBrowserClient in src/lib/supabase.ts to include proper cookie options for cross-browser compatibility
+### Details:
+The current createBrowserClient (line 9) uses default configuration which lacks proper cookie settings. Add cookie options including SameSite: 'lax', Secure: true, Path: '/' to ensure authentication tokens are stored correctly across Chrome, Firefox, Safari, and Edge. This addresses the 'Fetch API cannot load due to access control checks' error.
+
+## 2. Reduce Authentication Timeouts and Add Retry Logic [pending]
+### Dependencies: None
+### Description: Replace 60-second timeouts with 10-second timeouts and implement retry logic with exponential backoff
+### Details:
+Update auth-provider.tsx lines 38-39 and 177-178 to reduce timeouts from 60s to 10s. Implement retry mechanism with exponential backoff (1s, 2s, 4s delays) for failed authentication requests. Add proper error handling for timeout scenarios to improve user experience during network issues.
+
+## 3. Implement FetchProfile Request Deduplication [pending]
+### Dependencies: None
+### Description: Add request deduplication to prevent race conditions when fetchProfile is called from multiple places simultaneously
+### Details:
+The fetchProfile function in auth-provider.tsx is called from multiple locations (lines 62, 89, 138, 159) which can cause race conditions. Implement a request deduplication mechanism using a Map or similar to ensure only one profile fetch request is active at a time for each user ID.
+
+## 4. Enhance Middleware Cookie Configuration [pending]
+### Dependencies: 34.1
+### Description: Update middleware.ts createServerClient with proper cookie configuration for consistent cross-browser session management
+### Details:
+The middleware createServerClient (line 11-55) needs enhanced cookie configuration to match the browser client settings. Ensure consistent SameSite, Secure, and Path options between server and client cookie handling to prevent session inconsistencies across different browsers.
+
+## 5. Implement Cross-Browser Compatibility Tests [pending]
+### Dependencies: 34.1, 34.2, 34.3, 34.4
+### Description: Create automated Playwright test suite specifically for cross-browser authentication scenarios
+### Details:
+Develop comprehensive test suite using Playwright to test authentication flows across Chrome, Firefox, Safari, and Edge. Focus on cookie handling differences, timeout scenarios, and retry logic effectiveness. Include tests for Microsoft OAuth flow and session persistence.
+
