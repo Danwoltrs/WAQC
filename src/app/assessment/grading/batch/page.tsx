@@ -201,16 +201,16 @@ export default function BatchGradingPage() {
       } else if (sample.sample_type === 'type') {
         // For type samples without template, show all common screen sizes
         const allScreens: ScreenSizeConstraint[] = [
-          { screen_size: '20', constraint_type: 'minimum', value: 0, display_order: 0 },
-          { screen_size: '19', constraint_type: 'minimum', value: 0, display_order: 1 },
-          { screen_size: '18', constraint_type: 'minimum', value: 0, display_order: 2 },
-          { screen_size: '17', constraint_type: 'minimum', value: 0, display_order: 3 },
-          { screen_size: '16', constraint_type: 'minimum', value: 0, display_order: 4 },
-          { screen_size: '15', constraint_type: 'minimum', value: 0, display_order: 5 },
-          { screen_size: '14', constraint_type: 'minimum', value: 0, display_order: 6 },
-          { screen_size: '13', constraint_type: 'minimum', value: 0, display_order: 7 },
-          { screen_size: '12', constraint_type: 'minimum', value: 0, display_order: 8 },
-          { screen_size: 'Below 12', constraint_type: 'maximum', value: 100, display_order: 9 }
+          { screen_size: '20', constraint_type: 'any', display_order: 0 },
+          { screen_size: '19', constraint_type: 'any', display_order: 1 },
+          { screen_size: '18', constraint_type: 'any', display_order: 2 },
+          { screen_size: '17', constraint_type: 'any', display_order: 3 },
+          { screen_size: '16', constraint_type: 'any', display_order: 4 },
+          { screen_size: '15', constraint_type: 'any', display_order: 5 },
+          { screen_size: '14', constraint_type: 'any', display_order: 6 },
+          { screen_size: '13', constraint_type: 'any', display_order: 7 },
+          { screen_size: '12', constraint_type: 'any', display_order: 8 },
+          { screen_size: 'Below 12', constraint_type: 'any', display_order: 9 }
         ]
         screenConstraintsMap.set(sample.id, allScreens)
 
