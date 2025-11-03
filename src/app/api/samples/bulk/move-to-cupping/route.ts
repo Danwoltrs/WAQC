@@ -3,7 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 
 /**
  * POST /api/samples/bulk/move-to-cupping
- * Move samples to cupping stage, handling all necessary workflow transitions
+ * Move samples to analysis stage (green grading + cupping can be done simultaneously)
  * Body: { sample_ids: string[] }
  */
 export async function POST(request: NextRequest) {
@@ -23,7 +23,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'sample_ids array is required' }, { status: 400 })
     }
 
-    console.log('Moving samples to cupping stage:', sample_ids)
+    console.log('Moving samples to analysis stage:', sample_ids)
 
     // Process each sample
     const results = await Promise.all(
@@ -41,58 +41,41 @@ export async function POST(request: NextRequest) {
           }
 
           const currentStage = sample.workflow_stage || 'received'
-          console.log(`Sample ${sample.tracking_number}: current stage = ${currentStage}`)
+          console.log(`Sample ${sample.tracking_number}: current stage = ${currentStage}, type = ${sample.sample_type}`)
 
-          // Define the workflow stages in order (green analysis is tracked separately)
-          const stageOrder = ['received', 'roasting', 'cupping']
-          const currentIndex = stageOrder.indexOf(currentStage)
-          const targetIndex = stageOrder.indexOf('cupping')
-
-          // If already at cupping or beyond, no need to update
-          if (currentIndex >= targetIndex) {
-            console.log(`Sample ${sample.tracking_number} already at or past cupping stage`)
-            return { id, success: true, message: 'Already at cupping stage' }
+          // For PSS/SS/Type samples: received → analysis (green grading + cupping together)
+          // For Specialty samples: received → (stay received until manually moved to roasting)
+          if (sample.sample_type === 'specialty') {
+            // Specialty samples stay at 'received' - roasting is done manually when ready
+            console.log(`Sample ${sample.tracking_number} is specialty type - staying at received stage for manual roasting`)
+            return { id, success: true, message: 'Specialty sample - roasting must be done manually' }
           }
 
-          // Progress through stages sequentially to avoid validation errors
-          // For PSS/SS/Type samples: received → roasting → cupping
-          // For calibration: received → cupping (can skip roasting if already roasted separately)
-          let nextStage = currentStage
-
-          for (let i = currentIndex + 1; i <= targetIndex; i++) {
-            nextStage = stageOrder[i]
-
-            console.log(`Updating ${sample.tracking_number}: ${stageOrder[i - 1]} → ${nextStage}`)
-
+          // For PSS/SS/Type samples, move directly to analysis
+          if (currentStage === 'received') {
             const { error: updateError } = await supabase
               .from('samples')
-              .update({ workflow_stage: nextStage })
+              .update({
+                workflow_stage: 'analysis',
+                status: 'in_progress'
+              })
               .eq('id', id)
 
             if (updateError) {
-              console.error(`Failed to update to ${nextStage}:`, updateError)
+              console.error(`Failed to update to analysis:`, updateError)
               return { id, success: false, error: updateError.message }
             }
-          }
 
-          // Update status to in_progress
-          await supabase
-            .from('samples')
-            .update({ status: 'in_progress' })
-            .eq('id', id)
-
-          // For PSS/SS/Type samples, mark as roasted
-          if (sample.sample_type === 'pss' || sample.sample_type === 'ss' || sample.sample_type === 'type') {
-            // Create or update quality assessment with roast data
+            // Mark as ready for both green bean analysis and cupping
             const { error: assessmentError } = await supabase
               .from('quality_assessments')
               .upsert({
                 sample_id: id,
+                green_bean_data: {
+                  ready_for_grading: true
+                },
                 roast_data: {
-                  roasted: true,
-                  roasted_at: new Date().toISOString(),
-                  ready_for_cupping: true,
-                  auto_roasted: true, // Flag to indicate this was auto-set
+                  ready_for_cupping: true
                 },
                 updated_at: new Date().toISOString(),
               }, {
@@ -103,10 +86,16 @@ export async function POST(request: NextRequest) {
               console.warn(`Failed to update quality assessment for ${sample.tracking_number}:`, assessmentError)
               // Don't fail the entire operation
             }
-          }
 
-          console.log(`✅ Sample ${sample.tracking_number} moved to cupping stage`)
-          return { id, success: true, final_stage: 'cupping' }
+            console.log(`✅ Sample ${sample.tracking_number} moved to analysis stage`)
+            return { id, success: true, final_stage: 'analysis' }
+          } else if (currentStage === 'analysis') {
+            console.log(`Sample ${sample.tracking_number} already at analysis stage`)
+            return { id, success: true, message: 'Already at analysis stage' }
+          } else {
+            console.log(`Sample ${sample.tracking_number} at unexpected stage ${currentStage}`)
+            return { id, success: false, error: `Sample at unexpected stage: ${currentStage}` }
+          }
         } catch (error) {
           console.error(`Error processing sample ${id}:`, error)
           return { id, success: false, error: String(error) }
@@ -117,7 +106,7 @@ export async function POST(request: NextRequest) {
     const successCount = results.filter(r => r.success).length
     const failureCount = results.filter(r => !r.success).length
 
-    console.log(`Moved ${successCount}/${sample_ids.length} samples to cupping stage`)
+    console.log(`Moved ${successCount}/${sample_ids.length} samples to analysis stage`)
 
     if (failureCount > 0) {
       const failures = results.filter(r => !r.success)
@@ -129,7 +118,7 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      message: `Successfully moved ${successCount} sample${successCount !== 1 ? 's' : ''} to cupping stage`,
+      message: `Successfully moved ${successCount} sample${successCount !== 1 ? 's' : ''} to analysis stage`,
       results,
     })
   } catch (error) {

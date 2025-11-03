@@ -983,9 +983,13 @@ export default function SamplesPage() {
         samples={samples.filter((s) => selectedSamples.has(s.id))}
         assignedCuppers={assignedCuppers}
         onSuccess={() => {
-          // Navigate to batch grading page with selected sample IDs
-          const sampleIds = Array.from(selectedSamples).join(',')
-          router.push(`/assessment/grading/batch?ids=${sampleIds}`)
+          // Refresh the samples list to show updated status
+          loadSamples()
+          // Clear selection and reset cupper assignment
+          setSelectedSamples(new Set())
+          setSelectedQrCodes(new Set())
+          setAssignedCuppers([])
+          setCuppersAssigned(false)
         }}
       />
 

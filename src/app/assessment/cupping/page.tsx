@@ -34,11 +34,11 @@ export default function CuppingPage() {
     try {
       setLoading(true)
       const params = new URLSearchParams()
-      params.append('limit', '50')
+      params.append('limit', '100')
 
       // Cupping can happen independently of grading
-      // Show samples that are ready for cupping (status: 'cupping')
-      params.append('status', 'cupping')
+      // Show samples that are in the analysis workflow stage (ready for both grading and cupping)
+      params.append('workflow_stage', 'analysis')
 
       const response = await fetch(`/api/samples?${params}`)
       const data = await response.json()
