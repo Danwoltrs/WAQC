@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { ClientAnalyticsDashboard } from '@/components/clients/client-analytics-dashboard'
-import { createClient } from '@/lib/supabase-browser'
+import { supabase } from '@/lib/supabase'
 
 export default function TestClientAnalyticsPage() {
   const [clientId, setClientId] = useState<string>('')
@@ -16,7 +16,6 @@ export default function TestClientAnalyticsPage() {
 
   useEffect(() => {
     async function fetchClients() {
-      const supabase = createClient()
       const { data } = await supabase
         .from('clients')
         .select('id, name, company')

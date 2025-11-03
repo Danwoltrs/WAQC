@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge'
 import { Minus, Plus, X, Save, Eye, EyeOff, Users, AlertTriangle } from 'lucide-react'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType } from '@/types/attribute-scales'
-import { createClient } from '@/lib/supabase-browser'
+import { supabase } from '@/lib/supabase'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 
@@ -123,7 +123,6 @@ export function DigitalCuppingInterface({
   useEffect(() => {
     if (!activeSampleId) return
 
-    const supabase = createClient()
     let channel: ReturnType<typeof supabase.channel> | null = null
 
     const setupRealtime = async () => {

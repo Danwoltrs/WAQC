@@ -6,7 +6,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { StorageLayoutView } from '@/components/storage/storage-layout-view'
 import { Warehouse, AlertCircle } from 'lucide-react'
-import { supabase } from '@/lib/supabase-browser'
+import { supabase } from '@/lib/supabase'
 
 type ProfileData = {
   qc_role: string

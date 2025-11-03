@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
-import { createClient } from '@/lib/supabase-browser'
+import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 
 export interface Notification {
@@ -138,7 +138,6 @@ export function useNotifications(options?: { unreadOnly?: boolean; limit?: numbe
     fetchNotifications()
 
     // Set up real-time subscription
-    const supabase = createClient()
     const channel = supabase
       .channel('notifications')
       .on(
@@ -250,7 +249,6 @@ export function useActivityFeed(options?: { limit?: number; entityType?: string 
     fetchActivities()
 
     // Set up real-time subscription
-    const supabase = createClient()
     const channel = supabase
       .channel('activity_feed')
       .on(

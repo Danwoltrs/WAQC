@@ -10,7 +10,7 @@ import { PositionGrid } from './position-grid'
 import { PositionAssignmentDialog } from './position-assignment-dialog'
 import { Package, X, Calendar, MapPin, FileText, Users, Edit2, Check } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { supabase } from '@/lib/supabase-browser'
+import { supabase } from '@/lib/supabase'
 
 type ProfileData = {
   qc_role: string
