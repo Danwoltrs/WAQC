@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -65,7 +65,7 @@ interface GradingData {
   defects_total: number // Calculated
 }
 
-export default function BatchGradingPage() {
+function BatchGradingContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const sampleIds = searchParams.get('ids')?.split(',') || []
@@ -602,5 +602,17 @@ export default function BatchGradingPage() {
         })}
       </Tabs>
     </div>
+  )
+}
+
+export default function BatchGradingPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center min-h-screen bg-background">
+        <div className="text-muted-foreground">Loading grading interface...</div>
+      </div>
+    }>
+      <BatchGradingContent />
+    </Suspense>
   )
 }
