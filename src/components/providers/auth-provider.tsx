@@ -120,6 +120,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [networkError, setNetworkError] = useState(false)
 
   useEffect(() => {
+    // This effect runs ONCE on mount to get initial session and set up auth listener
     let isInitialLoad = true
     let refreshInterval: NodeJS.Timeout | null = null
     let hourlyRefreshInterval: NodeJS.Timeout | null = null
@@ -171,26 +172,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log('[Auth] Hourly refresh successful')
         }
       }, 60 * 60 * 1000) // Every hour
-    }
-
-    // Refresh session when user returns to tab (for long-term persistence)
-    const handleVisibilityChange = async () => {
-      if (document.visibilityState === 'visible' && user) {
-        const lastActivity = getLastActivity()
-        if (lastActivity) {
-          const timeSinceActivity = Date.now() - lastActivity
-          // If user was away for more than 5 minutes, refresh session
-          if (timeSinceActivity > 5 * 60 * 1000) {
-            console.log('[Auth] User returned after being away, refreshing session')
-            const { data, error } = await supabase.auth.refreshSession()
-            if (error) {
-              console.error('[Auth] Failed to refresh on return:', error)
-            } else if (data.session) {
-              console.log('[Auth] Session refreshed on user return')
-            }
-          }
-        }
-      }
     }
 
     // Get initial session with retry logic
@@ -252,9 +233,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isInitialLoad = false
     }
 
+    // Call getSession only once on mount
     getSession()
 
-    // Listen for auth state changes
+    // Listen for auth state changes (this subscription persists)
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange(async (event, session) => {
@@ -283,22 +265,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })
 
-    // Set up activity tracking
-    const handleActivity = () => {
-      updateLastActivity()
-    }
-
-    // Add activity event listeners when user is logged in
-    if (user) {
-      ACTIVITY_EVENTS.forEach(event => {
-        window.addEventListener(event, handleActivity, { passive: true })
-      })
-      // Add visibility change listener for session refresh on return
-      document.addEventListener('visibilitychange', handleVisibilityChange)
-      // Record initial activity
-      updateLastActivity()
-    }
-
     return () => {
       subscription.unsubscribe()
       // Clean up refresh intervals on unmount
@@ -308,6 +274,47 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (hourlyRefreshInterval) {
         clearInterval(hourlyRefreshInterval)
       }
+    }
+  }, []) // Empty dependency array - runs once on mount
+
+  // Separate effect for activity tracking that responds to user changes
+  useEffect(() => {
+    if (!user) return
+
+    const handleActivity = () => {
+      updateLastActivity()
+    }
+
+    // Refresh session when user returns to tab (for long-term persistence)
+    const handleVisibilityChange = async () => {
+      if (document.visibilityState === 'visible') {
+        const lastActivity = getLastActivity()
+        if (lastActivity) {
+          const timeSinceActivity = Date.now() - lastActivity
+          // If user was away for more than 5 minutes, refresh session
+          if (timeSinceActivity > 5 * 60 * 1000) {
+            console.log('[Auth] User returned after being away, refreshing session')
+            const { data, error } = await supabase.auth.refreshSession()
+            if (error) {
+              console.error('[Auth] Failed to refresh on return:', error)
+            } else if (data.session) {
+              console.log('[Auth] Session refreshed on user return')
+            }
+          }
+        }
+      }
+    }
+
+    // Add activity event listeners
+    ACTIVITY_EVENTS.forEach(event => {
+      window.addEventListener(event, handleActivity, { passive: true })
+    })
+    // Add visibility change listener
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    // Record initial activity
+    updateLastActivity()
+
+    return () => {
       // Clean up activity listeners
       ACTIVITY_EVENTS.forEach(event => {
         window.removeEventListener(event, handleActivity)
@@ -315,7 +322,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Clean up visibility listener
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [user])
+  }, [user]) // Runs when user changes
 
   const createUserProfile = async (userId: string) => {
     try {

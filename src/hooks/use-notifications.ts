@@ -135,6 +135,9 @@ export function useNotifications(options?: { unreadOnly?: boolean; limit?: numbe
   }, [])
 
   useEffect(() => {
+    // Only fetch if we have a profile
+    if (!profile || authLoading) return
+
     fetchNotifications()
 
     // Set up real-time subscription
@@ -157,7 +160,8 @@ export function useNotifications(options?: { unreadOnly?: boolean; limit?: numbe
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [fetchNotifications])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id, authLoading]) // Only re-run when profile ID or auth loading state changes
 
   const unreadCount = notifications.filter(n => !n.read).length
 
