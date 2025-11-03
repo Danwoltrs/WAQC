@@ -3,14 +3,38 @@
 # Status: in-progress
 # Dependencies: 9, 10, 36
 # Priority: high
-# Description: Build comprehensive cupping system with three input methods: OCR scanning (printed cards), real-time digital cupping interface, and future iOS app support. Support three session types: Calibration (digital only), Type Sample, and PSS/SS with quality validation.
+# Description: Build comprehensive cupping system with three input methods: OCR scanning (printed cards), real-time digital cupping interface, and future iOS app support. Support three session types: Calibration (digital only), Type Sample, and PSS/SS with quality validation. Integrated with analysis workflow stage for simultaneous grading and cupping.
 # Details:
-Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). Current progress: ✅ Cupper assignment dialog, ✅ Print cupping cards (thermal/A4), ✅ OCR scanning infrastructure, ⏳ Digital interface pending.
+Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). WORKFLOW INTEGRATION UPDATE (2025-11-03): Successfully integrated cupping page with new 'analysis' workflow stage enabling parallel cupping and grading workflows. Cupping page now loads samples via workflow_stage='analysis' instead of status='cupping', allows simultaneous grading and cupping processes, and maintains manual navigation flow where users access cupping interface from /assessment/cupping. System ready for real-time collaborative cupping sessions.
 
 # Test Strategy:
-Test OCR accuracy and score extraction from handwritten cards, test real-time collaboration and score synchronization in digital interface, test calibration session patterns (Square, Pyramid, Custom), test quality template validation for PSS/SS samples, test simultaneous cupping and grading workflows, verify certificate generation triggers
+Test OCR accuracy and score extraction from handwritten cards, test real-time collaboration and score synchronization in digital interface, test calibration session patterns (Square, Pyramid, Custom), test quality template validation for PSS/SS samples, test simultaneous cupping and grading workflows with analysis stage integration, verify certificate generation triggers, test workflow transitions and sample loading via workflow_stage parameter
 
 # Subtasks:
+## 3. Build OCR integration for handwritten cupping cards [pending]
+### Dependencies: 11.1
+### Description: Implement OCR processing system for extracting scores from scanned handwritten cupping cards
+### Details:
+Create src/lib/ocr/cupping-card-processor.ts to process scanned cupping cards, extract handwritten scores with 95%+ accuracy requirement, validate extracted data against session parameters, and integrate with existing QR code system. Include error handling for illegible handwriting and manual correction interface.
+
+## 4. Create cupping session validation and quality control [pending]
+### Dependencies: 11.2, 11.3
+### Description: Implement comprehensive validation system for cupping sessions with quality template compliance and certificate generation triggers
+### Details:
+Create src/lib/cupping/session-validator.ts with validation logic for different session types, quality template compliance checking for PSS/SS sessions, automatic certificate generation triggers, and session completion workflows. Include validation for minimum cupper requirements, score consistency checks, and mandatory field validation based on session type.
+
+## 5. Implement cupping session reporting and analytics [pending]
+### Dependencies: 11.4
+### Description: Build comprehensive reporting system for cupping sessions with analytics, performance metrics, and export capabilities
+### Details:
+Create src/components/cupping/session-reports.tsx with detailed session analytics, cupper performance metrics, score distribution analysis, and export functionality to PDF/Excel. Include comparative analysis between cuppers, historical performance tracking, and calibration session effectiveness metrics. Support filtering by date range, cupper, session type, and sample origin.
+
+## 6. Update cupping page integration with analysis workflow [done]
+### Dependencies: 11.2
+### Description: Ensure cupping page properly integrates with new analysis workflow stage for parallel grading and cupping processes
+### Details:
+Verify and optimize cupping page (src/app/assessment/cupping/page.tsx) integration with analysis workflow stage. Ensure proper sample loading via workflow_stage='analysis' parameter, validate simultaneous grading and cupping capability, test manual navigation flow from samples page to cupping interface, and confirm ready_for_cupping flag functionality from move-to-cupping API. Update any remaining workflow references and ensure compatibility with all three input methods (printed cards, digital interface, future iOS app).
+
 ## 1. Create cupping session management components [done]
 ### Dependencies: None
 ### Description: Build the core components for managing cupping sessions including session creation, participant management, and session configuration
@@ -55,22 +79,4 @@ Complete deployment sequence (6 commits total):
 
 Production verification complete: All TypeScript build errors resolved, configurable discrepancy detection operational, real-time cupping collaboration fully functional. System ready for user acceptance testing.
 </info added on 2025-10-30T19:43:50.038Z>
-
-## 3. Build OCR integration for handwritten cupping cards [pending]
-### Dependencies: 11.1
-### Description: Implement OCR processing system for extracting scores from scanned handwritten cupping cards
-### Details:
-Create src/lib/ocr/cupping-card-processor.ts to process scanned cupping cards, extract handwritten scores with 95%+ accuracy requirement, validate extracted data against session parameters, and integrate with existing QR code system. Include error handling for illegible handwriting and manual correction interface.
-
-## 4. Create cupping session validation and quality control [pending]
-### Dependencies: 11.2, 11.3
-### Description: Implement comprehensive validation system for cupping sessions with quality template compliance and certificate generation triggers
-### Details:
-Create src/lib/cupping/session-validator.ts with validation logic for different session types, quality template compliance checking for PSS/SS sessions, automatic certificate generation triggers, and session completion workflows. Include validation for minimum cupper requirements, score consistency checks, and mandatory field validation based on session type.
-
-## 5. Implement cupping session reporting and analytics [pending]
-### Dependencies: 11.4
-### Description: Build comprehensive reporting system for cupping sessions with analytics, performance metrics, and export capabilities
-### Details:
-Create src/components/cupping/session-reports.tsx with detailed session analytics, cupper performance metrics, score distribution analysis, and export functionality to PDF/Excel. Include comparative analysis between cuppers, historical performance tracking, and calibration session effectiveness metrics. Support filtering by date range, cupper, session type, and sample origin.
 
