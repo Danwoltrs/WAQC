@@ -498,13 +498,13 @@ export default function GradingPage() {
       {/* Tabs with Save Button */}
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
         <div className="border-b bg-card sticky top-0 z-50">
-          <div className="px-6 flex items-center justify-between">
-            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
+          <div className="flex items-center justify-between">
+            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap pl-6">
               {samples.map((sample, index) => (
                 <div key={sample.id} className="flex items-center">
                   <TabsTrigger
                     value={sample.id}
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors px-4 py-3"
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-green-500/10 hover:bg-accent/50 transition-colors px-4 py-3"
                   >
                     <div className="flex flex-col items-start gap-0.5">
                       <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
@@ -516,10 +516,12 @@ export default function GradingPage() {
                 </div>
               ))}
             </TabsList>
-            <Button onClick={handleSaveCurrent} disabled={saving} size="default">
-              <Save className="h-4 w-4 mr-2" />
-              {saving ? 'Saving...' : 'Save Current Sample'}
-            </Button>
+            <div className="pr-6">
+              <Button onClick={handleSaveCurrent} disabled={saving} size="default">
+                <Save className="h-4 w-4 mr-2" />
+                {saving ? 'Saving...' : 'Save Current Sample'}
+              </Button>
+            </div>
           </div>
         </div>
 
@@ -646,12 +648,12 @@ export default function GradingPage() {
 
               {/* Grading Content */}
               <div className="p-6">
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left Side: Screen Sizes */}
-                  <Card>
-                    <CardContent className="pt-4 pb-4">
+                <div className="flex gap-6">
+                  {/* Screen Size Distribution - Compact Card */}
+                  <Card className="w-fit">
+                    <CardContent className="pt-4 pb-4 px-4">
                       <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
-                      <div className="flex gap-4">
+                      <div className="flex gap-2">
                         {/* Screen Size Inputs */}
                         <div className="space-y-2 flex-1">
                           {screens.map(screen => {
@@ -688,10 +690,10 @@ export default function GradingPage() {
                           </div>
                         </div>
 
-                        {/* Pie Chart - Super Compact with Labels */}
+                        {/* Pie Chart with Labels and Lines */}
                         {gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) && (
-                          <div className="flex flex-col justify-center" style={{ width: '140px' }}>
-                            <ResponsiveContainer width="100%" height={120}>
+                          <div className="flex items-center justify-center" style={{ width: '200px', height: '140px' }}>
+                            <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
                                 <Pie
                                   data={screens
@@ -702,14 +704,11 @@ export default function GradingPage() {
                                     }))}
                                   cx="50%"
                                   cy="50%"
-                                  innerRadius={20}
-                                  outerRadius={35}
-                                  paddingAngle={1}
+                                  innerRadius={25}
+                                  outerRadius={40}
+                                  paddingAngle={2}
                                   dataKey="value"
-                                  label={(props: any) => {
-                                    const { name, value } = props
-                                    return `${name} ${typeof value === 'number' ? value.toFixed(0) : value}%`
-                                  }}
+                                  label={({ name, value }: any) => `${name} ${value.toFixed(0)}%`}
                                   labelLine={{ stroke: 'hsl(var(--border))', strokeWidth: 0.5 }}
                                 >
                                   {screens.map((_, index) => (
@@ -726,7 +725,7 @@ export default function GradingPage() {
                       {/* Quakers and Humidity */}
                       <div className="mt-4 pt-4 border-t space-y-2">
                         {/* Conditionally show Quakers based on template requirement */}
-                        {sample.quality_spec?.template?.parameters?.require_quaker_count !== false && (
+                        {sample.quality_spec?.template?.parameters?.require_quaker_count === true && (
                           <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
                             <Label className="text-sm">Quakers</Label>
                             <Input
@@ -740,7 +739,7 @@ export default function GradingPage() {
                           </div>
                         )}
                         <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
-                          <Label className="text-sm">Humidity (%)</Label>
+                          <Label className="text-sm">Humidity <span className="text-xs">(%)</span></Label>
                           <Input
                             type="number"
                             min="0"
@@ -756,9 +755,9 @@ export default function GradingPage() {
                     </CardContent>
                   </Card>
 
-                  {/* Right Side: Defects */}
-                  <Card>
-                    <CardContent className="pt-6">
+                  {/* Defects - Fill Remaining Space */}
+                  <Card className="flex-1">
+                    <CardContent className="pt-4">
                       <div className="flex items-center justify-between mb-4">
                         <h3 className="text-sm font-semibold">Defects</h3>
                         <div className="flex gap-4 text-sm">
