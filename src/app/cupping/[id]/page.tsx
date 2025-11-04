@@ -170,10 +170,12 @@ export default function CuppingDetailPage() {
   }
 
   return (
-    <DigitalCuppingInterface
-      samples={[sample]}
-      template={template}
-      onSave={handleSave}
-    />
+    <MainLayout>
+      <DigitalCuppingInterface
+        samples={[sample]}
+        template={template}
+        onSave={handleSave}
+      />
+    </MainLayout>
   )
 }

@@ -229,7 +229,7 @@ export default function GradingDetailPage() {
       }
 
       // Success - redirect to cupping page
-      router.push('/assessment/cupping')
+      router.push('/cupping')
     } catch (error) {
       console.error('Error submitting grading:', error)
       alert('Failed to submit grading. Please try again.')

@@ -393,7 +393,7 @@ export function DigitalCuppingInterface({
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background">
+    <div className="h-full flex flex-col bg-background">
       {/* Header with Sample Tabs and Collaboration Controls */}
       <div className="border-b bg-card">
         <div className="flex items-center justify-between p-4">

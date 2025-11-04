@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useCallback, Suspense } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
+import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -11,6 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { ChevronLeft, Save, Eye, EyeOff } from 'lucide-react'
 import {
   DefectConfig,
+  calculateDefectEquivalents,
   calculatePrimaryDefects,
   calculateSecondaryDefects,
   calculateTotalDefects,
@@ -24,7 +26,7 @@ import {
 interface Sample {
   id: string
   tracking_number: string
-  sample_type?: 'pss' | 'ss' | 'type' | 'specialty'
+  sample_type?: 'pss' | 'ss' | 'type'
   ico_number?: string
   container_nr?: string
   origin?: string
@@ -32,7 +34,6 @@ interface Sample {
   client_id?: string
   quality_spec_id?: string
   laboratory_id?: string
-  workflow_stage?: string
   client?: {
     id: string
     company: string
@@ -60,13 +61,15 @@ interface GradingData {
   moisture_percentage: number
   quakers_count: number
   defect_counts: { [defectName: string]: number }
-  defects_primary: number
-  defects_secondary: number
-  defects_total: number
+  defects_primary: number // Calculated
+  defects_secondary: number // Calculated
+  defects_total: number // Calculated
 }
 
-export default function GradingPage() {
+function BatchGradingContent() {
+  const searchParams = useSearchParams()
   const router = useRouter()
+  const sampleIds = searchParams.get('ids')?.split(',') || []
 
   const [samples, setSamples] = useState<Sample[]>([])
   const [activeSampleId, setActiveSampleId] = useState<string>('')
@@ -88,62 +91,53 @@ export default function GradingPage() {
   const [screenConstraintsMap, setScreenConstraintsMap] = useState<Map<string, ScreenSizeConstraint[]>>(new Map())
 
   useEffect(() => {
-    loadSamples()
-  }, [])
+    if (sampleIds.length > 0) {
+      loadSamples()
+    }
+  }, [sampleIds])
 
   const loadSamples = async () => {
     try {
       setLoading(true)
-      // Load samples in 'analysis' workflow stage
-      const response = await fetch('/api/samples?workflow_stage=analysis&limit=100')
+      const response = await fetch('/api/samples/bulk-details', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sample_ids: sampleIds })
+      })
+
       const data = await response.json()
 
       if (response.ok && data.samples) {
-        // Load full details for each sample
-        const sampleIds = data.samples.map((s: Sample) => s.id)
+        setSamples(data.samples)
+        if (data.samples.length > 0) {
+          setActiveSampleId(data.samples[0].id)
+        }
 
-        if (sampleIds.length > 0) {
-          const detailsResponse = await fetch('/api/samples/bulk-details', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ sample_ids: sampleIds })
+        // Initialize grading data for each sample
+        const newGradingMap = new Map<string, GradingData>()
+        const newDefectConfigsMap = new Map<string, DefectConfig[]>()
+        const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
+
+        for (const sample of data.samples) {
+          // Initialize grading data
+          newGradingMap.set(sample.id, {
+            sample_id: sample.id,
+            screen_sizes: {},
+            moisture_percentage: 0,
+            quakers_count: 0,
+            defect_counts: {},
+            defects_primary: 0,
+            defects_secondary: 0,
+            defects_total: 0
           })
 
-          const detailsData = await detailsResponse.json()
-
-          if (detailsResponse.ok && detailsData.samples) {
-            setSamples(detailsData.samples)
-            if (detailsData.samples.length > 0) {
-              setActiveSampleId(detailsData.samples[0].id)
-            }
-
-            // Initialize grading data for each sample
-            const newGradingMap = new Map<string, GradingData>()
-            const newDefectConfigsMap = new Map<string, DefectConfig[]>()
-            const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
-
-            for (const sample of detailsData.samples) {
-              // Initialize grading data
-              newGradingMap.set(sample.id, {
-                sample_id: sample.id,
-                screen_sizes: {},
-                moisture_percentage: 0,
-                quakers_count: 0,
-                defect_counts: {},
-                defects_primary: 0,
-                defects_secondary: 0,
-                defects_total: 0
-              })
-
-              // Load defect configuration and screen constraints for this sample
-              await loadSampleConfig(sample, newDefectConfigsMap, newScreenConstraintsMap, newGradingMap)
-            }
-
-            setGradingDataMap(newGradingMap)
-            setDefectConfigsMap(newDefectConfigsMap)
-            setScreenConstraintsMap(newScreenConstraintsMap)
-          }
+          // Load defect configuration and screen constraints for this sample
+          await loadSampleConfig(sample, newDefectConfigsMap, newScreenConstraintsMap, newGradingMap)
         }
+
+        setGradingDataMap(newGradingMap)
+        setDefectConfigsMap(newDefectConfigsMap)
+        setScreenConstraintsMap(newScreenConstraintsMap)
       }
     } catch (error) {
       console.error('Error loading samples:', error)
@@ -167,6 +161,7 @@ export default function GradingPage() {
         if (defectsResponse.ok) {
           const defectsData = await defectsResponse.json()
           if (defectsData.definitions) {
+            // Transform database format to DefectConfig format
             const defectConfigs: DefectConfig[] = defectsData.definitions.map((def: any, index: number) => ({
               name: def.name_en,
               weight: def.point_value,
@@ -177,6 +172,7 @@ export default function GradingPage() {
 
             defectConfigsMap.set(sample.id, defectConfigs)
 
+            // Initialize defect counts
             const gradingData = gradingDataMap.get(sample.id)
             if (gradingData) {
               const defectCounts: { [key: string]: number } = {}
@@ -194,6 +190,7 @@ export default function GradingPage() {
         const constraints = sample.quality_spec.template.parameters.screen_size_requirements.constraints || []
         screenConstraintsMap.set(sample.id, constraints)
 
+        // Initialize screen sizes
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
           const screenSizes: { [key: string]: number } = {}
@@ -251,7 +248,10 @@ export default function GradingPage() {
 
     if (!gradingData || !defects) return
 
+    // Update the specific defect count
     gradingData.defect_counts[defectName] = count
+
+    // Recalculate totals
     gradingData.defects_primary = calculatePrimaryDefects(defects, gradingData.defect_counts)
     gradingData.defects_secondary = calculateSecondaryDefects(defects, gradingData.defect_counts)
     gradingData.defects_total = calculateTotalDefects(defects, gradingData.defect_counts)
@@ -275,39 +275,52 @@ export default function GradingPage() {
     setGradingDataMap(new Map(gradingDataMap))
   }
 
-  const handleSaveCurrent = async () => {
-    if (!activeSampleId) return
-
+  const handleSaveAll = async () => {
     try {
       setSaving(true)
-      const gradingData = gradingDataMap.get(activeSampleId)
 
-      if (!gradingData) return
-
-      const assessmentResponse = await fetch(`/api/samples/${activeSampleId}/quality-assessment`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          green_bean_data: {
-            screen_sizes: gradingData.screen_sizes,
-            moisture_percentage: gradingData.moisture_percentage,
-            quakers: gradingData.quakers_count,
-            defects: {
-              counts: gradingData.defect_counts,
-              primary: gradingData.defects_primary,
-              secondary: gradingData.defects_secondary,
-              total: gradingData.defects_total
+      // Save all samples
+      for (const [sampleId, gradingData] of gradingDataMap) {
+        // Create/update quality assessment
+        const assessmentResponse = await fetch(`/api/samples/${sampleId}/quality-assessment`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            green_bean_data: {
+              screen_sizes: gradingData.screen_sizes,
+              moisture_percentage: gradingData.moisture_percentage,
+              quakers: gradingData.quakers_count,
+              defects: {
+                counts: gradingData.defect_counts,
+                primary: gradingData.defects_primary,
+                secondary: gradingData.defects_secondary,
+                total: gradingData.defects_total
+              }
             }
-          }
+          })
         })
-      })
 
-      if (!assessmentResponse.ok) {
-        console.error(`Failed to save assessment for sample ${activeSampleId}`)
-        alert('Failed to save grading data. Please try again.')
-      } else {
-        alert('Grading data saved successfully!')
+        if (!assessmentResponse.ok) {
+          console.error(`Failed to save assessment for sample ${sampleId}`)
+        }
+
+        // Update sample status to in_progress and mark as roasted
+        const updateResponse = await fetch(`/api/samples/${sampleId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            status: 'in_progress',
+            roasted: true
+          })
+        })
+
+        if (!updateResponse.ok) {
+          console.error(`Failed to update sample ${sampleId}`)
+        }
       }
+
+      // Redirect to cupping
+      router.push('/cupping')
     } catch (error) {
       console.error('Error saving grading data:', error)
       alert('Failed to save grading data. Please try again.')
@@ -318,26 +331,27 @@ export default function GradingPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="text-muted-foreground">Loading samples...</div>
-      </div>
+      <MainLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-muted-foreground">Loading samples...</div>
+        </div>
+      </MainLayout>
     )
   }
 
   if (samples.length === 0) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-background">
-        <div className="text-center space-y-4">
-          <h2 className="text-xl font-semibold">No samples ready for grading</h2>
-          <p className="text-muted-foreground">
-            Samples must be in the analysis stage to appear here.
-          </p>
-          <Button onClick={() => router.push('/samples')}>
+      <MainLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-center space-y-4">
+            <h2 className="text-xl font-semibold">No samples found</h2>
+          <Button onClick={() => router.back()}>
             <ChevronLeft className="h-4 w-4 mr-1" />
-            Back to Samples
+            Go Back
           </Button>
         </div>
       </div>
+      </MainLayout>
     )
   }
 
@@ -350,15 +364,16 @@ export default function GradingPage() {
   const secondaryDefects = getDefectsByCategory(activeDefects, 'secondary')
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Fixed Header */}
-      <div className="border-b bg-card sticky top-0 z-50">
+    <MainLayout>
+      <div className="h-full bg-background">
+        {/* Fixed Header */}
+        <div className="border-b bg-card sticky top-0 z-50">
         <div className="px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button
               variant="ghost"
               size="sm"
-              onClick={() => router.push('/samples')}
+              onClick={() => router.back()}
             >
               <ChevronLeft className="h-4 w-4 mr-1" />
               Back
@@ -368,9 +383,9 @@ export default function GradingPage() {
               <p className="text-sm text-muted-foreground">{samples.length} sample{samples.length !== 1 ? 's' : ''}</p>
             </div>
           </div>
-          <Button onClick={handleSaveCurrent} disabled={saving} size="lg">
+          <Button onClick={handleSaveAll} disabled={saving} size="lg">
             <Save className="h-4 w-4 mr-2" />
-            {saving ? 'Saving...' : 'Save Current Sample'}
+            {saving ? 'Saving...' : 'Save & Continue to Cupping'}
           </Button>
         </div>
       </div>
@@ -379,12 +394,12 @@ export default function GradingPage() {
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
         <div className="border-b bg-card sticky top-[73px] z-40">
           <div className="px-6">
-            <TabsList className="w-full justify-start h-12 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
+            <TabsList className="w-full justify-start h-12 bg-transparent border-b-0 rounded-none">
               {samples.map(sample => (
                 <TabsTrigger
                   key={sample.id}
                   value={sample.id}
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent whitespace-nowrap"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
                 >
                   <div className="flex flex-col items-start gap-0.5">
                     <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
@@ -533,7 +548,7 @@ export default function GradingPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                      <div className="space-y-4">
                         {/* Primary Defects */}
                         {primaries.length > 0 && (
                           <div>
@@ -551,7 +566,7 @@ export default function GradingPage() {
                                     placeholder="0"
                                   />
                                   <div className="text-sm text-right text-muted-foreground">
-                                    = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
+                                    = {calculateDefectEquivalents(gradingData?.defect_counts[defect.name] || 0, defect.weight).toFixed(2)}
                                   </div>
                                 </div>
                               ))}
@@ -576,7 +591,7 @@ export default function GradingPage() {
                                     placeholder="0"
                                   />
                                   <div className="text-sm text-right text-muted-foreground">
-                                    = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
+                                    = {calculateDefectEquivalents(gradingData?.defect_counts[defect.name] || 0, defect.weight).toFixed(2)}
                                   </div>
                                 </div>
                               ))}
@@ -592,6 +607,21 @@ export default function GradingPage() {
           )
         })}
       </Tabs>
-    </div>
+      </div>
+    </MainLayout>
+  )
+}
+
+export default function BatchGradingPage() {
+  return (
+    <Suspense fallback={
+      <MainLayout>
+        <div className="flex items-center justify-center h-full">
+          <div className="text-muted-foreground">Loading grading interface...</div>
+        </div>
+      </MainLayout>
+    }>
+      <BatchGradingContent />
+    </Suspense>
   )
 }

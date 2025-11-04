@@ -14,8 +14,6 @@ import {
   MapPin,
   Crown,
   DollarSign,
-  ChevronLeft,
-  ChevronRight,
   ChevronDown,
   ChevronUp,
   Award,
@@ -97,24 +95,16 @@ const getNavigation = (openIntakeDialog: () => void): NavItem[] => [
     ],
   },
   {
-    title: 'Quality Assessment',
-    href: '/assessment',
-    icon: CuppingBowl,
+    title: 'Grading',
+    href: '/grading',
+    icon: FileText,
     permission: 'conduct_assessments',
-    submenu: [
-      {
-        title: 'Grading',
-        href: '/assessment/grading',
-        icon: FileText,
-        permission: 'conduct_assessments',
-      },
-      {
-        title: 'Cupping',
-        href: '/assessment/cupping',
-        icon: Coffee,
-        permission: 'conduct_assessments',
-      },
-    ],
+  },
+  {
+    title: 'Cupping',
+    href: '/cupping',
+    icon: Coffee,
+    permission: 'conduct_assessments',
   },
   {
     title: 'Certificates',
@@ -188,6 +178,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   const { openIntakeDialog } = useSampleIntake()
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0)
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['/']))
+  const [hoverTimeoutId, setHoverTimeoutId] = useState<NodeJS.Timeout | null>(null)
 
   const navigation = getNavigation(openIntakeDialog)
 
@@ -280,26 +271,60 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
     return item
   }
 
-  return (
-    <aside className={cn(
-      'h-full border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300',
-      isOpen ? 'w-64' : 'w-16'
-    )}>
-      <div className="flex flex-col h-full">
-        {/* Toggle button */}
-        <div className="flex justify-end p-2">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onToggle}
-            className="h-8 w-8"
-          >
-            {isOpen ? <ChevronLeft className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </Button>
-        </div>
+  // Auto-collapse sidebar when clicking on any link
+  const handleLinkClick = () => {
+    if (isOpen && onToggle) {
+      onToggle()
+    }
+  }
 
+  // Auto-expand on mouse enter
+  const handleMouseEnter = () => {
+    // Clear any pending collapse timeout
+    if (hoverTimeoutId) {
+      clearTimeout(hoverTimeoutId)
+      setHoverTimeoutId(null)
+    }
+
+    // Expand sidebar if it's collapsed
+    if (!isOpen && onToggle) {
+      onToggle()
+    }
+  }
+
+  // Auto-collapse on mouse leave with delay
+  const handleMouseLeave = () => {
+    // Add a small delay before collapsing to prevent flickering
+    const timeoutId = setTimeout(() => {
+      if (isOpen && onToggle) {
+        onToggle()
+      }
+    }, 300) // 300ms delay
+
+    setHoverTimeoutId(timeoutId)
+  }
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (hoverTimeoutId) {
+        clearTimeout(hoverTimeoutId)
+      }
+    }
+  }, [hoverTimeoutId])
+
+  return (
+    <aside
+      className={cn(
+        'h-full border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300',
+        isOpen ? 'w-64' : 'w-16'
+      )}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+    >
+      <div className="flex flex-col h-full">
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 p-2">
+        <nav className="flex-1 space-y-1 p-2 pt-4">
           {/* Main Navigation */}
           <div className="space-y-1">
             {filterNavByPermissions(navigation).map((item) => {
@@ -325,7 +350,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                       )}
                     >
                       {item.href ? (
-                        <Link href={item.href} className="flex items-center gap-3 flex-1 min-w-0">
+                        <Link href={item.href} className="flex items-center gap-3 flex-1 min-w-0" onClick={handleLinkClick}>
                           <Icon className="h-4 w-4 flex-shrink-0" />
                           {isOpen && <span className="truncate">{item.title}</span>}
                         </Link>
@@ -351,6 +376,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                   ) : item.href ? (
                     <Link
                       href={item.href}
+                      onClick={handleLinkClick}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
                         active
@@ -405,6 +431,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                           <Link
                             key={key}
                             href={subItem.href!}
+                            onClick={handleLinkClick}
                             className={cn(
                               'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
                               subActive
@@ -458,7 +485,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                           )}
                         >
                           {itemWithBadge.href ? (
-                            <Link href={itemWithBadge.href} className="flex items-center gap-3 flex-1 min-w-0">
+                            <Link href={itemWithBadge.href} className="flex items-center gap-3 flex-1 min-w-0" onClick={handleLinkClick}>
                               <div className="relative">
                                 <Icon className="h-4 w-4 flex-shrink-0" />
                                 {!isOpen && itemWithBadge.badge && (
@@ -494,6 +521,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                       ) : itemWithBadge.href ? (
                         <Link
                           href={itemWithBadge.href}
+                          onClick={handleLinkClick}
                           className={cn(
                             'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
                             active
@@ -553,6 +581,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                               <Link
                                 key={key}
                                 href={subItem.href!}
+                                onClick={handleLinkClick}
                                 className={cn(
                                   'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
                                   subActive

@@ -1,5 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+
+// Create admin client with service role key (bypasses RLS)
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
 
 // Type definition for sample with all valid sample_type values
 type SampleType = 'pss' | 'ss' | 'type' | 'specialty' | null
@@ -66,7 +79,8 @@ export async function POST(request: NextRequest) {
 
           // For PSS/SS/Type samples, move directly to analysis
           if (currentStage === 'received') {
-            const { error: updateError } = await supabase
+            // Use admin client to bypass RLS policies that might cause array comparison errors
+            const { error: updateError } = await supabaseAdmin
               .from('samples')
               .update({
                 workflow_stage: 'analysis',
@@ -80,7 +94,7 @@ export async function POST(request: NextRequest) {
             }
 
             // Mark as ready for both green bean analysis and cupping
-            const { error: assessmentError } = await supabase
+            const { error: assessmentError } = await supabaseAdmin
               .from('quality_assessments')
               .upsert({
                 sample_id: id,

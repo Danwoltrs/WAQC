@@ -521,34 +521,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('[Auth] Fetching profile for user:', userId)
 
-        // Single attempt with 20s timeout - increased for slow networks
+        // Retry with increasing timeout - better for slow networks and flaky connections
         let profileData: Profile | null = null
         let error: any = null
+        const maxRetries = 2
 
-        try {
-          console.log('[Auth] Fetching profile data...')
-          const result = await withTimeout(
-            async () => await supabase
-              .from('profiles')
-              .select('*')
-              .eq('id', userId)
-              .single(),
-            5000,  // Reduced to 5s - use fallback faster
-            'Profile fetch timeout'
-          )
-          profileData = result.data
-          error = result.error
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          const timeoutMs = 8000 * attempt // 8s, 16s
 
-          if (!error && profileData) {
-            console.log('[Auth] ✓ Profile data fetched successfully')
-          }
-        } catch (err: any) {
-          // If timeout, use fallback immediately
-          if (err.message === 'Profile fetch timeout' || err.message?.includes('timeout')) {
-            console.warn('[Auth] ⚠ Profile fetch timed out, using fallback (faster now!)')
-            error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
-          } else {
-            throw err
+          try {
+            console.log(`[Auth] Fetching profile data (attempt ${attempt}/${maxRetries}, timeout: ${timeoutMs}ms)...`)
+            const result = await withTimeout(
+              async () => await supabase
+                .from('profiles')
+                .select('*')
+                .eq('id', userId)
+                .single(),
+              timeoutMs,
+              'Profile fetch timeout'
+            )
+            profileData = result.data
+            error = result.error
+
+            if (!error && profileData) {
+              console.log('[Auth] ✓ Profile data fetched successfully')
+              break // Success, exit retry loop
+            } else if (error && error.code !== 'TIMEOUT') {
+              // Non-timeout error, don't retry
+              break
+            }
+          } catch (err: any) {
+            // If timeout and not last attempt, retry
+            if ((err.message === 'Profile fetch timeout' || err.message?.includes('timeout')) && attempt < maxRetries) {
+              console.warn(`[Auth] ⚠ Profile fetch timed out on attempt ${attempt}, retrying...`)
+              error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
+              continue
+            } else if (err.message === 'Profile fetch timeout' || err.message?.includes('timeout')) {
+              // Last attempt timed out, use fallback
+              console.warn('[Auth] ⚠ Profile fetch timed out after all retries, using fallback')
+              error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
+              break
+            } else {
+              // Non-timeout error
+              throw err
+            }
           }
         }
 

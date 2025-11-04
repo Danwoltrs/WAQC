@@ -120,7 +120,7 @@ export default function CuppingPage() {
                   </div>
 
                   <div className="flex gap-2 pt-2">
-                    <Link href={`/assessment/cupping/${sample.id}`} className="flex-1">
+                    <Link href={`/cupping/${sample.id}`} className="flex-1">
                       <Button className="w-full" size="sm">
                         <Maximize2 className="h-3 w-3 mr-1" />
                         Start Cupping
