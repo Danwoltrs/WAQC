@@ -888,6 +888,7 @@ export default function GradingPage() {
                             </div>
                           )}
                         </div>
+                        </div>
                       )}
                     </CardContent>
                   </Card>
