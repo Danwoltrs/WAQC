@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
-  ChevronLeft, Save, CheckCircle2, Coffee
+  Save, CheckCircle2, Coffee
 } from 'lucide-react'
 import {
   ScreenSizeConstraint,
@@ -18,6 +18,14 @@ import {
   validateScreenSizeDistribution,
   ConstraintValidationResult
 } from '@/types/screen-size-constraints'
+import {
+  DefectConfig,
+  calculateDefectEquivalents,
+  calculatePrimaryDefects,
+  calculateSecondaryDefects,
+  calculateTotalDefects,
+  getDefectsByCategory
+} from '@/types/defect-configuration'
 
 interface Sample {
   id: string
@@ -30,6 +38,7 @@ interface Sample {
   bags_quantity_mt?: number
   created_at: string
   quality_spec_id?: string
+  client_id?: string
 }
 
 interface ClientQuality {
@@ -50,10 +59,14 @@ interface QualityTemplate {
 }
 
 interface GradingData {
-  screen_sizes: { [key: string]: number } // Dynamic screen sizes based on template
+  screen_sizes: { [key: string]: number } // Stores grams
+  screen_sizes_percentages: { [key: string]: number } // Calculated percentages
   moisture_percentage: number
-  defects_primary: number
-  defects_secondary: number
+  quakers_count: number
+  defect_counts: { [defectName: string]: number }
+  defects_primary: number // Calculated
+  defects_secondary: number // Calculated
+  defects_total: number // Calculated
   color_grade: string
   aroma_notes: string
   cups_per_sample: number
@@ -67,14 +80,19 @@ export default function GradingDetailPage() {
   const [sample, setSample] = useState<Sample | null>(null)
   const [qualityTemplate, setQualityTemplate] = useState<QualityTemplate | null>(null)
   const [screenSizeConstraints, setScreenSizeConstraints] = useState<ScreenSizeConstraint[]>([])
+  const [defectConfigs, setDefectConfigs] = useState<DefectConfig[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [gradingData, setGradingData] = useState<GradingData>({
     screen_sizes: {},
+    screen_sizes_percentages: {},
     moisture_percentage: 0,
+    quakers_count: 0,
+    defect_counts: {},
     defects_primary: 0,
     defects_secondary: 0,
+    defects_total: 0,
     color_grade: '',
     aroma_notes: '',
     cups_per_sample: 5
@@ -100,6 +118,11 @@ export default function GradingDetailPage() {
           await loadQualityTemplate(data.sample.quality_spec_id)
         }
 
+        // Load defect configuration
+        if (data.sample.client_id) {
+          await loadDefectConfig(data.sample.client_id, data.sample.origin)
+        }
+
         // Load existing grading data if available
         if (data.sample.cups_per_sample) {
           setGradingData(prev => ({
@@ -114,6 +137,41 @@ export default function GradingDetailPage() {
       console.error('Error loading sample:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadDefectConfig = async (clientId: string, origin?: string) => {
+    try {
+      const defectsResponse = await fetch(
+        `/api/defect-definitions?client_id=${clientId}&origin=${origin || ''}&is_active=true`
+      )
+      if (defectsResponse.ok) {
+        const defectsData = await defectsResponse.json()
+        if (defectsData.definitions) {
+          // Transform database format to DefectConfig format
+          const configs: DefectConfig[] = defectsData.definitions.map((def: any, index: number) => ({
+            name: def.name_en,
+            weight: def.point_value,
+            category: def.category as 'primary' | 'secondary',
+            display_order: index,
+            description: def.description_en
+          }))
+
+          setDefectConfigs(configs)
+
+          // Initialize defect counts
+          const defectCounts: { [key: string]: number } = {}
+          configs.forEach((defect: DefectConfig) => {
+            defectCounts[defect.name] = 0
+          })
+          setGradingData(prev => ({
+            ...prev,
+            defect_counts: defectCounts
+          }))
+        }
+      }
+    } catch (error) {
+      console.error('Error loading defect config:', error)
     }
   }
 
@@ -154,6 +212,17 @@ export default function GradingDetailPage() {
     }
   }
 
+  const calculatePercentages = (screenSizesGrams: { [key: string]: number }): { [key: string]: number } => {
+    const total = Object.values(screenSizesGrams).reduce((sum, val) => sum + val, 0)
+    if (total === 0) return {}
+
+    const percentages: { [key: string]: number } = {}
+    Object.entries(screenSizesGrams).forEach(([key, value]) => {
+      percentages[key] = Math.round((value / total) * 1000) / 10 // Round to 1 decimal
+    })
+    return percentages
+  }
+
   const handleInputChange = (field: keyof GradingData, value: string | number) => {
     setGradingData(prev => ({
       ...prev,
@@ -162,13 +231,39 @@ export default function GradingDetailPage() {
   }
 
   const handleScreenSizeChange = (screenSize: string, value: number) => {
-    setGradingData(prev => ({
-      ...prev,
-      screen_sizes: {
+    setGradingData(prev => {
+      const newScreenSizes = {
         ...prev.screen_sizes,
         [screenSize]: value
       }
-    }))
+      return {
+        ...prev,
+        screen_sizes: newScreenSizes,
+        screen_sizes_percentages: calculatePercentages(newScreenSizes)
+      }
+    })
+  }
+
+  const handleDefectCountChange = (defectName: string, count: number) => {
+    setGradingData(prev => {
+      const newDefectCounts = {
+        ...prev.defect_counts,
+        [defectName]: count
+      }
+
+      // Recalculate totals
+      const primary = calculatePrimaryDefects(defectConfigs, newDefectCounts)
+      const secondary = calculateSecondaryDefects(defectConfigs, newDefectCounts)
+      const total = calculateTotalDefects(defectConfigs, newDefectCounts)
+
+      return {
+        ...prev,
+        defect_counts: newDefectCounts,
+        defects_primary: primary,
+        defects_secondary: secondary,
+        defects_total: total
+      }
+    })
   }
 
   const handleSubmitGrading = async () => {
@@ -212,11 +307,14 @@ export default function GradingDetailPage() {
         body: JSON.stringify({
           sample_id: sampleId,
           green_bean_data: {
-            screen_sizes: gradingData.screen_sizes, // Dynamic screen sizes from constraints
+            screen_sizes: gradingData.screen_sizes_percentages, // Send percentages to backend
             moisture_percentage: gradingData.moisture_percentage,
+            quakers: gradingData.quakers_count,
             defects: {
+              counts: gradingData.defect_counts,
               primary: gradingData.defects_primary,
-              secondary: gradingData.defects_secondary
+              secondary: gradingData.defects_secondary,
+              total: gradingData.defects_total
             },
             color_grade: gradingData.color_grade,
             aroma_notes: gradingData.aroma_notes
@@ -265,9 +363,43 @@ export default function GradingDetailPage() {
     )
   }
 
+  const primaryDefects = getDefectsByCategory(defectConfigs, 'primary')
+  const secondaryDefects = getDefectsByCategory(defectConfigs, 'secondary')
+
   return (
     <MainLayout>
-      <div className="p-6 space-y-6">
+      <div className="h-full bg-background">
+        {/* Header with Sample Info and Save Button */}
+        <div className="border-b bg-card sticky top-0 z-50">
+          <div className="px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div>
+                <h1 className="text-lg font-semibold">{sample.tracking_number}</h1>
+                <p className="text-sm text-muted-foreground">
+                  {sample.supplier && `${sample.supplier} • `}
+                  {sample.origin}
+                  {qualityTemplate && ` • ${qualityTemplate.name_en || qualityTemplate.name}`}
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={handleSubmitGrading}
+              disabled={!isFormValid() || saving}
+              size="lg"
+            >
+              {saving ? (
+                'Saving...'
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  Save Current Sample
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
         {/* Validation Errors */}
         {validationErrors.length > 0 && (
           <Card className="border-destructive">
@@ -286,71 +418,6 @@ export default function GradingDetailPage() {
             </CardContent>
           </Card>
         )}
-
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.back()}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Back to Grading
-            </Button>
-          </div>
-          <Button
-            onClick={handleSubmitGrading}
-            disabled={!isFormValid() || saving}
-          >
-            {saving ? (
-              'Saving...'
-            ) : (
-              <>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Complete Grading
-              </>
-            )}
-          </Button>
-        </div>
-
-        {/* Sample Info */}
-        <Card>
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-2xl">{sample.tracking_number}</CardTitle>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {sample.supplier && `${sample.supplier} • `}
-                  {sample.origin}
-                </p>
-              </div>
-              <Badge variant="outline">
-                {sample.sample_type || 'Coffee Sample'}
-              </Badge>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-              {sample.bags_quantity_mt && (
-                <div>
-                  <span className="text-muted-foreground">Quantity:</span>
-                  <p className="font-medium">{sample.bags_quantity_mt} MT</p>
-                </div>
-              )}
-              <div>
-                <span className="text-muted-foreground">Received:</span>
-                <p className="font-medium">
-                  {new Date(sample.created_at).toLocaleDateString()}
-                </p>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Status:</span>
-                <p className="font-medium capitalize">{sample.status}</p>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Cupping Setup */}
         <Card>
@@ -381,148 +448,155 @@ export default function GradingDetailPage() {
           </CardContent>
         </Card>
 
-        {/* Green Bean Grading */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Green Bean Analysis</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Screen Sizes - Dynamic based on quality template constraints */}
-            <div>
-              <div className="flex items-center justify-between mb-3">
-                <Label className="text-base font-semibold">
-                  Screen Size Distribution (%)
-                </Label>
-                {qualityTemplate && (
-                  <Badge variant="outline" className="text-xs">
-                    Template: {qualityTemplate.name_en || qualityTemplate.name}
-                  </Badge>
-                )}
-              </div>
-
+        {/* Green Bean Grading - Two Column Layout */}
+        <div className="grid grid-cols-2 gap-6">
+          {/* Left Column: Screen Sizes */}
+          <Card>
+            <CardContent className="pt-6">
+              <h3 className="text-sm font-semibold mb-4">Screen Size Distribution (g)</h3>
               {screenSizeConstraints.length > 0 ? (
-                <>
-                  <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-4">
-                    {screenSizeConstraints
-                      .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-                      .map((constraint) => (
-                        <div key={constraint.screen_size} className="space-y-2">
-                          <div className="flex items-center justify-between">
-                            <Label htmlFor={`screen_${constraint.screen_size}`} className="text-sm font-medium">
-                              {constraint.screen_size}
-                            </Label>
-                            <Badge variant="secondary" className="text-xs">
-                              {getConstraintDisplayText(constraint)}
-                            </Badge>
-                          </div>
+                <div className="space-y-2">
+                  {screenSizeConstraints
+                    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
+                    .map((constraint) => {
+                      const percentage = gradingData.screen_sizes_percentages[constraint.screen_size] || 0
+                      return (
+                        <div key={constraint.screen_size} className="flex items-center gap-3">
+                          <Label className="text-sm w-20">{constraint.screen_size}</Label>
                           <Input
-                            id={`screen_${constraint.screen_size}`}
                             type="number"
                             min="0"
-                            max="100"
-                            step="0.1"
-                            value={gradingData.screen_sizes[constraint.screen_size] || 0}
+                            step="1"
+                            value={gradingData.screen_sizes[constraint.screen_size] || ''}
                             onChange={(e) => handleScreenSizeChange(constraint.screen_size, parseFloat(e.target.value) || 0)}
-                            placeholder="0.0"
+                            className="h-8 w-20"
+                            placeholder="0"
                           />
+                          <div className="text-sm tabular-nums w-16 text-muted-foreground">
+                            {percentage > 0 ? `${percentage}%` : ''}
+                          </div>
                         </div>
-                      ))}
-                  </div>
-                  <p className="text-xs text-muted-foreground mt-3">
-                    Only screens defined in the quality template are shown. Enter actual measured percentages.
-                  </p>
-                </>
+                      )
+                    })}
+                </div>
               ) : (
                 <div className="p-4 border border-dashed rounded-lg text-center text-muted-foreground">
                   <p className="text-sm">No quality template associated with this sample.</p>
-                  <p className="text-xs mt-1">Screen size requirements will be displayed once a quality template is assigned.</p>
                 </div>
               )}
-            </div>
 
-            {/* Physical Properties */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <Label htmlFor="moisture">Moisture Content (%)</Label>
-                <Input
-                  id="moisture"
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="0.1"
-                  value={gradingData.moisture_percentage}
-                  onChange={(e) => handleInputChange('moisture_percentage', parseFloat(e.target.value) || 0)}
-                  className="mt-2"
-                />
+              {/* Quakers and Humidity */}
+              <div className="mt-6 pt-6 border-t space-y-2">
+                <div className="flex items-center gap-3">
+                  <Label className="text-sm w-20">Quakers</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    value={gradingData.quakers_count || ''}
+                    onChange={(e) => handleInputChange('quakers_count', parseInt(e.target.value) || 0)}
+                    className="h-8 w-20"
+                    placeholder="0"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label className="text-sm w-20">Humidity (%)</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={gradingData.moisture_percentage || ''}
+                    onChange={(e) => handleInputChange('moisture_percentage', parseFloat(e.target.value) || 0)}
+                    className="h-8 w-20"
+                    placeholder="0.0"
+                  />
+                </div>
               </div>
-              <div>
-                <Label htmlFor="defects_primary">Primary Defects</Label>
-                <Input
-                  id="defects_primary"
-                  type="number"
-                  min="0"
-                  value={gradingData.defects_primary}
-                  onChange={(e) => handleInputChange('defects_primary', parseInt(e.target.value) || 0)}
-                  className="mt-2"
-                />
-              </div>
-              <div>
-                <Label htmlFor="defects_secondary">Secondary Defects</Label>
-                <Input
-                  id="defects_secondary"
-                  type="number"
-                  min="0"
-                  value={gradingData.defects_secondary}
-                  onChange={(e) => handleInputChange('defects_secondary', parseInt(e.target.value) || 0)}
-                  className="mt-2"
-                />
-              </div>
-            </div>
+            </CardContent>
+          </Card>
 
-            {/* Color and Aroma */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <Label htmlFor="color_grade">Color Grade</Label>
-                <Input
-                  id="color_grade"
-                  type="text"
-                  value={gradingData.color_grade}
-                  onChange={(e) => handleInputChange('color_grade', e.target.value)}
-                  placeholder="e.g., Bluish Green, Yellow Green"
-                  className="mt-2"
-                />
+          {/* Right Column: Defects */}
+          <Card>
+            <CardContent className="pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold">Defects</h3>
+                <div className="flex gap-4 text-sm">
+                  <div>
+                    <span className="text-muted-foreground">Primary: </span>
+                    <span className="font-semibold">{gradingData.defects_primary.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Secondary: </span>
+                    <span className="font-semibold">{gradingData.defects_secondary.toFixed(2)}</span>
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">Total: </span>
+                    <span className="font-semibold">{gradingData.defects_total.toFixed(2)}</span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <Label htmlFor="aroma_notes">Aroma Notes</Label>
-                <Input
-                  id="aroma_notes"
-                  type="text"
-                  value={gradingData.aroma_notes}
-                  onChange={(e) => handleInputChange('aroma_notes', e.target.value)}
-                  placeholder="e.g., Fresh, Fruity, Herbal"
-                  className="mt-2"
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
-        {/* Submit Button */}
-        <div className="flex justify-end">
-          <Button
-            size="lg"
-            onClick={handleSubmitGrading}
-            disabled={!isFormValid() || saving}
-          >
-            {saving ? (
-              'Saving...'
-            ) : (
-              <>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Complete Grading & Send to Cupping
-              </>
-            )}
-          </Button>
+              <div className="space-y-4">
+                {/* Primary Defects */}
+                {primaryDefects.length > 0 && (
+                  <div>
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Primary</h4>
+                    <div className="space-y-2">
+                      {primaryDefects.map(defect => (
+                        <div key={defect.name} className="grid grid-cols-[1fr_80px_80px] gap-3 items-center">
+                          <Label className="text-sm">{defect.name}</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={gradingData.defect_counts[defect.name] || ''}
+                            onChange={(e) => handleDefectCountChange(defect.name, parseInt(e.target.value) || 0)}
+                            className="h-8"
+                            placeholder="0"
+                          />
+                          <div className="text-sm text-right text-muted-foreground">
+                            = {calculateDefectEquivalents(gradingData.defect_counts[defect.name] || 0, defect.weight).toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Secondary Defects */}
+                {secondaryDefects.length > 0 && (
+                  <div className="pt-4 border-t">
+                    <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Secondary</h4>
+                    <div className="space-y-2">
+                      {secondaryDefects.map(defect => (
+                        <div key={defect.name} className="grid grid-cols-[1fr_80px_80px] gap-3 items-center">
+                          <Label className="text-sm">{defect.name}</Label>
+                          <Input
+                            type="number"
+                            min="0"
+                            value={gradingData.defect_counts[defect.name] || ''}
+                            onChange={(e) => handleDefectCountChange(defect.name, parseInt(e.target.value) || 0)}
+                            className="h-8"
+                            placeholder="0"
+                          />
+                          <div className="text-sm text-right text-muted-foreground">
+                            = {calculateDefectEquivalents(gradingData.defect_counts[defect.name] || 0, defect.weight).toFixed(2)}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {primaryDefects.length === 0 && secondaryDefects.length === 0 && (
+                  <div className="p-4 border border-dashed rounded-lg text-center text-muted-foreground">
+                    <p className="text-sm">No defect configuration found for this client</p>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
         </div>
       </div>
     </MainLayout>
