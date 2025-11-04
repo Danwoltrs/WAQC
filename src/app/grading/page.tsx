@@ -218,34 +218,62 @@ export default function GradingPage() {
       // Load defect configuration from quality template first, fallback to client defects
       let defectConfigs: DefectConfig[] = []
 
-      console.log(`[Defects Debug] Sample ${sample.id}:`, {
-        has_quality_spec: !!sample.quality_spec,
-        has_template: !!sample.quality_spec?.template,
-        has_parameters: !!sample.quality_spec?.template?.parameters,
-        has_defect_requirements: !!sample.quality_spec?.template?.parameters?.defect_requirements,
-        template_params: sample.quality_spec?.template?.parameters
-      })
+      // AGGRESSIVE DEBUGGING - Log entire template structure
+      console.log(`[Defects Debug] Sample ${sample.id} - FULL TEMPLATE:`, JSON.stringify(sample.quality_spec?.template, null, 2))
+      console.log(`[Defects Debug] Sample ${sample.id} - CUSTOM PARAMS:`, JSON.stringify(sample.quality_spec?.custom_parameters, null, 2))
 
-      // Try to load from quality template parameters
-      if (sample.quality_spec?.template?.parameters?.defect_requirements) {
-        const defectRequirements = sample.quality_spec.template.parameters.defect_requirements
-        console.log('[Defects Debug] Found defect_requirements:', defectRequirements)
+      // Try multiple possible locations for defect data
+      const templateParams = sample.quality_spec?.template?.parameters
+      const customParams = sample.quality_spec?.custom_parameters
 
-        if (defectRequirements.defects && Array.isArray(defectRequirements.defects)) {
-          defectConfigs = defectRequirements.defects.map((defect: any, index: number) => ({
-            name: defect.name || defect.name_en,
-            weight: defect.weight || defect.point_value || 1,
-            category: (defect.category || 'primary') as 'primary' | 'secondary',
-            display_order: defect.display_order ?? index,
-            description: defect.description || defect.description_en || ''
-          }))
-          console.log('[Defects Debug] Mapped defects from template:', defectConfigs)
-        }
+      // Path 1: template.parameters.defect_requirements.defects
+      if (templateParams?.defect_requirements?.defects && Array.isArray(templateParams.defect_requirements.defects)) {
+        console.log('[Defects Debug] Found defects in template.parameters.defect_requirements.defects')
+        defectConfigs = templateParams.defect_requirements.defects.map((defect: any, index: number) => ({
+          name: defect.name || defect.name_en,
+          weight: defect.weight || defect.point_value || 1,
+          category: (defect.category || 'primary') as 'primary' | 'secondary',
+          display_order: defect.display_order ?? index,
+          description: defect.description || defect.description_en || ''
+        }))
+      }
+      // Path 2: template.parameters.defects (direct array)
+      else if (templateParams?.defects && Array.isArray(templateParams.defects)) {
+        console.log('[Defects Debug] Found defects in template.parameters.defects')
+        defectConfigs = templateParams.defects.map((defect: any, index: number) => ({
+          name: defect.name || defect.name_en,
+          weight: defect.weight || defect.point_value || 1,
+          category: (defect.category || 'primary') as 'primary' | 'secondary',
+          display_order: defect.display_order ?? index,
+          description: defect.description || defect.description_en || ''
+        }))
+      }
+      // Path 3: custom_parameters.defect_requirements.defects
+      else if (customParams?.defect_requirements?.defects && Array.isArray(customParams.defect_requirements.defects)) {
+        console.log('[Defects Debug] Found defects in custom_parameters.defect_requirements.defects')
+        defectConfigs = customParams.defect_requirements.defects.map((defect: any, index: number) => ({
+          name: defect.name || defect.name_en,
+          weight: defect.weight || defect.point_value || 1,
+          category: (defect.category || 'primary') as 'primary' | 'secondary',
+          display_order: defect.display_order ?? index,
+          description: defect.description || defect.description_en || ''
+        }))
+      }
+      // Path 4: custom_parameters.defects (direct array)
+      else if (customParams?.defects && Array.isArray(customParams.defects)) {
+        console.log('[Defects Debug] Found defects in custom_parameters.defects')
+        defectConfigs = customParams.defects.map((defect: any, index: number) => ({
+          name: defect.name || defect.name_en,
+          weight: defect.weight || defect.point_value || 1,
+          category: (defect.category || 'primary') as 'primary' | 'secondary',
+          display_order: defect.display_order ?? index,
+          description: defect.description || defect.description_en || ''
+        }))
       }
 
       // Fallback to loading from defect definitions API if not in template
       if (defectConfigs.length === 0 && sample.client_id) {
-        console.log('[Defects Debug] No template defects, fetching from API for client:', sample.client_id)
+        console.log('[Defects Debug] No template defects found, fetching from API for client:', sample.client_id)
         const defectsResponse = await fetch(
           `/api/defect-definitions?client_id=${sample.client_id}&origin=${sample.origin || ''}&is_active=true`
         )
@@ -279,7 +307,14 @@ export default function GradingPage() {
           gradingData.defect_counts = defectCounts
         }
       } else {
-        console.warn('[Defects Debug] No defects found for sample:', sample.id)
+        console.warn('[Defects Debug] NO DEFECTS FOUND ANYWHERE for sample:', sample.id)
+        console.warn('[Defects Debug] Checked paths:', [
+          'template.parameters.defect_requirements.defects',
+          'template.parameters.defects',
+          'custom_parameters.defect_requirements.defects',
+          'custom_parameters.defects',
+          'API defect-definitions'
+        ])
       }
 
       // Load screen size constraints from quality template
@@ -614,17 +649,17 @@ export default function GradingPage() {
                 <div className="grid grid-cols-2 gap-6">
                   {/* Left Side: Screen Sizes */}
                   <Card>
-                    <CardContent className="pt-6">
-                      <h3 className="text-sm font-semibold mb-4">Screen Size Distribution</h3>
-                      <div className="flex gap-6">
+                    <CardContent className="pt-4 pb-4">
+                      <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
+                      <div className="flex gap-4">
                         {/* Screen Size Inputs */}
-                        <div className="space-y-3 flex-1">
+                        <div className="space-y-2 flex-1">
                           {screens.map(screen => {
                             const gramsValue = gradingData?.screen_sizes[screen.screen_size] || 0
                             const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
 
                             return (
-                              <div key={screen.screen_size} className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
+                              <div key={screen.screen_size} className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
                                 <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
                                 <Input
                                   type="number"
@@ -635,29 +670,29 @@ export default function GradingPage() {
                                   className="h-8 text-sm w-20"
                                   placeholder="grams"
                                 />
-                                <div className="text-sm text-muted-foreground">
+                                <div className="text-xs text-muted-foreground">
                                   {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
                                 </div>
                               </div>
                             )
                           })}
                           {/* Total Row */}
-                          <div className="grid grid-cols-[100px_80px_60px] gap-3 items-center pt-3 border-t">
+                          <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center pt-2 border-t">
                             <Label className="text-sm font-semibold">Total</Label>
                             <div className="text-sm font-semibold">
                               {Object.values(gradingData?.screen_sizes || {}).reduce((sum, val) => sum + val, 0)}g
                             </div>
-                            <div className="text-sm text-muted-foreground font-semibold">
+                            <div className="text-xs text-muted-foreground font-semibold">
                               100%
                             </div>
                           </div>
                         </div>
 
-                        {/* Pie Chart - Compact on the right */}
+                        {/* Pie Chart - Super Compact with Labels */}
                         {gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) && (
-                          <div className="flex-shrink-0" style={{ width: '180px' }}>
-                            <ResponsiveContainer width="100%" height={150}>
-                              <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                          <div className="flex flex-col justify-center" style={{ width: '140px' }}>
+                            <ResponsiveContainer width="100%" height={120}>
+                              <PieChart>
                                 <Pie
                                   data={screens
                                     .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
@@ -667,10 +702,15 @@ export default function GradingPage() {
                                     }))}
                                   cx="50%"
                                   cy="50%"
-                                  innerRadius={25}
-                                  outerRadius={45}
-                                  paddingAngle={2}
+                                  innerRadius={20}
+                                  outerRadius={35}
+                                  paddingAngle={1}
                                   dataKey="value"
+                                  label={(props: any) => {
+                                    const { name, value } = props
+                                    return `${name} ${typeof value === 'number' ? value.toFixed(0) : value}%`
+                                  }}
+                                  labelLine={{ stroke: 'hsl(var(--border))', strokeWidth: 0.5 }}
                                 >
                                   {screens.map((_, index) => (
                                     <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
@@ -684,10 +724,10 @@ export default function GradingPage() {
                       </div>
 
                       {/* Quakers and Humidity */}
-                      <div className="mt-6 pt-6 border-t space-y-3">
+                      <div className="mt-4 pt-4 border-t space-y-2">
                         {/* Conditionally show Quakers based on template requirement */}
                         {sample.quality_spec?.template?.parameters?.require_quaker_count !== false && (
-                          <div className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
+                          <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
                             <Label className="text-sm">Quakers</Label>
                             <Input
                               type="number"
@@ -696,10 +736,10 @@ export default function GradingPage() {
                               onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                               className="h-8 text-sm w-20"
                             />
-                            <div className="text-sm text-muted-foreground"></div>
+                            <div className="text-xs text-muted-foreground"></div>
                           </div>
                         )}
-                        <div className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
+                        <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
                           <Label className="text-sm">Humidity (%)</Label>
                           <Input
                             type="number"
@@ -710,7 +750,7 @@ export default function GradingPage() {
                             onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
                             className="h-8 text-sm w-20"
                           />
-                          <div className="text-sm text-muted-foreground"></div>
+                          <div className="text-xs text-muted-foreground"></div>
                         </div>
                       </div>
                     </CardContent>
