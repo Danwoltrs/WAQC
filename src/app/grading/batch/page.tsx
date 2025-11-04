@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ChevronLeft, Save, Eye, EyeOff } from 'lucide-react'
+import { Save, Eye, EyeOff } from 'lucide-react'
 import {
   DefectConfig,
   calculateDefectEquivalents,
@@ -57,7 +57,8 @@ interface Sample {
 
 interface GradingData {
   sample_id: string
-  screen_sizes: { [key: string]: number }
+  screen_sizes: { [key: string]: number } // Stores grams
+  screen_sizes_percentages: { [key: string]: number } // Calculated percentages
   moisture_percentage: number
   quakers_count: number
   defect_counts: { [defectName: string]: number }
@@ -123,6 +124,7 @@ function BatchGradingContent() {
           newGradingMap.set(sample.id, {
             sample_id: sample.id,
             screen_sizes: {},
+            screen_sizes_percentages: {},
             moisture_percentage: 0,
             quakers_count: 0,
             defect_counts: {},
@@ -259,11 +261,23 @@ function BatchGradingContent() {
     setGradingDataMap(new Map(gradingDataMap))
   }
 
+  const calculatePercentages = (screenSizesGrams: { [key: string]: number }): { [key: string]: number } => {
+    const total = Object.values(screenSizesGrams).reduce((sum, val) => sum + val, 0)
+    if (total === 0) return {}
+
+    const percentages: { [key: string]: number } = {}
+    Object.entries(screenSizesGrams).forEach(([key, value]) => {
+      percentages[key] = Math.round((value / total) * 1000) / 10 // Round to 1 decimal
+    })
+    return percentages
+  }
+
   const handleScreenSizeChange = (sampleId: string, screenSize: string, value: number) => {
     const gradingData = gradingDataMap.get(sampleId)
     if (!gradingData) return
 
     gradingData.screen_sizes[screenSize] = value
+    gradingData.screen_sizes_percentages = calculatePercentages(gradingData.screen_sizes)
     setGradingDataMap(new Map(gradingDataMap))
   }
 
@@ -287,7 +301,7 @@ function BatchGradingContent() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             green_bean_data: {
-              screen_sizes: gradingData.screen_sizes,
+              screen_sizes: gradingData.screen_sizes_percentages, // Send percentages to backend
               moisture_percentage: gradingData.moisture_percentage,
               quakers: gradingData.quakers_count,
               defects: {
@@ -345,9 +359,8 @@ function BatchGradingContent() {
         <div className="flex items-center justify-center h-full">
           <div className="text-center space-y-4">
             <h2 className="text-xl font-semibold">No samples found</h2>
-          <Button onClick={() => router.back()}>
-            <ChevronLeft className="h-4 w-4 mr-1" />
-            Go Back
+          <Button onClick={() => router.push('/grading')}>
+            Return to Grading
           </Button>
         </div>
       </div>
@@ -366,48 +379,34 @@ function BatchGradingContent() {
   return (
     <MainLayout>
       <div className="h-full bg-background">
-        {/* Fixed Header */}
-        <div className="border-b bg-card sticky top-0 z-50">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.back()}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Back
-            </Button>
-            <div>
-              <h1 className="text-lg font-semibold">Green Bean Grading</h1>
-              <p className="text-sm text-muted-foreground">{samples.length} sample{samples.length !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
-          <Button onClick={handleSaveAll} disabled={saving} size="lg">
-            <Save className="h-4 w-4 mr-2" />
-            {saving ? 'Saving...' : 'Save & Continue to Cupping'}
-          </Button>
-        </div>
-      </div>
-
       {/* Tabs */}
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
-        <div className="border-b bg-card sticky top-[73px] z-40">
-          <div className="px-6">
-            <TabsList className="w-full justify-start h-12 bg-transparent border-b-0 rounded-none">
-              {samples.map(sample => (
-                <TabsTrigger
-                  key={sample.id}
-                  value={sample.id}
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent"
-                >
-                  <div className="flex flex-col items-start gap-0.5">
-                    <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                    <span className="text-xs text-muted-foreground capitalize">{sample.sample_type || 'sample'}</span>
-                  </div>
-                </TabsTrigger>
+        {/* Combined Header with Tabs and Save Button */}
+        <div className="border-b bg-card sticky top-0 z-50">
+          <div className="px-6 flex items-center justify-between">
+            <TabsList className="justify-start h-auto bg-transparent border-b-0 rounded-none p-0 gap-0 flex-1">
+              {samples.map((sample, index) => (
+                <>
+                  <TabsTrigger
+                    key={sample.id}
+                    value={sample.id}
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3"
+                  >
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
+                      <span className="text-xs text-muted-foreground capitalize">{sample.sample_type || 'sample'}</span>
+                    </div>
+                  </TabsTrigger>
+                  {index < samples.length - 1 && (
+                    <div className="w-px h-12 bg-border" />
+                  )}
+                </>
               ))}
             </TabsList>
+            <Button onClick={handleSaveAll} disabled={saving} size="lg" className="ml-4">
+              <Save className="h-4 w-4 mr-2" />
+              {saving ? 'Saving...' : 'Save Current Sample'}
+            </Button>
           </div>
         </div>
 
@@ -478,49 +477,55 @@ function BatchGradingContent() {
                   {/* Left Side: Screen Sizes */}
                   <Card>
                     <CardContent className="pt-6">
-                      <h3 className="text-sm font-semibold mb-4">Screen Size Distribution (%)</h3>
-                      <div className="space-y-3">
-                        {screens.map(screen => (
-                          <div key={screen.screen_size} className="grid grid-cols-[120px_1fr_80px] gap-3 items-center">
-                            <Label className="text-sm">{screen.screen_size}</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="0.1"
-                              value={gradingData?.screen_sizes[screen.screen_size] || 0}
-                              onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
-                              className="h-9"
-                            />
-                            <Badge variant="secondary" className="text-xs justify-center">
-                              {getConstraintDisplayText(screen)}
-                            </Badge>
-                          </div>
-                        ))}
+                      <h3 className="text-sm font-semibold mb-4">Screen Size Distribution (g)</h3>
+                      <div className="space-y-2">
+                        {screens.map(screen => {
+                          const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
+                          const hasError = false // TODO: Add validation logic
+                          return (
+                            <div key={screen.screen_size} className="flex items-center gap-3">
+                              <Label className="text-sm w-20">{screen.screen_size}</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={gradingData?.screen_sizes[screen.screen_size] || ''}
+                                onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
+                                className="h-8 w-20"
+                                placeholder="0"
+                              />
+                              <div className={`text-sm tabular-nums w-16 ${hasError ? 'text-destructive font-semibold' : 'text-muted-foreground'}`}>
+                                {percentage > 0 ? `${percentage}%` : ''}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
 
                       {/* Quakers and Humidity */}
-                      <div className="mt-6 pt-6 border-t space-y-3">
-                        <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                          <Label className="text-sm">Quakers</Label>
+                      <div className="mt-6 pt-6 border-t space-y-2">
+                        <div className="flex items-center gap-3">
+                          <Label className="text-sm w-20">Quakers</Label>
                           <Input
                             type="number"
                             min="0"
-                            value={gradingData?.quakers_count || 0}
+                            value={gradingData?.quakers_count || ''}
                             onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                            className="h-9"
+                            className="h-8 w-20"
+                            placeholder="0"
                           />
                         </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                          <Label className="text-sm">Humidity (%)</Label>
+                        <div className="flex items-center gap-3">
+                          <Label className="text-sm w-20">Humidity (%)</Label>
                           <Input
                             type="number"
                             min="0"
                             max="100"
                             step="0.1"
-                            value={gradingData?.moisture_percentage || 0}
+                            value={gradingData?.moisture_percentage || ''}
                             onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
-                            className="h-9"
+                            className="h-8 w-20"
+                            placeholder="0.0"
                           />
                         </div>
                       </div>
