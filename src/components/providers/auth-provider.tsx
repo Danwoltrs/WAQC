@@ -290,7 +290,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           console.log(`[Auth] Supabase URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL}`)
           console.log(`[Auth] Timestamp: ${new Date().toISOString()}`)
 
-          // 30s timeout per attempt - further increased for debugging
+          // 10s timeout per attempt - reduced since we know auth works, just slow
           const startTime = Date.now()
           const result = await withTimeout(
             async () => {
@@ -299,7 +299,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               console.log(`[Auth] getSession() returned after ${Date.now() - startTime}ms`)
               return sessionResult
             },
-            30000,
+            10000,
             'Session fetch timeout'
           )
 
@@ -532,7 +532,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               .select('*')
               .eq('id', userId)
               .single(),
-            20000,
+            5000,  // Reduced to 5s - use fallback faster
             'Profile fetch timeout'
           )
           profileData = result.data
@@ -542,9 +542,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.log('[Auth] ✓ Profile data fetched successfully')
           }
         } catch (err: any) {
-          // If timeout, use fallback
+          // If timeout, use fallback immediately
           if (err.message === 'Profile fetch timeout' || err.message?.includes('timeout')) {
-            console.warn('[Auth] ⚠ Profile fetch timed out, will use fallback')
+            console.warn('[Auth] ⚠ Profile fetch timed out, using fallback (faster now!)')
             error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
           } else {
             throw err
@@ -557,14 +557,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             console.warn('Profile fetch timed out, creating temporary profile')
             const { data: { user: authUser } } = await supabase.auth.getUser()
 
+            // Check if user is a global admin
+            const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(authUser?.email || '')
+            const isWolthersUser = authUser?.email?.endsWith('@wolthers.com') || false
+
             // Create temporary profile to let user in
             const tempProfile = {
               id: userId,
               email: authUser?.email || '',
               full_name: authUser?.user_metadata?.full_name || authUser?.user_metadata?.name || authUser?.email?.split('@')[0] || 'User',
               qc_enabled: true,
-              qc_role: 'lab_personnel' as UserRole,
-              is_global_admin: false,
+              qc_role: isGlobalAdmin ? 'global_admin' as UserRole : 'lab_personnel' as UserRole,
+              is_global_admin: isGlobalAdmin,
               laboratory_id: null,
               client_id: null,
               qc_permissions: [],
