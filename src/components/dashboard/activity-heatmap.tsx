@@ -249,12 +249,16 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
   // Calculate max activity for tooltip context
   const maxActivity = Math.max(...activityData.map(a => a.samples + a.cups), 1)
 
+  // Calculate totals for title
+  const totalSamples = activityData.reduce((sum, a) => sum + a.samples, 0)
+  const totalCups = activityData.reduce((sum, a) => sum + a.cups, 0)
+
   return (
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>
-            {activityData.reduce((sum, a) => sum + a.samples + a.cups, 0).toLocaleString()} contributions in {selectedYear}
+            {totalSamples.toLocaleString()} samples processed, {totalCups.toLocaleString()} cups cupped in {selectedYear}
           </CardTitle>
           <div className="flex gap-2">
             {showLabFilter && laboratories.length > 0 && (
