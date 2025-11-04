@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import {
-  Save, CheckCircle2, Coffee
+  Save, CheckCircle2, Coffee, Eye, EyeOff
 } from 'lucide-react'
 import {
   ScreenSizeConstraint,
@@ -26,19 +26,30 @@ import {
   calculateTotalDefects,
   getDefectsByCategory
 } from '@/types/defect-configuration'
+import {
+  getVisibilitySettings,
+  updateVisibilitySetting,
+  SampleVisibilitySettings
+} from '@/lib/sample-visibility'
 
 interface Sample {
   id: string
   tracking_number: string
   supplier?: string
   origin?: string
-  sample_type?: string
+  sample_type?: 'pss' | 'ss' | 'type'
+  ico_number?: string
+  container_nr?: string
   status: string
   cups_per_sample?: number
   bags_quantity_mt?: number
   created_at: string
   quality_spec_id?: string
   client_id?: string
+  client?: {
+    id: string
+    company: string
+  }
 }
 
 interface ClientQuality {
@@ -84,6 +95,7 @@ export default function GradingDetailPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
   const [gradingData, setGradingData] = useState<GradingData>({
     screen_sizes: {},
     screen_sizes_percentages: {},
@@ -266,6 +278,21 @@ export default function GradingDetailPage() {
     })
   }
 
+  const toggleVisibility = (key: keyof SampleVisibilitySettings) => {
+    const newValue = !visibility[key]
+    const updated = updateVisibilitySetting(key, newValue)
+    setVisibility(updated)
+  }
+
+  const getSampleDisplayLabel = (sample: Sample): string => {
+    // When info is hidden, show only tracking number for PSS/Type or container/ICO for SS
+    if (sample.sample_type === 'ss') {
+      return sample.container_nr || sample.ico_number || sample.tracking_number
+    }
+    // PSS and Type samples
+    return sample.tracking_number
+  }
+
   const handleSubmitGrading = async () => {
     try {
       setSaving(true)
@@ -374,12 +401,83 @@ export default function GradingDetailPage() {
           <div className="px-6 py-4 flex items-center justify-between">
             <div className="flex items-center gap-4">
               <div>
-                <h1 className="text-lg font-semibold">{sample.tracking_number}</h1>
-                <p className="text-sm text-muted-foreground">
-                  {sample.supplier && `${sample.supplier} • `}
-                  {sample.origin}
-                  {qualityTemplate && ` • ${qualityTemplate.name_en || qualityTemplate.name}`}
-                </p>
+                <h1 className="text-lg font-semibold">{getSampleDisplayLabel(sample)}</h1>
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                  {/* Exporter/Supplier */}
+                  {visibility.showExporter && sample.supplier && (
+                    <div className="flex items-center gap-1">
+                      <span>{sample.supplier}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0"
+                        onClick={() => toggleVisibility('showExporter')}
+                      >
+                        <EyeOff className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                  {!visibility.showExporter && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6"
+                      onClick={() => toggleVisibility('showExporter')}
+                    >
+                      <Eye className="h-3 w-3 mr-1" /> Exporter
+                    </Button>
+                  )}
+
+                  {/* Buyer/Client - only show if different from exporter */}
+                  {visibility.showBuyer && sample.client && (
+                    <div className="flex items-center gap-1">
+                      <span>{sample.client.company}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0"
+                        onClick={() => toggleVisibility('showBuyer')}
+                      >
+                        <EyeOff className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                  {!visibility.showBuyer && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6"
+                      onClick={() => toggleVisibility('showBuyer')}
+                    >
+                      <Eye className="h-3 w-3 mr-1" /> Client
+                    </Button>
+                  )}
+
+                  {/* Quality Template */}
+                  {visibility.showQuality && qualityTemplate && (
+                    <div className="flex items-center gap-1">
+                      <span>{qualityTemplate.name_en || qualityTemplate.name}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0"
+                        onClick={() => toggleVisibility('showQuality')}
+                      >
+                        <EyeOff className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                  {!visibility.showQuality && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6"
+                      onClick={() => toggleVisibility('showQuality')}
+                    >
+                      <Eye className="h-3 w-3 mr-1" /> Quality
+                    </Button>
+                  )}
+                </div>
               </div>
             </div>
             <Button
