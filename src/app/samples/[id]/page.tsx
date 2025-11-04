@@ -217,11 +217,10 @@ export default function SampleDetailPage() {
   const getWorkflowTimeline = () => {
     const stages = [
       { key: 'received', label: 'Received', icon: CheckCircle },
-      { key: 'green_analysis', label: 'Green Analysis', icon: Package },
-      { key: 'roasting', label: 'Roasting', icon: Activity },
-      { key: 'cupping', label: 'Cupping', icon: FileText },
-      { key: 'certificate_ready', label: 'Certificate', icon: FileText },
-      { key: 'completed', label: 'Completed', icon: CheckCircle }
+      { key: 'analysis', label: 'Analysis', icon: Package },
+      { key: 'review', label: 'Review', icon: Activity },
+      { key: 'certified', label: 'Certified', icon: FileText },
+      { key: 'rejected', label: 'Rejected', icon: XCircle }
     ]
 
     const currentStageIndex = stages.findIndex(s => s.key === sample?.workflow_stage)

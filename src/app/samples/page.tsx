@@ -556,11 +556,11 @@ export default function SamplesPage() {
 
     const stageLabels: Record<string, string> = {
       received: 'Received',
-      green_analysis: 'Green Analysis',
+      analysis: 'Analysis',
       roasting: 'Roasting',
-      cupping: 'Cupping',
-      certificate_ready: 'Certificate Ready',
-      completed: 'Completed'
+      review: 'Review',
+      certified: 'Certified',
+      rejected: 'Rejected'
     }
 
     return (
@@ -771,11 +771,11 @@ export default function SamplesPage() {
                   Received
                 </Button>
                 <Button
-                  variant={workflowStageFilter === 'green_analysis' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('green_analysis')}
+                  variant={workflowStageFilter === 'analysis' ? 'default' : 'outline'}
+                  onClick={() => setWorkflowStageFilter('analysis')}
                   size="sm"
                 >
-                  Green Analysis
+                  Analysis
                 </Button>
                 <Button
                   variant={workflowStageFilter === 'roasting' ? 'default' : 'outline'}
@@ -785,18 +785,25 @@ export default function SamplesPage() {
                   Roasting
                 </Button>
                 <Button
-                  variant={workflowStageFilter === 'cupping' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('cupping')}
+                  variant={workflowStageFilter === 'review' ? 'default' : 'outline'}
+                  onClick={() => setWorkflowStageFilter('review')}
                   size="sm"
                 >
-                  Cupping
+                  Review
                 </Button>
                 <Button
-                  variant={workflowStageFilter === 'certificate_ready' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('certificate_ready')}
+                  variant={workflowStageFilter === 'certified' ? 'default' : 'outline'}
+                  onClick={() => setWorkflowStageFilter('certified')}
                   size="sm"
                 >
-                  Certificate Ready
+                  Certified
+                </Button>
+                <Button
+                  variant={workflowStageFilter === 'rejected' ? 'default' : 'outline'}
+                  onClick={() => setWorkflowStageFilter('rejected')}
+                  size="sm"
+                >
+                  Rejected
                 </Button>
                 <Button
                   variant="ghost"
