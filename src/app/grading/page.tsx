@@ -9,6 +9,13 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Save, Eye, EyeOff } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 import {
@@ -85,6 +92,8 @@ interface GradingData {
   defects_primary: number
   defects_secondary: number
   defects_total: number
+  green_aspect?: string
+  roast_aspect?: string
 }
 
 export default function GradingPage() {
@@ -110,6 +119,12 @@ export default function GradingPage() {
 
   // Client quality per sample (for custom quality names)
   const [clientQualityMap, setClientQualityMap] = useState<Map<string, ClientQuality>>(new Map())
+
+  // Green aspect options per sample
+  const [greenAspectOptionsMap, setGreenAspectOptionsMap] = useState<Map<string, string[]>>(new Map())
+
+  // Roast aspect options per sample
+  const [roastAspectOptionsMap, setRoastAspectOptionsMap] = useState<Map<string, string[]>>(new Map())
 
   useEffect(() => {
     loadSamples()
@@ -163,8 +178,9 @@ export default function GradingPage() {
             const newGradingMap = new Map<string, GradingData>()
             const newDefectConfigsMap = new Map<string, DefectConfig[]>()
             const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
-
             const newClientQualityMap = new Map<string, ClientQuality>()
+            const newGreenAspectOptionsMap = new Map<string, string[]>()
+            const newRoastAspectOptionsMap = new Map<string, string[]>()
 
             for (const sample of detailsData.samples) {
               // Initialize grading data
@@ -181,14 +197,15 @@ export default function GradingPage() {
               })
 
               // Load defect configuration and screen constraints for this sample
-              await loadSampleConfig(sample, newDefectConfigsMap, newScreenConstraintsMap, newGradingMap, newClientQualityMap)
+              await loadSampleConfig(sample, newDefectConfigsMap, newScreenConstraintsMap, newGradingMap, newClientQualityMap, newGreenAspectOptionsMap, newRoastAspectOptionsMap)
             }
 
             setClientQualityMap(newClientQualityMap)
-
             setGradingDataMap(newGradingMap)
             setDefectConfigsMap(newDefectConfigsMap)
             setScreenConstraintsMap(newScreenConstraintsMap)
+            setGreenAspectOptionsMap(newGreenAspectOptionsMap)
+            setRoastAspectOptionsMap(newRoastAspectOptionsMap)
           }
         }
       }
@@ -204,7 +221,9 @@ export default function GradingPage() {
     defectConfigsMap: Map<string, DefectConfig[]>,
     screenConstraintsMap: Map<string, ScreenSizeConstraint[]>,
     gradingDataMap: Map<string, GradingData>,
-    clientQualityMap: Map<string, ClientQuality>
+    clientQualityMap: Map<string, ClientQuality>,
+    greenAspectOptionsMap: Map<string, string[]>,
+    roastAspectOptionsMap: Map<string, string[]>
   ) => {
     try {
       // Load client quality for custom name
@@ -368,6 +387,18 @@ export default function GradingPage() {
           gradingData.screen_sizes = screenSizes
         }
       }
+
+      // Load green aspect options from quality template
+      if (templateParams?.green_aspect_configuration?.options && Array.isArray(templateParams.green_aspect_configuration.options)) {
+        const greenOptions = templateParams.green_aspect_configuration.options.map((opt: any) => opt.name || opt)
+        greenAspectOptionsMap.set(sample.id, greenOptions)
+      }
+
+      // Load roast aspect options from quality template
+      if (templateParams?.roast_aspect_configuration?.options && Array.isArray(templateParams.roast_aspect_configuration.options)) {
+        const roastOptions = templateParams.roast_aspect_configuration.options.map((opt: any) => opt.name || opt)
+        roastAspectOptionsMap.set(sample.id, roastOptions)
+      }
     } catch (error) {
       console.error('Error loading sample config:', error)
     }
@@ -428,6 +459,14 @@ export default function GradingPage() {
     setGradingDataMap(new Map(gradingDataMap))
   }
 
+  const handleAspectChange = (sampleId: string, field: 'green_aspect' | 'roast_aspect', value: string) => {
+    const gradingData = gradingDataMap.get(sampleId)
+    if (!gradingData) return
+
+    gradingData[field] = value
+    setGradingDataMap(new Map(gradingDataMap))
+  }
+
   const handleSaveCurrent = async () => {
     if (!activeSampleId) return
 
@@ -445,12 +484,16 @@ export default function GradingPage() {
             screen_sizes: gradingData.screen_sizes,
             moisture_percentage: gradingData.moisture_percentage,
             quakers: gradingData.quakers_count,
+            green_aspect: gradingData.green_aspect,
             defects: {
               counts: gradingData.defect_counts,
               primary: gradingData.defects_primary,
               secondary: gradingData.defects_secondary,
               total: gradingData.defects_total
             }
+          },
+          roast_data: {
+            roast_aspect: gradingData.roast_aspect
           }
         })
       })
@@ -513,6 +556,8 @@ export default function GradingPage() {
   const activeGradingData = gradingDataMap.get(activeSampleId)
   const activeDefects = defectConfigsMap.get(activeSampleId) || []
   const activeScreens = screenConstraintsMap.get(activeSampleId) || []
+  const greenAspectOptions = greenAspectOptionsMap.get(activeSampleId) || []
+  const roastAspectOptions = roastAspectOptionsMap.get(activeSampleId) || []
 
   const primaryDefects = getDefectsByCategory(activeDefects, 'primary')
   const secondaryDefects = getDefectsByCategory(activeDefects, 'secondary')
@@ -802,6 +847,68 @@ export default function GradingPage() {
                       </div>
                     </CardContent>
                   </Card>
+
+                  {/* Green and Roast Aspect */}
+                  {(() => {
+                    const sampleGreenOptions = greenAspectOptionsMap.get(sample.id) || []
+                    const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
+
+                    if (sampleGreenOptions.length === 0 && sampleRoastOptions.length === 0) {
+                      return null
+                    }
+
+                    return (
+                      <div className="flex gap-4">
+                        {/* Green Aspect */}
+                        {sampleGreenOptions.length > 0 && (
+                          <Card className="w-fit">
+                            <CardContent className="pt-4 pb-4 px-4">
+                              <Label className="text-sm font-semibold mb-2 block">Green Aspect</Label>
+                              <Select
+                                value={gradingData?.green_aspect || ''}
+                                onValueChange={(value) => handleAspectChange(sample.id, 'green_aspect', value)}
+                              >
+                                <SelectTrigger className="w-[180px] h-9">
+                                  <SelectValue placeholder="Select..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {sampleGreenOptions.map((option) => (
+                                    <SelectItem key={option} value={option}>
+                                      {option}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </CardContent>
+                          </Card>
+                        )}
+
+                        {/* Roast Aspect */}
+                        {sampleRoastOptions.length > 0 && (
+                          <Card className="w-fit">
+                            <CardContent className="pt-4 pb-4 px-4">
+                              <Label className="text-sm font-semibold mb-2 block">Roast Aspect</Label>
+                              <Select
+                                value={gradingData?.roast_aspect || ''}
+                                onValueChange={(value) => handleAspectChange(sample.id, 'roast_aspect', value)}
+                              >
+                                <SelectTrigger className="w-[180px] h-9">
+                                  <SelectValue placeholder="Select..." />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {sampleRoastOptions.map((option) => (
+                                    <SelectItem key={option} value={option}>
+                                      {option}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </CardContent>
+                          </Card>
+                        )}
+                      </div>
+                    )
+                  })()}
 
                   {/* Defects */}
                   <Card>
