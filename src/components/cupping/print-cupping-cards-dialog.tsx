@@ -577,7 +577,17 @@ export function PrintCuppingCardsDialog({
                   console.error('Output format:', outputFormat)
                 }
                 return (
-                  <Button disabled={loading || !!error}>
+                  <Button
+                    disabled={loading || !!error}
+                    onClick={() => {
+                      // Auto-close dialog after PDF download starts
+                      if (!loading && !error) {
+                        setTimeout(() => {
+                          onOpenChange(false)
+                        }, 500)
+                      }
+                    }}
+                  >
                     {loading ? 'Generating PDF...' : error ? `Error - ${error.message || 'Try Again'}` : `Download ${cardData ? cardData.length : 0} Card${cardData && cardData.length !== 1 ? 's' : ''}`}
                   </Button>
                 )
