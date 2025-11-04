@@ -321,7 +321,7 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
         ) : (
           <div className="space-y-4">
             {/* Heatmap */}
-            <div className="w-full max-w-5xl">
+            <div className="w-fit">
               <div className="flex gap-3">
                 {/* Weekday labels column */}
                 <div className="flex flex-col flex-shrink-0">
