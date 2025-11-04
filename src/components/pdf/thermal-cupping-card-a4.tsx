@@ -189,6 +189,7 @@ interface ThermalCuppingCardA4DocumentProps {
   cards: ThermalCuppingCardData[]
   show_quality: boolean
   show_buyer: boolean
+  show_supplier: boolean
   show_exporter: boolean
 }
 
@@ -198,7 +199,7 @@ interface ThermalCuppingCardA4DocumentProps {
  */
 export const ThermalCuppingCardA4Document: React.FC<
   ThermalCuppingCardA4DocumentProps
-> = ({ cards, show_quality, show_buyer, show_exporter }) => {
+> = ({ cards, show_quality, show_buyer, show_supplier, show_exporter }) => {
   // Ensure all cards have valid attributes array
   const validatedCards = cards.map(card => {
     // Process and validate attributes (can be strings or AttributeForCard objects)

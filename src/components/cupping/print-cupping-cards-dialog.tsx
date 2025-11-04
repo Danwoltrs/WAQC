@@ -26,6 +26,11 @@ import {
   ThermalCuppingCardData,
 } from '@/components/pdf/thermal-cupping-card'
 import { ThermalCuppingCardA4Document } from '@/components/pdf/thermal-cupping-card-a4'
+import {
+  getVisibilitySettings,
+  updateVisibilitySetting,
+  SampleVisibilitySettings
+} from '@/lib/sample-visibility'
 
 // Sample interface (simplified)
 interface Sample {
@@ -82,9 +87,7 @@ export function PrintCuppingCardsDialog({
   assignedCuppers = [],
   onSuccess,
 }: PrintCuppingCardsDialogProps) {
-  const [showQuality, setShowQuality] = useState(true)
-  const [showBuyer, setShowBuyer] = useState(true)
-  const [showExporter, setShowExporter] = useState(true)
+  const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
   const [numCuppers, setNumCuppers] = useState('5')
   const [outputFormat, setOutputFormat] = useState<'thermal' | 'pdf'>('pdf')
   const [cardData, setCardData] = useState<ThermalCuppingCardData[] | null>(
@@ -95,6 +98,12 @@ export function PrintCuppingCardsDialog({
   const [loading, setLoading] = useState(false)
   const [isReadyForDownload, setIsReadyForDownload] = useState(false)
   const [pdfKey, setPdfKey] = useState(0) // Force PDF regeneration only when needed
+
+  const toggleVisibility = (key: keyof SampleVisibilitySettings) => {
+    const newValue = !visibility[key]
+    const updated = updateVisibilitySetting(key, newValue)
+    setVisibility(updated)
+  }
 
   // Load full sample data with relations when dialog opens
   useEffect(() => {
@@ -355,19 +364,21 @@ export function PrintCuppingCardsDialog({
     return outputFormat === 'thermal' ? (
       <ThermalCuppingCardDocument
         cards={cardData}
-        show_quality={showQuality}
-        show_buyer={showBuyer}
-        show_exporter={showExporter}
+        show_quality={visibility.showQuality}
+        show_buyer={visibility.showBuyer}
+        show_supplier={visibility.showSupplier}
+        show_exporter={visibility.showExporter}
       />
     ) : (
       <ThermalCuppingCardA4Document
         cards={cardData}
-        show_quality={showQuality}
-        show_buyer={showBuyer}
-        show_exporter={showExporter}
+        show_quality={visibility.showQuality}
+        show_buyer={visibility.showBuyer}
+        show_supplier={visibility.showSupplier}
+        show_exporter={visibility.showExporter}
       />
     )
-  }, [isReadyForDownload, cardData, outputFormat, showQuality, showBuyer, showExporter])
+  }, [isReadyForDownload, cardData, outputFormat, visibility.showQuality, visibility.showBuyer, visibility.showSupplier, visibility.showExporter])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -429,11 +440,9 @@ export function PrintCuppingCardsDialog({
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="show-quality"
-                  checked={showQuality}
+                  checked={visibility.showQuality}
                   disabled={isReadyForDownload}
-                  onCheckedChange={(checked) =>
-                    setShowQuality(checked as boolean)
-                  }
+                  onCheckedChange={() => toggleVisibility('showQuality')}
                 />
                 <label
                   htmlFor="show-quality"
@@ -445,11 +454,9 @@ export function PrintCuppingCardsDialog({
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="show-buyer"
-                  checked={showBuyer}
+                  checked={visibility.showBuyer}
                   disabled={isReadyForDownload}
-                  onCheckedChange={(checked) =>
-                    setShowBuyer(checked as boolean)
-                  }
+                  onCheckedChange={() => toggleVisibility('showBuyer')}
                 />
                 <label
                   htmlFor="show-buyer"
@@ -460,12 +467,24 @@ export function PrintCuppingCardsDialog({
               </div>
               <div className="flex items-center space-x-2">
                 <Checkbox
-                  id="show-exporter"
-                  checked={showExporter}
+                  id="show-supplier"
+                  checked={visibility.showSupplier}
                   disabled={isReadyForDownload}
-                  onCheckedChange={(checked) =>
-                    setShowExporter(checked as boolean)
-                  }
+                  onCheckedChange={() => toggleVisibility('showSupplier')}
+                />
+                <label
+                  htmlFor="show-supplier"
+                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                >
+                  Show Supplier
+                </label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="show-exporter"
+                  checked={visibility.showExporter}
+                  disabled={isReadyForDownload}
+                  onCheckedChange={() => toggleVisibility('showExporter')}
                 />
                 <label
                   htmlFor="show-exporter"

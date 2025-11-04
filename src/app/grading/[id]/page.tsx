@@ -36,6 +36,7 @@ interface Sample {
   id: string
   tracking_number: string
   supplier?: string
+  exporter_legacy?: string
   origin?: string
   sample_type?: 'pss' | 'ss' | 'type'
   ico_number?: string
@@ -403,10 +404,37 @@ export default function GradingDetailPage() {
               <div>
                 <h1 className="text-lg font-semibold">{getSampleDisplayLabel(sample)}</h1>
                 <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                  {/* Exporter/Supplier */}
-                  {visibility.showExporter && sample.supplier && (
+                  {/* Supplier */}
+                  {visibility.showSupplier && sample.supplier && (
                     <div className="flex items-center gap-1">
+                      <span className="text-xs uppercase text-muted-foreground/70">Supplier:</span>
                       <span>{sample.supplier}</span>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-5 w-5 p-0"
+                        onClick={() => toggleVisibility('showSupplier')}
+                      >
+                        <EyeOff className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  )}
+                  {!visibility.showSupplier && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-6"
+                      onClick={() => toggleVisibility('showSupplier')}
+                    >
+                      <Eye className="h-3 w-3 mr-1" /> Supplier
+                    </Button>
+                  )}
+
+                  {/* Exporter */}
+                  {visibility.showExporter && sample.exporter_legacy && (
+                    <div className="flex items-center gap-1">
+                      <span className="text-xs uppercase text-muted-foreground/70">Exporter:</span>
+                      <span>{sample.exporter_legacy}</span>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -417,7 +445,7 @@ export default function GradingDetailPage() {
                       </Button>
                     </div>
                   )}
-                  {!visibility.showExporter && (
+                  {!visibility.showExporter && sample.exporter_legacy && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -428,9 +456,10 @@ export default function GradingDetailPage() {
                     </Button>
                   )}
 
-                  {/* Buyer/Client - only show if different from exporter */}
+                  {/* Buyer/Client */}
                   {visibility.showBuyer && sample.client && (
                     <div className="flex items-center gap-1">
+                      <span className="text-xs uppercase text-muted-foreground/70">Client:</span>
                       <span>{sample.client.company}</span>
                       <Button
                         variant="ghost"
@@ -442,7 +471,7 @@ export default function GradingDetailPage() {
                       </Button>
                     </div>
                   )}
-                  {!visibility.showBuyer && (
+                  {!visibility.showBuyer && sample.client && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -456,6 +485,7 @@ export default function GradingDetailPage() {
                   {/* Quality Template */}
                   {visibility.showQuality && qualityTemplate && (
                     <div className="flex items-center gap-1">
+                      <span className="text-xs uppercase text-muted-foreground/70">Quality:</span>
                       <span>{qualityTemplate.name_en || qualityTemplate.name}</span>
                       <Button
                         variant="ghost"
@@ -467,7 +497,7 @@ export default function GradingDetailPage() {
                       </Button>
                     </div>
                   )}
-                  {!visibility.showQuality && (
+                  {!visibility.showQuality && qualityTemplate && (
                     <Button
                       variant="outline"
                       size="sm"

@@ -8,12 +8,14 @@ const VISIBILITY_KEY = 'sample-info-visibility'
 export interface SampleVisibilitySettings {
   showQuality: boolean
   showBuyer: boolean
+  showSupplier: boolean
   showExporter: boolean
 }
 
 const DEFAULT_SETTINGS: SampleVisibilitySettings = {
   showQuality: true,
   showBuyer: true,
+  showSupplier: true,
   showExporter: true,
 }
 
