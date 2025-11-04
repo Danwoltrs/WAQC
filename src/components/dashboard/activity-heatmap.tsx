@@ -65,9 +65,20 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
       // Determine which lab to query
       const labId = selectedLab === 'all' ? profile?.laboratory_id : selectedLab
 
-      // Get year range
-      const yearStart = new Date(selectedYear, 0, 1)
-      const yearEnd = new Date(selectedYear, 11, 31, 23, 59, 59)
+      // Get date range - 52 weeks back from current week (or end of selected year for past years)
+      const now = new Date()
+      const currentYear = now.getFullYear()
+
+      let yearEnd: Date
+      if (selectedYear === currentYear) {
+        yearEnd = now
+      } else {
+        yearEnd = new Date(selectedYear, 11, 31, 23, 59, 59)
+      }
+
+      // Go back 52 weeks from end date
+      const yearStart = new Date(yearEnd)
+      yearStart.setDate(yearEnd.getDate() - (52 * 7))
 
       // Fetch samples data
       let samplesQuery = supabase
@@ -172,49 +183,65 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
       weekNumber: number
       monthLabel?: string
     }> = []
-    const startDate = new Date(selectedYear, 0, 1)
 
-    // Find the Monday of the first week
-    const firstDay = startDate.getDay()
-    const daysToMonday = firstDay === 0 ? 6 : firstDay - 1
-    const firstMonday = new Date(startDate)
-    firstMonday.setDate(startDate.getDate() - daysToMonday)
+    // Start from current date
+    const now = new Date()
+    const currentYear = now.getFullYear()
+
+    // If viewing current year, end at current week
+    // If viewing past year, show full year
+    let endDate: Date
+    if (selectedYear === currentYear) {
+      endDate = now
+    } else {
+      endDate = new Date(selectedYear, 11, 31) // End of selected year
+    }
+
+    // Find the Monday of the week containing the end date
+    const endDay = endDate.getDay()
+    const daysToMonday = endDay === 0 ? 6 : endDay - 1
+    const lastMonday = new Date(endDate)
+    lastMonday.setDate(endDate.getDate() - daysToMonday)
+
+    // Go back 52 weeks to start
+    const firstMonday = new Date(lastMonday)
+    firstMonday.setDate(lastMonday.getDate() - (51 * 7))
 
     let currentMonth = -1
 
-    // Generate 53 weeks (to cover the full year)
-    for (let week = 0; week < 53; week++) {
+    // Generate weeks from first Monday to last Monday
+    let weekCount = 0
+    let currentMonday = new Date(firstMonday)
+
+    while (currentMonday <= lastMonday && weekCount < 53) {
       const weekDays: Array<{ date: Date; activity: DayActivity | null }> = []
-      const weekStart = new Date(firstMonday)
-      weekStart.setDate(firstMonday.getDate() + (week * 7))
 
-      // Monday to Friday only (5 days, not 7)
+      // Monday to Friday only (5 days)
       for (let day = 0; day < 5; day++) {
-        const currentDate = new Date(firstMonday)
-        currentDate.setDate(firstMonday.getDate() + (week * 7) + day)
+        const currentDate = new Date(currentMonday)
+        currentDate.setDate(currentMonday.getDate() + day)
 
-        // Only include if within selected year
-        if (currentDate.getFullYear() === selectedYear) {
-          const dateStr = currentDate.toISOString().split('T')[0]
-          const activity = activityData.find(a => a.date === dateStr) || null
-          weekDays.push({ date: currentDate, activity })
-        }
+        const dateStr = currentDate.toISOString().split('T')[0]
+        const activity = activityData.find(a => a.date === dateStr) || null
+        weekDays.push({ date: currentDate, activity })
       }
 
-      if (weekDays.length > 0) {
-        // Get week number
-        const weekNumber = getWeekNumber(weekStart)
+      // Get week number
+      const weekNumber = getWeekNumber(currentMonday)
 
-        // Check if this is the first week of a new month
-        const monthOfWeek = weekStart.getMonth()
-        let monthLabel: string | undefined
-        if (monthOfWeek !== currentMonth) {
-          monthLabel = weekStart.toLocaleDateString('en-US', { month: 'short' })
-          currentMonth = monthOfWeek
-        }
-
-        weeks.push({ days: weekDays, weekNumber, monthLabel })
+      // Check if this is the first week of a new month
+      const monthOfWeek = currentMonday.getMonth()
+      let monthLabel: string | undefined
+      if (monthOfWeek !== currentMonth) {
+        monthLabel = currentMonday.toLocaleDateString('en-US', { month: 'short' })
+        currentMonth = monthOfWeek
       }
+
+      weeks.push({ days: weekDays, weekNumber, monthLabel })
+
+      // Move to next Monday
+      currentMonday.setDate(currentMonday.getDate() + 7)
+      weekCount++
     }
 
     return weeks
@@ -287,30 +314,30 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
         ) : (
           <div className="space-y-4">
             {/* Heatmap */}
-            <div className="overflow-x-auto">
-              <div className="inline-flex gap-2">
+            <div className="w-full">
+              <div className="flex gap-2">
                 {/* Weekday labels column */}
-                <div className="flex flex-col">
+                <div className="flex flex-col flex-shrink-0">
                   {/* Empty space for month row */}
-                  <div className="h-[18px]" />
+                  <div className="h-4 mb-1" />
                   {/* Weekday labels */}
                   <div className="flex flex-col gap-[2px]">
                     {weekdays.map(day => (
-                      <div key={day} className="h-[12px] flex items-center justify-end w-[30px]">
+                      <div key={day} className="h-3 flex items-center justify-end pr-2 min-w-[30px]">
                         <span className="text-[10px] text-muted-foreground font-medium">{day}</span>
                       </div>
                     ))}
                   </div>
                   {/* Empty space for week number row */}
-                  <div className="h-[14px]" />
+                  <div className="h-3 mt-1" />
                 </div>
 
                 {/* Grid with months and week numbers */}
-                <div className="flex flex-col">
+                <div className="flex flex-col overflow-x-auto flex-1">
                   {/* Month labels row */}
-                  <div className="flex gap-[2px] h-[18px] mb-1">
+                  <div className="flex gap-[2px] h-4 mb-1">
                     {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="w-[12px] flex items-center justify-center">
+                      <div key={weekIndex} className="w-3 flex-shrink-0 flex items-start">
                         {week.monthLabel && (
                           <span className="text-[11px] font-semibold text-foreground whitespace-nowrap">
                             {week.monthLabel}
@@ -323,7 +350,7 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
                   {/* Grid */}
                   <div className="flex gap-[2px]">
                     {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="flex flex-col gap-[2px]">
+                      <div key={weekIndex} className="flex flex-col gap-[2px] flex-shrink-0">
                         {week.days.map((day, dayIndex) => {
                           const dateStr = day.date.toLocaleDateString('en-US', {
                             month: 'short',
@@ -337,7 +364,7 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
                           return (
                             <div
                               key={dayIndex}
-                              className={`w-[12px] h-[12px] rounded-sm ${getActivityColor(day.activity)} transition-all hover:ring-2 hover:ring-primary cursor-pointer`}
+                              className={`w-3 h-3 rounded-sm ${getActivityColor(day.activity)} transition-all hover:ring-2 hover:ring-primary cursor-pointer`}
                               title={tooltip}
                             />
                           )
@@ -347,9 +374,9 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
                   </div>
 
                   {/* Week numbers row */}
-                  <div className="flex gap-[2px] h-[14px] mt-1">
+                  <div className="flex gap-[2px] h-3 mt-1">
                     {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="w-[12px] flex items-center justify-center">
+                      <div key={weekIndex} className="w-3 flex-shrink-0 flex items-center justify-center">
                         <span className="text-[8px] text-muted-foreground/60">
                           {week.weekNumber}
                         </span>
