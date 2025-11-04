@@ -390,7 +390,7 @@ function BatchGradingContent() {
                   <TabsTrigger
                     key={sample.id}
                     value={sample.id}
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent px-4 py-3"
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors px-4 py-3"
                   >
                     <div className="flex flex-col items-start gap-0.5">
                       <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
