@@ -180,8 +180,8 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
     for (let week = 0; week < 53; week++) {
       const weekDays: Array<{ date: Date; activity: DayActivity | null }> = []
 
-      // Monday to Friday (5 days)
-      for (let day = 0; day < 7; day++) {
+      // Monday to Friday only (5 days, not 7)
+      for (let day = 0; day < 5; day++) {
         const currentDate = new Date(firstMonday)
         currentDate.setDate(firstMonday.getDate() + (week * 7) + day)
 
@@ -208,14 +208,14 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
 
     const total = activity.samples + activity.cups
 
-    // Define intensity levels based on activity
-    if (total >= 20) return 'bg-[#6BE6D3] dark:bg-[#6BE6D3]' // High activity
-    if (total >= 10) return 'bg-[#7DBBFF] dark:bg-[#7DBBFF]' // Medium-high
-    if (total >= 5) return 'bg-[#A0BCE8] dark:bg-[#A0BCE8]' // Medium
-    return 'bg-[#ADADFB] dark:bg-[#ADADFB]' // Low activity
+    // Define intensity levels based on activity - green tones
+    if (total >= 20) return 'bg-emerald-600 dark:bg-emerald-500' // High activity
+    if (total >= 10) return 'bg-emerald-500 dark:bg-emerald-400' // Medium-high
+    if (total >= 5) return 'bg-emerald-400 dark:bg-emerald-300' // Medium
+    return 'bg-emerald-300 dark:bg-emerald-200' // Low activity
   }
 
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
   const heatmapData = generateHeatmapData()
 
   // Calculate max activity for tooltip context
@@ -256,12 +256,12 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
           <div className="space-y-4">
             {/* Heatmap */}
             <div className="overflow-x-auto">
-              <div className="inline-flex gap-1">
+              <div className="inline-flex gap-2">
                 {/* Weekday labels */}
-                <div className="flex flex-col gap-1 pr-2 justify-start pt-6">
+                <div className="flex flex-col gap-[2px]">
                   {weekdays.map(day => (
-                    <div key={day} className="h-[12px] flex items-center">
-                      <span className="text-[10px] text-muted-foreground">{day}</span>
+                    <div key={day} className="h-[12px] flex items-center justify-end w-[30px]">
+                      <span className="text-[10px] text-muted-foreground font-medium">{day}</span>
                     </div>
                   ))}
                 </div>
@@ -300,10 +300,10 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
                 <span className="text-xs text-muted-foreground">Less</span>
                 <div className="flex gap-1">
                   <div className="w-3 h-3 rounded-sm bg-muted/20" />
-                  <div className="w-3 h-3 rounded-sm bg-[#ADADFB]" />
-                  <div className="w-3 h-3 rounded-sm bg-[#A0BCE8]" />
-                  <div className="w-3 h-3 rounded-sm bg-[#7DBBFF]" />
-                  <div className="w-3 h-3 rounded-sm bg-[#6BE6D3]" />
+                  <div className="w-3 h-3 rounded-sm bg-emerald-300 dark:bg-emerald-200" />
+                  <div className="w-3 h-3 rounded-sm bg-emerald-400 dark:bg-emerald-300" />
+                  <div className="w-3 h-3 rounded-sm bg-emerald-500 dark:bg-emerald-400" />
+                  <div className="w-3 h-3 rounded-sm bg-emerald-600 dark:bg-emerald-500" />
                 </div>
                 <span className="text-xs text-muted-foreground">More</span>
               </div>
