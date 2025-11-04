@@ -165,9 +165,13 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
     }
   }
 
-  // Generate heatmap grid
+  // Generate heatmap grid with week metadata
   const generateHeatmapData = () => {
-    const weeks: Array<Array<{ date: Date; activity: DayActivity | null }>> = []
+    const weeks: Array<{
+      days: Array<{ date: Date; activity: DayActivity | null }>
+      weekNumber: number
+      monthLabel?: string
+    }> = []
     const startDate = new Date(selectedYear, 0, 1)
 
     // Find the Monday of the first week
@@ -176,9 +180,13 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
     const firstMonday = new Date(startDate)
     firstMonday.setDate(startDate.getDate() - daysToMonday)
 
+    let currentMonth = -1
+
     // Generate 53 weeks (to cover the full year)
     for (let week = 0; week < 53; week++) {
       const weekDays: Array<{ date: Date; activity: DayActivity | null }> = []
+      const weekStart = new Date(firstMonday)
+      weekStart.setDate(firstMonday.getDate() + (week * 7))
 
       // Monday to Friday only (5 days, not 7)
       for (let day = 0; day < 5; day++) {
@@ -194,11 +202,31 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
       }
 
       if (weekDays.length > 0) {
-        weeks.push(weekDays)
+        // Get week number
+        const weekNumber = getWeekNumber(weekStart)
+
+        // Check if this is the first week of a new month
+        const monthOfWeek = weekStart.getMonth()
+        let monthLabel: string | undefined
+        if (monthOfWeek !== currentMonth) {
+          monthLabel = weekStart.toLocaleDateString('en-US', { month: 'short' })
+          currentMonth = monthOfWeek
+        }
+
+        weeks.push({ days: weekDays, weekNumber, monthLabel })
       }
     }
 
     return weeks
+  }
+
+  // Calculate ISO week number
+  const getWeekNumber = (date: Date): number => {
+    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
+    const dayNum = d.getUTCDay() || 7
+    d.setUTCDate(d.getUTCDate() + 4 - dayNum)
+    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
+    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
   }
 
   const getActivityColor = (activity: DayActivity | null) => {
@@ -257,39 +285,73 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
             {/* Heatmap */}
             <div className="overflow-x-auto">
               <div className="inline-flex gap-2">
-                {/* Weekday labels */}
-                <div className="flex flex-col gap-[2px]">
-                  {weekdays.map(day => (
-                    <div key={day} className="h-[12px] flex items-center justify-end w-[30px]">
-                      <span className="text-[10px] text-muted-foreground font-medium">{day}</span>
-                    </div>
-                  ))}
+                {/* Weekday labels column */}
+                <div className="flex flex-col">
+                  {/* Empty space for month row */}
+                  <div className="h-[18px]" />
+                  {/* Weekday labels */}
+                  <div className="flex flex-col gap-[2px]">
+                    {weekdays.map(day => (
+                      <div key={day} className="h-[12px] flex items-center justify-end w-[30px]">
+                        <span className="text-[10px] text-muted-foreground font-medium">{day}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Empty space for week number row */}
+                  <div className="h-[14px]" />
                 </div>
 
-                {/* Grid */}
-                <div className="flex gap-[2px]">
-                  {heatmapData.map((week, weekIndex) => (
-                    <div key={weekIndex} className="flex flex-col gap-[2px]">
-                      {week.map((day, dayIndex) => {
-                        const dateStr = day.date.toLocaleDateString('en-US', {
-                          month: 'short',
-                          day: 'numeric',
-                          year: 'numeric'
-                        })
-                        const tooltip = day.activity
-                          ? `${dateStr}: ${day.activity.samples} samples, ${day.activity.cups} cups`
-                          : `${dateStr}: No activity`
+                {/* Grid with months and week numbers */}
+                <div className="flex flex-col">
+                  {/* Month labels row */}
+                  <div className="flex gap-[2px] h-[18px] mb-1">
+                    {heatmapData.map((week, weekIndex) => (
+                      <div key={weekIndex} className="w-[12px] flex items-center justify-center">
+                        {week.monthLabel && (
+                          <span className="text-[11px] font-semibold text-foreground whitespace-nowrap">
+                            {week.monthLabel}
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
 
-                        return (
-                          <div
-                            key={dayIndex}
-                            className={`w-[12px] h-[12px] rounded-sm ${getActivityColor(day.activity)} transition-all hover:ring-2 hover:ring-primary cursor-pointer`}
-                            title={tooltip}
-                          />
-                        )
-                      })}
-                    </div>
-                  ))}
+                  {/* Grid */}
+                  <div className="flex gap-[2px]">
+                    {heatmapData.map((week, weekIndex) => (
+                      <div key={weekIndex} className="flex flex-col gap-[2px]">
+                        {week.days.map((day, dayIndex) => {
+                          const dateStr = day.date.toLocaleDateString('en-US', {
+                            month: 'short',
+                            day: 'numeric',
+                            year: 'numeric'
+                          })
+                          const tooltip = day.activity
+                            ? `${dateStr}: ${day.activity.samples} samples, ${day.activity.cups} cups`
+                            : `${dateStr}: No activity`
+
+                          return (
+                            <div
+                              key={dayIndex}
+                              className={`w-[12px] h-[12px] rounded-sm ${getActivityColor(day.activity)} transition-all hover:ring-2 hover:ring-primary cursor-pointer`}
+                              title={tooltip}
+                            />
+                          )
+                        })}
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Week numbers row */}
+                  <div className="flex gap-[2px] h-[14px] mt-1">
+                    {heatmapData.map((week, weekIndex) => (
+                      <div key={weekIndex} className="w-[12px] flex items-center justify-center">
+                        <span className="text-[8px] text-muted-foreground/60">
+                          {week.weekNumber}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
