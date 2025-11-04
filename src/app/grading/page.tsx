@@ -27,6 +27,7 @@ import {
   getVisibilitySettings,
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
+import { useToast } from '@/hooks/use-toast'
 
 // Pastel colors for pie chart
 const CHART_COLORS = ['#C7CEEA', '#B8E0D2', '#D4A5A5', '#F4E1D2', '#E9D8FD', '#B5EAD7', '#FFE5D9', '#E0E7FF']
@@ -88,6 +89,7 @@ interface GradingData {
 
 export default function GradingPage() {
   const router = useRouter()
+  const { toast } = useToast()
 
   const [samples, setSamples] = useState<Sample[]>([])
   const [activeSampleId, setActiveSampleId] = useState<string>('')
@@ -226,8 +228,19 @@ export default function GradingPage() {
       const templateParams = sample.quality_spec?.template?.parameters
       const customParams = sample.quality_spec?.custom_parameters
 
-      // Path 1: template.parameters.defect_requirements.defects
-      if (templateParams?.defect_requirements?.defects && Array.isArray(templateParams.defect_requirements.defects)) {
+      // Path 1: template.parameters.defect_configuration (GRADING DEFECTS)
+      if (templateParams?.defect_configuration?.defects && Array.isArray(templateParams.defect_configuration.defects)) {
+        console.log('[Defects Debug] Found defects in template.parameters.defect_configuration.defects')
+        defectConfigs = templateParams.defect_configuration.defects.map((defect: any, index: number) => ({
+          name: defect.name || defect.name_en,
+          weight: defect.weight || defect.point_value || 1,
+          category: (defect.category || 'primary') as 'primary' | 'secondary',
+          display_order: defect.display_order ?? index,
+          description: defect.description || defect.description_en || ''
+        }))
+      }
+      // Path 2: template.parameters.defect_requirements.defects
+      else if (templateParams?.defect_requirements?.defects && Array.isArray(templateParams.defect_requirements.defects)) {
         console.log('[Defects Debug] Found defects in template.parameters.defect_requirements.defects')
         defectConfigs = templateParams.defect_requirements.defects.map((defect: any, index: number) => ({
           name: defect.name || defect.name_en,
@@ -237,7 +250,7 @@ export default function GradingPage() {
           description: defect.description || defect.description_en || ''
         }))
       }
-      // Path 2: template.parameters.defects (direct array)
+      // Path 3: template.parameters.defects (direct array)
       else if (templateParams?.defects && Array.isArray(templateParams.defects)) {
         console.log('[Defects Debug] Found defects in template.parameters.defects')
         defectConfigs = templateParams.defects.map((defect: any, index: number) => ({
@@ -248,7 +261,7 @@ export default function GradingPage() {
           description: defect.description || defect.description_en || ''
         }))
       }
-      // Path 3: custom_parameters.defect_requirements.defects
+      // Path 4: custom_parameters.defect_requirements.defects
       else if (customParams?.defect_requirements?.defects && Array.isArray(customParams.defect_requirements.defects)) {
         console.log('[Defects Debug] Found defects in custom_parameters.defect_requirements.defects')
         defectConfigs = customParams.defect_requirements.defects.map((defect: any, index: number) => ({
@@ -259,7 +272,7 @@ export default function GradingPage() {
           description: defect.description || defect.description_en || ''
         }))
       }
-      // Path 4: custom_parameters.defects (direct array)
+      // Path 5: custom_parameters.defects (direct array)
       else if (customParams?.defects && Array.isArray(customParams.defects)) {
         console.log('[Defects Debug] Found defects in custom_parameters.defects')
         defectConfigs = customParams.defects.map((defect: any, index: number) => ({
@@ -443,14 +456,26 @@ export default function GradingPage() {
       })
 
       if (!assessmentResponse.ok) {
-        console.error(`Failed to save assessment for sample ${activeSampleId}`)
-        alert('Failed to save grading data. Please try again.')
+        const errorData = await assessmentResponse.json().catch(() => ({}))
+        console.error(`Failed to save assessment for sample ${activeSampleId}`, errorData)
+        toast({
+          title: 'Failed to save',
+          description: errorData.error || 'Unable to save grading data. Please try again.',
+          variant: 'destructive'
+        })
       } else {
-        alert('Grading data saved successfully!')
+        toast({
+          title: 'Success',
+          description: 'Grading data saved successfully!',
+        })
       }
     } catch (error) {
       console.error('Error saving grading data:', error)
-      alert('Failed to save grading data. Please try again.')
+      toast({
+        title: 'Error',
+        description: 'An unexpected error occurred. Please try again.',
+        variant: 'destructive'
+      })
     } finally {
       setSaving(false)
     }
@@ -500,21 +525,25 @@ export default function GradingPage() {
         <div className="border-b bg-card sticky top-0 z-50">
           <div className="flex items-center justify-between">
             <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
-              {samples.map((sample, index) => (
-                <div key={sample.id} className="flex items-center">
-                  <TabsTrigger
-                    value={sample.id}
-                    className={`rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-green-500/10 hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
-                  >
-                    <div className="flex flex-col items-start gap-0.5">
-                      <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                      <span className="text-xs text-muted-foreground capitalize">{sample.sample_type || 'sample'}</span>
-                    </div>
-                  </TabsTrigger>
-                  {/* Vertical separator after each tab */}
-                  <div className="h-8 w-px bg-border/60 mx-1" />
-                </div>
-              ))}
+              {samples.map((sample, index) => {
+                const isActive = sample.id === activeSampleId
+
+                return (
+                  <div key={sample.id} className={`flex items-center ${isActive ? 'bg-green-500/20' : ''}`}>
+                    {/* Separator before tab (except first) */}
+                    {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
+                    <TabsTrigger
+                      value={sample.id}
+                      className={`rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
+                    >
+                      <div className="flex flex-col items-start gap-0.5">
+                        <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
+                        <span className="text-xs text-muted-foreground capitalize">{sample.sample_type || 'sample'}</span>
+                      </div>
+                    </TabsTrigger>
+                  </div>
+                )
+              })}
             </TabsList>
             <div className="pr-6">
               <Button onClick={handleSaveCurrent} disabled={saving} size="default">
@@ -669,7 +698,7 @@ export default function GradingPage() {
                                   step="1"
                                   value={gramsValue}
                                   onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
-                                  className="h-8 text-sm w-20"
+                                  className="h-8 text-sm w-16"
                                   placeholder="grams"
                                 />
                                 <div className="text-xs text-muted-foreground">
@@ -708,7 +737,26 @@ export default function GradingPage() {
                                   outerRadius={40}
                                   paddingAngle={2}
                                   dataKey="value"
-                                  label={({ name, value }: any) => `${name} ${value.toFixed(0)}%`}
+                                  label={(props: any) => {
+                                    const { cx, cy, midAngle, outerRadius, name, value } = props
+                                    const RADIAN = Math.PI / 180
+                                    const radius = outerRadius + 30
+                                    const x = cx + radius * Math.cos(-midAngle * RADIAN)
+                                    const y = cy + radius * Math.sin(-midAngle * RADIAN)
+
+                                    return (
+                                      <text
+                                        x={x}
+                                        y={y}
+                                        textAnchor={x > cx ? 'start' : 'end'}
+                                        dominantBaseline="central"
+                                        className="fill-foreground text-xs"
+                                      >
+                                        <tspan x={x} dy="0">{name}</tspan>
+                                        <tspan x={x} dy="1.2em" className="font-semibold">{value.toFixed(0)}%</tspan>
+                                      </text>
+                                    )
+                                  }}
                                   labelLine={{ stroke: 'hsl(var(--border))', strokeWidth: 0.5 }}
                                 >
                                   {screens.map((_, index) => (
@@ -755,82 +803,90 @@ export default function GradingPage() {
                     </CardContent>
                   </Card>
 
-                  {/* Defects - Fill Remaining Space */}
-                  <Card className="flex-1">
+                  {/* Defects */}
+                  <Card>
                     <CardContent className="pt-4">
-                      <div className="flex items-center justify-between mb-4">
-                        <h3 className="text-sm font-semibold">Defects</h3>
-                        <div className="flex gap-4 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Primary: </span>
-                            <span className="font-semibold">{gradingData?.defects_primary.toFixed(2) || '0.00'}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Secondary: </span>
-                            <span className="font-semibold">{gradingData?.defects_secondary.toFixed(2) || '0.00'}</span>
-                          </div>
-                          <div>
-                            <span className="text-muted-foreground">Total: </span>
-                            <span className="font-semibold">{gradingData?.defects_total.toFixed(2) || '0.00'}</span>
-                          </div>
-                        </div>
-                      </div>
-
                       {primaries.length === 0 && secondaries.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground text-sm">
                           No defects configured for this sample&apos;s quality template.
                         </div>
                       ) : (
-                        <div className="space-y-4 max-h-[600px] overflow-y-auto">
-                        {/* Primary Defects */}
-                        {primaries.length > 0 && (
-                          <div>
-                            <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Primary</h4>
-                            <div className="space-y-2">
-                              {primaries.map(defect => (
-                                <div key={defect.name} className="grid grid-cols-[1fr_80px_80px] gap-3 items-center">
-                                  <Label className="text-sm">{defect.name}</Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    value={gradingData?.defect_counts[defect.name] || 0}
-                                    onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
-                                    className="h-8"
-                                    placeholder="0"
-                                  />
-                                  <div className="text-sm text-right text-muted-foreground">
-                                    = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
-                                  </div>
-                                </div>
-                              ))}
+                        <div>
+                          <div className="flex items-center mb-3 gap-4 text-sm">
+                            <div>
+                              <span className="text-muted-foreground">Primary: </span>
+                              <span className="font-semibold">{gradingData?.defects_primary.toFixed(2) || '0.00'}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Secondary: </span>
+                              <span className="font-semibold">{gradingData?.defects_secondary.toFixed(2) || '0.00'}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground">Total: </span>
+                              <span className="font-semibold">{gradingData?.defects_total.toFixed(2) || '0.00'}</span>
                             </div>
                           </div>
-                        )}
+                        <div className="flex gap-6">
+                          {/* Primary Defects Section */}
+                          {primaries.length > 0 && (
+                            <div>
+                              <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Primary</h4>
+                              <div className="space-y-1.5">
+                                {primaries.map((defect, index) => (
+                                  <div key={defect.name} className="grid grid-cols-[140px_64px_auto] gap-1.5 items-center">
+                                    <Label className="text-sm">
+                                      {defect.name}
+                                      <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={gradingData?.defect_counts[defect.name] || 0}
+                                      onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
+                                      className="h-8 text-sm"
+                                      placeholder="0"
+                                    />
+                                    <div className="text-xs text-muted-foreground">
+                                      = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
 
-                        {/* Secondary Defects */}
-                        {secondaries.length > 0 && (
-                          <div className="pt-4 border-t">
-                            <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Secondary</h4>
-                            <div className="space-y-2">
-                              {secondaries.map(defect => (
-                                <div key={defect.name} className="grid grid-cols-[1fr_80px_80px] gap-3 items-center">
-                                  <Label className="text-sm">{defect.name}</Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    value={gradingData?.defect_counts[defect.name] || 0}
-                                    onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
-                                    className="h-8"
-                                    placeholder="0"
-                                  />
-                                  <div className="text-sm text-right text-muted-foreground">
-                                    = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
+                          {/* Vertical Separator */}
+                          {primaries.length > 0 && secondaries.length > 0 && (
+                            <div className="w-px bg-border" />
+                          )}
+
+                          {/* Secondary Defects Section */}
+                          {secondaries.length > 0 && (
+                            <div>
+                              <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Secondary</h4>
+                              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                                {secondaries.map((defect, index) => (
+                                  <div key={defect.name} className="grid grid-cols-[140px_64px_auto] gap-1.5 items-center">
+                                    <Label className="text-sm">
+                                      {defect.name}
+                                      <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={gradingData?.defect_counts[defect.name] || 0}
+                                      onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
+                                      className="h-8 text-sm"
+                                      placeholder="0"
+                                    />
+                                    <div className="text-xs text-muted-foreground">
+                                      = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
+                                    </div>
                                   </div>
-                                </div>
-                              ))}
+                                ))}
+                              </div>
                             </div>
-                          </div>
-                        )}
+                          )}
                         </div>
                       )}
                     </CardContent>
