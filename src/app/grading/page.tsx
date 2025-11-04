@@ -28,8 +28,8 @@ import {
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
 
-// Colors for pie chart
-const CHART_COLORS = ['#ADADFB', '#A0BCE8', '#6BE6D3', '#7DBBFF', '#B899EB', '#71DD8C', '#FF9B9B', '#FFD93D']
+// Pastel colors for pie chart
+const CHART_COLORS = ['#C7CEEA', '#B8E0D2', '#D4A5A5', '#F4E1D2', '#E9D8FD', '#B5EAD7', '#FFE5D9', '#E0E7FF']
 
 interface Sample {
   id: string
@@ -218,9 +218,19 @@ export default function GradingPage() {
       // Load defect configuration from quality template first, fallback to client defects
       let defectConfigs: DefectConfig[] = []
 
+      console.log(`[Defects Debug] Sample ${sample.id}:`, {
+        has_quality_spec: !!sample.quality_spec,
+        has_template: !!sample.quality_spec?.template,
+        has_parameters: !!sample.quality_spec?.template?.parameters,
+        has_defect_requirements: !!sample.quality_spec?.template?.parameters?.defect_requirements,
+        template_params: sample.quality_spec?.template?.parameters
+      })
+
       // Try to load from quality template parameters
       if (sample.quality_spec?.template?.parameters?.defect_requirements) {
         const defectRequirements = sample.quality_spec.template.parameters.defect_requirements
+        console.log('[Defects Debug] Found defect_requirements:', defectRequirements)
+
         if (defectRequirements.defects && Array.isArray(defectRequirements.defects)) {
           defectConfigs = defectRequirements.defects.map((defect: any, index: number) => ({
             name: defect.name || defect.name_en,
@@ -229,16 +239,19 @@ export default function GradingPage() {
             display_order: defect.display_order ?? index,
             description: defect.description || defect.description_en || ''
           }))
+          console.log('[Defects Debug] Mapped defects from template:', defectConfigs)
         }
       }
 
       // Fallback to loading from defect definitions API if not in template
       if (defectConfigs.length === 0 && sample.client_id) {
+        console.log('[Defects Debug] No template defects, fetching from API for client:', sample.client_id)
         const defectsResponse = await fetch(
           `/api/defect-definitions?client_id=${sample.client_id}&origin=${sample.origin || ''}&is_active=true`
         )
         if (defectsResponse.ok) {
           const defectsData = await defectsResponse.json()
+          console.log('[Defects Debug] API response:', defectsData)
           if (defectsData.definitions) {
             defectConfigs = defectsData.definitions.map((def: any, index: number) => ({
               name: def.name_en,
@@ -247,12 +260,14 @@ export default function GradingPage() {
               display_order: index,
               description: def.description_en
             }))
+            console.log('[Defects Debug] Mapped defects from API:', defectConfigs)
           }
         }
       }
 
       // Set defect configs if we have any
       if (defectConfigs.length > 0) {
+        console.log('[Defects Debug] Setting defect configs for sample:', sample.id, defectConfigs)
         defectConfigsMap.set(sample.id, defectConfigs)
 
         const gradingData = gradingDataMap.get(sample.id)
@@ -263,6 +278,8 @@ export default function GradingPage() {
           })
           gradingData.defect_counts = defectCounts
         }
+      } else {
+        console.warn('[Defects Debug] No defects found for sample:', sample.id)
       }
 
       // Load screen size constraints from quality template
@@ -447,18 +464,21 @@ export default function GradingPage() {
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
         <div className="border-b bg-card sticky top-0 z-50">
           <div className="px-6 flex items-center justify-between">
-            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap divide-x divide-border">
-              {samples.map(sample => (
-                <TabsTrigger
-                  key={sample.id}
-                  value={sample.id}
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors px-4 py-3"
-                >
-                  <div className="flex flex-col items-start gap-0.5">
-                    <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                    <span className="text-xs text-muted-foreground capitalize">{sample.sample_type || 'sample'}</span>
-                  </div>
-                </TabsTrigger>
+            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
+              {samples.map((sample, index) => (
+                <div key={sample.id} className="flex items-center">
+                  <TabsTrigger
+                    value={sample.id}
+                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors px-4 py-3"
+                  >
+                    <div className="flex flex-col items-start gap-0.5">
+                      <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
+                      <span className="text-xs text-muted-foreground capitalize">{sample.sample_type || 'sample'}</span>
+                    </div>
+                  </TabsTrigger>
+                  {/* Vertical separator after each tab */}
+                  <div className="h-8 w-px bg-border/60 mx-1" />
+                </div>
               ))}
             </TabsList>
             <Button onClick={handleSaveCurrent} disabled={saving} size="default">
@@ -596,60 +616,72 @@ export default function GradingPage() {
                   <Card>
                     <CardContent className="pt-6">
                       <h3 className="text-sm font-semibold mb-4">Screen Size Distribution</h3>
-                      <div className="space-y-3">
-                        {screens.map(screen => {
-                          const gramsValue = gradingData?.screen_sizes[screen.screen_size] || 0
-                          const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
+                      <div className="flex gap-6">
+                        {/* Screen Size Inputs */}
+                        <div className="space-y-3 flex-1">
+                          {screens.map(screen => {
+                            const gramsValue = gradingData?.screen_sizes[screen.screen_size] || 0
+                            const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
 
-                          return (
-                            <div key={screen.screen_size} className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
-                              <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
-                              <Input
-                                type="number"
-                                min="0"
-                                step="1"
-                                value={gramsValue}
-                                onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
-                                className="h-8 text-sm w-20"
-                                placeholder="grams"
-                              />
-                              <div className="text-sm text-muted-foreground">
-                                {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
+                            return (
+                              <div key={screen.screen_size} className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
+                                <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
+                                <Input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={gramsValue}
+                                  onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
+                                  className="h-8 text-sm w-20"
+                                  placeholder="grams"
+                                />
+                                <div className="text-sm text-muted-foreground">
+                                  {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
+                                </div>
                               </div>
+                            )
+                          })}
+                          {/* Total Row */}
+                          <div className="grid grid-cols-[100px_80px_60px] gap-3 items-center pt-3 border-t">
+                            <Label className="text-sm font-semibold">Total</Label>
+                            <div className="text-sm font-semibold">
+                              {Object.values(gradingData?.screen_sizes || {}).reduce((sum, val) => sum + val, 0)}g
                             </div>
-                          )
-                        })}
-                      </div>
-
-                      {/* Pie Chart */}
-                      {gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) && (
-                        <div className="mt-6 pt-6 border-t">
-                          <ResponsiveContainer width="100%" height={200}>
-                            <PieChart>
-                              <Pie
-                                data={screens
-                                  .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
-                                  .map((screen, index) => ({
-                                    name: formatScreenLabel(screen.screen_size),
-                                    value: gradingData.screen_sizes_percentages[screen.screen_size] || 0
-                                  }))}
-                                cx="50%"
-                                cy="50%"
-                                innerRadius={40}
-                                outerRadius={70}
-                                paddingAngle={2}
-                                dataKey="value"
-                              >
-                                {screens.map((_, index) => (
-                                  <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
-                                ))}
-                              </Pie>
-                              <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
-                              <Legend />
-                            </PieChart>
-                          </ResponsiveContainer>
+                            <div className="text-sm text-muted-foreground font-semibold">
+                              100%
+                            </div>
+                          </div>
                         </div>
-                      )}
+
+                        {/* Pie Chart - Compact on the right */}
+                        {gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) && (
+                          <div className="flex-shrink-0" style={{ width: '180px' }}>
+                            <ResponsiveContainer width="100%" height={150}>
+                              <PieChart margin={{ top: 0, right: 0, bottom: 0, left: 0 }}>
+                                <Pie
+                                  data={screens
+                                    .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
+                                    .map((screen, index) => ({
+                                      name: formatScreenLabel(screen.screen_size),
+                                      value: gradingData.screen_sizes_percentages[screen.screen_size] || 0
+                                    }))}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={25}
+                                  outerRadius={45}
+                                  paddingAngle={2}
+                                  dataKey="value"
+                                >
+                                  {screens.map((_, index) => (
+                                    <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                                  ))}
+                                </Pie>
+                                <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
+                              </PieChart>
+                            </ResponsiveContainer>
+                          </div>
+                        )}
+                      </div>
 
                       {/* Quakers and Humidity */}
                       <div className="mt-6 pt-6 border-t space-y-3">
@@ -705,7 +737,12 @@ export default function GradingPage() {
                         </div>
                       </div>
 
-                      <div className="space-y-4 max-h-[600px] overflow-y-auto">
+                      {primaries.length === 0 && secondaries.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground text-sm">
+                          No defects configured for this sample's quality template.
+                        </div>
+                      ) : (
+                        <div className="space-y-4 max-h-[600px] overflow-y-auto">
                         {/* Primary Defects */}
                         {primaries.length > 0 && (
                           <div>
@@ -755,7 +792,8 @@ export default function GradingPage() {
                             </div>
                           </div>
                         )}
-                      </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </div>
