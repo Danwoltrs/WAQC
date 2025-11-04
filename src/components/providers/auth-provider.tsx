@@ -243,11 +243,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Safety timeout - if we're still loading after 90s total, force show login
+    // Safety timeout - if we're still loading after 15s total, force show login
+    // Reduced from 90s since we know auth works, just slow profile fetch
     const safetyTimeout = setTimeout(() => {
       console.error('[Auth] ⚠️ SAFETY TIMEOUT: Auth initialization took too long, forcing login screen')
       setLoading(false)
-    }, 90000) // 90 seconds total (3 attempts × 30s)
+    }, 15000) // 15 seconds total - enough for quick auth + profile attempt
 
     // Get initial session with retry logic and recovery
     const getSession = async (retries = 3) => {
@@ -576,15 +577,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               updated_at: new Date().toISOString()
             } as Profile
 
+            console.log('[Auth] Setting temporary profile and clearing loading state')
             setProfile(tempProfile)
             setCachedProfile(tempProfile) // Cache temporary profile
-            setPermissions(getUserPermissions('lab_personnel', undefined))
+            setPermissions(getUserPermissions(isGlobalAdmin ? 'global_admin' : 'lab_personnel', undefined))
+
+            // CRITICAL: Clear loading immediately so user can see dashboard
             setLoading(false)
 
-            // Try to create real profile in background
-            createUserProfile(userId).catch(err =>
-              console.error('Background profile creation failed:', err)
-            )
+            console.log('[Auth] ✓ User can now access dashboard with temporary profile')
+
+            // Try to create real profile in background (non-blocking)
+            setTimeout(() => {
+              createUserProfile(userId).catch(err =>
+                console.error('Background profile creation failed:', err)
+              )
+            }, 0)
+
             return
           }
 
