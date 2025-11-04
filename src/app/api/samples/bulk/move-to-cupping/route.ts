@@ -79,19 +79,30 @@ export async function POST(request: NextRequest) {
 
           // For PSS/SS/Type samples, move directly to analysis
           if (currentStage === 'received') {
+            console.log(`📝 Attempting to update sample ${sampleData.tracking_number} to analysis stage...`)
+
             // Use admin client to bypass RLS policies that might cause array comparison errors
-            const { error: updateError } = await supabaseAdmin
+            const { data: updateData, error: updateError } = await supabaseAdmin
               .from('samples')
               .update({
                 workflow_stage: 'analysis',
                 status: 'in_progress'
               })
               .eq('id', id)
+              .select()
 
             if (updateError) {
-              console.error(`Failed to update to analysis:`, updateError)
+              console.error(`❌ Failed to update sample ${sampleData.tracking_number} to analysis:`, updateError)
+              console.error('Error details:', {
+                code: updateError.code,
+                message: updateError.message,
+                details: updateError.details,
+                hint: updateError.hint
+              })
               return { id, success: false, error: updateError.message }
             }
+
+            console.log(`✅ Sample ${sampleData.tracking_number} updated successfully:`, updateData)
 
             // Mark as ready for both green bean analysis and cupping
             const { error: assessmentError } = await supabaseAdmin

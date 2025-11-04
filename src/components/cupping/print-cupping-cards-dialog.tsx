@@ -142,7 +142,7 @@ export function PrintCuppingCardsDialog({
   // Move samples to cupping stage and mark as roasted (for PSS/SS/Type samples)
   const updateSampleStatuses = async (sampleIds: string[]) => {
     try {
-      console.log('Moving samples to cupping stage:', sampleIds)
+      console.log('🔄 Moving samples to cupping stage:', sampleIds)
 
       const response = await fetch('/api/samples/bulk/move-to-cupping', {
         method: 'POST',
@@ -150,25 +150,31 @@ export function PrintCuppingCardsDialog({
         body: JSON.stringify({ sample_ids: sampleIds }),
       })
 
+      console.log('📡 Response status:', response.status, response.statusText)
+
       if (!response.ok) {
         const errorData = await response.json()
-        console.error('Failed to move samples to cupping:', errorData)
+        console.error('❌ Failed to move samples to cupping:', errorData)
 
         // Handle partial success (207 status)
         if (response.status === 207) {
-          console.warn('Some samples failed to update:', errorData.failures)
+          console.warn('⚠️ Some samples failed to update:', errorData.failures)
+          alert(`Warning: ${errorData.failures?.length || 0} samples failed to update. Check console for details.`)
           return false
         }
 
+        alert(`Failed to update sample status: ${errorData.error || 'Unknown error'}`)
         return false
       }
 
       const data = await response.json()
-      console.log('✅ Successfully moved samples to cupping stage:', data)
+      console.log('✅ Successfully moved samples to analysis stage:', data)
+      console.log('📊 Results:', data.results)
 
       return true
     } catch (error) {
-      console.error('Error moving samples to cupping stage:', error)
+      console.error('❌ Error moving samples to cupping stage:', error)
+      alert(`Error updating sample status: ${error instanceof Error ? error.message : 'Unknown error'}`)
       return false
     }
   }
