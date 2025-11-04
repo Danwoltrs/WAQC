@@ -45,6 +45,40 @@ const PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours - profile changes rare
 const LAST_ACTIVITY_KEY = 'waqc_last_activity'
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart']
 
+// Global utility function for manual session cleanup (accessible from browser console)
+// Users can call: window.clearWAQCSession() if they encounter auth issues
+if (typeof window !== 'undefined') {
+  (window as any).clearWAQCSession = () => {
+    console.log('[WAQC] Manually clearing all session data...')
+
+    // Clear all Supabase auth keys
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('sb-')) {
+        keysToRemove.push(key)
+      }
+    }
+
+    keysToRemove.forEach(key => {
+      localStorage.removeItem(key)
+    })
+
+    // Clear WAQC cache
+    localStorage.removeItem(PROFILE_CACHE_KEY)
+    localStorage.removeItem(PROFILE_CACHE_TIMESTAMP_KEY)
+    localStorage.removeItem(LAST_ACTIVITY_KEY)
+
+    // Clear session storage
+    sessionStorage.clear()
+
+    console.log('[WAQC] ✓ Session cleared successfully. Please refresh the page and try logging in again.')
+    console.log('[WAQC] Removed keys:', keysToRemove)
+  }
+
+  console.log('[WAQC] Authentication utilities loaded. Type "window.clearWAQCSession()" in console to manually clear session data.')
+}
+
 // Helper to get cached profile from localStorage
 function getCachedProfile(): Profile | null {
   try {
@@ -174,7 +208,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }, 60 * 60 * 1000) // Every hour
     }
 
-    // Get initial session with retry logic
+    // Clear potentially corrupted session data
+    const clearCorruptedSession = () => {
+      console.log('[Auth] Clearing potentially corrupted session data')
+      try {
+        if (typeof window === 'undefined') return
+
+        // Get all Supabase-related keys from localStorage
+        const keysToRemove: string[] = []
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && key.startsWith('sb-')) {
+            keysToRemove.push(key)
+          }
+        }
+
+        // Remove all Supabase auth keys
+        keysToRemove.forEach(key => {
+          console.log('[Auth] Removing stale auth key:', key)
+          localStorage.removeItem(key)
+        })
+
+        // Also clear our own cache
+        localStorage.removeItem(PROFILE_CACHE_KEY)
+        localStorage.removeItem(PROFILE_CACHE_TIMESTAMP_KEY)
+        localStorage.removeItem(LAST_ACTIVITY_KEY)
+
+        // Clear session storage
+        sessionStorage.clear()
+
+        console.log('[Auth] Cleared all session data, ready for fresh login')
+      } catch (error) {
+        console.error('[Auth] Error clearing session data:', error)
+      }
+    }
+
+    // Get initial session with retry logic and recovery
     const getSession = async (retries = 3) => {
       for (let attempt = 0; attempt < retries; attempt++) {
         try {
@@ -184,15 +253,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)))
           }
 
-          // 15s timeout per attempt - longer for production environments with slower connections
+          // On the first attempt, try to get existing session
+          // On subsequent attempts, clear potentially corrupted data first
+          if (attempt > 0) {
+            console.log('[Auth] Clearing potentially corrupted session data before retry')
+            clearCorruptedSession()
+          }
+
+          console.log(`[Auth] Attempting to get session (attempt ${attempt + 1}/${retries})...`)
+
+          // 20s timeout per attempt - increased to handle very slow networks
           const result = await withTimeout(
             async () => await supabase.auth.getSession(),
-            15000,
+            20000,
             'Session fetch timeout'
           )
 
           if (result.error) {
-            console.error('Error getting session:', result.error)
+            console.error('[Auth] Error getting session:', result.error)
             // Don't retry on explicit errors, only on timeouts
             setLoading(false)
             return
@@ -201,29 +279,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const session = result.data.session
 
           if (session?.user) {
-            console.log('[Auth] Session retrieved successfully')
+            console.log('[Auth] ✓ Session retrieved successfully for user:', session.user.id)
             setUser(session.user)
             // Setup proactive token refresh
             setupTokenRefresh(session)
             try {
               await fetchProfile(session.user.id)
             } catch (error) {
-              console.error('Failed to fetch profile during session setup:', error)
+              console.error('[Auth] Failed to fetch profile during session setup:', error)
               setLoading(false)
             }
           } else {
-            console.log('[Auth] No active session found')
+            console.log('[Auth] No active session found (user needs to log in)')
             setLoading(false)
           }
 
           // Success - break out of retry loop
           break
         } catch (err: any) {
-          console.error(`[Auth] Error getting session (attempt ${attempt + 1}/${retries}):`, err)
+          console.error(`[Auth] ✗ Error getting session (attempt ${attempt + 1}/${retries}):`, err)
 
-          // If this was the last attempt, show login
+          // If this was the last attempt, force cleanup and show login
           if (attempt === retries - 1) {
-            console.error('[Auth] All retry attempts failed')
+            console.error('[Auth] All retry attempts failed - forcing clean state')
+            // Nuclear option: clear everything and force user to re-login
+            clearCorruptedSession()
             setLoading(false)
           }
           // Otherwise, loop continues to next retry
@@ -404,26 +484,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('[Auth] Fetching profile for user:', userId)
 
-        // Single attempt with 5s timeout - Supabase handles retries internally
+        // Single attempt with 20s timeout - increased for slow networks
         let profileData: Profile | null = null
         let error: any = null
 
         try {
+          console.log('[Auth] Fetching profile data...')
           const result = await withTimeout(
             async () => await supabase
               .from('profiles')
               .select('*')
               .eq('id', userId)
               .single(),
-            15000,
+            20000,
             'Profile fetch timeout'
           )
           profileData = result.data
           error = result.error
+
+          if (!error && profileData) {
+            console.log('[Auth] ✓ Profile data fetched successfully')
+          }
         } catch (err: any) {
           // If timeout, use fallback
           if (err.message === 'Profile fetch timeout' || err.message?.includes('timeout')) {
-            console.warn('Profile fetch timed out, will use fallback')
+            console.warn('[Auth] ⚠ Profile fetch timed out, will use fallback')
             error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
           } else {
             throw err
