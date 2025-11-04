@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Supabase Auth Diagnostic Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+  <h1>Supabase Auth Diagnostic Test</h1>
+  <div id="results"></div>
+
+  <script>
+    const results = document.getElementById('results');
+
+    function log(message, isError = false) {
+      const p = document.createElement('p');
+      p.textContent = `[${new Date().toISOString()}] ${message}`;
+      p.style.color = isError ? 'red' : 'green';
+      results.appendChild(p);
+      console.log(message);
+    }
+
+    async function testSupabaseAuth() {
+      log('Starting Supabase auth diagnostics...');
+
+      // Get env vars from your .env.local
+      const SUPABASE_URL = 'https://ojyonxplpmhvcgaycznc.supabase.co';
+      const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9qeW9ueHBscG1odmNnYXljem5jIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM2OTcwMjQsImV4cCI6MjA2OTI3MzAyNH0.yw_s7ydtABkUJiK_2HqDI2ewbC8tSIW5MJuD_Vwxpak';
+
+      if (!SUPABASE_URL || SUPABASE_URL === 'YOUR_SUPABASE_URL_HERE') {
+        log('ERROR: Please replace SUPABASE_URL and SUPABASE_ANON_KEY in this file', true);
+        return;
+      }
+
+      log(`Testing connection to: ${SUPABASE_URL}`);
+
+      // Test 1: Basic connectivity
+      log('Test 1: Testing basic fetch to Supabase...');
+      try {
+        const startTime = Date.now();
+        const response = await fetch(`${SUPABASE_URL}/rest/v1/`, {
+          headers: {
+            'apikey': SUPABASE_ANON_KEY,
+            'Authorization': `Bearer ${SUPABASE_ANON_KEY}`
+          }
+        });
+        const elapsed = Date.now() - startTime;
+        log(`✓ Basic fetch succeeded in ${elapsed}ms (Status: ${response.status})`);
+      } catch (error) {
+        log(`✗ Basic fetch failed: ${error.message}`, true);
+      }
+
+      // Test 2: Create Supabase client
+      log('Test 2: Creating Supabase client...');
+      try {
+        const { createClient } = window.supabase;
+        const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+          auth: {
+            storage: window.localStorage,
+            autoRefreshToken: true,
+            persistSession: true,
+            detectSessionInUrl: true,
+          }
+        });
+        log('✓ Supabase client created');
+
+        // Test 3: getSession() with timeout
+        log('Test 3: Calling getSession() (15s timeout)...');
+        const startTime = Date.now();
+
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('15s timeout')), 15000)
+        );
+
+        try {
+          const result = await Promise.race([
+            supabase.auth.getSession(),
+            timeoutPromise
+          ]);
+          const elapsed = Date.now() - startTime;
+
+          if (result.data?.session) {
+            log(`✓ getSession() succeeded in ${elapsed}ms - User logged in`);
+          } else {
+            log(`✓ getSession() succeeded in ${elapsed}ms - No active session`);
+          }
+        } catch (timeoutError) {
+          const elapsed = Date.now() - startTime;
+          log(`✗ getSession() timed out after ${elapsed}ms`, true);
+        }
+
+      } catch (error) {
+        log(`✗ Client creation failed: ${error.message}`, true);
+      }
+
+      // Test 4: Check localStorage
+      log('Test 4: Checking localStorage for Supabase data...');
+      let hasSupabaseData = false;
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key.includes('supabase')) {
+          hasSupabaseData = true;
+          log(`Found: ${key}`);
+        }
+      }
+      if (!hasSupabaseData) {
+        log('No Supabase data in localStorage');
+      }
+
+      log('Diagnostics complete!');
+    }
+
+    // Run test on page load
+    testSupabaseAuth();
+  </script>
+</body>
+</html>

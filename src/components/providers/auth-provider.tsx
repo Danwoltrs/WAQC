@@ -243,8 +243,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Safety timeout - if we're still loading after 90s total, force show login
+    const safetyTimeout = setTimeout(() => {
+      console.error('[Auth] ⚠️ SAFETY TIMEOUT: Auth initialization took too long, forcing login screen')
+      setLoading(false)
+    }, 90000) // 90 seconds total (3 attempts × 30s)
+
     // Get initial session with retry logic and recovery
     const getSession = async (retries = 3) => {
+      // Quick check: if there's NO Supabase auth data at all in localStorage, skip directly to login
+      if (typeof window !== 'undefined') {
+        let hasAnySupabaseAuth = false
+        for (let i = 0; i < localStorage.length; i++) {
+          const key = localStorage.key(i)
+          if (key && key.startsWith('sb-') && key.includes('auth-token')) {
+            hasAnySupabaseAuth = true
+            break
+          }
+        }
+
+        if (!hasAnySupabaseAuth) {
+          console.log('[Auth] No auth tokens found in localStorage, skipping to login screen')
+          setLoading(false)
+          clearTimeout(safetyTimeout)
+          isInitialLoad = false
+          return
+        }
+      }
+
       for (let attempt = 0; attempt < retries; attempt++) {
         try {
           if (attempt > 0) {
@@ -261,11 +287,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           }
 
           console.log(`[Auth] Attempting to get session (attempt ${attempt + 1}/${retries})...`)
+          console.log(`[Auth] Supabase URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL}`)
+          console.log(`[Auth] Timestamp: ${new Date().toISOString()}`)
 
-          // 20s timeout per attempt - increased to handle very slow networks
+          // 30s timeout per attempt - further increased for debugging
+          const startTime = Date.now()
           const result = await withTimeout(
-            async () => await supabase.auth.getSession(),
-            20000,
+            async () => {
+              console.log('[Auth] Calling supabase.auth.getSession()...')
+              const sessionResult = await supabase.auth.getSession()
+              console.log(`[Auth] getSession() returned after ${Date.now() - startTime}ms`)
+              return sessionResult
+            },
+            30000,
             'Session fetch timeout'
           )
 
@@ -305,12 +339,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Nuclear option: clear everything and force user to re-login
             clearCorruptedSession()
             setLoading(false)
+            clearTimeout(safetyTimeout) // Clear safety timeout
           }
           // Otherwise, loop continues to next retry
         }
       }
 
       isInitialLoad = false
+      clearTimeout(safetyTimeout) // Clear safety timeout on completion
     }
 
     // Call getSession only once on mount
