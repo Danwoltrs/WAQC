@@ -499,12 +499,12 @@ export default function GradingPage() {
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
         <div className="border-b bg-card sticky top-0 z-50">
           <div className="flex items-center justify-between">
-            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap pl-6">
+            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
               {samples.map((sample, index) => (
                 <div key={sample.id} className="flex items-center">
                   <TabsTrigger
                     value={sample.id}
-                    className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-green-500/10 hover:bg-accent/50 transition-colors px-4 py-3"
+                    className={`rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-green-500/10 hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
                   >
                     <div className="flex flex-col items-start gap-0.5">
                       <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
@@ -692,7 +692,7 @@ export default function GradingPage() {
 
                         {/* Pie Chart with Labels and Lines */}
                         {gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) && (
-                          <div className="flex items-center justify-center" style={{ width: '200px', height: '140px' }}>
+                          <div className="flex items-center justify-center" style={{ width: '240px', height: '160px' }}>
                             <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
                                 <Pie
@@ -738,8 +738,8 @@ export default function GradingPage() {
                             <div className="text-xs text-muted-foreground"></div>
                           </div>
                         )}
-                        <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
-                          <Label className="text-sm">Humidity <span className="text-xs">(%)</span></Label>
+                        <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
+                          <Label className="text-sm whitespace-nowrap">Humidity (%)</Label>
                           <Input
                             type="number"
                             min="0"
