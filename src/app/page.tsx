@@ -12,6 +12,7 @@ import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar, CheckCircle2, XCircle } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
+import { ActivityHeatmap } from '@/components/dashboard/activity-heatmap'
 
 interface Sample {
   id: string
@@ -254,10 +255,38 @@ function DashboardContent() {
 
   const userChange = lastMonthUsers > 0 ? `+${lastMonthUsers}` : '0'
 
+  // Calculate month-over-month changes for stats
+  const calculateMonthlyChange = (filterFn: (s: Sample) => boolean) => {
+    const now = new Date()
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+
+    const currentMonthCount = samples.filter(s => {
+      if (!s.created_at) return false
+      const date = new Date(s.created_at)
+      return date >= currentMonthStart && filterFn(s)
+    }).length
+
+    const lastMonthCount = samples.filter(s => {
+      if (!s.created_at) return false
+      const date = new Date(s.created_at)
+      return date >= lastMonthStart && date <= lastMonthEnd && filterFn(s)
+    }).length
+
+    if (lastMonthCount === 0) return currentMonthCount > 0 ? '+100%' : '0%'
+    const percentChange = Math.round(((currentMonthCount - lastMonthCount) / lastMonthCount) * 100)
+    return percentChange > 0 ? `+${percentChange}%` : `${percentChange}%`
+  }
+
+  const activeSamplesChange = calculateMonthlyChange(s => s.status === 'in_progress' || s.status === 'under_review')
+  const pendingAssessmentsChange = calculateMonthlyChange(s => s.status === 'under_review')
+  const certificatesChange = calculateMonthlyChange(s => s.status === 'approved')
+
   const stats = [
-    { title: 'Active Samples', value: samples.filter(s => s.status === 'in_progress' || s.status === 'under_review').length.toString(), change: '+12%', icon: SampleTin, color: 'lab-icon' },
-    { title: 'Pending Assessments', value: samples.filter(s => s.status === 'under_review').length.toString(), change: '-3%', icon: CuppingBowl, color: 'lab-icon' },
-    { title: 'Certificates Generated', value: approvedSamples.toString(), change: '+8%', icon: FileText, color: 'lab-icon' },
+    { title: 'Active Samples', value: samples.filter(s => s.status === 'in_progress' || s.status === 'under_review').length.toString(), change: activeSamplesChange, icon: SampleTin, color: 'lab-icon' },
+    { title: 'Pending Assessments', value: samples.filter(s => s.status === 'under_review').length.toString(), change: pendingAssessmentsChange, icon: CuppingBowl, color: 'lab-icon' },
+    { title: 'Certificates Generated', value: approvedSamples.toString(), change: certificatesChange, icon: FileText, color: 'lab-icon' },
     { title: 'Total Users', value: totalUsers.toString(), change: userChange, icon: Users, color: 'lab-icon' },
   ]
 
@@ -563,6 +592,9 @@ function DashboardContent() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Activity Heatmap */}
+      <ActivityHeatmap showLabFilter={profile?.is_global_admin || profile?.qc_role === 'global_admin'} />
 
     </div>
   )
