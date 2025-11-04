@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { ChevronLeft, Save, Eye, EyeOff } from 'lucide-react'
+import { Save, Eye, EyeOff } from 'lucide-react'
 import {
   DefectConfig,
   calculatePrimaryDefects,
@@ -21,6 +21,11 @@ import {
   ScreenSizeConstraint,
   getConstraintDisplayText
 } from '@/types/screen-size-constraints'
+import {
+  SampleVisibilitySettings,
+  getVisibilitySettings,
+  updateVisibilitySetting
+} from '@/lib/sample-visibility'
 
 interface Sample {
   id: string
@@ -30,6 +35,9 @@ interface Sample {
   container_nr?: string
   origin?: string
   exporter_legacy?: string
+  supplier?: {
+    company: string
+  }
   client_id?: string
   quality_spec_id?: string
   laboratory_id?: string
@@ -50,14 +58,22 @@ interface Sample {
     template?: {
       id: string
       name: string
+      name_en?: string
       parameters?: any
     }
   }
 }
 
+interface ClientQuality {
+  id: string
+  custom_name?: string
+  template_id: string
+}
+
 interface GradingData {
   sample_id: string
-  screen_sizes: { [key: string]: number }
+  screen_sizes: { [key: string]: number } // Stores grams
+  screen_sizes_percentages: { [key: string]: number } // Calculated percentages
   moisture_percentage: number
   quakers_count: number
   defect_counts: { [defectName: string]: number }
@@ -74,10 +90,8 @@ export default function GradingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
-  // UI toggles
-  const [showQuality, setShowQuality] = useState(true)
-  const [showShipper, setShowShipper] = useState(true)
-  const [showSpec, setShowSpec] = useState(true)
+  // Visibility settings using shared utility
+  const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
 
   // Grading data for all samples
   const [gradingDataMap, setGradingDataMap] = useState<Map<string, GradingData>>(new Map())
@@ -88,9 +102,30 @@ export default function GradingPage() {
   // Screen size constraints per sample
   const [screenConstraintsMap, setScreenConstraintsMap] = useState<Map<string, ScreenSizeConstraint[]>>(new Map())
 
+  // Client quality per sample (for custom quality names)
+  const [clientQualityMap, setClientQualityMap] = useState<Map<string, ClientQuality>>(new Map())
+
   useEffect(() => {
     loadSamples()
   }, [])
+
+  const toggleVisibility = (key: keyof SampleVisibilitySettings) => {
+    const newValue = !visibility[key]
+    const updated = updateVisibilitySetting(key, newValue)
+    setVisibility(updated)
+  }
+
+  // Calculate percentages from gram inputs
+  const calculatePercentages = (screenSizesGrams: { [key: string]: number }): { [key: string]: number } => {
+    const total = Object.values(screenSizesGrams).reduce((sum, val) => sum + val, 0)
+    if (total === 0) return {}
+
+    const percentages: { [key: string]: number } = {}
+    Object.entries(screenSizesGrams).forEach(([key, value]) => {
+      percentages[key] = Math.round((value / total) * 1000) / 10 // Round to 1 decimal
+    })
+    return percentages
+  }
 
   const loadSamples = async () => {
     try {
@@ -123,11 +158,14 @@ export default function GradingPage() {
             const newDefectConfigsMap = new Map<string, DefectConfig[]>()
             const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
 
+            const newClientQualityMap = new Map<string, ClientQuality>()
+
             for (const sample of detailsData.samples) {
               // Initialize grading data
               newGradingMap.set(sample.id, {
                 sample_id: sample.id,
-                screen_sizes: {},
+                screen_sizes: {}, // Grams
+                screen_sizes_percentages: {}, // Calculated percentages
                 moisture_percentage: 0,
                 quakers_count: 0,
                 defect_counts: {},
@@ -137,8 +175,10 @@ export default function GradingPage() {
               })
 
               // Load defect configuration and screen constraints for this sample
-              await loadSampleConfig(sample, newDefectConfigsMap, newScreenConstraintsMap, newGradingMap)
+              await loadSampleConfig(sample, newDefectConfigsMap, newScreenConstraintsMap, newGradingMap, newClientQualityMap)
             }
+
+            setClientQualityMap(newClientQualityMap)
 
             setGradingDataMap(newGradingMap)
             setDefectConfigsMap(newDefectConfigsMap)
@@ -157,9 +197,20 @@ export default function GradingPage() {
     sample: Sample,
     defectConfigsMap: Map<string, DefectConfig[]>,
     screenConstraintsMap: Map<string, ScreenSizeConstraint[]>,
-    gradingDataMap: Map<string, GradingData>
+    gradingDataMap: Map<string, GradingData>,
+    clientQualityMap: Map<string, ClientQuality>
   ) => {
     try {
+      // Load client quality for custom name
+      if (sample.quality_spec_id) {
+        const clientQualityResponse = await fetch(`/api/client-qualities/${sample.quality_spec_id}`)
+        const clientQualityData = await clientQualityResponse.json()
+
+        if (clientQualityResponse.ok && clientQualityData.client_quality) {
+          clientQualityMap.set(sample.id, clientQualityData.client_quality)
+        }
+      }
+
       // Load defect configuration for this client
       if (sample.client_id) {
         const defectsResponse = await fetch(
@@ -260,11 +311,12 @@ export default function GradingPage() {
     setGradingDataMap(new Map(gradingDataMap))
   }
 
-  const handleScreenSizeChange = (sampleId: string, screenSize: string, value: number) => {
+  const handleScreenSizeChange = (sampleId: string, screenSize: string, grams: number) => {
     const gradingData = gradingDataMap.get(sampleId)
     if (!gradingData) return
 
-    gradingData.screen_sizes[screenSize] = value
+    gradingData.screen_sizes[screenSize] = grams
+    gradingData.screen_sizes_percentages = calculatePercentages(gradingData.screen_sizes)
     setGradingDataMap(new Map(gradingDataMap))
   }
 
@@ -337,7 +389,6 @@ export default function GradingPage() {
               Samples must be in the analysis stage to appear here.
             </p>
             <Button onClick={() => router.push('/samples')}>
-              <ChevronLeft className="h-4 w-4 mr-1" />
               Back to Samples
             </Button>
           </div>
@@ -357,40 +408,16 @@ export default function GradingPage() {
   return (
     <MainLayout>
       <div className="h-full bg-background">
-        {/* Fixed Header */}
-        <div className="border-b bg-card sticky top-0 z-50">
-        <div className="px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push('/samples')}
-            >
-              <ChevronLeft className="h-4 w-4 mr-1" />
-              Back
-            </Button>
-            <div>
-              <h1 className="text-lg font-semibold">Green Bean Grading</h1>
-              <p className="text-sm text-muted-foreground">{samples.length} sample{samples.length !== 1 ? 's' : ''}</p>
-            </div>
-          </div>
-          <Button onClick={handleSaveCurrent} disabled={saving} size="lg">
-            <Save className="h-4 w-4 mr-2" />
-            {saving ? 'Saving...' : 'Save Current Sample'}
-          </Button>
-        </div>
-      </div>
-
-      {/* Tabs */}
+      {/* Tabs with Save Button */}
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
-        <div className="border-b bg-card sticky top-[73px] z-40">
-          <div className="px-6">
-            <TabsList className="w-full justify-start h-12 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
+        <div className="border-b bg-card sticky top-0 z-50">
+          <div className="px-6 flex items-center justify-between">
+            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
               {samples.map(sample => (
                 <TabsTrigger
                   key={sample.id}
                   value={sample.id}
-                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent whitespace-nowrap"
+                  className="rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors px-4 py-3"
                 >
                   <div className="flex flex-col items-start gap-0.5">
                     <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
@@ -399,6 +426,10 @@ export default function GradingPage() {
                 </TabsTrigger>
               ))}
             </TabsList>
+            <Button onClick={handleSaveCurrent} disabled={saving} size="default">
+              <Save className="h-4 w-4 mr-2" />
+              {saving ? 'Saving...' : 'Save Current Sample'}
+            </Button>
           </div>
         </div>
 
@@ -408,55 +439,115 @@ export default function GradingPage() {
           const screens = screenConstraintsMap.get(sample.id) || []
           const primaries = getDefectsByCategory(defects, 'primary')
           const secondaries = getDefectsByCategory(defects, 'secondary')
+          const clientQuality = clientQualityMap.get(sample.id)
 
           return (
             <TabsContent key={sample.id} value={sample.id} className="m-0">
-              {/* Sample Info Bar */}
+              {/* Sample Info Bar with Visibility Toggles */}
               <div className="border-b bg-card/50 px-6 py-3">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-6 text-sm">
-                    {showQuality && sample.quality_spec?.template && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Quality:</span>
-                        <Badge variant="outline">{sample.quality_spec.template.name}</Badge>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setShowQuality(false)}>
+                    {/* Quality */}
+                    {visibility.showQuality && (sample.quality_spec?.template || clientQuality) && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs uppercase text-muted-foreground/70">Quality:</span>
+                        <span>{clientQuality?.custom_name || sample.quality_spec?.template?.name_en || sample.quality_spec?.template?.name}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 p-0"
+                          onClick={() => toggleVisibility('showQuality')}
+                        >
                           <EyeOff className="h-3 w-3" />
                         </Button>
                       </div>
                     )}
-                    {showShipper && sample.exporter_legacy && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Shipper:</span>
-                        <span className="font-medium">{sample.exporter_legacy}</span>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setShowShipper(false)}>
-                          <EyeOff className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
-                    {showSpec && sample.client && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground">Client:</span>
-                        <span className="font-medium">{sample.client.company}</span>
-                        <Button variant="ghost" size="sm" className="h-6 w-6 p-0" onClick={() => setShowSpec(false)}>
-                          <EyeOff className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex gap-2">
-                    {!showQuality && (
-                      <Button variant="outline" size="sm" onClick={() => setShowQuality(true)}>
+                    {!visibility.showQuality && (sample.quality_spec?.template || clientQuality) && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6"
+                        onClick={() => toggleVisibility('showQuality')}
+                      >
                         <Eye className="h-3 w-3 mr-1" /> Quality
                       </Button>
                     )}
-                    {!showShipper && (
-                      <Button variant="outline" size="sm" onClick={() => setShowShipper(true)}>
-                        <Eye className="h-3 w-3 mr-1" /> Shipper
+
+                    {/* Client/Buyer */}
+                    {visibility.showBuyer && sample.client && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs uppercase text-muted-foreground/70">Client:</span>
+                        <span>{sample.client.company}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 p-0"
+                          onClick={() => toggleVisibility('showBuyer')}
+                        >
+                          <EyeOff className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                    {!visibility.showBuyer && sample.client && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6"
+                        onClick={() => toggleVisibility('showBuyer')}
+                      >
+                        <Eye className="h-3 w-3 mr-1" /> Client
                       </Button>
                     )}
-                    {!showSpec && (
-                      <Button variant="outline" size="sm" onClick={() => setShowSpec(true)}>
-                        <Eye className="h-3 w-3 mr-1" /> Client
+
+                    {/* Supplier */}
+                    {visibility.showSupplier && sample.supplier && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs uppercase text-muted-foreground/70">Supplier:</span>
+                        <span>{sample.supplier.company}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 p-0"
+                          onClick={() => toggleVisibility('showSupplier')}
+                        >
+                          <EyeOff className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                    {!visibility.showSupplier && sample.supplier && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6"
+                        onClick={() => toggleVisibility('showSupplier')}
+                      >
+                        <Eye className="h-3 w-3 mr-1" /> Supplier
+                      </Button>
+                    )}
+
+                    {/* Exporter */}
+                    {visibility.showExporter && sample.exporter_legacy && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-xs uppercase text-muted-foreground/70">Exporter:</span>
+                        <span>{sample.exporter_legacy}</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-5 w-5 p-0"
+                          onClick={() => toggleVisibility('showExporter')}
+                        >
+                          <EyeOff className="h-3 w-3" />
+                        </Button>
+                      </div>
+                    )}
+                    {!visibility.showExporter && sample.exporter_legacy && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-6"
+                        onClick={() => toggleVisibility('showExporter')}
+                      >
+                        <Eye className="h-3 w-3 mr-1" /> Exporter
                       </Button>
                     )}
                   </div>
@@ -469,25 +560,30 @@ export default function GradingPage() {
                   {/* Left Side: Screen Sizes */}
                   <Card>
                     <CardContent className="pt-6">
-                      <h3 className="text-sm font-semibold mb-4">Screen Size Distribution (%)</h3>
+                      <h3 className="text-sm font-semibold mb-4">Screen Size Distribution</h3>
                       <div className="space-y-3">
-                        {screens.map(screen => (
-                          <div key={screen.screen_size} className="grid grid-cols-[120px_1fr_80px] gap-3 items-center">
-                            <Label className="text-sm">{screen.screen_size}</Label>
-                            <Input
-                              type="number"
-                              min="0"
-                              max="100"
-                              step="0.1"
-                              value={gradingData?.screen_sizes[screen.screen_size] || 0}
-                              onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
-                              className="h-9"
-                            />
-                            <Badge variant="secondary" className="text-xs justify-center">
-                              {getConstraintDisplayText(screen)}
-                            </Badge>
-                          </div>
-                        ))}
+                        {screens.map(screen => {
+                          const gramsValue = gradingData?.screen_sizes[screen.screen_size] || 0
+                          const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
+
+                          return (
+                            <div key={screen.screen_size} className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
+                              <Label className="text-sm">Screen {screen.screen_size}</Label>
+                              <Input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={gramsValue}
+                                onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
+                                className="h-8 text-sm"
+                                placeholder="grams"
+                              />
+                              <div className="text-sm text-muted-foreground">
+                                {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
 
                       {/* Quakers and Humidity */}
