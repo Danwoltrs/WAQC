@@ -149,8 +149,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Try to load cached profile immediately for instant render
     return getCachedProfile()
   })
-  const [permissions, setPermissions] = useState<string[]>([])
-  const [loading, setLoading] = useState(true)
+  const [permissions, setPermissions] = useState<string[]>(() => {
+    // If we have a cached profile, load permissions too
+    const cached = getCachedProfile()
+    if (cached?.qc_role) {
+      return getUserPermissions(cached.qc_role as UserRole, undefined)
+    }
+    return []
+  })
+  const [loading, setLoading] = useState(() => {
+    // If we have a cached profile AND auth tokens, start with loading=false
+    // This prevents the loading screen flash on page refresh
+    const cachedProfile = getCachedProfile()
+    if (!cachedProfile) return true
+
+    // Check if auth tokens exist
+    if (typeof window !== 'undefined') {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (key && key.startsWith('sb-') && key.includes('auth-token')) {
+          console.log('[Auth] Found cached profile + auth tokens, skipping initial loading screen')
+          return false // Have both profile and tokens, skip loading
+        }
+      }
+    }
+    return true // No tokens, need to load
+  })
   const [networkError, setNetworkError] = useState(false)
 
   useEffect(() => {
@@ -243,12 +267,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // Safety timeout - if we're still loading after 15s total, force show login
-    // Reduced from 90s since we know auth works, just slow profile fetch
-    const safetyTimeout = setTimeout(() => {
-      console.error('[Auth] ⚠️ SAFETY TIMEOUT: Auth initialization took too long, forcing login screen')
+    // ABSOLUTE MAXIMUM TIMEOUT - if we're still loading after 10s total, force show login
+    // This is the last resort to prevent infinite loading screens
+    // Reduced from 15s since we have faster timeouts now (3s + 5s = 8s max)
+    const absoluteMaxTimeout = setTimeout(() => {
+      console.error('[Auth] ⚠️ ABSOLUTE MAX TIMEOUT: Auth initialization took too long, forcing login screen')
       setLoading(false)
-    }, 15000) // 15 seconds total - enough for quick auth + profile attempt
+      setNetworkError(false) // Clear any network error to show login
+    }, 10000) // 10 seconds absolute maximum - no exceptions
 
     // Get initial session with retry logic and recovery
     const getSession = async (retries = 3) => {
@@ -266,7 +292,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (!hasAnySupabaseAuth) {
           console.log('[Auth] No auth tokens found in localStorage, skipping to login screen')
           setLoading(false)
-          clearTimeout(safetyTimeout)
+          clearTimeout(absoluteMaxTimeout)
           isInitialLoad = false
           return
         }
@@ -340,14 +366,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Nuclear option: clear everything and force user to re-login
             clearCorruptedSession()
             setLoading(false)
-            clearTimeout(safetyTimeout) // Clear safety timeout
+            clearTimeout(absoluteMaxTimeout) // Clear timeout, we're done
           }
           // Otherwise, loop continues to next retry
         }
       }
 
       isInitialLoad = false
-      clearTimeout(safetyTimeout) // Clear safety timeout on completion
+      // Don't clear absoluteMaxTimeout here - fetchProfile might still be running
     }
 
     // Call getSession only once on mount
@@ -391,6 +417,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (hourlyRefreshInterval) {
         clearInterval(hourlyRefreshInterval)
       }
+      // Clean up absolute timeout
+      clearTimeout(absoluteMaxTimeout)
     }
   }, []) // Empty dependency array - runs once on mount
 
@@ -521,13 +549,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('[Auth] Fetching profile for user:', userId)
 
-        // Retry with increasing timeout - better for slow networks and flaky connections
+        // Retry with aggressive timeout - show UI fast, profile will load or use fallback
         let profileData: Profile | null = null
         let error: any = null
         const maxRetries = 2
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          const timeoutMs = 8000 * attempt // 8s, 16s
+          // Reduced timeouts: 3s, 5s instead of 8s, 16s
+          // This gets users into the UI much faster on production
+          const timeoutMs = attempt === 1 ? 3000 : 5000
 
           try {
             console.log(`[Auth] Fetching profile data (attempt ${attempt}/${maxRetries}, timeout: ${timeoutMs}ms)...`)
@@ -571,8 +601,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) {
           // Handle timeout with fallback for authenticated users
           if (error.code === 'TIMEOUT' || error.message === 'Profile fetch timeout') {
-            console.warn('Profile fetch timed out, creating temporary profile')
-            const { data: { user: authUser } } = await supabase.auth.getUser()
+            console.warn('[Auth] ⚠ Profile fetch timed out, using fallback (faster now!)')
+
+            // CRITICAL FIX: Wrap getUser in timeout to prevent infinite hang
+            let authUser: any = null
+            try {
+              const getUserResult = await withTimeout(
+                async () => await supabase.auth.getUser(),
+                2000, // 2 second timeout - must be fast or give up
+                'getUser timeout in fallback'
+              )
+              authUser = getUserResult.data?.user
+            } catch (getUserError) {
+              console.error('[Auth] ✗ getUser also timed out, using minimal profile')
+              // Even getUser failed - create absolute minimal profile
+              authUser = null
+            }
 
             // Check if user is a global admin
             const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(authUser?.email || '')

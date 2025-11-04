@@ -30,6 +30,7 @@ import {
 } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
+import { Grading } from '@/components/icons/grading'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -97,7 +98,7 @@ const getNavigation = (openIntakeDialog: () => void): NavItem[] => [
   {
     title: 'Grading',
     href: '/grading',
-    icon: FileText,
+    icon: Grading,
     permission: 'conduct_assessments',
   },
   {
