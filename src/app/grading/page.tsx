@@ -10,6 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Save, Eye, EyeOff } from 'lucide-react'
+import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 import {
   DefectConfig,
   calculatePrimaryDefects,
@@ -26,6 +27,9 @@ import {
   getVisibilitySettings,
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
+
+// Colors for pie chart
+const CHART_COLORS = ['#ADADFB', '#A0BCE8', '#6BE6D3', '#7DBBFF', '#B899EB', '#71DD8C', '#FF9B9B', '#FFD93D']
 
 interface Sample {
   id: string
@@ -211,33 +215,53 @@ export default function GradingPage() {
         }
       }
 
-      // Load defect configuration for this client
-      if (sample.client_id) {
+      // Load defect configuration from quality template first, fallback to client defects
+      let defectConfigs: DefectConfig[] = []
+
+      // Try to load from quality template parameters
+      if (sample.quality_spec?.template?.parameters?.defect_requirements) {
+        const defectRequirements = sample.quality_spec.template.parameters.defect_requirements
+        if (defectRequirements.defects && Array.isArray(defectRequirements.defects)) {
+          defectConfigs = defectRequirements.defects.map((defect: any, index: number) => ({
+            name: defect.name || defect.name_en,
+            weight: defect.weight || defect.point_value || 1,
+            category: (defect.category || 'primary') as 'primary' | 'secondary',
+            display_order: defect.display_order ?? index,
+            description: defect.description || defect.description_en || ''
+          }))
+        }
+      }
+
+      // Fallback to loading from defect definitions API if not in template
+      if (defectConfigs.length === 0 && sample.client_id) {
         const defectsResponse = await fetch(
           `/api/defect-definitions?client_id=${sample.client_id}&origin=${sample.origin || ''}&is_active=true`
         )
         if (defectsResponse.ok) {
           const defectsData = await defectsResponse.json()
           if (defectsData.definitions) {
-            const defectConfigs: DefectConfig[] = defectsData.definitions.map((def: any, index: number) => ({
+            defectConfigs = defectsData.definitions.map((def: any, index: number) => ({
               name: def.name_en,
               weight: def.point_value,
               category: def.category as 'primary' | 'secondary',
               display_order: index,
               description: def.description_en
             }))
-
-            defectConfigsMap.set(sample.id, defectConfigs)
-
-            const gradingData = gradingDataMap.get(sample.id)
-            if (gradingData) {
-              const defectCounts: { [key: string]: number } = {}
-              defectConfigs.forEach((defect: DefectConfig) => {
-                defectCounts[defect.name] = 0
-              })
-              gradingData.defect_counts = defectCounts
-            }
           }
+        }
+      }
+
+      // Set defect configs if we have any
+      if (defectConfigs.length > 0) {
+        defectConfigsMap.set(sample.id, defectConfigs)
+
+        const gradingData = gradingDataMap.get(sample.id)
+        if (gradingData) {
+          const defectCounts: { [key: string]: number } = {}
+          defectConfigs.forEach((defect: DefectConfig) => {
+            defectCounts[defect.name] = 0
+          })
+          gradingData.defect_counts = defectCounts
         }
       }
 
@@ -295,6 +319,17 @@ export default function GradingPage() {
       default:
         return sample.tracking_number
     }
+  }
+
+  // Format screen size label (e.g., "18" -> "Scr. 18", "Pan" -> "Pan")
+  const formatScreenLabel = (screenSize: string): string => {
+    const lowerScreen = screenSize.toLowerCase()
+    if (lowerScreen.includes('pan') || lowerScreen === 'pan') {
+      return 'Pan'
+    }
+    // Remove any existing "Screen" prefix and format as "Scr. X"
+    const cleanSize = screenSize.replace(/^screen\s*/i, '').trim()
+    return `Scr. ${cleanSize}`
   }
 
   const handleDefectCountChange = (sampleId: string, defectName: string, count: number) => {
@@ -412,7 +447,7 @@ export default function GradingPage() {
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
         <div className="border-b bg-card sticky top-0 z-50">
           <div className="px-6 flex items-center justify-between">
-            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
+            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap divide-x divide-border">
               {samples.map(sample => (
                 <TabsTrigger
                   key={sample.id}
@@ -568,14 +603,14 @@ export default function GradingPage() {
 
                           return (
                             <div key={screen.screen_size} className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
-                              <Label className="text-sm">Screen {screen.screen_size}</Label>
+                              <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
                               <Input
                                 type="number"
                                 min="0"
                                 step="1"
                                 value={gramsValue}
                                 onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
-                                className="h-8 text-sm"
+                                className="h-8 text-sm w-20"
                                 placeholder="grams"
                               />
                               <div className="text-sm text-muted-foreground">
@@ -586,19 +621,53 @@ export default function GradingPage() {
                         })}
                       </div>
 
+                      {/* Pie Chart */}
+                      {gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) && (
+                        <div className="mt-6 pt-6 border-t">
+                          <ResponsiveContainer width="100%" height={200}>
+                            <PieChart>
+                              <Pie
+                                data={screens
+                                  .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
+                                  .map((screen, index) => ({
+                                    name: formatScreenLabel(screen.screen_size),
+                                    value: gradingData.screen_sizes_percentages[screen.screen_size] || 0
+                                  }))}
+                                cx="50%"
+                                cy="50%"
+                                innerRadius={40}
+                                outerRadius={70}
+                                paddingAngle={2}
+                                dataKey="value"
+                              >
+                                {screens.map((_, index) => (
+                                  <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+                                ))}
+                              </Pie>
+                              <Tooltip formatter={(value: number) => `${value.toFixed(1)}%`} />
+                              <Legend />
+                            </PieChart>
+                          </ResponsiveContainer>
+                        </div>
+                      )}
+
                       {/* Quakers and Humidity */}
                       <div className="mt-6 pt-6 border-t space-y-3">
-                        <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
-                          <Label className="text-sm">Quakers</Label>
-                          <Input
-                            type="number"
-                            min="0"
-                            value={gradingData?.quakers_count || 0}
-                            onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                            className="h-9"
-                          />
-                        </div>
-                        <div className="grid grid-cols-[120px_1fr] gap-3 items-center">
+                        {/* Conditionally show Quakers based on template requirement */}
+                        {sample.quality_spec?.template?.parameters?.require_quaker_count !== false && (
+                          <div className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
+                            <Label className="text-sm">Quakers</Label>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={gradingData?.quakers_count || 0}
+                              onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
+                              className="h-8 text-sm w-20"
+                            />
+                            <div className="text-sm text-muted-foreground"></div>
+                          </div>
+                        )}
+                        <div className="grid grid-cols-[100px_80px_60px] gap-3 items-center">
                           <Label className="text-sm">Humidity (%)</Label>
                           <Input
                             type="number"
@@ -607,8 +676,9 @@ export default function GradingPage() {
                             step="0.1"
                             value={gradingData?.moisture_percentage || 0}
                             onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
-                            className="h-9"
+                            className="h-8 text-sm w-20"
                           />
+                          <div className="text-sm text-muted-foreground"></div>
                         </div>
                       </div>
                     </CardContent>
