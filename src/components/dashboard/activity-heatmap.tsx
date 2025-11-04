@@ -276,6 +276,13 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
   // Calculate max activity for tooltip context
   const maxActivity = Math.max(...activityData.map(a => a.samples + a.cups), 1)
 
+  // Get current week number for highlighting
+  const getCurrentWeekNumber = () => {
+    const now = new Date()
+    return getWeekNumber(now)
+  }
+  const currentWeekNumber = getCurrentWeekNumber()
+
   // Calculate totals for title
   const totalSamples = activityData.reduce((sum, a) => sum + a.samples, 0)
   const totalCups = activityData.reduce((sum, a) => sum + a.cups, 0)
@@ -314,17 +321,17 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
         ) : (
           <div className="space-y-4">
             {/* Heatmap */}
-            <div className="w-full">
+            <div className="w-full max-w-4xl">
               <div className="flex gap-2">
                 {/* Weekday labels column */}
                 <div className="flex flex-col flex-shrink-0">
                   {/* Empty space for month row */}
-                  <div className="h-4 mb-1" />
+                  <div className="h-3 mb-1" />
                   {/* Weekday labels */}
-                  <div className="flex flex-col gap-[2px]">
+                  <div className="flex flex-col gap-[1px]">
                     {weekdays.map(day => (
-                      <div key={day} className="h-3 flex items-center justify-end pr-2 min-w-[30px]">
-                        <span className="text-[10px] text-muted-foreground font-medium">{day}</span>
+                      <div key={day} className="h-[10px] flex items-center justify-end pr-2 min-w-[28px]">
+                        <span className="text-[9px] text-muted-foreground font-medium leading-none">{day}</span>
                       </div>
                     ))}
                   </div>
@@ -335,11 +342,11 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
                 {/* Grid with months and week numbers */}
                 <div className="flex flex-col overflow-x-auto flex-1">
                   {/* Month labels row */}
-                  <div className="flex gap-[2px] h-4 mb-1">
+                  <div className="flex gap-[1px] h-3 mb-1">
                     {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="w-3 flex-shrink-0 flex items-start">
+                      <div key={weekIndex} className="w-[10px] flex-shrink-0 flex items-start">
                         {week.monthLabel && (
-                          <span className="text-[11px] font-semibold text-foreground whitespace-nowrap">
+                          <span className="text-[10px] font-semibold text-foreground whitespace-nowrap">
                             {week.monthLabel}
                           </span>
                         )}
@@ -348,9 +355,9 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
                   </div>
 
                   {/* Grid */}
-                  <div className="flex gap-[2px]">
+                  <div className="flex gap-[1px]">
                     {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="flex flex-col gap-[2px] flex-shrink-0">
+                      <div key={weekIndex} className="flex flex-col gap-[1px] flex-shrink-0">
                         {week.days.map((day, dayIndex) => {
                           const dateStr = day.date.toLocaleDateString('en-US', {
                             month: 'short',
@@ -364,7 +371,7 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
                           return (
                             <div
                               key={dayIndex}
-                              className={`w-3 h-3 rounded-sm ${getActivityColor(day.activity)} transition-all hover:ring-2 hover:ring-primary cursor-pointer`}
+                              className={`w-[10px] h-[10px] rounded-[2px] ${getActivityColor(day.activity)} transition-all hover:ring-2 hover:ring-primary cursor-pointer`}
                               title={tooltip}
                             />
                           )
@@ -374,10 +381,10 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
                   </div>
 
                   {/* Week numbers row */}
-                  <div className="flex gap-[2px] h-3 mt-1">
+                  <div className="flex gap-[1px] h-3 mt-1">
                     {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="w-3 flex-shrink-0 flex items-center justify-center">
-                        <span className="text-[8px] text-muted-foreground/60">
+                      <div key={weekIndex} className="w-[10px] flex-shrink-0 flex items-center justify-center">
+                        <span className={`text-[7px] font-medium ${week.weekNumber === currentWeekNumber ? 'text-emerald-500' : 'text-muted-foreground/60'}`}>
                           {week.weekNumber}
                         </span>
                       </div>
@@ -392,11 +399,11 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">Less</span>
                 <div className="flex gap-1">
-                  <div className="w-3 h-3 rounded-sm bg-muted/20" />
-                  <div className="w-3 h-3 rounded-sm bg-emerald-300 dark:bg-emerald-200" />
-                  <div className="w-3 h-3 rounded-sm bg-emerald-400 dark:bg-emerald-300" />
-                  <div className="w-3 h-3 rounded-sm bg-emerald-500 dark:bg-emerald-400" />
-                  <div className="w-3 h-3 rounded-sm bg-emerald-600 dark:bg-emerald-500" />
+                  <div className="w-[10px] h-[10px] rounded-[2px] bg-muted/20" />
+                  <div className="w-[10px] h-[10px] rounded-[2px] bg-emerald-300 dark:bg-emerald-200" />
+                  <div className="w-[10px] h-[10px] rounded-[2px] bg-emerald-400 dark:bg-emerald-300" />
+                  <div className="w-[10px] h-[10px] rounded-[2px] bg-emerald-500 dark:bg-emerald-400" />
+                  <div className="w-[10px] h-[10px] rounded-[2px] bg-emerald-600 dark:bg-emerald-500" />
                 </div>
                 <span className="text-xs text-muted-foreground">More</span>
               </div>
