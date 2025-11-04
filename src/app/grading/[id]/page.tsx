@@ -58,6 +58,7 @@ interface ClientQuality {
   template_id: string
   client_id: string
   origin: string
+  custom_name?: string
 }
 
 interface QualityTemplate {
@@ -90,6 +91,7 @@ export default function GradingDetailPage() {
   const sampleId = params?.id as string
 
   const [sample, setSample] = useState<Sample | null>(null)
+  const [clientQuality, setClientQuality] = useState<ClientQuality | null>(null)
   const [qualityTemplate, setQualityTemplate] = useState<QualityTemplate | null>(null)
   const [screenSizeConstraints, setScreenSizeConstraints] = useState<ScreenSizeConstraint[]>([])
   const [defectConfigs, setDefectConfigs] = useState<DefectConfig[]>([])
@@ -195,6 +197,9 @@ export default function GradingDetailPage() {
       const clientQualityData = await clientQualityResponse.json()
 
       if (clientQualityResponse.ok && clientQualityData.client_quality?.template_id) {
+        // Save client quality (which has custom_name)
+        setClientQuality(clientQualityData.client_quality)
+
         // Load quality template
         const templateResponse = await fetch(`/api/quality-templates/${clientQualityData.client_quality.template_id}`)
         const templateData = await templateResponse.json()
@@ -483,10 +488,10 @@ export default function GradingDetailPage() {
                   )}
 
                   {/* Quality Template */}
-                  {visibility.showQuality && qualityTemplate && (
+                  {visibility.showQuality && (qualityTemplate || clientQuality) && (
                     <div className="flex items-center gap-1">
                       <span className="text-xs uppercase text-muted-foreground/70">Quality:</span>
-                      <span>{qualityTemplate.name_en || qualityTemplate.name}</span>
+                      <span>{clientQuality?.custom_name || qualityTemplate?.name_en || qualityTemplate?.name}</span>
                       <Button
                         variant="ghost"
                         size="sm"
@@ -497,7 +502,7 @@ export default function GradingDetailPage() {
                       </Button>
                     </div>
                   )}
-                  {!visibility.showQuality && qualityTemplate && (
+                  {!visibility.showQuality && (qualityTemplate || clientQuality) && (
                     <Button
                       variant="outline"
                       size="sm"
