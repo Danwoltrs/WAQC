@@ -739,7 +739,7 @@ export default function GradingPage() {
 
                       {primaries.length === 0 && secondaries.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground text-sm">
-                          No defects configured for this sample's quality template.
+                          No defects configured for this sample&apos;s quality template.
                         </div>
                       ) : (
                         <div className="space-y-4 max-h-[600px] overflow-y-auto">
