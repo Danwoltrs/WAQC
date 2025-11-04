@@ -722,9 +722,9 @@ export default function GradingPage() {
 
               {/* Grading Content */}
               <div className="p-6">
-                <div className="flex gap-6">
+                <div className={`flex gap-6 ${gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) ? 'flex-row' : 'flex-col'}`}>
                   {/* Screen Size Distribution - Compact Card */}
-                  <Card className="w-fit">
+                  <Card className="w-fit h-fit">
                     <CardContent className="pt-4 pb-4 px-4">
                       <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
                       <div className="flex gap-2">
@@ -835,9 +835,9 @@ export default function GradingPage() {
                   </Card>
 
                   {/* Humidity | Green Aspect | Roast Aspect */}
-                  <Card>
+                  <Card className="h-fit">
                     <CardContent className="pt-4 pb-4 px-4">
-                      <div className="flex gap-6 items-end">
+                      <div className={`flex gap-6 ${gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) ? 'flex-row items-end' : 'flex-col items-start'}`}>
                         {/* Humidity */}
                         <div className="flex flex-col gap-2">
                           <Label className="text-sm font-semibold">Humidity (%)</Label>
@@ -910,7 +910,7 @@ export default function GradingPage() {
                   </Card>
 
                   {/* Defects */}
-                  <Card>
+                  <Card className="h-fit">
                     <CardContent className="pt-4">
                       {primaries.length === 0 && secondaries.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground text-sm">
