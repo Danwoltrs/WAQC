@@ -528,42 +528,57 @@
           36
         ],
         "priority": "high",
-        "details": "Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). CRITICAL WORKFLOW FIXES COMPLETED (2025-11-04): Resolved all blocking issues preventing cupping workflow operation. Fixed sample status update bug in move-to-cupping API by implementing Supabase admin client to bypass RLS policies, enabling proper received→analysis transitions. Restructured navigation from /assessment/cupping to top-level /cupping route with MainLayout integration for consistent header/sidebar. Enhanced authentication resilience with progressive timeout retry mechanism (8s→16s). Implemented Supabase-style auto-expanding sidebar behavior. System now fully operational with complete cupping workflow from sample assignment through status tracking.",
-        "testStrategy": "Test OCR accuracy and score extraction from handwritten cards, test real-time collaboration and score synchronization in digital interface, test calibration session patterns (Square, Pyramid, Custom), test quality template validation for PSS/SS samples, test simultaneous cupping and grading workflows with analysis stage integration, verify certificate generation triggers, test workflow transitions and sample loading via workflow_stage parameter, test new navigation structure and MainLayout integration, verify authentication stability during long cupping sessions",
+        "details": "Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). CRITICAL WORKFLOW FIXES COMPLETED (2025-11-04): Resolved all blocking issues preventing cupping workflow operation. Fixed sample status update bug in move-to-cupping API by implementing Supabase admin client to bypass RLS policies, enabling proper received→analysis transitions. Restructured navigation from /assessment/cupping to top-level /cupping route with MainLayout integration for consistent header/sidebar. Enhanced authentication resilience with progressive timeout retry mechanism (8s→16s). Implemented Supabase-style auto-expanding sidebar behavior. System now fully operational with complete cupping workflow from sample assignment through status tracking. GRADING INTEGRATION IMPROVEMENTS (2025-11-04): Fixed grading page data persistence bug where screen sizes and defects now save/load correctly from quality_assessments table. Layout improvements completed with adaptive card sizing and independent card heights. Enhanced screen size distribution with proper percentage calculations and real-time chart updates. Ready for next phase: real-time warnings and notifications system for cupping sessions to alert cuppers of scoring discrepancies, session time limits, and validation issues.",
+        "testStrategy": "Test OCR accuracy and score extraction from handwritten cards, test real-time collaboration and score synchronization in digital interface, test calibration session patterns (Square, Pyramid, Custom), test quality template validation for PSS/SS samples, test simultaneous cupping and grading workflows with analysis stage integration, verify certificate generation triggers, test workflow transitions and sample loading via workflow_stage parameter, test new navigation structure and MainLayout integration, verify authentication stability during long cupping sessions, test grading data persistence and real-time chart updates, test real-time warning system for discrepancies and session management",
         "subtasks": [
           {
             "id": 3,
-            "title": "Build OCR integration for handwritten cupping cards",
-            "description": "Implement OCR processing system for extracting scores from scanned handwritten cupping cards",
-            "dependencies": [
-              1
-            ],
-            "details": "Create src/lib/ocr/cupping-card-processor.ts to process scanned cupping cards, extract handwritten scores with 95%+ accuracy requirement, validate extracted data against session parameters, and integrate with existing QR code system. Include error handling for illegible handwriting and manual correction interface.",
-            "status": "pending",
-            "testStrategy": "Test OCR accuracy with various handwriting styles, test QR code integration, test manual correction workflow"
-          },
-          {
-            "id": 4,
-            "title": "Create cupping session validation and quality control",
-            "description": "Implement comprehensive validation system for cupping sessions with quality template compliance and certificate generation triggers",
-            "dependencies": [
-              2,
-              3
-            ],
-            "details": "Create src/lib/cupping/session-validator.ts with validation logic for different session types, quality template compliance checking for PSS/SS sessions, automatic certificate generation triggers, and session completion workflows. Include validation for minimum cupper requirements, score consistency checks, and mandatory field validation based on session type.",
-            "status": "pending",
-            "testStrategy": "Test validation logic for each session type, test quality template compliance, test certificate generation triggers"
-          },
-          {
-            "id": 5,
             "title": "Implement cupping session reporting and analytics",
             "description": "Build comprehensive reporting system for cupping sessions with analytics, performance metrics, and export capabilities",
-            "dependencies": [
-              4
-            ],
+            "dependencies": [],
             "details": "Create src/components/cupping/session-reports.tsx with detailed session analytics, cupper performance metrics, score distribution analysis, and export functionality to PDF/Excel. Include comparative analysis between cuppers, historical performance tracking, and calibration session effectiveness metrics. Support filtering by date range, cupper, session type, and sample origin.",
             "status": "pending",
             "testStrategy": "Test report generation accuracy, test export functionality, test analytics calculations, verify performance metrics"
+          },
+          {
+            "id": 4,
+            "title": "Update cupping page integration with analysis workflow",
+            "description": "Ensure cupping page properly integrates with new analysis workflow stage for parallel grading and cupping processes",
+            "dependencies": [
+              2
+            ],
+            "details": "Verify and optimize cupping page (src/app/assessment/cupping/page.tsx) integration with analysis workflow stage. Ensure proper sample loading via workflow_stage='analysis' parameter, validate simultaneous grading and cupping capability, test manual navigation flow from samples page to cupping interface, and confirm ready_for_cupping flag functionality from move-to-cupping API. Update any remaining workflow references and ensure compatibility with all three input methods (printed cards, digital interface, future iOS app).",
+            "status": "done",
+            "testStrategy": "Test sample loading with workflow_stage parameter, verify parallel workflow functionality, test navigation between grading and cupping interfaces"
+          },
+          {
+            "id": 5,
+            "title": "Validate and test complete cupping workflow after critical fixes",
+            "description": "Comprehensive testing and validation of the entire cupping workflow after navigation restructuring and critical bug fixes",
+            "dependencies": [],
+            "details": "Perform end-to-end testing of the complete cupping workflow with recent critical fixes: 1) Verify samples properly transition from received→analysis status using fixed move-to-cupping API with admin client, 2) Test new top-level /cupping navigation structure with MainLayout integration, 3) Validate authentication stability during long cupping sessions with progressive timeout mechanism, 4) Test auto-expanding sidebar behavior and navigation flow, 5) Verify digital cupping interface properly nested with h-full instead of h-screen, 6) Test complete workflow from sample assignment through cupping card printing to digital interface access. Include testing of all three input methods compatibility with the restructured navigation.",
+            "status": "pending",
+            "testStrategy": "Test complete workflow from sample receipt to cupping completion, verify navigation structure functionality, test authentication resilience during long sessions, validate MainLayout integration across cupping pages"
+          },
+          {
+            "id": 7,
+            "title": "Create cupping session management components",
+            "description": "Build the core components for managing cupping sessions including session creation, participant management, and session configuration",
+            "dependencies": [],
+            "details": "Create src/components/cupping/cupping-session-manager.tsx with session state management, participant assignment interface, and session configuration options. Include components for session type selection (Calibration, Type Sample, PSS/SS), sample assignment validation, and cupper role management with minimum 2 cuppers requirement for collaborative sessions.\n<info added on 2025-10-30T17:02:48.759Z>\nI'll analyze the current codebase to understand the existing infrastructure and provide an informed update for this subtask.Based on the comprehensive codebase analysis and the task context, here's the update that should be appended to the subtask details:\n\nProgress Update (2025-01-30): Successfully completed Phase 1 foundational analysis and type definition creation. Analyzed existing cupping infrastructure including print-cupping-cards-dialog.tsx cupper assignment system, QR generation patterns, and cupping_sessions table schema in database.types.ts. Created comprehensive type definitions in src/types/cupping-session.ts covering all four sample types (TYPE, PSS, SS, CALIBRATION), input methods (digital, OCR, iOS, mixed), session statuses, and complete data structures for sessions, scores, and validation.\n\nKey architectural decisions established: Four distinct sample types with calibration requiring special UX flow, mixed input method support for simultaneous OCR and digital entry, privacy toggles for individual cupper scores, and integrated quality validation workflow for PSS/SS samples. Confirmed existing cupping infrastructure in src/components/cupping/ directory includes OCR validation dialog, scan cupping cards dialog, and print dialog with cupper assignment capabilities.\n\nReady to proceed with implementation of cupping-session-manager.tsx component leveraging existing cupper assignment patterns from print-cupping-cards-dialog.tsx and integrating with confirmed cupping_sessions database table structure.\n</info added on 2025-10-30T17:02:48.759Z>\n<info added on 2025-10-30T18:56:54.969Z>\nCOMPLETED (2025-10-30): Full Digital Cupping Interface implementation delivered with comprehensive workflow integration. Successfully built desktop/mobile responsive interface (src/components/cupping/digital-cupping-interface.tsx, 1000+ lines) featuring slider controls, tap-to-edit number inputs, defect management system with intensity classification, and real-time score calculation. Implemented critical workflow connection where print dialog automatically updates sample status to 'cupping' enabling seamless transition to cupping workflow independent of grading status. Created comprehensive documentation (.docs/CUPPING_WORKFLOW_IMPLEMENTATION.md, 1,072 lines) covering complete implementation details, design patterns, and next phase requirements. Ready for API endpoint implementation phase.\n</info added on 2025-10-30T18:56:54.969Z>\n<info added on 2025-10-31T12:18:54.539Z>\nI'll analyze the codebase to understand the current implementation and provide a comprehensive update for this subtask.Workflow Transition Bug Fix Complete (2025-10-31): Resolved critical issue where printing cupping cards attempted to set invalid workflow_stage='cupping' causing database constraint violations. Implemented comprehensive solution involving new API endpoint /api/samples/bulk/move-to-cupping that properly handles sequential workflow transitions (received → roasting → cupping) while respecting database validation constraints. Key architectural changes: 1) Separated green bean analysis from main workflow as independent parallel process tracked in quality_assessments.green_bean_data, 2) Created migration 088_fix_workflow_stages.sql updating workflow validation function to remove green_analysis stage, 3) Added auto-roasting capability for PSS/SS/Type samples when transitioning to cupping, 4) Implemented onSuccess callback in print dialog to refresh samples list ensuring UI consistency. This enables parallel workflows where green bean analysis and cupping can proceed independently without blocking each other, fixing the core workflow bottleneck that prevented cupping session initialization.\n</info added on 2025-10-31T12:18:54.539Z>",
+            "status": "done",
+            "testStrategy": "Test session creation with different types, test participant assignment validation, test minimum cupper requirements"
+          },
+          {
+            "id": 8,
+            "title": "Implement real-time digital cupping interface",
+            "description": "Build the collaborative digital cupping interface with live score synchronization and discrepancy detection",
+            "dependencies": [
+              1
+            ],
+            "details": "Create src/components/cupping/digital-cupping-interface.tsx with real-time scoring UI, live sync capabilities using Supabase Realtime, discrepancy detection algorithms, and rich note-taking functionality. Include cup-by-cup scoring grid, attribute scoring (fragrance, flavor, aftertaste, etc.), and automatic score validation with conflict highlighting.\n<info added on 2025-10-30T19:42:18.262Z>\nLet me first explore the codebase to understand the current implementation and structure.COMPLETED: Initial deployment of digital cupping interface to production with real-time collaboration features. Fixed supabase client import path issue during deployment. Successfully implemented configurable discrepancy threshold feature per user request - added cupping_discrepancy_threshold column to quality_templates table (DECIMAL(3,2) DEFAULT 1.0), updated TypeScript types, modified API endpoints to return threshold value with 1.0 fallback, and updated digital cupping interface to use template.discrepancy_threshold instead of hardcoded value. Fixed Next.js 15 async params pattern in 3 route files. Corrected cupping session status enum from invalid 'in_progress' to valid 'active'. All changes deployed to production across 5 commits. System now fully operational with configurable discrepancy detection thresholds.\n</info added on 2025-10-30T19:42:18.262Z>\n<info added on 2025-10-30T19:43:50.038Z>\nFINAL PRODUCTION DEPLOYMENT STATUS:\n\nTypeScript interface synchronization completed in commit 678bfee. Fixed CuppingTemplate interface in src/app/assessment/cupping/[id]/page.tsx by adding missing discrepancy_threshold field at line 24, ensuring full type compatibility with DigitalCuppingInterface component expectations.\n\nComplete deployment sequence (6 commits total):\n1. Core real-time collaboration features\n2. Supabase client import path resolution  \n3. Database migration for configurable discrepancy thresholds\n4. Next.js 15 async params compliance in route handlers\n5. Cupping session status enum correction (in_progress → active)\n6. CuppingTemplate interface type synchronization\n\nProduction verification complete: All TypeScript build errors resolved, configurable discrepancy detection operational, real-time cupping collaboration fully functional. System ready for user acceptance testing.\n</info added on 2025-10-30T19:43:50.038Z>",
+            "status": "done",
+            "testStrategy": "Test real-time sync between multiple cuppers, test discrepancy detection accuracy, test note synchronization"
           },
           {
             "id": 6,
@@ -575,17 +590,6 @@
             "details": "Verify and optimize cupping page (src/app/assessment/cupping/page.tsx) integration with analysis workflow stage. Ensure proper sample loading via workflow_stage='analysis' parameter, validate simultaneous grading and cupping capability, test manual navigation flow from samples page to cupping interface, and confirm ready_for_cupping flag functionality from move-to-cupping API. Update any remaining workflow references and ensure compatibility with all three input methods (printed cards, digital interface, future iOS app).",
             "status": "done",
             "testStrategy": "Test sample loading with workflow_stage parameter, verify parallel workflow functionality, test navigation between grading and cupping interfaces"
-          },
-          {
-            "id": 7,
-            "title": "Validate and test complete cupping workflow after critical fixes",
-            "description": "Comprehensive testing and validation of the entire cupping workflow after navigation restructuring and critical bug fixes",
-            "dependencies": [
-              6
-            ],
-            "details": "Perform end-to-end testing of the complete cupping workflow with recent critical fixes: 1) Verify samples properly transition from received→analysis status using fixed move-to-cupping API with admin client, 2) Test new top-level /cupping navigation structure with MainLayout integration, 3) Validate authentication stability during long cupping sessions with progressive timeout mechanism, 4) Test auto-expanding sidebar behavior and navigation flow, 5) Verify digital cupping interface properly nested with h-full instead of h-screen, 6) Test complete workflow from sample assignment through cupping card printing to digital interface access. Include testing of all three input methods compatibility with the restructured navigation.",
-            "status": "pending",
-            "testStrategy": "Test complete workflow from sample receipt to cupping completion, verify navigation structure functionality, test authentication resilience during long sessions, validate MainLayout integration across cupping pages"
           },
           {
             "id": 1,

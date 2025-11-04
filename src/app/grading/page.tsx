@@ -183,8 +183,10 @@ export default function GradingPage() {
             const newRoastAspectOptionsMap = new Map<string, string[]>()
 
             for (const sample of detailsData.samples) {
-              // Initialize grading data
-              newGradingMap.set(sample.id, {
+              console.log(`[LOAD] Processing sample: ${sample.tracking_number} (ID: ${sample.id})`)
+
+              // Initialize grading data with defaults
+              const defaultGradingData: GradingData = {
                 sample_id: sample.id,
                 screen_sizes: {}, // Grams
                 screen_sizes_percentages: {}, // Calculated percentages
@@ -194,7 +196,65 @@ export default function GradingPage() {
                 defects_primary: 0,
                 defects_secondary: 0,
                 defects_total: 0
-              })
+              }
+
+              // Try to load existing quality assessment data
+              try {
+                console.log(`[QA LOAD] Fetching quality assessment for sample ${sample.id}`)
+                const qaResponse = await fetch(`/api/samples/${sample.id}/quality-assessment`)
+                console.log(`[QA LOAD] Response status: ${qaResponse.status}`)
+                if (qaResponse.ok) {
+                  const qaData = await qaResponse.json()
+                  console.log(`[QA LOAD] Loaded assessment:`, qaData)
+
+                  if (qaData.assessment) {
+                    const greenBeanData = qaData.assessment.green_bean_data as any
+                    const roastData = qaData.assessment.roast_data as any
+
+                    // Populate with existing green bean data
+                    if (greenBeanData) {
+                      if (greenBeanData.screen_sizes) {
+                        defaultGradingData.screen_sizes = greenBeanData.screen_sizes
+                        defaultGradingData.screen_sizes_percentages = calculatePercentages(greenBeanData.screen_sizes)
+                      }
+                      if (greenBeanData.moisture_percentage != null) {
+                        defaultGradingData.moisture_percentage = greenBeanData.moisture_percentage
+                      }
+                      if (greenBeanData.quakers != null) {
+                        defaultGradingData.quakers_count = greenBeanData.quakers
+                      }
+                      if (greenBeanData.green_aspect) {
+                        defaultGradingData.green_aspect = greenBeanData.green_aspect
+                      }
+                      if (greenBeanData.defects) {
+                        if (greenBeanData.defects.counts) {
+                          defaultGradingData.defect_counts = greenBeanData.defects.counts
+                        }
+                        if (greenBeanData.defects.primary != null) {
+                          defaultGradingData.defects_primary = greenBeanData.defects.primary
+                        }
+                        if (greenBeanData.defects.secondary != null) {
+                          defaultGradingData.defects_secondary = greenBeanData.defects.secondary
+                        }
+                        if (greenBeanData.defects.total != null) {
+                          defaultGradingData.defects_total = greenBeanData.defects.total
+                        }
+                      }
+                    }
+
+                    // Populate with existing roast data
+                    if (roastData) {
+                      if (roastData.roast_aspect) {
+                        defaultGradingData.roast_aspect = roastData.roast_aspect
+                      }
+                    }
+                  }
+                }
+              } catch (error) {
+                console.error(`Error loading quality assessment for sample ${sample.id}:`, error)
+              }
+
+              newGradingMap.set(sample.id, defaultGradingData)
 
               // Load defect configuration and screen constraints for this sample
               await loadSampleConfig(sample, newDefectConfigsMap, newScreenConstraintsMap, newGradingMap, newClientQualityMap, newGreenAspectOptionsMap, newRoastAspectOptionsMap)
@@ -226,30 +286,45 @@ export default function GradingPage() {
     roastAspectOptionsMap: Map<string, string[]>
   ) => {
     try {
-      // Load client quality for custom name
+      // Load client quality for custom name and extract template parameters
+      let templateParams: any = null
       if (sample.quality_spec_id) {
         const clientQualityResponse = await fetch(`/api/client-qualities/${sample.quality_spec_id}`)
         const clientQualityData = await clientQualityResponse.json()
 
         if (clientQualityResponse.ok && clientQualityData.client_quality) {
           clientQualityMap.set(sample.id, clientQualityData.client_quality)
+
+          // Extract template parameters from the API response
+          templateParams = clientQualityData.client_quality?.template?.parameters
+
+          // Extract and populate green aspect options (using "wordings" array)
+          if (templateParams?.green_aspect_configuration?.wordings && Array.isArray(templateParams.green_aspect_configuration.wordings)) {
+            const greenOptions = templateParams.green_aspect_configuration.wordings.map((opt: any) => opt.label || opt.name || opt)
+            greenAspectOptionsMap.set(sample.id, greenOptions)
+          }
+
+          // Extract and populate roast aspect options (using "wordings" array)
+          if (templateParams?.roast_aspect_configuration?.wordings && Array.isArray(templateParams.roast_aspect_configuration.wordings)) {
+            const roastOptions = templateParams.roast_aspect_configuration.wordings.map((opt: any) => opt.label || opt.name || opt)
+            roastAspectOptionsMap.set(sample.id, roastOptions)
+          }
         }
+      }
+
+      // Fallback: try to get templateParams from sample object if not found in API response
+      if (!templateParams) {
+        templateParams = sample.quality_spec?.template?.parameters
       }
 
       // Load defect configuration from quality template first, fallback to client defects
       let defectConfigs: DefectConfig[] = []
 
-      // AGGRESSIVE DEBUGGING - Log entire template structure
-      console.log(`[Defects Debug] Sample ${sample.id} - FULL TEMPLATE:`, JSON.stringify(sample.quality_spec?.template, null, 2))
-      console.log(`[Defects Debug] Sample ${sample.id} - CUSTOM PARAMS:`, JSON.stringify(sample.quality_spec?.custom_parameters, null, 2))
-
       // Try multiple possible locations for defect data
-      const templateParams = sample.quality_spec?.template?.parameters
       const customParams = sample.quality_spec?.custom_parameters
 
       // Path 1: template.parameters.defect_configuration (GRADING DEFECTS)
       if (templateParams?.defect_configuration?.defects && Array.isArray(templateParams.defect_configuration.defects)) {
-        console.log('[Defects Debug] Found defects in template.parameters.defect_configuration.defects')
         defectConfigs = templateParams.defect_configuration.defects.map((defect: any, index: number) => ({
           name: defect.name || defect.name_en,
           weight: defect.weight || defect.point_value || 1,
@@ -260,7 +335,6 @@ export default function GradingPage() {
       }
       // Path 2: template.parameters.defect_requirements.defects
       else if (templateParams?.defect_requirements?.defects && Array.isArray(templateParams.defect_requirements.defects)) {
-        console.log('[Defects Debug] Found defects in template.parameters.defect_requirements.defects')
         defectConfigs = templateParams.defect_requirements.defects.map((defect: any, index: number) => ({
           name: defect.name || defect.name_en,
           weight: defect.weight || defect.point_value || 1,
@@ -271,7 +345,6 @@ export default function GradingPage() {
       }
       // Path 3: template.parameters.defects (direct array)
       else if (templateParams?.defects && Array.isArray(templateParams.defects)) {
-        console.log('[Defects Debug] Found defects in template.parameters.defects')
         defectConfigs = templateParams.defects.map((defect: any, index: number) => ({
           name: defect.name || defect.name_en,
           weight: defect.weight || defect.point_value || 1,
@@ -282,7 +355,6 @@ export default function GradingPage() {
       }
       // Path 4: custom_parameters.defect_requirements.defects
       else if (customParams?.defect_requirements?.defects && Array.isArray(customParams.defect_requirements.defects)) {
-        console.log('[Defects Debug] Found defects in custom_parameters.defect_requirements.defects')
         defectConfigs = customParams.defect_requirements.defects.map((defect: any, index: number) => ({
           name: defect.name || defect.name_en,
           weight: defect.weight || defect.point_value || 1,
@@ -293,7 +365,6 @@ export default function GradingPage() {
       }
       // Path 5: custom_parameters.defects (direct array)
       else if (customParams?.defects && Array.isArray(customParams.defects)) {
-        console.log('[Defects Debug] Found defects in custom_parameters.defects')
         defectConfigs = customParams.defects.map((defect: any, index: number) => ({
           name: defect.name || defect.name_en,
           weight: defect.weight || defect.point_value || 1,
@@ -305,13 +376,11 @@ export default function GradingPage() {
 
       // Fallback to loading from defect definitions API if not in template
       if (defectConfigs.length === 0 && sample.client_id) {
-        console.log('[Defects Debug] No template defects found, fetching from API for client:', sample.client_id)
         const defectsResponse = await fetch(
           `/api/defect-definitions?client_id=${sample.client_id}&origin=${sample.origin || ''}&is_active=true`
         )
         if (defectsResponse.ok) {
           const defectsData = await defectsResponse.json()
-          console.log('[Defects Debug] API response:', defectsData)
           if (defectsData.definitions) {
             defectConfigs = defectsData.definitions.map((def: any, index: number) => ({
               name: def.name_en,
@@ -320,33 +389,26 @@ export default function GradingPage() {
               display_order: index,
               description: def.description_en
             }))
-            console.log('[Defects Debug] Mapped defects from API:', defectConfigs)
           }
         }
       }
 
       // Set defect configs if we have any
       if (defectConfigs.length > 0) {
-        console.log('[Defects Debug] Setting defect configs for sample:', sample.id, defectConfigs)
         defectConfigsMap.set(sample.id, defectConfigs)
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          const defectCounts: { [key: string]: number } = {}
+          // Preserve existing loaded defect counts
+          const defectCounts: { [key: string]: number } = { ...gradingData.defect_counts }
           defectConfigs.forEach((defect: DefectConfig) => {
-            defectCounts[defect.name] = 0
+            // Only initialize to 0 if not already loaded from quality assessment
+            if (!(defect.name in defectCounts)) {
+              defectCounts[defect.name] = 0
+            }
           })
           gradingData.defect_counts = defectCounts
         }
-      } else {
-        console.warn('[Defects Debug] NO DEFECTS FOUND ANYWHERE for sample:', sample.id)
-        console.warn('[Defects Debug] Checked paths:', [
-          'template.parameters.defect_requirements.defects',
-          'template.parameters.defects',
-          'custom_parameters.defect_requirements.defects',
-          'custom_parameters.defects',
-          'API defect-definitions'
-        ])
       }
 
       // Load screen size constraints from quality template
@@ -356,9 +418,13 @@ export default function GradingPage() {
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          const screenSizes: { [key: string]: number } = {}
+          // Preserve existing loaded screen sizes
+          const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
           constraints.forEach((constraint: ScreenSizeConstraint) => {
-            screenSizes[constraint.screen_size] = 0
+            // Only initialize to 0 if not already loaded from quality assessment
+            if (!(constraint.screen_size in screenSizes)) {
+              screenSizes[constraint.screen_size] = 0
+            }
           })
           gradingData.screen_sizes = screenSizes
         }
@@ -380,24 +446,16 @@ export default function GradingPage() {
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          const screenSizes: { [key: string]: number } = {}
+          // Preserve existing loaded screen sizes
+          const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
           allScreens.forEach(screen => {
-            screenSizes[screen.screen_size] = 0
+            // Only initialize to 0 if not already loaded from quality assessment
+            if (!(screen.screen_size in screenSizes)) {
+              screenSizes[screen.screen_size] = 0
+            }
           })
           gradingData.screen_sizes = screenSizes
         }
-      }
-
-      // Load green aspect options from quality template
-      if (templateParams?.green_aspect_configuration?.options && Array.isArray(templateParams.green_aspect_configuration.options)) {
-        const greenOptions = templateParams.green_aspect_configuration.options.map((opt: any) => opt.name || opt)
-        greenAspectOptionsMap.set(sample.id, greenOptions)
-      }
-
-      // Load roast aspect options from quality template
-      if (templateParams?.roast_aspect_configuration?.options && Array.isArray(templateParams.roast_aspect_configuration.options)) {
-        const roastOptions = templateParams.roast_aspect_configuration.options.map((opt: any) => opt.name || opt)
-        roastAspectOptionsMap.set(sample.id, roastOptions)
       }
     } catch (error) {
       console.error('Error loading sample config:', error)
@@ -474,33 +532,43 @@ export default function GradingPage() {
       setSaving(true)
       const gradingData = gradingDataMap.get(activeSampleId)
 
-      if (!gradingData) return
+      if (!gradingData) {
+        console.error('[SAVE ERROR] No grading data found for active sample')
+        return
+      }
+
+      const payload = {
+        green_bean_data: {
+          screen_sizes: gradingData.screen_sizes,
+          moisture_percentage: gradingData.moisture_percentage,
+          quakers: gradingData.quakers_count,
+          green_aspect: gradingData.green_aspect,
+          defects: {
+            counts: gradingData.defect_counts,
+            primary: gradingData.defects_primary,
+            secondary: gradingData.defects_secondary,
+            total: gradingData.defects_total
+          }
+        },
+        roast_data: {
+          roast_aspect: gradingData.roast_aspect
+        }
+      }
+
+      console.log('[SAVE] Saving quality assessment for sample:', activeSampleId)
+      console.log('[SAVE] Payload:', JSON.stringify(payload, null, 2))
 
       const assessmentResponse = await fetch(`/api/samples/${activeSampleId}/quality-assessment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          green_bean_data: {
-            screen_sizes: gradingData.screen_sizes,
-            moisture_percentage: gradingData.moisture_percentage,
-            quakers: gradingData.quakers_count,
-            green_aspect: gradingData.green_aspect,
-            defects: {
-              counts: gradingData.defect_counts,
-              primary: gradingData.defects_primary,
-              secondary: gradingData.defects_secondary,
-              total: gradingData.defects_total
-            }
-          },
-          roast_data: {
-            roast_aspect: gradingData.roast_aspect
-          }
-        })
+        body: JSON.stringify(payload)
       })
+
+      console.log('[SAVE] Response status:', assessmentResponse.status)
 
       if (!assessmentResponse.ok) {
         const errorData = await assessmentResponse.json().catch(() => ({}))
-        console.error(`Failed to save assessment for sample ${activeSampleId}`, errorData)
+        console.error(`[SAVE ERROR] Failed to save assessment for sample ${activeSampleId}`, errorData)
         toast({
           title: 'Failed to save',
           description: errorData.error || 'Unable to save grading data. Please try again.',
@@ -910,7 +978,7 @@ export default function GradingPage() {
                   </Card>
 
                   {/* Defects */}
-                  <Card className="flex-1 self-start">
+                  <Card className="w-fit self-start">
                     <CardContent className="pt-4">
                       {primaries.length === 0 && secondaries.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground text-sm">

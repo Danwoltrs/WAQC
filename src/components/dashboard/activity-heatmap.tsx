@@ -288,7 +288,7 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
   const totalCups = activityData.reduce((sum, a) => sum + a.cups, 0)
 
   return (
-    <Card>
+    <Card className="w-fit">
       <CardHeader>
         <div className="flex items-center justify-between">
           <CardTitle>
