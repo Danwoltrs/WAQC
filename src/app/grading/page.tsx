@@ -815,10 +815,9 @@ export default function GradingPage() {
                         )}
                       </div>
 
-                      {/* Quakers and Humidity */}
-                      <div className="mt-4 pt-4 border-t space-y-2">
-                        {/* Conditionally show Quakers based on template requirement */}
-                        {sample.quality_spec?.template?.parameters?.require_quaker_count === true && (
+                      {/* Quakers */}
+                      {sample.quality_spec?.template?.parameters?.require_quaker_count === true && (
+                        <div className="mt-4 pt-4 border-t">
                           <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
                             <Label className="text-sm">Quakers</Label>
                             <Input
@@ -830,9 +829,18 @@ export default function GradingPage() {
                             />
                             <div className="text-xs text-muted-foreground"></div>
                           </div>
-                        )}
-                        <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
-                          <Label className="text-sm whitespace-nowrap">Humidity (%)</Label>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Humidity | Green Aspect | Roast Aspect */}
+                  <Card>
+                    <CardContent className="pt-4 pb-4 px-4">
+                      <div className="flex gap-6 items-end">
+                        {/* Humidity */}
+                        <div className="flex flex-col gap-2">
+                          <Label className="text-sm font-semibold">Humidity (%)</Label>
                           <Input
                             type="number"
                             min="0"
@@ -840,30 +848,18 @@ export default function GradingPage() {
                             step="0.1"
                             value={gradingData?.moisture_percentage || 0}
                             onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
-                            className="h-8 text-sm w-20"
+                            className="h-9 text-sm w-[120px]"
                           />
-                          <div className="text-xs text-muted-foreground"></div>
                         </div>
-                      </div>
-                    </CardContent>
-                  </Card>
 
-                  {/* Green and Roast Aspect */}
-                  {(() => {
-                    const sampleGreenOptions = greenAspectOptionsMap.get(sample.id) || []
-                    const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
-
-                    if (sampleGreenOptions.length === 0 && sampleRoastOptions.length === 0) {
-                      return null
-                    }
-
-                    return (
-                      <div className="flex gap-4">
                         {/* Green Aspect */}
-                        {sampleGreenOptions.length > 0 && (
-                          <Card className="w-fit">
-                            <CardContent className="pt-4 pb-4 px-4">
-                              <Label className="text-sm font-semibold mb-2 block">Green Aspect</Label>
+                        {(() => {
+                          const sampleGreenOptions = greenAspectOptionsMap.get(sample.id) || []
+                          if (sampleGreenOptions.length === 0) return null
+
+                          return (
+                            <div className="flex flex-col gap-2">
+                              <Label className="text-sm font-semibold">Green Aspect</Label>
                               <Select
                                 value={gradingData?.green_aspect || ''}
                                 onValueChange={(value) => handleAspectChange(sample.id, 'green_aspect', value)}
@@ -879,15 +875,18 @@ export default function GradingPage() {
                                   ))}
                                 </SelectContent>
                               </Select>
-                            </CardContent>
-                          </Card>
-                        )}
+                            </div>
+                          )
+                        })()}
 
                         {/* Roast Aspect */}
-                        {sampleRoastOptions.length > 0 && (
-                          <Card className="w-fit">
-                            <CardContent className="pt-4 pb-4 px-4">
-                              <Label className="text-sm font-semibold mb-2 block">Roast Aspect</Label>
+                        {(() => {
+                          const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
+                          if (sampleRoastOptions.length === 0) return null
+
+                          return (
+                            <div className="flex flex-col gap-2">
+                              <Label className="text-sm font-semibold">Roast Aspect</Label>
                               <Select
                                 value={gradingData?.roast_aspect || ''}
                                 onValueChange={(value) => handleAspectChange(sample.id, 'roast_aspect', value)}
@@ -903,12 +902,12 @@ export default function GradingPage() {
                                   ))}
                                 </SelectContent>
                               </Select>
-                            </CardContent>
-                          </Card>
-                        )}
+                            </div>
+                          )
+                        })()}
                       </div>
-                    )
-                  })()}
+                    </CardContent>
+                  </Card>
 
                   {/* Defects */}
                   <Card>
