@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -16,14 +17,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Save, Eye, EyeOff } from 'lucide-react'
+import { Save, Eye, EyeOff, AlertCircle, CheckCircle, Clock } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 import {
   DefectConfig,
+  DefectThresholds,
   calculatePrimaryDefects,
   calculateSecondaryDefects,
   calculateTotalDefects,
-  getDefectsByCategory
+  getDefectsByCategory,
+  validateDefectCounts
 } from '@/types/defect-configuration'
 import {
   ScreenSizeConstraint,
@@ -114,6 +117,9 @@ export default function GradingPage() {
   // Defect configurations per sample
   const [defectConfigsMap, setDefectConfigsMap] = useState<Map<string, DefectConfig[]>>(new Map())
 
+  // Defect thresholds per sample (for compliance checking)
+  const [defectThresholdsMap, setDefectThresholdsMap] = useState<Map<string, DefectThresholds>>(new Map())
+
   // Screen size constraints per sample
   const [screenConstraintsMap, setScreenConstraintsMap] = useState<Map<string, ScreenSizeConstraint[]>>(new Map())
 
@@ -134,6 +140,57 @@ export default function GradingPage() {
     const newValue = !visibility[key]
     const updated = updateVisibilitySetting(key, newValue)
     setVisibility(updated)
+  }
+
+  // Calculate compliance status for a sample
+  const getComplianceStatus = (sampleId: string): {
+    status: 'pass' | 'fail' | 'pending';
+    errors: string[];
+    color: string;
+    label: string;
+  } => {
+    const gradingData = gradingDataMap.get(sampleId)
+    const defects = defectConfigsMap.get(sampleId)
+    const thresholds = defectThresholdsMap.get(sampleId)
+
+    // If no thresholds defined, return pending
+    if (!thresholds || Object.keys(thresholds).length === 0) {
+      return {
+        status: 'pending',
+        errors: [],
+        color: 'text-muted-foreground',
+        label: 'No thresholds'
+      }
+    }
+
+    // If no defects or no grading data, return pending
+    if (!defects || !gradingData || defects.length === 0) {
+      return {
+        status: 'pending',
+        errors: [],
+        color: 'text-muted-foreground',
+        label: 'Pending'
+      }
+    }
+
+    // Validate defect counts against thresholds
+    const validation = validateDefectCounts(defects, gradingData.defect_counts, thresholds)
+
+    if (validation.valid) {
+      return {
+        status: 'pass',
+        errors: [],
+        color: 'text-green-600 dark:text-green-400',
+        label: 'Pass'
+      }
+    } else {
+      return {
+        status: 'fail',
+        errors: validation.errors,
+        color: 'text-red-600 dark:text-red-400',
+        label: 'Fail'
+      }
+    }
   }
 
   // Calculate percentages from gram inputs
@@ -177,6 +234,7 @@ export default function GradingPage() {
             // Initialize grading data for each sample
             const newGradingMap = new Map<string, GradingData>()
             const newDefectConfigsMap = new Map<string, DefectConfig[]>()
+            const newDefectThresholdsMap = new Map<string, DefectThresholds>()
             const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
             const newClientQualityMap = new Map<string, ClientQuality>()
             const newGreenAspectOptionsMap = new Map<string, string[]>()
@@ -257,12 +315,13 @@ export default function GradingPage() {
               newGradingMap.set(sample.id, defaultGradingData)
 
               // Load defect configuration and screen constraints for this sample
-              await loadSampleConfig(sample, newDefectConfigsMap, newScreenConstraintsMap, newGradingMap, newClientQualityMap, newGreenAspectOptionsMap, newRoastAspectOptionsMap)
+              await loadSampleConfig(sample, newDefectConfigsMap, newDefectThresholdsMap, newScreenConstraintsMap, newGradingMap, newClientQualityMap, newGreenAspectOptionsMap, newRoastAspectOptionsMap)
             }
 
             setClientQualityMap(newClientQualityMap)
             setGradingDataMap(newGradingMap)
             setDefectConfigsMap(newDefectConfigsMap)
+            setDefectThresholdsMap(newDefectThresholdsMap)
             setScreenConstraintsMap(newScreenConstraintsMap)
             setGreenAspectOptionsMap(newGreenAspectOptionsMap)
             setRoastAspectOptionsMap(newRoastAspectOptionsMap)
@@ -279,6 +338,7 @@ export default function GradingPage() {
   const loadSampleConfig = async (
     sample: Sample,
     defectConfigsMap: Map<string, DefectConfig[]>,
+    defectThresholdsMap: Map<string, DefectThresholds>,
     screenConstraintsMap: Map<string, ScreenSizeConstraint[]>,
     gradingDataMap: Map<string, GradingData>,
     clientQualityMap: Map<string, ClientQuality>,
@@ -411,6 +471,52 @@ export default function GradingPage() {
         }
       }
 
+      // Load defect thresholds from quality template
+      const defectThresholds: DefectThresholds = {}
+
+      // Path 1: template.parameters.defect_requirements (common location)
+      if (templateParams?.defect_requirements) {
+        if (templateParams.defect_requirements.max_primary !== undefined) {
+          defectThresholds.max_primary = templateParams.defect_requirements.max_primary
+        }
+        if (templateParams.defect_requirements.max_secondary !== undefined) {
+          defectThresholds.max_secondary = templateParams.defect_requirements.max_secondary
+        }
+        if (templateParams.defect_requirements.max_total !== undefined) {
+          defectThresholds.max_total = templateParams.defect_requirements.max_total
+        }
+      }
+      // Path 2: template.parameters.defect_configuration.thresholds
+      else if (templateParams?.defect_configuration?.thresholds) {
+        const thresholds = templateParams.defect_configuration.thresholds
+        if (thresholds.max_primary !== undefined) {
+          defectThresholds.max_primary = thresholds.max_primary
+        }
+        if (thresholds.max_secondary !== undefined) {
+          defectThresholds.max_secondary = thresholds.max_secondary
+        }
+        if (thresholds.max_total !== undefined) {
+          defectThresholds.max_total = thresholds.max_total
+        }
+      }
+      // Path 3: custom_parameters.defect_requirements
+      else if (customParams?.defect_requirements) {
+        if (customParams.defect_requirements.max_primary !== undefined) {
+          defectThresholds.max_primary = customParams.defect_requirements.max_primary
+        }
+        if (customParams.defect_requirements.max_secondary !== undefined) {
+          defectThresholds.max_secondary = customParams.defect_requirements.max_secondary
+        }
+        if (customParams.defect_requirements.max_total !== undefined) {
+          defectThresholds.max_total = customParams.defect_requirements.max_total
+        }
+      }
+
+      // Store thresholds for this sample
+      if (Object.keys(defectThresholds).length > 0) {
+        defectThresholdsMap.set(sample.id, defectThresholds)
+      }
+
       // Load screen size constraints from quality template
       if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
         const constraints = sample.quality_spec.template.parameters.screen_size_requirements.constraints || []
@@ -537,6 +643,9 @@ export default function GradingPage() {
         return
       }
 
+      // Calculate compliance status
+      const compliance = getComplianceStatus(activeSampleId)
+
       const payload = {
         green_bean_data: {
           screen_sizes: gradingData.screen_sizes,
@@ -552,7 +661,8 @@ export default function GradingPage() {
         },
         roast_data: {
           roast_aspect: gradingData.roast_aspect
-        }
+        },
+        compliance_status: compliance.status
       }
 
       console.log('[SAVE] Saving quality assessment for sample:', activeSampleId)
@@ -999,7 +1109,42 @@ export default function GradingPage() {
                               <span className="text-muted-foreground">Total: </span>
                               <span className="font-semibold">{gradingData?.defects_total.toFixed(2) || '0.00'}</span>
                             </div>
+                            {/* Compliance Status Badge */}
+                            {(() => {
+                              const compliance = getComplianceStatus(sample.id)
+                              return (
+                                <Badge
+                                  variant={compliance.status === 'pass' ? 'default' : compliance.status === 'fail' ? 'destructive' : 'secondary'}
+                                  className={`ml-2 ${compliance.color}`}
+                                >
+                                  {compliance.status === 'pass' && <CheckCircle className="h-3 w-3 mr-1" />}
+                                  {compliance.status === 'fail' && <AlertCircle className="h-3 w-3 mr-1" />}
+                                  {compliance.status === 'pending' && <Clock className="h-3 w-3 mr-1" />}
+                                  {compliance.label}
+                                </Badge>
+                              )
+                            })()}
                           </div>
+                          {/* Compliance Violation Messages */}
+                          {(() => {
+                            const compliance = getComplianceStatus(sample.id)
+                            if (compliance.status === 'fail' && compliance.errors.length > 0) {
+                              return (
+                                <Alert variant="destructive" className="mb-3">
+                                  <AlertCircle className="h-4 w-4" />
+                                  <AlertTitle>Defect Compliance Issues</AlertTitle>
+                                  <AlertDescription>
+                                    <ul className="list-disc list-inside space-y-1 mt-2 text-sm">
+                                      {compliance.errors.map((error, index) => (
+                                        <li key={index}>{error}</li>
+                                      ))}
+                                    </ul>
+                                  </AlertDescription>
+                                </Alert>
+                              )
+                            }
+                            return null
+                          })()}
                         <div className="flex gap-6">
                           {/* Primary Defects Section */}
                           {primaries.length > 0 && (

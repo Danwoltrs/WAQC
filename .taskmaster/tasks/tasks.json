@@ -156,9 +156,9 @@
         "id": 7,
         "title": "Build Green Bean Analysis Interface",
         "description": "Create green bean quality assessment form with client-specific defects, dynamic screen sizes, and automatic out-of-spec warnings",
-        "status": "done",
+        "status": "in-progress",
         "dependencies": [
-          6
+          "6"
         ],
         "priority": "high",
         "details": "MAJOR MILESTONE ACHIEVED (2025-11-03): Complete workflow redesign and grading interface implementation successfully completed. Original task targeting src/app/assessment/grading/[id]/page.tsx has been superseded by comprehensive tabbed multi-sample interface at src/app/assessment/grading/page.tsx (385 lines).\n\n**WORKFLOW TRANSFORMATION:**\n- Database migrations 098/099: Added 'analysis' workflow stage replacing separate roasting/cupping stages\n- Added 'specialty' sample_type to enum (pss, ss, type, specialty)\n- Simultaneous grading and cupping workflow: PSS/SS/Type samples move received → analysis directly\n- Specialty samples: received → roasting (manual) → analysis for quality control\n\n**COMPREHENSIVE GRADING INTERFACE FEATURES:**\n- Tabbed interface displaying ALL samples in 'analysis' stage simultaneously (up to 100 samples)\n- Sample-type specific tab labels: PSS uses tracking_number, SS uses container_number/ico_mark\n- Complete grading interface per tab: screen sizes, client-specific defects, moisture, quakers\n- Collapsible sample info sections: quality spec, shipper details, client info\n- Individual save functionality per sample tab\n- Integrated DefectConfiguration types from src/types/defect-configuration.ts\n- Real-time defect calculations using calculatePrimaryDefects, calculateSecondaryDefects helper functions\n- Template-based screen size filtering with quality constraint validation\n- Bulk data persistence to quality_assessments.green_bean_data via API\n\n**WORKFLOW API INTEGRATION:**\n- Fixed TypeScript build errors in src/app/api/samples/bulk/move-to-cupping/route.ts\n- Proper SampleType and SampleData interface definitions\n- Automatic workflow stage transitions with ready_for_grading/ready_for_cupping flags\n- Updated cupping page to load from 'analysis' stage for parallel workflow\n\n**TECHNICAL ACHIEVEMENTS:**\n- Complete rewrite supporting multi-sample batch processing\n- Eliminated single-sample [id]/page.tsx approach for production efficiency\n- TypeScript type safety with database schema alignment\n- Responsive design optimized for tablet/iPad usage\n- Integration with existing DefectConfiguration and quality template systems\n\nStatus upgraded to DONE. Core implementation complete with parallel grading/cupping workflow operational. Deferred features (photo upload, real-time compliance indicators) identified for future enhancement phase.",
@@ -173,7 +173,8 @@
             ],
             "details": "Add photo upload capability that stores images in the defect_photos array field of quality_assessments table. Implement client-side image compression before upload. Allow multiple photos per assessment. Provide photo preview and management interface. Connect to Supabase storage for actual file storage with proper references in the defect_photos array.\n<info added on 2025-11-03T15:37:12.918Z>\nLet me analyze the codebase first to understand the current implementation and how this deferral relates to the batch grading interface.STATUS UPDATE (2025-11-03): Photo upload functionality for defect documentation was identified during comprehensive batch grading interface implementation but intentionally deferred. Current batch grading workflow at src/app/assessment/grading/batch/page.tsx prioritizes speed and efficiency during quality assessment process. Numerical data entry (defect counts, screen sizes, moisture, quakers) provides sufficient information for immediate grading decisions. Photo documentation would slow down batch processing workflow where time efficiency is critical for laboratory productivity. Feature remains in pending status for future enhancement phase when user feedback indicates demand for visual defect documentation without impacting grading speed. Decision aligns with laboratory workflow priorities emphasizing throughput over comprehensive documentation during initial assessment phase.\n</info added on 2025-11-03T15:37:12.918Z>",
             "status": "pending",
-            "testStrategy": "Test photo upload and compression, test multiple photo handling, test Supabase storage integration"
+            "testStrategy": "Test photo upload and compression, test multiple photo handling, test Supabase storage integration",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -183,9 +184,11 @@
               3,
               5
             ],
-            "details": "Use validateDefectCounts function to check defect totals against quality template thresholds. Implement visual indicators (red/yellow/green) for out-of-spec conditions. Update compliance_status enum field in quality_assessments table. Show detailed violation messages when thresholds are exceeded. Provide real-time feedback as user enters defect counts.\n<info added on 2025-11-03T15:38:12.676Z>\nI'll analyze the codebase to understand the current implementation before generating the update for this subtask.Based on my analysis of the codebase, I can see that:\n\n1. The current green bean analysis interface (`src/app/assessment/grading/[id]/page.tsx`) has basic functionality but lacks detailed defect classification\n2. The `validateDefectCounts` function exists in `src/types/defect-configuration.ts` with comprehensive defect validation logic\n3. The `compliance_status` enum exists in the database with values 'pass', 'fail', 'pending'\n4. The current implementation only saves basic defect data (primary/secondary totals) without detailed validation\n\nBased on the user's request indicating this feature was deferred, here is the update text:\n\nStatus changed to deferred. Real-time compliance checking with visual indicators (red/yellow/green) not implemented in current green bean analysis interface at src/app/assessment/grading/[id]/page.tsx:174-238. Current implementation only saves basic defect totals to quality_assessments table without live validation against quality template thresholds using the available validateDefectCounts function from src/types/defect-configuration.ts:293-324. The compliance_status enum field exists in database but is not actively updated during data entry. Future enhancement needed to implement real-time visual feedback system with detailed violation messages as users enter defect counts for improved UX.\n</info added on 2025-11-03T15:38:12.676Z>",
-            "status": "pending",
-            "testStrategy": "Test compliance validation logic, test visual indicator accuracy, test compliance_status enum handling"
+            "details": "Use validateDefectCounts function to check defect totals against quality template thresholds. Implement visual indicators (red/yellow/green) for out-of-spec conditions. Update compliance_status enum field in quality_assessments table. Show detailed violation messages when thresholds are exceeded. Provide real-time feedback as user enters defect counts.\n<info added on 2025-11-03T15:38:12.676Z>\nI'll analyze the codebase to understand the current implementation before generating the update for this subtask.Based on my analysis of the codebase, I can see that:\n\n1. The current green bean analysis interface (`src/app/assessment/grading/[id]/page.tsx`) has basic functionality but lacks detailed defect classification\n2. The `validateDefectCounts` function exists in `src/types/defect-configuration.ts` with comprehensive defect validation logic\n3. The `compliance_status` enum exists in the database with values 'pass', 'fail', 'pending'\n4. The current implementation only saves basic defect data (primary/secondary totals) without detailed validation\n\nBased on the user's request indicating this feature was deferred, here is the update text:\n\nStatus changed to deferred. Real-time compliance checking with visual indicators (red/yellow/green) not implemented in current green bean analysis interface at src/app/assessment/grading/[id]/page.tsx:174-238. Current implementation only saves basic defect totals to quality_assessments table without live validation against quality template thresholds using the available validateDefectCounts function from src/types/defect-configuration.ts:293-324. The compliance_status enum field exists in database but is not actively updated during data entry. Future enhancement needed to implement real-time visual feedback system with detailed violation messages as users enter defect counts for improved UX.\n</info added on 2025-11-03T15:38:12.676Z>\n<info added on 2025-11-05T11:50:51.564Z>\nI'll analyze the codebase to understand the current implementation before generating the update for this subtask.IMPLEMENTATION COMPLETE (2025-11-05): Real-time compliance checking with visual indicators successfully implemented in grading page. FEATURES IMPLEMENTED: 1. Defect Thresholds Management (src/app/grading/page.tsx:119-120) - Added defectThresholdsMap state to track thresholds per sample, Load thresholds from quality template parameters (multiple paths supported), Paths checked: defect_requirements, defect_configuration.thresholds, custom_parameters, Thresholds include max_primary, max_secondary, max_total values. 2. Compliance Validation Function (src/app/grading/page.tsx:144-193) - Created getComplianceStatus() function that returns status, errors, color, label, Uses validateDefectCounts() from defect-configuration.ts, Returns three states: 'pass' (green), 'fail' (red), 'pending' (gray), Real-time calculation on every defect count change. 3. Visual Compliance Indicators (src/app/grading/page.tsx:1107-1122) - Added Badge component with color-coded status (green/red/gray), Icons: CheckCircle (pass), AlertCircle (fail), Clock (pending), Positioned next to Primary/Secondary/Total defect totals, Updates automatically as user enters defect counts. 4. Violation Messages Display (src/app/grading/page.tsx:1124-1143) - Alert component displays when status is 'fail', Shows detailed list of all threshold violations, Messages include actual vs. allowed values, Examples: 'Primary defects (6.5) exceed maximum allowed (5)'. 5. Database Integration (src/app/grading/page.tsx:646-666) - Save function updated to include compliance_status, Status persisted to quality_assessments table, Calculated at save time using current defect counts. TECHNICAL DETAILS: Imports DefectThresholds type, validateDefectCounts function, Alert components, Icons: AlertCircle, CheckCircle, Clock from lucide-react, Real-time updates: Compliance recalculated on every defect input change, Multi-path threshold loading supports various template structures. TESTING VERIFICATION: Server compiles successfully without TypeScript errors, Page loads correctly with 4 samples in analysis stage, Thresholds loaded from quality templates successfully, Real-time validation working as users enter defect counts.\n</info added on 2025-11-05T11:50:51.564Z>",
+            "status": "done",
+            "testStrategy": "Test compliance validation logic, test visual indicator accuracy, test compliance_status enum handling",
+            "updatedAt": "2025-11-05T11:49:49.672Z",
+            "parentId": "undefined"
           },
           {
             "id": 11,
@@ -196,7 +199,8 @@
             ],
             "details": "Complete rewrite of grading interface from single-sample [id]/page.tsx to multi-sample tabbed page.tsx. Implement tabbed layout displaying all samples in 'analysis' workflow stage simultaneously. Create sample-type specific tab labels (PSS: tracking_number, SS: container_number/ico_mark). Load samples via /api/samples?workflow_stage=analysis&limit=100. Integrate with workflow stage transitions from database migrations 098/099. Support parallel grading and cupping workflow architecture.",
             "status": "done",
-            "testStrategy": "Test tabbed interface functionality, test sample loading from analysis stage, test workflow stage integration, test multi-sample data handling"
+            "testStrategy": "Test tabbed interface functionality, test sample loading from analysis stage, test workflow stage integration, test multi-sample data handling",
+            "parentId": "undefined"
           },
           {
             "id": 12,
@@ -207,7 +211,8 @@
             ],
             "details": "Fix TypeScript build errors in src/app/api/samples/bulk/move-to-cupping/route.ts by adding explicit SampleType and SampleData interfaces. Resolve 'specialty' sample_type enum compatibility issues. Implement proper workflow stage transitions: PSS/SS/Type samples automatically move received → analysis, Specialty samples stay at received for manual roasting. Set green_bean_data.ready_for_grading and roast_data.ready_for_cupping flags appropriately.",
             "status": "done",
-            "testStrategy": "Test TypeScript compilation success, test workflow stage transitions, test sample type enum handling, verify Vercel deployment compatibility"
+            "testStrategy": "Test TypeScript compilation success, test workflow stage transitions, test sample type enum handling, verify Vercel deployment compatibility",
+            "parentId": "undefined"
           },
           {
             "id": 1,
@@ -314,7 +319,8 @@
             "parentId": "undefined",
             "updatedAt": "2025-11-03T15:34:16.656Z"
           }
-        ]
+        ],
+        "updatedAt": "2025-11-05T11:49:49.672Z"
       },
       {
         "id": 8,
@@ -518,14 +524,14 @@
         ]
       },
       {
-        "id": "11",
+        "id": 11,
         "title": "Create Digital Cupping Session Interface",
         "description": "Build comprehensive cupping system with three input methods: OCR scanning (printed cards), real-time digital cupping interface, and future iOS app support. Support three session types: Calibration (digital only), Type Sample, and PSS/SS with quality validation. Integrated with analysis workflow stage for simultaneous grading and cupping.",
         "status": "in-progress",
         "dependencies": [
-          9,
-          10,
-          36
+          "9",
+          "10",
+          "36"
         ],
         "priority": "high",
         "details": "Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). CRITICAL WORKFLOW FIXES COMPLETED (2025-11-04): Resolved all blocking issues preventing cupping workflow operation. Fixed sample status update bug in move-to-cupping API by implementing Supabase admin client to bypass RLS policies, enabling proper received→analysis transitions. Restructured navigation from /assessment/cupping to top-level /cupping route with MainLayout integration for consistent header/sidebar. Enhanced authentication resilience with progressive timeout retry mechanism (8s→16s). Implemented Supabase-style auto-expanding sidebar behavior. System now fully operational with complete cupping workflow from sample assignment through status tracking. GRADING INTEGRATION IMPROVEMENTS (2025-11-04): Fixed grading page data persistence bug where screen sizes and defects now save/load correctly from quality_assessments table. Layout improvements completed with adaptive card sizing and independent card heights. Enhanced screen size distribution with proper percentage calculations and real-time chart updates. Ready for next phase: real-time warnings and notifications system for cupping sessions to alert cuppers of scoring discrepancies, session time limits, and validation issues.",
@@ -538,7 +544,8 @@
             "dependencies": [],
             "details": "Create src/components/cupping/session-reports.tsx with detailed session analytics, cupper performance metrics, score distribution analysis, and export functionality to PDF/Excel. Include comparative analysis between cuppers, historical performance tracking, and calibration session effectiveness metrics. Support filtering by date range, cupper, session type, and sample origin.",
             "status": "pending",
-            "testStrategy": "Test report generation accuracy, test export functionality, test analytics calculations, verify performance metrics"
+            "testStrategy": "Test report generation accuracy, test export functionality, test analytics calculations, verify performance metrics",
+            "parentId": "undefined"
           },
           {
             "id": 4,
@@ -549,7 +556,8 @@
             ],
             "details": "Verify and optimize cupping page (src/app/assessment/cupping/page.tsx) integration with analysis workflow stage. Ensure proper sample loading via workflow_stage='analysis' parameter, validate simultaneous grading and cupping capability, test manual navigation flow from samples page to cupping interface, and confirm ready_for_cupping flag functionality from move-to-cupping API. Update any remaining workflow references and ensure compatibility with all three input methods (printed cards, digital interface, future iOS app).",
             "status": "done",
-            "testStrategy": "Test sample loading with workflow_stage parameter, verify parallel workflow functionality, test navigation between grading and cupping interfaces"
+            "testStrategy": "Test sample loading with workflow_stage parameter, verify parallel workflow functionality, test navigation between grading and cupping interfaces",
+            "parentId": "undefined"
           },
           {
             "id": 5,
@@ -558,7 +566,8 @@
             "dependencies": [],
             "details": "Perform end-to-end testing of the complete cupping workflow with recent critical fixes: 1) Verify samples properly transition from received→analysis status using fixed move-to-cupping API with admin client, 2) Test new top-level /cupping navigation structure with MainLayout integration, 3) Validate authentication stability during long cupping sessions with progressive timeout mechanism, 4) Test auto-expanding sidebar behavior and navigation flow, 5) Verify digital cupping interface properly nested with h-full instead of h-screen, 6) Test complete workflow from sample assignment through cupping card printing to digital interface access. Include testing of all three input methods compatibility with the restructured navigation.",
             "status": "pending",
-            "testStrategy": "Test complete workflow from sample receipt to cupping completion, verify navigation structure functionality, test authentication resilience during long sessions, validate MainLayout integration across cupping pages"
+            "testStrategy": "Test complete workflow from sample receipt to cupping completion, verify navigation structure functionality, test authentication resilience during long sessions, validate MainLayout integration across cupping pages",
+            "parentId": "undefined"
           },
           {
             "id": 7,
@@ -567,7 +576,8 @@
             "dependencies": [],
             "details": "Create src/components/cupping/cupping-session-manager.tsx with session state management, participant assignment interface, and session configuration options. Include components for session type selection (Calibration, Type Sample, PSS/SS), sample assignment validation, and cupper role management with minimum 2 cuppers requirement for collaborative sessions.\n<info added on 2025-10-30T17:02:48.759Z>\nI'll analyze the current codebase to understand the existing infrastructure and provide an informed update for this subtask.Based on the comprehensive codebase analysis and the task context, here's the update that should be appended to the subtask details:\n\nProgress Update (2025-01-30): Successfully completed Phase 1 foundational analysis and type definition creation. Analyzed existing cupping infrastructure including print-cupping-cards-dialog.tsx cupper assignment system, QR generation patterns, and cupping_sessions table schema in database.types.ts. Created comprehensive type definitions in src/types/cupping-session.ts covering all four sample types (TYPE, PSS, SS, CALIBRATION), input methods (digital, OCR, iOS, mixed), session statuses, and complete data structures for sessions, scores, and validation.\n\nKey architectural decisions established: Four distinct sample types with calibration requiring special UX flow, mixed input method support for simultaneous OCR and digital entry, privacy toggles for individual cupper scores, and integrated quality validation workflow for PSS/SS samples. Confirmed existing cupping infrastructure in src/components/cupping/ directory includes OCR validation dialog, scan cupping cards dialog, and print dialog with cupper assignment capabilities.\n\nReady to proceed with implementation of cupping-session-manager.tsx component leveraging existing cupper assignment patterns from print-cupping-cards-dialog.tsx and integrating with confirmed cupping_sessions database table structure.\n</info added on 2025-10-30T17:02:48.759Z>\n<info added on 2025-10-30T18:56:54.969Z>\nCOMPLETED (2025-10-30): Full Digital Cupping Interface implementation delivered with comprehensive workflow integration. Successfully built desktop/mobile responsive interface (src/components/cupping/digital-cupping-interface.tsx, 1000+ lines) featuring slider controls, tap-to-edit number inputs, defect management system with intensity classification, and real-time score calculation. Implemented critical workflow connection where print dialog automatically updates sample status to 'cupping' enabling seamless transition to cupping workflow independent of grading status. Created comprehensive documentation (.docs/CUPPING_WORKFLOW_IMPLEMENTATION.md, 1,072 lines) covering complete implementation details, design patterns, and next phase requirements. Ready for API endpoint implementation phase.\n</info added on 2025-10-30T18:56:54.969Z>\n<info added on 2025-10-31T12:18:54.539Z>\nI'll analyze the codebase to understand the current implementation and provide a comprehensive update for this subtask.Workflow Transition Bug Fix Complete (2025-10-31): Resolved critical issue where printing cupping cards attempted to set invalid workflow_stage='cupping' causing database constraint violations. Implemented comprehensive solution involving new API endpoint /api/samples/bulk/move-to-cupping that properly handles sequential workflow transitions (received → roasting → cupping) while respecting database validation constraints. Key architectural changes: 1) Separated green bean analysis from main workflow as independent parallel process tracked in quality_assessments.green_bean_data, 2) Created migration 088_fix_workflow_stages.sql updating workflow validation function to remove green_analysis stage, 3) Added auto-roasting capability for PSS/SS/Type samples when transitioning to cupping, 4) Implemented onSuccess callback in print dialog to refresh samples list ensuring UI consistency. This enables parallel workflows where green bean analysis and cupping can proceed independently without blocking each other, fixing the core workflow bottleneck that prevented cupping session initialization.\n</info added on 2025-10-31T12:18:54.539Z>",
             "status": "done",
-            "testStrategy": "Test session creation with different types, test participant assignment validation, test minimum cupper requirements"
+            "testStrategy": "Test session creation with different types, test participant assignment validation, test minimum cupper requirements",
+            "parentId": "undefined"
           },
           {
             "id": 8,
@@ -578,7 +588,8 @@
             ],
             "details": "Create src/components/cupping/digital-cupping-interface.tsx with real-time scoring UI, live sync capabilities using Supabase Realtime, discrepancy detection algorithms, and rich note-taking functionality. Include cup-by-cup scoring grid, attribute scoring (fragrance, flavor, aftertaste, etc.), and automatic score validation with conflict highlighting.\n<info added on 2025-10-30T19:42:18.262Z>\nLet me first explore the codebase to understand the current implementation and structure.COMPLETED: Initial deployment of digital cupping interface to production with real-time collaboration features. Fixed supabase client import path issue during deployment. Successfully implemented configurable discrepancy threshold feature per user request - added cupping_discrepancy_threshold column to quality_templates table (DECIMAL(3,2) DEFAULT 1.0), updated TypeScript types, modified API endpoints to return threshold value with 1.0 fallback, and updated digital cupping interface to use template.discrepancy_threshold instead of hardcoded value. Fixed Next.js 15 async params pattern in 3 route files. Corrected cupping session status enum from invalid 'in_progress' to valid 'active'. All changes deployed to production across 5 commits. System now fully operational with configurable discrepancy detection thresholds.\n</info added on 2025-10-30T19:42:18.262Z>\n<info added on 2025-10-30T19:43:50.038Z>\nFINAL PRODUCTION DEPLOYMENT STATUS:\n\nTypeScript interface synchronization completed in commit 678bfee. Fixed CuppingTemplate interface in src/app/assessment/cupping/[id]/page.tsx by adding missing discrepancy_threshold field at line 24, ensuring full type compatibility with DigitalCuppingInterface component expectations.\n\nComplete deployment sequence (6 commits total):\n1. Core real-time collaboration features\n2. Supabase client import path resolution  \n3. Database migration for configurable discrepancy thresholds\n4. Next.js 15 async params compliance in route handlers\n5. Cupping session status enum correction (in_progress → active)\n6. CuppingTemplate interface type synchronization\n\nProduction verification complete: All TypeScript build errors resolved, configurable discrepancy detection operational, real-time cupping collaboration fully functional. System ready for user acceptance testing.\n</info added on 2025-10-30T19:43:50.038Z>",
             "status": "done",
-            "testStrategy": "Test real-time sync between multiple cuppers, test discrepancy detection accuracy, test note synchronization"
+            "testStrategy": "Test real-time sync between multiple cuppers, test discrepancy detection accuracy, test note synchronization",
+            "parentId": "undefined"
           },
           {
             "id": 6,
@@ -589,7 +600,8 @@
             ],
             "details": "Verify and optimize cupping page (src/app/assessment/cupping/page.tsx) integration with analysis workflow stage. Ensure proper sample loading via workflow_stage='analysis' parameter, validate simultaneous grading and cupping capability, test manual navigation flow from samples page to cupping interface, and confirm ready_for_cupping flag functionality from move-to-cupping API. Update any remaining workflow references and ensure compatibility with all three input methods (printed cards, digital interface, future iOS app).",
             "status": "done",
-            "testStrategy": "Test sample loading with workflow_stage parameter, verify parallel workflow functionality, test navigation between grading and cupping interfaces"
+            "testStrategy": "Test sample loading with workflow_stage parameter, verify parallel workflow functionality, test navigation between grading and cupping interfaces",
+            "parentId": "undefined"
           },
           {
             "id": 1,
@@ -1512,13 +1524,13 @@
     ],
     "metadata": {
       "version": "1.0.0",
-      "lastModified": "2025-11-03T15:34:16.656Z",
+      "lastModified": "2025-11-05T11:49:49.673Z",
       "taskCount": 36,
       "completedCount": 21,
       "tags": [
         "master"
       ],
-      "created": "2025-11-03T15:36:34.761Z",
+      "created": "2025-11-05T11:50:01.751Z",
       "description": "Tasks for master context"
     }
   }
