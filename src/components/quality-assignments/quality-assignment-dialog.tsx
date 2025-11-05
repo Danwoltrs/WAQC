@@ -59,6 +59,7 @@ export function QualityAssignmentDialog({
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templateId || '')
   const [customName, setCustomName] = useState('')
   const [qualityCode, setQualityCode] = useState('')
+  const [cupsPerSample, setCupsPerSample] = useState<number>(10)
   const [notes, setNotes] = useState('')
 
   // Search state
@@ -213,6 +214,7 @@ export function QualityAssignmentDialog({
         custom_name: customName.trim(),
         quality_code: qualityCode.trim() || null,
         code_position: selectedClient?.certificate_pattern?.quality_position || 'suffix',
+        cups_per_sample: cupsPerSample,
         notes: notes.trim() || null,
         is_active: true
       }
@@ -236,6 +238,7 @@ export function QualityAssignmentDialog({
       // Reset form
       setCustomName('')
       setQualityCode('')
+      setCupsPerSample(10)
       setNotes('')
       setSelectedClientId(clientId || '')
       setSelectedTemplateId(templateId || '')
@@ -268,7 +271,7 @@ export function QualityAssignmentDialog({
   const getPreviewName = () => {
     if (!customName) return 'Enter a custom name to preview'
     if (!qualityCode || !showQualityCode) return customName
-    return `${customName} - ${qualityCode}`
+    return `${customName} | ${qualityCode}`
   }
 
   return (
@@ -300,7 +303,7 @@ export function QualityAssignmentDialog({
                     disabled={searchLoading}
                   >
                     {selectedClientId
-                      ? clients.find((client) => client.id === selectedClientId)?.name
+                      ? clients.find((client) => client.id === selectedClientId)?.fantasy_name || clients.find((client) => client.id === selectedClientId)?.company
                       : "Select client..."}
                     <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
@@ -330,8 +333,8 @@ export function QualityAssignmentDialog({
                             )}
                           />
                           <div>
-                            <div className="font-medium">{client.name}</div>
-                            <div className="text-sm text-muted-foreground">{client.company}</div>
+                            <div className="font-medium">{client.fantasy_name || client.company}</div>
+                            <div className="text-sm text-muted-foreground">{client.name}</div>
                           </div>
                         </CommandItem>
                       ))}
@@ -397,7 +400,7 @@ export function QualityAssignmentDialog({
             </div>
           )}
 
-          {/* Custom Name and Quality Code */}
+          {/* Custom Name, Cups, and Quality Code */}
           <div className="space-y-2">
             <div className="flex items-start gap-4">
               <div className="flex-1 space-y-2">
@@ -410,6 +413,24 @@ export function QualityAssignmentDialog({
                 />
                 <p className="text-sm text-muted-foreground">
                   This is how this quality will be displayed for this client
+                </p>
+              </div>
+
+              <div className="w-px bg-border self-stretch mt-8" />
+
+              <div className="w-24 space-y-2">
+                <Label htmlFor="cups">Cups</Label>
+                <Input
+                  id="cups"
+                  type="number"
+                  min={1}
+                  max={20}
+                  value={cupsPerSample}
+                  onChange={(e) => setCupsPerSample(Math.max(1, Math.min(20, parseInt(e.target.value) || 10)))}
+                  className="text-center"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Per sample
                 </p>
               </div>
 

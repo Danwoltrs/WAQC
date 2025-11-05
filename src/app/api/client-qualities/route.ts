@@ -105,6 +105,7 @@ export async function POST(request: NextRequest) {
       custom_name: body.custom_name || null,
       quality_code: body.quality_code || null,
       code_position: body.code_position || 'suffix',
+      cups_per_sample: body.cups_per_sample || 10,
       is_active: body.is_active !== undefined ? body.is_active : true,
       notes: body.notes || null
     }

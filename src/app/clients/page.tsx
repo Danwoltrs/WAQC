@@ -43,6 +43,7 @@ interface AssignedQuality {
   id: string
   custom_name: string
   quality_code?: string
+  cups_per_sample?: number
   template_id: string
   template_name: string
   is_active: boolean
@@ -122,6 +123,7 @@ export default function ClientsPage() {
                     id: cq.id,
                     custom_name: cq.custom_name || cq.template?.name_en || '',
                     quality_code: cq.quality_code,
+                    cups_per_sample: cq.cups_per_sample,
                     template_id: cq.template_id,
                     template_name: cq.template?.name_en || '',
                     is_active: cq.is_active
@@ -408,7 +410,9 @@ export default function ClientsPage() {
                               {client.assigned_qualities && client.assigned_qualities.length > 0 && (
                                 <div className="space-y-1">
                                   <div className="text-xs text-muted-foreground max-w-[180px] line-clamp-2">
-                                    {client.assigned_qualities.slice(0, 2).map((q) => q.custom_name).join(', ')}
+                                    {client.assigned_qualities.slice(0, 2).map((q) =>
+                                      q.quality_code ? `${q.custom_name} | ${q.quality_code}` : q.custom_name
+                                    ).join(', ')}
                                     {client.assigned_qualities.length > 2 && '...'}
                                   </div>
                                   {client.assigned_qualities.length > 2 && (
@@ -596,12 +600,12 @@ export default function ClientsPage() {
                     <div className="flex items-start justify-between">
                       <div className="space-y-1 flex-1">
                         <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-sm">{quality.custom_name}</h4>
-                          {quality.quality_code && (
-                            <Badge variant="outline" className="text-xs">
-                              {quality.quality_code}
-                            </Badge>
-                          )}
+                          <h4 className="font-semibold text-sm">
+                            {quality.quality_code ? `${quality.custom_name} | ${quality.quality_code}` : quality.custom_name}
+                          </h4>
+                          <Badge variant="secondary" className="text-xs">
+                            {quality.cups_per_sample || 10} cups
+                          </Badge>
                         </div>
                         <p className="text-xs text-muted-foreground">
                           Based on: {quality.template_name}

@@ -524,7 +524,7 @@
         ]
       },
       {
-        "id": 11,
+        "id": "11",
         "title": "Create Digital Cupping Session Interface",
         "description": "Build comprehensive cupping system with three input methods: OCR scanning (printed cards), real-time digital cupping interface, and future iOS app support. Support three session types: Calibration (digital only), Type Sample, and PSS/SS with quality validation. Integrated with analysis workflow stage for simultaneous grading and cupping.",
         "status": "in-progress",
@@ -534,8 +534,8 @@
           "36"
         ],
         "priority": "high",
-        "details": "Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). CRITICAL WORKFLOW FIXES COMPLETED (2025-11-04): Resolved all blocking issues preventing cupping workflow operation. Fixed sample status update bug in move-to-cupping API by implementing Supabase admin client to bypass RLS policies, enabling proper received→analysis transitions. Restructured navigation from /assessment/cupping to top-level /cupping route with MainLayout integration for consistent header/sidebar. Enhanced authentication resilience with progressive timeout retry mechanism (8s→16s). Implemented Supabase-style auto-expanding sidebar behavior. System now fully operational with complete cupping workflow from sample assignment through status tracking. GRADING INTEGRATION IMPROVEMENTS (2025-11-04): Fixed grading page data persistence bug where screen sizes and defects now save/load correctly from quality_assessments table. Layout improvements completed with adaptive card sizing and independent card heights. Enhanced screen size distribution with proper percentage calculations and real-time chart updates. Ready for next phase: real-time warnings and notifications system for cupping sessions to alert cuppers of scoring discrepancies, session time limits, and validation issues.",
-        "testStrategy": "Test OCR accuracy and score extraction from handwritten cards, test real-time collaboration and score synchronization in digital interface, test calibration session patterns (Square, Pyramid, Custom), test quality template validation for PSS/SS samples, test simultaneous cupping and grading workflows with analysis stage integration, verify certificate generation triggers, test workflow transitions and sample loading via workflow_stage parameter, test new navigation structure and MainLayout integration, verify authentication stability during long cupping sessions, test grading data persistence and real-time chart updates, test real-time warning system for discrepancies and session management",
+        "details": "Build comprehensive cupping system architecture supporting three input methods: 1) Printed Cards + OCR (print cupping cards with QR codes, scan completed handwritten cards, extract scores via OCR), 2) Real-time Digital Cupping Interface (collaborative cupping with live score sync, discrepancy detection, rich notes), 3) Future iOS App. Support three session types: Calibration Sessions (digital only, display cup patterns, no certificates), Type Sample Cupping (any method, basic reports), PSS/SS Sample Cupping (any method, quality template validation, certificate generation). CRITICAL WORKFLOW FIXES COMPLETED (2025-11-04): Resolved all blocking issues preventing cupping workflow operation. Fixed sample status update bug in move-to-cupping API by implementing Supabase admin client to bypass RLS policies, enabling proper received→analysis transitions. Restructured navigation from /assessment/cupping to top-level /cupping route with MainLayout integration for consistent header/sidebar. Enhanced authentication resilience with progressive timeout retry mechanism (8s→16s). Implemented Supabase-style auto-expanding sidebar behavior. System now fully operational with complete cupping workflow from sample assignment through status tracking. GRADING INTEGRATION IMPROVEMENTS (2025-11-04): Fixed grading page data persistence bug where screen sizes and defects now save/load correctly from quality_assessments table. Layout improvements completed with adaptive card sizing and independent card heights. Enhanced screen size distribution with proper percentage calculations and real-time chart updates. RESPONSIVE LAYOUT FIXES (2025-11-05): Resolved responsive layout issues in grading page for better user experience across all screen sizes. Fixed text overlapping on smaller screens (1530px-1720px) with sidebar open/closed by implementing responsive flex layout with Tailwind breakpoints. Optimized Secondary Defects layout using single-column display to prevent overlapping at any screen width. Finalized Type Sample defect loading with hardcoded SCA defect templates based on origin matching. Ready for next phase: real-time warnings and notifications system for cupping sessions to alert cuppers of scoring discrepancies, session time limits, and validation issues.",
+        "testStrategy": "Test OCR accuracy and score extraction from handwritten cards, test real-time collaboration and score synchronization in digital interface, test calibration session patterns (Square, Pyramid, Custom), test quality template validation for PSS/SS samples, test simultaneous cupping and grading workflows with analysis stage integration, verify certificate generation triggers, test workflow transitions and sample loading via workflow_stage parameter, test new navigation structure and MainLayout integration, verify authentication stability during long cupping sessions, test grading data persistence and real-time chart updates, test responsive layout behavior across different screen sizes, test real-time warning system for discrepancies and session management",
         "subtasks": [
           {
             "id": 3,
@@ -544,8 +544,25 @@
             "dependencies": [],
             "details": "Create src/components/cupping/session-reports.tsx with detailed session analytics, cupper performance metrics, score distribution analysis, and export functionality to PDF/Excel. Include comparative analysis between cuppers, historical performance tracking, and calibration session effectiveness metrics. Support filtering by date range, cupper, session type, and sample origin.",
             "status": "pending",
-            "testStrategy": "Test report generation accuracy, test export functionality, test analytics calculations, verify performance metrics",
-            "parentId": "undefined"
+            "testStrategy": "Test report generation accuracy, test export functionality, test analytics calculations, verify performance metrics"
+          },
+          {
+            "id": 5,
+            "title": "Validate and test complete cupping workflow after critical fixes",
+            "description": "Comprehensive testing and validation of the entire cupping workflow after navigation restructuring and critical bug fixes",
+            "dependencies": [],
+            "details": "Perform end-to-end testing of the complete cupping workflow with recent critical fixes: 1) Verify samples properly transition from received→analysis status using fixed move-to-cupping API with admin client, 2) Test new top-level /cupping navigation structure with MainLayout integration, 3) Validate authentication stability during long cupping sessions with progressive timeout mechanism, 4) Test auto-expanding sidebar behavior and navigation flow, 5) Verify digital cupping interface properly nested with h-full instead of h-screen, 6) Test complete workflow from sample assignment through cupping card printing to digital interface access. Include testing of all three input methods compatibility with the restructured navigation.",
+            "status": "pending",
+            "testStrategy": "Test complete workflow from sample receipt to cupping completion, verify navigation structure functionality, test authentication resilience during long sessions, validate MainLayout integration across cupping pages"
+          },
+          {
+            "id": 9,
+            "title": "Implement responsive layout testing and validation",
+            "description": "Test and validate responsive layout functionality across all screen sizes for cupping and grading interfaces",
+            "dependencies": [],
+            "details": "Comprehensive testing of responsive layout fixes implemented in grading page (src/app/grading/page.tsx). Verify responsive flex layout with Tailwind breakpoints works correctly at critical widths: 1530px-1720px with sidebar open/closed, ensure Screen Size and Defects cards stack vertically on small screens (<1024px) and display side-by-side on large screens (≥1024px). Test secondary defects single-column layout prevents overlapping at all screen widths. Validate Type Sample defect loading with hardcoded SCA defect templates based on origin matching (Brazil → BRAZIL_SCA_DEFECTS, Colombia → COLOMBIA_STANDARD_DEFECTS, fallback → SCA_STANDARD_DEFECTS). Ensure humidity layout displays side-by-side with quakers when >10 screens and stacks vertically when ≤10 screens.",
+            "status": "pending",
+            "testStrategy": "Test layout at critical breakpoints (1024px, 1530px, 1720px), verify sidebar open/closed behavior, test defect template loading by origin, validate card stacking behavior"
           },
           {
             "id": 4,
@@ -557,16 +574,6 @@
             "details": "Verify and optimize cupping page (src/app/assessment/cupping/page.tsx) integration with analysis workflow stage. Ensure proper sample loading via workflow_stage='analysis' parameter, validate simultaneous grading and cupping capability, test manual navigation flow from samples page to cupping interface, and confirm ready_for_cupping flag functionality from move-to-cupping API. Update any remaining workflow references and ensure compatibility with all three input methods (printed cards, digital interface, future iOS app).",
             "status": "done",
             "testStrategy": "Test sample loading with workflow_stage parameter, verify parallel workflow functionality, test navigation between grading and cupping interfaces",
-            "parentId": "undefined"
-          },
-          {
-            "id": 5,
-            "title": "Validate and test complete cupping workflow after critical fixes",
-            "description": "Comprehensive testing and validation of the entire cupping workflow after navigation restructuring and critical bug fixes",
-            "dependencies": [],
-            "details": "Perform end-to-end testing of the complete cupping workflow with recent critical fixes: 1) Verify samples properly transition from received→analysis status using fixed move-to-cupping API with admin client, 2) Test new top-level /cupping navigation structure with MainLayout integration, 3) Validate authentication stability during long cupping sessions with progressive timeout mechanism, 4) Test auto-expanding sidebar behavior and navigation flow, 5) Verify digital cupping interface properly nested with h-full instead of h-screen, 6) Test complete workflow from sample assignment through cupping card printing to digital interface access. Include testing of all three input methods compatibility with the restructured navigation.",
-            "status": "pending",
-            "testStrategy": "Test complete workflow from sample receipt to cupping completion, verify navigation structure functionality, test authentication resilience during long sessions, validate MainLayout integration across cupping pages",
             "parentId": "undefined"
           },
           {

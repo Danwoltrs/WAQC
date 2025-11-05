@@ -1116,6 +1116,7 @@ export type Database = {
           client_id: string | null
           code_position: string | null
           created_at: string | null
+          cups_per_sample: number | null
           custom_name: string | null
           custom_parameters: Json | null
           id: string
@@ -1132,6 +1133,7 @@ export type Database = {
           client_id?: string | null
           code_position?: string | null
           created_at?: string | null
+          cups_per_sample?: number | null
           custom_name?: string | null
           custom_parameters?: Json | null
           id?: string
@@ -1148,6 +1150,7 @@ export type Database = {
           client_id?: string | null
           code_position?: string | null
           created_at?: string | null
+          cups_per_sample?: number | null
           custom_name?: string | null
           custom_parameters?: Json | null
           id?: string
