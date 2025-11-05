@@ -568,16 +568,18 @@ export default function GradingPage() {
           if (templateParams?.green_aspect_configuration) {
             console.log(`[CONSTRAINTS] Green aspect config for ${sample.tracking_number}:`, templateParams.green_aspect_configuration)
 
-            // Check for minimum acceptable level
-            if (templateParams.green_aspect_configuration.minimum_acceptable !== undefined) {
-              const minAcceptable = templateParams.green_aspect_configuration.minimum_acceptable
+            // Check for minimum acceptable level (check both validation.min_acceptable_value and minimum_acceptable)
+            const minAcceptableValue = templateParams.green_aspect_configuration.validation?.min_acceptable_value
+              ?? templateParams.green_aspect_configuration.minimum_acceptable
+
+            if (minAcceptableValue !== undefined) {
               const greenOptions = greenAspectOptionsMap.get(sample.id) || []
-              const minOption = greenOptions.find(opt => opt.value === minAcceptable)
+              const minOption = greenOptions.find(opt => opt.value === minAcceptableValue)
 
               if (minOption) {
                 console.log(`[CONSTRAINTS] Green aspect minimum acceptable:`, minOption)
                 greenAspectConstraintsMap.set(sample.id, {
-                  min_value: minAcceptable,
+                  min_value: minAcceptableValue,
                   min_label: minOption.label
                 })
               }
@@ -596,16 +598,18 @@ export default function GradingPage() {
           if (templateParams?.roast_aspect_configuration) {
             console.log(`[CONSTRAINTS] Roast aspect config for ${sample.tracking_number}:`, templateParams.roast_aspect_configuration)
 
-            // Check for minimum acceptable level
-            if (templateParams.roast_aspect_configuration.minimum_acceptable !== undefined) {
-              const minAcceptable = templateParams.roast_aspect_configuration.minimum_acceptable
+            // Check for minimum acceptable level (check both validation.min_acceptable_value and minimum_acceptable)
+            const minAcceptableValue = templateParams.roast_aspect_configuration.validation?.min_acceptable_value
+              ?? templateParams.roast_aspect_configuration.minimum_acceptable
+
+            if (minAcceptableValue !== undefined) {
               const roastOptions = roastAspectOptionsMap.get(sample.id) || []
-              const minOption = roastOptions.find(opt => opt.value === minAcceptable)
+              const minOption = roastOptions.find(opt => opt.value === minAcceptableValue)
 
               if (minOption) {
                 console.log(`[CONSTRAINTS] Roast aspect minimum acceptable:`, minOption)
                 roastAspectConstraintsMap.set(sample.id, {
-                  min_value: minAcceptable,
+                  min_value: minAcceptableValue,
                   min_label: minOption.label
                 })
               }
