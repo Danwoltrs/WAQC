@@ -903,17 +903,20 @@ export default function GradingPage() {
                   gradingData.roast_aspect
                 )
 
-                // Determine background color only if sample has been graded:
-                // - Red if fail (regardless of active state)
-                // - Yellow if active and pass
-                // - Green if inactive and pass
+                // Determine background color:
+                // - Yellow if active (regardless of pass/fail)
+                // - Red if inactive and has data and failed
+                // - Green if inactive and has data and passed
+                // - No background if no data
                 let bgColor = ''
-                if (hasData) {
+                if (isActive && hasData) {
+                  bgColor = 'bg-yellow-500/20'
+                } else if (hasData) {
                   const compliance = getComplianceStatus(sample.id)
                   if (compliance.status === 'fail') {
                     bgColor = 'bg-red-500/20'
                   } else if (compliance.status === 'pass') {
-                    bgColor = isActive ? 'bg-yellow-500/20' : 'bg-green-500/20'
+                    bgColor = 'bg-green-500/20'
                   }
                 }
 
