@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -1048,6 +1048,18 @@ export default function GradingPage() {
           const secondaries = getDefectsByCategory(defects, 'secondary')
           const clientQuality = clientQualityMap.get(sample.id)
 
+          // Memoize chart data to prevent unnecessary re-renders when other fields change
+          // eslint-disable-next-line react-hooks/rules-of-hooks
+          const chartData = useMemo(() => {
+            if (!gradingData) return []
+            return screens
+              .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
+              .map((screen) => ({
+                name: formatScreenLabel(screen.screen_size),
+                value: gradingData.screen_sizes_percentages[screen.screen_size] || 0
+              }))
+          }, [gradingData?.screen_sizes_percentages, screens])
+
           return (
             <TabsContent key={sample.id} value={sample.id} className="m-0">
               {/* Sample Info Bar with Visibility Toggles */}
@@ -1211,17 +1223,12 @@ export default function GradingPage() {
                         </div>
 
                         {/* Pie Chart with Labels and Lines */}
-                        {gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0) && (
+                        {chartData.length > 0 && (
                           <div className="flex items-center justify-center" style={{ width: '240px', height: '160px' }}>
                             <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
                                 <Pie
-                                  data={screens
-                                    .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
-                                    .map((screen, index) => ({
-                                      name: formatScreenLabel(screen.screen_size),
-                                      value: gradingData.screen_sizes_percentages[screen.screen_size] || 0
-                                    }))}
+                                  data={chartData}
                                   cx="50%"
                                   cy="50%"
                                   innerRadius={25}
@@ -1263,7 +1270,7 @@ export default function GradingPage() {
 
                       {/* Quakers, Humidity, Green Aspect, Roast Aspect */}
                       {(() => {
-                        const hasChart = gradingData && Object.values(gradingData.screen_sizes_percentages).some(p => p > 0)
+                        const hasChart = chartData.length > 0
                         const sampleGreenOptions = greenAspectOptionsMap.get(sample.id) || []
                         const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
                         const hasAspects = sampleGreenOptions.length > 0 || sampleRoastOptions.length > 0
