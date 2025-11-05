@@ -225,6 +225,13 @@ export default function GradingPage() {
     const gradingData = gradingDataMap.get(sampleId)
     const constraint = greenAspectConstraintsMap.get(sampleId)
 
+    console.log('[COMPLIANCE CHECK] Green aspect:', {
+      sampleId,
+      constraint,
+      gradingData: gradingData?.green_aspect,
+      options: greenAspectOptionsMap.get(sampleId)
+    })
+
     if (!constraint || !gradingData || !gradingData.green_aspect) {
       return { errors: [], violated: false }
     }
@@ -372,11 +379,11 @@ export default function GradingPage() {
             const newDefectThresholdsMap = new Map<string, DefectThresholds>()
             const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
             const newHumidityConstraintsMap = new Map<string, { min?: number; max?: number }>()
-            const newGreenAspectConstraintsMap = new Map<string, string[]>()
-            const newRoastAspectConstraintsMap = new Map<string, string[]>()
+            const newGreenAspectConstraintsMap = new Map<string, string[] | { min_value: number; min_label: string }>()
+            const newRoastAspectConstraintsMap = new Map<string, string[] | { min_value: number; min_label: string }>()
             const newClientQualityMap = new Map<string, ClientQuality>()
-            const newGreenAspectOptionsMap = new Map<string, string[]>()
-            const newRoastAspectOptionsMap = new Map<string, string[]>()
+            const newGreenAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
+            const newRoastAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
 
             for (const sample of detailsData.samples) {
               console.log(`[LOAD] Processing sample: ${sample.tracking_number} (ID: ${sample.id})`)
@@ -494,12 +501,12 @@ export default function GradingPage() {
     defectThresholdsMap: Map<string, DefectThresholds>,
     screenConstraintsMap: Map<string, ScreenSizeConstraint[]>,
     humidityConstraintsMap: Map<string, { min?: number; max?: number }>,
-    greenAspectConstraintsMap: Map<string, string[]>,
-    roastAspectConstraintsMap: Map<string, string[]>,
+    greenAspectConstraintsMap: Map<string, string[] | { min_value: number; min_label: string }>,
+    roastAspectConstraintsMap: Map<string, string[] | { min_value: number; min_label: string }>,
     gradingDataMap: Map<string, GradingData>,
     clientQualityMap: Map<string, ClientQuality>,
-    greenAspectOptionsMap: Map<string, string[]>,
-    roastAspectOptionsMap: Map<string, string[]>
+    greenAspectOptionsMap: Map<string, Array<{label: string; value: number}>>,
+    roastAspectOptionsMap: Map<string, Array<{label: string; value: number}>>
   ) => {
     try {
       // Load client quality for custom name and extract template parameters
