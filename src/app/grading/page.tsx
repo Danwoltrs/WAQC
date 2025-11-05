@@ -489,27 +489,52 @@ export default function GradingPage() {
           }
 
           // Extract humidity constraints (moisture requirements)
+          const humidityConstraint: { min?: number; max?: number } = {}
+
+          // Try multiple paths for moisture constraints
           if (templateParams?.moisture_requirements) {
-            const humidityConstraint: { min?: number; max?: number } = {}
             if (templateParams.moisture_requirements.min !== undefined) {
               humidityConstraint.min = templateParams.moisture_requirements.min
             }
             if (templateParams.moisture_requirements.max !== undefined) {
               humidityConstraint.max = templateParams.moisture_requirements.max
             }
-            if (Object.keys(humidityConstraint).length > 0) {
-              humidityConstraintsMap.set(sample.id, humidityConstraint)
-            }
+          }
+          // Direct moisture_min/max at template level
+          if (templateParams?.moisture_min !== undefined) {
+            humidityConstraint.min = templateParams.moisture_min
+          }
+          if (templateParams?.moisture_max !== undefined) {
+            humidityConstraint.max = templateParams.moisture_max
+          }
+
+          if (Object.keys(humidityConstraint).length > 0) {
+            console.log(`[CONSTRAINTS] Humidity constraints for ${sample.tracking_number}:`, humidityConstraint)
+            humidityConstraintsMap.set(sample.id, humidityConstraint)
           }
 
           // Extract green aspect constraints (rejectable values)
-          if (templateParams?.green_aspect_configuration?.rejectable_values && Array.isArray(templateParams.green_aspect_configuration.rejectable_values)) {
-            greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable_values)
+          if (templateParams?.green_aspect_configuration) {
+            console.log(`[CONSTRAINTS] Green aspect config for ${sample.tracking_number}:`, templateParams.green_aspect_configuration)
+            if (templateParams.green_aspect_configuration.rejectable_values && Array.isArray(templateParams.green_aspect_configuration.rejectable_values)) {
+              console.log(`[CONSTRAINTS] Green aspect rejectable values:`, templateParams.green_aspect_configuration.rejectable_values)
+              greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable_values)
+            } else if (templateParams.green_aspect_configuration.rejectable && Array.isArray(templateParams.green_aspect_configuration.rejectable)) {
+              console.log(`[CONSTRAINTS] Green aspect rejectable:`, templateParams.green_aspect_configuration.rejectable)
+              greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable)
+            }
           }
 
           // Extract roast aspect constraints (rejectable values)
-          if (templateParams?.roast_aspect_configuration?.rejectable_values && Array.isArray(templateParams.roast_aspect_configuration.rejectable_values)) {
-            roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable_values)
+          if (templateParams?.roast_aspect_configuration) {
+            console.log(`[CONSTRAINTS] Roast aspect config for ${sample.tracking_number}:`, templateParams.roast_aspect_configuration)
+            if (templateParams.roast_aspect_configuration.rejectable_values && Array.isArray(templateParams.roast_aspect_configuration.rejectable_values)) {
+              console.log(`[CONSTRAINTS] Roast aspect rejectable values:`, templateParams.roast_aspect_configuration.rejectable_values)
+              roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable_values)
+            } else if (templateParams.roast_aspect_configuration.rejectable && Array.isArray(templateParams.roast_aspect_configuration.rejectable)) {
+              console.log(`[CONSTRAINTS] Roast aspect rejectable:`, templateParams.roast_aspect_configuration.rejectable)
+              roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable)
+            }
           }
         }
       }
