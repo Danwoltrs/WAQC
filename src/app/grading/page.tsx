@@ -1274,8 +1274,18 @@ export default function GradingPage() {
                         )
                       })()}
 
-                      {/* Compliance Violation Messages at Bottom of Card */}
+                      {/* Compliance Violation Messages at Bottom of Card - Only for screen/humidity/aspect */}
                       {(() => {
+                        // Check if any data has been entered
+                        const hasData = gradingData && (
+                          Object.values(gradingData.screen_sizes).some(grams => grams > 0) ||
+                          gradingData.moisture_percentage > 0 ||
+                          gradingData.green_aspect ||
+                          gradingData.roast_aspect
+                        )
+
+                        if (!hasData) return null
+
                         const screenComp = getScreenSizeCompliance(sample.id)
                         const humidityComp = getHumidityCompliance(sample.id)
                         const greenComp = getGreenAspectCompliance(sample.id)
@@ -1415,13 +1425,19 @@ export default function GradingPage() {
                         </div>
                       )}
 
-                      {/* Compliance Violation Messages - Discrete at bottom */}
+                      {/* Compliance Violation Messages - Only defect-related warnings */}
                       {(() => {
-                        const compliance = getComplianceStatus(sample.id)
-                        if (compliance.status === 'fail' && compliance.errors.length > 0) {
+                        // Check if any defect data has been entered
+                        const hasDefectData = gradingData && Object.values(gradingData.defect_counts).some(count => count > 0)
+
+                        if (!hasDefectData) return null
+
+                        const defectComp = getDefectCompliance(sample.id)
+
+                        if (defectComp.errors.length > 0) {
                           return (
                             <div className="mt-3 pt-3 border-t space-y-1">
-                              {compliance.errors.map((error, index) => (
+                              {defectComp.errors.map((error, index) => (
                                 <div key={index} className="text-xs text-red-600 dark:text-red-400 font-medium">
                                   {error}
                                 </div>
