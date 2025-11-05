@@ -998,12 +998,12 @@ export default function GradingPage() {
                 )
 
                 // Determine background color:
-                // - Yellow if active (regardless of pass/fail)
+                // - Yellow if active (regardless of whether it has data)
                 // - Red if inactive and has data and failed
                 // - Green if inactive and has data and passed
-                // - No background if no data
+                // - No background if inactive and no data
                 let bgColor = ''
-                if (isActive && hasData) {
+                if (isActive) {
                   bgColor = 'bg-yellow-500/20'
                 } else if (hasData) {
                   const compliance = getComplianceStatus(sample.id)
