@@ -225,13 +225,6 @@ export default function GradingPage() {
     const gradingData = gradingDataMap.get(sampleId)
     const constraint = greenAspectConstraintsMap.get(sampleId)
 
-    console.log('[COMPLIANCE CHECK] Green aspect:', {
-      sampleId,
-      constraint,
-      gradingData: gradingData?.green_aspect,
-      options: greenAspectOptionsMap.get(sampleId)
-    })
-
     if (!constraint || !gradingData || !gradingData.green_aspect) {
       return { errors: [], violated: false }
     }
@@ -560,14 +553,11 @@ export default function GradingPage() {
           }
 
           if (Object.keys(humidityConstraint).length > 0) {
-            console.log(`[CONSTRAINTS] Humidity constraints for ${sample.tracking_number}:`, humidityConstraint)
             humidityConstraintsMap.set(sample.id, humidityConstraint)
           }
 
           // Extract green aspect constraints
           if (templateParams?.green_aspect_configuration) {
-            console.log(`[CONSTRAINTS] Green aspect config for ${sample.tracking_number}:`, templateParams.green_aspect_configuration)
-
             // Check for minimum acceptable level (check both validation.min_acceptable_value and minimum_acceptable)
             const minAcceptableValue = templateParams.green_aspect_configuration.validation?.min_acceptable_value
               ?? templateParams.green_aspect_configuration.minimum_acceptable
@@ -577,7 +567,6 @@ export default function GradingPage() {
               const minOption = greenOptions.find(opt => opt.value === minAcceptableValue)
 
               if (minOption) {
-                console.log(`[CONSTRAINTS] Green aspect minimum acceptable:`, minOption)
                 greenAspectConstraintsMap.set(sample.id, {
                   min_value: minAcceptableValue,
                   min_label: minOption.label
@@ -586,18 +575,14 @@ export default function GradingPage() {
             }
             // Check for rejectable values array
             else if (templateParams.green_aspect_configuration.rejectable_values && Array.isArray(templateParams.green_aspect_configuration.rejectable_values)) {
-              console.log(`[CONSTRAINTS] Green aspect rejectable values:`, templateParams.green_aspect_configuration.rejectable_values)
               greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable_values)
             } else if (templateParams.green_aspect_configuration.rejectable && Array.isArray(templateParams.green_aspect_configuration.rejectable)) {
-              console.log(`[CONSTRAINTS] Green aspect rejectable:`, templateParams.green_aspect_configuration.rejectable)
               greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable)
             }
           }
 
           // Extract roast aspect constraints
           if (templateParams?.roast_aspect_configuration) {
-            console.log(`[CONSTRAINTS] Roast aspect config for ${sample.tracking_number}:`, templateParams.roast_aspect_configuration)
-
             // Check for minimum acceptable level (check both validation.min_acceptable_value and minimum_acceptable)
             const minAcceptableValue = templateParams.roast_aspect_configuration.validation?.min_acceptable_value
               ?? templateParams.roast_aspect_configuration.minimum_acceptable
@@ -607,7 +592,6 @@ export default function GradingPage() {
               const minOption = roastOptions.find(opt => opt.value === minAcceptableValue)
 
               if (minOption) {
-                console.log(`[CONSTRAINTS] Roast aspect minimum acceptable:`, minOption)
                 roastAspectConstraintsMap.set(sample.id, {
                   min_value: minAcceptableValue,
                   min_label: minOption.label
@@ -616,10 +600,8 @@ export default function GradingPage() {
             }
             // Check for rejectable values array
             else if (templateParams.roast_aspect_configuration.rejectable_values && Array.isArray(templateParams.roast_aspect_configuration.rejectable_values)) {
-              console.log(`[CONSTRAINTS] Roast aspect rejectable values:`, templateParams.roast_aspect_configuration.rejectable_values)
               roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable_values)
             } else if (templateParams.roast_aspect_configuration.rejectable && Array.isArray(templateParams.roast_aspect_configuration.rejectable)) {
-              console.log(`[CONSTRAINTS] Roast aspect rejectable:`, templateParams.roast_aspect_configuration.rejectable)
               roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable)
             }
           }
