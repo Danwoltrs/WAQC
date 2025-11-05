@@ -25,7 +25,12 @@ import {
   calculateSecondaryDefects,
   calculateTotalDefects,
   getDefectsByCategory,
-  validateDefectCounts
+  validateDefectCounts,
+  BRAZIL_SCA_DEFECTS,
+  COLOMBIA_STANDARD_DEFECTS,
+  GUATEMALA_STANDARD_DEFECTS,
+  SCA_STANDARD_DEFECTS,
+  PREDEFINED_DEFECT_TEMPLATES
 } from '@/types/defect-configuration'
 import {
   ScreenSizeConstraint,
@@ -613,14 +618,20 @@ export default function GradingPage() {
         templateParams = sample.quality_spec?.template?.parameters
       }
 
-      // Load defect configuration from quality template first, fallback to client defects
+      // For TYPE SAMPLES: Skip all template-based defect loading
+      // Type samples ALWAYS use standard SCA defects based on origin only
+      // They are offer samples for evaluation, not subject to approval/rejection
       let defectConfigs: DefectConfig[] = []
 
-      // Try multiple possible locations for defect data
+      // Extract custom parameters (used for defects and thresholds)
       const customParams = sample.quality_spec?.custom_parameters
 
-      // Path 1: template.parameters.defect_configuration (GRADING DEFECTS)
-      if (templateParams?.defect_configuration?.defects && Array.isArray(templateParams.defect_configuration.defects)) {
+      if (sample.sample_type !== 'type') {
+        // Only load template defects for non-type samples (PSS, SS, Specialty)
+        // Try multiple possible locations for defect data
+
+        // Path 1: template.parameters.defect_configuration (GRADING DEFECTS)
+        if (templateParams?.defect_configuration?.defects && Array.isArray(templateParams.defect_configuration.defects)) {
         defectConfigs = templateParams.defect_configuration.defects.map((defect: any, index: number) => ({
           name: defect.name || defect.name_en,
           weight: defect.weight || defect.point_value || 1,
@@ -670,26 +681,27 @@ export default function GradingPage() {
         }))
       }
 
-      // Fallback to loading from defect definitions API if not in template
-      if (defectConfigs.length === 0 && sample.client_id) {
-        const defectsResponse = await fetch(
-          `/api/defect-definitions?client_id=${sample.client_id}&origin=${sample.origin || ''}&is_active=true`
-        )
-        if (defectsResponse.ok) {
-          const defectsData = await defectsResponse.json()
-          if (defectsData.definitions) {
-            defectConfigs = defectsData.definitions.map((def: any, index: number) => ({
-              name: def.name_en,
-              weight: def.point_value,
-              category: def.category as 'primary' | 'secondary',
-              display_order: index,
-              description: def.description_en
-            }))
+        // Fallback to loading from defect definitions API if not in template
+        if (defectConfigs.length === 0 && sample.client_id) {
+          const defectsResponse = await fetch(
+            `/api/defect-definitions?client_id=${sample.client_id}&origin=${sample.origin || ''}&is_active=true`
+          )
+          if (defectsResponse.ok) {
+            const defectsData = await defectsResponse.json()
+            if (defectsData.definitions) {
+              defectConfigs = defectsData.definitions.map((def: any, index: number) => ({
+                name: def.name_en,
+                weight: def.point_value,
+                category: def.category as 'primary' | 'secondary',
+                display_order: index,
+                description: def.description_en
+              }))
+            }
           }
         }
-      }
+      } // End of non-type sample defect loading
 
-      // Set defect configs if we have any
+      // Set defect configs if we have any (for non-type samples)
       if (defectConfigs.length > 0) {
         defectConfigsMap.set(sample.id, defectConfigs)
 
@@ -753,8 +765,64 @@ export default function GradingPage() {
         defectThresholdsMap.set(sample.id, defectThresholds)
       }
 
-      // Load screen size constraints from quality template
-      if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
+      // Load screen size constraints
+      // For TYPE SAMPLES: ALWAYS use all 13 standard screens regardless of template
+      if (sample.sample_type === 'type') {
+        // Type samples show all common screen sizes including peaberries and Pan
+        const allScreens: ScreenSizeConstraint[] = [
+          { screen_size: '20', constraint_type: 'any', display_order: 0 },
+          { screen_size: '19', constraint_type: 'any', display_order: 1 },
+          { screen_size: '18', constraint_type: 'any', display_order: 2 },
+          { screen_size: '17', constraint_type: 'any', display_order: 3 },
+          { screen_size: '16', constraint_type: 'any', display_order: 4 },
+          { screen_size: '15', constraint_type: 'any', display_order: 5 },
+          { screen_size: '14', constraint_type: 'any', display_order: 6 },
+          { screen_size: '13', constraint_type: 'any', display_order: 7 },
+          { screen_size: '12', constraint_type: 'any', display_order: 8 },
+          { screen_size: 'Peas 11', constraint_type: 'any', display_order: 9 },
+          { screen_size: 'Peas 10', constraint_type: 'any', display_order: 10 },
+          { screen_size: 'Peas 9', constraint_type: 'any', display_order: 11 },
+          { screen_size: 'Pan', constraint_type: 'any', display_order: 12 }
+        ]
+        screenConstraintsMap.set(sample.id, allScreens)
+
+        const gradingData = gradingDataMap.get(sample.id)
+        if (gradingData) {
+          // Preserve existing loaded screen sizes
+          const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
+          allScreens.forEach(screen => {
+            // Only initialize to 0 if not already loaded from quality assessment
+            if (!(screen.screen_size in screenSizes)) {
+              screenSizes[screen.screen_size] = 0
+            }
+          })
+          gradingData.screen_sizes = screenSizes
+        }
+
+        // Add standard green and roast aspect options for Type samples (no constraints, just tracking)
+        const standardGreenOptions = [
+          { label: 'Bluish', value: 1 },
+          { label: 'Bluish Green', value: 2 },
+          { label: 'Green', value: 3 },
+          { label: 'Greenish', value: 4 },
+          { label: 'Yellow Green', value: 5 },
+          { label: 'Yellowish', value: 6 },
+          { label: 'Pale Yellow', value: 7 }
+        ]
+        greenAspectOptionsMap.set(sample.id, standardGreenOptions)
+
+        const standardRoastOptions = [
+          { label: 'Very Light', value: 1 },
+          { label: 'Light', value: 2 },
+          { label: 'Medium Light', value: 3 },
+          { label: 'Medium', value: 4 },
+          { label: 'Medium Dark', value: 5 },
+          { label: 'Dark', value: 6 },
+          { label: 'Very Dark', value: 7 }
+        ]
+        roastAspectOptionsMap.set(sample.id, standardRoastOptions)
+      } else if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
+        // For non-type samples: use template screen size requirements
         const constraints = sample.quality_spec.template.parameters.screen_size_requirements.constraints || []
         screenConstraintsMap.set(sample.id, constraints)
 
@@ -770,33 +838,55 @@ export default function GradingPage() {
           })
           gradingData.screen_sizes = screenSizes
         }
-      } else if (sample.sample_type === 'type') {
-        // For type samples without template, show all common screen sizes
-        const allScreens: ScreenSizeConstraint[] = [
-          { screen_size: '20', constraint_type: 'any', display_order: 0 },
-          { screen_size: '19', constraint_type: 'any', display_order: 1 },
-          { screen_size: '18', constraint_type: 'any', display_order: 2 },
-          { screen_size: '17', constraint_type: 'any', display_order: 3 },
-          { screen_size: '16', constraint_type: 'any', display_order: 4 },
-          { screen_size: '15', constraint_type: 'any', display_order: 5 },
-          { screen_size: '14', constraint_type: 'any', display_order: 6 },
-          { screen_size: '13', constraint_type: 'any', display_order: 7 },
-          { screen_size: '12', constraint_type: 'any', display_order: 8 },
-          { screen_size: 'Below 12', constraint_type: 'any', display_order: 9 }
-        ]
-        screenConstraintsMap.set(sample.id, allScreens)
+      }
+
+      // For ALL type samples, ALWAYS load standard SCA defects based on origin
+      // Type samples are offer samples for evaluation - they use standard classification only
+      // They do NOT follow any client quality template or approval/rejection criteria
+      console.log(`🔍 Checking sample ${sample.tracking_number}: type=${sample.sample_type}, origin=${sample.origin}`)
+      if (sample.sample_type === 'type') {
+        console.log(`📋 Loading SCA defects for TYPE sample ${sample.tracking_number} with origin ${sample.origin}`)
+
+        // Use hardcoded defect templates (same as template builder)
+        // Match by origin first, fall back to generic SCA if no match
+        let defectTemplate = null
+
+        if (sample.origin) {
+          const originLower = sample.origin.toLowerCase()
+          defectTemplate = PREDEFINED_DEFECT_TEMPLATES.find(t =>
+            t.origin && t.origin.toLowerCase() === originLower
+          )
+        }
+
+        // Fall back to generic SCA defects if no origin-specific template found
+        if (!defectTemplate) {
+          console.log(`No origin-specific defects for ${sample.origin || 'unknown'}, using generic SCA standard`)
+          defectTemplate = SCA_STANDARD_DEFECTS
+        } else {
+          console.log(`Found ${defectTemplate.name} defects for origin ${sample.origin}`)
+        }
+
+        // Use defects from the template
+        const typeDefectConfigs = defectTemplate.configuration.defects.map(defect => ({
+          name: defect.name,
+          weight: defect.weight,
+          category: defect.category,
+          display_order: defect.display_order,
+          description: defect.description
+        }))
+
+        console.log(`✅ Loaded ${typeDefectConfigs.length} defects from ${defectTemplate.name} template`)
+        defectConfigsMap.set(sample.id, typeDefectConfigs)
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          // Preserve existing loaded screen sizes
-          const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
-          allScreens.forEach(screen => {
-            // Only initialize to 0 if not already loaded from quality assessment
-            if (!(screen.screen_size in screenSizes)) {
-              screenSizes[screen.screen_size] = 0
+          const defectCounts: { [key: string]: number } = { ...gradingData.defect_counts }
+          typeDefectConfigs.forEach((defect: DefectConfig) => {
+            if (!(defect.name in defectCounts)) {
+              defectCounts[defect.name] = 0
             }
           })
-          gradingData.screen_sizes = screenSizes
+          gradingData.defect_counts = defectCounts
         }
       }
     } catch (error) {
@@ -822,6 +912,10 @@ export default function GradingPage() {
     const lowerScreen = screenSize.toLowerCase()
     if (lowerScreen.includes('pan') || lowerScreen === 'pan') {
       return 'Pan'
+    }
+    // Peaberries (Peas) should not have "Scr." prefix
+    if (lowerScreen.includes('peas')) {
+      return screenSize
     }
     // Remove any existing "Screen" prefix and format as "Scr. X"
     const cleanSize = screenSize.replace(/^screen\s*/i, '').trim()
@@ -938,6 +1032,43 @@ export default function GradingPage() {
     }
   }
 
+  // Extract only screen size percentages for memoization dependency
+  // This prevents chart re-render when defects, humidity, or aspects change
+  const screenPercentagesKey = useMemo(() => {
+    return samples.map(sample => {
+      const gradingData = gradingDataMap.get(sample.id)
+      if (!gradingData) return `${sample.id}:empty`
+      return `${sample.id}:${JSON.stringify(gradingData.screen_sizes_percentages)}`
+    }).join('|')
+  }, [samples, gradingDataMap])
+
+  // Memoize chart data for all samples at component level to prevent unnecessary re-renders
+  // Must be called before early returns to maintain consistent hook order
+  // Only recalculates when screen size values actually change (not when defects/humidity/aspects change)
+  const allChartDataMap = useMemo(() => {
+    const chartDataMap = new Map<string, Array<{name: string; value: number}>>()
+
+    samples.forEach(sample => {
+      const gradingData = gradingDataMap.get(sample.id)
+      const screens = screenConstraintsMap.get(sample.id) || []
+
+      if (gradingData) {
+        const chartData = screens
+          .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
+          .map((screen) => ({
+            name: formatScreenLabel(screen.screen_size),
+            value: gradingData.screen_sizes_percentages[screen.screen_size] || 0
+          }))
+
+        chartDataMap.set(sample.id, chartData)
+      } else {
+        chartDataMap.set(sample.id, [])
+      }
+    })
+
+    return chartDataMap
+  }, [samples, screenPercentagesKey, screenConstraintsMap])
+
   if (loading) {
     return (
       <MainLayout>
@@ -1048,17 +1179,8 @@ export default function GradingPage() {
           const secondaries = getDefectsByCategory(defects, 'secondary')
           const clientQuality = clientQualityMap.get(sample.id)
 
-          // Memoize chart data to prevent unnecessary re-renders when other fields change
-          // eslint-disable-next-line react-hooks/rules-of-hooks
-          const chartData = useMemo(() => {
-            if (!gradingData) return []
-            return screens
-              .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
-              .map((screen) => ({
-                name: formatScreenLabel(screen.screen_size),
-                value: gradingData.screen_sizes_percentages[screen.screen_size] || 0
-              }))
-          }, [gradingData?.screen_sizes_percentages, screens])
+          // Get pre-calculated chart data from top-level memoized map
+          const chartData = allChartDataMap.get(sample.id) || []
 
           return (
             <TabsContent key={sample.id} value={sample.id} className="m-0">
@@ -1175,24 +1297,30 @@ export default function GradingPage() {
 
               {/* Grading Content */}
               <div className="p-6">
-                {/* Screen Size Distribution + Defects (Horizontal) */}
-                <div className="flex gap-6 items-start">
+                {/* Screen Size Distribution + Defects (Responsive: Vertical on small screens, Horizontal on large) */}
+                <div className="flex flex-col lg:flex-row gap-6 items-start">
                   {/* Screen Size Distribution - Compact Card */}
-                  <Card className="w-fit self-start">
+                  <Card className="w-full lg:w-fit self-start">
                     <CardContent className="pt-4 pb-4 px-4">
                       <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
                       <div className="flex gap-2">
-                        {/* Screen Size Inputs */}
-                        <div className="space-y-2 flex-1">
+                        {/* Screen Size Inputs - Split into 2 columns if > 10 screens */}
+                        <div className="flex-1">
                           {(() => {
                             const screenComp = getScreenSizeCompliance(sample.id)
-                            return screens.map(screen => {
+                            const totalScreens = screens.length
+                            const shouldSplit = totalScreens > 10
+                            const midpoint = shouldSplit ? Math.ceil(totalScreens / 2) : totalScreens
+                            const firstColumn = screens.slice(0, midpoint)
+                            const secondColumn = shouldSplit ? screens.slice(midpoint) : []
+
+                            const renderScreenRow = (screen: ScreenSizeConstraint) => {
                               const gramsValue = gradingData?.screen_sizes[screen.screen_size] || 0
                               const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
                               const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
 
                               return (
-                                <div key={screen.screen_size} className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
+                                <div key={screen.screen_size} className="grid grid-cols-[70px_60px_45px] gap-1.5 items-center">
                                   <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
                                   <Input
                                     type="number"
@@ -1200,7 +1328,7 @@ export default function GradingPage() {
                                     step="1"
                                     value={gramsValue}
                                     onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
-                                    className="h-8 text-sm w-16"
+                                    className="h-8 text-sm w-full"
                                     placeholder="grams"
                                   />
                                   <div className={`text-xs ${isViolated ? 'text-red-600 dark:text-red-400 font-bold' : 'text-muted-foreground'}`}>
@@ -1208,22 +1336,41 @@ export default function GradingPage() {
                                   </div>
                                 </div>
                               )
-                            })
+                            }
+
+                            return (
+                              <>
+                                <div className={`flex ${shouldSplit ? 'gap-2' : ''}`}>
+                                  {/* First Column */}
+                                  <div className="space-y-1.5 flex-1">
+                                    {firstColumn.map(renderScreenRow)}
+                                  </div>
+
+                                  {/* Second Column (if needed) */}
+                                  {shouldSplit && (
+                                    <div className="space-y-1.5 flex-1">
+                                      {secondColumn.map(renderScreenRow)}
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* Total Row */}
+                                <div className="grid grid-cols-[70px_60px_45px] gap-1.5 items-center pt-2 mt-2 border-t">
+                                  <Label className="text-sm font-semibold">Total</Label>
+                                  <div className="text-sm font-semibold">
+                                    {Object.values(gradingData?.screen_sizes || {}).reduce((sum, val) => sum + val, 0)}g
+                                  </div>
+                                  <div className="text-xs text-muted-foreground font-semibold">
+                                    100%
+                                  </div>
+                                </div>
+                              </>
+                            )
                           })()}
-                          {/* Total Row */}
-                          <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center pt-2 border-t">
-                            <Label className="text-sm font-semibold">Total</Label>
-                            <div className="text-sm font-semibold">
-                              {Object.values(gradingData?.screen_sizes || {}).reduce((sum, val) => sum + val, 0)}g
-                            </div>
-                            <div className="text-xs text-muted-foreground font-semibold">
-                              100%
-                            </div>
-                          </div>
                         </div>
 
-                        {/* Pie Chart with Labels and Lines */}
-                        {chartData.length > 0 && (
+                        {/* Pie Chart with Labels and Lines - Hidden for type samples or when more than 6 screens */}
+                        {chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6 && (
                           <div className="flex items-center justify-center" style={{ width: '240px', height: '160px' }}>
                             <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
@@ -1270,32 +1417,33 @@ export default function GradingPage() {
 
                       {/* Quakers, Humidity, Green Aspect, Roast Aspect */}
                       {(() => {
-                        const hasChart = chartData.length > 0
+                        const hasChart = chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6
                         const sampleGreenOptions = greenAspectOptionsMap.get(sample.id) || []
                         const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
                         const hasAspects = sampleGreenOptions.length > 0 || sampleRoastOptions.length > 0
+                        const shouldSplit = screens.length > 10
+                        const showQuakers = sample.quality_spec?.template?.parameters?.require_quaker_count === true || sample.sample_type === 'type'
+                        const humidityComp = getHumidityCompliance(sample.id)
 
                         return (
                           <div className="mt-4 pt-4 border-t space-y-2">
-                            {/* Conditionally show Quakers based on template requirement */}
-                            {sample.quality_spec?.template?.parameters?.require_quaker_count === true && (
-                              <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
-                                <Label className="text-sm">Quakers</Label>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  value={gradingData?.quakers_count || 0}
-                                  onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                                  className="h-8 text-sm w-20"
-                                />
-                                <div className="text-xs text-muted-foreground"></div>
-                              </div>
-                            )}
+                            {/* When 2 columns (>10 screens): show Quakers and Humidity side by side */}
+                            {shouldSplit && showQuakers ? (
+                              <div className="flex gap-4">
+                                {/* Quakers */}
+                                <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
+                                  <Label className="text-sm">Quakers</Label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    value={gradingData?.quakers_count || 0}
+                                    onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
+                                    className="h-8 text-sm w-20"
+                                  />
+                                  <div className="text-xs text-muted-foreground"></div>
+                                </div>
 
-                            {/* Humidity */}
-                            {(() => {
-                              const humidityComp = getHumidityCompliance(sample.id)
-                              return (
+                                {/* Humidity */}
                                 <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
                                   <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                     Humidity (%)
@@ -1311,16 +1459,50 @@ export default function GradingPage() {
                                   />
                                   <div className="text-xs text-muted-foreground"></div>
                                 </div>
-                              )
-                            })()}
+                              </div>
+                            ) : (
+                              <>
+                                {/* When 1 column or no quakers: show stacked */}
+                                {showQuakers && (
+                                  <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
+                                    <Label className="text-sm">Quakers</Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      value={gradingData?.quakers_count || 0}
+                                      onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
+                                      className="h-8 text-sm w-20"
+                                    />
+                                    <div className="text-xs text-muted-foreground"></div>
+                                  </div>
+                                )}
 
-                            {/* Green and Roast Aspects - Conditional Layout */}
+                                {/* Humidity */}
+                                <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
+                                  <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                    Humidity (%)
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.1"
+                                    value={gradingData?.moisture_percentage || 0}
+                                    onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
+                                    className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                  />
+                                  <div className="text-xs text-muted-foreground"></div>
+                                </div>
+                              </>
+                            )}
+
+                            {/* Green and Roast Aspects - Always Side by Side */}
                             {hasAspects && (() => {
                               const greenComp = getGreenAspectCompliance(sample.id)
                               const roastComp = getRoastAspectCompliance(sample.id)
 
                               return (
-                                <div className={hasChart ? "flex gap-4" : "space-y-2"}>
+                                <div className="flex gap-4">
                                   {/* Green Aspect */}
                                   {sampleGreenOptions.length > 0 && (
                                     <div className="flex flex-col gap-1.5">
@@ -1416,7 +1598,7 @@ export default function GradingPage() {
                   </Card>
 
                   {/* Defects */}
-                  <Card className="w-fit self-start">
+                  <Card className="w-full lg:w-fit self-start">
                     <CardContent className="pt-4">
                       {primaries.length === 0 && secondaries.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground text-sm">
@@ -1499,10 +1681,10 @@ export default function GradingPage() {
                           {secondaries.length > 0 && (
                             <div>
                               <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Secondary</h4>
-                              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5">
+                              <div className="space-y-1.5">
                                 {secondaries.map((defect, index) => (
-                                  <div key={defect.name} className="grid grid-cols-[140px_64px_auto] gap-1.5 items-center">
-                                    <Label className="text-sm">
+                                  <div key={defect.name} className="grid grid-cols-[160px_64px_auto] gap-1.5 items-center">
+                                    <Label className="text-sm" title={defect.name}>
                                       {defect.name}
                                       <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
                                     </Label>

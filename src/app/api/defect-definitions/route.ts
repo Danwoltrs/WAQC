@@ -26,6 +26,7 @@ export async function GET(request: NextRequest) {
     const category = searchParams.get('category')
     const is_active = searchParams.get('is_active')
     const search = searchParams.get('search')
+    const standard_only = searchParams.get('standard_only') === 'true' // For type samples: get standard SCA defects only
     const limit = parseInt(searchParams.get('limit') || '100')
     const offset = parseInt(searchParams.get('offset') || '0')
 
@@ -39,7 +40,11 @@ export async function GET(request: NextRequest) {
       .range(offset, offset + limit - 1)
 
     // Apply filters
-    if (client_id) {
+    if (standard_only) {
+      // For type samples: get standard SCA defects (client_id IS NULL)
+      query = query.is('client_id', null)
+    } else if (client_id) {
+      // For client-specific samples: get client's custom defects
       query = query.eq('client_id', client_id)
     }
 
