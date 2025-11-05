@@ -123,6 +123,13 @@ export default function GradingPage() {
   // Screen size constraints per sample
   const [screenConstraintsMap, setScreenConstraintsMap] = useState<Map<string, ScreenSizeConstraint[]>>(new Map())
 
+  // Humidity constraints per sample (min/max)
+  const [humidityConstraintsMap, setHumidityConstraintsMap] = useState<Map<string, { min?: number; max?: number }>>(new Map())
+
+  // Green/Roast aspect constraints per sample (rejectable values)
+  const [greenAspectConstraintsMap, setGreenAspectConstraintsMap] = useState<Map<string, string[]>>(new Map())
+  const [roastAspectConstraintsMap, setRoastAspectConstraintsMap] = useState<Map<string, string[]>>(new Map())
+
   // Client quality per sample (for custom quality names)
   const [clientQualityMap, setClientQualityMap] = useState<Map<string, ClientQuality>>(new Map())
 
@@ -142,55 +149,131 @@ export default function GradingPage() {
     setVisibility(updated)
   }
 
-  // Calculate compliance status for a sample
+  // Separate compliance checking functions for each validation type
+
+  // Defect compliance
+  const getDefectCompliance = (sampleId: string): { errors: string[]; violatedTypes: string[] } => {
+    const gradingData = gradingDataMap.get(sampleId)
+    const defects = defectConfigsMap.get(sampleId)
+    const thresholds = defectThresholdsMap.get(sampleId)
+
+    if (!thresholds || Object.keys(thresholds).length === 0 || !defects || !gradingData || defects.length === 0) {
+      return { errors: [], violatedTypes: [] }
+    }
+
+    const defectValidation = validateDefectCounts(defects, gradingData.defect_counts, thresholds)
+    if (!defectValidation.valid) {
+      const violatedTypes: string[] = []
+      defectValidation.errors.forEach(error => {
+        if (error.toLowerCase().includes('primary')) violatedTypes.push('primary')
+        if (error.toLowerCase().includes('secondary')) violatedTypes.push('secondary')
+        if (error.toLowerCase().includes('total')) violatedTypes.push('total')
+      })
+      return { errors: defectValidation.errors, violatedTypes }
+    }
+
+    return { errors: [], violatedTypes: [] }
+  }
+
+  // Screen size compliance
+  const getScreenSizeCompliance = (sampleId: string): { errors: string[]; violatedScreens: string[] } => {
+    const gradingData = gradingDataMap.get(sampleId)
+    const screenConstraints = screenConstraintsMap.get(sampleId)
+
+    if (!screenConstraints || screenConstraints.length === 0 || !gradingData) {
+      return { errors: [], violatedScreens: [] }
+    }
+
+    const screenValidation = validateScreenSizeDistribution(
+      gradingData.screen_sizes_percentages,
+      { constraints: screenConstraints }
+    )
+
+    if (!screenValidation.is_valid) {
+      const violatedScreens = screenValidation.violations.map(v => v.screen_size)
+      const errors = screenValidation.violations.map(v => v.message)
+      return { errors, violatedScreens }
+    }
+
+    return { errors: [], violatedScreens: [] }
+  }
+
+  // Humidity compliance
+  const getHumidityCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
+    const gradingData = gradingDataMap.get(sampleId)
+    const constraints = humidityConstraintsMap.get(sampleId)
+
+    if (!constraints || !gradingData || gradingData.moisture_percentage === 0) {
+      return { errors: [], violated: false }
+    }
+
+    const errors: string[] = []
+    const humidity = gradingData.moisture_percentage
+
+    if (constraints.min !== undefined && humidity < constraints.min) {
+      errors.push(`Humidity must be at least ${constraints.min}%, but is ${humidity.toFixed(1)}%`)
+    }
+    if (constraints.max !== undefined && humidity > constraints.max) {
+      errors.push(`Humidity must be at most ${constraints.max}%, but is ${humidity.toFixed(1)}%`)
+    }
+
+    return { errors, violated: errors.length > 0 }
+  }
+
+  // Green aspect compliance
+  const getGreenAspectCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
+    const gradingData = gradingDataMap.get(sampleId)
+    const rejectableValues = greenAspectConstraintsMap.get(sampleId)
+
+    if (!rejectableValues || rejectableValues.length === 0 || !gradingData || !gradingData.green_aspect) {
+      return { errors: [], violated: false }
+    }
+
+    if (rejectableValues.includes(gradingData.green_aspect)) {
+      return { errors: [`Green aspect "${gradingData.green_aspect}" is not acceptable`], violated: true }
+    }
+
+    return { errors: [], violated: false }
+  }
+
+  // Roast aspect compliance
+  const getRoastAspectCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
+    const gradingData = gradingDataMap.get(sampleId)
+    const rejectableValues = roastAspectConstraintsMap.get(sampleId)
+
+    if (!rejectableValues || rejectableValues.length === 0 || !gradingData || !gradingData.roast_aspect) {
+      return { errors: [], violated: false }
+    }
+
+    if (rejectableValues.includes(gradingData.roast_aspect)) {
+      return { errors: [`Roast aspect "${gradingData.roast_aspect}" is not acceptable`], violated: true }
+    }
+
+    return { errors: [], violated: false }
+  }
+
+  // Overall compliance status (for save operation)
   const getComplianceStatus = (sampleId: string): {
     status: 'pass' | 'fail' | 'pending';
     errors: string[];
     color: string;
     label: string;
   } => {
-    const gradingData = gradingDataMap.get(sampleId)
-    const defects = defectConfigsMap.get(sampleId)
-    const thresholds = defectThresholdsMap.get(sampleId)
-    const screenConstraints = screenConstraintsMap.get(sampleId)
+    const defectComp = getDefectCompliance(sampleId)
+    const screenComp = getScreenSizeCompliance(sampleId)
+    const humidityComp = getHumidityCompliance(sampleId)
+    const greenComp = getGreenAspectCompliance(sampleId)
+    const roastComp = getRoastAspectCompliance(sampleId)
 
-    const allErrors: string[] = []
+    const allErrors = [
+      ...defectComp.errors,
+      ...screenComp.errors,
+      ...humidityComp.errors,
+      ...greenComp.errors,
+      ...roastComp.errors
+    ]
 
-    // Validate defect counts if thresholds are defined
-    if (thresholds && Object.keys(thresholds).length > 0 && defects && gradingData && defects.length > 0) {
-      const defectValidation = validateDefectCounts(defects, gradingData.defect_counts, thresholds)
-      if (!defectValidation.valid) {
-        allErrors.push(...defectValidation.errors)
-      }
-    }
-
-    // Validate screen size distribution if constraints are defined
-    if (screenConstraints && screenConstraints.length > 0 && gradingData) {
-      const screenValidation = validateScreenSizeDistribution(
-        gradingData.screen_sizes_percentages,
-        { constraints: screenConstraints }
-      )
-      if (!screenValidation.is_valid) {
-        allErrors.push(...screenValidation.violations.map(v => v.message))
-      }
-    }
-
-    // Return status based on combined validation
     if (allErrors.length === 0) {
-      // Check if we have any validation criteria at all
-      const hasValidationCriteria =
-        (thresholds && Object.keys(thresholds).length > 0) ||
-        (screenConstraints && screenConstraints.some(c => c.constraint_type !== 'any'))
-
-      if (!hasValidationCriteria) {
-        return {
-          status: 'pending',
-          errors: [],
-          color: 'text-muted-foreground',
-          label: 'No thresholds'
-        }
-      }
-
       return {
         status: 'pass',
         errors: [],
@@ -250,6 +333,9 @@ export default function GradingPage() {
             const newDefectConfigsMap = new Map<string, DefectConfig[]>()
             const newDefectThresholdsMap = new Map<string, DefectThresholds>()
             const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
+            const newHumidityConstraintsMap = new Map<string, { min?: number; max?: number }>()
+            const newGreenAspectConstraintsMap = new Map<string, string[]>()
+            const newRoastAspectConstraintsMap = new Map<string, string[]>()
             const newClientQualityMap = new Map<string, ClientQuality>()
             const newGreenAspectOptionsMap = new Map<string, string[]>()
             const newRoastAspectOptionsMap = new Map<string, string[]>()
@@ -329,7 +415,19 @@ export default function GradingPage() {
               newGradingMap.set(sample.id, defaultGradingData)
 
               // Load defect configuration and screen constraints for this sample
-              await loadSampleConfig(sample, newDefectConfigsMap, newDefectThresholdsMap, newScreenConstraintsMap, newGradingMap, newClientQualityMap, newGreenAspectOptionsMap, newRoastAspectOptionsMap)
+              await loadSampleConfig(
+                sample,
+                newDefectConfigsMap,
+                newDefectThresholdsMap,
+                newScreenConstraintsMap,
+                newHumidityConstraintsMap,
+                newGreenAspectConstraintsMap,
+                newRoastAspectConstraintsMap,
+                newGradingMap,
+                newClientQualityMap,
+                newGreenAspectOptionsMap,
+                newRoastAspectOptionsMap
+              )
             }
 
             setClientQualityMap(newClientQualityMap)
@@ -337,6 +435,9 @@ export default function GradingPage() {
             setDefectConfigsMap(newDefectConfigsMap)
             setDefectThresholdsMap(newDefectThresholdsMap)
             setScreenConstraintsMap(newScreenConstraintsMap)
+            setHumidityConstraintsMap(newHumidityConstraintsMap)
+            setGreenAspectConstraintsMap(newGreenAspectConstraintsMap)
+            setRoastAspectConstraintsMap(newRoastAspectConstraintsMap)
             setGreenAspectOptionsMap(newGreenAspectOptionsMap)
             setRoastAspectOptionsMap(newRoastAspectOptionsMap)
           }
@@ -354,6 +455,9 @@ export default function GradingPage() {
     defectConfigsMap: Map<string, DefectConfig[]>,
     defectThresholdsMap: Map<string, DefectThresholds>,
     screenConstraintsMap: Map<string, ScreenSizeConstraint[]>,
+    humidityConstraintsMap: Map<string, { min?: number; max?: number }>,
+    greenAspectConstraintsMap: Map<string, string[]>,
+    roastAspectConstraintsMap: Map<string, string[]>,
     gradingDataMap: Map<string, GradingData>,
     clientQualityMap: Map<string, ClientQuality>,
     greenAspectOptionsMap: Map<string, string[]>,
@@ -382,6 +486,30 @@ export default function GradingPage() {
           if (templateParams?.roast_aspect_configuration?.wordings && Array.isArray(templateParams.roast_aspect_configuration.wordings)) {
             const roastOptions = templateParams.roast_aspect_configuration.wordings.map((opt: any) => opt.label || opt.name || opt)
             roastAspectOptionsMap.set(sample.id, roastOptions)
+          }
+
+          // Extract humidity constraints (moisture requirements)
+          if (templateParams?.moisture_requirements) {
+            const humidityConstraint: { min?: number; max?: number } = {}
+            if (templateParams.moisture_requirements.min !== undefined) {
+              humidityConstraint.min = templateParams.moisture_requirements.min
+            }
+            if (templateParams.moisture_requirements.max !== undefined) {
+              humidityConstraint.max = templateParams.moisture_requirements.max
+            }
+            if (Object.keys(humidityConstraint).length > 0) {
+              humidityConstraintsMap.set(sample.id, humidityConstraint)
+            }
+          }
+
+          // Extract green aspect constraints (rejectable values)
+          if (templateParams?.green_aspect_configuration?.rejectable_values && Array.isArray(templateParams.green_aspect_configuration.rejectable_values)) {
+            greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable_values)
+          }
+
+          // Extract roast aspect constraints (rejectable values)
+          if (templateParams?.roast_aspect_configuration?.rejectable_values && Array.isArray(templateParams.roast_aspect_configuration.rejectable_values)) {
+            roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable_values)
           }
         }
       }
@@ -764,9 +892,33 @@ export default function GradingPage() {
             <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
               {samples.map((sample, index) => {
                 const isActive = sample.id === activeSampleId
+                const gradingData = gradingDataMap.get(sample.id)
+
+                // Check if sample has been graded (has any data entered)
+                const hasData = gradingData && (
+                  Object.values(gradingData.defect_counts).some(count => count > 0) ||
+                  Object.values(gradingData.screen_sizes).some(grams => grams > 0) ||
+                  gradingData.moisture_percentage > 0 ||
+                  gradingData.green_aspect ||
+                  gradingData.roast_aspect
+                )
+
+                // Determine background color only if sample has been graded:
+                // - Red if fail (regardless of active state)
+                // - Yellow if active and pass
+                // - Green if inactive and pass
+                let bgColor = ''
+                if (hasData) {
+                  const compliance = getComplianceStatus(sample.id)
+                  if (compliance.status === 'fail') {
+                    bgColor = 'bg-red-500/20'
+                  } else if (compliance.status === 'pass') {
+                    bgColor = isActive ? 'bg-yellow-500/20' : 'bg-green-500/20'
+                  }
+                }
 
                 return (
-                  <div key={sample.id} className={`flex items-center ${isActive ? 'bg-green-500/20' : ''}`}>
+                  <div key={sample.id} className={`flex items-center ${bgColor}`}>
                     {/* Separator before tab (except first) */}
                     {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
                     <TabsTrigger
@@ -923,28 +1075,32 @@ export default function GradingPage() {
                       <div className="flex gap-2">
                         {/* Screen Size Inputs */}
                         <div className="space-y-2 flex-1">
-                          {screens.map(screen => {
-                            const gramsValue = gradingData?.screen_sizes[screen.screen_size] || 0
-                            const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
+                          {(() => {
+                            const screenComp = getScreenSizeCompliance(sample.id)
+                            return screens.map(screen => {
+                              const gramsValue = gradingData?.screen_sizes[screen.screen_size] || 0
+                              const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
+                              const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
 
-                            return (
-                              <div key={screen.screen_size} className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
-                                <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
-                                <Input
-                                  type="number"
-                                  min="0"
-                                  step="1"
-                                  value={gramsValue}
-                                  onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
-                                  className="h-8 text-sm w-16"
-                                  placeholder="grams"
-                                />
-                                <div className="text-xs text-muted-foreground">
-                                  {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
+                              return (
+                                <div key={screen.screen_size} className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
+                                  <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="1"
+                                    value={gramsValue}
+                                    onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
+                                    className="h-8 text-sm w-16"
+                                    placeholder="grams"
+                                  />
+                                  <div className={`text-xs ${isViolated ? 'text-red-600 dark:text-red-400 font-bold' : 'text-muted-foreground'}`}>
+                                    {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
+                                  </div>
                                 </div>
-                              </div>
-                            )
-                          })}
+                              )
+                            })
+                          })()}
                           {/* Total Row */}
                           <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center pt-2 border-t">
                             <Label className="text-sm font-semibold">Total</Label>
@@ -1033,70 +1189,114 @@ export default function GradingPage() {
                             )}
 
                             {/* Humidity */}
-                            <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
-                              <Label className="text-sm whitespace-nowrap">Humidity (%)</Label>
-                              <Input
-                                type="number"
-                                min="0"
-                                max="100"
-                                step="0.1"
-                                value={gradingData?.moisture_percentage || 0}
-                                onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
-                                className="h-8 text-sm w-20"
-                              />
-                              <div className="text-xs text-muted-foreground"></div>
-                            </div>
+                            {(() => {
+                              const humidityComp = getHumidityCompliance(sample.id)
+                              return (
+                                <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
+                                  <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                    Humidity (%)
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.1"
+                                    value={gradingData?.moisture_percentage || 0}
+                                    onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
+                                    className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                  />
+                                  <div className="text-xs text-muted-foreground"></div>
+                                </div>
+                              )
+                            })()}
 
                             {/* Green and Roast Aspects - Conditional Layout */}
-                            {hasAspects && (
-                              <div className={hasChart ? "flex gap-4" : "space-y-2"}>
-                                {/* Green Aspect */}
-                                {sampleGreenOptions.length > 0 && (
-                                  <div className="flex flex-col gap-1.5">
-                                    <Label className="text-sm">Green Aspect</Label>
-                                    <Select
-                                      value={gradingData?.green_aspect || ''}
-                                      onValueChange={(value) => handleAspectChange(sample.id, 'green_aspect', value)}
-                                    >
-                                      <SelectTrigger className="w-[180px] h-8 text-sm">
-                                        <SelectValue placeholder="Select..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {sampleGreenOptions.map((option) => (
-                                          <SelectItem key={option} value={option}>
-                                            {option}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                )}
+                            {hasAspects && (() => {
+                              const greenComp = getGreenAspectCompliance(sample.id)
+                              const roastComp = getRoastAspectCompliance(sample.id)
 
-                                {/* Roast Aspect */}
-                                {sampleRoastOptions.length > 0 && (
-                                  <div className="flex flex-col gap-1.5">
-                                    <Label className="text-sm">Roast Aspect</Label>
-                                    <Select
-                                      value={gradingData?.roast_aspect || ''}
-                                      onValueChange={(value) => handleAspectChange(sample.id, 'roast_aspect', value)}
-                                    >
-                                      <SelectTrigger className="w-[180px] h-8 text-sm">
-                                        <SelectValue placeholder="Select..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {sampleRoastOptions.map((option) => (
-                                          <SelectItem key={option} value={option}>
-                                            {option}
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
-                                  </div>
-                                )}
-                              </div>
-                            )}
+                              return (
+                                <div className={hasChart ? "flex gap-4" : "space-y-2"}>
+                                  {/* Green Aspect */}
+                                  {sampleGreenOptions.length > 0 && (
+                                    <div className="flex flex-col gap-1.5">
+                                      <Label className={`text-sm ${greenComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                        Green Aspect
+                                      </Label>
+                                      <Select
+                                        value={gradingData?.green_aspect || ''}
+                                        onValueChange={(value) => handleAspectChange(sample.id, 'green_aspect', value)}
+                                      >
+                                        <SelectTrigger className={`w-[180px] h-8 text-sm ${greenComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                          <SelectValue placeholder="Select..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {sampleGreenOptions.map((option) => (
+                                            <SelectItem key={option} value={option}>
+                                              {option}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  )}
+
+                                  {/* Roast Aspect */}
+                                  {sampleRoastOptions.length > 0 && (
+                                    <div className="flex flex-col gap-1.5">
+                                      <Label className={`text-sm ${roastComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                        Roast Aspect
+                                      </Label>
+                                      <Select
+                                        value={gradingData?.roast_aspect || ''}
+                                        onValueChange={(value) => handleAspectChange(sample.id, 'roast_aspect', value)}
+                                      >
+                                        <SelectTrigger className={`w-[180px] h-8 text-sm ${roastComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                          <SelectValue placeholder="Select..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {sampleRoastOptions.map((option) => (
+                                            <SelectItem key={option} value={option}>
+                                              {option}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  )}
+                                </div>
+                              )
+                            })()}
                           </div>
                         )
+                      })()}
+
+                      {/* Compliance Violation Messages at Bottom of Card */}
+                      {(() => {
+                        const screenComp = getScreenSizeCompliance(sample.id)
+                        const humidityComp = getHumidityCompliance(sample.id)
+                        const greenComp = getGreenAspectCompliance(sample.id)
+                        const roastComp = getRoastAspectCompliance(sample.id)
+
+                        const allErrors = [
+                          ...screenComp.errors,
+                          ...humidityComp.errors,
+                          ...greenComp.errors,
+                          ...roastComp.errors
+                        ]
+
+                        if (allErrors.length > 0) {
+                          return (
+                            <div className="mt-3 pt-3 border-t space-y-1">
+                              {allErrors.map((error, index) => (
+                                <div key={index} className="text-xs text-red-600 dark:text-red-400 font-medium">
+                                  {error}
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        }
+                        return null
                       })()}
                     </CardContent>
                   </Card>
