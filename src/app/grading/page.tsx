@@ -126,18 +126,18 @@ export default function GradingPage() {
   // Humidity constraints per sample (min/max)
   const [humidityConstraintsMap, setHumidityConstraintsMap] = useState<Map<string, { min?: number; max?: number }>>(new Map())
 
-  // Green/Roast aspect constraints per sample (rejectable values)
-  const [greenAspectConstraintsMap, setGreenAspectConstraintsMap] = useState<Map<string, string[]>>(new Map())
-  const [roastAspectConstraintsMap, setRoastAspectConstraintsMap] = useState<Map<string, string[]>>(new Map())
+  // Green/Roast aspect constraints per sample (either rejectable values or minimum acceptable level)
+  const [greenAspectConstraintsMap, setGreenAspectConstraintsMap] = useState<Map<string, string[] | { min_value: number; min_label: string }>>(new Map())
+  const [roastAspectConstraintsMap, setRoastAspectConstraintsMap] = useState<Map<string, string[] | { min_value: number; min_label: string }>>(new Map())
 
   // Client quality per sample (for custom quality names)
   const [clientQualityMap, setClientQualityMap] = useState<Map<string, ClientQuality>>(new Map())
 
-  // Green aspect options per sample
-  const [greenAspectOptionsMap, setGreenAspectOptionsMap] = useState<Map<string, string[]>>(new Map())
+  // Green aspect options per sample (array of objects with label and value)
+  const [greenAspectOptionsMap, setGreenAspectOptionsMap] = useState<Map<string, Array<{label: string; value: number}>>>(new Map())
 
-  // Roast aspect options per sample
-  const [roastAspectOptionsMap, setRoastAspectOptionsMap] = useState<Map<string, string[]>>(new Map())
+  // Roast aspect options per sample (array of objects with label and value)
+  const [roastAspectOptionsMap, setRoastAspectOptionsMap] = useState<Map<string, Array<{label: string; value: number}>>>(new Map())
 
   useEffect(() => {
     loadSamples()
@@ -223,14 +223,33 @@ export default function GradingPage() {
   // Green aspect compliance
   const getGreenAspectCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
     const gradingData = gradingDataMap.get(sampleId)
-    const rejectableValues = greenAspectConstraintsMap.get(sampleId)
+    const constraint = greenAspectConstraintsMap.get(sampleId)
 
-    if (!rejectableValues || rejectableValues.length === 0 || !gradingData || !gradingData.green_aspect) {
+    if (!constraint || !gradingData || !gradingData.green_aspect) {
       return { errors: [], violated: false }
     }
 
-    if (rejectableValues.includes(gradingData.green_aspect)) {
-      return { errors: [`Green aspect "${gradingData.green_aspect}" is not acceptable`], violated: true }
+    // Check if constraint is minimum acceptable level (object with min_value and min_label)
+    if (typeof constraint === 'object' && 'min_value' in constraint) {
+      const greenOptions = greenAspectOptionsMap.get(sampleId) || []
+      const selectedOption = greenOptions.find(opt =>
+        typeof opt === 'object' && opt.label === gradingData.green_aspect
+      )
+
+      if (selectedOption && typeof selectedOption === 'object' && 'value' in selectedOption) {
+        if (selectedOption.value < constraint.min_value) {
+          return {
+            errors: [`Green aspect must be "${constraint.min_label}" or better`],
+            violated: true
+          }
+        }
+      }
+    }
+    // Check if constraint is rejectable values array
+    else if (Array.isArray(constraint)) {
+      if (constraint.includes(gradingData.green_aspect)) {
+        return { errors: [`Green aspect "${gradingData.green_aspect}" is not acceptable`], violated: true }
+      }
     }
 
     return { errors: [], violated: false }
@@ -239,14 +258,33 @@ export default function GradingPage() {
   // Roast aspect compliance
   const getRoastAspectCompliance = (sampleId: string): { errors: string[]; violated: boolean } => {
     const gradingData = gradingDataMap.get(sampleId)
-    const rejectableValues = roastAspectConstraintsMap.get(sampleId)
+    const constraint = roastAspectConstraintsMap.get(sampleId)
 
-    if (!rejectableValues || rejectableValues.length === 0 || !gradingData || !gradingData.roast_aspect) {
+    if (!constraint || !gradingData || !gradingData.roast_aspect) {
       return { errors: [], violated: false }
     }
 
-    if (rejectableValues.includes(gradingData.roast_aspect)) {
-      return { errors: [`Roast aspect "${gradingData.roast_aspect}" is not acceptable`], violated: true }
+    // Check if constraint is minimum acceptable level (object with min_value and min_label)
+    if (typeof constraint === 'object' && 'min_value' in constraint) {
+      const roastOptions = roastAspectOptionsMap.get(sampleId) || []
+      const selectedOption = roastOptions.find(opt =>
+        typeof opt === 'object' && opt.label === gradingData.roast_aspect
+      )
+
+      if (selectedOption && typeof selectedOption === 'object' && 'value' in selectedOption) {
+        if (selectedOption.value < constraint.min_value) {
+          return {
+            errors: [`Roast aspect must be "${constraint.min_label}" or better`],
+            violated: true
+          }
+        }
+      }
+    }
+    // Check if constraint is rejectable values array
+    else if (Array.isArray(constraint)) {
+      if (constraint.includes(gradingData.roast_aspect)) {
+        return { errors: [`Roast aspect "${gradingData.roast_aspect}" is not acceptable`], violated: true }
+      }
     }
 
     return { errors: [], violated: false }
@@ -476,15 +514,21 @@ export default function GradingPage() {
           // Extract template parameters from the API response
           templateParams = clientQualityData.client_quality?.template?.parameters
 
-          // Extract and populate green aspect options (using "wordings" array)
+          // Extract and populate green aspect options (using "wordings" array with label and value)
           if (templateParams?.green_aspect_configuration?.wordings && Array.isArray(templateParams.green_aspect_configuration.wordings)) {
-            const greenOptions = templateParams.green_aspect_configuration.wordings.map((opt: any) => opt.label || opt.name || opt)
+            const greenOptions = templateParams.green_aspect_configuration.wordings.map((opt: any) => ({
+              label: opt.label || opt.name || opt,
+              value: opt.value !== undefined ? opt.value : 0
+            }))
             greenAspectOptionsMap.set(sample.id, greenOptions)
           }
 
-          // Extract and populate roast aspect options (using "wordings" array)
+          // Extract and populate roast aspect options (using "wordings" array with label and value)
           if (templateParams?.roast_aspect_configuration?.wordings && Array.isArray(templateParams.roast_aspect_configuration.wordings)) {
-            const roastOptions = templateParams.roast_aspect_configuration.wordings.map((opt: any) => opt.label || opt.name || opt)
+            const roastOptions = templateParams.roast_aspect_configuration.wordings.map((opt: any) => ({
+              label: opt.label || opt.name || opt,
+              value: opt.value !== undefined ? opt.value : 0
+            }))
             roastAspectOptionsMap.set(sample.id, roastOptions)
           }
 
@@ -513,10 +557,26 @@ export default function GradingPage() {
             humidityConstraintsMap.set(sample.id, humidityConstraint)
           }
 
-          // Extract green aspect constraints (rejectable values)
+          // Extract green aspect constraints
           if (templateParams?.green_aspect_configuration) {
             console.log(`[CONSTRAINTS] Green aspect config for ${sample.tracking_number}:`, templateParams.green_aspect_configuration)
-            if (templateParams.green_aspect_configuration.rejectable_values && Array.isArray(templateParams.green_aspect_configuration.rejectable_values)) {
+
+            // Check for minimum acceptable level
+            if (templateParams.green_aspect_configuration.minimum_acceptable !== undefined) {
+              const minAcceptable = templateParams.green_aspect_configuration.minimum_acceptable
+              const greenOptions = greenAspectOptionsMap.get(sample.id) || []
+              const minOption = greenOptions.find(opt => opt.value === minAcceptable)
+
+              if (minOption) {
+                console.log(`[CONSTRAINTS] Green aspect minimum acceptable:`, minOption)
+                greenAspectConstraintsMap.set(sample.id, {
+                  min_value: minAcceptable,
+                  min_label: minOption.label
+                })
+              }
+            }
+            // Check for rejectable values array
+            else if (templateParams.green_aspect_configuration.rejectable_values && Array.isArray(templateParams.green_aspect_configuration.rejectable_values)) {
               console.log(`[CONSTRAINTS] Green aspect rejectable values:`, templateParams.green_aspect_configuration.rejectable_values)
               greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable_values)
             } else if (templateParams.green_aspect_configuration.rejectable && Array.isArray(templateParams.green_aspect_configuration.rejectable)) {
@@ -525,10 +585,26 @@ export default function GradingPage() {
             }
           }
 
-          // Extract roast aspect constraints (rejectable values)
+          // Extract roast aspect constraints
           if (templateParams?.roast_aspect_configuration) {
             console.log(`[CONSTRAINTS] Roast aspect config for ${sample.tracking_number}:`, templateParams.roast_aspect_configuration)
-            if (templateParams.roast_aspect_configuration.rejectable_values && Array.isArray(templateParams.roast_aspect_configuration.rejectable_values)) {
+
+            // Check for minimum acceptable level
+            if (templateParams.roast_aspect_configuration.minimum_acceptable !== undefined) {
+              const minAcceptable = templateParams.roast_aspect_configuration.minimum_acceptable
+              const roastOptions = roastAspectOptionsMap.get(sample.id) || []
+              const minOption = roastOptions.find(opt => opt.value === minAcceptable)
+
+              if (minOption) {
+                console.log(`[CONSTRAINTS] Roast aspect minimum acceptable:`, minOption)
+                roastAspectConstraintsMap.set(sample.id, {
+                  min_value: minAcceptable,
+                  min_label: minOption.label
+                })
+              }
+            }
+            // Check for rejectable values array
+            else if (templateParams.roast_aspect_configuration.rejectable_values && Array.isArray(templateParams.roast_aspect_configuration.rejectable_values)) {
               console.log(`[CONSTRAINTS] Roast aspect rejectable values:`, templateParams.roast_aspect_configuration.rejectable_values)
               roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable_values)
             } else if (templateParams.roast_aspect_configuration.rejectable && Array.isArray(templateParams.roast_aspect_configuration.rejectable)) {
@@ -1260,8 +1336,8 @@ export default function GradingPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                           {sampleGreenOptions.map((option) => (
-                                            <SelectItem key={option} value={option}>
-                                              {option}
+                                            <SelectItem key={option.label} value={option.label}>
+                                              {option.label}
                                             </SelectItem>
                                           ))}
                                         </SelectContent>
@@ -1284,8 +1360,8 @@ export default function GradingPage() {
                                         </SelectTrigger>
                                         <SelectContent>
                                           {sampleRoastOptions.map((option) => (
-                                            <SelectItem key={option} value={option}>
-                                              {option}
+                                            <SelectItem key={option.label} value={option.label}>
+                                              {option.label}
                                             </SelectItem>
                                           ))}
                                         </SelectContent>
