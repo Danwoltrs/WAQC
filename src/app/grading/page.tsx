@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
@@ -17,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Save, Eye, EyeOff, AlertCircle, CheckCircle, Clock } from 'lucide-react'
+import { Save, Eye, EyeOff } from 'lucide-react'
 import { PieChart, Pie, Cell, ResponsiveContainer, Legend, Tooltip } from 'recharts'
 import {
   DefectConfig,
@@ -30,7 +29,8 @@ import {
 } from '@/types/defect-configuration'
 import {
   ScreenSizeConstraint,
-  getConstraintDisplayText
+  getConstraintDisplayText,
+  validateScreenSizeDistribution
 } from '@/types/screen-size-constraints'
 import {
   SampleVisibilitySettings,
@@ -152,31 +152,45 @@ export default function GradingPage() {
     const gradingData = gradingDataMap.get(sampleId)
     const defects = defectConfigsMap.get(sampleId)
     const thresholds = defectThresholdsMap.get(sampleId)
+    const screenConstraints = screenConstraintsMap.get(sampleId)
 
-    // If no thresholds defined, return pending
-    if (!thresholds || Object.keys(thresholds).length === 0) {
-      return {
-        status: 'pending',
-        errors: [],
-        color: 'text-muted-foreground',
-        label: 'No thresholds'
+    const allErrors: string[] = []
+
+    // Validate defect counts if thresholds are defined
+    if (thresholds && Object.keys(thresholds).length > 0 && defects && gradingData && defects.length > 0) {
+      const defectValidation = validateDefectCounts(defects, gradingData.defect_counts, thresholds)
+      if (!defectValidation.valid) {
+        allErrors.push(...defectValidation.errors)
       }
     }
 
-    // If no defects or no grading data, return pending
-    if (!defects || !gradingData || defects.length === 0) {
-      return {
-        status: 'pending',
-        errors: [],
-        color: 'text-muted-foreground',
-        label: 'Pending'
+    // Validate screen size distribution if constraints are defined
+    if (screenConstraints && screenConstraints.length > 0 && gradingData) {
+      const screenValidation = validateScreenSizeDistribution(
+        gradingData.screen_sizes_percentages,
+        { constraints: screenConstraints }
+      )
+      if (!screenValidation.is_valid) {
+        allErrors.push(...screenValidation.violations.map(v => v.message))
       }
     }
 
-    // Validate defect counts against thresholds
-    const validation = validateDefectCounts(defects, gradingData.defect_counts, thresholds)
+    // Return status based on combined validation
+    if (allErrors.length === 0) {
+      // Check if we have any validation criteria at all
+      const hasValidationCriteria =
+        (thresholds && Object.keys(thresholds).length > 0) ||
+        (screenConstraints && screenConstraints.some(c => c.constraint_type !== 'any'))
 
-    if (validation.valid) {
+      if (!hasValidationCriteria) {
+        return {
+          status: 'pending',
+          errors: [],
+          color: 'text-muted-foreground',
+          label: 'No thresholds'
+        }
+      }
+
       return {
         status: 'pass',
         errors: [],
@@ -186,7 +200,7 @@ export default function GradingPage() {
     } else {
       return {
         status: 'fail',
-        errors: validation.errors,
+        errors: allErrors,
         color: 'text-red-600 dark:text-red-400',
         label: 'Fail'
       }
@@ -1097,54 +1111,42 @@ export default function GradingPage() {
                       ) : (
                         <div>
                           <div className="flex items-center mb-3 gap-4 text-sm">
-                            <div>
-                              <span className="text-muted-foreground">Primary: </span>
-                              <span className="font-semibold">{gradingData?.defects_primary.toFixed(2) || '0.00'}</span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Secondary: </span>
-                              <span className="font-semibold">{gradingData?.defects_secondary.toFixed(2) || '0.00'}</span>
-                            </div>
-                            <div>
-                              <span className="text-muted-foreground">Total: </span>
-                              <span className="font-semibold">{gradingData?.defects_total.toFixed(2) || '0.00'}</span>
-                            </div>
-                            {/* Compliance Status Badge */}
                             {(() => {
                               const compliance = getComplianceStatus(sample.id)
+                              const primaryColor = compliance.status === 'fail' && compliance.errors.some(e => e.toLowerCase().includes('primary'))
+                                ? 'text-red-600 dark:text-red-400'
+                                : ''
+                              const secondaryColor = compliance.status === 'fail' && compliance.errors.some(e => e.toLowerCase().includes('secondary'))
+                                ? 'text-red-600 dark:text-red-400'
+                                : ''
+                              const totalColor = compliance.status === 'fail' && compliance.errors.some(e => e.toLowerCase().includes('total'))
+                                ? 'text-red-600 dark:text-red-400'
+                                : ''
+
                               return (
-                                <Badge
-                                  variant={compliance.status === 'pass' ? 'default' : compliance.status === 'fail' ? 'destructive' : 'secondary'}
-                                  className={`ml-2 ${compliance.color}`}
-                                >
-                                  {compliance.status === 'pass' && <CheckCircle className="h-3 w-3 mr-1" />}
-                                  {compliance.status === 'fail' && <AlertCircle className="h-3 w-3 mr-1" />}
-                                  {compliance.status === 'pending' && <Clock className="h-3 w-3 mr-1" />}
-                                  {compliance.label}
-                                </Badge>
+                                <>
+                                  <div>
+                                    <span className="text-muted-foreground">Primary: </span>
+                                    <span className={`font-semibold ${primaryColor}`}>
+                                      {gradingData?.defects_primary.toFixed(2) || '0.00'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Secondary: </span>
+                                    <span className={`font-semibold ${secondaryColor}`}>
+                                      {gradingData?.defects_secondary.toFixed(2) || '0.00'}
+                                    </span>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Total: </span>
+                                    <span className={`font-semibold ${totalColor}`}>
+                                      {gradingData?.defects_total.toFixed(2) || '0.00'}
+                                    </span>
+                                  </div>
+                                </>
                               )
                             })()}
                           </div>
-                          {/* Compliance Violation Messages */}
-                          {(() => {
-                            const compliance = getComplianceStatus(sample.id)
-                            if (compliance.status === 'fail' && compliance.errors.length > 0) {
-                              return (
-                                <Alert variant="destructive" className="mb-3">
-                                  <AlertCircle className="h-4 w-4" />
-                                  <AlertTitle>Defect Compliance Issues</AlertTitle>
-                                  <AlertDescription>
-                                    <ul className="list-disc list-inside space-y-1 mt-2 text-sm">
-                                      {compliance.errors.map((error, index) => (
-                                        <li key={index}>{error}</li>
-                                      ))}
-                                    </ul>
-                                  </AlertDescription>
-                                </Alert>
-                              )
-                            }
-                            return null
-                          })()}
                         <div className="flex gap-6">
                           {/* Primary Defects Section */}
                           {primaries.length > 0 && (
@@ -1209,6 +1211,23 @@ export default function GradingPage() {
                         </div>
                         </div>
                       )}
+
+                      {/* Compliance Violation Messages - Discrete at bottom */}
+                      {(() => {
+                        const compliance = getComplianceStatus(sample.id)
+                        if (compliance.status === 'fail' && compliance.errors.length > 0) {
+                          return (
+                            <div className="mt-3 pt-3 border-t space-y-1">
+                              {compliance.errors.map((error, index) => (
+                                <div key={index} className="text-xs text-red-600 dark:text-red-400 font-medium">
+                                  {error}
+                                </div>
+                              ))}
+                            </div>
+                          )
+                        }
+                        return null
+                      })()}
                     </CardContent>
                   </Card>
                 </div>
