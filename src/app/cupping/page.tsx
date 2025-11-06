@@ -416,6 +416,62 @@ export default function CuppingPage() {
         }
       }
 
+      // Load existing cupping scores from database (if any)
+      try {
+        const scoresResponse = await fetch(`/api/samples/${sample.id}/cupping-score`)
+        const scoresData = await scoresResponse.json()
+
+        if (scoresResponse.ok && scoresData.scores && scoresData.scores.length > 0) {
+          // Find the current user's score (there should only be one per cupper)
+          const userScore = scoresData.scores[0] // For now, use the first score
+
+          console.log(`[LOAD] Found existing cupping score for sample ${sample.tracking_number}:`, userScore)
+
+          // Populate attributes with saved scores
+          if (userScore.scores && defaultCuppingData.attributes.length > 0) {
+            defaultCuppingData.attributes = defaultCuppingData.attributes.map(attr => ({
+              ...attr,
+              value: userScore.scores[attr.attribute] ?? null
+            }))
+          }
+
+          // Populate defects from saved taints/faults
+          if (userScore.defects) {
+            const savedDefects: CuppingDefect[] = []
+
+            // Add taints
+            if (userScore.defects.taints && Array.isArray(userScore.defects.taints)) {
+              userScore.defects.taints.forEach((taint: any) => {
+                savedDefects.push({
+                  id: `${Date.now()}-${Math.random()}`,
+                  name: taint.name,
+                  cups_affected: taint.cups_affected || 0,
+                  intensity: taint.intensity || 1,
+                  is_taint: true
+                })
+              })
+            }
+
+            // Add faults
+            if (userScore.defects.faults && Array.isArray(userScore.defects.faults)) {
+              userScore.defects.faults.forEach((fault: any) => {
+                savedDefects.push({
+                  id: `${Date.now()}-${Math.random()}`,
+                  name: fault.name,
+                  cups_affected: fault.cups_affected || 0,
+                  intensity: fault.intensity || 1,
+                  is_taint: false
+                })
+              })
+            }
+
+            defaultCuppingData.defects = savedDefects
+          }
+        }
+      } catch (error) {
+        console.error('Error loading existing cupping scores:', error)
+      }
+
       // No fallback - all samples must have quality template with cupping configuration
       cuppingMap.set(sample.id, defaultCuppingData)
     } catch (error) {
