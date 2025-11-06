@@ -1297,38 +1297,32 @@ export default function CuppingPage() {
                                 const isOutOfSpec = defectValidation.outOfSpec
 
                                 return (
-                                  <div key={defect.id} className="flex flex-col gap-1">
-                                    <div
-                                      className={`flex items-center gap-2 text-sm px-2 py-1 rounded border ${
-                                        isOutOfSpec ? 'border-red-500/50 bg-red-500/10' : 'border-border bg-card'
-                                      }`}
+                                  <div
+                                    key={defect.id}
+                                    className={`flex items-center gap-2 text-sm px-2 py-1 rounded border ${
+                                      isOutOfSpec ? 'border-red-500/50 bg-red-500/10' : 'border-border bg-card'
+                                    }`}
+                                  >
+                                    <Badge
+                                      variant={defect.is_taint ? 'secondary' : 'destructive'}
+                                      className="text-[10px] px-1.5 py-0 h-5"
                                     >
-                                      <Badge
-                                        variant={defect.is_taint ? 'secondary' : 'destructive'}
-                                        className="text-[10px] px-1.5 py-0 h-5"
-                                      >
-                                        {defect.is_taint ? 'T' : 'F'}
-                                      </Badge>
-                                      <span className={`font-medium ${isOutOfSpec ? 'text-red-500' : ''}`}>
-                                        {defect.name}
-                                      </span>
-                                      <span className="text-xs text-muted-foreground">
-                                        {defect.cups_affected}/{cups} cups · I:{defect.intensity}
-                                      </span>
-                                      <Button
-                                        variant="ghost"
-                                        size="icon"
-                                        className="h-5 w-5 ml-1"
-                                        onClick={() => removeDefect(sample.id, defect.id)}
-                                      >
-                                        <X className="h-3 w-3" />
-                                      </Button>
-                                    </div>
-                                    {isOutOfSpec && (
-                                      <p className="text-xs text-red-500 pl-2">
-                                        {defectValidation.reason}
-                                      </p>
-                                    )}
+                                      {defect.is_taint ? 'T' : 'F'}
+                                    </Badge>
+                                    <span className={`font-medium ${isOutOfSpec ? 'text-red-500' : ''}`}>
+                                      {defect.name}
+                                    </span>
+                                    <span className="text-xs text-muted-foreground">
+                                      {defect.cups_affected}/{cups} cups · I:{defect.intensity}
+                                    </span>
+                                    <Button
+                                      variant="ghost"
+                                      size="icon"
+                                      className="h-5 w-5 ml-1"
+                                      onClick={() => removeDefect(sample.id, defect.id)}
+                                    >
+                                      <X className="h-3 w-3" />
+                                    </Button>
                                   </div>
                                 )
                               })}
