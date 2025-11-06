@@ -123,8 +123,19 @@ export default function CuppingPage() {
                        templateParams?.defects ||
                        templateParams?.taint_fault_configuration?.defects
 
+    // Also check rules-level zero tolerance
+    const taintFaultConfig = customParams?.taint_fault_configuration || templateParams?.taint_fault_configuration
+    const rules = taintFaultConfig?.rules
+
     console.log(`[DEFECT VALIDATION] Checking tolerance for "${defectName}"`)
     console.log('[DEFECT VALIDATION] Defects list:', defectsList)
+    console.log('[DEFECT VALIDATION] Rules:', rules)
+
+    // Check for rules-level zero tolerance (applies to ALL defects)
+    if (rules?.zero_tolerance === true) {
+      console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (rules.zero_tolerance = true)`)
+      return 0
+    }
 
     if (defectsList && Array.isArray(defectsList)) {
       const defectConfig = defectsList.find((d: any) =>
@@ -140,16 +151,43 @@ export default function CuppingPage() {
           return 0 // Zero tolerance - no cups allowed
         }
 
-        // Check for legacy tolerance or max_cups property
-        if (typeof defectConfig.tolerance === 'number') {
+        // Check for empty taint range (min === max === 0)
+        if (defectConfig.taint_range &&
+            typeof defectConfig.taint_range === 'object' &&
+            defectConfig.taint_range.min === 0 &&
+            defectConfig.taint_range.max === 0) {
+          console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (empty taint_range)`)
+          return 0
+        }
+
+        // Check for explicit max_cups = 0
+        if (defectConfig.max_cups === 0) {
+          console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (max_cups = 0)`)
+          return 0
+        }
+
+        // Check for explicit tolerance = 0
+        if (defectConfig.tolerance === 0) {
+          console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (tolerance = 0)`)
+          return 0
+        }
+
+        // Check for legacy tolerance or max_cups property (non-zero values)
+        if (typeof defectConfig.tolerance === 'number' && defectConfig.tolerance > 0) {
           console.log(`[DEFECT VALIDATION] "${defectName}" has tolerance: ${defectConfig.tolerance}`)
           return defectConfig.tolerance
         }
-        if (typeof defectConfig.max_cups === 'number') {
+        if (typeof defectConfig.max_cups === 'number' && defectConfig.max_cups > 0) {
           console.log(`[DEFECT VALIDATION] "${defectName}" has max_cups: ${defectConfig.max_cups}`)
           return defectConfig.max_cups
         }
       }
+    }
+
+    // Check rules-level max_faults = 0 (zero tolerance for faults)
+    if (rules?.max_faults === 0) {
+      console.log(`[DEFECT VALIDATION] "${defectName}" treated as ZERO TOLERANCE (rules.max_faults = 0)`)
+      return 0
     }
 
     console.log(`[DEFECT VALIDATION] No tolerance found for "${defectName}"`)
