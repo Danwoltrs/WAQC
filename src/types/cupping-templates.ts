@@ -1,8 +1,9 @@
-import { AttributeScaleType } from './attribute-scales'
+import { AttributeScaleType, AttributeValidationRule } from './attribute-scales'
 
 export interface AttributeWithScale {
   attribute: string
   scale: AttributeScaleType
+  validation_rule?: AttributeValidationRule
 }
 
 export interface CuppingAttributeTemplate {

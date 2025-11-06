@@ -225,7 +225,7 @@ export default function CuppingPage() {
     }
 
     const cuppingData = cuppingDataMap.get(sampleId)
-    const attributes = attributesMap.get(sampleId) || []
+    const attributes: AttributeWithScale[] = attributesMap.get(sampleId) || []
 
     // Check if any data has been entered
     const hasAttributeData = cuppingData && cuppingData.attributes.some(a => a.value !== null)
