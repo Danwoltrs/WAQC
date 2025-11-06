@@ -1,5 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+
+// Create admin client with service role key (bypasses RLS)
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
 
 /**
  * POST /api/samples/[id]/cupping-score
@@ -31,8 +44,8 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid defects data' }, { status: 400 })
     }
 
-    // Check if cupping score already exists for this sample and cupper
-    const { data: existingScore } = await supabase
+    // Check if cupping score already exists for this sample and cupper (using admin client)
+    const { data: existingScore } = await supabaseAdmin
       .from('cupping_scores')
       .select('id')
       .eq('sample_id', sampleId)
@@ -58,8 +71,8 @@ export async function POST(
     let result
 
     if (existingScore) {
-      // Update existing score
-      const { data, error } = await supabase
+      // Update existing score (using admin client to bypass RLS)
+      const { data, error } = await supabaseAdmin
         .from('cupping_scores')
         .update(cuppingScoreData)
         .eq('id', existingScore.id)
@@ -76,8 +89,8 @@ export async function POST(
 
       result = data
     } else {
-      // Insert new score
-      const { data, error } = await supabase
+      // Insert new score (using admin client to bypass RLS)
+      const { data, error } = await supabaseAdmin
         .from('cupping_scores')
         .insert(cuppingScoreData)
         .select()
@@ -130,8 +143,8 @@ export async function GET(
 
     const { id: sampleId } = await params
 
-    // Fetch all cupping scores for this sample
-    const { data: scores, error } = await supabase
+    // Fetch all cupping scores for this sample (using admin client for consistency)
+    const { data: scores, error } = await supabaseAdmin
       .from('cupping_scores')
       .select(`
         *,
