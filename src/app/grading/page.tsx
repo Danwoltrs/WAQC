@@ -1114,7 +1114,7 @@ export default function GradingPage() {
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
         <div className="border-b bg-card sticky top-0 z-50">
           <div className="flex items-center justify-between">
-            <TabsList className="h-14 bg-transparent border-b-0 rounded-none overflow-x-auto flex-nowrap">
+            <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start">
               {samples.map((sample, index) => {
                 const isActive = sample.id === activeSampleId
                 const gradingData = gradingDataMap.get(sample.id)
@@ -1151,7 +1151,7 @@ export default function GradingPage() {
                     {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
                     <TabsTrigger
                       value={sample.id}
-                      className={`rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
+                      className={`rounded-none border-transparent data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
                     >
                       <div className="flex flex-col items-start gap-0.5">
                         <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>

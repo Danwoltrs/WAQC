@@ -27,6 +27,7 @@ export async function GET(
         id,
         tracking_number,
         sample_type,
+        origin,
         quality_spec_id,
         quality_specifications!quality_spec_id (
           id,
