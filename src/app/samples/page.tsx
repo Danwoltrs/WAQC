@@ -904,7 +904,7 @@ export default function SamplesPage() {
                           <div className="font-medium">{parseTrackingNumber(sample.tracking_number)}</div>
                           {sample.sample_type === 'ss' && sample.container_nr && (
                             <div className="text-xs text-muted-foreground mt-0.5">
-                              Container: {sample.container_nr}
+                              {sample.container_nr}
                             </div>
                           )}
                         </td>
