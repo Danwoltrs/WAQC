@@ -902,6 +902,11 @@ export default function SamplesPage() {
                         )}
                         <td className="py-3 px-4">
                           <div className="font-medium">{parseTrackingNumber(sample.tracking_number)}</div>
+                          {sample.sample_type === 'ss' && sample.container_nr && (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              Container: {sample.container_nr}
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
                         <td className="py-3 px-4 text-sm">
