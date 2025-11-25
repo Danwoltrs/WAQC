@@ -27,6 +27,7 @@ interface SampleIntakeFormProps {
 const initialFormData: FormData = {
   client_id: '',
   laboratory_id: '',
+  exporter_sample_number: '',
   exporter: '',
   buyer: '',
   roaster: '',

@@ -191,6 +191,7 @@ export async function POST(request: NextRequest) {
       hide_exporter_on_label: body.hide_exporter_on_label || false,
       origin: body.origin,
       exporter_id: body.exporter_id,
+      exporter_sample_number: body.exporter_sample_number || null,
       importer_id: body.importer_id || null,
       roaster_id: body.roaster_id || null,
       status: body.status || 'received',

@@ -84,6 +84,7 @@ export interface ThermalCuppingCardData {
   sample_type?: 'pss' | 'ss' | 'type' // Sample type
   ico_number?: string // ICO number (for SS samples)
   container_nr?: string // Container number (for SS samples)
+  exporter_sample_number?: string // Exporter's sample identification number
   quality_name?: string // Optional based on user selection
   buyer_name?: string // Optional based on user selection
   exporter_name?: string // Optional based on user selection
@@ -264,6 +265,7 @@ export const ThermalCuppingCardDocument: React.FC<
       lab_name: card.lab_name ? String(card.lab_name) : undefined,
       ico_number: card.ico_number ? String(card.ico_number) : undefined,
       container_nr: card.container_nr ? String(card.container_nr) : undefined,
+      exporter_sample_number: card.exporter_sample_number ? String(card.exporter_sample_number) : undefined,
       quality_name: card.quality_name ? String(card.quality_name) : undefined,
       buyer_name: card.buyer_name ? String(card.buyer_name) : undefined,
       exporter_name: card.exporter_name ? String(card.exporter_name) : undefined,
@@ -313,6 +315,11 @@ export const ThermalCuppingCardDocument: React.FC<
                 {show_exporter && card.exporter_name && (
                   <Text style={styles.infoRow}>
                     Exporter: {card.exporter_name}
+                  </Text>
+                )}
+                {card.exporter_sample_number && (
+                  <Text style={styles.infoRow}>
+                    Exp. Sample #: {card.exporter_sample_number}
                   </Text>
                 )}
                 <Text style={styles.infoRow}>

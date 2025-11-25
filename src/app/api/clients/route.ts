@@ -22,8 +22,16 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const search = searchParams.get('search')
+    const clientTypesParam = searchParams.get('client_types')
+    const isActiveParam = searchParams.get('is_active')
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
+
+    // Parse client_types filter (comma-separated list)
+    let clientTypesFilter: string[] = []
+    if (clientTypesParam) {
+      clientTypesFilter = clientTypesParam.split(',').map(t => t.trim())
+    }
 
     // Build query - type assertion to avoid deep instantiation issues
     let query = (supabase as any)
@@ -35,6 +43,17 @@ export async function GET(request: NextRequest) {
     // Apply search filter
     if (search) {
       query = query.or(`name.ilike.%${search}%,company.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
+    }
+
+    // Apply client_types filter (array overlap)
+    if (clientTypesFilter.length > 0) {
+      query = query.overlaps('client_types', clientTypesFilter)
+    }
+
+    // Apply is_active filter
+    if (isActiveParam) {
+      const isActive = isActiveParam === 'true'
+      query = query.eq('is_active', isActive)
     }
 
     const { data: clients, error } = await query
@@ -51,6 +70,15 @@ export async function GET(request: NextRequest) {
 
     if (search) {
       countQuery = countQuery.or(`name.ilike.%${search}%,company.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
+    }
+
+    if (clientTypesFilter.length > 0) {
+      countQuery = countQuery.overlaps('client_types', clientTypesFilter)
+    }
+
+    if (isActiveParam) {
+      const isActive = isActiveParam === 'true'
+      countQuery = countQuery.eq('is_active', isActive)
     }
 
     const { count } = await countQuery

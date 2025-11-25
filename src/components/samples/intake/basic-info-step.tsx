@@ -271,6 +271,20 @@ export function BasicInfoStep({
             </div>
           )}
 
+          {/* Exporter Sample Number */}
+          <div className="space-y-2">
+            <Label htmlFor="exporter_sample_number">Exporter Sample Number</Label>
+            <Input
+              id="exporter_sample_number"
+              value={formData.exporter_sample_number}
+              onChange={(e) => updateFormData('exporter_sample_number', e.target.value)}
+              placeholder="Enter exporter's sample identification number"
+            />
+            <p className="text-xs text-muted-foreground">
+              The sample identification number provided by the exporter (e.g., container-specific ID)
+            </p>
+          </div>
+
       {/* Exporter and Buyer row */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="space-y-2">

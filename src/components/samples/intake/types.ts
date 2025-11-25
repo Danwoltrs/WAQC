@@ -8,6 +8,7 @@ export interface FormData {
   // Basic Info
   client_id: string
   laboratory_id: string
+  exporter_sample_number: string // Exporter's sample identification number
   exporter: string
   buyer: string
   roaster: string

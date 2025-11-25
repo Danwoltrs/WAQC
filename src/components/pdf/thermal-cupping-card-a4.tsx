@@ -247,6 +247,7 @@ export const ThermalCuppingCardA4Document: React.FC<
       lab_name: card.lab_name ? String(card.lab_name) : undefined,
       ico_number: card.ico_number ? String(card.ico_number) : undefined,
       container_nr: card.container_nr ? String(card.container_nr) : undefined,
+      exporter_sample_number: card.exporter_sample_number ? String(card.exporter_sample_number) : undefined,
       quality_name: card.quality_name ? String(card.quality_name) : undefined,
       buyer_name: card.buyer_name ? String(card.buyer_name) : undefined,
       exporter_name: card.exporter_name ? String(card.exporter_name) : undefined,
@@ -311,6 +312,11 @@ export const ThermalCuppingCardA4Document: React.FC<
                     {show_exporter && card.exporter_name && (
                       <Text style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Exporter:</Text> {card.exporter_name}
+                      </Text>
+                    )}
+                    {card.exporter_sample_number && (
+                      <Text style={styles.infoRow}>
+                        <Text style={styles.infoLabel}>Exp. Sample #:</Text> {card.exporter_sample_number}
                       </Text>
                     )}
                     <Text style={styles.infoRow}>

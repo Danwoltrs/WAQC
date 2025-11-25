@@ -120,8 +120,8 @@ export function QualityAssignmentDialog({
   const fetchAvailableClients = async () => {
     setSearchLoading(true)
     try {
-      // Fetch all active clients
-      const response = await fetch('/api/clients?is_active=true')
+      // Fetch active buyers and roasters only (not exporters)
+      const response = await fetch('/api/clients?is_active=true&client_types=importer_buyer,roaster,final_buyer,roaster_final_buyer')
       if (!response.ok) throw new Error('Failed to fetch clients')
 
       const data = await response.json()
@@ -332,10 +332,7 @@ export function QualityAssignmentDialog({
                               selectedClientId === client.id ? "opacity-100" : "opacity-0"
                             )}
                           />
-                          <div>
-                            <div className="font-medium">{client.fantasy_name || client.company}</div>
-                            <div className="text-sm text-muted-foreground">{client.name}</div>
-                          </div>
+                          <div className="font-medium">{client.fantasy_name || client.company}</div>
                         </CommandItem>
                       ))}
                     </CommandGroup>
