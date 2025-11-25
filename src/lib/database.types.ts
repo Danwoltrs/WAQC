@@ -6518,6 +6518,7 @@ export type Database = {
           exporter_contract_nr: string | null
           exporter_id: string | null
           exporter_legacy: string | null
+          exporter_sample_number: string | null
           hide_exporter_on_label: boolean | null
           ico_marks: string | null
           ico_number: string | null
@@ -6563,6 +6564,7 @@ export type Database = {
           exporter_contract_nr?: string | null
           exporter_id?: string | null
           exporter_legacy?: string | null
+          exporter_sample_number?: string | null
           hide_exporter_on_label?: boolean | null
           ico_marks?: string | null
           ico_number?: string | null
@@ -6608,6 +6610,7 @@ export type Database = {
           exporter_contract_nr?: string | null
           exporter_id?: string | null
           exporter_legacy?: string | null
+          exporter_sample_number?: string | null
           hide_exporter_on_label?: boolean | null
           ico_marks?: string | null
           ico_number?: string | null
