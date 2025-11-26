@@ -537,24 +537,22 @@ export default function ClientsPage() {
                                 ) : clientOriginPricing.length === 0 ? (
                                   <p className="text-sm text-muted-foreground">No origin-specific pricing configured</p>
                                 ) : (
-                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    {clientOriginPricing.map((pricing) => (
-                                      <Card key={pricing.id} className="border-2">
-                                        <CardContent className="p-4">
-                                          <div className="flex items-center justify-between mb-2">
-                                            <h5 className="font-semibold text-sm">{pricing.origin}</h5>
-                                            <Badge
-                                              variant={pricing.is_active ? 'default' : 'secondary'}
-                                              className="text-xs"
-                                            >
-                                              {pricing.is_active ? 'Active' : 'Inactive'}
-                                            </Badge>
-                                          </div>
-                                          <p className="text-sm text-muted-foreground">
-                                            {formatOriginPricing(pricing)}
-                                          </p>
-                                        </CardContent>
-                                      </Card>
+                                  <div className="space-y-3">
+                                    {clientOriginPricing.map((pricing, index) => (
+                                      <div key={pricing.id}>
+                                        {index > 0 && <div className="border-t border-border mb-3" />}
+                                        <div className="flex items-center justify-between">
+                                          <span className="text-sm">
+                                            <span className="font-semibold">{pricing.origin}:</span> {formatOriginPricing(pricing)}
+                                          </span>
+                                          <Badge
+                                            variant={pricing.is_active ? 'default' : 'secondary'}
+                                            className="text-xs"
+                                          >
+                                            {pricing.is_active ? 'Active' : 'Inactive'}
+                                          </Badge>
+                                        </div>
+                                      </div>
                                     ))}
                                   </div>
                                 )}
