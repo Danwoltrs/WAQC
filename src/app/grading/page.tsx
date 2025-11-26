@@ -1384,7 +1384,7 @@ export default function GradingPage() {
                                   dataKey="value"
                                   label={(props: any) => {
                                     const isDarkMode = document.documentElement.classList.contains('dark')
-                                    const textColor = isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.7)'
+                                    const textColor = isDarkMode ? '#ffffff' : '#000000'
                                     const textAnchor = props.x > props.cx ? 'start' : 'end'
                                     return (
                                       <g>
@@ -1415,8 +1415,8 @@ export default function GradingPage() {
                                   }}
                                   labelLine={{
                                     stroke: document.documentElement.classList.contains('dark')
-                                      ? 'rgba(255, 255, 255, 0.4)'
-                                      : 'rgba(0, 0, 0, 0.3)',
+                                      ? '#666666'
+                                      : '#999999',
                                     strokeWidth: 1
                                   }}
                                 >

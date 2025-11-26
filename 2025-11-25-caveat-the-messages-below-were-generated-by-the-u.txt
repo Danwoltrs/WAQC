@@ -1,1 +1,44 @@
-On quality templates, when clicking on the eye, opening a module showing a quick view and history tab for the quality is enough, no need to open on a new tab, and user can click on edit, and the edit will be done on the same module as well.
+ What We Built:
+
+  1. 0.5 Point Threshold Validation (src/app/api/cupping/scores/aggregate/route.ts:254-279)
+    - Strict maximum difference of 0.5 points between any two cuppers
+    - Flags ALL cuppers when threshold exceeded (forces discussion)
+    - Replaced statistical outlier detection with simple range check
+  2. Automatic Score Averaging (route.ts:140-154)
+    - Calculates mean from all cupper scores
+    - Rounds to nearest increment (0.25 by default, supports 0.5 or custom)
+    - roundToNearestIncrement() function (route.ts:289-297)
+  3. Defect Discrepancy Detection (route.ts:167-227)
+    - Tracks defects (taints/faults) per cupper
+    - Flags when some cuppers identify a defect but others don't
+    - Shows which cuppers identified each defect
+  4. Enhanced API Response:
+  AttributeStats {
+    finalScore: number      // Rounded average (e.g., 4.25)
+    range: number          // Max - Min difference
+    hasDiscrepancy: boolean // true if range > 0.5
+    outliers: string[]     // Cupper names when discrepancy exists
+  }
+  5. Detailed Error Messages:
+    - "Sweetness: Discrepancy of 0.75 points exceeds 0.5 limit (Range: 4.00 - 4.75)"
+    - "Defect (Taint) 'Ferment': Only identified by Anderson, Matheus (2/3 cuppers)"
+
+  Commit: 0f80d28 - Pushed to production ✅
+
+  ---
+  🚧 NEXT PHASE: UI Implementation
+
+  What We Need to Build:
+
+  The cupping workflow currently allows individual cuppers to enter scores. We need to add a validation/review step that:
+
+  1. Displays Aggregated Scores - Shows averaged scores with discrepancy indicators
+  2. Highlights Discrepancies - Red badges/warnings for attributes exceeding 0.5
+  3. Shows Individual Cupper Scores - Table comparing all cuppers' scores
+  4. Blocks Certificate Generation - Disable "Finalize" button when hasDiscrepancies === true
+  5. Allows Score Editing - Cuppers can adjust their scores to resolve conflicts
+
+  Where to implement this: I recommend creating a new modal/dialog component that appears after multiple cuppers have scored a
+   sample, showing the aggregation results and allowing resolution of discrepancies before finalizing.
+
+  Ready to proceed with UI implementation? I can create the discrepancy validation interface now.
