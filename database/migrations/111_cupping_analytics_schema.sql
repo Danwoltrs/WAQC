@@ -121,7 +121,7 @@ SELECT
     sess.session_type,
     sess.discrepancy_detected,
     sess.auto_averaged,
-    jsonb_array_length(sess.sample_ids) as sample_count,
+    array_length(sess.sample_ids, 1) as sample_count, -- sample_ids is UUID[] not JSONB
     (SELECT COUNT(DISTINCT cupper_id) FROM cupping_scores WHERE session_id = sess.id) as cupper_count,
     (SELECT AVG((scores->>'total_score')::numeric) FROM cupping_scores WHERE session_id = sess.id) as avg_session_score,
     (SELECT STDDEV((scores->>'total_score')::numeric) FROM cupping_scores WHERE session_id = sess.id) as session_score_stddev,
