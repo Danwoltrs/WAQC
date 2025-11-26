@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { TemplateBuilder } from '@/components/quality/template-builder'
+import { TemplateViewDialog } from '@/components/quality/template-view-dialog'
 import { VersionComparisonDialog } from '@/components/quality/version-comparison-dialog'
 import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
 import { Button } from '@/components/ui/button'
@@ -64,6 +65,7 @@ export default function QualityTemplatesPage() {
   const [showBuilder, setShowBuilder] = useState(false)
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [viewingTemplate, setViewingTemplate] = useState<Template | null>(null)
+  const [viewDialogOpen, setViewDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null)
   const [clientsUsingTemplate, setClientsUsingTemplate] = useState<any[]>([])
@@ -148,8 +150,13 @@ export default function QualityTemplatesPage() {
   }
 
   const handleEdit = (template: Template) => {
-    setEditingTemplate(template)
-    setShowBuilder(true)
+    setViewingTemplate(template)
+    setViewDialogOpen(true)
+  }
+
+  const handleView = (template: Template) => {
+    setViewingTemplate(template)
+    setViewDialogOpen(true)
   }
 
   const handleClone = async (template: Template) => {
@@ -231,11 +238,11 @@ export default function QualityTemplatesPage() {
 
   const handleSave = async (templateData: any) => {
     try {
-      const url = editingTemplate
-        ? `/api/quality-templates/${editingTemplate.id}`
+      const url = viewingTemplate
+        ? `/api/quality-templates/${viewingTemplate.id}`
         : '/api/quality-templates'
 
-      const method = editingTemplate ? 'PATCH' : 'POST'
+      const method = viewingTemplate ? 'PATCH' : 'POST'
 
       const response = await fetch(url, {
         method,
@@ -253,6 +260,19 @@ export default function QualityTemplatesPage() {
       setEditingTemplate(null)
     } catch (error: any) {
       throw new Error(error.message || 'Failed to save template')
+    }
+  }
+
+  const handleDialogSave = async (templateData: any) => {
+    await handleSave(templateData)
+    // Reload to get updated template data
+    await loadTemplates()
+    // Update the viewing template with fresh data
+    if (viewingTemplate) {
+      const updatedTemplate = templates.find(t => t.id === viewingTemplate.id)
+      if (updatedTemplate) {
+        setViewingTemplate(updatedTemplate)
+      }
     }
   }
 
@@ -287,234 +307,6 @@ export default function QualityTemplatesPage() {
               setEditingTemplate(null)
             }}
           />
-        </div>
-      </MainLayout>
-    )
-  }
-
-  if (viewingTemplate) {
-    const params = viewingTemplate.parameters
-    return (
-      <MainLayout>
-        <div className="p-6 max-w-5xl mx-auto">
-          <div className="flex items-center justify-between mb-6">
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">{getTemplateName(viewingTemplate)}</h1>
-              <p className="text-muted-foreground">{getTemplateDescription(viewingTemplate)}</p>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setVersionComparisonTemplate(viewingTemplate)
-                  setVersionDialogOpen(true)
-                }}
-              >
-                <History className="h-4 w-4 mr-2" />
-                Version History
-              </Button>
-              <Button variant="outline" onClick={() => setViewingTemplate(null)}>
-                Back to Library
-              </Button>
-            </div>
-          </div>
-
-          <Card>
-            <CardContent className="p-6">
-              {/* Basic Info - Horizontal Layout */}
-              <div className="grid grid-cols-4 gap-4 pb-4 border-b">
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Origin</div>
-                  <div className="font-medium">{(params as any).origin || 'Not specified'}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Micro-origins</div>
-                  <div className="font-medium">
-                    {(params as any).micro_origins?.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {(params as any).micro_origins.slice(0, 2).map((mo: string, idx: number) => (
-                          <Badge key={idx} variant="outline" className="text-xs px-1 py-0">
-                            {mo}
-                          </Badge>
-                        ))}
-                        {(params as any).micro_origins.length > 2 && (
-                          <Badge variant="outline" className="text-xs px-1 py-0">
-                            +{(params as any).micro_origins.length - 2}
-                          </Badge>
-                        )}
-                      </div>
-                    ) : 'Any'}
-                  </div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Created by</div>
-                  <div className="font-medium text-sm">{viewingTemplate.created_by_name || 'Unknown'}</div>
-                  <div className="text-xs text-muted-foreground">{new Date(viewingTemplate.created_at).toLocaleDateString()}</div>
-                </div>
-                <div>
-                  <div className="text-xs text-muted-foreground mb-1">Version</div>
-                  <Badge variant="outline">v{viewingTemplate.version}</Badge>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-6 pt-4">
-                {/* Left Column */}
-                <div className="space-y-4">
-                  {/* Screen Size Requirements */}
-                  <div className="pb-4 border-b">
-                    <h3 className="text-sm font-semibold mb-3">Screen Size Requirements</h3>
-                    {params.screen_size_requirements?.constraints?.length ? (
-                      <div className="space-y-1">
-                        {[...params.screen_size_requirements.constraints]
-                          .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-                          .map((c, idx) => (
-                            <div key={idx} className="flex items-center justify-between text-xs">
-                              <span className="font-mono font-medium">{c.screen_size}</span>
-                              <span className="text-muted-foreground">
-                                {c.constraint_type === 'minimum' && `≥ ${c.min_value}%`}
-                                {c.constraint_type === 'maximum' && `≤ ${c.max_value}%`}
-                                {c.constraint_type === 'range' && `${c.min_value}-${c.max_value}%`}
-                                {c.constraint_type === 'any' && 'any'}
-                              </span>
-                            </div>
-                          ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Not configured</p>
-                    )}
-                  </div>
-
-                  {/* Defect Thresholds */}
-                  <div className="pb-4 border-b">
-                    <h3 className="text-sm font-semibold mb-3">Defect Thresholds</h3>
-                    {params.defect_configuration?.thresholds ? (
-                      <div className="space-y-1 text-xs">
-                        {params.defect_configuration.thresholds.max_primary !== undefined && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Primary</span>
-                            <span className="font-medium">≤ {params.defect_configuration.thresholds.max_primary}</span>
-                          </div>
-                        )}
-                        {params.defect_configuration.thresholds.max_secondary !== undefined && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Secondary</span>
-                            <span className="font-medium">≤ {params.defect_configuration.thresholds.max_secondary}</span>
-                          </div>
-                        )}
-                        {params.defect_configuration.thresholds.max_total !== undefined && (
-                          <div className="flex justify-between">
-                            <span className="text-muted-foreground">Total</span>
-                            <span className="font-medium">≤ {params.defect_configuration.thresholds.max_total}</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Not configured</p>
-                    )}
-                  </div>
-
-                  {/* Moisture & Quakers */}
-                  <div>
-                    <h3 className="text-sm font-semibold mb-3">Physical Properties</h3>
-                    <div className="space-y-2 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Moisture Range</span>
-                        <span className="font-medium">
-                          {params.moisture_min || '-'}% - {params.moisture_max || '-'}%
-                        </span>
-                      </div>
-                      {params.max_quakers !== undefined && (
-                        <div className="flex justify-between">
-                          <span className="text-muted-foreground">Max Quakers</span>
-                          <span className="font-medium">
-                            ≤ {params.max_quakers} per {params.roast_sample_size_grams || 300}g
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Column */}
-                <div className="space-y-4 border-l pl-6">
-                  {/* Cupping Attributes */}
-                  <div className="pb-4 border-b">
-                    <h3 className="text-sm font-semibold mb-3">
-                      Cupping Attributes ({params.cupping_attributes?.length || 0})
-                    </h3>
-                    {params.cupping_attributes?.length ? (
-                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                        {params.cupping_attributes.map((attr: any, idx: number) => (
-                          <div key={idx} className="text-xs">
-                            <div className="font-medium">{attr.attribute}</div>
-                            <div className="text-muted-foreground ml-2">
-                              {attr.scale.type === 'numeric'
-                                ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
-                                : `${attr.scale.options?.length || 0} wording levels`}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Not configured</p>
-                    )}
-                  </div>
-
-                  {/* Taints & Faults */}
-                  <div className="pb-4 border-b">
-                    <h3 className="text-sm font-semibold mb-3">Taints & Faults</h3>
-                    {params.taint_fault_configuration ? (
-                      <div className="space-y-2 text-xs">
-                        {params.taint_fault_configuration.rules?.zero_tolerance ? (
-                          <Badge variant="destructive" className="text-xs">Zero Tolerance</Badge>
-                        ) : (
-                          <>
-                            {params.taint_fault_configuration.taints?.length > 0 && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Taints</span>
-                                <span className="font-medium">{params.taint_fault_configuration.taints.length} defined</span>
-                              </div>
-                            )}
-                            {params.taint_fault_configuration.faults?.length > 0 && (
-                              <div className="flex justify-between">
-                                <span className="text-muted-foreground">Faults</span>
-                                <span className="font-medium">{params.taint_fault_configuration.faults.length} defined</span>
-                              </div>
-                            )}
-                          </>
-                        )}
-                      </div>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Not configured</p>
-                    )}
-                  </div>
-
-                  {/* Aspects */}
-                  <div>
-                    <h3 className="text-sm font-semibold mb-3">Visual Aspects</h3>
-                    <div className="space-y-2 text-xs">
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Green Aspect</span>
-                        <span className="font-medium">
-                          {params.green_aspect_configuration?.wordings?.length || 0} levels
-                          {params.green_aspect_configuration?.validation?.min_acceptable_value &&
-                            ` (min: ${getGreenAspectMinLabel(viewingTemplate)})`}
-                        </span>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-muted-foreground">Roast Aspect</span>
-                        <span className="font-medium">
-                          {params.roast_aspect_configuration?.wordings?.length || 0} levels
-                          {params.roast_aspect_configuration?.validation?.min_acceptable_value &&
-                            ` (min: ${getRoastAspectMinLabel(viewingTemplate)})`}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
         </div>
       </MainLayout>
     )
@@ -838,7 +630,7 @@ export default function QualityTemplatesPage() {
                             <Button
                               variant="ghost"
                               size="sm"
-                              onClick={() => setViewingTemplate(template)}
+                              onClick={() => handleView(template)}
                               title="View details"
                             >
                               <Eye className="h-4 w-4" />
@@ -950,6 +742,15 @@ export default function QualityTemplatesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
+
+        {/* Template View Dialog */}
+        <TemplateViewDialog
+          open={viewDialogOpen}
+          onOpenChange={setViewDialogOpen}
+          template={viewingTemplate}
+          onSave={handleDialogSave}
+          onTemplateUpdated={loadTemplates}
+        />
 
         {/* Version Comparison Dialog */}
         {versionComparisonTemplate && (
