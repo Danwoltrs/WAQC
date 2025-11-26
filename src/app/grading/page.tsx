@@ -1371,32 +1371,46 @@ export default function GradingPage() {
 
                         {/* Pie Chart - Hidden for type samples or when more than 6 screens */}
                         {chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6 && (
-                          <div className="w-[200px] flex-shrink-0">
-                            <ResponsiveContainer width="100%" height={150}>
+                          <div className="w-[180px] flex-shrink-0">
+                            <ResponsiveContainer width="100%" height={140}>
                               <PieChart>
                                 <Pie
                                   data={chartData}
                                   cx="50%"
                                   cy="50%"
-                                  innerRadius={25}
-                                  outerRadius={37.5}
+                                  innerRadius={20}
+                                  outerRadius={30}
                                   paddingAngle={2}
                                   dataKey="value"
                                   label={(props: any) => {
                                     const isDarkMode = document.documentElement.classList.contains('dark')
-                                    const textColor = isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)'
+                                    const textColor = isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.7)'
+                                    const textAnchor = props.x > props.cx ? 'start' : 'end'
                                     return (
-                                      <text
-                                        x={props.x}
-                                        y={props.y}
-                                        fill={textColor}
-                                        textAnchor={props.x > props.cx ? 'start' : 'end'}
-                                        dominantBaseline="central"
-                                        fontSize="11px"
-                                        fontWeight="500"
-                                      >
-                                        {`${props.name}: ${props.value.toFixed(1)}%`}
-                                      </text>
+                                      <g>
+                                        <text
+                                          x={props.x}
+                                          y={props.y - 6}
+                                          fill={textColor}
+                                          textAnchor={textAnchor}
+                                          dominantBaseline="central"
+                                          fontSize="10px"
+                                          fontWeight="500"
+                                        >
+                                          {props.name}
+                                        </text>
+                                        <text
+                                          x={props.x}
+                                          y={props.y + 6}
+                                          fill={textColor}
+                                          textAnchor={textAnchor}
+                                          dominantBaseline="central"
+                                          fontSize="10px"
+                                          fontWeight="500"
+                                        >
+                                          {`${props.value.toFixed(1)}%`}
+                                        </text>
+                                      </g>
                                     )
                                   }}
                                   labelLine={{
