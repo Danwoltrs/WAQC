@@ -1109,7 +1109,7 @@ export default function CuppingPage() {
                           </div>
 
                           {/* Spider Chart Visualization */}
-                          <div className="w-[350px] flex-shrink-0">
+                          <div className="w-[420px] flex-shrink-0">
                             {cuppingData && cuppingData.attributes.some(a => a.value !== null) ? (
                               (() => {
                                 // Calculate max value across all attributes for consistent chart scale
@@ -1124,24 +1124,43 @@ export default function CuppingPage() {
                                 const numTicks = Math.ceil(maxScaleValue / tickInterval) + 1
                                 const tickVals = Array.from({ length: numTicks }, (_, i) => i * tickInterval)
 
-                                // Format attribute labels with threshold ranges
-                                const formattedLabels = attributes.map(({ attribute, validation_rule }) => {
+                                // Prepare data for Plotly first (needed for labels)
+                                const values = attributes.map(({ attribute }) => {
+                                  const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
+                                  return attrScore?.value ?? 0
+                                })
+
+                                // Format attribute labels with scores and threshold ranges
+                                const formattedLabels = attributes.map(({ attribute, validation_rule }, idx) => {
+                                  const score = values[idx]
+                                  const scoreDisplay = score > 0 ? ` ${score}` : ''
+
+                                  // Check if attribute is out of spec
+                                  const attrData = cuppingData.attributes.find(a => a.attribute === attribute)
+                                  const isOutOfSpec = attrData?.value && validation_rule
+                                    ? !validateScoreAgainstRule(attrData.value, validation_rule).valid
+                                    : false
+
+                                  // Get theme-aware color for labels
+                                  const isDarkMode = document.documentElement.classList.contains('dark')
+                                  const normalColor = isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
+                                  const outOfSpecColor = '#ef4444' // Red for out of spec
+                                  const labelColor = isOutOfSpec ? outOfSpecColor : normalColor
+
                                   if (validation_rule && validation_rule.type === 'range' && validation_rule.max_value !== undefined) {
                                     const center = (validation_rule.min_value + validation_rule.max_value) / 2
                                     const tolerance = (validation_rule.max_value - validation_rule.min_value) / 2
                                     // Format with at most 2 decimal places, removing unnecessary zeros
                                     const centerStr = Number(center.toFixed(2)).toString()
                                     const toleranceStr = Number(tolerance.toFixed(2)).toString()
-                                    return `${attribute}<br><span style="font-size: 9px">(${centerStr} +/- ${toleranceStr})</span>`
+                                    return `<span style="color: ${labelColor}">${attribute}${scoreDisplay}<br><span style="font-size: 9px">(${centerStr} +/- ${toleranceStr})</span></span>`
                                   }
-                                  return attribute
+                                  return `<span style="color: ${labelColor}">${attribute}${scoreDisplay}</span>`
                                 })
 
-                                // Prepare data for Plotly
-                                const values = attributes.map(({ attribute }) => {
-                                  const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
-                                  return attrScore?.value ?? 0
-                                })
+                                // Close the polygon by adding the first value at the end
+                                const closedValues = [...values, values[0]]
+                                const closedLabels = [...formattedLabels, formattedLabels[0]]
 
                                 // Check if all scores are within spec
                                 const allWithinSpec = cuppingData.attributes.every(a => {
@@ -1152,14 +1171,19 @@ export default function CuppingPage() {
 
                                 const lineColor = allWithinSpec ? '#22c55e' : '#ef4444'
 
+                                // Get computed color values for theme-aware rendering
+                                const isDarkMode = document.documentElement.classList.contains('dark')
+                                const labelColor = isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
+                                const tickColor = isDarkMode ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)'
+
                                 return (
                                   // @ts-ignore - Plotly.js types are incomplete
                                   <Plot
                                     data={[
                                       {
                                         type: 'scatterpolar',
-                                        r: values,
-                                        theta: formattedLabels,
+                                        r: closedValues,
+                                        theta: closedLabels,
                                         fill: 'toself',
                                         fillcolor: allWithinSpec ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
                                         line: {
@@ -1174,7 +1198,7 @@ export default function CuppingPage() {
                                     ]}
                                     layout={{
                                       autosize: true,
-                                      height: 320,
+                                      height: 380,
                                       polar: {
                                         radialaxis: {
                                           visible: true,
@@ -1182,14 +1206,14 @@ export default function CuppingPage() {
                                           tickvals: tickVals,
                                           tickfont: {
                                             size: 10,
-                                            color: 'hsl(var(--muted-foreground))'
+                                            color: tickColor
                                           },
                                           gridcolor: 'rgba(128, 128, 128, 0.2)'
                                         },
                                         angularaxis: {
                                           tickfont: {
                                             size: 11,
-                                            color: 'hsl(var(--muted-foreground))'
+                                            color: labelColor
                                           }
                                         },
                                         bgcolor: 'transparent'
@@ -1197,9 +1221,9 @@ export default function CuppingPage() {
                                       plot_bgcolor: 'transparent',
                                       paper_bgcolor: 'transparent',
                                       font: {
-                                        color: 'hsl(var(--foreground))'
+                                        color: labelColor
                                       },
-                                      margin: { t: 30, r: 40, b: 30, l: 40 },
+                                      margin: { t: 60, r: 80, b: 60, l: 80 },
                                       showlegend: false
                                     }}
                                     config={{ displayModeBar: false, responsive: true }}
@@ -1208,7 +1232,7 @@ export default function CuppingPage() {
                                 )
                               })()
                             ) : (
-                              <div className="flex items-center justify-center h-[320px] text-xs text-muted-foreground">
+                              <div className="flex items-center justify-center h-[380px] text-xs text-muted-foreground">
                                 Start scoring to see chart
                               </div>
                             )}
