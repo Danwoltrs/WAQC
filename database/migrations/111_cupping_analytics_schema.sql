@@ -2,16 +2,44 @@
 -- Date: 2025-11-26
 -- Purpose: Add session state management, analytics views, and reporting infrastructure
 
--- Step 1: Add session status enum and update cupping_sessions table
+-- Step 1: Add new values to existing session_status enum
+-- Current values: setup, active, completed
+-- Adding: review, finalized (we'll map: setup->in_progress, active->active, completed->finalized)
 DO $$ BEGIN
-    CREATE TYPE cupping_session_status AS ENUM ('in_progress', 'review', 'finalized', 'cancelled');
-EXCEPTION
-    WHEN duplicate_object THEN null;
+    -- Add 'review' status if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'review' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'session_status')) THEN
+        ALTER TYPE session_status ADD VALUE 'review';
+    END IF;
+
+    -- Add 'finalized' status if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'finalized' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'session_status')) THEN
+        ALTER TYPE session_status ADD VALUE 'finalized';
+    END IF;
+END $$;
+
+-- Add new values to existing session_type enum
+-- Current values: digital, handwritten, q_grading
+-- Adding: regular, calibration, type_sample
+DO $$ BEGIN
+    -- Add 'regular' type if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'regular' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'session_type')) THEN
+        ALTER TYPE session_type ADD VALUE 'regular';
+    END IF;
+
+    -- Add 'calibration' type if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'calibration' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'session_type')) THEN
+        ALTER TYPE session_type ADD VALUE 'calibration';
+    END IF;
+
+    -- Add 'type_sample' type if it doesn't exist
+    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'type_sample' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'session_type')) THEN
+        ALTER TYPE session_type ADD VALUE 'type_sample';
+    END IF;
 END $$;
 
 -- Add session management fields to cupping_sessions
+-- Note: status and session_type columns already exist, we're just adding new fields
 ALTER TABLE cupping_sessions
-ADD COLUMN IF NOT EXISTS status cupping_session_status DEFAULT 'in_progress',
 ADD COLUMN IF NOT EXISTS cupper_completion JSONB DEFAULT '{}', -- {cupper_id: {completed_at: timestamp, samples_completed: [sample_ids]}}
 ADD COLUMN IF NOT EXISTS discrepancy_detected BOOLEAN DEFAULT false,
 ADD COLUMN IF NOT EXISTS discrepancy_notes TEXT,
@@ -21,22 +49,22 @@ ADD COLUMN IF NOT EXISTS auto_averaged BOOLEAN DEFAULT false, -- True if scores 
 ADD COLUMN IF NOT EXISTS review_required BOOLEAN DEFAULT false; -- True if manual review needed
 
 -- Step 2: Add laboratory_id and calibration session fields
+-- Note: session_type already exists, we're just adding new fields and enum values
 ALTER TABLE cupping_sessions
 ADD COLUMN IF NOT EXISTS laboratory_id UUID REFERENCES laboratories(id), -- Lab where session is happening
 ADD COLUMN IF NOT EXISTS session_date DATE DEFAULT CURRENT_DATE, -- Date of the cupping session
 ADD COLUMN IF NOT EXISTS cupper_ids JSONB DEFAULT '[]', -- Array of cupper IDs assigned to this session
-ADD COLUMN IF NOT EXISTS session_type TEXT DEFAULT 'regular', -- 'regular', 'calibration', 'type_sample'
 ADD COLUMN IF NOT EXISTS cup_count INTEGER, -- For calibration: number of cups per sample
 ADD COLUMN IF NOT EXISTS cup_pattern TEXT; -- For calibration: pattern like 'triangle', 'square', '3-3-2-2'
 
-COMMENT ON COLUMN cupping_sessions.status IS 'Session workflow state: in_progress → review → finalized';
+COMMENT ON COLUMN cupping_sessions.status IS 'Session workflow state: setup → active → review → finalized (or completed for legacy)';
 COMMENT ON COLUMN cupping_sessions.laboratory_id IS 'Laboratory where the cupping session is taking place';
 COMMENT ON COLUMN cupping_sessions.session_date IS 'Date of the cupping session';
 COMMENT ON COLUMN cupping_sessions.cupper_ids IS 'Array of cupper profile IDs assigned to this session';
 COMMENT ON COLUMN cupping_sessions.cupper_completion IS 'Tracks which cuppers have finished and when: {cupper_id: {completed_at, samples_completed}}';
 COMMENT ON COLUMN cupping_sessions.discrepancy_detected IS 'True if cupper scores exceed quality template threshold';
 COMMENT ON COLUMN cupping_sessions.auto_averaged IS 'True if scores were automatically averaged (within threshold)';
-COMMENT ON COLUMN cupping_sessions.session_type IS 'Type of session: regular, calibration, type_sample';
+COMMENT ON COLUMN cupping_sessions.session_type IS 'Type of session: digital, handwritten, q_grading (legacy) OR regular, calibration, type_sample (new analytics types)';
 COMMENT ON COLUMN cupping_sessions.cup_count IS 'Number of cups per sample (for calibration sessions)';
 COMMENT ON COLUMN cupping_sessions.cup_pattern IS 'Cup arrangement pattern for calibration (e.g., triangle, square, 3-3-2-2 for 10 cups)';
 
