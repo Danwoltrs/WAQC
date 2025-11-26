@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -13,7 +14,6 @@ import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3 } from 'lucide-react'
-import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType, validateScoreAgainstRule } from '@/types/attribute-scales'
@@ -23,6 +23,9 @@ import {
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
 import { CuppingReports } from '@/components/cupping/cupping-reports'
+
+// Dynamic import of Plotly to avoid SSR issues
+const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
 
 interface Sample {
   id: string
@@ -1116,55 +1119,92 @@ export default function CuppingPage() {
                                   )
                                 )
 
-                                const chartData = attributes.map(({ attribute, scale, validation_rule }) => {
-                                  const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
-                                  const value = attrScore?.value ?? 0
-                                  const maxValue = scale.type === 'numeric' ? scale.max : Math.max(...scale.options.map(o => o.value))
+                                // Generate uniform scale ticks (0, 2, 4, 6, 8, 10...)
+                                const tickInterval = 2
+                                const numTicks = Math.ceil(maxScaleValue / tickInterval) + 1
+                                const tickVals = Array.from({ length: numTicks }, (_, i) => i * tickInterval)
 
-                                  // Check if value is within spec for coloring
-                                  const hasValue = value !== null && value !== 0
-                                  const isWithinSpec = hasValue && validation_rule
-                                    ? validateScoreAgainstRule(value, validation_rule).valid
-                                    : true
-
-                                  return {
-                                    attribute: attribute.length > 15 ? attribute.substring(0, 13) + '...' : attribute,
-                                    value: value,
-                                    fullMark: maxValue,
-                                    fill: hasValue ? (isWithinSpec ? '#22c55e' : '#ef4444') : 'transparent'
+                                // Format attribute labels with threshold ranges
+                                const formattedLabels = attributes.map(({ attribute, validation_rule }) => {
+                                  if (validation_rule && validation_rule.type === 'range' && validation_rule.max_value !== undefined) {
+                                    const center = (validation_rule.min_value + validation_rule.max_value) / 2
+                                    const tolerance = (validation_rule.max_value - validation_rule.min_value) / 2
+                                    // Format with at most 2 decimal places, removing unnecessary zeros
+                                    const centerStr = Number(center.toFixed(2)).toString()
+                                    const toleranceStr = Number(tolerance.toFixed(2)).toString()
+                                    return `${attribute}<br><span style="font-size: 9px">(${centerStr} +/- ${toleranceStr})</span>`
                                   }
+                                  return attribute
                                 })
 
+                                // Prepare data for Plotly
+                                const values = attributes.map(({ attribute }) => {
+                                  const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
+                                  return attrScore?.value ?? 0
+                                })
+
+                                // Check if all scores are within spec
+                                const allWithinSpec = cuppingData.attributes.every(a => {
+                                  const attr = attributes.find(attr => attr.attribute === a.attribute)
+                                  if (!a.value || !attr?.validation_rule) return true
+                                  return validateScoreAgainstRule(a.value, attr.validation_rule).valid
+                                })
+
+                                const lineColor = allWithinSpec ? '#22c55e' : '#ef4444'
+
                                 return (
-                                  <ResponsiveContainer width="100%" height={320}>
-                                    <RadarChart data={chartData}>
-                                      <PolarGrid strokeDasharray="3 3" />
-                                      <PolarAngleAxis
-                                        dataKey="attribute"
-                                        tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
-                                      />
-                                      <PolarRadiusAxis angle={90} domain={[0, maxScaleValue]} />
-                                      <Radar
-                                        name="Score"
-                                        dataKey="value"
-                                        stroke={
-                                          cuppingData.attributes.every(a => {
-                                            const attr = attributes.find(attr => attr.attribute === a.attribute)
-                                            if (!a.value || !attr?.validation_rule) return true
-                                            return validateScoreAgainstRule(a.value, attr.validation_rule).valid
-                                          }) ? '#22c55e' : '#ef4444'
+                                  // @ts-ignore - Plotly.js types are incomplete
+                                  <Plot
+                                    data={[
+                                      {
+                                        type: 'scatterpolar',
+                                        r: values,
+                                        theta: formattedLabels,
+                                        fill: 'toself',
+                                        fillcolor: allWithinSpec ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+                                        line: {
+                                          color: lineColor,
+                                          width: 2
+                                        },
+                                        marker: {
+                                          color: lineColor,
+                                          size: 6
                                         }
-                                        fill={
-                                          cuppingData.attributes.every(a => {
-                                            const attr = attributes.find(attr => attr.attribute === a.attribute)
-                                            if (!a.value || !attr?.validation_rule) return true
-                                            return validateScoreAgainstRule(a.value, attr.validation_rule).valid
-                                          }) ? '#22c55e' : '#ef4444'
-                                        }
-                                        fillOpacity={0.4}
-                                      />
-                                    </RadarChart>
-                                  </ResponsiveContainer>
+                                      }
+                                    ]}
+                                    layout={{
+                                      autosize: true,
+                                      height: 320,
+                                      polar: {
+                                        radialaxis: {
+                                          visible: true,
+                                          range: [0, maxScaleValue],
+                                          tickvals: tickVals,
+                                          tickfont: {
+                                            size: 10,
+                                            color: 'hsl(var(--muted-foreground))'
+                                          },
+                                          gridcolor: 'rgba(128, 128, 128, 0.2)'
+                                        },
+                                        angularaxis: {
+                                          tickfont: {
+                                            size: 11,
+                                            color: 'hsl(var(--muted-foreground))'
+                                          }
+                                        },
+                                        bgcolor: 'transparent'
+                                      },
+                                      plot_bgcolor: 'transparent',
+                                      paper_bgcolor: 'transparent',
+                                      font: {
+                                        color: 'hsl(var(--foreground))'
+                                      },
+                                      margin: { t: 30, r: 40, b: 30, l: 40 },
+                                      showlegend: false
+                                    }}
+                                    config={{ displayModeBar: false, responsive: true }}
+                                    className="w-full"
+                                  />
                                 )
                               })()
                             ) : (
