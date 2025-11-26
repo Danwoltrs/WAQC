@@ -1141,9 +1141,9 @@ export default function CuppingPage() {
                                     ? !validateScoreAgainstRule(attrData.value, validation_rule).valid
                                     : false
 
-                                  // Get theme-aware color for labels
+                                  // Get theme-aware color for labels (brighter for better visibility)
                                   const isDarkMode = document.documentElement.classList.contains('dark')
-                                  const normalColor = isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
+                                  const normalColor = isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)'
                                   const outOfSpecColor = '#ef4444' // Red for out of spec
                                   const labelColor = isOutOfSpec ? outOfSpecColor : normalColor
 
@@ -1173,8 +1173,8 @@ export default function CuppingPage() {
 
                                 // Get computed color values for theme-aware rendering
                                 const isDarkMode = document.documentElement.classList.contains('dark')
-                                const labelColor = isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
-                                const tickColor = isDarkMode ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)'
+                                const labelColor = isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)'
+                                const tickColor = isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.6)'
 
                                 return (
                                   // @ts-ignore - Plotly.js types are incomplete

@@ -1372,18 +1372,39 @@ export default function GradingPage() {
                         {/* Pie Chart - Hidden for type samples or when more than 6 screens */}
                         {chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6 && (
                           <div className="w-[200px] flex-shrink-0">
-                            <ResponsiveContainer width="100%" height={200}>
+                            <ResponsiveContainer width="100%" height={150}>
                               <PieChart>
                                 <Pie
                                   data={chartData}
                                   cx="50%"
                                   cy="50%"
-                                  innerRadius={50}
-                                  outerRadius={75}
+                                  innerRadius={25}
+                                  outerRadius={37.5}
                                   paddingAngle={2}
                                   dataKey="value"
-                                  label={(props: any) => `${props.name}: ${props.value.toFixed(1)}%`}
-                                  labelLine={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 }}
+                                  label={(props: any) => {
+                                    const isDarkMode = document.documentElement.classList.contains('dark')
+                                    const textColor = isDarkMode ? 'rgba(255, 255, 255, 0.9)' : 'rgba(0, 0, 0, 0.8)'
+                                    return (
+                                      <text
+                                        x={props.x}
+                                        y={props.y}
+                                        fill={textColor}
+                                        textAnchor={props.x > props.cx ? 'start' : 'end'}
+                                        dominantBaseline="central"
+                                        fontSize="11px"
+                                        fontWeight="500"
+                                      >
+                                        {`${props.name}: ${props.value.toFixed(1)}%`}
+                                      </text>
+                                    )
+                                  }}
+                                  labelLine={{
+                                    stroke: document.documentElement.classList.contains('dark')
+                                      ? 'rgba(255, 255, 255, 0.4)'
+                                      : 'rgba(0, 0, 0, 0.3)',
+                                    strokeWidth: 1
+                                  }}
                                 >
                                   {chartData.map((entry, index) => (
                                     <Cell
