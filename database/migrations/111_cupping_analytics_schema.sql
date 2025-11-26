@@ -4,18 +4,17 @@
 
 -- Step 1: Add new values to existing session_status enum
 -- Current values: setup, active, completed
--- Adding: review, finalized (we'll map: setup->in_progress, active->active, completed->finalized)
+-- Adding: review (we'll use: setup → active → review → completed)
+-- Note: 'completed' serves as 'finalized' - no need for separate status
 DO $$ BEGIN
     -- Add 'review' status if it doesn't exist
     IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'review' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'session_status')) THEN
         ALTER TYPE session_status ADD VALUE 'review';
     END IF;
-
-    -- Add 'finalized' status if it doesn't exist
-    IF NOT EXISTS (SELECT 1 FROM pg_enum WHERE enumlabel = 'finalized' AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'session_status')) THEN
-        ALTER TYPE session_status ADD VALUE 'finalized';
-    END IF;
 END $$;
+
+-- Commit the enum change before using it
+COMMIT;
 
 -- Add new values to existing session_type enum
 -- Current values: digital, handwritten, q_grading
@@ -57,7 +56,7 @@ ADD COLUMN IF NOT EXISTS cupper_ids JSONB DEFAULT '[]', -- Array of cupper IDs a
 ADD COLUMN IF NOT EXISTS cup_count INTEGER, -- For calibration: number of cups per sample
 ADD COLUMN IF NOT EXISTS cup_pattern TEXT; -- For calibration: pattern like 'triangle', 'square', '3-3-2-2'
 
-COMMENT ON COLUMN cupping_sessions.status IS 'Session workflow state: setup → active → review → finalized (or completed for legacy)';
+COMMENT ON COLUMN cupping_sessions.status IS 'Session workflow state: setup → active → review → completed';
 COMMENT ON COLUMN cupping_sessions.laboratory_id IS 'Laboratory where the cupping session is taking place';
 COMMENT ON COLUMN cupping_sessions.session_date IS 'Date of the cupping session';
 COMMENT ON COLUMN cupping_sessions.cupper_ids IS 'Array of cupper profile IDs assigned to this session';
@@ -106,7 +105,7 @@ SELECT
 FROM cupping_scores cs
 JOIN cupping_sessions cupp_sess ON cs.session_id = cupp_sess.id
 JOIN profiles p ON cs.cupper_id = p.id
-WHERE cupp_sess.status = 'finalized' -- Only include finalized sessions
+WHERE cupp_sess.status = 'completed' -- Only include completed (finalized) sessions
 GROUP BY cs.cupper_id, p.full_name, cs.session_id, cupp_sess.laboratory_id, cupp_sess.session_date, cupp_sess.status;
 
 COMMENT ON VIEW cupper_performance_stats IS 'Aggregated cupper performance metrics for analytics dashboard';
@@ -155,7 +154,7 @@ JOIN cupping_scores cs ON s.id = cs.sample_id
 JOIN cupping_sessions sess ON cs.session_id = sess.id
 JOIN profiles p ON cs.cupper_id = p.id
 LEFT JOIN clients c ON s.client_id = c.id
-WHERE sess.status = 'finalized';
+WHERE sess.status = 'completed'; -- completed = finalized
 
 COMMENT ON VIEW sample_cupping_history IS 'Complete cupping history for each sample with cupper details';
 
@@ -176,7 +175,7 @@ FROM samples s
 JOIN cupping_scores cs ON s.id = cs.sample_id
 JOIN cupping_sessions sess ON cs.session_id = sess.id
 JOIN laboratories l ON s.laboratory_id = l.id
-WHERE sess.status = 'finalized'
+WHERE sess.status = 'completed' -- completed = finalized
   AND s.origin IS NOT NULL
 GROUP BY s.origin, s.laboratory_id, l.name;
 
