@@ -27,6 +27,12 @@ import { CuppingReports } from '@/components/cupping/cupping-reports'
 // Dynamic import of Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
 
+// Helper function to check if dark mode is active
+function isDarkMode(): boolean {
+  if (typeof window === 'undefined') return false
+  return document.documentElement.classList.contains('dark')
+}
+
 interface Sample {
   id: string
   tracking_number: string
@@ -92,9 +98,24 @@ export default function CuppingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [activeView, setActiveView] = useState<'cupping' | 'reports'>('cupping')
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => isDarkMode() ? 'dark' : 'light')
 
   // Visibility settings
   const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
+
+  // Watch for theme changes
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(isDarkMode() ? 'dark' : 'light')
+    })
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class']
+    })
+
+    return () => observer.disconnect()
+  }, [])
 
   // Cupping data for all samples
   const [cuppingDataMap, setCuppingDataMap] = useState<Map<string, CuppingData>>(new Map())
@@ -1142,8 +1163,7 @@ export default function CuppingPage() {
                                     : false
 
                                   // Get theme-aware color for labels
-                                  const isDarkMode = document.documentElement.classList.contains('dark')
-                                  const normalColor = isDarkMode ? '#ffffff' : '#000000'
+                                  const normalColor = theme === 'dark' ? '#ffffff' : '#000000'
                                   const outOfSpecColor = '#ef4444' // Red for out of spec
                                   const labelColor = isOutOfSpec ? outOfSpecColor : normalColor
 
@@ -1172,9 +1192,8 @@ export default function CuppingPage() {
                                 const lineColor = allWithinSpec ? '#22c55e' : '#ef4444'
 
                                 // Get computed color values for theme-aware rendering
-                                const isDarkMode = document.documentElement.classList.contains('dark')
-                                const labelColor = isDarkMode ? '#ffffff' : '#000000'
-                                const tickColor = isDarkMode ? '#aaaaaa' : '#666666'
+                                const labelColor = theme === 'dark' ? '#ffffff' : '#000000'
+                                const tickColor = theme === 'dark' ? '#aaaaaa' : '#666666'
 
                                 return (
                                   // @ts-ignore - Plotly.js types are incomplete
