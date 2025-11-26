@@ -23,6 +23,7 @@ import {
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
 import { CuppingReports } from '@/components/cupping/cupping-reports'
+import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
 
 // Dynamic import of Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
@@ -102,6 +103,10 @@ export default function CuppingPage() {
 
   // Visibility settings
   const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
+
+  // Validation modal state
+  const [validationModalOpen, setValidationModalOpen] = useState(false)
+  const [validationSampleId, setValidationSampleId] = useState<string | null>(null)
 
   // Watch for theme changes
   useEffect(() => {
@@ -760,6 +765,29 @@ export default function CuppingPage() {
     }
   }
 
+  const handleOpenValidationModal = () => {
+    if (!activeSampleId) return
+    setValidationSampleId(activeSampleId)
+    setValidationModalOpen(true)
+  }
+
+  const handleFinalizeScores = async () => {
+    // TODO: Implement score finalization logic
+    // This could involve updating session status, triggering certificate generation, etc.
+    toast({
+      title: 'Scores Finalized',
+      description: 'Cupping scores have been finalized successfully',
+    })
+  }
+
+  const handleEditCupperScore = (cupperId: string) => {
+    // TODO: Implement logic to allow editing a specific cupper's scores
+    toast({
+      title: 'Edit Cupper Score',
+      description: `Opening score editor for cupper: ${cupperId}`,
+    })
+  }
+
   if (loading) {
     return (
       <MainLayout>
@@ -863,10 +891,18 @@ export default function CuppingPage() {
                   )
                 })}
               </TabsList>
-              <div className="pr-6">
+              <div className="pr-6 flex gap-2">
                 <Button onClick={handleSaveCurrent} disabled={saving} size="default">
                   <Save className="h-4 w-4 mr-2" />
                   {saving ? 'Saving...' : 'Save Current Sample'}
+                </Button>
+                <Button
+                  onClick={handleOpenValidationModal}
+                  variant="outline"
+                  size="default"
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Validate & Review
                 </Button>
               </div>
             </div>
@@ -1471,6 +1507,16 @@ export default function CuppingPage() {
           </TabsContent>
         </Tabs>
       </div>
+
+      {/* Validation Modal */}
+      <CuppingValidationModal
+        open={validationModalOpen}
+        onOpenChange={setValidationModalOpen}
+        sampleId={validationSampleId}
+        sampleTrackingNumber={activeSample?.tracking_number}
+        onFinalize={handleFinalizeScores}
+        onEditScore={handleEditCupperScore}
+      />
     </MainLayout>
   )
 }
