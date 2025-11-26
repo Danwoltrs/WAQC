@@ -19,6 +19,8 @@ interface AttributeStats {
   values: number[]
   hasDiscrepancy: boolean
   outliers: string[] // Cupper IDs who are outliers
+  finalScore: number // Rounded average score (to nearest 0.25)
+  range: number // max - min (discrepancy amount)
 }
 
 interface AggregatedScores {
@@ -137,17 +139,23 @@ export async function GET(request: NextRequest) {
 
       const stats = calculateStatistics(values)
       const outliers = detectOutliers(cupperValues, stats)
+      const range = stats.max - stats.min
+
+      // Round mean to nearest 0.25 increment (standard cupping increment)
+      const finalScore = roundToNearestIncrement(stats.mean, 0.25)
 
       attributeStats[attribute] = {
         ...stats,
         values,
         hasDiscrepancy: outliers.length > 0,
         outliers,
+        finalScore,
+        range,
       }
 
       if (outliers.length > 0) {
         discrepancyFlags.push(
-          `${attribute}: ${outliers.join(', ')} ${outliers.length === 1 ? 'is' : 'are'} outlier${outliers.length === 1 ? '' : 's'}`
+          `${attribute}: Discrepancy of ${range.toFixed(2)} points exceeds 0.5 limit (Range: ${stats.min.toFixed(2)} - ${stats.max.toFixed(2)})`
         )
       }
     }
@@ -156,19 +164,67 @@ export async function GET(request: NextRequest) {
     const overallMeans = Object.values(attributeStats).map((stats) => stats.mean)
     const overallStats = calculateStatistics(overallMeans)
 
-    // Aggregate defects
+    // Aggregate defects and check for discrepancies
     const allTaints = new Set<string>()
     const allFaults = new Set<string>()
+    const cupperDefects: Map<string, { taints: Set<string>; faults: Set<string> }> = new Map()
 
     scores.forEach((score: any) => {
+      const cupperName = score.cupper?.full_name || score.cupper_id || 'Unknown'
       const defects = score.defects || {}
+
+      // Track defects per cupper
+      if (!cupperDefects.has(cupperName)) {
+        cupperDefects.set(cupperName, { taints: new Set(), faults: new Set() })
+      }
+      const cupperDefectSet = cupperDefects.get(cupperName)!
+
       if (defects.taints) {
-        defects.taints.forEach((taint: string) => allTaints.add(taint))
+        defects.taints.forEach((taint: string) => {
+          allTaints.add(taint)
+          cupperDefectSet.taints.add(taint)
+        })
       }
       if (defects.faults) {
-        defects.faults.forEach((fault: string) => allFaults.add(fault))
+        defects.faults.forEach((fault: string) => {
+          allFaults.add(fault)
+          cupperDefectSet.faults.add(fault)
+        })
       }
     })
+
+    // Check for defect discrepancies (when cuppers disagree on defects)
+    if (cupperDefects.size > 1) {
+      // Check if all cuppers identified the same defects
+      const allCupperTaints = Array.from(cupperDefects.values()).map(d => d.taints)
+      const allCupperFaults = Array.from(cupperDefects.values()).map(d => d.faults)
+
+      // Check taint discrepancies
+      allTaints.forEach((taint) => {
+        const cuppersWithTaint = Array.from(cupperDefects.entries())
+          .filter(([_, defects]) => defects.taints.has(taint))
+          .map(([cupper, _]) => cupper)
+
+        if (cuppersWithTaint.length > 0 && cuppersWithTaint.length < cupperDefects.size) {
+          discrepancyFlags.push(
+            `Defect (Taint) "${taint}": Only identified by ${cuppersWithTaint.join(', ')} (${cuppersWithTaint.length}/${cupperDefects.size} cuppers)`
+          )
+        }
+      })
+
+      // Check fault discrepancies
+      allFaults.forEach((fault) => {
+        const cuppersWithFault = Array.from(cupperDefects.entries())
+          .filter(([_, defects]) => defects.faults.has(fault))
+          .map(([cupper, _]) => cupper)
+
+        if (cuppersWithFault.length > 0 && cuppersWithFault.length < cupperDefects.size) {
+          discrepancyFlags.push(
+            `Defect (Fault) "${fault}": Only identified by ${cuppersWithFault.join(', ')} (${cuppersWithFault.length}/${cupperDefects.size} cuppers)`
+          )
+        }
+      })
+    }
 
     // Build aggregated result
     const aggregated: AggregatedScores = {
@@ -252,7 +308,8 @@ function calculateStatistics(values: number[]): {
 }
 
 /**
- * Detect outliers using the IQR method (values outside 1.5 * IQR)
+ * Detect inter-cupper discrepancies using 0.5 point threshold
+ * If the difference between any two cuppers exceeds 0.5 points, flag as discrepancy
  */
 function detectOutliers(
   cupperValues: Map<string, number>,
@@ -260,17 +317,29 @@ function detectOutliers(
 ): string[] {
   const outliers: string[] = []
 
-  // Use 2 standard deviations as threshold for discrepancy
-  // This means values more than 2 std devs from mean are flagged
-  const threshold = 2 * stats.stdDev
+  // Calculate the range (max - min) between cuppers
+  const range = stats.max - stats.min
 
-  cupperValues.forEach((value, cupper) => {
-    const deviation = Math.abs(value - stats.mean)
-    if (deviation > threshold && stats.stdDev > 0.25) {
-      // Only flag if std dev is significant
+  // REQUIREMENT: Maximum 0.5 point difference allowed between any two cuppers
+  const MAX_ALLOWED_DISCREPANCY = 0.5
+
+  if (range > MAX_ALLOWED_DISCREPANCY) {
+    // Flag ALL cuppers when discrepancy exceeds threshold
+    // This forces cuppers to discuss and reach consensus
+    cupperValues.forEach((value, cupper) => {
       outliers.push(cupper)
-    }
-  })
+    })
+  }
 
   return outliers
+}
+
+/**
+ * Round a number to the nearest increment
+ * @param value - The value to round
+ * @param increment - The rounding increment (e.g., 0.25 for quarter points)
+ * @returns Rounded value
+ */
+function roundToNearestIncrement(value: number, increment: number): number {
+  return Math.round(value / increment) * increment
 }
