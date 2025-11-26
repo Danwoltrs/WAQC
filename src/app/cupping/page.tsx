@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown } from 'lucide-react'
+import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3 } from 'lucide-react'
 import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, ResponsiveContainer } from 'recharts'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale } from '@/types/cupping-templates'
@@ -22,6 +22,7 @@ import {
   getVisibilitySettings,
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
+import { CuppingReports } from '@/components/cupping/cupping-reports'
 
 interface Sample {
   id: string
@@ -87,6 +88,7 @@ export default function CuppingPage() {
   const [activeSampleId, setActiveSampleId] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [activeView, setActiveView] = useState<'cupping' | 'reports'>('cupping')
 
   // Visibility settings
   const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
@@ -772,8 +774,25 @@ export default function CuppingPage() {
   return (
     <MainLayout>
       <div className="h-full bg-background">
-        {/* Tabs with Save Button */}
-        <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
+        {/* Top-level Navigation: Cupping vs Reports */}
+        <Tabs value={activeView} onValueChange={(v) => setActiveView(v as 'cupping' | 'reports')} className="w-full h-full flex flex-col">
+          <div className="border-b bg-card">
+            <TabsList className="h-12 bg-transparent border-b-0 rounded-none">
+              <TabsTrigger value="cupping" className="gap-2">
+                <Coffee className="h-4 w-4" />
+                Cupping
+              </TabsTrigger>
+              <TabsTrigger value="reports" className="gap-2">
+                <BarChart3 className="h-4 w-4" />
+                Reports
+              </TabsTrigger>
+            </TabsList>
+          </div>
+
+          {/* Cupping Tab Content */}
+          <TabsContent value="cupping" className="m-0 flex-1">
+            {/* Sample Tabs with Save Button */}
+            <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full h-full flex flex-col">
           <div className="border-b bg-card sticky top-0 z-50">
             <div className="flex items-center justify-between">
               <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start">
@@ -1359,6 +1378,13 @@ export default function CuppingPage() {
               </TabsContent>
             )
           })}
+            </Tabs>
+          </TabsContent>
+
+          {/* Reports Tab Content */}
+          <TabsContent value="reports" className="m-0 flex-1 overflow-auto">
+            <CuppingReports />
+          </TabsContent>
         </Tabs>
       </div>
     </MainLayout>

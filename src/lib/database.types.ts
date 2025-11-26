@@ -1119,6 +1119,7 @@ export type Database = {
           cups_per_sample: number | null
           custom_name: string | null
           custom_parameters: Json | null
+          discrepancy_threshold: number | null
           id: string
           is_active: boolean | null
           notes: string | null
@@ -1136,6 +1137,7 @@ export type Database = {
           cups_per_sample?: number | null
           custom_name?: string | null
           custom_parameters?: Json | null
+          discrepancy_threshold?: number | null
           id?: string
           is_active?: boolean | null
           notes?: string | null
@@ -1153,6 +1155,7 @@ export type Database = {
           cups_per_sample?: number | null
           custom_name?: string | null
           custom_parameters?: Json | null
+          discrepancy_threshold?: number | null
           id?: string
           is_active?: boolean | null
           notes?: string | null
@@ -1307,6 +1310,7 @@ export type Database = {
           is_active: boolean
           is_qc_client: boolean | null
           legacy_client_id: number | null
+          logo_url: string | null
           name: string
           notification_emails: string[] | null
           payment_terms: string | null
@@ -1315,6 +1319,7 @@ export type Database = {
           price_per_sample: number | null
           pricing_model: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled: boolean | null
+          report_branding_preference: string | null
           state: string | null
           tracking_number_format: Json | null
           updated_at: string | null
@@ -1344,6 +1349,7 @@ export type Database = {
           is_active?: boolean
           is_qc_client?: boolean | null
           legacy_client_id?: number | null
+          logo_url?: string | null
           name: string
           notification_emails?: string[] | null
           payment_terms?: string | null
@@ -1352,6 +1358,7 @@ export type Database = {
           price_per_sample?: number | null
           pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled?: boolean | null
+          report_branding_preference?: string | null
           state?: string | null
           tracking_number_format?: Json | null
           updated_at?: string | null
@@ -1381,6 +1388,7 @@ export type Database = {
           is_active?: boolean
           is_qc_client?: boolean | null
           legacy_client_id?: number | null
+          logo_url?: string | null
           name?: string
           notification_emails?: string[] | null
           payment_terms?: string | null
@@ -1389,6 +1397,7 @@ export type Database = {
           price_per_sample?: number | null
           pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled?: boolean | null
+          report_branding_preference?: string | null
           state?: string | null
           tracking_number_format?: Json | null
           updated_at?: string | null
@@ -2433,6 +2442,7 @@ export type Database = {
       cupping_scores: {
         Row: {
           created_at: string | null
+          cup_defects: Json | null
           cupper_id: string | null
           defects: Json | null
           id: string
@@ -2444,6 +2454,7 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          cup_defects?: Json | null
           cupper_id?: string | null
           defects?: Json | null
           id?: string
@@ -2455,6 +2466,7 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          cup_defects?: Json | null
           cupper_id?: string | null
           defects?: Json | null
           id?: string
@@ -2490,31 +2502,67 @@ export type Database = {
       }
       cupping_sessions: {
         Row: {
+          auto_averaged: boolean | null
           created_at: string | null
           created_by: string | null
+          cup_count: number | null
+          cup_pattern: string | null
+          cupper_completion: Json
+          cupper_ids: Json
+          discrepancy_detected: boolean | null
+          discrepancy_notes: string | null
+          finalized_at: string | null
+          finalized_by: string | null
           id: string
+          laboratory_id: string | null
           participants: string[]
+          review_required: boolean | null
           sample_ids: string[]
+          session_date: string | null
           session_type: Database["public"]["Enums"]["session_type"] | null
           status: Database["public"]["Enums"]["session_status"] | null
           updated_at: string | null
         }
         Insert: {
+          auto_averaged?: boolean | null
           created_at?: string | null
           created_by?: string | null
+          cup_count?: number | null
+          cup_pattern?: string | null
+          cupper_completion?: Json
+          cupper_ids?: Json
+          discrepancy_detected?: boolean | null
+          discrepancy_notes?: string | null
+          finalized_at?: string | null
+          finalized_by?: string | null
           id?: string
+          laboratory_id?: string | null
           participants: string[]
+          review_required?: boolean | null
           sample_ids: string[]
+          session_date?: string | null
           session_type?: Database["public"]["Enums"]["session_type"] | null
           status?: Database["public"]["Enums"]["session_status"] | null
           updated_at?: string | null
         }
         Update: {
+          auto_averaged?: boolean | null
           created_at?: string | null
           created_by?: string | null
+          cup_count?: number | null
+          cup_pattern?: string | null
+          cupper_completion?: Json
+          cupper_ids?: Json
+          discrepancy_detected?: boolean | null
+          discrepancy_notes?: string | null
+          finalized_at?: string | null
+          finalized_by?: string | null
           id?: string
+          laboratory_id?: string | null
           participants?: string[]
+          review_required?: boolean | null
           sample_ids?: string[]
+          session_date?: string | null
           session_type?: Database["public"]["Enums"]["session_type"] | null
           status?: Database["public"]["Enums"]["session_status"] | null
           updated_at?: string | null
@@ -10250,8 +10298,8 @@ export type Database = {
         | "approved"
         | "rejected"
       sample_type_enum: "pss" | "ss" | "type"
-      session_status: "setup" | "active" | "completed"
-      session_type: "digital" | "handwritten" | "q_grading"
+      session_status: "setup" | "active" | "completed" | "review"
+      session_type: "digital" | "handwritten" | "q_grading" | "regular" | "calibration" | "type_sample"
       share_method: "client_portal" | "email_link" | "direct_share"
       share_permission: "view_only" | "download" | "comment" | "full_access"
       taint_fault_type: "taint" | "fault"
@@ -10527,8 +10575,8 @@ export const Constants = {
         "rejected",
       ],
       sample_type_enum: ["pss", "ss", "type"],
-      session_status: ["setup", "active", "completed"],
-      session_type: ["digital", "handwritten", "q_grading"],
+      session_status: ["setup", "active", "completed", "review"],
+      session_type: ["digital", "handwritten", "q_grading", "regular", "calibration", "type_sample"],
       share_method: ["client_portal", "email_link", "direct_share"],
       share_permission: ["view_only", "download", "comment", "full_access"],
       taint_fault_type: ["taint", "fault"],
