@@ -1,0 +1,1 @@
+On quality templates, when clicking on the eye, opening a module showing a quick view and history tab for the quality is enough, no need to open on a new tab, and user can click on edit, and the edit will be done on the same module as well.

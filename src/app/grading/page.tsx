@@ -17,10 +17,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Save, Eye, EyeOff } from 'lucide-react'
-import dynamic from 'next/dynamic'
-
-// Dynamically import Plotly to avoid SSR issues
-const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
+import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
   DefectConfig,
   DefectThresholds,
@@ -46,6 +43,9 @@ import {
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
 import { useToast } from '@/hooks/use-toast'
+
+// Chart colors from design system
+const CHART_COLORS = ['#ADADFB', '#A0BCE8', '#6BE6D3', '#7DBBFF', '#B899EB', '#71DD8C']
 
 interface Sample {
   id: string
@@ -1369,112 +1369,42 @@ export default function GradingPage() {
                           })()}
                         </div>
 
-                        {/* Radar Chart - Hidden for type samples or when more than 6 screens */}
+                        {/* Pie Chart - Hidden for type samples or when more than 6 screens */}
                         {chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6 && (
-                          <div className="w-[420px] flex-shrink-0">
-                            {(() => {
-                              // Get theme for proper text colors
-                              const isDarkMode = document.documentElement.classList.contains('dark')
-                              const labelColor = isDarkMode ? 'rgba(255, 255, 255, 0.7)' : 'rgba(0, 0, 0, 0.7)'
-                              const tickColor = isDarkMode ? 'rgba(255, 255, 255, 0.5)' : 'rgba(0, 0, 0, 0.5)'
-
-                              // Extract values and labels with percentages
-                              const values = chartData.map(d => d.value)
-                              const labels = chartData.map(d => {
-                                const percentage = d.value.toFixed(1)
-                                // Get the constraint for this screen size to show min percentage
-                                const screenData = screens.find(s => formatScreenLabel(s.screen_size) === d.name)
-
-                                // Check if this specific screen size is out of spec
-                                const actualPercentage = gradingData?.screen_sizes_percentages[screenData?.screen_size || ''] || 0
-                                const hasMinConstraint = screenData && (screenData.constraint_type === 'minimum' || screenData.constraint_type === 'range') && screenData.min_value !== undefined
-                                const isOutOfSpec = hasMinConstraint ? actualPercentage < (screenData.min_value || 0) : false
-
-                                const textColor = isOutOfSpec ? '#ef4444' : labelColor
-
-                                if (hasMinConstraint) {
-                                  return `<span style="color: ${textColor}">${d.name} ${percentage}%<br><span style="font-size: 9px">(min: ${screenData.min_value!.toFixed(1)}%)</span></span>`
-                                }
-                                return `<span style="color: ${textColor}">${d.name} ${percentage}%</span>`
-                              })
-
-                              // Close the polygon
-                              const closedValues = [...values, values[0]]
-                              const closedLabels = [...labels, labels[0]]
-
-                              // Check if all percentages meet minimum requirements
-                              const allWithinSpec = screens.every(screen => {
-                                const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
-                                const hasMinConstraint = (screen.constraint_type === 'minimum' || screen.constraint_type === 'range') && screen.min_value !== undefined
-                                if (hasMinConstraint) {
-                                  return percentage >= screen.min_value!
-                                }
-                                return true
-                              })
-
-                              const lineColor = allWithinSpec ? '#22c55e' : '#ef4444'
-
-                              // Generate uniform scale ticks (0, 10, 20, 30...)
-                              const maxPercentage = Math.max(...values, 0)
-                              const tickInterval = 10
-                              const numTicks = Math.ceil(maxPercentage / tickInterval) + 1
-                              const tickVals = Array.from({ length: numTicks }, (_, i) => i * tickInterval)
-
-                              return (
-                                // @ts-ignore - Plotly.js types are incomplete
-                                <Plot
-                                  data={[
-                                    {
-                                      type: 'scatterpolar',
-                                      r: closedValues,
-                                      theta: closedLabels,
-                                      fill: 'toself',
-                                      fillcolor: allWithinSpec ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
-                                      line: {
-                                        color: lineColor,
-                                        width: 2
-                                      },
-                                      marker: {
-                                        color: lineColor,
-                                        size: 6
-                                      }
-                                    }
-                                  ]}
-                                  layout={{
-                                    autosize: true,
-                                    height: 380,
-                                    polar: {
-                                      radialaxis: {
-                                        visible: true,
-                                        range: [0, Math.max(100, maxPercentage)],
-                                        tickvals: tickVals,
-                                        tickfont: {
-                                          size: 10,
-                                          color: tickColor
-                                        },
-                                        gridcolor: 'rgba(128, 128, 128, 0.2)'
-                                      },
-                                      angularaxis: {
-                                        tickfont: {
-                                          size: 11,
-                                          color: labelColor
-                                        }
-                                      },
-                                      bgcolor: 'transparent'
-                                    },
-                                    plot_bgcolor: 'transparent',
-                                    paper_bgcolor: 'transparent',
-                                    font: {
-                                      color: labelColor
-                                    },
-                                    margin: { t: 60, r: 80, b: 60, l: 80 },
-                                    showlegend: false
+                          <div className="w-[350px] flex-shrink-0">
+                            <ResponsiveContainer width="100%" height={320}>
+                              <PieChart>
+                                <Pie
+                                  data={chartData}
+                                  cx="50%"
+                                  cy="50%"
+                                  innerRadius={80}
+                                  outerRadius={120}
+                                  paddingAngle={2}
+                                  dataKey="value"
+                                  label={(props: any) => `${props.name}: ${props.value.toFixed(1)}%`}
+                                  labelLine={{ stroke: 'hsl(var(--muted-foreground))', strokeWidth: 1 }}
+                                >
+                                  {chartData.map((entry, index) => (
+                                    <Cell
+                                      key={`cell-${index}`}
+                                      fill={CHART_COLORS[index % CHART_COLORS.length]}
+                                      stroke="hsl(var(--background))"
+                                      strokeWidth={2}
+                                    />
+                                  ))}
+                                </Pie>
+                                <Tooltip
+                                  contentStyle={{
+                                    backgroundColor: 'hsl(var(--popover))',
+                                    border: '1px solid hsl(var(--border))',
+                                    borderRadius: '8px',
+                                    fontSize: '12px'
                                   }}
-                                  config={{ displayModeBar: false, responsive: true }}
-                                  className="w-full"
+                                  formatter={(value: number) => `${value.toFixed(1)}%`}
                                 />
-                              )
-                            })()}
+                              </PieChart>
+                            </ResponsiveContainer>
                           </div>
                         )}
                       </div>
