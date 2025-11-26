@@ -63,7 +63,10 @@ The primary goal is to build a robust, intuitive, and aesthetically pleasing app
   * **Primary Text**: \#000000  
   * **Secondary/Muted Text**: rgba(0, 0, 0, 0.4)  
   * **Borders**: rgba(0, 0, 0, 0.1)  
-* **Accent & Chart Colors**: Use the following palette for charts, graphs, and status indicators: \#ADADFB, \#A0BCE8, \#6BE6D3, \#7DBBFF, \#B899EB, \#71DD8C.
+* **Accent & Chart Colors**: Use the following palette for charts, graphs, and status indicators:
+  * Primary Chart Colors: #556b2f (olive green), #a9a454 (yellowish green), #efe4d4 (light beige/cream), #b07946 (tan/brown), #445763 (dark slate blue), #151618 (dark gray/black)
+  * Validation Colors: #22c55e (green - for valid/approved), #ef4444 (red - for invalid/rejected/out-of-spec)
+  * Usage Note: Apply the primary chart color palette consistently across all charts (Recharts, Plotly.js) for histograms, bar charts, pie charts, line charts, box plots, and scatter plots. Validation colors should be used for pass/fail indicators and quality control visualizations.
 
 ### **3\. Typography**
 

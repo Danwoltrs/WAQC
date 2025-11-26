@@ -45,7 +45,7 @@ import {
 import { useToast } from '@/hooks/use-toast'
 
 // Chart colors from design system
-const CHART_COLORS = ['#ADADFB', '#A0BCE8', '#6BE6D3', '#7DBBFF', '#B899EB', '#71DD8C']
+const CHART_COLORS = ['#556b2f', '#a9a454', '#efe4d4', '#b07946', '#445763', '#151618']
 
 interface Sample {
   id: string
@@ -1371,15 +1371,15 @@ export default function GradingPage() {
 
                         {/* Pie Chart - Hidden for type samples or when more than 6 screens */}
                         {chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6 && (
-                          <div className="w-[350px] flex-shrink-0">
-                            <ResponsiveContainer width="100%" height={320}>
+                          <div className="w-[200px] flex-shrink-0">
+                            <ResponsiveContainer width="100%" height={200}>
                               <PieChart>
                                 <Pie
                                   data={chartData}
                                   cx="50%"
                                   cy="50%"
-                                  innerRadius={80}
-                                  outerRadius={120}
+                                  innerRadius={50}
+                                  outerRadius={75}
                                   paddingAngle={2}
                                   dataKey="value"
                                   label={(props: any) => `${props.name}: ${props.value.toFixed(1)}%`}

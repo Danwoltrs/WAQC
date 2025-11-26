@@ -61,7 +61,7 @@ interface TemplateUsageAnalyticsProps {
   templateId: string
 }
 
-const COLORS = ['#ADADFB', '#A0BCE8', '#6BE6D3', '#7DBBFF', '#B899EB', '#71DD8C']
+const COLORS = ['#556b2f', '#a9a454', '#efe4d4', '#b07946', '#445763', '#151618']
 
 export function TemplateUsageAnalytics({ templateId }: TemplateUsageAnalyticsProps) {
   const [analytics, setAnalytics] = useState<TemplateAnalytics | null>(null)
@@ -138,8 +138,8 @@ export function TemplateUsageAnalytics({ templateId }: TemplateUsageAnalyticsPro
     : '0'
 
   const sampleStatusData = [
-    { name: 'Approved', value: analytics.approved_samples, color: '#71DD8C' },
-    { name: 'Rejected', value: analytics.rejected_samples, color: '#FF6B6B' },
+    { name: 'Approved', value: analytics.approved_samples, color: '#556b2f' },
+    { name: 'Rejected', value: analytics.rejected_samples, color: '#b07946' },
   ]
 
   return (
@@ -300,7 +300,7 @@ export function TemplateUsageAnalytics({ templateId }: TemplateUsageAnalyticsPro
                       <Line
                         type="monotone"
                         dataKey="count"
-                        stroke="#ADADFB"
+                        stroke="#556b2f"
                         strokeWidth={2}
                         name="Samples"
                       />
@@ -323,7 +323,7 @@ export function TemplateUsageAnalytics({ templateId }: TemplateUsageAnalyticsPro
                       <XAxis dataKey="origin" />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="count" fill="#6BE6D3" />
+                      <Bar dataKey="count" fill="#a9a454" />
                     </BarChart>
                   </ResponsiveContainer>
                 </CardContent>

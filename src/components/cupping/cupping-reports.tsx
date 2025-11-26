@@ -252,7 +252,7 @@ export function CuppingReports({ laboratoryId }: CuppingReportsProps) {
                   x: data.sessionStats.map(s => s.avg_session_score),
                   type: 'histogram',
                   marker: {
-                    color: '#ADADFB',
+                    color: '#556b2f',
                   },
                   nbinsx: 20,
                 }
@@ -312,7 +312,7 @@ export function CuppingReports({ laboratoryId }: CuppingReportsProps) {
                   type: 'box' as const,
                   name: name,
                   marker: {
-                    color: ['#ADADFB', '#A0BCE8', '#6BE6D3', '#7DBBFF', '#B899EB', '#71DD8C'][index % 6],
+                    color: ['#556b2f', '#a9a454', '#efe4d4', '#b07946', '#445763', '#151618'][index % 6],
                   },
                   boxmean: 'sd' as const,
                 }))
@@ -362,7 +362,7 @@ export function CuppingReports({ laboratoryId }: CuppingReportsProps) {
                   y: data.originStats.map(s => s.avg_score),
                   type: 'bar',
                   marker: {
-                    color: '#6BE6D3',
+                    color: '#a9a454',
                   },
                   name: 'Average Score',
                 },
@@ -372,7 +372,7 @@ export function CuppingReports({ laboratoryId }: CuppingReportsProps) {
                   type: 'scatter',
                   mode: 'markers',
                   marker: {
-                    color: '#B899EB',
+                    color: '#b07946',
                     size: 10,
                     symbol: 'diamond',
                   },
