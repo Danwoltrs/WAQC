@@ -1198,6 +1198,7 @@ export default function CuppingPage() {
                                 return (
                                   // @ts-ignore - Plotly.js types are incomplete
                                   <Plot
+                                    key={theme}
                                     data={[
                                       {
                                         type: 'scatterpolar',
