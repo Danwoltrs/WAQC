@@ -47,6 +47,12 @@ import { useToast } from '@/hooks/use-toast'
 // Chart colors from design system
 const CHART_COLORS = ['#556b2f', '#a9a454', '#efe4d4', '#b07946', '#445763', '#151618']
 
+// Helper function to check if dark mode is active
+function isDarkMode(): boolean {
+  if (typeof window === 'undefined') return false
+  return document.documentElement.classList.contains('dark')
+}
+
 interface Sample {
   id: string
   tracking_number: string
@@ -113,6 +119,9 @@ export default function GradingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  // Theme tracking for chart re-rendering
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => isDarkMode() ? 'dark' : 'light')
+
   // Visibility settings using shared utility
   const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
 
@@ -143,6 +152,20 @@ export default function GradingPage() {
 
   // Roast aspect options per sample (array of objects with label and value)
   const [roastAspectOptionsMap, setRoastAspectOptionsMap] = useState<Map<string, Array<{label: string; value: number}>>>(new Map())
+
+  // Watch for theme changes
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setTheme(isDarkMode() ? 'dark' : 'light')
+    })
+
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class']
+    })
+
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     loadSamples()
@@ -1373,7 +1396,7 @@ export default function GradingPage() {
                         {chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6 && (
                           <div className="w-[180px] flex-shrink-0">
                             <ResponsiveContainer width="100%" height={140}>
-                              <PieChart>
+                              <PieChart key={theme}>
                                 <Pie
                                   data={chartData}
                                   cx="50%"
