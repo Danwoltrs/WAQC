@@ -34,13 +34,14 @@ function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number 
   }
 
   // Priority 2: Common coffee attribute abbreviations (fallback if no user abbreviation)
+  // Max 4 characters to fit in narrow columns without wrapping
   const knownAbbreviations: Record<string, string> = {
     'Fragancia': 'Frag',
     'Fragrance': 'Frag',
     'Aroma': 'Arom',
     'Sabor': 'Sabr',
-    'Flavor': 'Flvr',
-    'Retrogusto': 'Retg',
+    'Flavor': 'Flav',
+    'Retrogusto': 'Retr',
     'Aftertaste': 'Aftr',
     'Acidez': 'Acid',
     'Acidity': 'Acid',
@@ -48,14 +49,15 @@ function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number 
     'Body': 'Body',
     'Balance': 'Bal',
     'Dulzura': 'Dulz',
-    'Dulçura': 'Dolç',
+    'Dulçura': 'Dulç',
     'Sweetness': 'Swet',
     'Uniformidad': 'Unif',
     'Uniformity': 'Unif',
     'Taza Limpia': 'Limp',
-    'Clean Cup': 'Cln',
+    'Clean Cup': 'Clen',
     'Finish': 'Fin',
     'Umami': 'Umam',
+    'Overall': 'Ovrl',
   }
 
   // Check for exact match (case-insensitive)
@@ -148,11 +150,14 @@ const styles = StyleSheet.create({
     width: '30pt',
     padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 9,
+    fontSize: 7,
     fontWeight: 'bold',
     textAlign: 'center',
     overflow: 'hidden',
-    wordBreak: 'keep-all',
+    height: '12pt',
+  },
+  attributeText: {
+    maxLines: 1,
   },
   tableRow: {
     flexDirection: 'row',
@@ -334,11 +339,14 @@ export const ThermalCuppingCardA4Document: React.FC<
                     <View style={styles.cupperColumn}>
                       <Text>Cupper</Text>
                     </View>
-                    {card.attributes.map((attr, attrIndex) => (
-                      <View key={attrIndex} style={styles.attributeColumn}>
-                        <Text>{abbreviateAttribute(attr, 6)}</Text>
-                      </View>
-                    ))}
+                    {card.attributes.map((attr, attrIndex) => {
+                      const attrName = typeof attr === 'object' ? (attr.abbreviation || attr.name) : attr
+                      return (
+                        <View key={attrIndex} style={styles.attributeColumn}>
+                          <Text style={styles.attributeText}>{attrName}</Text>
+                        </View>
+                      )
+                    })}
                   </View>
 
                   {/* Cupper Rows */}

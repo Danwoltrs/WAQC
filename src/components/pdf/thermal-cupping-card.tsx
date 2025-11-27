@@ -33,28 +33,30 @@ function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number 
   }
 
   // Priority 2: Common coffee attribute abbreviations (fallback if no user abbreviation)
+  // Max 4 characters to fit in narrow columns without wrapping
   const knownAbbreviations: Record<string, string> = {
     'Fragancia': 'Frag',
     'Fragrance': 'Frag',
     'Aroma': 'Arom',
-    'Sabor': 'Sabor',
-    'Flavor': 'Flavr',
-    'Retrogusto': 'Retro',
-    'Aftertaste': 'After',
-    'Acidez': 'Acidz',
+    'Sabor': 'Sabr',
+    'Flavor': 'Flav',
+    'Retrogusto': 'Retr',
+    'Aftertaste': 'Aftr',
+    'Acidez': 'Acid',
     'Acidity': 'Acid',
-    'Cuerpo': 'Cuerp',
+    'Cuerpo': 'Cuer',
     'Body': 'Body',
     'Balance': 'Bal',
     'Dulzura': 'Dulz',
-    'Dulçura': 'Dolçu',
-    'Sweetness': 'Sweet',
-    'Uniformidad': 'Unifm',
-    'Uniformity': 'Unifm',
-    'Taza Limpia': 'Limpa',
-    'Clean Cup': 'Clean',
-    'Finish': 'Finsh',
-    'Umami': 'Umami',
+    'Dulçura': 'Dulç',
+    'Sweetness': 'Swet',
+    'Uniformidad': 'Unif',
+    'Uniformity': 'Unif',
+    'Taza Limpia': 'Limp',
+    'Clean Cup': 'Clen',
+    'Finish': 'Fin',
+    'Umami': 'Umam',
+    'Overall': 'Ovrl',
   }
 
   // Check for exact match (case-insensitive)
@@ -164,11 +166,16 @@ const styles = StyleSheet.create({
   },
   attributeColumn: {
     width: '32pt',
-    padding: '3pt',
+    padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 7,
+    fontSize: 6,
     fontWeight: 'bold',
     textAlign: 'center',
+    overflow: 'hidden',
+    height: '12pt',
+  },
+  attributeText: {
+    maxLines: 1,
   },
   tableRow: {
     flexDirection: 'row',
@@ -335,11 +342,14 @@ export const ThermalCuppingCardDocument: React.FC<
                 <View style={styles.cupperColumn}>
                   <Text>Cupper</Text>
                 </View>
-                {card.attributes.map((attr, attrIndex) => (
-                  <View key={attrIndex} style={styles.attributeColumn}>
-                    <Text>{abbreviateAttribute(attr, 5)}</Text>
-                  </View>
-                ))}
+                {card.attributes.map((attr, attrIndex) => {
+                  const attrName = typeof attr === 'object' ? (attr.abbreviation || attr.name) : attr
+                  return (
+                    <View key={attrIndex} style={styles.attributeColumn}>
+                      <Text style={styles.attributeText}>{attrName}</Text>
+                    </View>
+                  )
+                })}
               </View>
 
               {/* Cupper Rows */}
