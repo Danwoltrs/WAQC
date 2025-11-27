@@ -75,9 +75,28 @@ interface OCRValidationDialogProps {
   onSubmit: (validatedData: any[]) => Promise<void>
 }
 
-// Attribute column names matching the cupping card
-const SCORE_ATTRIBUTES = ['Fragrance', 'Flavor', 'Aftertaste', 'Acidity', 'Body', 'Balance', 'Overall']
-const ATTRIBUTE_SHORT = ['Fra', 'Fla', 'Aft', 'Acid', 'Body', 'Bal', 'Ove']
+// Default attributes if template doesn't have any
+const DEFAULT_ATTRIBUTES = [
+  { attribute: 'Fragrance', abbreviation: 'Fra' },
+  { attribute: 'Flavor', abbreviation: 'Fla' },
+  { attribute: 'Aftertaste', abbreviation: 'Aft' },
+  { attribute: 'Acidity', abbreviation: 'Acid' },
+  { attribute: 'Body', abbreviation: 'Body' },
+  { attribute: 'Balance', abbreviation: 'Bal' },
+  { attribute: 'Overall', abbreviation: 'Ove' },
+]
+
+// Helper to get abbreviation from attribute name
+function getAbbreviation(attr: any): string {
+  if (attr.abbreviation) return attr.abbreviation
+  // Generate abbreviation from attribute name
+  const name = attr.attribute || attr
+  if (name.includes('/')) {
+    // "Fragrance/Aroma" -> "Fra/Aro"
+    return name.split('/').map((s: string) => s.substring(0, 3)).join('/')
+  }
+  return name.substring(0, 4)
+}
 
 export function OCRValidationDialog({
   open,
@@ -106,6 +125,9 @@ export function OCRValidationDialog({
 
   const [taints, setTaints] = useState(currentCard?.defects.taints.join(', ') || '')
   const [faults, setFaults] = useState(currentCard?.defects.faults.join(', ') || '')
+
+  // Get attributes from quality template or use defaults
+  const templateAttributes = currentCard?.sample.quality_template?.parameters?.cupping_attributes || DEFAULT_ATTRIBUTES
 
   // Update state when card changes
   useEffect(() => {
@@ -259,10 +281,10 @@ export function OCRValidationDialog({
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-[150px]">Cupper</TableHead>
-                      {ATTRIBUTE_SHORT.map((attr) => (
-                        <TableHead key={attr} className="text-center w-[70px]">
-                          {attr}
+                      <TableHead className="w-[140px]">Cupper</TableHead>
+                      {templateAttributes.map((attr: any, idx: number) => (
+                        <TableHead key={attr.attribute || idx} className="text-center w-[60px] px-1">
+                          <span title={attr.attribute}>{getAbbreviation(attr)}</span>
                         </TableHead>
                       ))}
                     </TableRow>
@@ -278,20 +300,23 @@ export function OCRValidationDialog({
                             className="h-8 text-sm"
                           />
                         </TableCell>
-                        {SCORE_ATTRIBUTES.map((attr, attrIndex) => (
-                          <TableCell key={attr} className="p-1 text-center">
-                            <Input
-                              type="number"
-                              step="0.25"
-                              min="0"
-                              max="10"
-                              value={cupper.scores[attr] || ''}
-                              onChange={(e) => updateScore(cupperIndex, attr, e.target.value)}
-                              className="h-8 text-sm text-center px-1"
-                              placeholder="-"
-                            />
-                          </TableCell>
-                        ))}
+                        {templateAttributes.map((attr: any, attrIndex: number) => {
+                          const attrName = attr.attribute || attr
+                          return (
+                            <TableCell key={attrName} className="p-1 text-center">
+                              <Input
+                                type="number"
+                                step="0.25"
+                                min="0"
+                                max="10"
+                                value={cupper.scores[attrName] || ''}
+                                onChange={(e) => updateScore(cupperIndex, attrName, e.target.value)}
+                                className="h-8 text-sm text-center px-1"
+                                placeholder="-"
+                              />
+                            </TableCell>
+                          )
+                        })}
                       </TableRow>
                     ))}
                   </TableBody>
