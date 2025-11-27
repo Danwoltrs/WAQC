@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
@@ -92,9 +92,24 @@ interface CuppingData {
   defects: CuppingDefect[]
 }
 
-export default function CuppingPage() {
+// Helper component to handle URL search params with Suspense
+function ScanDialogTrigger({ onTrigger, loading }: { onTrigger: () => void; loading: boolean }) {
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  useEffect(() => {
+    if (searchParams.get('scan') === 'true' && !loading) {
+      onTrigger()
+      // Clean up URL parameter
+      router.replace('/cupping')
+    }
+  }, [searchParams, loading, router, onTrigger])
+
+  return null
+}
+
+function CuppingPageContent() {
+  const router = useRouter()
   const { toast } = useToast()
 
   const [samples, setSamples] = useState<Sample[]>([])
@@ -117,15 +132,6 @@ export default function CuppingPage() {
   const [ocrValidationOpen, setOcrValidationOpen] = useState(false)
   const [extractedCards, setExtractedCards] = useState<any[]>([])
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 })
-
-  // Auto-open scan dialog if scan=true in URL
-  useEffect(() => {
-    if (searchParams.get('scan') === 'true' && !loading) {
-      setScanDialogOpen(true)
-      // Clean up URL parameter
-      router.replace('/cupping')
-    }
-  }, [searchParams, loading, router])
 
   // Watch for theme changes
   useEffect(() => {
@@ -1749,6 +1755,20 @@ export default function CuppingPage() {
         extractedCards={extractedCards}
         onSubmit={handleOCRSubmit}
       />
+
+      {/* Auto-open scan dialog from URL parameter */}
+      <Suspense fallback={null}>
+        <ScanDialogTrigger onTrigger={() => setScanDialogOpen(true)} loading={loading} />
+      </Suspense>
     </MainLayout>
+  )
+}
+
+// Export with Suspense boundary for Next.js 15+
+export default function CuppingPage() {
+  return (
+    <Suspense fallback={<div>Loading...</div>}>
+      <CuppingPageContent />
+    </Suspense>
   )
 }
