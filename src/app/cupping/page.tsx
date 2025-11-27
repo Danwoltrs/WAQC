@@ -9,11 +9,12 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3 } from 'lucide-react'
+import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType, validateScoreAgainstRule } from '@/types/attribute-scales'
@@ -24,6 +25,7 @@ import {
 } from '@/lib/sample-visibility'
 import { CuppingReports } from '@/components/cupping/cupping-reports'
 import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
+import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
 
 // Dynamic import of Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
@@ -107,6 +109,13 @@ export default function CuppingPage() {
   // Validation modal state
   const [validationModalOpen, setValidationModalOpen] = useState(false)
   const [validationSampleId, setValidationSampleId] = useState<string | null>(null)
+
+  // Scan cards dialog state
+  const [scanDialogOpen, setScanDialogOpen] = useState(false)
+  const [isProcessingOCR, setIsProcessingOCR] = useState(false)
+  const [ocrValidationOpen, setOcrValidationOpen] = useState(false)
+  const [extractedCards, setExtractedCards] = useState<any[]>([])
+  const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 })
 
   // Watch for theme changes
   useEffect(() => {
@@ -788,6 +797,132 @@ export default function CuppingPage() {
     })
   }
 
+  const handleScanCards = async (files: FileList) => {
+    if (!files || files.length === 0) return
+
+    setIsProcessingOCR(true)
+    setProcessingProgress({ current: 0, total: files.length })
+
+    const extractedData: any[] = []
+    const errors: string[] = []
+
+    try {
+      // Process each file
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i]
+        setProcessingProgress({ current: i + 1, total: files.length })
+
+        try {
+          // Create FormData for upload
+          const formData = new FormData()
+          formData.append('image', file)
+
+          // Call OCR API
+          const response = await fetch('/api/cupping/ocr/process-card', {
+            method: 'POST',
+            body: formData,
+          })
+
+          const result = await response.json()
+
+          if (!response.ok) {
+            errors.push(`${file.name}: ${result.error || 'Failed to process'}`)
+            continue
+          }
+
+          // Store extracted data with image preview
+          const imagePreview = URL.createObjectURL(file)
+          extractedData.push({
+            ...result,
+            imagePreview,
+            fileName: file.name,
+          })
+
+        } catch (error: any) {
+          console.error(`Error processing ${file.name}:`, error)
+          errors.push(`${file.name}: ${error.message || 'Processing failed'}`)
+        }
+      }
+
+      // Close scan dialog
+      setScanDialogOpen(false)
+      setIsProcessingOCR(false)
+      setProcessingProgress({ current: 0, total: 0 })
+
+      // Show results
+      if (extractedData.length > 0) {
+        setExtractedCards(extractedData)
+        setOcrValidationOpen(true)
+
+        if (errors.length > 0) {
+          toast({
+            title: 'Partial Success',
+            description: `Processed ${extractedData.length} of ${files.length} cards. ${errors.length} failed.`,
+            variant: 'destructive',
+          })
+        } else {
+          toast({
+            title: 'Cards Scanned',
+            description: `Successfully processed ${extractedData.length} card${extractedData.length > 1 ? 's' : ''}`,
+          })
+        }
+      } else {
+        toast({
+          title: 'Scan Failed',
+          description: errors.length > 0 ? errors[0] : 'No cards could be processed',
+          variant: 'destructive',
+        })
+      }
+
+    } catch (error: any) {
+      console.error('Error during OCR processing:', error)
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to process cupping cards',
+        variant: 'destructive',
+      })
+      setScanDialogOpen(false)
+      setIsProcessingOCR(false)
+      setProcessingProgress({ current: 0, total: 0 })
+    }
+  }
+
+  const handleOCRSubmit = async (validatedData: any[]) => {
+    try {
+      const response = await fetch('/api/cupping/scores/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ scores: validatedData }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to submit scores')
+      }
+
+      toast({
+        title: 'Success',
+        description: result.message || 'Cupping scores submitted successfully',
+      })
+
+      // Close validation dialog
+      setOcrValidationOpen(false)
+      setExtractedCards([])
+
+      // Reload samples to reflect any changes
+      loadSamples()
+
+    } catch (error: any) {
+      console.error('Error submitting OCR scores:', error)
+      toast({
+        title: 'Submission Failed',
+        description: error.message || 'Failed to submit cupping scores',
+        variant: 'destructive',
+      })
+    }
+  }
+
   if (loading) {
     return (
       <MainLayout>
@@ -826,13 +961,45 @@ export default function CuppingPage() {
   return (
     <MainLayout>
       <div className="h-full bg-background">
+        {/* Header with Title and Action Buttons */}
+        <div className="border-b bg-card px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <Coffee className="h-6 w-6" />
+              <h1 className="text-2xl font-bold">Cupping</h1>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={() => setScanDialogOpen(true)}
+                variant="default"
+                size="default"
+              >
+                <Camera className="h-4 w-4 mr-2" />
+                Scan Cards
+              </Button>
+              <Button onClick={handleSaveCurrent} disabled={saving} size="default">
+                <Save className="h-4 w-4 mr-2" />
+                {saving ? 'Saving...' : 'Save Current Sample'}
+              </Button>
+              <Button
+                onClick={handleOpenValidationModal}
+                variant="outline"
+                size="default"
+              >
+                <Eye className="h-4 w-4 mr-2" />
+                Validate & Review
+              </Button>
+            </div>
+          </div>
+        </div>
+
         {/* Top-level Navigation: Cupping vs Reports */}
         <Tabs value={activeView} onValueChange={(v) => setActiveView(v as 'cupping' | 'reports')} className="w-full h-full flex flex-col">
           <div className="border-b bg-card">
             <TabsList className="h-12 bg-transparent border-b-0 rounded-none">
               <TabsTrigger value="cupping" className="gap-2">
                 <Coffee className="h-4 w-4" />
-                Cupping
+                Cupping Table
               </TabsTrigger>
               <TabsTrigger value="reports" className="gap-2">
                 <BarChart3 className="h-4 w-4" />
@@ -843,12 +1010,11 @@ export default function CuppingPage() {
 
           {/* Cupping Tab Content */}
           <TabsContent value="cupping" className="m-0 flex-1">
-            {/* Sample Tabs with Save Button */}
+            {/* Sample Tabs */}
             <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full h-full flex flex-col">
           <div className="border-b bg-card sticky top-0 z-50">
-            <div className="flex items-center justify-between">
-              <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start">
-                {samples.map((sample, index) => {
+            <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start">
+              {samples.map((sample, index) => {
                   const isActive = sample.id === activeSampleId
                   const cuppingData = cuppingDataMap.get(sample.id)
 
@@ -890,22 +1056,7 @@ export default function CuppingPage() {
                     </div>
                   )
                 })}
-              </TabsList>
-              <div className="pr-6 flex gap-2">
-                <Button onClick={handleSaveCurrent} disabled={saving} size="default">
-                  <Save className="h-4 w-4 mr-2" />
-                  {saving ? 'Saving...' : 'Save Current Sample'}
-                </Button>
-                <Button
-                  onClick={handleOpenValidationModal}
-                  variant="outline"
-                  size="default"
-                >
-                  <Eye className="h-4 w-4 mr-2" />
-                  Validate & Review
-                </Button>
-              </div>
-            </div>
+            </TabsList>
           </div>
 
           {samples.map(sample => {
@@ -1516,6 +1667,85 @@ export default function CuppingPage() {
         sampleTrackingNumber={activeSample?.tracking_number}
         onFinalize={handleFinalizeScores}
         onEditScore={handleEditCupperScore}
+      />
+
+      {/* Scan Cards Dialog */}
+      <Dialog open={scanDialogOpen} onOpenChange={(open) => {
+        if (!isProcessingOCR) {
+          setScanDialogOpen(open)
+        }
+      }}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Scan Cupping Cards</DialogTitle>
+            <DialogDescription>
+              Upload images of completed cupping cards to extract scores automatically.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {isProcessingOCR ? (
+              // Processing state
+              <div className="space-y-4 py-8">
+                <div className="flex flex-col items-center gap-4">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+                  <div className="text-center space-y-1">
+                    <p className="text-sm font-medium">Processing Cards...</p>
+                    <p className="text-xs text-muted-foreground">
+                      {processingProgress.current} of {processingProgress.total} cards
+                    </p>
+                  </div>
+                  <div className="w-full bg-muted rounded-full h-2">
+                    <div
+                      className="bg-primary h-2 rounded-full transition-all duration-300"
+                      style={{ width: `${(processingProgress.current / processingProgress.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // Upload state
+              <div className="space-y-3">
+                {/* File Upload Input */}
+                <div className="flex flex-col items-center gap-4 p-6 border-2 border-dashed border-border rounded-lg hover:border-primary/50 transition-colors">
+                  <Camera className="h-12 w-12 text-muted-foreground" />
+                  <div className="text-center space-y-1">
+                    <p className="text-sm font-medium">Upload Card Images</p>
+                    <p className="text-xs text-muted-foreground">
+                      Select multiple images or take photos with your camera
+                    </p>
+                  </div>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    multiple
+                    onChange={(e) => {
+                      const files = e.target.files
+                      if (files && files.length > 0) {
+                        handleScanCards(files)
+                      }
+                    }}
+                    className="w-full text-sm file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-primary-foreground hover:file:bg-primary/90 cursor-pointer"
+                  />
+                </div>
+
+                <div className="text-xs text-muted-foreground text-center space-y-1">
+                  <p>• Ensure good lighting and clear focus</p>
+                  <p>• Cards should be flat and fully visible</p>
+                  <p>• QR code must be readable</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* OCR Validation Dialog */}
+      <OCRValidationDialog
+        open={ocrValidationOpen}
+        onOpenChange={setOcrValidationOpen}
+        extractedCards={extractedCards}
+        onSubmit={handleOCRSubmit}
       />
     </MainLayout>
   )

@@ -25,8 +25,15 @@ import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2 } from 'luci
 import { cn } from '@/lib/utils'
 
 interface ExtractedScore {
+  cupper_id: string
   cupper_name: string
   scores: Record<string, number>
+  confidence: number
+}
+
+interface AssignedCupper {
+  id: string
+  name: string
 }
 
 interface ExtractedCard {
@@ -47,6 +54,7 @@ interface ExtractedCard {
     }
   }
   extracted_scores: ExtractedScore[]
+  assigned_cuppers: AssignedCupper[]
   defects: {
     taints: string[]
     faults: string[]
@@ -56,7 +64,6 @@ interface ExtractedCard {
 }
 
 interface ValidatedScore extends ExtractedScore {
-  cupper_id?: string
   validated: boolean
 }
 
@@ -276,6 +283,29 @@ export function OCRValidationDialog({
                 {currentCard.sample.quality_template?.name || 'Unknown'}
               </p>
             </div>
+
+            {/* Assigned Cuppers */}
+            {currentCard.assigned_cuppers && currentCard.assigned_cuppers.length > 0 && (
+              <div className="rounded-md border p-3 space-y-2">
+                <p className="text-sm font-medium">Assigned Cuppers</p>
+                <div className="flex flex-wrap gap-2">
+                  {currentCard.assigned_cuppers.map((cupper, index) => (
+                    <div
+                      key={cupper.id}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-500/10 border border-blue-500/30 text-xs"
+                    >
+                      <span className="font-medium text-blue-700 dark:text-blue-400">
+                        {index + 1}.
+                      </span>
+                      <span>{cupper.name}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Scores matched by row position (top to bottom)
+                </p>
+              </div>
+            )}
           </div>
 
           {/* Right: Score Validation */}
@@ -283,43 +313,65 @@ export function OCRValidationDialog({
             <Label className="text-sm font-semibold">Cupping Scores</Label>
 
             {/* Cupper Scores */}
-            {cupperScores.map((cupper, cupperIndex) => (
-              <div key={cupperIndex} className="rounded-md border p-3 space-y-3">
-                <div className="flex items-center gap-2">
-                  <Label className="text-xs text-muted-foreground w-20">
-                    Cupper {cupperIndex + 1}
-                  </Label>
-                  <Input
-                    value={cupper.cupper_name}
-                    onChange={(e) =>
-                      updateCupperName(cupperIndex, e.target.value)
-                    }
-                    placeholder="Cupper name"
-                    className="h-8 text-sm"
-                  />
-                </div>
+            {cupperScores.map((cupper, cupperIndex) => {
+              const cupperConfidence = cupper.confidence || 0
+              const lowCupperConfidence = cupperConfidence < 70
 
-                {/* Score Grid */}
-                <div className="grid grid-cols-4 gap-2">
-                  {templateAttributes.map((attr: string) => (
-                    <div key={attr} className="space-y-1">
+              return (
+                <div key={cupperIndex} className="rounded-md border p-3 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-1.5">
                       <Label className="text-xs text-muted-foreground">
-                        {attr}
+                        Cupper {cupperIndex + 1}
                       </Label>
-                      <Input
-                        type="number"
-                        step="0.25"
-                        value={cupper.scores[attr] || ''}
-                        onChange={(e) =>
-                          updateScore(cupperIndex, attr, e.target.value)
-                        }
-                        className="h-8 text-sm"
-                      />
+                      <div
+                        className={cn(
+                          'inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium',
+                          lowCupperConfidence
+                            ? 'bg-yellow-500/10 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30'
+                            : 'bg-green-500/10 text-green-700 dark:text-green-400 border border-green-500/30'
+                        )}
+                      >
+                        {lowCupperConfidence ? (
+                          <AlertCircle className="h-2.5 w-2.5" />
+                        ) : (
+                          <CheckCircle2 className="h-2.5 w-2.5" />
+                        )}
+                        {Math.round(cupperConfidence)}%
+                      </div>
                     </div>
-                  ))}
+                    <Input
+                      value={cupper.cupper_name}
+                      onChange={(e) =>
+                        updateCupperName(cupperIndex, e.target.value)
+                      }
+                      placeholder="Cupper name"
+                      className="h-8 text-sm flex-1"
+                    />
+                  </div>
+
+                  {/* Score Grid */}
+                  <div className="grid grid-cols-4 gap-2">
+                    {templateAttributes.map((attr: string) => (
+                      <div key={attr} className="space-y-1">
+                        <Label className="text-xs text-muted-foreground">
+                          {attr}
+                        </Label>
+                        <Input
+                          type="number"
+                          step="0.25"
+                          value={cupper.scores[attr] || ''}
+                          onChange={(e) =>
+                            updateScore(cupperIndex, attr, e.target.value)
+                          }
+                          className="h-8 text-sm"
+                        />
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ))}
+              )
+            })}
 
             {/* Defects */}
             <div className="space-y-2">

@@ -9,7 +9,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
-import { FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar, CheckCircle2, XCircle } from 'lucide-react'
+import { FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar, CheckCircle2, XCircle, Camera } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
 import { ActivityHeatmap } from '@/components/dashboard/activity-heatmap'
@@ -353,6 +353,13 @@ function DashboardContent() {
             className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
           >
             New Client
+          </button>
+          <button
+            onClick={() => router.push('/cupping')}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium flex items-center gap-2"
+          >
+            <Camera className="h-4 w-4" />
+            Scan Cupping Cards
           </button>
           <button className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-sm font-medium">
             Start Assessment
