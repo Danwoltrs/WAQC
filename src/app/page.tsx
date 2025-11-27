@@ -364,33 +364,33 @@ function DashboardContent() {
       {/* Quick actions */}
       <div className="space-y-4">
         <h2 className="text-xl font-bold">Quick Actions</h2>
-        <div className="flex gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:flex gap-3">
           <button
             onClick={() => setSampleDialogOpen(true)}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+            className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium whitespace-nowrap"
           >
             New Sample
           </button>
           <button
             onClick={handleNewClient}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+            className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium whitespace-nowrap"
           >
             New Client
           </button>
           <button
             onClick={() => setScanDialogOpen(true)}
             disabled={!hasCardsPrinted}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="px-4 py-2.5 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap col-span-2 sm:col-span-1"
             title={!hasCardsPrinted ? 'Print cupping cards first' : 'Scan cupping cards'}
           >
             <Camera className="h-4 w-4" />
-            Scan Cupping Cards
+            Scan Cards
           </button>
-          <button className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-sm font-medium">
-            Start Assessment
+          <button className="px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-sm font-medium whitespace-nowrap">
+            Assessment
           </button>
-          <button className="px-4 py-2 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-sm font-medium">
-            Generate Certificate
+          <button className="px-4 py-2.5 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-sm font-medium whitespace-nowrap">
+            Certificate
           </button>
         </div>
       </div>
@@ -417,25 +417,27 @@ function DashboardContent() {
         {/* In Progress Lane - Cupping Table */}
         {samplesByStatus.inProgress.length > 0 && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <FlaskConical className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-xl font-bold">Cupping Table - In Progress</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2">
+                <FlaskConical className="h-5 w-5 text-muted-foreground" />
+                <h2 className="text-lg sm:text-xl font-bold">Cupping Table - In Progress</h2>
+              </div>
               <span className="text-sm text-muted-foreground">
                 {samplesByStatus.inProgress.length} {samplesByStatus.inProgress.length === 1 ? 'sample' : 'samples'}
               </span>
             </div>
-            <Card className="p-6">
-              <div className="flex flex-wrap gap-4">
+            <Card className="p-4 sm:p-6">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-4">
                 {samplesByStatus.inProgress.map((sample, index) => (
                   <div key={sample.id} className="flex items-center">
-                    <div className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors">
-                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-1">{sample.id}</p>
-                      <p className="text-sm text-foreground">{sample.origin}</p>
-                      {sample.client && <p className="text-xs text-muted-foreground">{sample.client}</p>}
-                      <p className="text-xs text-muted-foreground mt-1">{sample.quality}</p>
+                    <div className="cursor-pointer hover:bg-muted/50 p-2 sm:p-3 rounded-lg transition-colors w-full sm:w-auto">
+                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-1 text-sm sm:text-base">{sample.id}</p>
+                      <p className="text-xs sm:text-sm text-foreground truncate">{sample.origin}</p>
+                      {sample.client && <p className="text-xs text-muted-foreground truncate">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{sample.quality}</p>
                     </div>
                     {index < samplesByStatus.inProgress.length - 1 && (
-                      <div className="h-16 w-px bg-border mx-2" />
+                      <div className="hidden sm:block h-16 w-px bg-border mx-2" />
                     )}
                   </div>
                 ))}
@@ -447,25 +449,27 @@ function DashboardContent() {
         {/* Under Review Lane */}
         {samplesByStatus.underReview.length > 0 && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Calendar className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-xl font-bold">Under Review</h2>
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2">
+                <Calendar className="h-5 w-5 text-muted-foreground" />
+                <h2 className="text-lg sm:text-xl font-bold">Under Review</h2>
+              </div>
               <span className="text-sm text-muted-foreground">
                 {samplesByStatus.underReview.length} {samplesByStatus.underReview.length === 1 ? 'sample' : 'samples'}
               </span>
             </div>
-            <Card className="p-6">
-              <div className="flex flex-wrap gap-4">
+            <Card className="p-4 sm:p-6">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-4">
                 {samplesByStatus.underReview.map((sample, index) => (
                   <div key={sample.id} className="flex items-center">
-                    <div className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors">
-                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-1">{sample.id}</p>
-                      <p className="text-sm text-foreground">{sample.origin}</p>
-                      {sample.client && <p className="text-xs text-muted-foreground">{sample.client}</p>}
-                      <p className="text-xs text-muted-foreground mt-1">{sample.quality}</p>
+                    <div className="cursor-pointer hover:bg-muted/50 p-2 sm:p-3 rounded-lg transition-colors w-full sm:w-auto">
+                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-1 text-sm sm:text-base">{sample.id}</p>
+                      <p className="text-xs sm:text-sm text-foreground truncate">{sample.origin}</p>
+                      {sample.client && <p className="text-xs text-muted-foreground truncate">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{sample.quality}</p>
                     </div>
                     {index < samplesByStatus.underReview.length - 1 && (
-                      <div className="h-16 w-px bg-border mx-2" />
+                      <div className="hidden sm:block h-16 w-px bg-border mx-2" />
                     )}
                   </div>
                 ))}
@@ -477,10 +481,12 @@ function DashboardContent() {
         {/* Approved Lane */}
         {samplesByStatus.approved.length > 0 && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-xl font-bold">Approved Samples</h2>
-              <div className="flex items-center gap-2 ml-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
+                <h2 className="text-lg sm:text-xl font-bold">Approved Samples</h2>
+              </div>
+              <div className="flex items-center gap-2 sm:ml-auto">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <select
                   value={approvedFilter}
@@ -493,18 +499,18 @@ function DashboardContent() {
                 </select>
               </div>
             </div>
-            <Card className="p-6">
-              <div className="flex flex-wrap gap-4">
+            <Card className="p-4 sm:p-6">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-4">
                 {samplesByStatus.approved.map((sample, index) => (
                   <div key={sample.id} className="flex items-center">
-                    <div className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors">
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1">{sample.id}</p>
-                      <p className="text-sm text-foreground">{sample.origin}</p>
-                      {sample.client && <p className="text-xs text-muted-foreground">{sample.client}</p>}
-                      <p className="text-xs text-muted-foreground mt-1">{sample.quality}</p>
+                    <div className="cursor-pointer hover:bg-muted/50 p-2 sm:p-3 rounded-lg transition-colors w-full sm:w-auto">
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1 text-sm sm:text-base">{sample.id}</p>
+                      <p className="text-xs sm:text-sm text-foreground truncate">{sample.origin}</p>
+                      {sample.client && <p className="text-xs text-muted-foreground truncate">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{sample.quality}</p>
                     </div>
                     {index < samplesByStatus.approved.length - 1 && (
-                      <div className="h-16 w-px bg-border mx-2" />
+                      <div className="hidden sm:block h-16 w-px bg-border mx-2" />
                     )}
                   </div>
                 ))}
@@ -516,10 +522,12 @@ function DashboardContent() {
         {/* Rejected Lane */}
         {samplesByStatus.rejected.length > 0 && (
           <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <XCircle className="h-5 w-5 text-muted-foreground" />
-              <h2 className="text-xl font-bold">Rejected Samples</h2>
-              <div className="flex items-center gap-2 ml-auto">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+              <div className="flex items-center gap-2">
+                <XCircle className="h-5 w-5 text-muted-foreground" />
+                <h2 className="text-lg sm:text-xl font-bold">Rejected Samples</h2>
+              </div>
+              <div className="flex items-center gap-2 sm:ml-auto">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <select
                   value={rejectedFilter}
@@ -532,18 +540,18 @@ function DashboardContent() {
                 </select>
               </div>
             </div>
-            <Card className="p-6">
-              <div className="flex flex-wrap gap-4">
+            <Card className="p-4 sm:p-6">
+              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-4">
                 {samplesByStatus.rejected.map((sample, index) => (
                   <div key={sample.id} className="flex items-center">
-                    <div className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors">
-                      <p className="font-bold text-red-600 dark:text-red-400 mb-1">{sample.id}</p>
-                      <p className="text-sm text-foreground">{sample.origin}</p>
-                      {sample.client && <p className="text-xs text-muted-foreground">{sample.client}</p>}
-                      <p className="text-xs text-muted-foreground mt-1">{sample.quality}</p>
+                    <div className="cursor-pointer hover:bg-muted/50 p-2 sm:p-3 rounded-lg transition-colors w-full sm:w-auto">
+                      <p className="font-bold text-red-600 dark:text-red-400 mb-1 text-sm sm:text-base">{sample.id}</p>
+                      <p className="text-xs sm:text-sm text-foreground truncate">{sample.origin}</p>
+                      {sample.client && <p className="text-xs text-muted-foreground truncate">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground mt-1 truncate">{sample.quality}</p>
                     </div>
                     {index < samplesByStatus.rejected.length - 1 && (
-                      <div className="h-16 w-px bg-border mx-2" />
+                      <div className="hidden sm:block h-16 w-px bg-border mx-2" />
                     )}
                   </div>
                 ))}

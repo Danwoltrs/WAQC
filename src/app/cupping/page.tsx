@@ -26,6 +26,7 @@ import {
 import { CuppingReports } from '@/components/cupping/cupping-reports'
 import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
+import { supabase } from '@/lib/supabase'
 
 // Dynamic import of Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
@@ -828,21 +829,51 @@ function CuppingPageContent() {
         const file = files[i]
         setProcessingProgress({ current: i + 1, total: files.length })
 
+        let storagePath: string | null = null
+
         try {
-          // Send original file without compression for better OCR accuracy
-          console.log(`Processing card ${i + 1}: Size ${(file.size / 1024 / 1024).toFixed(2)}MB`)
+          // Upload image to Supabase Storage for URL-based OCR processing
+          // This bypasses Vercel's 4.5MB body limit and allows full resolution images
+          const fileExt = file.name.split('.').pop() || 'jpg'
+          storagePath = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
 
-          // Create FormData for upload
-          const formData = new FormData()
-          formData.append('image', file)
+          console.log(`Uploading image to storage: ${storagePath} (${(file.size / 1024 / 1024).toFixed(2)}MB)`)
 
-          // Call OCR API
+          const { error: uploadError } = await supabase.storage
+            .from('ocr-temp')
+            .upload(storagePath, file, {
+              cacheControl: '300', // 5 minute cache
+              upsert: false,
+            })
+
+          if (uploadError) {
+            throw new Error(`Failed to upload image: ${uploadError.message}`)
+          }
+
+          // Get public URL for the uploaded image
+          const { data: urlData } = supabase.storage
+            .from('ocr-temp')
+            .getPublicUrl(storagePath)
+
+          const imageUrl = urlData.publicUrl
+          console.log(`Image uploaded, calling OCR API with URL: ${imageUrl}`)
+
+          // Call OCR API with image URL (JSON body instead of FormData)
           const response = await fetch('/api/cupping/ocr/process-card', {
             method: 'POST',
-            body: formData,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              image_url: imageUrl,
+              storage_path: storagePath,
+            }),
           })
 
           const result = await response.json()
+
+          // Clean up temp image after processing
+          if (storagePath) {
+            supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
+          }
 
           if (!response.ok) {
             errors.push(`${file.name}: ${result.error || 'Failed to process'}`)
@@ -860,6 +891,10 @@ function CuppingPageContent() {
         } catch (error: any) {
           console.error(`Error processing ${file.name}:`, error)
           errors.push(`${file.name}: ${error.message || 'Processing failed'}`)
+          // Clean up temp image on error
+          if (storagePath) {
+            supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
+          }
         }
       }
 

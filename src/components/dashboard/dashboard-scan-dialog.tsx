@@ -16,6 +16,7 @@ import { Label } from '@/components/ui/label'
 import { Upload, X, FileImage, Loader2, CheckCircle2, AlertCircle, Camera } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
+import { supabase } from '@/lib/supabase'
 
 interface ScannedCard {
   file: File
@@ -183,15 +184,43 @@ export function DashboardScanDialog({
         return updated
       })
 
-      try {
-        // Send original file without compression for better OCR accuracy
-        const formData = new FormData()
-        formData.append('image', card.file)
+      let storagePath: string | null = null
 
-        // Call OCR API
+      try {
+        // Upload image to Supabase Storage for URL-based OCR processing
+        // This bypasses Vercel's 4.5MB body limit and allows full resolution images
+        const fileExt = card.file.name.split('.').pop() || 'jpg'
+        storagePath = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+
+        console.log(`Uploading image to storage: ${storagePath} (${(card.file.size / 1024 / 1024).toFixed(2)}MB)`)
+
+        const { error: uploadError } = await supabase.storage
+          .from('ocr-temp')
+          .upload(storagePath, card.file, {
+            cacheControl: '300', // 5 minute cache
+            upsert: false,
+          })
+
+        if (uploadError) {
+          throw new Error(`Failed to upload image: ${uploadError.message}`)
+        }
+
+        // Get public URL for the uploaded image
+        const { data: urlData } = supabase.storage
+          .from('ocr-temp')
+          .getPublicUrl(storagePath)
+
+        const imageUrl = urlData.publicUrl
+        console.log(`Image uploaded, calling OCR API with URL: ${imageUrl}`)
+
+        // Call OCR API with image URL (JSON body instead of FormData)
         const response = await fetch('/api/cupping/ocr/process-card', {
           method: 'POST',
-          body: formData,
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            image_url: imageUrl,
+            storage_path: storagePath,
+          }),
         })
 
         if (!response.ok) {
@@ -222,6 +251,11 @@ export function DashboardScanDialog({
           }
           return updated
         })
+
+        // Clean up temp image after successful processing
+        if (storagePath) {
+          supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
+        }
       } catch (error) {
         console.error('Error processing card:', error)
         // Update status to error
@@ -234,6 +268,11 @@ export function DashboardScanDialog({
           }
           return updated
         })
+
+        // Clean up temp image on error too
+        if (storagePath) {
+          supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
+        }
       }
     }
 
@@ -388,8 +427,8 @@ export function DashboardScanDialog({
                       )}
                     </div>
 
-                    {/* Remove Button */}
-                    {card.status === 'pending' && !isProcessing && (
+                    {/* Remove Button - show for pending and error cards */}
+                    {(card.status === 'pending' || card.status === 'error') && !isProcessing && (
                       <button
                         onClick={() => removeCard(index)}
                         className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"

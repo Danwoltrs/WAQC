@@ -22,12 +22,20 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2 } from 'lucide-react'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2, User } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ExtractedScore {
   cupper_id: string
   cupper_name: string
+  ocr_name?: string // Raw OCR detected name
   scores: Record<string, number>
   confidence: number
 }
@@ -157,6 +165,14 @@ export function OCRValidationDialog({
   // Update cupper name
   const updateCupperName = (cupperIndex: number, name: string) => {
     const newScores = [...cupperScores]
+    newScores[cupperIndex].cupper_name = name
+    setCupperScores(newScores)
+  }
+
+  // Update cupper id and name (from dropdown selection)
+  const updateCupperId = (cupperIndex: number, id: string, name: string) => {
+    const newScores = [...cupperScores]
+    newScores[cupperIndex].cupper_id = id
     newScores[cupperIndex].cupper_name = name
     setCupperScores(newScores)
   }
@@ -293,12 +309,63 @@ export function OCRValidationDialog({
                     {cupperScores.map((cupper, cupperIndex) => (
                       <TableRow key={cupperIndex}>
                         <TableCell className="p-1">
-                          <Input
-                            value={cupper.cupper_name}
-                            onChange={(e) => updateCupperName(cupperIndex, e.target.value)}
-                            placeholder={`Cupper ${cupperIndex + 1}`}
-                            className="h-8 text-sm"
-                          />
+                          <div className="space-y-1">
+                            {/* Show OCR detected name as hint if different from selected */}
+                            {cupper.ocr_name && cupper.ocr_name !== cupper.cupper_name && (
+                              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                <span>OCR: {cupper.ocr_name}</span>
+                              </div>
+                            )}
+                            {/* Cupper selection dropdown */}
+                            {currentCard?.assigned_cuppers && currentCard.assigned_cuppers.length > 0 ? (
+                              <Select
+                                value={cupper.cupper_id}
+                                onValueChange={(value) => {
+                                  // Handle OCR option selection
+                                  if (value.startsWith('ocr_')) {
+                                    updateCupperId(cupperIndex, value, cupper.ocr_name || `Cupper ${cupperIndex + 1}`)
+                                    return
+                                  }
+                                  const selectedCupper = currentCard.assigned_cuppers.find(c => c.id === value)
+                                  if (selectedCupper) {
+                                    updateCupperId(cupperIndex, selectedCupper.id, selectedCupper.name)
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="h-8 text-sm">
+                                  <SelectValue placeholder="Select cupper">
+                                    {cupper.cupper_name || 'Select cupper'}
+                                  </SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {currentCard.assigned_cuppers.map((assignedCupper) => (
+                                    <SelectItem key={assignedCupper.id} value={assignedCupper.id}>
+                                      <div className="flex items-center gap-2">
+                                        <User className="h-3 w-3" />
+                                        {assignedCupper.name}
+                                      </div>
+                                    </SelectItem>
+                                  ))}
+                                  {/* Option to use OCR detected name */}
+                                  {cupper.ocr_name && (
+                                    <SelectItem value={`ocr_${cupperIndex}`}>
+                                      <div className="flex items-center gap-2 text-muted-foreground">
+                                        <User className="h-3 w-3" />
+                                        {cupper.ocr_name} (OCR)
+                                      </div>
+                                    </SelectItem>
+                                  )}
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <Input
+                                value={cupper.cupper_name}
+                                onChange={(e) => updateCupperName(cupperIndex, e.target.value)}
+                                placeholder={cupper.ocr_name || `Cupper ${cupperIndex + 1}`}
+                                className="h-8 text-sm"
+                              />
+                            )}
+                          </div>
                         </TableCell>
                         {templateAttributes.map((attr: any, attrIndex: number) => {
                           const attrName = attr.attribute || attr
