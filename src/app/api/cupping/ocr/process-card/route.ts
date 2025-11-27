@@ -38,9 +38,29 @@ export async function POST(request: NextRequest) {
     // Convert image file to buffer
     const imageBuffer = Buffer.from(await imageFile.arrayBuffer())
 
-    // Step 1: Detect and decode QR code
-    console.log('Step 1: Detecting QR code...')
-    const qrData = await detectQRCode(imageBuffer)
+    // Step 1: Run Google Cloud Vision for both QR detection and OCR
+    console.log('Step 1: Running Google Cloud Vision...')
+    const visionResult = await runGoogleVisionFull(imageBuffer)
+
+    if (!visionResult.success) {
+      return NextResponse.json(
+        {
+          error: 'Vision API failed',
+          message: visionResult.error || 'Failed to process image'
+        },
+        { status: 500 }
+      )
+    }
+
+    // Step 2: Extract QR code data (from Vision API or fallback to jsQR)
+    console.log('Step 2: Extracting QR code data...')
+    let qrData = visionResult.qrData
+
+    // If Vision API didn't find QR, try jsQR as fallback
+    if (!qrData) {
+      console.log('Vision API did not detect QR, trying jsQR fallback...')
+      qrData = await detectQRCodeWithJsQR(imageBuffer)
+    }
 
     if (!qrData) {
       return NextResponse.json(
@@ -54,9 +74,7 @@ export async function POST(request: NextRequest) {
 
     console.log('QR code decoded:', qrData)
 
-    // Step 2: Run OCR with Google Cloud Vision
-    console.log('Step 2: Running Google Cloud Vision OCR...')
-    const ocrResult = await runGoogleVisionOCR(imageBuffer)
+    const ocrResult = visionResult
 
     if (!ocrResult.success) {
       return NextResponse.json(
@@ -141,10 +159,11 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * Detect and decode QR code from image buffer
+ * Detect and decode QR code from image buffer using jsQR
  * Tries multiple image processing approaches for better detection
+ * Used as fallback if Google Vision barcode detection fails
  */
-async function detectQRCode(imageBuffer: Buffer): Promise<{
+async function detectQRCodeWithJsQR(imageBuffer: Buffer): Promise<{
   sample_id: string
   tracking_number: string
   type: string
@@ -235,24 +254,30 @@ interface VisionOCRResult {
     confidence: number
   }>
   confidence?: number
+  qrData?: {
+    sample_id: string
+    tracking_number: string
+    type: string
+  } | null
 }
 
 /**
- * Run OCR using Google Cloud Vision API
+ * Run Google Cloud Vision API for both OCR and QR/barcode detection
  */
-async function runGoogleVisionOCR(imageBuffer: Buffer): Promise<VisionOCRResult> {
+async function runGoogleVisionFull(imageBuffer: Buffer): Promise<VisionOCRResult> {
   const apiKey = process.env.GOOGLE_VISION_API_KEY
 
   if (!apiKey) {
     console.error('GOOGLE_VISION_API_KEY not configured')
-    return { success: false, error: 'OCR service not configured' }
+    return { success: false, error: 'OCR service not configured. Please set GOOGLE_VISION_API_KEY.' }
   }
 
   try {
     // Convert image to base64
     const base64Image = imageBuffer.toString('base64')
+    console.log(`Sending image to Vision API (${(imageBuffer.length / 1024).toFixed(1)} KB)`)
 
-    // Call Google Cloud Vision API
+    // Call Google Cloud Vision API with both TEXT and BARCODE detection
     const response = await fetch(
       `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
       {
@@ -263,7 +288,8 @@ async function runGoogleVisionOCR(imageBuffer: Buffer): Promise<VisionOCRResult>
             {
               image: { content: base64Image },
               features: [
-                { type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 }
+                { type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 },
+                { type: 'BARCODE_DETECTION', maxResults: 10 }
               ],
             },
           ],
@@ -273,20 +299,55 @@ async function runGoogleVisionOCR(imageBuffer: Buffer): Promise<VisionOCRResult>
 
     if (!response.ok) {
       const errorText = await response.text()
-      console.error('Google Vision API error:', errorText)
-      return { success: false, error: `Vision API error: ${response.status}` }
+      console.error('Google Vision API error:', response.status, errorText)
+      return { success: false, error: `Vision API error: ${response.status} - ${errorText}` }
     }
 
     const result = await response.json()
     const annotation = result.responses?.[0]
 
     if (annotation?.error) {
+      console.error('Vision API annotation error:', annotation.error)
       return { success: false, error: annotation.error.message }
     }
 
+    // Extract QR code data from barcode detection
+    let qrData: VisionOCRResult['qrData'] = null
+    const barcodes = annotation?.barcodeAnnotations || []
+    console.log(`Found ${barcodes.length} barcodes`)
+
+    for (const barcode of barcodes) {
+      console.log(`Barcode type: ${barcode.format}, value: ${barcode.rawValue?.substring(0, 50)}...`)
+      if (barcode.format === 'QR_CODE' && barcode.rawValue) {
+        try {
+          const parsed = JSON.parse(barcode.rawValue)
+          if (parsed.sample_id && parsed.tracking_number) {
+            qrData = {
+              sample_id: parsed.sample_id,
+              tracking_number: parsed.tracking_number,
+              type: parsed.type || 'cupping_card',
+            }
+            console.log('QR code parsed successfully:', qrData)
+            break
+          }
+        } catch (e) {
+          console.log('QR code found but not valid JSON:', barcode.rawValue)
+        }
+      }
+    }
+
+    // Extract OCR text
     const fullTextAnnotation = annotation?.fullTextAnnotation
     if (!fullTextAnnotation) {
-      return { success: false, error: 'No text detected in image' }
+      console.warn('No text detected in image')
+      return {
+        success: true,
+        fullText: '',
+        words: [],
+        blocks: [],
+        qrData,
+        error: qrData ? undefined : 'No text detected in image'
+      }
     }
 
     // Extract words with bounding boxes
@@ -321,12 +382,15 @@ async function runGoogleVisionOCR(imageBuffer: Buffer): Promise<VisionOCRResult>
       })
     })
 
+    console.log(`OCR extracted ${words.length} words`)
+
     return {
       success: true,
       fullText: fullTextAnnotation.text,
       blocks,
       words,
       confidence: fullTextAnnotation.pages?.[0]?.confidence || 0,
+      qrData,
     }
   } catch (error: any) {
     console.error('Error calling Google Vision API:', error)
