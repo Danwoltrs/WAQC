@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -94,6 +94,7 @@ interface CuppingData {
 
 export default function CuppingPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const { toast } = useToast()
 
   const [samples, setSamples] = useState<Sample[]>([])
@@ -116,6 +117,15 @@ export default function CuppingPage() {
   const [ocrValidationOpen, setOcrValidationOpen] = useState(false)
   const [extractedCards, setExtractedCards] = useState<any[]>([])
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 })
+
+  // Auto-open scan dialog if scan=true in URL
+  useEffect(() => {
+    if (searchParams.get('scan') === 'true' && !loading) {
+      setScanDialogOpen(true)
+      // Clean up URL parameter
+      router.replace('/cupping')
+    }
+  }, [searchParams, loading, router])
 
   // Watch for theme changes
   useEffect(() => {
@@ -961,50 +971,42 @@ export default function CuppingPage() {
   return (
     <MainLayout>
       <div className="h-full bg-background">
-        {/* Header with Title and Action Buttons */}
-        <div className="border-b bg-card px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <Coffee className="h-6 w-6" />
-              <h1 className="text-2xl font-bold">Cupping</h1>
-            </div>
-            <div className="flex gap-2">
-              <Button
-                onClick={() => setScanDialogOpen(true)}
-                variant="default"
-                size="default"
-              >
-                <Camera className="h-4 w-4 mr-2" />
-                Scan Cards
-              </Button>
-              <Button onClick={handleSaveCurrent} disabled={saving} size="default">
-                <Save className="h-4 w-4 mr-2" />
-                {saving ? 'Saving...' : 'Save Current Sample'}
-              </Button>
-              <Button
-                onClick={handleOpenValidationModal}
-                variant="outline"
-                size="default"
-              >
-                <Eye className="h-4 w-4 mr-2" />
-                Validate & Review
-              </Button>
-            </div>
-          </div>
-        </div>
-
-        {/* Top-level Navigation: Cupping vs Reports */}
+        {/* Top-level Navigation: Cupping vs Reports with Action Buttons */}
         <Tabs value={activeView} onValueChange={(v) => setActiveView(v as 'cupping' | 'reports')} className="w-full h-full flex flex-col">
           <div className="border-b bg-card">
-            <TabsList className="h-12 bg-transparent border-b-0 rounded-none">
-              <TabsTrigger value="cupping" className="gap-2">
-                <Coffee className="h-4 w-4" />
-                Cupping Table
-              </TabsTrigger>
-              <TabsTrigger value="reports" className="gap-2">
-                <BarChart3 className="h-4 w-4" />
-                Reports
-              </TabsTrigger>
+            <TabsList className="h-12 bg-transparent border-b-0 rounded-none w-full justify-between">
+              <div className="flex">
+                <TabsTrigger value="cupping" className="gap-2">
+                  <Coffee className="h-4 w-4" />
+                  Cupping Table
+                </TabsTrigger>
+                <TabsTrigger value="reports" className="gap-2">
+                  <BarChart3 className="h-4 w-4" />
+                  Reports
+                </TabsTrigger>
+              </div>
+              <div className="flex gap-2 mr-2">
+                <Button
+                  onClick={() => setScanDialogOpen(true)}
+                  variant="default"
+                  size="sm"
+                >
+                  <Camera className="h-4 w-4 mr-2" />
+                  Scan Cards
+                </Button>
+                <Button onClick={handleSaveCurrent} disabled={saving} size="sm">
+                  <Save className="h-4 w-4 mr-2" />
+                  {saving ? 'Saving...' : 'Save Current Sample'}
+                </Button>
+                <Button
+                  onClick={handleOpenValidationModal}
+                  variant="outline"
+                  size="sm"
+                >
+                  <Eye className="h-4 w-4 mr-2" />
+                  Validate & Review
+                </Button>
+              </div>
             </TabsList>
           </div>
 
@@ -1317,7 +1319,7 @@ export default function CuppingPage() {
                           </div>
 
                           {/* Spider Chart Visualization */}
-                          <div className="w-[420px] flex-shrink-0">
+                          <div className="hidden md:block w-[420px] flex-shrink-0">
                             {cuppingData && cuppingData.attributes.some(a => a.value !== null) ? (
                               (() => {
                                 // Calculate max value across all attributes for consistent chart scale

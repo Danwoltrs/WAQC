@@ -140,6 +140,9 @@ export default function GradingPage() {
   // Humidity constraints per sample (min/max)
   const [humidityConstraintsMap, setHumidityConstraintsMap] = useState<Map<string, { min?: number; max?: number }>>(new Map())
 
+  // Mobile view toggle for grading page
+  const [mobileView, setMobileView] = useState<'screen' | 'grading'>('screen')
+
   // Green/Roast aspect constraints per sample (either rejectable values or minimum acceptable level)
   const [greenAspectConstraintsMap, setGreenAspectConstraintsMap] = useState<Map<string, string[] | { min_value: number; min_label: string }>>(new Map())
   const [roastAspectConstraintsMap, setRoastAspectConstraintsMap] = useState<Map<string, string[] | { min_value: number; min_label: string }>>(new Map())
@@ -1325,7 +1328,29 @@ export default function GradingPage() {
                   {/* Screen Size Distribution - Compact Card */}
                   <Card className="w-full lg:w-fit self-start">
                     <CardContent className="pt-4 pb-4 px-4">
-                      <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
+                      {/* Mobile Toggle Buttons */}
+                      <div className="md:hidden flex gap-2 mb-4">
+                        <Button
+                          variant={mobileView === 'screen' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setMobileView('screen')}
+                          className="flex-1"
+                        >
+                          Screen
+                        </Button>
+                        <Button
+                          variant={mobileView === 'grading' ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setMobileView('grading')}
+                          className="flex-1"
+                        >
+                          Grading
+                        </Button>
+                      </div>
+
+                      {/* Screen Section */}
+                      <div className={mobileView === 'screen' ? 'block' : 'hidden md:block'}>
+                        <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
                       <div className="flex gap-2">
                         {/* Screen Size Inputs - Split into 2 columns if > 10 screens */}
                         <div className="flex-1">
@@ -1394,7 +1419,7 @@ export default function GradingPage() {
 
                         {/* Pie Chart - Hidden for type samples or when more than 6 screens */}
                         {chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6 && (
-                          <div className="w-[180px] flex-shrink-0">
+                          <div className="hidden md:block w-[180px] flex-shrink-0">
                             <ResponsiveContainer width="100%" height={140}>
                               <PieChart key={theme}>
                                 <Pie
@@ -1466,9 +1491,13 @@ export default function GradingPage() {
                           </div>
                         )}
                       </div>
+                      </div>
+                      {/* End Screen Section */}
 
-                      {/* Quakers, Humidity, Green Aspect, Roast Aspect */}
-                      {(() => {
+                      {/* Grading Section */}
+                      <div className={mobileView === 'grading' ? 'block' : 'hidden md:block'}>
+                        {/* Quakers, Humidity, Green Aspect, Roast Aspect */}
+                        {(() => {
                         const hasChart = chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6
                         const sampleGreenOptions = greenAspectOptionsMap.get(sample.id) || []
                         const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
@@ -1608,6 +1637,8 @@ export default function GradingPage() {
                           </div>
                         )
                       })()}
+                      </div>
+                      {/* End Grading Section */}
 
                       {/* Compliance Violation Messages at Bottom of Card - Only for screen/humidity/aspect */}
                       {(() => {
