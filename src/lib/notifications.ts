@@ -171,6 +171,22 @@ export const notifications = {
       metadata: { session_id: sessionId, date }
     }),
 
+  samplesAssigned: (cupperId: string, sampleCount: number, sampleIds: string[], sessionId?: string) =>
+    createNotification({
+      type: 'info',
+      priority: 'normal',
+      title: 'New Samples Assigned for Cupping',
+      message: `You have ${sampleCount} sample${sampleCount !== 1 ? 's' : ''} waiting to be cupped`,
+      link: '/cupping',
+      user_id: cupperId,
+      metadata: {
+        type: 'sample_assignment',
+        sample_ids: sampleIds,
+        sample_count: sampleCount,
+        session_id: sessionId
+      }
+    }),
+
   samplesNearingDeadline: (laboratoryId: string, count: number) =>
     createNotification({
       type: 'warning',
