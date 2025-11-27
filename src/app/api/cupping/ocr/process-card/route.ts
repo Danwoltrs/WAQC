@@ -431,7 +431,8 @@ function parseScoresFromVisionResult(
   }
 
   // Cupping card column headers (in order on the printed card)
-  const scoreColumns = ['Frag', 'Flavor', 'Aftr', 'Acid', 'Body', 'Bal', 'Overall']
+  // Matches the abbreviated headers: Fra, Fla, Aft, Acid, Body, Bal, Ove
+  const scoreColumns = ['Fragrance', 'Flavor', 'Aftertaste', 'Acidity', 'Body', 'Balance', 'Overall']
 
   // Find all number patterns (scores) with their positions
   const scoreWords = ocrResult.words.filter((word) => {
@@ -467,13 +468,12 @@ function parseScoresFromVisionResult(
   console.log(`Found ${dataRows.length} data rows with scores`)
 
   // Match rows to assigned cuppers by position order
+  // If no cuppers assigned, create placeholder entries for manual assignment
   dataRows.forEach((row, index) => {
-    if (index >= assignedCuppers.length) {
-      console.warn(`Row ${index} has no corresponding assigned cupper`)
-      return
-    }
-
-    const cupper = assignedCuppers[index]
+    // Get assigned cupper if available, otherwise create placeholder
+    const cupper = index < assignedCuppers.length
+      ? assignedCuppers[index]
+      : { id: `placeholder_${index}`, name: `Cupper ${index + 1}` }
 
     // Sort scores in row by X position (left to right)
     const sortedScores = row.scores.sort((a, b) => a.boundingBox.x - b.boundingBox.x)
