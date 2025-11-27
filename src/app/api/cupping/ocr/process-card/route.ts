@@ -425,8 +425,10 @@ function parseScoresFromVisionResult(
 ): Array<{ cupper_id: string; cupper_name: string; scores: Record<string, number>; confidence: number }> {
   const results: Array<{ cupper_id: string; cupper_name: string; scores: Record<string, number>; confidence: number }> = []
 
+  console.warn(`[OCR DEBUG] Words count: ${ocrResult.words?.length || 0}, Full text length: ${ocrResult.fullText?.length || 0}`)
+
   if (!ocrResult.words || ocrResult.words.length === 0) {
-    console.warn('No words found in OCR result')
+    console.warn('[OCR DEBUG] No words found in OCR result - check Vision API response')
     return []
   }
 
@@ -441,7 +443,7 @@ function parseScoresFromVisionResult(
     return /^\d+([.,]\d+)?$/.test(text)
   })
 
-  console.log(`Found ${scoreWords.length} potential score values`)
+  console.warn(`[OCR DEBUG] Found ${scoreWords.length} potential score values`)
 
   // Group scores by approximate Y position (vertical rows)
   const rowTolerance = 20 // pixels
@@ -465,7 +467,7 @@ function parseScoresFromVisionResult(
   // Filter rows to only those with multiple scores (cupper data rows, not headers)
   const dataRows = rows.filter((row) => row.scores.length >= 5) // At least 5 scores per cupper
 
-  console.log(`Found ${dataRows.length} data rows with scores`)
+  console.warn(`[OCR DEBUG] Found ${dataRows.length} data rows with 5+ scores (from ${rows.length} total rows)`)
 
   // Match rows to assigned cuppers by position order
   // If no cuppers assigned, create placeholder entries for manual assignment
@@ -501,9 +503,10 @@ function parseScoresFromVisionResult(
       confidence: avgConfidence * 100, // Convert to percentage
     })
 
-    console.log(`Mapped row ${index} to ${cupper.name}:`, scores)
+    console.warn(`[OCR DEBUG] Mapped row ${index} to ${cupper.name}:`, JSON.stringify(scores))
   })
 
+  console.warn(`[OCR DEBUG] Total extracted scores: ${results.length} cuppers`)
   return results
 }
 
