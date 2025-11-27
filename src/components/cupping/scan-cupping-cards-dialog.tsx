@@ -17,6 +17,116 @@ import { Upload, X, FileImage, Loader2, CheckCircle2, AlertCircle } from 'lucide
 import { cn } from '@/lib/utils'
 import { OCRValidationDialog } from './ocr-validation-dialog'
 
+// Maximum file size after compression (4MB to stay under Vercel's 4.5MB limit)
+const MAX_FILE_SIZE = 4 * 1024 * 1024
+// Maximum image dimension - keep high for OCR quality (2400px is ~300 DPI on letter-size)
+const MAX_DIMENSION = 2400
+// Minimum quality to maintain OCR readability (don't go below this)
+const MIN_QUALITY = 0.70
+
+/**
+ * Compress an image file using canvas
+ * Optimized for OCR: maintains text clarity while reducing file size
+ * - Resizes large images to max dimension
+ * - Uses high quality JPEG to preserve text edges
+ * - Never drops below MIN_QUALITY to ensure OCR works
+ */
+async function compressImage(file: File): Promise<File> {
+  // If file is already small enough and not HEIC, return as-is
+  if (file.size <= MAX_FILE_SIZE && !file.type.includes('heic')) {
+    console.log(`Image already small enough: ${(file.size / 1024 / 1024).toFixed(2)}MB`)
+    return file
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = document.createElement('img')
+    const objectUrl = URL.createObjectURL(file)
+
+    img.onload = async () => {
+      URL.revokeObjectURL(objectUrl) // Clean up
+
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'))
+        return
+      }
+
+      // Calculate new dimensions while maintaining aspect ratio
+      let { width, height } = img
+      const originalWidth = width
+      const originalHeight = height
+
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        if (width > height) {
+          height = Math.round((height / width) * MAX_DIMENSION)
+          width = MAX_DIMENSION
+        } else {
+          width = Math.round((width / height) * MAX_DIMENSION)
+          height = MAX_DIMENSION
+        }
+      }
+
+      canvas.width = width
+      canvas.height = height
+
+      // Use high-quality image smoothing for better text preservation
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(img, 0, 0, width, height)
+
+      console.log(`Resized from ${originalWidth}x${originalHeight} to ${width}x${height}`)
+
+      // Try quality levels from high to minimum (OCR-safe range)
+      const qualities = [0.92, 0.88, 0.82, 0.76, MIN_QUALITY]
+
+      const tryCompression = (qualityIndex: number) => {
+        const quality = qualityIndex < qualities.length ? qualities[qualityIndex] : MIN_QUALITY
+        const isLastAttempt = qualityIndex >= qualities.length - 1
+
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Failed to compress image'))
+              return
+            }
+
+            if (blob.size <= MAX_FILE_SIZE || isLastAttempt) {
+              // Success or reached minimum quality
+              const compressedFile = new File(
+                [blob],
+                file.name.replace(/\.[^.]+$/, '.jpg'),
+                { type: 'image/jpeg' }
+              )
+              console.log(`Compressed: ${(file.size / 1024 / 1024).toFixed(2)}MB -> ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB (quality: ${quality})`)
+
+              if (blob.size > MAX_FILE_SIZE) {
+                console.warn(`Image still above limit at min quality. OCR may work but upload might fail.`)
+              }
+
+              resolve(compressedFile)
+            } else {
+              // Try lower quality
+              tryCompression(qualityIndex + 1)
+            }
+          },
+          'image/jpeg',
+          quality
+        )
+      }
+
+      tryCompression(0)
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Failed to load image for compression'))
+    }
+    img.src = objectUrl
+  })
+}
+
 interface ScannedCard {
   file: File
   preview: string
@@ -86,9 +196,14 @@ export function ScanCuppingCardsDialog({
       })
 
       try {
-        // Create FormData with the image
+        // Compress image before uploading (handles large iPhone photos)
+        console.log(`Processing card ${i + 1}: Original size ${(card.file.size / 1024 / 1024).toFixed(2)}MB`)
+        const compressedFile = await compressImage(card.file)
+        console.log(`Compressed size: ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`)
+
+        // Create FormData with the compressed image
         const formData = new FormData()
-        formData.append('image', card.file)
+        formData.append('image', compressedFile)
         if (sessionId) {
           formData.append('session_id', sessionId)
         }
@@ -100,7 +215,8 @@ export function ScanCuppingCardsDialog({
         })
 
         if (!response.ok) {
-          throw new Error(`Failed to process card: ${response.statusText}`)
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || `Failed to process card: ${response.statusText}`)
         }
 
         const data = await response.json()

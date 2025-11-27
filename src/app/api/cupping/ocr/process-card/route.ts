@@ -4,10 +4,14 @@ import Tesseract from 'tesseract.js'
 import jsQR from 'jsqr'
 import sharp from 'sharp'
 
+// Allow up to 60 seconds for OCR processing
+export const maxDuration = 60
+
 /**
  * POST /api/cupping/ocr/process-card
  * Process a scanned cupping card image with OCR
  * Body: FormData with 'image' file and optional 'session_id'
+ * Note: Images should be compressed client-side before upload (max ~4MB for Vercel)
  */
 export async function POST(request: NextRequest) {
   try {

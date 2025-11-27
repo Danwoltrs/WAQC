@@ -17,6 +17,81 @@ import { Upload, X, FileImage, Loader2, CheckCircle2, AlertCircle, Camera } from
 import { cn } from '@/lib/utils'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
 
+// Maximum file size after compression (4MB to stay under Vercel's 4.5MB limit)
+const MAX_FILE_SIZE = 4 * 1024 * 1024
+// Maximum image dimension - keep high for OCR quality
+const MAX_DIMENSION = 2400
+// Minimum quality to maintain OCR readability
+const MIN_QUALITY = 0.70
+
+/**
+ * Compress an image file for OCR processing
+ */
+async function compressImage(file: File): Promise<File> {
+  if (file.size <= MAX_FILE_SIZE && !file.type.includes('heic')) {
+    return file
+  }
+
+  return new Promise((resolve, reject) => {
+    const img = document.createElement('img')
+    const objectUrl = URL.createObjectURL(file)
+
+    img.onload = () => {
+      URL.revokeObjectURL(objectUrl)
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        reject(new Error('Failed to get canvas context'))
+        return
+      }
+
+      let { width, height } = img
+      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+        if (width > height) {
+          height = Math.round((height / width) * MAX_DIMENSION)
+          width = MAX_DIMENSION
+        } else {
+          width = Math.round((width / height) * MAX_DIMENSION)
+          height = MAX_DIMENSION
+        }
+      }
+
+      canvas.width = width
+      canvas.height = height
+      ctx.imageSmoothingEnabled = true
+      ctx.imageSmoothingQuality = 'high'
+      ctx.drawImage(img, 0, 0, width, height)
+
+      const qualities = [0.92, 0.88, 0.82, 0.76, MIN_QUALITY]
+      const tryCompression = (i: number) => {
+        const quality = i < qualities.length ? qualities[i] : MIN_QUALITY
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) {
+              reject(new Error('Compression failed'))
+              return
+            }
+            if (blob.size <= MAX_FILE_SIZE || i >= qualities.length - 1) {
+              resolve(new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' }))
+            } else {
+              tryCompression(i + 1)
+            }
+          },
+          'image/jpeg',
+          quality
+        )
+      }
+      tryCompression(0)
+    }
+
+    img.onerror = () => {
+      URL.revokeObjectURL(objectUrl)
+      reject(new Error('Failed to load image'))
+    }
+    img.src = objectUrl
+  })
+}
+
 interface ScannedCard {
   file: File
   preview: string
@@ -184,9 +259,12 @@ export function DashboardScanDialog({
       })
 
       try {
-        // Create FormData with the image
+        // Compress image before uploading (handles large iPhone photos)
+        const compressedFile = await compressImage(card.file)
+
+        // Create FormData with the compressed image
         const formData = new FormData()
-        formData.append('image', card.file)
+        formData.append('image', compressedFile)
 
         // Call OCR API
         const response = await fetch('/api/cupping/ocr/process-card', {
@@ -195,7 +273,8 @@ export function DashboardScanDialog({
         })
 
         if (!response.ok) {
-          throw new Error(`Failed to process card: ${response.statusText}`)
+          const errorData = await response.json().catch(() => ({}))
+          throw new Error(errorData.error || `Failed to process card: ${response.statusText}`)
         }
 
         const data = await response.json()
