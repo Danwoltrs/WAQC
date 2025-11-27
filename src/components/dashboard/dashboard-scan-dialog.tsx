@@ -17,12 +17,12 @@ import { Upload, X, FileImage, Loader2, CheckCircle2, AlertCircle, Camera } from
 import { cn } from '@/lib/utils'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
 
-// Maximum file size after compression (4MB to stay under Vercel's 4.5MB limit)
-const MAX_FILE_SIZE = 4 * 1024 * 1024
-// Maximum image dimension - keep high for OCR quality
-const MAX_DIMENSION = 2400
-// Minimum quality to maintain OCR readability
-const MIN_QUALITY = 0.70
+// Maximum file size (4.5MB Vercel limit, but leave margin)
+const MAX_FILE_SIZE = 4.2 * 1024 * 1024
+// Keep original dimensions - don't resize (important for QR code detection)
+const MAX_DIMENSION = 4000
+// High quality to preserve QR code and handwriting
+const MIN_QUALITY = 0.90
 
 /**
  * Compress an image file for OCR processing
@@ -62,7 +62,7 @@ async function compressImage(file: File): Promise<File> {
       ctx.imageSmoothingQuality = 'high'
       ctx.drawImage(img, 0, 0, width, height)
 
-      const qualities = [0.92, 0.88, 0.82, 0.76, MIN_QUALITY]
+      const qualities = [0.95, 0.92, MIN_QUALITY]
       const tryCompression = (i: number) => {
         const quality = i < qualities.length ? qualities[i] : MIN_QUALITY
         canvas.toBlob(

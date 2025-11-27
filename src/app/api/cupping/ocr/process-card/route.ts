@@ -142,41 +142,82 @@ export async function POST(request: NextRequest) {
 
 /**
  * Detect and decode QR code from image buffer
+ * Tries multiple image processing approaches for better detection
  */
 async function detectQRCode(imageBuffer: Buffer): Promise<{
   sample_id: string
   tracking_number: string
   type: string
 } | null> {
-  try {
-    // Convert to raw pixel data for jsQR
-    const { data, info } = await sharp(imageBuffer)
-      .raw()
-      .ensureAlpha()
-      .toBuffer({ resolveWithObject: true })
+  // Try different image processing approaches
+  const attempts = [
+    // Attempt 1: Original image
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .raw()
+        .ensureAlpha()
+        .toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height, name: 'original' }
+    },
+    // Attempt 2: Grayscale with enhanced contrast
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .grayscale()
+        .normalize()
+        .raw()
+        .ensureAlpha()
+        .toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height, name: 'grayscale' }
+    },
+    // Attempt 3: Sharpen and increase contrast
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .sharpen()
+        .modulate({ brightness: 1.1 })
+        .raw()
+        .ensureAlpha()
+        .toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height, name: 'sharpened' }
+    },
+    // Attempt 4: Resize to standard size (sometimes helps with detection)
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .resize(1500, null, { withoutEnlargement: true })
+        .raw()
+        .ensureAlpha()
+        .toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height, name: 'resized' }
+    },
+  ]
 
-    // Convert to Uint8ClampedArray format expected by jsQR
-    const imageData = new Uint8ClampedArray(data)
+  for (const attempt of attempts) {
+    try {
+      const { data, width, height, name } = await attempt()
+      const imageData = new Uint8ClampedArray(data)
+      const code = jsQR(imageData, width, height)
 
-    // Detect QR code
-    const code = jsQR(imageData, info.width, info.height)
-
-    if (!code) {
-      return null
+      if (code) {
+        console.log(`QR code detected using ${name} approach`)
+        try {
+          const qrData = JSON.parse(code.data)
+          return {
+            sample_id: qrData.sample_id,
+            tracking_number: qrData.tracking_number,
+            type: qrData.type,
+          }
+        } catch (parseError) {
+          console.error('QR code found but data invalid:', code.data)
+          continue
+        }
+      }
+    } catch (error) {
+      console.error(`QR detection attempt failed:`, error)
+      continue
     }
-
-    // Parse QR code data
-    const qrData = JSON.parse(code.data)
-
-    return {
-      sample_id: qrData.sample_id,
-      tracking_number: qrData.tracking_number,
-      type: qrData.type,
-    }
-  } catch (error) {
-    console.error('Error detecting QR code:', error)
-    return null
   }
+
+  console.error('QR code not detected after all attempts')
+  return null
 }
 
 interface VisionOCRResult {
