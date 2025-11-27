@@ -351,11 +351,11 @@ export function OCRValidationDialog({
                   </div>
 
                   {/* Score Grid */}
-                  <div className="grid grid-cols-4 gap-2">
+                  <div className="grid grid-cols-7 gap-1.5">
                     {templateAttributes.map((attr: string) => (
-                      <div key={attr} className="space-y-1">
-                        <Label className="text-xs text-muted-foreground">
-                          {attr}
+                      <div key={attr} className="space-y-0.5">
+                        <Label className="text-[10px] text-muted-foreground truncate block overflow-hidden">
+                          {attr.length > 4 ? attr.substring(0, 4) : attr}
                         </Label>
                         <Input
                           type="number"
@@ -364,7 +364,7 @@ export function OCRValidationDialog({
                           onChange={(e) =>
                             updateScore(cupperIndex, attr, e.target.value)
                           }
-                          className="h-8 text-sm"
+                          className="h-7 text-xs px-1.5"
                         />
                       </div>
                     ))}
