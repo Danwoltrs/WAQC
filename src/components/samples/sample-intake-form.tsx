@@ -86,11 +86,16 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     }
   }, [])
 
-  // Save form data to localStorage on changes
+  // Save form data to localStorage on changes (skip when in success state or when form is empty)
   useEffect(() => {
+    // Don't save empty forms or when showing success view
+    if (success) return
+    // Don't save if form is essentially empty (just reset)
+    if (!formData.exporter && !formData.buyer && !formData.sample_type) return
+
     const dataToSave = { ...formData, photo_file: null }
     localStorage.setItem('sample-intake-form', JSON.stringify(dataToSave))
-  }, [formData])
+  }, [formData, success])
 
   // Client auto-detection based on buyer/exporter names
   // For PSS/SS samples: buyer is the client (they own quality specs)
