@@ -148,9 +148,11 @@ const styles = StyleSheet.create({
     width: '30pt',
     padding: '2pt',
     borderRight: '0.5pt solid #CCCCCC',
-    fontSize: 10,
+    fontSize: 9,
     fontWeight: 'bold',
     textAlign: 'center',
+    overflow: 'hidden',
+    wordBreak: 'keep-all',
   },
   tableRow: {
     flexDirection: 'row',

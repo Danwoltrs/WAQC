@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { getPendingSamplesForCupper } from '@/lib/queries/cupping-assignments'
 
 interface AttributeScore {
   attribute: string
@@ -150,6 +151,29 @@ export async function POST(request: NextRequest) {
 
       console.log(`Updated existing cupping score: ${existingScore.id}`)
 
+      // Check if cupper has completed all assigned samples
+      const pendingSamples = await getPendingSamplesForCupper(supabase, user.id)
+
+      if (pendingSamples.pending_count === 0) {
+        // Clear all sample assignment notifications for this cupper
+        console.log(`Cupper ${user.id} has completed all assigned samples. Clearing notifications...`)
+
+        const { error: notifError } = await (supabase as any)
+          .from('notifications')
+          .update({ read: true })
+          .eq('user_id', user.id)
+          .eq('read', false)
+          .contains('metadata', { type: 'sample_assignment' })
+
+        if (notifError) {
+          console.error('Failed to clear notifications:', notifError)
+        } else {
+          console.log('Successfully cleared sample assignment notifications')
+        }
+      } else {
+        console.log(`Cupper ${user.id} still has ${pendingSamples.pending_count} pending sample(s)`)
+      }
+
       return NextResponse.json({
         success: true,
         message: 'Cupping scores updated successfully',
@@ -179,6 +203,29 @@ export async function POST(request: NextRequest) {
       }
 
       console.log(`Created new cupping score: ${insertedScore.id}`)
+
+      // Check if cupper has completed all assigned samples
+      const pendingSamples = await getPendingSamplesForCupper(supabase, user.id)
+
+      if (pendingSamples.pending_count === 0) {
+        // Clear all sample assignment notifications for this cupper
+        console.log(`Cupper ${user.id} has completed all assigned samples. Clearing notifications...`)
+
+        const { error: notifError } = await (supabase as any)
+          .from('notifications')
+          .update({ read: true })
+          .eq('user_id', user.id)
+          .eq('read', false)
+          .contains('metadata', { type: 'sample_assignment' })
+
+        if (notifError) {
+          console.error('Failed to clear notifications:', notifError)
+        } else {
+          console.log('Successfully cleared sample assignment notifications')
+        }
+      } else {
+        console.log(`Cupper ${user.id} still has ${pendingSamples.pending_count} pending sample(s)`)
+      }
 
       return NextResponse.json({
         success: true,

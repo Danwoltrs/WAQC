@@ -38,6 +38,7 @@ import { useSampleIntake } from '@/components/samples/sample-intake-provider'
 import { hasPermission } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
+import { getPendingSamplesForCupper } from '@/lib/queries/cupping-assignments'
 
 interface NavItem {
   title: string
@@ -178,6 +179,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   const { permissions, profile } = useAuth()
   const { openIntakeDialog } = useSampleIntake()
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0)
+  const [pendingSamplesCount, setPendingSamplesCount] = useState<number>(0)
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['/']))
   const [hoverTimeoutId, setHoverTimeoutId] = useState<NodeJS.Timeout | null>(null)
 
@@ -235,6 +237,51 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
     }
   }, [profile, permissions])
 
+  // Fetch pending cupping samples count for logged-in cupper
+  useEffect(() => {
+    const fetchPendingSamples = async () => {
+      if (!profile?.id || !hasPermission(permissions, 'conduct_assessments')) {
+        return
+      }
+
+      try {
+        const result = await getPendingSamplesForCupper(supabase, profile.id)
+        setPendingSamplesCount(result.pending_count)
+      } catch (error) {
+        console.error('Error fetching pending samples count:', error)
+      }
+    }
+
+    fetchPendingSamples()
+
+    // Set up real-time subscription for cupping sessions and scores
+    const sessionsChannel = supabase
+      .channel('cupping_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'cupping_sessions' },
+        () => {
+          fetchPendingSamples()
+        }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'cupping_scores' },
+        () => {
+          fetchPendingSamples()
+        }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'samples' },
+        () => {
+          fetchPendingSamples()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(sessionsChannel)
+    }
+  }, [profile, permissions])
+
   const filterNavByPermissions = (nav: NavItem[]) => {
     return nav.filter(item => !item.permission || hasPermission(permissions, item.permission))
   }
@@ -264,10 +311,13 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
     return submenu.some(item => item.href && isActive(item.href))
   }
 
-  // Add badge to Users nav item
+  // Add badge to nav items
   const getNavItemWithBadge = (item: NavItem): NavItem => {
     if (item.href === '/users' && pendingRequestsCount > 0) {
       return { ...item, badge: String(pendingRequestsCount) }
+    }
+    if (item.href === '/cupping' && pendingSamplesCount > 0) {
+      return { ...item, badge: String(pendingSamplesCount) }
     }
     return item
   }

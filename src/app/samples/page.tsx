@@ -379,10 +379,36 @@ export default function SamplesPage() {
     setShowAssignCuppersDialog(true)
   }
 
-  const handleCuppersAssigned = (cupperIds: string[], cuppers: Array<{ id: string; full_name: string; email: string }>) => {
+  const handleCuppersAssigned = async (cupperIds: string[], cuppers: Array<{ id: string; full_name: string; email: string }>) => {
     setAssignedCuppers(cuppers)
     setCuppersAssigned(true)
     console.log('Cuppers assigned:', cuppers)
+
+    // Send notifications to assigned cuppers via API
+    const sampleIds = Array.from(selectedSamples)
+    try {
+      const response = await fetch('/api/notifications/samples-assigned', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          cupper_ids: cupperIds,
+          sample_ids: sampleIds,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Failed to send notifications:', errorData)
+      } else {
+        const data = await response.json()
+        console.log('Notifications sent:', data)
+      }
+    } catch (error) {
+      console.error('Error sending cupper assignment notifications:', error)
+      // Don't block the workflow if notifications fail
+    }
 
     // Automatically open print cupping cards dialog
     setShowCuppingCardsDialog(true)

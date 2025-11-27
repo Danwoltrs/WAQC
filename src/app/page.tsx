@@ -13,6 +13,7 @@ import { FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
 import { ActivityHeatmap } from '@/components/dashboard/activity-heatmap'
+import { DashboardScanDialog } from '@/components/dashboard/dashboard-scan-dialog'
 
 interface Sample {
   id: string
@@ -34,11 +35,33 @@ function DashboardContent() {
   const [totalUsers, setTotalUsers] = useState(0)
   const [lastMonthUsers, setLastMonthUsers] = useState(0)
   const [sampleDialogOpen, setSampleDialogOpen] = useState(false)
+  const [scanDialogOpen, setScanDialogOpen] = useState(false)
+  const [hasCardsPrinted, setHasCardsPrinted] = useState(false)
 
   useEffect(() => {
     fetchSamples()
     fetchUserCount()
+    checkCardsPrinted()
   }, [profile])
+
+  const checkCardsPrinted = async () => {
+    try {
+      const response = await fetch('/api/samples/check-cards-printed')
+      if (response.ok) {
+        const data = await response.json()
+        setHasCardsPrinted(data.hasCardsPrinted)
+      }
+    } catch (error) {
+      console.error('Error checking cards printed status:', error)
+    }
+  }
+
+  const handleScanComplete = () => {
+    // Refresh samples after scan
+    fetchSamples()
+    // Recheck cards printed status
+    checkCardsPrinted()
+  }
 
   const handleSampleCreated = (trackingNumber: string) => {
     setSampleDialogOpen(false)
@@ -355,8 +378,10 @@ function DashboardContent() {
             New Client
           </button>
           <button
-            onClick={() => router.push('/cupping?scan=true')}
-            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium flex items-center gap-2"
+            onClick={() => setScanDialogOpen(true)}
+            disabled={!hasCardsPrinted}
+            className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!hasCardsPrinted ? 'Print cupping cards first' : 'Scan cupping cards'}
           >
             <Camera className="h-4 w-4" />
             Scan Cupping Cards
@@ -379,6 +404,13 @@ function DashboardContent() {
           <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} />
         </DialogContent>
       </Dialog>
+
+      {/* Scan Cupping Cards Dialog */}
+      <DashboardScanDialog
+        open={scanDialogOpen}
+        onOpenChange={setScanDialogOpen}
+        onScoresSubmitted={handleScanComplete}
+      />
 
       {/* Sample Lanes */}
       <div className="space-y-8">

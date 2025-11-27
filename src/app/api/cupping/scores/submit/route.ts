@@ -1,5 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { getPendingSamplesForCupper } from '@/lib/queries/cupping-assignments'
+
+// Create admin client with service role key (bypasses RLS)
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
 
 interface ValidatedCupperScore {
   cupper_name: string
@@ -36,7 +50,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { scores } = body as { scores: ValidatedCardData[] }
+    const { scores, entryMethod = 'manual' } = body as { scores: ValidatedCardData[], entryMethod?: 'manual' | 'ocr' }
 
     if (!scores || !Array.isArray(scores) || scores.length === 0) {
       return NextResponse.json(
@@ -45,7 +59,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log(`Submitting ${scores.length} validated cupping cards from user ${user.id}`)
+    console.log(`Submitting ${scores.length} validated cupping cards from user ${user.id} via ${entryMethod}`)
 
     // Process each validated card
     const results = []
@@ -132,6 +146,7 @@ export async function POST(request: NextRequest) {
           cupper_id: cupperId || null,
           scores: cupperScore.scores,
           defects,
+          entry_method: entryMethod, // Track whether this was OCR or manual entry
           notes: cupperId
             ? null
             : `OCR extracted - Cupper name: ${cupperScore.cupper_name}`,
@@ -157,6 +172,24 @@ export async function POST(request: NextRequest) {
         console.log(
           `Successfully inserted ${insertedScores.length} cupping scores for sample ${card.tracking_number}`
         )
+
+        // Lock sample after OCR scan validation
+        if (entryMethod === 'ocr') {
+          const { error: lockError } = await supabaseAdmin
+            .from('samples')
+            .update({
+              scanned_at: new Date().toISOString(),
+              locked: true
+            })
+            .eq('id', card.sample_id)
+
+          if (lockError) {
+            console.error(`Failed to lock sample ${card.sample_id}:`, lockError)
+          } else {
+            console.log(`Sample ${card.tracking_number} locked after OCR scan`)
+          }
+        }
+
         results.push({
           sample_id: card.sample_id,
           tracking_number: card.tracking_number,
@@ -170,6 +203,42 @@ export async function POST(request: NextRequest) {
     // Check if all submissions were successful
     const allSuccessful = results.every((r) => r.success)
     const successCount = results.filter((r) => r.success).length
+
+    // Clear notifications for cuppers who have completed all assigned samples
+    // Collect unique cupper IDs from all successfully submitted scores
+    const cupperIdsToCheck = new Set<string>()
+    for (const card of scores) {
+      for (const cupperScore of card.cupper_scores) {
+        if (cupperScore.cupper_id) {
+          cupperIdsToCheck.add(cupperScore.cupper_id)
+        }
+      }
+    }
+
+    // Check each cupper to see if they've completed all their assigned samples
+    for (const cupperId of cupperIdsToCheck) {
+      const pendingSamples = await getPendingSamplesForCupper(supabase, cupperId)
+
+      if (pendingSamples.pending_count === 0) {
+        // Clear all sample assignment notifications for this cupper
+        console.log(`Cupper ${cupperId} has completed all assigned samples. Clearing notifications...`)
+
+        const { error: notifError } = await (supabase as any)
+          .from('notifications')
+          .update({ read: true })
+          .eq('user_id', cupperId)
+          .eq('read', false)
+          .contains('metadata', { type: 'sample_assignment' })
+
+        if (notifError) {
+          console.error(`Failed to clear notifications for cupper ${cupperId}:`, notifError)
+        } else {
+          console.log(`Successfully cleared sample assignment notifications for cupper ${cupperId}`)
+        }
+      } else {
+        console.log(`Cupper ${cupperId} still has ${pendingSamples.pending_count} pending sample(s)`)
+      }
+    }
 
     return NextResponse.json({
       success: allSuccessful,

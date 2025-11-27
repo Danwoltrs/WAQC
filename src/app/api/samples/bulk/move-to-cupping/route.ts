@@ -86,7 +86,8 @@ export async function POST(request: NextRequest) {
               .from('samples')
               .update({
                 workflow_stage: 'analysis',
-                status: 'in_progress'
+                status: 'in_progress',
+                cards_printed_at: new Date().toISOString() // Track when cupping cards were printed
               })
               .eq('id', id)
               .select()

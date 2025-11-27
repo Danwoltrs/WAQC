@@ -146,7 +146,9 @@ export function Header({ onMenuToggle, isMenuOpen, onNotificationsToggle, isNoti
           >
             <Bell className="h-4 w-4" />
             {unreadNotifications > 0 && (
-              <span className="absolute -top-1 -right-1 h-3 w-3 bg-red-500 rounded-full text-xs"></span>
+              <span className="absolute -top-1 -right-1 h-5 min-w-[20px] px-1 bg-red-500 rounded-full text-[10px] font-semibold text-white flex items-center justify-center">
+                {unreadNotifications > 99 ? '99+' : unreadNotifications}
+              </span>
             )}
           </Button>
 
