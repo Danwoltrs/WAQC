@@ -343,7 +343,9 @@ export const ThermalCuppingCardDocument: React.FC<
                   <Text>Cupper</Text>
                 </View>
                 {card.attributes.map((attr, attrIndex) => {
-                  const attrName = typeof attr === 'object' ? (attr.abbreviation || attr.name) : attr
+                  const fullName = typeof attr === 'object' ? (attr.abbreviation || attr.name) : attr
+                  // Truncate to 5 characters max to prevent hyphenation
+                  const attrName = fullName.length > 5 ? fullName.substring(0, 5) : fullName
                   return (
                     <View key={attrIndex} style={styles.attributeColumn}>
                       <Text style={styles.attributeText}>{attrName}</Text>
