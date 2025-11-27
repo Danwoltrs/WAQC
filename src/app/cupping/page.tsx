@@ -36,101 +36,6 @@ function isDarkMode(): boolean {
   return document.documentElement.classList.contains('dark')
 }
 
-// Image compression settings for OCR
-const MAX_FILE_SIZE = 4.2 * 1024 * 1024 // 4.2MB (Vercel limit is ~4.5MB)
-const MAX_DIMENSION = 4000 // Keep original dimensions for QR detection
-const MIN_QUALITY = 0.90 // High quality to preserve handwriting
-
-/**
- * Compress an image file for OCR processing
- * Maintains text clarity while reducing file size
- */
-async function compressImage(file: File): Promise<File> {
-  // If file is already small enough and not HEIC, return as-is
-  if (file.size <= MAX_FILE_SIZE && !file.type.includes('heic')) {
-    console.log(`Image already small enough: ${(file.size / 1024 / 1024).toFixed(2)}MB`)
-    return file
-  }
-
-  return new Promise((resolve, reject) => {
-    const img = document.createElement('img')
-    const objectUrl = URL.createObjectURL(file)
-
-    img.onload = async () => {
-      URL.revokeObjectURL(objectUrl)
-
-      const canvas = document.createElement('canvas')
-      const ctx = canvas.getContext('2d')
-
-      if (!ctx) {
-        reject(new Error('Failed to get canvas context'))
-        return
-      }
-
-      let { width, height } = img
-      const originalWidth = width
-      const originalHeight = height
-
-      if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
-        if (width > height) {
-          height = Math.round((height / width) * MAX_DIMENSION)
-          width = MAX_DIMENSION
-        } else {
-          width = Math.round((width / height) * MAX_DIMENSION)
-          height = MAX_DIMENSION
-        }
-      }
-
-      canvas.width = width
-      canvas.height = height
-
-      ctx.imageSmoothingEnabled = true
-      ctx.imageSmoothingQuality = 'high'
-      ctx.drawImage(img, 0, 0, width, height)
-
-      console.log(`Resized from ${originalWidth}x${originalHeight} to ${width}x${height}`)
-
-      const qualities = [0.95, 0.92, MIN_QUALITY]
-
-      const tryCompression = (qualityIndex: number) => {
-        const quality = qualityIndex < qualities.length ? qualities[qualityIndex] : MIN_QUALITY
-        const isLastAttempt = qualityIndex >= qualities.length - 1
-
-        canvas.toBlob(
-          (blob) => {
-            if (!blob) {
-              reject(new Error('Failed to compress image'))
-              return
-            }
-
-            if (blob.size <= MAX_FILE_SIZE || isLastAttempt) {
-              const compressedFile = new File(
-                [blob],
-                file.name.replace(/\.[^.]+$/, '.jpg'),
-                { type: 'image/jpeg' }
-              )
-              console.log(`Compressed: ${(file.size / 1024 / 1024).toFixed(2)}MB -> ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB (quality: ${quality})`)
-              resolve(compressedFile)
-            } else {
-              tryCompression(qualityIndex + 1)
-            }
-          },
-          'image/jpeg',
-          quality
-        )
-      }
-
-      tryCompression(0)
-    }
-
-    img.onerror = () => {
-      URL.revokeObjectURL(objectUrl)
-      reject(new Error('Failed to load image for compression'))
-    }
-    img.src = objectUrl
-  })
-}
-
 interface Sample {
   id: string
   tracking_number: string
@@ -924,14 +829,12 @@ function CuppingPageContent() {
         setProcessingProgress({ current: i + 1, total: files.length })
 
         try {
-          // Compress image before uploading (handles large photos)
-          console.log(`Processing card ${i + 1}: Original size ${(file.size / 1024 / 1024).toFixed(2)}MB`)
-          const compressedFile = await compressImage(file)
-          console.log(`Compressed size: ${(compressedFile.size / 1024 / 1024).toFixed(2)}MB`)
+          // Send original file without compression for better OCR accuracy
+          console.log(`Processing card ${i + 1}: Size ${(file.size / 1024 / 1024).toFixed(2)}MB`)
 
           // Create FormData for upload
           const formData = new FormData()
-          formData.append('image', compressedFile)
+          formData.append('image', file)
 
           // Call OCR API
           const response = await fetch('/api/cupping/ocr/process-card', {
