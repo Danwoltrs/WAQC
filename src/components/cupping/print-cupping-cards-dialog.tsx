@@ -272,16 +272,13 @@ export function PrintCuppingCardsDialog({
           console.log(`Extracted attributes for ${sample.tracking_number}:`, attributes)
           console.log(`Generating QR code for sample ${sample.tracking_number}`)
 
-          // Generate QR code
-          const qrData = {
-            sample_id: sample.id,
-            tracking_number: sample.tracking_number,
-            type: 'cupping_card',
-          }
-          const qrCodeDataUrl = await QRCode.toDataURL(JSON.stringify(qrData), {
-            width: 200,
-            margin: 1,
-            errorCorrectionLevel: 'M',
+          // Generate QR code - SIMPLIFIED for better detection
+          // Format: WAQC:sample_id:tracking_number (shorter = more reliable scanning)
+          const qrContent = `WAQC:${sample.id}:${sample.tracking_number}`
+          const qrCodeDataUrl = await QRCode.toDataURL(qrContent, {
+            width: 250,  // Slightly larger for better scanning
+            margin: 2,   // More margin for edge detection
+            errorCorrectionLevel: 'H',  // Highest error correction (30% damage tolerance)
           })
 
           const cardData = {

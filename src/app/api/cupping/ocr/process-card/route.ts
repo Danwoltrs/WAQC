@@ -54,16 +54,36 @@ export async function POST(request: NextRequest) {
 
     // Step 1: Detect QR code using Vision API (still accurate for barcodes)
     console.log('[OCR] Detecting QR code...')
-    const qrResult = await detectQRCode(imageUrl, imageBuffer)
+    let qrResult = await detectQRCode(imageUrl, imageBuffer)
+
+    // FAILSAFE: If QR detection fails, use Gemini to read the tracking number from the card
+    if (!qrResult) {
+      console.log('[OCR] QR detection failed, trying Gemini failsafe...')
+
+      // Ensure we have image data for Gemini
+      let fallbackBuffer = imageBuffer
+      if (!fallbackBuffer && imageUrl) {
+        try {
+          const res = await fetch(imageUrl)
+          if (res.ok) {
+            fallbackBuffer = Buffer.from(await res.arrayBuffer())
+          }
+        } catch { /* ignore */ }
+      }
+
+      if (fallbackBuffer) {
+        qrResult = await extractTrackingNumberWithGemini(fallbackBuffer, supabase)
+      }
+    }
 
     if (!qrResult) {
       return NextResponse.json({
         error: 'QR code not detected',
-        message: 'Could not find QR code on the cupping card.'
+        message: 'Could not find QR code or tracking number on the cupping card. Please ensure the card is clearly visible and try again.'
       }, { status: 400 })
     }
 
-    console.log('[OCR] QR:', qrResult)
+    console.log('[OCR] Sample identified:', qrResult)
 
     // Step 2: Fetch sample details
     const { data: sample, error: sampleError } = await supabase
@@ -153,6 +173,104 @@ export async function POST(request: NextRequest) {
 // ============================================================================
 
 const DEFAULT_ATTRIBUTES = ['Fragrance', 'Flavor', 'Aftertaste', 'Acidity', 'Body', 'Balance', 'Overall']
+
+// ============================================================================
+// GEMINI FAILSAFE - EXTRACT TRACKING NUMBER WHEN QR FAILS
+// ============================================================================
+
+async function extractTrackingNumberWithGemini(
+  imageBuffer: Buffer,
+  supabase: any
+): Promise<QRData | null> {
+  const apiKey = process.env.GEMINI_API_KEY
+
+  if (!apiKey) {
+    console.error('[GEMINI FAILSAFE] GEMINI_API_KEY not configured')
+    return null
+  }
+
+  try {
+    const genAI = new GoogleGenerativeAI(apiKey)
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
+
+    // Convert image to base64
+    const base64Image = imageBuffer.toString('base64')
+    const mimeType = 'image/jpeg'
+
+    const prompt = `Look at this coffee cupping card image.
+
+I need you to find the TRACKING NUMBER printed on the card. It's located near the top of the card, typically right below the laboratory name (e.g., "Wolthers & Associates Quality Control" or "Santos Lab").
+
+The tracking number format is like: "WAQC-001" or "WAQC-0001" or similar alphanumeric codes.
+
+Return ONLY the tracking number, nothing else. No explanation, no quotes, just the tracking number.
+
+If you cannot find a tracking number on this card, respond with exactly: NOT_FOUND`
+
+    console.log('[GEMINI FAILSAFE] Extracting tracking number...')
+
+    const result = await model.generateContent([
+      prompt,
+      {
+        inlineData: {
+          mimeType,
+          data: base64Image
+        }
+      }
+    ])
+
+    const responseText = result.response.text().trim()
+    console.log('[GEMINI FAILSAFE] Response:', responseText)
+
+    if (responseText === 'NOT_FOUND' || responseText.length > 50) {
+      console.log('[GEMINI FAILSAFE] No valid tracking number found')
+      return null
+    }
+
+    // Clean the tracking number (remove any quotes or extra whitespace)
+    const trackingNumber = responseText.replace(/['"]/g, '').trim()
+
+    // Look up the sample by tracking number
+    const { data: sample, error } = await supabase
+      .from('samples')
+      .select('id, tracking_number')
+      .eq('tracking_number', trackingNumber)
+      .single()
+
+    if (error || !sample) {
+      console.log(`[GEMINI FAILSAFE] Sample not found for tracking: ${trackingNumber}`)
+
+      // Try a partial match (in case of OCR minor errors)
+      const { data: fuzzyMatch } = await supabase
+        .from('samples')
+        .select('id, tracking_number')
+        .ilike('tracking_number', `%${trackingNumber}%`)
+        .limit(1)
+        .single()
+
+      if (fuzzyMatch) {
+        console.log(`[GEMINI FAILSAFE] Fuzzy match found: ${fuzzyMatch.tracking_number}`)
+        return {
+          sample_id: fuzzyMatch.id,
+          tracking_number: fuzzyMatch.tracking_number,
+          type: 'cupping_card'
+        }
+      }
+
+      return null
+    }
+
+    console.log(`[GEMINI FAILSAFE] Found sample: ${sample.tracking_number}`)
+    return {
+      sample_id: sample.id,
+      tracking_number: sample.tracking_number,
+      type: 'cupping_card'
+    }
+  } catch (error: any) {
+    console.error('[GEMINI FAILSAFE] Error:', error.message)
+    return null
+  }
+}
 
 // ============================================================================
 // GEMINI VISION SCORE EXTRACTION
@@ -375,6 +493,37 @@ async function detectQRCode(imageUrl: string | null, imageBuffer: Buffer | null)
   return null
 }
 
+// Parse QR code content - supports both formats:
+// 1. New simplified: "WAQC:sample_id:tracking_number"
+// 2. Legacy JSON: {"sample_id":"...","tracking_number":"..."}
+function parseQRContent(rawValue: string): QRData | null {
+  // Try new simplified format first: WAQC:uuid:tracking
+  if (rawValue.startsWith('WAQC:')) {
+    const parts = rawValue.split(':')
+    if (parts.length >= 3) {
+      return {
+        sample_id: parts[1],
+        tracking_number: parts.slice(2).join(':'), // Handle tracking numbers with colons
+        type: 'cupping_card'
+      }
+    }
+  }
+
+  // Try legacy JSON format
+  try {
+    const parsed = JSON.parse(rawValue)
+    if (parsed.sample_id && parsed.tracking_number) {
+      return {
+        sample_id: parsed.sample_id,
+        tracking_number: parsed.tracking_number,
+        type: parsed.type || 'cupping_card'
+      }
+    }
+  } catch { /* not JSON */ }
+
+  return null
+}
+
 async function detectQRWithVision(imageUrl: string): Promise<QRData | null> {
   const apiKey = process.env.GOOGLE_VISION_API_KEY
   if (!apiKey) return null
@@ -398,16 +547,11 @@ async function detectQRWithVision(imageUrl: string): Promise<QRData | null> {
 
     for (const barcode of barcodes) {
       if (barcode.format === 'QR_CODE' && barcode.rawValue) {
-        try {
-          const parsed = JSON.parse(barcode.rawValue)
-          if (parsed.sample_id && parsed.tracking_number) {
-            return {
-              sample_id: parsed.sample_id,
-              tracking_number: parsed.tracking_number,
-              type: parsed.type || 'cupping_card'
-            }
-          }
-        } catch { /* not JSON */ }
+        const qrData = parseQRContent(barcode.rawValue)
+        if (qrData) {
+          console.log('[QR] Vision API detected:', qrData.tracking_number)
+          return qrData
+        }
       }
     }
   } catch { /* ignore */ }
@@ -484,14 +628,11 @@ async function detectQRWithJsQR(imageBuffer: Buffer): Promise<QRData | null> {
       const { data, width, height } = await attempts[i]()
       const code = jsQR(new Uint8ClampedArray(data), width, height)
       if (code) {
-        console.log(`[QR] jsQR detected with attempt ${i + 1}`)
-        const qrData = JSON.parse(code.data)
-        if (qrData.sample_id && qrData.tracking_number) {
-          return {
-            sample_id: qrData.sample_id,
-            tracking_number: qrData.tracking_number,
-            type: qrData.type || 'cupping_card'
-          }
+        console.log(`[QR] jsQR detected with attempt ${i + 1}: ${code.data.substring(0, 50)}...`)
+        const qrData = parseQRContent(code.data)
+        if (qrData) {
+          console.log(`[QR] Parsed successfully: ${qrData.tracking_number}`)
+          return qrData
         }
       }
     } catch { continue }
