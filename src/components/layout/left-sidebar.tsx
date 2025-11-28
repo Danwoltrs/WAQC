@@ -26,7 +26,9 @@ import {
   UserCheck,
   UserPlus,
   Building2,
-  Building
+  Building,
+  Globe,
+  Check
 } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
@@ -182,6 +184,8 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   const [pendingSamplesCount, setPendingSamplesCount] = useState<number>(0)
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['/']))
   const [hoverTimeoutId, setHoverTimeoutId] = useState<NodeJS.Timeout | null>(null)
+  const [currentLanguage, setCurrentLanguage] = useState('EN')
+  const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
 
   const navigation = getNavigation(openIntakeDialog)
 
@@ -654,6 +658,58 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
             </>
           )}
         </nav>
+
+        {/* Language Selector - Only visible on mobile (when sidebar is overlay) */}
+        <div className="p-2 border-t border-border lg:hidden">
+          <div className="relative">
+            <button
+              onClick={() => setLanguageMenuOpen(!languageMenuOpen)}
+              className={cn(
+                'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all w-full',
+                'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+              )}
+            >
+              <Globe className="h-4 w-4 flex-shrink-0" />
+              {isOpen && (
+                <>
+                  <span className="truncate">Language</span>
+                  <span className="ml-auto text-xs bg-accent px-2 py-0.5 rounded">{currentLanguage}</span>
+                </>
+              )}
+            </button>
+
+            {/* Language options dropdown */}
+            {languageMenuOpen && isOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-xl shadow-lg overflow-hidden z-50">
+                {[
+                  { code: 'EN', label: 'English' },
+                  { code: 'PT', label: 'Português' },
+                  { code: 'ES', label: 'Español' },
+                ].map((lang) => (
+                  <button
+                    key={lang.code}
+                    onClick={() => {
+                      setCurrentLanguage(lang.code)
+                      setLanguageMenuOpen(false)
+                      console.log(`Language changed to: ${lang.code}`)
+                    }}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 text-sm w-full text-left transition-colors',
+                      currentLanguage === lang.code
+                        ? 'bg-accent text-accent-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    )}
+                  >
+                    <span className="flex-1">{lang.label} ({lang.code})</span>
+                    {currentLanguage === lang.code && (
+                      <Check className="h-4 w-4 flex-shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
 
         {/* Settings - Temporarily disabled until page is created */}
         {/* <div className="p-2 border-t border-border">

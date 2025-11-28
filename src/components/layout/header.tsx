@@ -86,32 +86,32 @@ export function Header({ onMenuToggle, isMenuOpen, onNotificationsToggle, isNoti
 
         {/* Right side actions */}
         <div className="flex items-center space-x-2">
-          {/* Language selector */}
+          {/* Language selector - Hidden on mobile, shown in hamburger menu instead */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-9 px-3 rounded-full text-white dark:text-white hover:bg-green-700 dark:hover:bg-neutral-700 flex items-center gap-2"
+                className="hidden lg:flex h-9 px-3 rounded-full text-white dark:text-white hover:bg-green-700 dark:hover:bg-neutral-700 items-center gap-2"
               >
                 <Globe className="h-4 w-4" />
                 <span className="text-sm font-medium">{currentLanguage}</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="min-w-[100px]">
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => handleLanguageChange('EN')}
                 className={currentLanguage === 'EN' ? 'bg-accent' : ''}
               >
                 English (EN)
               </DropdownMenuItem>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => handleLanguageChange('PT')}
                 className={currentLanguage === 'PT' ? 'bg-accent' : ''}
               >
                 Português (PT)
               </DropdownMenuItem>
-              <DropdownMenuItem 
+              <DropdownMenuItem
                 onClick={() => handleLanguageChange('ES')}
                 className={currentLanguage === 'ES' ? 'bg-accent' : ''}
               >
@@ -120,8 +120,8 @@ export function Header({ onMenuToggle, isMenuOpen, onNotificationsToggle, isNoti
             </DropdownMenuContent>
           </DropdownMenu>
 
-          {/* Separator */}
-          <div className="h-4 w-px bg-white/30 dark:bg-white/30"></div>
+          {/* Separator - Hidden on mobile */}
+          <div className="hidden lg:block h-4 w-px bg-white/30 dark:bg-white/30"></div>
 
           {/* Theme toggle */}
           <Button
