@@ -136,7 +136,7 @@ export async function POST(request: NextRequest) {
             console.log(`Matched cupper "${cupperScore.cupper_name}" to profile ${profile.id}`)
           } else {
             console.log(`Could not find profile for cupper "${cupperScore.cupper_name}"`)
-            cupperId = null // Clear the placeholder ID
+            cupperId = undefined // Clear the placeholder ID
           }
         }
 
