@@ -322,19 +322,53 @@ function DashboardContent() {
   }
 
   return (
-    <div className="p-6 space-y-6">
-      {/* Welcome header */}
-      <div className="space-y-3">
-        <h1 className="text-3xl font-bold tracking-tight">
-          Welcome back, {profile?.full_name || 'User'}
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+      {/* Mobile: Quick Actions FIRST */}
+      <div className="sm:hidden space-y-3">
+        <h2 className="text-lg font-bold">Quick Actions</h2>
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            onClick={() => setSampleDialogOpen(true)}
+            className="px-3 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
+            New Sample
+          </button>
+          <button
+            onClick={handleNewClient}
+            className="px-3 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium"
+          >
+            New Client
+          </button>
+          <button
+            onClick={() => setScanDialogOpen(true)}
+            disabled={!hasCardsPrinted}
+            className="px-3 py-3 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors text-sm font-medium flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            title={!hasCardsPrinted ? 'Print cupping cards first' : 'Scan cupping cards'}
+          >
+            <Camera className="h-4 w-4" />
+            Scan Cards
+          </button>
+          <button
+            onClick={() => router.push('/cupping')}
+            className="px-3 py-3 bg-secondary text-secondary-foreground rounded-lg hover:bg-secondary/80 transition-colors text-sm font-medium"
+          >
+            Cupping
+          </button>
+        </div>
+      </div>
+
+      {/* Welcome header - smaller on mobile */}
+      <div className="space-y-1 sm:space-y-3">
+        <h1 className="text-xl sm:text-3xl font-bold tracking-tight">
+          Welcome back, {profile?.full_name?.split(' ')[0] || 'User'}
         </h1>
-        <p className="text-lg text-muted-foreground">
+        <p className="text-sm sm:text-lg text-muted-foreground hidden sm:block">
           Here&apos;s what&apos;s happening in your laboratory today.
         </p>
       </div>
 
-      {/* Stats grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      {/* Stats grid - HIDDEN on mobile */}
+      <div className="hidden sm:grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         {stats.map((stat) => {
           const Icon = stat.icon
           return (
@@ -361,8 +395,8 @@ function DashboardContent() {
         })}
       </div>
 
-      {/* Quick actions */}
-      <div className="space-y-4">
+      {/* Desktop Quick actions - HIDDEN on mobile (shown above) */}
+      <div className="hidden sm:block space-y-4">
         <h2 className="text-xl font-bold">Quick Actions</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 md:flex gap-3">
           <button
@@ -412,8 +446,8 @@ function DashboardContent() {
         onScoresSubmitted={handleScanComplete}
       />
 
-      {/* Sample Lanes */}
-      <div className="space-y-8">
+      {/* Sample Lanes - HIDDEN on mobile */}
+      <div className="hidden sm:block space-y-8">
         {/* In Progress Lane - Cupping Table */}
         {samplesByStatus.inProgress.length > 0 && (
           <div className="space-y-4">
@@ -561,8 +595,8 @@ function DashboardContent() {
         )}
       </div>
 
-      {/* Lab Insights */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Lab Insights - HIDDEN on mobile */}
+      <div className="hidden sm:grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Weekly Activity Chart */}
         <Card className="shadow-sm">
           <CardHeader className="pb-4">
@@ -640,8 +674,10 @@ function DashboardContent() {
         </Card>
       </div>
 
-      {/* Activity Heatmap */}
-      <ActivityHeatmap showLabFilter={profile?.is_global_admin || profile?.qc_role === 'global_admin'} />
+      {/* Activity Heatmap - HIDDEN on mobile */}
+      <div className="hidden sm:block">
+        <ActivityHeatmap showLabFilter={profile?.is_global_admin || profile?.qc_role === 'global_admin'} />
+      </div>
 
     </div>
   )
