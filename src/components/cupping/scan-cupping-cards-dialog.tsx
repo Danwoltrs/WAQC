@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Upload, X, FileImage, Loader2, CheckCircle2, AlertCircle } from 'lucide-react'
+import { Upload, X, FileImage, Loader2, CheckCircle2, AlertCircle, Camera, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { OCRValidationDialog } from './ocr-validation-dialog'
 import { supabase } from '@/lib/supabase'
@@ -185,43 +185,49 @@ export function ScanCuppingCardsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="sm:max-w-[700px]">
+      <DialogContent className="max-w-[calc(100%-1rem)] sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Scan Cupping Cards</DialogTitle>
           <DialogDescription>
-            Upload images of filled cupping cards for OCR processing
+            Take photos of completed cupping cards for automatic score extraction
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
-          {/* Upload Area */}
+        <div className="space-y-4 py-2 sm:py-4">
+          {/* Camera/Upload Buttons - Always visible when not processing */}
           {!isProcessing && (
-            <div
-              {...getRootProps()}
-              className={cn(
-                'border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors',
-                isDragActive
-                  ? 'border-primary bg-primary/5'
-                  : 'border-border hover:border-primary/50'
-              )}
-            >
-              <input {...getInputProps()} />
-              <div className="flex flex-col items-center gap-2">
-                <Upload className="h-10 w-10 text-muted-foreground" />
-                {isDragActive ? (
-                  <p className="text-sm text-muted-foreground">
-                    Drop the images here...
-                  </p>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium">
-                      Drag and drop cupping card images, or click to browse
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Supports PNG, JPG, HEIC (iPhone photos)
-                    </p>
-                  </>
+            <div className="space-y-3">
+              {/* Primary: Take Photo Button (prominent for mobile) */}
+              <div
+                {...getRootProps()}
+                className={cn(
+                  'border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-colors',
+                  isDragActive
+                    ? 'border-primary bg-primary/5'
+                    : hasCards
+                      ? 'border-border hover:border-primary/50'
+                      : 'border-primary/50 bg-primary/5 hover:bg-primary/10'
                 )}
+              >
+                <input {...getInputProps()} capture="environment" />
+                <div className="flex flex-col items-center gap-2">
+                  {hasCards ? (
+                    <>
+                      <Plus className="h-6 w-6 text-muted-foreground" />
+                      <p className="text-sm font-medium">Add More Cards</p>
+                    </>
+                  ) : (
+                    <>
+                      <Camera className="h-10 w-10 text-primary" />
+                      <p className="text-sm font-medium">
+                        {isDragActive ? 'Drop images here...' : 'Take Photo or Upload'}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        Tap to open camera or select files
+                      </p>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
           )}
@@ -232,7 +238,7 @@ export function ScanCuppingCardsDialog({
               <Label className="text-sm font-semibold">
                 Scanned Cards: {scannedCards.length}
               </Label>
-              <div className="grid grid-cols-2 gap-3 max-h-[300px] overflow-y-auto rounded-md border p-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[250px] sm:max-h-[300px] overflow-y-auto rounded-md border p-2 sm:p-3">
                 {scannedCards.map((card, index) => (
                   <div
                     key={index}
@@ -276,11 +282,11 @@ export function ScanCuppingCardsDialog({
                       )}
                     </div>
 
-                    {/* Remove Button - show for pending and error cards */}
+                    {/* Remove Button - always visible on mobile, hover on desktop */}
                     {(card.status === 'pending' || card.status === 'error') && !isProcessing && (
                       <button
                         onClick={() => removeCard(index)}
-                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="absolute top-2 right-2 bg-red-500 text-white rounded-full p-1.5 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shadow-md"
                       >
                         <X className="h-4 w-4" />
                       </button>
