@@ -178,10 +178,10 @@ async function extractScoresWithGemini(
   assignedCuppers: Array<{ id: string; name: string }>,
   attributes: string[]
 ): Promise<ExtractionResult> {
-  const apiKey = process.env.GOOGLE_GEMINI_API_KEY
+  const apiKey = process.env.GEMINI_API_KEY
 
   if (!apiKey) {
-    console.error('[GEMINI] GOOGLE_GEMINI_API_KEY not configured')
+    console.error('[GEMINI] GEMINI_API_KEY not configured')
     return createEmptyExtraction(assignedCuppers)
   }
 
