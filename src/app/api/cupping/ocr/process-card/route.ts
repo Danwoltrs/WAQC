@@ -199,15 +199,14 @@ async function extractTrackingNumberWithGemini(
 
     const prompt = `Look at this coffee cupping card image.
 
-I need you to find the SAMPLE TRACKING NUMBER printed on the card. It's located in the header area at the top of the card, after a prefix like "PSS:", "SS:", or "Sample:".
+I need you to find the SAMPLE TRACKING NUMBER printed on the card. It's located in the header area at the top of the card, after a prefix "PSS:", "SS:", or "Type:".
 
-Common tracking number formats on these cards:
-- "PSS: AD-008900/25" (the tracking number is "AD-008900/25")
-- "SS: 002/2215/0095" (the tracking number is "002/2215/0095")
-- "Sample: WAQC-001" (the tracking number is "WAQC-001")
-- Or just an alphanumeric code near the QR code area
+Examples:
+- "PSS: AD-008900/25" → return "AD-008900/25"
+- "SS: 002/2215/0095" → return "002/2215/0095"
+- "Type: ABC-123" → return "ABC-123"
 
-Return ONLY the tracking number value itself (not the prefix like PSS: or SS:), nothing else. No explanation, no quotes, just the tracking number.
+Return ONLY the tracking number value itself (the part AFTER the prefix), nothing else. No explanation, no quotes, no prefix, just the tracking number.
 
 If you cannot find a tracking number on this card, respond with exactly: NOT_FOUND`
 
