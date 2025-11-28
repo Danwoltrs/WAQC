@@ -114,8 +114,20 @@ export async function POST(request: NextRequest) {
 
       // Submit each cupper's scores
       const scoreInserts = []
+      const skippedCuppers: string[] = []
+      const existingDigitalCuppers: string[] = []
 
       for (const cupperScore of card.cupper_scores) {
+        // HYBRID MODE: Skip cuppers with blank/empty scores (they'll enter digitally)
+        const hasScores = cupperScore.scores && Object.keys(cupperScore.scores).length > 0
+        const hasValidScores = hasScores && Object.values(cupperScore.scores).some(v => v !== null && v !== undefined && !isNaN(v))
+
+        if (!hasValidScores) {
+          console.log(`Skipping cupper "${cupperScore.cupper_name}" - no scores on paper (will use digital entry)`)
+          skippedCuppers.push(cupperScore.cupper_name)
+          continue
+        }
+
         // Try to find cupper by name if cupper_id is not a valid UUID
         let cupperId = cupperScore.cupper_id
 
@@ -140,6 +152,22 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // HYBRID MODE: Check if cupper already has digital scores for this sample
+        if (cupperId) {
+          const { data: existingScores } = await supabase
+            .from('cupping_scores')
+            .select('id')
+            .eq('sample_id', card.sample_id)
+            .eq('cupper_id', cupperId)
+            .limit(1)
+
+          if (existingScores && existingScores.length > 0) {
+            console.log(`Cupper "${cupperScore.cupper_name}" already has scores for this sample - skipping OCR`)
+            existingDigitalCuppers.push(cupperScore.cupper_name)
+            continue
+          }
+        }
+
         // Build defects JSON
         const defects = {
           taints: card.defects.taints,
@@ -159,6 +187,30 @@ export async function POST(request: NextRequest) {
             ? null
             : `OCR extracted - Cupper name: ${cupperScore.cupper_name}`,
         })
+      }
+
+      // Log hybrid mode summary
+      if (skippedCuppers.length > 0) {
+        console.log(`Hybrid mode: Skipped ${skippedCuppers.length} cupper(s) with blank paper: ${skippedCuppers.join(', ')}`)
+      }
+      if (existingDigitalCuppers.length > 0) {
+        console.log(`Hybrid mode: ${existingDigitalCuppers.length} cupper(s) already have digital scores: ${existingDigitalCuppers.join(', ')}`)
+      }
+
+      // Handle case where no scores to insert (all cuppers skipped)
+      if (scoreInserts.length === 0) {
+        console.log(`No OCR scores to insert for sample ${card.tracking_number} - all cuppers skipped or have digital scores`)
+        results.push({
+          sample_id: card.sample_id,
+          tracking_number: card.tracking_number,
+          success: true,
+          session_id: sessionId,
+          scores_created: 0,
+          skipped_blank: skippedCuppers,
+          skipped_existing: existingDigitalCuppers,
+          message: 'No paper scores to import - cuppers will enter digitally',
+        })
+        continue
       }
 
       // Insert all scores for this card

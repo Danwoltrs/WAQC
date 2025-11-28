@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2, User, Plus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2, User, Plus, Smartphone } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ExtractedScore {
@@ -328,12 +328,20 @@ export function OCRValidationDialog({
                   ))}
 
                   {/* Data Rows */}
-                  {cupperScores.map((cupper, cupperIndex) => (
+                  {cupperScores.map((cupper, cupperIndex) => {
+                    // Check if this row is blank (no scores = will enter digitally)
+                    const hasAnyScore = Object.values(cupper.scores).some(
+                      v => v !== null && v !== undefined && v !== 0 && !isNaN(Number(v))
+                    )
+                    const isBlankRow = !hasAnyScore
+
+                    return (
                     <React.Fragment key={`cupper-row-${cupperIndex}`}>
                       {/* Cupper Name Cell */}
                       <div
                         className={cn(
-                          "border-r border-foreground/40 bg-muted/30",
+                          "border-r border-foreground/40",
+                          isBlankRow ? "bg-blue-500/10" : "bg-muted/30",
                           cupperIndex < cupperScores.length - 1 && "border-b border-foreground/20"
                         )}
                       >
@@ -395,6 +403,13 @@ export function OCRValidationDialog({
                             OCR: {cupper.ocr_name}
                           </div>
                         )}
+                        {/* Blank row indicator - will enter digitally */}
+                        {isBlankRow && (
+                          <div className="px-2 pb-1 text-[10px] text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                            <Smartphone className="h-3 w-3" />
+                            Will enter digitally
+                          </div>
+                        )}
                       </div>
 
                       {/* Score Cells */}
@@ -408,6 +423,7 @@ export function OCRValidationDialog({
                             key={`${cupperIndex}-${attrName}`}
                             className={cn(
                               "relative",
+                              isBlankRow && "bg-blue-500/10",
                               attrIndex < templateAttributes.length - 1 && "border-r border-foreground/20",
                               cupperIndex < cupperScores.length - 1 && "border-b border-foreground/20"
                             )}
@@ -424,15 +440,17 @@ export function OCRValidationDialog({
                                 "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary focus-visible:ring-offset-0",
                                 "bg-transparent hover:bg-muted/50",
                                 hasValue ? "text-foreground" : "text-muted-foreground",
+                                isBlankRow && "placeholder:text-blue-400",
                                 "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                               )}
-                              placeholder="-"
+                              placeholder={isBlankRow ? "" : "-"}
                             />
                           </div>
                         )
                       })}
                     </React.Fragment>
-                  ))}
+                  )
+                  })}
                 </div>
               </div>
             )}
