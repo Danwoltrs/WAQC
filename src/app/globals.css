@@ -85,3 +85,18 @@
 .lab-icon:hover {
   @apply text-foreground;
 }
+
+/* Hide scrollbar utility for mobile horizontal scroll */
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;  /* Chrome, Safari, Opera */
+}
+
+/* Safe area padding for modern mobile devices */
+.safe-area-inset-bottom {
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
+}
