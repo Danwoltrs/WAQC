@@ -195,7 +195,7 @@ export function ScanCuppingCardsDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleClose}>
-      <DialogContent className="max-w-[calc(100%-1rem)] sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] max-w-[95vw] sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Scan Cupping Cards</DialogTitle>
           <DialogDescription>

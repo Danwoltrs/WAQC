@@ -12,6 +12,12 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Wolthers Coffee QC",
   description: "Coffee Quality Control System for Wolthers Global Laboratory Network",
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    maximumScale: 1,
+    userScalable: false,
+  },
   icons: {
     icon: [
       { url: '/favicon.ico' },
