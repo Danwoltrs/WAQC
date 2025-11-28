@@ -21,7 +21,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2, User, Plus, Smartphone } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2, User, Plus, Smartphone, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ExtractedScore {
@@ -105,7 +105,18 @@ export function OCRValidationDialog({
   const [currentCardIndex, setCurrentCardIndex] = useState(0)
   const [validatedCards, setValidatedCards] = useState<Map<number, any>>(new Map())
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [isMobile, setIsMobile] = useState(false)
   const gridRef = useRef<HTMLDivElement>(null)
+
+  // Detect mobile on mount and resize
+  useEffect(() => {
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 640)
+    }
+    checkMobile()
+    window.addEventListener('resize', checkMobile)
+    return () => window.removeEventListener('resize', checkMobile)
+  }, [])
 
   const currentCard = extractedCards[currentCardIndex]
   const hasNextCard = currentCardIndex < extractedCards.length - 1
@@ -229,6 +240,284 @@ export function OCRValidationDialog({
   const lowConfidence = currentCard.confidence < 80
   const numCols = templateAttributes.length + 1 // +1 for cupper name column
 
+  // Mobile full-screen layout
+  if (isMobile) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent
+          className="fixed inset-0 w-full h-full max-w-none max-h-none m-0 p-0 rounded-none border-0 translate-x-0 translate-y-0 left-0 top-0 flex flex-col bg-background [&>button]:hidden"
+          style={{ transform: 'none' }}
+        >
+          {/* Header with safe area */}
+          <div
+            className="flex items-center justify-between px-4 py-3 border-b border-border bg-card"
+            style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
+          >
+            <button onClick={() => onOpenChange(false)} className="p-2 -ml-2">
+              <X className="h-5 w-5" />
+            </button>
+            <div className="text-center flex-1">
+              <p className="text-sm font-medium">Card {currentCardIndex + 1} of {extractedCards.length}</p>
+              <p className="text-xs text-muted-foreground">{currentCard.sample.tracking_number} | {currentCard.sample.sample_type?.toUpperCase()}</p>
+            </div>
+            <div
+              className={cn(
+                'rounded-full px-2 py-1 text-xs font-medium',
+                lowConfidence ? 'bg-yellow-500/20 text-yellow-600' : 'bg-green-500/20 text-green-600'
+              )}
+            >
+              {Math.round(currentCard.confidence)}%
+            </div>
+          </div>
+
+          {/* Scrollable content */}
+          <div className="flex-1 overflow-y-auto">
+            {/* Scanned Card Image - smaller on mobile */}
+            <div className="p-4 pb-2">
+              <Label className="text-xs font-semibold text-muted-foreground mb-2 block">Scanned Card</Label>
+              <div className="relative w-full h-[120px] rounded-lg border overflow-hidden bg-muted">
+                <Image
+                  src={currentCard.imagePreview}
+                  alt={`Cupping card ${currentCardIndex + 1}`}
+                  fill
+                  className="object-contain"
+                />
+              </div>
+            </div>
+
+            {/* Scores Grid - horizontal scroll */}
+            <div className="px-4 pb-2">
+              <div className="flex items-center justify-between mb-2">
+                <Label className="text-xs font-semibold text-muted-foreground">Cupping Scores</Label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={addCupperRow}
+                  className="h-7 text-xs"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Row
+                </Button>
+              </div>
+
+              {cupperScores.length === 0 ? (
+                <div className="rounded-md border-2 border-dashed p-4 text-center text-muted-foreground text-sm">
+                  <p>No scores extracted.</p>
+                  <p className="text-xs mt-1">Tap Add Row to enter manually.</p>
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <div className="overflow-x-auto scrollbar-hide">
+                    <div
+                      className="grid min-w-max"
+                      style={{
+                        gridTemplateColumns: `100px repeat(${templateAttributes.length}, 60px)`,
+                      }}
+                    >
+                      {/* Header Row */}
+                      <div className="bg-muted/80 border-b border-r border-foreground/20 px-2 py-2 font-semibold text-xs sticky left-0 z-10">
+                        Cupper
+                      </div>
+                      {templateAttributes.map((attr: any, idx: number) => (
+                        <div
+                          key={attr.attribute || idx}
+                          className={cn(
+                            "bg-muted/80 border-b border-foreground/20 px-1 py-2 font-semibold text-xs text-center",
+                            idx < templateAttributes.length - 1 && "border-r border-foreground/10"
+                          )}
+                          title={attr.attribute}
+                        >
+                          {getAbbreviation(attr)}
+                        </div>
+                      ))}
+
+                      {/* Data Rows */}
+                      {cupperScores.map((cupper, cupperIndex) => {
+                        const hasAnyScore = Object.values(cupper.scores).some(
+                          v => v !== null && v !== undefined && v !== 0 && !isNaN(Number(v))
+                        )
+                        const isBlankRow = !hasAnyScore
+
+                        return (
+                          <React.Fragment key={`cupper-row-${cupperIndex}`}>
+                            {/* Cupper Name Cell */}
+                            <div
+                              className={cn(
+                                "border-r border-foreground/20 sticky left-0 z-10",
+                                isBlankRow ? "bg-blue-500/10" : "bg-card",
+                                cupperIndex < cupperScores.length - 1 && "border-b border-foreground/10"
+                              )}
+                            >
+                              {currentCard?.assigned_cuppers && currentCard.assigned_cuppers.length > 0 ? (
+                                <Select
+                                  value={cupper.cupper_id}
+                                  onValueChange={(value) => {
+                                    if (value.startsWith('ocr_')) {
+                                      updateCupperId(cupperIndex, value, cupper.ocr_name || `Cupper ${cupperIndex + 1}`)
+                                      return
+                                    }
+                                    const selectedCupper = currentCard.assigned_cuppers.find(c => c.id === value)
+                                    if (selectedCupper) {
+                                      updateCupperId(cupperIndex, selectedCupper.id, selectedCupper.name)
+                                    }
+                                  }}
+                                >
+                                  <SelectTrigger className="h-10 border-0 rounded-none text-xs bg-transparent focus:ring-0 focus:ring-offset-0 px-2">
+                                    <SelectValue placeholder="Select...">
+                                      <span className="truncate block max-w-[80px]">
+                                        {cupper.cupper_name || 'Select...'}
+                                      </span>
+                                    </SelectValue>
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {currentCard.assigned_cuppers.map((assignedCupper) => (
+                                      <SelectItem key={assignedCupper.id} value={assignedCupper.id}>
+                                        <div className="flex items-center gap-2">
+                                          <User className="h-3 w-3" />
+                                          {assignedCupper.name}
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <Input
+                                  value={cupper.cupper_name}
+                                  onChange={(e) => {
+                                    const newScores = [...cupperScores]
+                                    newScores[cupperIndex].cupper_name = e.target.value
+                                    setCupperScores(newScores)
+                                  }}
+                                  placeholder={`Cupper ${cupperIndex + 1}`}
+                                  className="h-10 border-0 rounded-none text-xs bg-transparent focus-visible:ring-0 px-2"
+                                />
+                              )}
+                              {isBlankRow && (
+                                <div className="px-2 pb-1 text-[9px] text-blue-600 dark:text-blue-400 flex items-center gap-1">
+                                  <Smartphone className="h-2.5 w-2.5" />
+                                  Digital
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Score Cells */}
+                            {templateAttributes.map((attr: any, attrIndex: number) => {
+                              const attrName = attr.attribute || attr
+                              const scoreValue = cupper.scores[attrName]
+                              const hasValue = scoreValue !== undefined && scoreValue !== null && scoreValue !== 0
+
+                              return (
+                                <div
+                                  key={`${cupperIndex}-${attrName}`}
+                                  className={cn(
+                                    "relative",
+                                    isBlankRow && "bg-blue-500/10",
+                                    attrIndex < templateAttributes.length - 1 && "border-r border-foreground/10",
+                                    cupperIndex < cupperScores.length - 1 && "border-b border-foreground/10"
+                                  )}
+                                >
+                                  <Input
+                                    type="number"
+                                    step="0.25"
+                                    min="0"
+                                    max="10"
+                                    value={hasValue ? scoreValue : ''}
+                                    onChange={(e) => updateScore(cupperIndex, attrName, e.target.value)}
+                                    className={cn(
+                                      "h-10 w-full border-0 rounded-none text-center font-mono text-sm",
+                                      "focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-primary",
+                                      "bg-transparent",
+                                      hasValue ? "text-foreground" : "text-muted-foreground",
+                                      "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    )}
+                                    placeholder="-"
+                                  />
+                                </div>
+                              )
+                            })}
+                          </React.Fragment>
+                        )
+                      })}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Taints and Faults */}
+            <div className="px-4 pb-4 space-y-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-muted-foreground">Taints</Label>
+                <Textarea
+                  value={taints}
+                  onChange={(e) => setTaints(e.target.value)}
+                  placeholder="e.g., ferment, rubber"
+                  className="text-sm resize-none h-16"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-semibold text-muted-foreground">Faults</Label>
+                <Textarea
+                  value={faults}
+                  onChange={(e) => setFaults(e.target.value)}
+                  placeholder="e.g., rio, phenolic"
+                  className="text-sm resize-none h-16"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Bottom actions with safe area */}
+          <div
+            className="border-t border-border bg-card px-4 py-3"
+            style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+          >
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToPrevCard}
+                disabled={!hasPrevCard}
+                className="flex-1"
+              >
+                <ChevronLeft className="h-4 w-4" />
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={goToNextCard}
+                disabled={!hasNextCard}
+                className="flex-1"
+              >
+                Next
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="secondary"
+                onClick={saveCurrentCard}
+                className="flex-1"
+              >
+                <Save className="h-4 w-4 mr-1" />
+                Save Card
+              </Button>
+              <Button
+                onClick={handleSubmit}
+                disabled={isSubmitting}
+                className="flex-1"
+              >
+                {isSubmitting ? 'Submitting...' : 'Submit'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
+  // Desktop layout
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[950px] max-h-[90vh] overflow-y-auto">

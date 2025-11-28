@@ -338,10 +338,42 @@ export function DashboardScanDialog({
               className="absolute inset-0 w-full h-full object-cover"
             />
 
+            {/* Dark vignette overlay - creates focus on the viewfinder */}
+            <div className="absolute inset-0 pointer-events-none">
+              {/* Top darkened area */}
+              <div
+                className="absolute top-0 left-0 right-0 bg-black/70"
+                style={{ height: 'calc(50% - min(30vw, 133px))' }}
+              />
+              {/* Bottom darkened area */}
+              <div
+                className="absolute bottom-0 left-0 right-0 bg-black/70"
+                style={{ height: 'calc(50% - min(30vw, 133px))' }}
+              />
+              {/* Left darkened area */}
+              <div
+                className="absolute left-0 bg-black/70"
+                style={{
+                  top: 'calc(50% - min(30vw, 133px))',
+                  bottom: 'calc(50% - min(30vw, 133px))',
+                  width: 'calc(50% - min(45vw, 200px))'
+                }}
+              />
+              {/* Right darkened area */}
+              <div
+                className="absolute right-0 bg-black/70"
+                style={{
+                  top: 'calc(50% - min(30vw, 133px))',
+                  bottom: 'calc(50% - min(30vw, 133px))',
+                  width: 'calc(50% - min(45vw, 200px))'
+                }}
+              />
+            </div>
+
             {/* Landscape viewfinder overlay for cupping card shape */}
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
               <div
-                className="border-2 border-white/60 rounded-lg"
+                className="relative border-2 border-white/80"
                 style={{
                   width: 'min(90vw, 400px)',
                   height: 'min(60vw, 267px)',
@@ -349,10 +381,10 @@ export function DashboardScanDialog({
                 }}
               >
                 {/* Corner guides */}
-                <div className="absolute -top-0.5 -left-0.5 w-6 h-6 border-t-4 border-l-4 border-white rounded-tl-lg" />
-                <div className="absolute -top-0.5 -right-0.5 w-6 h-6 border-t-4 border-r-4 border-white rounded-tr-lg" />
-                <div className="absolute -bottom-0.5 -left-0.5 w-6 h-6 border-b-4 border-l-4 border-white rounded-bl-lg" />
-                <div className="absolute -bottom-0.5 -right-0.5 w-6 h-6 border-b-4 border-r-4 border-white rounded-br-lg" />
+                <div className="absolute -top-0.5 -left-0.5 w-6 h-6 border-t-4 border-l-4 border-white" />
+                <div className="absolute -top-0.5 -right-0.5 w-6 h-6 border-t-4 border-r-4 border-white" />
+                <div className="absolute -bottom-0.5 -left-0.5 w-6 h-6 border-b-4 border-l-4 border-white" />
+                <div className="absolute -bottom-0.5 -right-0.5 w-6 h-6 border-b-4 border-r-4 border-white" />
               </div>
             </div>
 
