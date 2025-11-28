@@ -90,7 +90,8 @@ export async function POST(request: NextRequest) {
     console.log(`[OCR] ${cuppers.length} assigned cuppers:`, cuppers.map(c => c.name))
 
     // Step 4: Get cupping attributes from template
-    const attributes = sample.quality_spec?.template?.parameters?.cupping_attributes?.map(
+    const templateParams = sample.quality_spec?.template?.parameters as Record<string, any> | null
+    const attributes = templateParams?.cupping_attributes?.map(
       (a: any) => typeof a === 'string' ? a : a.attribute
     ) || DEFAULT_ATTRIBUTES
 
