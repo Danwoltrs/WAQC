@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import {
   Dialog,
@@ -15,27 +15,19 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2, User } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Save, AlertCircle, CheckCircle2, User, Plus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ExtractedScore {
   cupper_id: string
   cupper_name: string
-  ocr_name?: string // Raw OCR detected name
+  ocr_name?: string
   scores: Record<string, number>
   confidence: number
 }
@@ -94,14 +86,12 @@ const DEFAULT_ATTRIBUTES = [
   { attribute: 'Overall', abbreviation: 'Ove' },
 ]
 
-// Helper to get abbreviation from attribute name
+// Get short abbreviation for column header (max 4 chars)
 function getAbbreviation(attr: any): string {
-  if (attr.abbreviation) return attr.abbreviation
-  // Generate abbreviation from attribute name
+  if (attr.abbreviation) return attr.abbreviation.substring(0, 4)
   const name = attr.attribute || attr
   if (name.includes('/')) {
-    // "Fragrance/Aroma" -> "Fra/Aro"
-    return name.split('/').map((s: string) => s.substring(0, 3)).join('/')
+    return name.split('/').map((s: string) => s.substring(0, 2)).join('/')
   }
   return name.substring(0, 4)
 }
@@ -115,13 +105,11 @@ export function OCRValidationDialog({
   const [currentCardIndex, setCurrentCardIndex] = useState(0)
   const [validatedCards, setValidatedCards] = useState<Map<number, any>>(new Map())
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const gridRef = useRef<HTMLDivElement>(null)
 
   const currentCard = extractedCards[currentCardIndex]
   const hasNextCard = currentCardIndex < extractedCards.length - 1
   const hasPrevCard = currentCardIndex > 0
-  const allCardsValidated = extractedCards.every((_, index) =>
-    validatedCards.has(index)
-  )
 
   // Initialize validated scores for current card
   const [cupperScores, setCupperScores] = useState<ValidatedScore[]>(
@@ -162,19 +150,24 @@ export function OCRValidationDialog({
     }
   }
 
-  // Update cupper name
-  const updateCupperName = (cupperIndex: number, name: string) => {
-    const newScores = [...cupperScores]
-    newScores[cupperIndex].cupper_name = name
-    setCupperScores(newScores)
-  }
-
   // Update cupper id and name (from dropdown selection)
   const updateCupperId = (cupperIndex: number, id: string, name: string) => {
     const newScores = [...cupperScores]
     newScores[cupperIndex].cupper_id = id
     newScores[cupperIndex].cupper_name = name
     setCupperScores(newScores)
+  }
+
+  // Add new cupper row
+  const addCupperRow = () => {
+    const newId = `manual_${cupperScores.length + 1}`
+    setCupperScores([...cupperScores, {
+      cupper_id: newId,
+      cupper_name: '',
+      scores: {},
+      confidence: 0,
+      validated: false,
+    }])
   }
 
   // Save current card validation
@@ -234,10 +227,11 @@ export function OCRValidationDialog({
   }
 
   const lowConfidence = currentCard.confidence < 80
+  const numCols = templateAttributes.length + 1 // +1 for cupper name column
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[950px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <div className="flex items-center justify-between">
             <div>
@@ -270,11 +264,11 @@ export function OCRValidationDialog({
           </div>
         </DialogHeader>
 
-        <div className="space-y-6 py-4">
+        <div className="space-y-4 py-4">
           {/* TOP: Scanned Card Image */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold">Scanned Card</Label>
-            <div className="relative w-full h-[200px] rounded-lg border overflow-hidden bg-muted">
+            <div className="relative w-full h-[180px] rounded-lg border overflow-hidden bg-muted">
               <Image
                 src={currentCard.imagePreview}
                 alt={`Cupping card ${currentCardIndex + 1}`}
@@ -284,130 +278,164 @@ export function OCRValidationDialog({
             </div>
           </div>
 
-          {/* MIDDLE: Scores Table */}
+          {/* MIDDLE: Excel-like Scores Grid */}
           <div className="space-y-2">
-            <Label className="text-sm font-semibold">Cupping Scores</Label>
-            {cupperScores.length === 0 ? (
-              <div className="rounded-md border p-6 text-center text-muted-foreground">
-                <p>No scores extracted from this card.</p>
-                <p className="text-sm mt-1">OCR could not detect score values. Please enter manually.</p>
-              </div>
-            ) : (
-              <div className="rounded-md border overflow-hidden">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-[140px]">Cupper</TableHead>
-                      {templateAttributes.map((attr: any, idx: number) => (
-                        <TableHead key={attr.attribute || idx} className="text-center w-[60px] px-1">
-                          <span title={attr.attribute}>{getAbbreviation(attr)}</span>
-                        </TableHead>
-                      ))}
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {cupperScores.map((cupper, cupperIndex) => (
-                      <TableRow key={cupperIndex}>
-                        <TableCell className="p-1">
-                          <div className="space-y-1">
-                            {/* Show OCR detected name as hint if different from selected */}
-                            {cupper.ocr_name && cupper.ocr_name !== cupper.cupper_name && (
-                              <div className="text-xs text-muted-foreground flex items-center gap-1">
-                                <span>OCR: {cupper.ocr_name}</span>
-                              </div>
-                            )}
-                            {/* Cupper selection dropdown */}
-                            {currentCard?.assigned_cuppers && currentCard.assigned_cuppers.length > 0 ? (
-                              <Select
-                                value={cupper.cupper_id}
-                                onValueChange={(value) => {
-                                  // Handle OCR option selection
-                                  if (value.startsWith('ocr_')) {
-                                    updateCupperId(cupperIndex, value, cupper.ocr_name || `Cupper ${cupperIndex + 1}`)
-                                    return
-                                  }
-                                  const selectedCupper = currentCard.assigned_cuppers.find(c => c.id === value)
-                                  if (selectedCupper) {
-                                    updateCupperId(cupperIndex, selectedCupper.id, selectedCupper.name)
-                                  }
-                                }}
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select cupper">
-                                    {cupper.cupper_name || 'Select cupper'}
-                                  </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {currentCard.assigned_cuppers.map((assignedCupper) => (
-                                    <SelectItem key={assignedCupper.id} value={assignedCupper.id}>
-                                      <div className="flex items-center gap-2">
-                                        <User className="h-3 w-3" />
-                                        {assignedCupper.name}
-                                      </div>
-                                    </SelectItem>
-                                  ))}
-                                  {/* Option to use OCR detected name */}
-                                  {cupper.ocr_name && (
-                                    <SelectItem value={`ocr_${cupperIndex}`}>
-                                      <div className="flex items-center gap-2 text-muted-foreground">
-                                        <User className="h-3 w-3" />
-                                        {cupper.ocr_name} (OCR)
-                                      </div>
-                                    </SelectItem>
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <Input
-                                value={cupper.cupper_name}
-                                onChange={(e) => updateCupperName(cupperIndex, e.target.value)}
-                                placeholder={cupper.ocr_name || `Cupper ${cupperIndex + 1}`}
-                                className="h-8 text-sm"
-                              />
-                            )}
-                          </div>
-                        </TableCell>
-                        {templateAttributes.map((attr: any, attrIndex: number) => {
-                          const attrName = attr.attribute || attr
-                          return (
-                            <TableCell key={attrName} className="p-1 text-center">
-                              <Input
-                                type="number"
-                                step="0.25"
-                                min="0"
-                                max="10"
-                                value={cupper.scores[attrName] || ''}
-                                onChange={(e) => updateScore(cupperIndex, attrName, e.target.value)}
-                                className="h-8 text-sm text-center px-1"
-                                placeholder="-"
-                              />
-                            </TableCell>
-                          )
-                        })}
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-
-            {/* Add row button for manual entry */}
-            {cupperScores.length === 0 && (
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold">Cupping Scores</Label>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => {
-                  setCupperScores([{
-                    cupper_id: 'manual_1',
-                    cupper_name: '',
-                    scores: {},
-                    confidence: 0,
-                    validated: false,
-                  }])
-                }}
+                onClick={addCupperRow}
+                className="h-7 text-xs"
               >
-                Add Cupper Row
+                <Plus className="h-3 w-3 mr-1" />
+                Add Row
               </Button>
+            </div>
+
+            {cupperScores.length === 0 ? (
+              <div className="rounded-md border-2 border-dashed p-6 text-center text-muted-foreground">
+                <p>No scores extracted from this card.</p>
+                <p className="text-sm mt-1">Click &ldquo;Add Row&rdquo; to enter scores manually.</p>
+              </div>
+            ) : (
+              <div
+                ref={gridRef}
+                className="border-2 border-foreground/80 rounded overflow-hidden"
+              >
+                {/* Excel-like Grid */}
+                <div
+                  className="grid"
+                  style={{
+                    gridTemplateColumns: `120px repeat(${templateAttributes.length}, 52px)`,
+                  }}
+                >
+                  {/* Header Row */}
+                  <div className="bg-muted/80 border-b-2 border-r border-foreground/40 px-2 py-2 font-semibold text-xs flex items-center">
+                    Cupper
+                  </div>
+                  {templateAttributes.map((attr: any, idx: number) => (
+                    <div
+                      key={attr.attribute || idx}
+                      className={cn(
+                        "bg-muted/80 border-b-2 border-foreground/40 px-1 py-2 font-semibold text-xs text-center flex items-center justify-center",
+                        idx < templateAttributes.length - 1 && "border-r border-foreground/20"
+                      )}
+                      title={attr.attribute}
+                    >
+                      {getAbbreviation(attr)}
+                    </div>
+                  ))}
+
+                  {/* Data Rows */}
+                  {cupperScores.map((cupper, cupperIndex) => (
+                    <>
+                      {/* Cupper Name Cell */}
+                      <div
+                        key={`name-${cupperIndex}`}
+                        className={cn(
+                          "border-r border-foreground/40 bg-muted/30",
+                          cupperIndex < cupperScores.length - 1 && "border-b border-foreground/20"
+                        )}
+                      >
+                        {currentCard?.assigned_cuppers && currentCard.assigned_cuppers.length > 0 ? (
+                          <Select
+                            value={cupper.cupper_id}
+                            onValueChange={(value) => {
+                              if (value.startsWith('ocr_')) {
+                                updateCupperId(cupperIndex, value, cupper.ocr_name || `Cupper ${cupperIndex + 1}`)
+                                return
+                              }
+                              const selectedCupper = currentCard.assigned_cuppers.find(c => c.id === value)
+                              if (selectedCupper) {
+                                updateCupperId(cupperIndex, selectedCupper.id, selectedCupper.name)
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="h-10 border-0 rounded-none text-xs bg-transparent focus:ring-0 focus:ring-offset-0">
+                              <SelectValue placeholder="Select...">
+                                <span className="truncate block max-w-[90px]">
+                                  {cupper.cupper_name || 'Select...'}
+                                </span>
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent>
+                              {currentCard.assigned_cuppers.map((assignedCupper) => (
+                                <SelectItem key={assignedCupper.id} value={assignedCupper.id}>
+                                  <div className="flex items-center gap-2">
+                                    <User className="h-3 w-3" />
+                                    {assignedCupper.name}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                              {cupper.ocr_name && (
+                                <SelectItem value={`ocr_${cupperIndex}`}>
+                                  <div className="flex items-center gap-2 text-muted-foreground">
+                                    <User className="h-3 w-3" />
+                                    {cupper.ocr_name} (OCR)
+                                  </div>
+                                </SelectItem>
+                              )}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            value={cupper.cupper_name}
+                            onChange={(e) => {
+                              const newScores = [...cupperScores]
+                              newScores[cupperIndex].cupper_name = e.target.value
+                              setCupperScores(newScores)
+                            }}
+                            placeholder={cupper.ocr_name || `Cupper ${cupperIndex + 1}`}
+                            className="h-10 border-0 rounded-none text-xs bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                          />
+                        )}
+                        {/* OCR hint */}
+                        {cupper.ocr_name && cupper.ocr_name !== cupper.cupper_name && (
+                          <div className="px-2 pb-1 text-[10px] text-muted-foreground truncate" title={`OCR detected: ${cupper.ocr_name}`}>
+                            OCR: {cupper.ocr_name}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Score Cells */}
+                      {templateAttributes.map((attr: any, attrIndex: number) => {
+                        const attrName = attr.attribute || attr
+                        const scoreValue = cupper.scores[attrName]
+                        const hasValue = scoreValue !== undefined && scoreValue !== null && scoreValue !== 0
+
+                        return (
+                          <div
+                            key={`${cupperIndex}-${attrName}`}
+                            className={cn(
+                              "relative",
+                              attrIndex < templateAttributes.length - 1 && "border-r border-foreground/20",
+                              cupperIndex < cupperScores.length - 1 && "border-b border-foreground/20"
+                            )}
+                          >
+                            <Input
+                              type="number"
+                              step="0.25"
+                              min="0"
+                              max="10"
+                              value={hasValue ? scoreValue : ''}
+                              onChange={(e) => updateScore(cupperIndex, attrName, e.target.value)}
+                              className={cn(
+                                "h-10 w-full border-0 rounded-none text-center font-mono text-sm",
+                                "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary focus-visible:ring-offset-0",
+                                "bg-transparent hover:bg-muted/50",
+                                hasValue ? "text-foreground" : "text-muted-foreground",
+                                "[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                              )}
+                              placeholder="-"
+                            />
+                          </div>
+                        )
+                      })}
+                    </>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
 

@@ -10,15 +10,16 @@ export const maxDuration = 30
  * POST /api/cupping/ocr/process-card
  * Process a scanned cupping card image with Google Cloud Vision OCR
  *
- * Supports two modes:
- * 1. JSON body with 'image_url' - URL to image in Supabase Storage (recommended for large files)
- * 2. FormData with 'image' file - Direct file upload (limited by Vercel's 4.5MB body limit)
+ * ROBUST OCR SYSTEM v2.0
+ * - Uses table structure detection
+ * - Relative column indexing (not absolute X positions)
+ * - Aggressive number extraction
+ * - Better confidence scoring
  */
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
 
-    // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -27,78 +28,54 @@ export async function POST(request: NextRequest) {
     let imageUrl: string | null = null
     let imageBuffer: Buffer | null = null
     let sessionId: string | null = null
-    let storagePath: string | null = null
 
-    // Check content type to determine how to parse the request
     const contentType = request.headers.get('content-type') || ''
 
     if (contentType.includes('application/json')) {
-      // JSON body with image_url
       const body = await request.json()
       imageUrl = body.image_url
       sessionId = body.session_id || null
-      storagePath = body.storage_path || null
 
       if (!imageUrl) {
-        return NextResponse.json(
-          { error: 'No image_url provided' },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: 'No image_url provided' }, { status: 400 })
       }
-
-      console.log(`Processing cupping card from URL: ${imageUrl}`)
+      console.log(`[OCR] Processing URL: ${imageUrl}`)
     } else {
-      // FormData with image file (legacy support)
       const formData = await request.formData()
       const imageFile = formData.get('image') as File
       sessionId = formData.get('session_id') as string | null
 
       if (!imageFile) {
-        return NextResponse.json(
-          { error: 'No image file provided' },
-          { status: 400 }
-        )
+        return NextResponse.json({ error: 'No image file provided' }, { status: 400 })
       }
-
-      console.log(`Processing cupping card image: ${imageFile.name} (${(imageFile.size / 1024).toFixed(1)} KB)`)
       imageBuffer = Buffer.from(await imageFile.arrayBuffer())
     }
 
-    // Step 1: Run Google Cloud Vision for both QR detection and OCR
-    console.log('Step 1: Running Google Cloud Vision...')
+    // Step 1: Run Google Cloud Vision
+    console.log('[OCR] Running Vision API...')
     const visionResult = imageUrl
       ? await runGoogleVisionWithUrl(imageUrl)
       : await runGoogleVisionFull(imageBuffer!)
 
     if (!visionResult.success) {
-      return NextResponse.json(
-        {
-          error: 'Vision API failed',
-          message: visionResult.error || 'Failed to process image'
-        },
-        { status: 500 }
-      )
+      return NextResponse.json({
+        error: 'Vision API failed',
+        message: visionResult.error || 'Failed to process image'
+      }, { status: 500 })
     }
 
-    // Step 2: Extract QR code data (from Vision API or fallback to jsQR)
-    console.log('Step 2: Extracting QR code data...')
-    let qrData = visionResult.qrData
+    console.log(`[OCR] Vision returned ${visionResult.words?.length || 0} words`)
 
-    // If Vision API didn't find QR, try jsQR as fallback
+    // Step 2: Extract QR code
+    let qrData = visionResult.qrData
     if (!qrData) {
-      console.log('Vision API did not detect QR, trying jsQR fallback...')
-      // For URL mode, fetch the image first
+      console.log('[OCR] No QR from Vision, trying jsQR...')
       let bufferForQR = imageBuffer
       if (!bufferForQR && imageUrl) {
         try {
-          console.log('Fetching image from URL for jsQR fallback...')
-          const imageResponse = await fetch(imageUrl)
-          if (imageResponse.ok) {
-            bufferForQR = Buffer.from(await imageResponse.arrayBuffer())
-          }
-        } catch (fetchError) {
-          console.error('Failed to fetch image for jsQR fallback:', fetchError)
-        }
+          const res = await fetch(imageUrl)
+          if (res.ok) bufferForQR = Buffer.from(await res.arrayBuffer())
+        } catch { /* ignore */ }
       }
       if (bufferForQR) {
         qrData = await detectQRCodeWithJsQR(bufferForQR)
@@ -106,73 +83,49 @@ export async function POST(request: NextRequest) {
     }
 
     if (!qrData) {
-      return NextResponse.json(
-        {
-          error: 'QR code not detected',
-          message: 'Could not find or read QR code on the cupping card. Please ensure the QR code is visible and not obscured.'
-        },
-        { status: 400 }
-      )
+      return NextResponse.json({
+        error: 'QR code not detected',
+        message: 'Could not find QR code on the cupping card.'
+      }, { status: 400 })
     }
 
-    console.log('QR code decoded:', qrData)
+    console.log('[OCR] QR:', qrData)
 
-    const ocrResult = visionResult
-
-    if (!ocrResult.success) {
-      return NextResponse.json(
-        {
-          error: 'OCR failed',
-          message: ocrResult.error || 'Failed to extract text from image'
-        },
-        { status: 500 }
-      )
-    }
-
-    console.log('OCR completed. Text blocks:', ocrResult.blocks?.length || 0)
-
-    // Step 3: Fetch sample details to validate
+    // Step 3: Fetch sample details
     const { data: sample, error: sampleError } = await supabase
       .from('samples')
       .select(`
-        id,
-        tracking_number,
-        sample_type,
+        id, tracking_number, sample_type,
         quality_spec:client_qualities!samples_quality_spec_id_fkey(
           id,
-          template:quality_templates!client_qualities_template_id_fkey(
-            id,
-            name,
-            parameters
-          )
+          template:quality_templates!client_qualities_template_id_fkey(id, name, parameters)
         )
       `)
       .eq('id', qrData.sample_id)
       .single()
 
     if (sampleError || !sample) {
-      console.error('Sample not found:', qrData.sample_id)
-      return NextResponse.json(
-        {
-          error: 'Sample not found',
-          message: `The sample ${qrData.tracking_number} could not be found in the database.`
-        },
-        { status: 404 }
-      )
+      return NextResponse.json({
+        error: 'Sample not found',
+        message: `Sample ${qrData.tracking_number} not found.`
+      }, { status: 404 })
     }
 
-    // Step 4: Fetch cupping session and assigned cuppers
-    console.log('Step 3: Fetching assigned cuppers...')
+    // Step 4: Fetch assigned cuppers
     const cuppers = await fetchAssignedCuppers(supabase, qrData.sample_id)
+    console.log(`[OCR] ${cuppers.length} assigned cuppers:`, cuppers.map(c => c.name))
 
-    // Step 5: Parse scores from OCR result using position-based matching
-    console.log('Step 4: Parsing scores with position-based matching...')
-    const scoresWithCuppers = parseScoresFromVisionResult(ocrResult, cuppers)
+    // Step 5: Extract scores using robust table detection
+    const extraction = extractScoresRobust(visionResult, cuppers)
 
-    // Step 6: Extract taints and faults
-    const defects = extractDefects(ocrResult.fullText || '')
+    // Step 6: Extract defects (with proper filtering)
+    const defects = extractDefectsClean(visionResult.fullText || '')
 
-    // Return extracted data for validation
+    // Step 7: Calculate confidence
+    const confidence = calculateConfidence(extraction, visionResult)
+
+    console.log(`[OCR] Result: ${extraction.cupperScores.length} cuppers, ${confidence}% confidence`)
+
     return NextResponse.json({
       success: true,
       qr_data: qrData,
@@ -182,637 +135,600 @@ export async function POST(request: NextRequest) {
         sample_type: sample.sample_type,
         quality_template: sample.quality_spec?.template,
       },
-      extracted_scores: scoresWithCuppers,
+      extracted_scores: extraction.cupperScores,
       assigned_cuppers: cuppers,
-      defects: defects,
-      raw_text: ocrResult.fullText,
-      confidence: ocrResult.confidence,
+      defects,
+      raw_text: visionResult.fullText,
+      confidence,
       session_id: sessionId,
+      debug: {
+        wordsFound: visionResult.words?.length || 0,
+        numbersFound: extraction.numbersFound,
+        rowsDetected: extraction.rowsDetected,
+        cupperNamesFound: extraction.cupperNamesFound,
+      }
     })
   } catch (error: any) {
-    console.error('Error processing cupping card:', error)
-    return NextResponse.json(
-      {
-        error: 'Failed to process cupping card',
-        details: error.message || String(error),
-      },
-      { status: 500 }
-    )
+    console.error('[OCR] Error:', error)
+    return NextResponse.json({
+      error: 'Failed to process cupping card',
+      details: error.message || String(error),
+    }, { status: 500 })
   }
 }
 
-/**
- * Detect and decode QR code from image buffer using jsQR
- * Tries multiple image processing approaches for better detection
- * Used as fallback if Google Vision barcode detection fails
- */
+// ============================================================================
+// QR CODE DETECTION
+// ============================================================================
+
 async function detectQRCodeWithJsQR(imageBuffer: Buffer): Promise<{
   sample_id: string
   tracking_number: string
   type: string
 } | null> {
-  // Try different image processing approaches
   const attempts = [
-    // Attempt 1: Original image
     async () => {
       const { data, info } = await sharp(imageBuffer)
-        .raw()
-        .ensureAlpha()
-        .toBuffer({ resolveWithObject: true })
-      return { data, width: info.width, height: info.height, name: 'original' }
+        .raw().ensureAlpha().toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height }
     },
-    // Attempt 2: Grayscale with enhanced contrast
     async () => {
       const { data, info } = await sharp(imageBuffer)
-        .grayscale()
-        .normalize()
-        .raw()
-        .ensureAlpha()
-        .toBuffer({ resolveWithObject: true })
-      return { data, width: info.width, height: info.height, name: 'grayscale' }
-    },
-    // Attempt 3: Sharpen and increase contrast
-    async () => {
-      const { data, info } = await sharp(imageBuffer)
-        .sharpen()
-        .modulate({ brightness: 1.1 })
-        .raw()
-        .ensureAlpha()
-        .toBuffer({ resolveWithObject: true })
-      return { data, width: info.width, height: info.height, name: 'sharpened' }
-    },
-    // Attempt 4: Resize to standard size (sometimes helps with detection)
-    async () => {
-      const { data, info } = await sharp(imageBuffer)
-        .resize(1500, null, { withoutEnlargement: true })
-        .raw()
-        .ensureAlpha()
-        .toBuffer({ resolveWithObject: true })
-      return { data, width: info.width, height: info.height, name: 'resized' }
+        .grayscale().normalize().raw().ensureAlpha().toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height }
     },
   ]
 
   for (const attempt of attempts) {
     try {
-      const { data, width, height, name } = await attempt()
-      const imageData = new Uint8ClampedArray(data)
-      const code = jsQR(imageData, width, height)
-
+      const { data, width, height } = await attempt()
+      const code = jsQR(new Uint8ClampedArray(data), width, height)
       if (code) {
-        console.log(`QR code detected using ${name} approach`)
-        try {
-          const qrData = JSON.parse(code.data)
-          return {
-            sample_id: qrData.sample_id,
-            tracking_number: qrData.tracking_number,
-            type: qrData.type,
-          }
-        } catch (parseError) {
-          console.error('QR code found but data invalid:', code.data)
-          continue
+        const qrData = JSON.parse(code.data)
+        if (qrData.sample_id && qrData.tracking_number) {
+          return { sample_id: qrData.sample_id, tracking_number: qrData.tracking_number, type: qrData.type || 'cupping_card' }
         }
       }
-    } catch (error) {
-      console.error(`QR detection attempt failed:`, error)
-      continue
-    }
+    } catch { continue }
   }
-
-  console.error('QR code not detected after all attempts')
   return null
+}
+
+// ============================================================================
+// VISION API
+// ============================================================================
+
+interface VisionWord {
+  text: string
+  boundingBox: { x: number; y: number; width: number; height: number }
+  confidence: number
 }
 
 interface VisionOCRResult {
   success: boolean
   error?: string
   fullText?: string
-  blocks?: Array<{
-    text: string
-    boundingBox: { x: number; y: number; width: number; height: number }
-    confidence: number
-  }>
-  words?: Array<{
-    text: string
-    boundingBox: { x: number; y: number; width: number; height: number }
-    confidence: number
-  }>
+  words?: VisionWord[]
   confidence?: number
-  qrData?: {
-    sample_id: string
-    tracking_number: string
-    type: string
-  } | null
+  qrData?: { sample_id: string; tracking_number: string; type: string } | null
 }
 
-/**
- * Run Google Cloud Vision API using image URL (for large files)
- * Vision API fetches the image directly from the URL, bypassing Vercel's body limit
- */
 async function runGoogleVisionWithUrl(imageUrl: string): Promise<VisionOCRResult> {
   const apiKey = process.env.GOOGLE_VISION_API_KEY
-
-  if (!apiKey) {
-    console.error('GOOGLE_VISION_API_KEY not configured')
-    return { success: false, error: 'OCR service not configured. Please set GOOGLE_VISION_API_KEY.' }
-  }
+  if (!apiKey) return { success: false, error: 'GOOGLE_VISION_API_KEY not configured' }
 
   try {
-    console.log(`Sending image URL to Vision API: ${imageUrl}`)
-
-    // Call Google Cloud Vision API with URL source
-    const response = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests: [
-            {
-              image: { source: { imageUri: imageUrl } },
-              features: [
-                { type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 },
-                { type: 'BARCODE_DETECTION', maxResults: 10 }
-              ],
-            },
+    const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          image: { source: { imageUri: imageUrl } },
+          features: [
+            { type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 },
+            { type: 'BARCODE_DETECTION', maxResults: 10 }
           ],
-        }),
-      }
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Google Vision API error:', response.status, errorText)
-      return { success: false, error: `Vision API error: ${response.status} - ${errorText}` }
-    }
-
-    const result = await response.json()
-    const annotation = result.responses?.[0]
-
-    if (annotation?.error) {
-      console.error('Vision API annotation error:', annotation.error)
-      return { success: false, error: annotation.error.message }
-    }
-
-    // Extract QR code data from barcode detection
-    let qrData: VisionOCRResult['qrData'] = null
-    const barcodes = annotation?.barcodeAnnotations || []
-    console.log(`Found ${barcodes.length} barcodes`)
-
-    for (const barcode of barcodes) {
-      console.log(`Barcode type: ${barcode.format}, value: ${barcode.rawValue?.substring(0, 50)}...`)
-      if (barcode.format === 'QR_CODE' && barcode.rawValue) {
-        try {
-          const parsed = JSON.parse(barcode.rawValue)
-          if (parsed.sample_id && parsed.tracking_number) {
-            qrData = {
-              sample_id: parsed.sample_id,
-              tracking_number: parsed.tracking_number,
-              type: parsed.type || 'cupping_card',
-            }
-            console.log('QR code parsed successfully:', qrData)
-            break
-          }
-        } catch (e) {
-          console.log('QR code found but not valid JSON:', barcode.rawValue)
-        }
-      }
-    }
-
-    // Extract OCR text
-    const fullTextAnnotation = annotation?.fullTextAnnotation
-    if (!fullTextAnnotation) {
-      console.warn('No text detected in image')
-      return {
-        success: true,
-        fullText: '',
-        words: [],
-        blocks: [],
-        qrData,
-        error: qrData ? undefined : 'No text detected in image'
-      }
-    }
-
-    // Extract words with bounding boxes
-    const words: VisionOCRResult['words'] = []
-    const blocks: VisionOCRResult['blocks'] = []
-
-    fullTextAnnotation.pages?.forEach((page: any) => {
-      page.blocks?.forEach((block: any) => {
-        const blockBox = getBoundingBox(block.boundingBox)
-        const blockText: string[] = []
-
-        block.paragraphs?.forEach((paragraph: any) => {
-          paragraph.words?.forEach((word: any) => {
-            const wordText = word.symbols?.map((s: any) => s.text).join('') || ''
-            const wordBox = getBoundingBox(word.boundingBox)
-            const wordConfidence = word.confidence || 0
-
-            blockText.push(wordText)
-            words.push({
-              text: wordText,
-              boundingBox: wordBox,
-              confidence: wordConfidence,
-            })
-          })
-        })
-
-        blocks.push({
-          text: blockText.join(' '),
-          boundingBox: blockBox,
-          confidence: block.confidence || 0,
-        })
-      })
+        }],
+      }),
     })
 
-    console.log(`OCR extracted ${words.length} words`)
-
-    return {
-      success: true,
-      fullText: fullTextAnnotation.text,
-      blocks,
-      words,
-      confidence: fullTextAnnotation.pages?.[0]?.confidence || 0,
-      qrData,
+    if (!response.ok) {
+      return { success: false, error: `Vision API: ${response.status}` }
     }
+    return parseVisionResponse(await response.json())
   } catch (error: any) {
-    console.error('Error calling Google Vision API with URL:', error)
     return { success: false, error: error.message }
   }
 }
 
-/**
- * Run Google Cloud Vision API for both OCR and QR/barcode detection
- */
 async function runGoogleVisionFull(imageBuffer: Buffer): Promise<VisionOCRResult> {
   const apiKey = process.env.GOOGLE_VISION_API_KEY
-
-  if (!apiKey) {
-    console.error('GOOGLE_VISION_API_KEY not configured')
-    return { success: false, error: 'OCR service not configured. Please set GOOGLE_VISION_API_KEY.' }
-  }
+  if (!apiKey) return { success: false, error: 'GOOGLE_VISION_API_KEY not configured' }
 
   try {
-    // Convert image to base64
-    const base64Image = imageBuffer.toString('base64')
-    console.log(`Sending image to Vision API (${(imageBuffer.length / 1024).toFixed(1)} KB)`)
-
-    // Call Google Cloud Vision API with both TEXT and BARCODE detection
-    const response = await fetch(
-      `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          requests: [
-            {
-              image: { content: base64Image },
-              features: [
-                { type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 },
-                { type: 'BARCODE_DETECTION', maxResults: 10 }
-              ],
-            },
+    const response = await fetch(`https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        requests: [{
+          image: { content: imageBuffer.toString('base64') },
+          features: [
+            { type: 'DOCUMENT_TEXT_DETECTION', maxResults: 1 },
+            { type: 'BARCODE_DETECTION', maxResults: 10 }
           ],
-        }),
-      }
-    )
-
-    if (!response.ok) {
-      const errorText = await response.text()
-      console.error('Google Vision API error:', response.status, errorText)
-      return { success: false, error: `Vision API error: ${response.status} - ${errorText}` }
-    }
-
-    const result = await response.json()
-    const annotation = result.responses?.[0]
-
-    if (annotation?.error) {
-      console.error('Vision API annotation error:', annotation.error)
-      return { success: false, error: annotation.error.message }
-    }
-
-    // Extract QR code data from barcode detection
-    let qrData: VisionOCRResult['qrData'] = null
-    const barcodes = annotation?.barcodeAnnotations || []
-    console.log(`Found ${barcodes.length} barcodes`)
-
-    for (const barcode of barcodes) {
-      console.log(`Barcode type: ${barcode.format}, value: ${barcode.rawValue?.substring(0, 50)}...`)
-      if (barcode.format === 'QR_CODE' && barcode.rawValue) {
-        try {
-          const parsed = JSON.parse(barcode.rawValue)
-          if (parsed.sample_id && parsed.tracking_number) {
-            qrData = {
-              sample_id: parsed.sample_id,
-              tracking_number: parsed.tracking_number,
-              type: parsed.type || 'cupping_card',
-            }
-            console.log('QR code parsed successfully:', qrData)
-            break
-          }
-        } catch (e) {
-          console.log('QR code found but not valid JSON:', barcode.rawValue)
-        }
-      }
-    }
-
-    // Extract OCR text
-    const fullTextAnnotation = annotation?.fullTextAnnotation
-    if (!fullTextAnnotation) {
-      console.warn('No text detected in image')
-      return {
-        success: true,
-        fullText: '',
-        words: [],
-        blocks: [],
-        qrData,
-        error: qrData ? undefined : 'No text detected in image'
-      }
-    }
-
-    // Extract words with bounding boxes
-    const words: VisionOCRResult['words'] = []
-    const blocks: VisionOCRResult['blocks'] = []
-
-    fullTextAnnotation.pages?.forEach((page: any) => {
-      page.blocks?.forEach((block: any) => {
-        const blockBox = getBoundingBox(block.boundingBox)
-        const blockText: string[] = []
-
-        block.paragraphs?.forEach((paragraph: any) => {
-          paragraph.words?.forEach((word: any) => {
-            const wordText = word.symbols?.map((s: any) => s.text).join('') || ''
-            const wordBox = getBoundingBox(word.boundingBox)
-            const wordConfidence = word.confidence || 0
-
-            blockText.push(wordText)
-            words.push({
-              text: wordText,
-              boundingBox: wordBox,
-              confidence: wordConfidence,
-            })
-          })
-        })
-
-        blocks.push({
-          text: blockText.join(' '),
-          boundingBox: blockBox,
-          confidence: block.confidence || 0,
-        })
-      })
+        }],
+      }),
     })
 
-    console.log(`OCR extracted ${words.length} words`)
-
-    return {
-      success: true,
-      fullText: fullTextAnnotation.text,
-      blocks,
-      words,
-      confidence: fullTextAnnotation.pages?.[0]?.confidence || 0,
-      qrData,
+    if (!response.ok) {
+      return { success: false, error: `Vision API: ${response.status}` }
     }
+    return parseVisionResponse(await response.json())
   } catch (error: any) {
-    console.error('Error calling Google Vision API:', error)
     return { success: false, error: error.message }
   }
 }
 
-/**
- * Convert Google Vision bounding box to simple format
- */
-function getBoundingBox(boundingBox: any): { x: number; y: number; width: number; height: number } {
-  if (!boundingBox?.vertices || boundingBox.vertices.length < 4) {
-    return { x: 0, y: 0, width: 0, height: 0 }
+function parseVisionResponse(result: any): VisionOCRResult {
+  const annotation = result.responses?.[0]
+  if (annotation?.error) {
+    return { success: false, error: annotation.error.message }
   }
 
-  const vertices = boundingBox.vertices
-  const x = Math.min(...vertices.map((v: any) => v.x || 0))
-  const y = Math.min(...vertices.map((v: any) => v.y || 0))
-  const maxX = Math.max(...vertices.map((v: any) => v.x || 0))
-  const maxY = Math.max(...vertices.map((v: any) => v.y || 0))
+  // Extract QR
+  let qrData: VisionOCRResult['qrData'] = null
+  for (const barcode of (annotation?.barcodeAnnotations || [])) {
+    if (barcode.format === 'QR_CODE' && barcode.rawValue) {
+      try {
+        const parsed = JSON.parse(barcode.rawValue)
+        if (parsed.sample_id && parsed.tracking_number) {
+          qrData = { sample_id: parsed.sample_id, tracking_number: parsed.tracking_number, type: parsed.type || 'cupping_card' }
+          break
+        }
+      } catch { /* not JSON */ }
+    }
+  }
 
-  return { x, y, width: maxX - x, height: maxY - y }
+  const fullTextAnnotation = annotation?.fullTextAnnotation
+  if (!fullTextAnnotation) {
+    return { success: true, fullText: '', words: [], qrData }
+  }
+
+  // Extract words with bounding boxes
+  const words: VisionWord[] = []
+  let totalConfidence = 0
+  let wordCount = 0
+
+  fullTextAnnotation.pages?.forEach((page: any) => {
+    page.blocks?.forEach((block: any) => {
+      block.paragraphs?.forEach((paragraph: any) => {
+        paragraph.words?.forEach((word: any) => {
+          const wordText = word.symbols?.map((s: any) => s.text).join('') || ''
+          const vertices = word.boundingBox?.vertices || []
+          const conf = word.confidence || 0.9
+
+          if (vertices.length >= 4 && wordText.trim()) {
+            const x = Math.min(...vertices.map((v: any) => v.x || 0))
+            const y = Math.min(...vertices.map((v: any) => v.y || 0))
+            const maxX = Math.max(...vertices.map((v: any) => v.x || 0))
+            const maxY = Math.max(...vertices.map((v: any) => v.y || 0))
+
+            words.push({
+              text: wordText,
+              boundingBox: { x, y, width: maxX - x, height: maxY - y },
+              confidence: conf,
+            })
+            totalConfidence += conf
+            wordCount++
+          }
+        })
+      })
+    })
+  })
+
+  return {
+    success: true,
+    fullText: fullTextAnnotation.text,
+    words,
+    confidence: wordCount > 0 ? totalConfidence / wordCount : 0.8,
+    qrData,
+  }
 }
 
-/**
- * Parse cupping scores from Google Vision OCR result
- * Extracts cupper names from the first column and maps scores to the correct columns
- */
-function parseScoresFromVisionResult(
+// ============================================================================
+// ROBUST SCORE EXTRACTION v2.0
+// ============================================================================
+
+const ATTRIBUTES = ['Fragrance', 'Flavor', 'Aftertaste', 'Acidity', 'Body', 'Balance', 'Overall']
+
+interface ExtractionResult {
+  cupperScores: Array<{
+    cupper_id: string
+    cupper_name: string
+    ocr_name: string
+    scores: Record<string, number>
+    confidence: number
+  }>
+  numbersFound: number
+  rowsDetected: number
+  cupperNamesFound: string[]
+}
+
+function extractScoresRobust(
   ocrResult: VisionOCRResult,
   assignedCuppers: Array<{ id: string; name: string }>
-): Array<{ cupper_id: string; cupper_name: string; ocr_name: string; scores: Record<string, number>; confidence: number }> {
-  const results: Array<{ cupper_id: string; cupper_name: string; ocr_name: string; scores: Record<string, number>; confidence: number }> = []
+): ExtractionResult {
+  const words = ocrResult.words || []
+  const fullText = ocrResult.fullText || ''
 
-  console.warn(`[OCR DEBUG] Words count: ${ocrResult.words?.length || 0}, Full text length: ${ocrResult.fullText?.length || 0}`)
+  console.log('[EXTRACT] Starting robust extraction...')
 
-  if (!ocrResult.words || ocrResult.words.length === 0) {
-    console.warn('[OCR DEBUG] No words found in OCR result - check Vision API response')
-    return []
+  // Step 1: Find ALL numbers that could be scores (0-10 range)
+  const numberWords: Array<VisionWord & { value: number }> = []
+
+  for (const word of words) {
+    const value = parseScoreValue(word.text)
+    if (value !== null) {
+      numberWords.push({ ...word, value })
+    }
   }
 
-  // Cupping card column headers (in order on the printed card)
-  const scoreColumns = ['Fragrance', 'Flavor', 'Aftertaste', 'Acidity', 'Body', 'Balance', 'Overall']
+  console.log(`[EXTRACT] Found ${numberWords.length} score numbers`)
 
-  // Separate words into numbers (scores) and text (names/labels)
-  const allWords = ocrResult.words
+  // Step 2: Find cupper names (from assigned list or common patterns)
+  const cupperNameWords = findCupperNameWords(words, assignedCuppers)
+  console.log(`[EXTRACT] Found cupper names:`, cupperNameWords.map(w => w.text))
 
-  // Find all number patterns (scores) with their positions
-  const scoreWords = allWords.filter((word) => {
-    const text = word.text.trim().replace(',', '.')
-    // Match numbers like 5, 5.5, 4,5, 2.75, etc.
-    return /^\d+([.,]\d+)?$/.test(text)
-  })
+  // Step 3: Group numbers into rows by Y position
+  const rows = groupNumbersIntoRows(numberWords, 40)
+  console.log(`[EXTRACT] Grouped into ${rows.length} rows`)
 
-  // Find all text words (potential cupper names) - exclude common labels
-  const excludedLabels = ['cupper', 'fra', 'fla', 'aft', 'acid', 'body', 'bal', 'ove', 'over', 'taints', 'faults', 'template', 'quality', 'buyer', 'ss', 'pss', 'type', 'fragrance', 'flavor', 'aftertaste', 'acidity', 'balance', 'overall', 'wolthers']
-  const textWords = allWords.filter((word) => {
-    const text = word.text.trim().toLowerCase()
-    // Must be alphabetic and not a common label
-    return /^[a-zA-Z]+$/.test(word.text.trim()) &&
-           text.length >= 3 &&
-           !excludedLabels.some(label => text.includes(label))
-  })
+  // Step 4: Associate each row with a cupper
+  const cupperScores: ExtractionResult['cupperScores'] = []
 
-  console.warn(`[OCR DEBUG] Found ${scoreWords.length} score values and ${textWords.length} potential name words`)
+  rows.forEach((row, rowIndex) => {
+    // Find cupper name for this row
+    const rowY = row.avgY
+    const cupperWord = cupperNameWords.find(w => Math.abs(w.boundingBox.y - rowY) < 50)
+    const ocrName = cupperWord?.text || ''
 
-  // Group scores by approximate Y position (vertical rows)
-  const rowTolerance = 25 // pixels - slightly more tolerant
-  const rows: Array<{ y: number; scores: typeof scoreWords; nameWord?: typeof textWords[0] }> = []
+    // Match to assigned cupper
+    const matched = matchToAssignedCupper(ocrName, assignedCuppers, rowIndex)
 
-  scoreWords.forEach((scoreWord) => {
-    const y = scoreWord.boundingBox.y
-    let foundRow = rows.find((row) => Math.abs(row.y - y) <= rowTolerance)
-
-    if (!foundRow) {
-      foundRow = { y, scores: [] }
-      rows.push(foundRow)
-    }
-
-    foundRow.scores.push(scoreWord)
-  })
-
-  // Sort rows by Y position (top to bottom)
-  rows.sort((a, b) => a.y - b.y)
-
-  // Filter rows to only those with multiple scores (cupper data rows, not headers)
-  // Lowered threshold to 4 to catch incomplete rows
-  const dataRows = rows.filter((row) => row.scores.length >= 4)
-
-  console.warn(`[OCR DEBUG] Found ${dataRows.length} data rows with 4+ scores (from ${rows.length} total rows)`)
-
-  // For each data row, find the cupper name (leftmost text word on same row)
-  dataRows.forEach((row) => {
-    // Find text words that are on the same Y row
-    const rowNameCandidates = textWords.filter((textWord) => {
-      return Math.abs(textWord.boundingBox.y - row.y) <= rowTolerance
-    })
-
-    if (rowNameCandidates.length > 0) {
-      // Get the leftmost name candidate
-      rowNameCandidates.sort((a, b) => a.boundingBox.x - b.boundingBox.x)
-      row.nameWord = rowNameCandidates[0]
-      console.warn(`[OCR DEBUG] Found name "${row.nameWord.text}" for row at Y=${row.y}`)
-    }
-  })
-
-  // Match extracted names to assigned cuppers
-  dataRows.forEach((row, index) => {
-    const ocrName = row.nameWord?.text || ''
-
-    // Try to match OCR name to an assigned cupper (case-insensitive partial match)
-    let matchedCupper = assignedCuppers.find((cupper) => {
-      const cupperNameLower = cupper.name.toLowerCase()
-      const ocrNameLower = ocrName.toLowerCase()
-      // Match if OCR name starts with cupper name or vice versa
-      return cupperNameLower.startsWith(ocrNameLower) ||
-             ocrNameLower.startsWith(cupperNameLower) ||
-             cupperNameLower.includes(ocrNameLower) ||
-             ocrNameLower.includes(cupperNameLower)
-    })
-
-    // If no match found, use the OCR name directly or fallback to placeholder
-    const cupper = matchedCupper || {
-      id: `ocr_${index}`,
-      name: ocrName || `Cupper ${index + 1}`
-    }
-
-    // Sort scores in row by X position (left to right)
-    const sortedScores = row.scores.sort((a, b) => a.boundingBox.x - b.boundingBox.x)
-
-    // Map scores to columns
+    // Map scores to attributes by column index (left to right = Fra, Fla, Aft, etc.)
     const scores: Record<string, number> = {}
-    let totalConfidence = 0
-
-    sortedScores.forEach((scoreWord, scoreIndex) => {
-      if (scoreIndex < scoreColumns.length) {
-        const value = parseFloat(scoreWord.text.replace(',', '.'))
-        if (!isNaN(value) && value >= 0 && value <= 10) {
-          scores[scoreColumns[scoreIndex]] = value
-          totalConfidence += scoreWord.confidence
-        }
-      }
+    row.numbers.slice(0, ATTRIBUTES.length).forEach((num, idx) => {
+      scores[ATTRIBUTES[idx]] = num.value
     })
 
-    const avgConfidence = sortedScores.length > 0 ? totalConfidence / sortedScores.length : 0
+    // Calculate row confidence
+    const rowConf = Math.min(100, (row.numbers.length / 7) * 100)
 
-    results.push({
-      cupper_id: cupper.id,
-      cupper_name: cupper.name,
-      ocr_name: ocrName, // Include the raw OCR name for validation UI
+    cupperScores.push({
+      cupper_id: matched.id,
+      cupper_name: matched.name,
+      ocr_name: ocrName,
       scores,
-      confidence: avgConfidence * 100,
+      confidence: rowConf,
     })
 
-    console.warn(`[OCR DEBUG] Row ${index}: OCR name="${ocrName}", matched to "${cupper.name}", scores:`, JSON.stringify(scores))
+    console.log(`[EXTRACT] Row ${rowIndex}: ${ocrName} -> ${matched.name}, ${row.numbers.length} scores`)
   })
 
-  console.warn(`[OCR DEBUG] Total extracted scores: ${results.length} cuppers`)
-  return results
+  // If no rows found but we have cuppers, create empty rows
+  if (cupperScores.length === 0 && assignedCuppers.length > 0) {
+    for (const cupper of assignedCuppers) {
+      cupperScores.push({
+        cupper_id: cupper.id,
+        cupper_name: cupper.name,
+        ocr_name: '',
+        scores: {},
+        confidence: 0,
+      })
+    }
+  }
+
+  return {
+    cupperScores,
+    numbersFound: numberWords.length,
+    rowsDetected: rows.length,
+    cupperNamesFound: cupperNameWords.map(w => w.text),
+  }
 }
 
 /**
- * Extract taints and faults from OCR text
+ * Parse a score value from OCR text
+ * Handles: "7", "7.5", "7,5", "7.25", "7,25", etc.
  */
-function extractDefects(text: string): {
-  taints: string[]
-  faults: string[]
-} {
+function parseScoreValue(text: string): number | null {
+  if (!text) return null
+
+  let cleaned = text.trim()
+
+  // Replace comma with period
+  cleaned = cleaned.replace(',', '.')
+
+  // Remove any trailing punctuation
+  cleaned = cleaned.replace(/[.:;]$/, '')
+
+  // Try to parse
+  const value = parseFloat(cleaned)
+
+  if (isNaN(value)) return null
+  if (value < 0 || value > 10) return null
+
+  // Round to nearest 0.25
+  return Math.round(value * 4) / 4
+}
+
+/**
+ * Find words that are likely cupper names
+ */
+function findCupperNameWords(
+  words: VisionWord[],
+  assignedCuppers: Array<{ id: string; name: string }>
+): VisionWord[] {
+  const assignedNames = assignedCuppers.map(c => c.name.toLowerCase())
+  const commonNames = ['anderson', 'matheus', 'victor', 'daniel', 'lucas', 'pedro', 'maria', 'ana', 'carlos', 'joao', 'roberto', 'gabriel', 'rafael', 'felipe']
+
+  const found: VisionWord[] = []
+
+  for (const word of words) {
+    const text = word.text.toLowerCase().trim()
+
+    // Skip short words
+    if (text.length < 3) continue
+
+    // Skip numbers
+    if (/^\d+([.,]\d+)?$/.test(text)) continue
+
+    // Skip common labels
+    const skipWords = ['cupper', 'fra', 'fla', 'aft', 'acid', 'body', 'bal', 'ove', 'over', 'overall', 'taints', 'faults', 'template', 'quality', 'buyer', 'type', 'pss', 'wolthers', 'associates', 'corretora', 'mercadorias', 'ltda', 'alfenas', 'dulce', 'eurodulce', 'blaser', 'trading']
+    if (skipWords.some(s => text === s || text.startsWith(s))) continue
+
+    // Check if it matches an assigned cupper
+    const matchesAssigned = assignedNames.some(n => {
+      return text === n || text.includes(n) || n.includes(text) ||
+        (text.length >= 4 && n.startsWith(text.substring(0, 4))) ||
+        levenshtein(text, n) <= 2
+    })
+
+    // Check if it's a common name
+    const isCommonName = commonNames.some(n =>
+      text === n || text.startsWith(n.substring(0, 4))
+    )
+
+    if (matchesAssigned || isCommonName) {
+      found.push(word)
+    }
+  }
+
+  // Sort by Y position (top to bottom)
+  found.sort((a, b) => a.boundingBox.y - b.boundingBox.y)
+
+  return found
+}
+
+/**
+ * Group numbers into rows by Y position
+ */
+function groupNumbersIntoRows(
+  numbers: Array<VisionWord & { value: number }>,
+  tolerance: number
+): Array<{ avgY: number; numbers: Array<VisionWord & { value: number }> }> {
+  if (numbers.length === 0) return []
+
+  // Sort by Y first
+  const sorted = [...numbers].sort((a, b) => a.boundingBox.y - b.boundingBox.y)
+
+  const rows: Array<{ ys: number[]; numbers: Array<VisionWord & { value: number }> }> = []
+
+  for (const num of sorted) {
+    const y = num.boundingBox.y
+
+    // Find existing row within tolerance
+    let matched = false
+    for (const row of rows) {
+      const avgY = row.ys.reduce((a, b) => a + b, 0) / row.ys.length
+      if (Math.abs(avgY - y) <= tolerance) {
+        row.ys.push(y)
+        row.numbers.push(num)
+        matched = true
+        break
+      }
+    }
+
+    if (!matched) {
+      rows.push({ ys: [y], numbers: [num] })
+    }
+  }
+
+  // Filter to rows with at least 3 scores and sort by X within each row
+  return rows
+    .filter(r => r.numbers.length >= 3)
+    .map(r => ({
+      avgY: r.ys.reduce((a, b) => a + b, 0) / r.ys.length,
+      numbers: r.numbers.sort((a, b) => a.boundingBox.x - b.boundingBox.x)
+    }))
+    .sort((a, b) => a.avgY - b.avgY)
+}
+
+/**
+ * Match OCR name to assigned cupper
+ */
+function matchToAssignedCupper(
+  ocrName: string,
+  assignedCuppers: Array<{ id: string; name: string }>,
+  rowIndex: number
+): { id: string; name: string } {
+  if (assignedCuppers.length === 0) {
+    return { id: `row_${rowIndex}`, name: ocrName || `Cupper ${rowIndex + 1}` }
+  }
+
+  if (ocrName) {
+    const ocrLower = ocrName.toLowerCase()
+
+    for (const cupper of assignedCuppers) {
+      const cupperLower = cupper.name.toLowerCase()
+
+      if (cupperLower === ocrLower) return cupper
+      if (cupperLower.includes(ocrLower) || ocrLower.includes(cupperLower)) return cupper
+      if (cupperLower.substring(0, 4) === ocrLower.substring(0, 4)) return cupper
+      if (levenshtein(cupperLower, ocrLower) <= 2) return cupper
+    }
+  }
+
+  // Fall back to position-based assignment
+  if (rowIndex < assignedCuppers.length) {
+    return assignedCuppers[rowIndex]
+  }
+
+  return { id: `row_${rowIndex}`, name: ocrName || `Cupper ${rowIndex + 1}` }
+}
+
+// ============================================================================
+// DEFECT EXTRACTION (with proper filtering)
+// ============================================================================
+
+function extractDefectsClean(text: string): { taints: string[]; faults: string[] } {
   const taints: string[] = []
   const faults: string[] = []
 
   // Look for TAINTS section
   const taintsMatch = text.match(/TAINTS:?\s*([^\n]*)/i)
-  if (taintsMatch && taintsMatch[1].trim()) {
-    taints.push(taintsMatch[1].trim())
+  if (taintsMatch) {
+    const cleaned = cleanDefectLine(taintsMatch[1])
+    taints.push(...cleaned)
   }
 
   // Look for FAULTS section
   const faultsMatch = text.match(/FAULTS:?\s*([^\n]*)/i)
-  if (faultsMatch && faultsMatch[1].trim()) {
-    faults.push(faultsMatch[1].trim())
+  if (faultsMatch) {
+    const cleaned = cleanDefectLine(faultsMatch[1])
+    faults.push(...cleaned)
   }
 
   return { taints, faults }
 }
 
-/**
- * Fetch assigned cuppers for a sample from the cupping session
- */
+function cleanDefectLine(raw: string): string[] {
+  if (!raw) return []
+
+  // Known valid defect terms
+  const validDefects = [
+    'ferment', 'fermented', 'rubber', 'rubbery', 'phenol', 'phenolic',
+    'rio', 'rioy', 'potato', 'earthy', 'moldy', 'musty', 'baggy',
+    'chemical', 'medicinal', 'sour', 'stinker', 'woody', 'papery',
+    'past', 'aged', 'faded', 'harsh', 'astringent', 'green', 'grassy'
+  ]
+
+  const words = raw.toLowerCase().split(/[\s,;]+/).filter(Boolean)
+  const result: string[] = []
+
+  for (const word of words) {
+    // Must be only letters (no numbers, special chars)
+    if (!/^[a-z]+$/i.test(word)) continue
+
+    // Must be at least 3 characters
+    if (word.length < 3) continue
+
+    // Must not be garbage patterns
+    if (/^w+$/.test(word)) continue  // wwww
+    if (/^(.)\1+$/.test(word)) continue  // aaaa, bbbb
+
+    // Check if it's a known defect or similar
+    const isValid = validDefects.some(d =>
+      word === d || word.startsWith(d.substring(0, 4)) || levenshtein(word, d) <= 2
+    )
+
+    if (isValid) {
+      result.push(word)
+    }
+  }
+
+  return result
+}
+
+// ============================================================================
+// CONFIDENCE CALCULATION
+// ============================================================================
+
+function calculateConfidence(extraction: ExtractionResult, vision: VisionOCRResult): number {
+  let score = 0
+
+  // Vision API confidence (0-1 scale) -> max 30 points
+  const visionConf = vision.confidence || 0.8
+  score += visionConf * 30
+
+  // Numbers found -> max 25 points (21+ numbers = full score)
+  score += Math.min(25, extraction.numbersFound * 1.2)
+
+  // Rows detected -> max 25 points (3 rows = full score)
+  score += Math.min(25, extraction.rowsDetected * 8)
+
+  // Cupper names found -> max 20 points
+  score += Math.min(20, extraction.cupperNamesFound.length * 7)
+
+  // Ensure minimum 10%
+  return Math.max(10, Math.min(100, Math.round(score)))
+}
+
+// ============================================================================
+// UTILITIES
+// ============================================================================
+
+function levenshtein(a: string, b: string): number {
+  const matrix: number[][] = []
+  for (let i = 0; i <= b.length; i++) matrix[i] = [i]
+  for (let j = 0; j <= a.length; j++) matrix[0][j] = j
+
+  for (let i = 1; i <= b.length; i++) {
+    for (let j = 1; j <= a.length; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1]
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        )
+      }
+    }
+  }
+  return matrix[b.length][a.length]
+}
+
 async function fetchAssignedCuppers(
   supabase: any,
   sampleId: string
 ): Promise<Array<{ id: string; name: string }>> {
   try {
-    // Find active cupping session containing this sample
-    const { data: sessions, error: sessionError } = await supabase
+    const { data: sessions } = await supabase
       .from('cupping_sessions')
-      .select('id, cupper_ids, sample_ids')
+      .select('cupper_ids')
       .contains('sample_ids', [sampleId])
       .eq('status', 'active')
       .order('created_at', { ascending: false })
       .limit(1)
 
-    if (sessionError || !sessions || sessions.length === 0) {
-      console.warn('No active cupping session found for sample:', sampleId)
+    if (!sessions?.length || !sessions[0].cupper_ids?.length) {
       return []
     }
 
-    const session = sessions[0]
-    const cupperIds = session.cupper_ids || []
-
-    if (cupperIds.length === 0) {
-      console.warn('No cuppers assigned to session:', session.id)
-      return []
-    }
-
-    // Fetch cupper profile names
-    const { data: profiles, error: profileError } = await supabase
+    const { data: profiles } = await supabase
       .from('profiles')
       .select('id, full_name')
-      .in('id', cupperIds)
+      .in('id', sessions[0].cupper_ids)
 
-    if (profileError || !profiles) {
-      console.error('Error fetching cupper profiles:', profileError)
-      return []
-    }
+    if (!profiles) return []
 
-    // Map to simple name array, preserve order from cupper_ids
-    const cuppers = cupperIds
+    return sessions[0].cupper_ids
       .map((id: string) => {
-        const profile = profiles.find((p: any) => p.id === id)
-        if (!profile) return null
-        return {
-          id: profile.id,
-          name: profile.full_name.split(' ')[0], // Use first name only
-        }
+        const p = profiles.find((profile: any) => profile.id === id)
+        return p ? { id: p.id, name: p.full_name.split(' ')[0] } : null
       })
-      .filter((c: any) => c !== null)
-
-    console.log(`Found ${cuppers.length} assigned cuppers:`, cuppers.map((c: any) => c.name).join(', '))
-    return cuppers
-  } catch (error) {
-    console.error('Error fetching assigned cuppers:', error)
+      .filter(Boolean)
+  } catch {
     return []
   }
 }
