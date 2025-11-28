@@ -116,19 +116,27 @@ export async function POST(request: NextRequest) {
       const scoreInserts = []
 
       for (const cupperScore of card.cupper_scores) {
-        // Try to find cupper by name if cupper_id not provided
+        // Try to find cupper by name if cupper_id is not a valid UUID
         let cupperId = cupperScore.cupper_id
 
-        if (!cupperId && cupperScore.cupper_name) {
+        // Check if cupper_id is a valid UUID (not a placeholder like "gemini_0" or "row_0")
+        const isValidUUID = cupperId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cupperId)
+
+        if (!isValidUUID && cupperScore.cupper_name) {
+          // Search with wildcard to match first name against full name
           const { data: profile } = await supabase
             .from('profiles')
             .select('id')
-            .ilike('full_name', cupperScore.cupper_name)
+            .ilike('full_name', `${cupperScore.cupper_name}%`)
             .limit(1)
             .single()
 
           if (profile) {
             cupperId = profile.id
+            console.log(`Matched cupper "${cupperScore.cupper_name}" to profile ${profile.id}`)
+          } else {
+            console.log(`Could not find profile for cupper "${cupperScore.cupper_name}"`)
+            cupperId = null // Clear the placeholder ID
           }
         }
 
