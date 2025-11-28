@@ -416,24 +416,75 @@ async function detectQRWithVision(imageUrl: string): Promise<QRData | null> {
 }
 
 async function detectQRWithJsQR(imageBuffer: Buffer): Promise<QRData | null> {
+  // Multiple preprocessing strategies for better QR detection
   const attempts = [
+    // 1. Raw image (fastest, works for clean QR codes)
     async () => {
       const { data, info } = await sharp(imageBuffer)
         .raw().ensureAlpha().toBuffer({ resolveWithObject: true })
       return { data, width: info.width, height: info.height }
     },
+    // 2. Grayscale + normalize (improves contrast)
     async () => {
       const { data, info } = await sharp(imageBuffer)
         .grayscale().normalize().raw().ensureAlpha().toBuffer({ resolveWithObject: true })
       return { data, width: info.width, height: info.height }
     },
+    // 3. Sharpen (helps with slightly blurry photos)
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .sharpen({ sigma: 2 }).raw().ensureAlpha().toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height }
+    },
+    // 4. High contrast + sharpen (for washed out images)
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .modulate({ brightness: 1.1 })
+        .linear(1.5, -0.2)  // Increase contrast
+        .sharpen()
+        .raw().ensureAlpha().toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height }
+    },
+    // 5. Resize to standard size (helps with very large/small images)
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .resize(1200, null, { fit: 'inside' })
+        .grayscale().normalize()
+        .raw().ensureAlpha().toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height }
+    },
+    // 6. Threshold to black/white (for poor lighting)
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .grayscale()
+        .threshold(128)
+        .raw().ensureAlpha().toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height }
+    },
+    // 7. Lower threshold (for darker images)
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .grayscale()
+        .threshold(100)
+        .raw().ensureAlpha().toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height }
+    },
+    // 8. Higher threshold (for lighter images)
+    async () => {
+      const { data, info } = await sharp(imageBuffer)
+        .grayscale()
+        .threshold(160)
+        .raw().ensureAlpha().toBuffer({ resolveWithObject: true })
+      return { data, width: info.width, height: info.height }
+    },
   ]
 
-  for (const attempt of attempts) {
+  for (let i = 0; i < attempts.length; i++) {
     try {
-      const { data, width, height } = await attempt()
+      const { data, width, height } = await attempts[i]()
       const code = jsQR(new Uint8ClampedArray(data), width, height)
       if (code) {
+        console.log(`[QR] jsQR detected with attempt ${i + 1}`)
         const qrData = JSON.parse(code.data)
         if (qrData.sample_id && qrData.tracking_number) {
           return {
@@ -445,6 +496,7 @@ async function detectQRWithJsQR(imageBuffer: Buffer): Promise<QRData | null> {
       }
     } catch { continue }
   }
+  console.log('[QR] jsQR failed all 8 preprocessing attempts')
   return null
 }
 
