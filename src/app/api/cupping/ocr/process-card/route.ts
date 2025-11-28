@@ -133,7 +133,7 @@ export async function POST(request: NextRequest) {
       confidence: extraction.confidence,
       session_id: sessionId,
       debug: {
-        model: 'gemini-1.5-flash',
+        model: 'gemini-2.0-flash',
         attributesUsed: attributes,
         cuppersProvided: cuppers.length,
         cuppersExtracted: extraction.cupperScores.length,
@@ -188,7 +188,7 @@ async function extractScoresWithGemini(
 
   try {
     const genAI = new GoogleGenerativeAI(apiKey)
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' })
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' })
 
     // Convert image to base64
     const base64Image = imageBuffer.toString('base64')

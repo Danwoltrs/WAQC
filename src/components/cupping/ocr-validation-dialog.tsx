@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import Image from 'next/image'
 import {
   Dialog,
@@ -329,10 +329,9 @@ export function OCRValidationDialog({
 
                   {/* Data Rows */}
                   {cupperScores.map((cupper, cupperIndex) => (
-                    <>
+                    <React.Fragment key={`cupper-row-${cupperIndex}`}>
                       {/* Cupper Name Cell */}
                       <div
-                        key={`name-${cupperIndex}`}
                         className={cn(
                           "border-r border-foreground/40 bg-muted/30",
                           cupperIndex < cupperScores.length - 1 && "border-b border-foreground/20"
@@ -432,7 +431,7 @@ export function OCRValidationDialog({
                           </div>
                         )
                       })}
-                    </>
+                    </React.Fragment>
                   ))}
                 </div>
               </div>
