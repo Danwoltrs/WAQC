@@ -38,7 +38,10 @@ export function ScanCuppingCardsDialog({
   const [isProcessing, setIsProcessing] = useState(false)
   const [showValidation, setShowValidation] = useState(false)
   const [isMobile, setIsMobile] = useState(false)
-  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const [cameraError, setCameraError] = useState<string | null>(null)
+  const [cameraReady, setCameraReady] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const thumbnailsRef = useRef<HTMLDivElement>(null)
 
   // Detect mobile device
@@ -58,7 +61,179 @@ export function ScanCuppingCardsDialog({
     }
   }, [scannedCards.length])
 
-  // Handle file input
+  // Initialize camera when dialog opens on mobile
+  useEffect(() => {
+    if (!open) {
+      // Clean up when closing
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+        streamRef.current = null
+      }
+      setCameraReady(false)
+      setCameraError(null)
+      return
+    }
+
+    if (!isMobile) return
+
+    // Start camera on mobile
+    const startCamera = async () => {
+      try {
+        setCameraError(null)
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: 'environment',
+            width: { ideal: 1920 },
+            height: { ideal: 1080 }
+          }
+        })
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          videoRef.current.onloadedmetadata = () => {
+            setCameraReady(true)
+          }
+        }
+      } catch (error) {
+        console.error('Error accessing camera:', error)
+        setCameraError('Could not access camera. Please allow camera permissions.')
+      }
+    }
+
+    startCamera()
+
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop())
+        streamRef.current = null
+      }
+    }
+  }, [open, isMobile])
+
+  // Process a single card in background
+  const processCardInBackground = useCallback(async (cardIndex: number, card: ScannedCard) => {
+    let storagePath: string | null = null
+
+    try {
+      // Update status to processing
+      setScannedCards((prev) => {
+        const updated = [...prev]
+        if (updated[cardIndex]) {
+          updated[cardIndex] = { ...updated[cardIndex], status: 'processing' }
+        }
+        return updated
+      })
+
+      // Upload image to Supabase Storage
+      const fileExt = card.file.name.split('.').pop() || 'jpg'
+      storagePath = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+
+      const { error: uploadError } = await supabase.storage
+        .from('ocr-temp')
+        .upload(storagePath, card.file, {
+          cacheControl: '300',
+          upsert: false,
+        })
+
+      if (uploadError) {
+        throw new Error(`Failed to upload image: ${uploadError.message}`)
+      }
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from('ocr-temp')
+        .getPublicUrl(storagePath)
+
+      // Call OCR API
+      const response = await fetch('/api/cupping/ocr/process-card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          image_url: urlData.publicUrl,
+          storage_path: storagePath,
+          session_id: sessionId,
+        }),
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Failed to process card`)
+      }
+
+      const data = await response.json()
+
+      // Update status to success
+      setScannedCards((prev) => {
+        const updated = [...prev]
+        if (updated[cardIndex]) {
+          updated[cardIndex] = {
+            ...updated[cardIndex],
+            status: 'success',
+            extractedData: data,
+          }
+        }
+        return updated
+      })
+
+      // Clean up temp image
+      if (storagePath) {
+        supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
+      }
+    } catch (error) {
+      console.error('Error processing card:', error)
+      setScannedCards((prev) => {
+        const updated = [...prev]
+        if (updated[cardIndex]) {
+          updated[cardIndex] = {
+            ...updated[cardIndex],
+            status: 'error',
+            error: error instanceof Error ? error.message : 'Unknown error',
+          }
+        }
+        return updated
+      })
+
+      if (storagePath) {
+        supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
+      }
+    }
+  }, [sessionId])
+
+  // Capture photo from camera
+  const capturePhoto = useCallback(() => {
+    if (!videoRef.current || !cameraReady) return
+
+    const canvas = document.createElement('canvas')
+    canvas.width = videoRef.current.videoWidth
+    canvas.height = videoRef.current.videoHeight
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
+
+    ctx.drawImage(videoRef.current, 0, 0)
+
+    canvas.toBlob((blob) => {
+      if (!blob) return
+
+      const file = new File([blob], `cupping-card-${Date.now()}.jpg`, { type: 'image/jpeg' })
+      const preview = URL.createObjectURL(blob)
+
+      const newCard: ScannedCard = {
+        file,
+        preview,
+        status: 'pending',
+      }
+
+      setScannedCards((prev) => {
+        const newCards = [...prev, newCard]
+        // Start processing immediately in background
+        const newIndex = newCards.length - 1
+        setTimeout(() => processCardInBackground(newIndex, newCard), 100)
+        return newCards
+      })
+    }, 'image/jpeg', 0.95)
+  }, [cameraReady, processCardInBackground])
+
+  // Handle file input (desktop)
   const handleFiles = useCallback((files: File[]) => {
     const newCards: ScannedCard[] = files.map((file) => ({
       file,
@@ -79,7 +254,6 @@ export function ScanCuppingCardsDialog({
       'image/*': ['.png', '.jpg', '.jpeg', '.heic', '.heif'],
     },
     multiple: true,
-    noClick: isMobile, // Disable click on mobile - we use our own button
   })
 
   // Remove a scanned card
@@ -92,83 +266,14 @@ export function ScanCuppingCardsDialog({
     })
   }
 
-  // Process all scanned cards through OCR
-  const processCards = async () => {
+  // Process all pending cards (for desktop)
+  const processAllCards = async () => {
     setIsProcessing(true)
 
     for (let i = 0; i < scannedCards.length; i++) {
       const card = scannedCards[i]
       if (card.status !== 'pending') continue
-
-      setScannedCards((prev) => {
-        const updated = [...prev]
-        updated[i] = { ...updated[i], status: 'processing' }
-        return updated
-      })
-
-      let storagePath: string | null = null
-
-      try {
-        const fileExt = card.file.name.split('.').pop() || 'jpg'
-        storagePath = `${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
-
-        const { error: uploadError } = await supabase.storage
-          .from('ocr-temp')
-          .upload(storagePath, card.file, {
-            cacheControl: '300',
-            upsert: false,
-          })
-
-        if (uploadError) {
-          throw new Error(`Failed to upload image: ${uploadError.message}`)
-        }
-
-        const { data: urlData } = supabase.storage
-          .from('ocr-temp')
-          .getPublicUrl(storagePath)
-
-        const response = await fetch('/api/cupping/ocr/process-card', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            image_url: urlData.publicUrl,
-            storage_path: storagePath,
-            session_id: sessionId,
-          }),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || `Failed to process card: ${response.statusText}`)
-        }
-
-        const data = await response.json()
-
-        setScannedCards((prev) => {
-          const updated = [...prev]
-          updated[i] = { ...updated[i], status: 'success', extractedData: data }
-          return updated
-        })
-
-        if (storagePath) {
-          supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
-        }
-      } catch (error) {
-        console.error('Error processing card:', error)
-        setScannedCards((prev) => {
-          const updated = [...prev]
-          updated[i] = {
-            ...updated[i],
-            status: 'error',
-            error: error instanceof Error ? error.message : 'Unknown error',
-          }
-          return updated
-        })
-
-        if (storagePath) {
-          supabase.storage.from('ocr-temp').remove([storagePath]).catch(console.error)
-        }
-      }
+      await processCardInBackground(i, card)
     }
 
     setIsProcessing(false)
@@ -177,115 +282,114 @@ export function ScanCuppingCardsDialog({
   const handleClose = () => {
     scannedCards.forEach((card) => URL.revokeObjectURL(card.preview))
     setScannedCards([])
+    setCameraReady(false)
+    setCameraError(null)
     onOpenChange(false)
   }
 
   const hasCards = scannedCards.length > 0
-  const pendingCount = scannedCards.filter((c) => c.status === 'pending').length
-  const successCount = scannedCards.filter((c) => c.status === 'success').length
-  const errorCount = scannedCards.filter((c) => c.status === 'error').length
-  const allProcessed = pendingCount === 0 && hasCards
-  const allSuccess = successCount === scannedCards.length && hasCards
+  const pendingCards = scannedCards.filter(c => c.status === 'pending').length
+  const processingCards = scannedCards.filter(c => c.status === 'processing').length
+  const successCards = scannedCards.filter(c => c.status === 'success')
+  const allProcessed = scannedCards.length > 0 && pendingCards === 0 && processingCards === 0
+  const hasErrors = scannedCards.some((card) => card.status === 'error')
+  const allSuccess = scannedCards.length > 0 && scannedCards.every((card) => card.status === 'success')
 
-  // Mobile-optimized full-screen layout
+  // Mobile layout with live camera
   if (isMobile) {
     return (
       <Dialog open={open} onOpenChange={handleClose}>
-        <DialogContent className="w-screen h-screen max-w-none max-h-none m-0 p-0 rounded-none border-0 flex flex-col bg-black">
-          {/* Hidden camera input */}
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            className="hidden"
-            onChange={(e) => {
-              const files = e.target.files
-              if (files && files.length > 0) {
-                handleFiles(Array.from(files))
-              }
-              e.target.value = ''
-            }}
-          />
-
-          {/* Header - minimal */}
-          <div className="flex items-center justify-between p-3 bg-black/80 text-white">
-            <button onClick={handleClose} className="p-2 -m-2">
+        <DialogContent
+          className="fixed inset-0 w-full h-full max-w-none max-h-none m-0 p-0 rounded-none border-0 translate-x-0 translate-y-0 left-0 top-0 flex flex-col bg-black [&>button]:hidden"
+          style={{ transform: 'none' }}
+        >
+          {/* Header with safe area */}
+          <div
+            className="flex items-center justify-between px-4 py-3 bg-black text-white z-10"
+            style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
+          >
+            <button onClick={handleClose} className="p-2 -ml-2">
               <X className="h-6 w-6" />
             </button>
-            <span className="text-sm font-medium">
+            <span className="text-base font-medium">
               {hasCards ? `${scannedCards.length} card${scannedCards.length !== 1 ? 's' : ''}` : 'Scan Cards'}
             </span>
-            <div className="w-10" /> {/* Spacer for centering */}
+            <div className="w-10" />
           </div>
 
-          {/* Main area - camera viewfinder style */}
-          <div className="flex-1 flex flex-col justify-center items-center bg-black relative overflow-hidden">
-            {/* Camera frame guide */}
-            <div className="absolute inset-8 border-2 border-white/30 rounded-lg pointer-events-none" />
-            <div className="absolute inset-8 flex items-center justify-center">
-              <Camera className="h-20 w-20 text-white/20" />
+          {/* Camera area - landscape rectangle for cupping cards */}
+          <div className="flex-1 flex flex-col bg-black relative">
+            {/* Video feed */}
+            <video
+              ref={videoRef}
+              autoPlay
+              playsInline
+              muted
+              className="absolute inset-0 w-full h-full object-cover"
+            />
+
+            {/* Landscape viewfinder overlay for cupping card shape */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <div
+                className="border-2 border-white/60 rounded-lg relative"
+                style={{
+                  width: 'min(90vw, 400px)',
+                  height: 'min(60vw, 267px)',
+                  aspectRatio: '3/2'
+                }}
+              >
+                {/* Corner guides */}
+                <div className="absolute -top-0.5 -left-0.5 w-6 h-6 border-t-4 border-l-4 border-white rounded-tl-lg" />
+                <div className="absolute -top-0.5 -right-0.5 w-6 h-6 border-t-4 border-r-4 border-white rounded-tr-lg" />
+                <div className="absolute -bottom-0.5 -left-0.5 w-6 h-6 border-b-4 border-l-4 border-white rounded-bl-lg" />
+                <div className="absolute -bottom-0.5 -right-0.5 w-6 h-6 border-b-4 border-r-4 border-white rounded-br-lg" />
+              </div>
             </div>
 
-            {/* Status messages */}
-            {isProcessing && (
-              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-10">
-                <Loader2 className="h-12 w-12 animate-spin text-white mb-4" />
-                <p className="text-white text-lg">Processing cards...</p>
-                <p className="text-white/60 text-sm mt-2">
-                  {successCount} of {scannedCards.length} complete
-                </p>
+            {/* Camera status overlay */}
+            {!cameraReady && !cameraError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+                <div className="text-center text-white">
+                  <Loader2 className="h-10 w-10 animate-spin mx-auto mb-3" />
+                  <p>Starting camera...</p>
+                </div>
               </div>
             )}
 
-            {allProcessed && !isProcessing && (
-              <div className="absolute inset-0 bg-black/70 flex flex-col items-center justify-center z-10 px-6">
-                {allSuccess ? (
-                  <>
-                    <CheckCircle2 className="h-16 w-16 text-green-500 mb-4" />
-                    <p className="text-white text-lg text-center">All cards processed!</p>
-                    <p className="text-white/60 text-sm mt-2 text-center">
-                      Tap below to review and submit scores
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <AlertCircle className="h-16 w-16 text-yellow-500 mb-4" />
-                    <p className="text-white text-lg text-center">
-                      {successCount} success, {errorCount} failed
-                    </p>
-                    <p className="text-white/60 text-sm mt-2 text-center">
-                      Tap a failed card to remove it
-                    </p>
-                  </>
-                )}
+            {cameraError && (
+              <div className="absolute inset-0 flex items-center justify-center bg-black/80">
+                <div className="text-center text-white px-6">
+                  <AlertCircle className="h-10 w-10 mx-auto mb-3 text-red-400" />
+                  <p className="text-sm">{cameraError}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Processing indicator overlay */}
+            {processingCards > 0 && (
+              <div className="absolute top-4 left-4 bg-yellow-500 text-white text-xs px-3 py-1.5 rounded-full flex items-center gap-2">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                Processing {processingCards}...
               </div>
             )}
           </div>
 
-          {/* Thumbnail strip - horizontal scroll */}
+          {/* Thumbnail strip */}
           {hasCards && (
-            <div className="bg-black/90 px-2 py-2">
+            <div className="bg-black/95 px-3 py-2 border-t border-white/10">
               <div
                 ref={thumbnailsRef}
-                className="flex gap-2 overflow-x-auto scrollbar-hide pb-1"
-                style={{ scrollBehavior: 'smooth' }}
+                className="flex gap-2 overflow-x-auto scrollbar-hide"
               >
                 {scannedCards.map((card, index) => (
                   <div
                     key={index}
-                    className="relative flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border-2"
-                    style={{
-                      borderColor:
-                        card.status === 'success' ? '#22c55e' :
-                        card.status === 'error' ? '#ef4444' :
-                        card.status === 'processing' ? '#eab308' : '#ffffff50'
-                    }}
-                    onClick={() => {
-                      if (card.status === 'error' || card.status === 'pending') {
-                        removeCard(index)
-                      }
-                    }}
+                    className={cn(
+                      "relative flex-shrink-0 w-14 h-14 rounded-md overflow-hidden",
+                      card.status === 'success' && "ring-2 ring-green-500",
+                      card.status === 'error' && "ring-2 ring-red-500",
+                      card.status === 'processing' && "ring-2 ring-yellow-500"
+                    )}
                   >
                     <Image
                       src={card.preview}
@@ -294,18 +398,18 @@ export function ScanCuppingCardsDialog({
                       className="object-cover"
                     />
                     {card.status === 'processing' && (
-                      <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
-                        <Loader2 className="h-4 w-4 animate-spin text-white" />
+                      <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                        <Loader2 className="h-4 w-4 text-white animate-spin" />
                       </div>
                     )}
                     {card.status === 'success' && (
-                      <div className="absolute top-0.5 right-0.5">
-                        <CheckCircle2 className="h-4 w-4 text-green-500 drop-shadow-lg" />
+                      <div className="absolute inset-0 bg-green-500/20 flex items-center justify-center">
+                        <CheckCircle2 className="h-5 w-5 text-green-500" />
                       </div>
                     )}
                     {card.status === 'error' && (
-                      <div className="absolute inset-0 bg-red-500/50 flex items-center justify-center">
-                        <X className="h-5 w-5 text-white" />
+                      <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
+                        <AlertCircle className="h-5 w-5 text-red-500" />
                       </div>
                     )}
                   </div>
@@ -314,99 +418,77 @@ export function ScanCuppingCardsDialog({
             </div>
           )}
 
-          {/* Bottom action area - thumb-friendly */}
-          <div className="bg-black p-4 pb-8 safe-area-inset-bottom">
-            {!allProcessed ? (
+          {/* Bottom action area with safe area */}
+          <div
+            className="bg-black px-4 py-3"
+            style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
+          >
+            {!allProcessed || !hasCards ? (
               <div className="flex gap-3">
-                {/* Capture button - large and centered */}
                 <Button
-                  onClick={() => cameraInputRef.current?.click()}
-                  disabled={isProcessing}
-                  className="flex-1 h-14 text-lg bg-white text-black hover:bg-white/90 rounded-full"
+                  onClick={capturePhoto}
+                  disabled={!cameraReady}
+                  className="flex-1 h-12 text-base bg-white text-black hover:bg-white/90 rounded-full font-medium"
                 >
-                  <Camera className="h-6 w-6 mr-2" />
-                  {hasCards ? 'Capture More' : 'Capture Photo'}
+                  <Camera className="mr-2 h-5 w-5" />
+                  Capture
                 </Button>
-
-                {/* Process button - only show when cards exist */}
-                {hasCards && pendingCount > 0 && (
+                {allSuccess && successCards.length > 0 && (
                   <Button
-                    onClick={processCards}
-                    disabled={isProcessing}
-                    className="flex-1 h-14 text-lg bg-green-600 hover:bg-green-700 rounded-full"
+                    onClick={() => setShowValidation(true)}
+                    className="flex-1 h-12 text-base bg-green-600 hover:bg-green-700 rounded-full font-medium"
                   >
-                    {isProcessing ? (
-                      <Loader2 className="h-5 w-5 animate-spin" />
-                    ) : (
-                      `Process ${pendingCount}`
-                    )}
+                    <CheckCircle2 className="mr-2 h-5 w-5" />
+                    Review ({successCards.length})
                   </Button>
                 )}
               </div>
             ) : (
-              /* Review button - full width when all processed */
               <Button
                 onClick={() => setShowValidation(true)}
-                disabled={!allSuccess}
-                className="w-full h-14 text-lg bg-green-600 hover:bg-green-700 rounded-full"
+                className="w-full h-12 text-base bg-green-600 hover:bg-green-700 rounded-full font-medium"
               >
-                <CheckCircle2 className="h-6 w-6 mr-2" />
-                Review & Submit {successCount} Card{successCount !== 1 ? 's' : ''}
+                <CheckCircle2 className="mr-2 h-5 w-5" />
+                Review & Submit ({successCards.length})
               </Button>
             )}
           </div>
-
-          {/* OCR Validation Dialog */}
-          <OCRValidationDialog
-            open={showValidation}
-            onOpenChange={setShowValidation}
-            extractedCards={scannedCards
-              .filter((card) => card.status === 'success' && card.extractedData)
-              .map((card) => ({
-                imagePreview: card.preview,
-                ...card.extractedData,
-              }))}
-            onSubmit={async (validatedData) => {
-              const response = await fetch('/api/cupping/scores/submit', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ scores: validatedData, entryMethod: 'ocr' }),
-              })
-
-              if (response.ok) {
-                setShowValidation(false)
-                handleClose()
-                onScoresSubmitted?.()
-              } else {
-                throw new Error('Failed to submit scores')
-              }
-            }}
-          />
         </DialogContent>
+
+        {/* OCR Validation Dialog */}
+        <OCRValidationDialog
+          open={showValidation}
+          onOpenChange={setShowValidation}
+          extractedCards={scannedCards
+            .filter((card) => card.status === 'success' && card.extractedData)
+            .map((card) => ({
+              imagePreview: card.preview,
+              ...card.extractedData,
+            }))}
+          onSubmit={async (validatedData) => {
+            const response = await fetch('/api/cupping/scores/submit', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ scores: validatedData, entryMethod: 'ocr' }),
+            })
+
+            if (response.ok) {
+              setShowValidation(false)
+              handleClose()
+              onScoresSubmitted?.()
+            } else {
+              throw new Error('Failed to submit scores')
+            }
+          }}
+        />
       </Dialog>
     )
   }
 
-  // Desktop layout (unchanged from before)
+  // Desktop layout
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
-        {/* Hidden camera input */}
-        <input
-          ref={cameraInputRef}
-          type="file"
-          accept="image/*"
-          capture="environment"
-          className="hidden"
-          onChange={(e) => {
-            const files = e.target.files
-            if (files && files.length > 0) {
-              handleFiles(Array.from(files))
-            }
-            e.target.value = ''
-          }}
-        />
-
         <div className="space-y-4">
           <div>
             <h2 className="text-lg font-semibold">Scan Cupping Cards</h2>
@@ -506,7 +588,7 @@ export function ScanCuppingCardsDialog({
               <div>
                 <p className="text-sm font-medium">Processing cards...</p>
                 <p className="text-xs text-muted-foreground">
-                  {successCount} of {scannedCards.length} complete
+                  {successCards.length} of {scannedCards.length} complete
                 </p>
               </div>
             </div>
@@ -518,19 +600,19 @@ export function ScanCuppingCardsDialog({
           <Button variant="outline" onClick={handleClose} disabled={isProcessing}>
             Cancel
           </Button>
-          {hasCards && pendingCount > 0 && (
-            <Button onClick={processCards} disabled={isProcessing}>
+          {hasCards && pendingCards > 0 && (
+            <Button onClick={processAllCards} disabled={isProcessing}>
               {isProcessing ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                   Processing...
                 </>
               ) : (
-                `Process ${pendingCount} Card${pendingCount !== 1 ? 's' : ''}`
+                `Process ${pendingCards} Card${pendingCards !== 1 ? 's' : ''}`
               )}
             </Button>
           )}
-          {allSuccess && (
+          {allSuccess && successCards.length > 0 && (
             <Button onClick={() => setShowValidation(true)}>
               Review & Submit
             </Button>
