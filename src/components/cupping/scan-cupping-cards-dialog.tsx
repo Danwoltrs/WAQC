@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import { useDropzone } from 'react-dropzone'
 import Image from 'next/image'
 import {
@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
-import { Upload, X, FileImage, Loader2, CheckCircle2, AlertCircle, Camera, Plus } from 'lucide-react'
+import { Upload, X, FileImage, Loader2, CheckCircle2, AlertCircle, Camera, Plus, CameraOff } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { OCRValidationDialog } from './ocr-validation-dialog'
 import { supabase } from '@/lib/supabase'
@@ -42,6 +42,8 @@ export function ScanCuppingCardsDialog({
   const [scannedCards, setScannedCards] = useState<ScannedCard[]>([])
   const [isProcessing, setIsProcessing] = useState(false)
   const [showValidation, setShowValidation] = useState(false)
+  const [continuousMode, setContinuousMode] = useState(false)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
 
   // Handle file drops
   const onDrop = useCallback((acceptedFiles: File[]) => {
@@ -51,7 +53,14 @@ export function ScanCuppingCardsDialog({
       status: 'pending',
     }))
     setScannedCards((prev) => [...prev, ...newCards])
-  }, [])
+
+    // In continuous mode, re-trigger camera after a short delay
+    if (continuousMode) {
+      setTimeout(() => {
+        cameraInputRef.current?.click()
+      }, 500)
+    }
+  }, [continuousMode])
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
@@ -175,6 +184,7 @@ export function ScanCuppingCardsDialog({
   const handleClose = () => {
     scannedCards.forEach((card) => URL.revokeObjectURL(card.preview))
     setScannedCards([])
+    setContinuousMode(false)
     onOpenChange(false)
   }
 
@@ -197,6 +207,56 @@ export function ScanCuppingCardsDialog({
           {/* Camera/Upload Buttons - Always visible when not processing */}
           {!isProcessing && (
             <div className="space-y-3">
+              {/* Continuous scanning toggle */}
+              {hasCards && (
+                <div className="flex items-center justify-between px-1">
+                  <span className="text-xs text-muted-foreground">
+                    {continuousMode ? 'Continuous scanning ON' : 'Tap below to add more cards'}
+                  </span>
+                  <Button
+                    variant={continuousMode ? "default" : "outline"}
+                    size="sm"
+                    className="h-7 text-xs"
+                    onClick={() => {
+                      setContinuousMode(!continuousMode)
+                      if (!continuousMode) {
+                        // Enable continuous mode and open camera
+                        setTimeout(() => cameraInputRef.current?.click(), 100)
+                      }
+                    }}
+                  >
+                    {continuousMode ? (
+                      <>
+                        <CameraOff className="h-3 w-3 mr-1" />
+                        Stop
+                      </>
+                    ) : (
+                      <>
+                        <Camera className="h-3 w-3 mr-1" />
+                        Multi-scan
+                      </>
+                    )}
+                  </Button>
+                </div>
+              )}
+
+              {/* Hidden input for continuous mode camera triggering */}
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                className="hidden"
+                onChange={(e) => {
+                  const files = e.target.files
+                  if (files && files.length > 0) {
+                    onDrop(Array.from(files))
+                  }
+                  // Reset input so same file can be selected again
+                  e.target.value = ''
+                }}
+              />
+
               {/* Primary: Take Photo Button (prominent for mobile) */}
               <div
                 {...getRootProps()}
@@ -214,7 +274,7 @@ export function ScanCuppingCardsDialog({
                   {hasCards ? (
                     <>
                       <Plus className="h-6 w-6 text-muted-foreground" />
-                      <p className="text-sm font-medium">Add More Cards</p>
+                      <p className="text-sm font-medium">Tap to Add More Cards</p>
                     </>
                   ) : (
                     <>
