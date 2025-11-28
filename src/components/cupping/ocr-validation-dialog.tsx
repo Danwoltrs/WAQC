@@ -307,18 +307,18 @@ export function OCRValidationDialog({
                 <div
                   className="grid"
                   style={{
-                    gridTemplateColumns: `120px repeat(${templateAttributes.length}, 52px)`,
+                    gridTemplateColumns: `140px repeat(${templateAttributes.length}, 70px)`,
                   }}
                 >
                   {/* Header Row */}
-                  <div className="bg-muted/80 border-b-2 border-r border-foreground/40 px-2 py-2 font-semibold text-xs flex items-center">
+                  <div className="bg-muted/80 border-b-2 border-r border-foreground/40 px-3 py-3 font-semibold text-sm flex items-center">
                     Cupper
                   </div>
                   {templateAttributes.map((attr: any, idx: number) => (
                     <div
                       key={attr.attribute || idx}
                       className={cn(
-                        "bg-muted/80 border-b-2 border-foreground/40 px-1 py-2 font-semibold text-xs text-center flex items-center justify-center",
+                        "bg-muted/80 border-b-2 border-foreground/40 px-1 py-3 font-semibold text-sm text-center flex items-center justify-center",
                         idx < templateAttributes.length - 1 && "border-r border-foreground/20"
                       )}
                       title={attr.attribute}
@@ -352,9 +352,9 @@ export function OCRValidationDialog({
                               }
                             }}
                           >
-                            <SelectTrigger className="h-10 border-0 rounded-none text-xs bg-transparent focus:ring-0 focus:ring-offset-0">
+                            <SelectTrigger className="h-12 border-0 rounded-none text-sm bg-transparent focus:ring-0 focus:ring-offset-0">
                               <SelectValue placeholder="Select...">
-                                <span className="truncate block max-w-[90px]">
+                                <span className="truncate block max-w-[110px]">
                                   {cupper.cupper_name || 'Select...'}
                                 </span>
                               </SelectValue>
@@ -387,7 +387,7 @@ export function OCRValidationDialog({
                               setCupperScores(newScores)
                             }}
                             placeholder={cupper.ocr_name || `Cupper ${cupperIndex + 1}`}
-                            className="h-10 border-0 rounded-none text-xs bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
+                            className="h-12 border-0 rounded-none text-sm bg-transparent focus-visible:ring-0 focus-visible:ring-offset-0"
                           />
                         )}
                         {/* OCR hint */}
@@ -421,7 +421,7 @@ export function OCRValidationDialog({
                               value={hasValue ? scoreValue : ''}
                               onChange={(e) => updateScore(cupperIndex, attrName, e.target.value)}
                               className={cn(
-                                "h-10 w-full border-0 rounded-none text-center font-mono text-sm",
+                                "h-12 w-full border-0 rounded-none text-center font-mono text-base font-medium",
                                 "focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary focus-visible:ring-offset-0",
                                 "bg-transparent hover:bg-muted/50",
                                 hasValue ? "text-foreground" : "text-muted-foreground",
