@@ -521,13 +521,35 @@ function CuppingPageContent() {
           const userScore = scoresData.scores[0] // For now, use the first score
 
           console.log(`[LOAD] Found existing cupping score for sample ${sample.tracking_number}:`, userScore)
+          console.log(`[LOAD] Score keys:`, Object.keys(userScore.scores || {}))
+          console.log(`[LOAD] Template attributes:`, defaultCuppingData.attributes.map(a => a.attribute))
 
-          // Populate attributes with saved scores
+          // Populate attributes with saved scores (with flexible matching)
           if (userScore.scores && defaultCuppingData.attributes.length > 0) {
-            defaultCuppingData.attributes = defaultCuppingData.attributes.map(attr => ({
-              ...attr,
-              value: userScore.scores[attr.attribute] ?? null
-            }))
+            const scoreKeys = Object.keys(userScore.scores)
+
+            defaultCuppingData.attributes = defaultCuppingData.attributes.map(attr => {
+              // Try exact match first
+              if (userScore.scores[attr.attribute] !== undefined) {
+                return { ...attr, value: userScore.scores[attr.attribute] }
+              }
+
+              // Try flexible matching (case-insensitive, partial match)
+              const attrLower = attr.attribute.toLowerCase()
+              const matchingKey = scoreKeys.find(key => {
+                const keyLower = key.toLowerCase()
+                // Match "Fragrance" to "Fragrance/Aroma" or "Frag" to "Fragrance"
+                return attrLower.startsWith(keyLower) || keyLower.startsWith(attrLower) ||
+                       attrLower.includes(keyLower) || keyLower.includes(attrLower)
+              })
+
+              if (matchingKey) {
+                console.log(`[LOAD] Flexible match: "${attr.attribute}" matched with "${matchingKey}"`)
+                return { ...attr, value: userScore.scores[matchingKey] }
+              }
+
+              return { ...attr, value: null }
+            })
           }
 
           // Populate defects from saved taints/faults
