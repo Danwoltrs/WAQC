@@ -429,9 +429,15 @@ export function DashboardScanDialog({
                     className={cn(
                       "relative flex-shrink-0 w-14 h-14 rounded-md overflow-hidden",
                       card.status === 'success' && "ring-2 ring-green-500",
-                      card.status === 'error' && "ring-2 ring-red-500",
+                      card.status === 'error' && "ring-2 ring-red-500 cursor-pointer",
                       card.status === 'processing' && "ring-2 ring-yellow-500"
                     )}
+                    onClick={() => {
+                      // Allow removing failed cards by tapping
+                      if (card.status === 'error') {
+                        removeCard(index)
+                      }
+                    }}
                   >
                     <Image
                       src={card.preview}
@@ -450,8 +456,8 @@ export function DashboardScanDialog({
                       </div>
                     )}
                     {card.status === 'error' && (
-                      <div className="absolute inset-0 bg-red-500/20 flex items-center justify-center">
-                        <AlertCircle className="h-5 w-5 text-red-500" />
+                      <div className="absolute inset-0 bg-red-500/40 flex items-center justify-center">
+                        <X className="h-5 w-5 text-white" />
                       </div>
                     )}
                   </div>
@@ -465,34 +471,39 @@ export function DashboardScanDialog({
             className="bg-black px-4 py-3"
             style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}
           >
-            {!allProcessed || !hasCards ? (
-              <div className="flex gap-3">
-                <Button
-                  onClick={capturePhoto}
-                  disabled={!cameraReady}
-                  className="flex-1 h-12 text-base bg-white text-black hover:bg-white/90 rounded-full font-medium"
-                >
-                  <Camera className="mr-2 h-5 w-5" />
-                  Capture
-                </Button>
-                {allSuccess && successCards.length > 0 && (
-                  <Button
-                    onClick={() => setShowValidation(true)}
-                    className="flex-1 h-12 text-base bg-green-600 hover:bg-green-700 rounded-full font-medium"
-                  >
-                    <CheckCircle2 className="mr-2 h-5 w-5" />
-                    Review ({successCards.length})
-                  </Button>
-                )}
-              </div>
-            ) : (
+            <div className="flex gap-3">
+              {/* Always show Capture button */}
               <Button
-                onClick={() => setShowValidation(true)}
-                className="w-full h-12 text-base bg-green-600 hover:bg-green-700 rounded-full font-medium"
+                onClick={capturePhoto}
+                disabled={!cameraReady}
+                className={cn(
+                  "h-12 text-base rounded-full font-medium",
+                  successCards.length > 0
+                    ? "flex-1 bg-white/20 text-white hover:bg-white/30 border border-white/40"
+                    : "flex-1 bg-white text-black hover:bg-white/90"
+                )}
               >
-                <CheckCircle2 className="mr-2 h-5 w-5" />
-                Review & Submit ({successCards.length})
+                <Camera className="mr-2 h-5 w-5" />
+                {successCards.length > 0 ? 'Scan More' : 'Capture'}
               </Button>
+
+              {/* Show Review button when there are successful cards */}
+              {successCards.length > 0 && (
+                <Button
+                  onClick={() => setShowValidation(true)}
+                  className="flex-1 h-12 text-base bg-green-600 hover:bg-green-700 rounded-full font-medium"
+                >
+                  <CheckCircle2 className="mr-2 h-5 w-5" />
+                  Review ({successCards.length})
+                </Button>
+              )}
+            </div>
+
+            {/* Hint text for failed cards */}
+            {hasErrors && (
+              <p className="text-center text-xs text-white/60 mt-2">
+                Tap failed cards to remove them
+              </p>
             )}
           </div>
         </DialogContent>
