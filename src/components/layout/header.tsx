@@ -71,8 +71,8 @@ export function Header({ onMenuToggle, isMenuOpen, onNotificationsToggle, isNoti
               <span className="text-2xl font-bold text-white dark:text-white">QC</span>
             </Link>
             
-            {/* Search - Right next to logo section */}
-            <div className="w-96">
+            {/* Search - Right next to logo section - Hidden on mobile */}
+            <div className="hidden lg:block w-96">
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-white/60 dark:text-white/60" />
                 <Input
