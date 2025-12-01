@@ -28,11 +28,12 @@ export async function getPendingSamplesForCupper(
 ): Promise<PendingSampleCount> {
   try {
     // Step 1: Find all active cupping sessions where this cupper is assigned
+    // Use .filter() with 'cs' for JSONB array contains (avoids incorrect format from .contains())
     const { data: sessions, error: sessionsError } = await supabase
       .from('cupping_sessions')
       .select('id, sample_ids, cupper_ids')
       .eq('status', 'active') // Only active sessions
-      .contains('cupper_ids', [cupperId]) // Cupper is in the cupper_ids array
+      .filter('cupper_ids', 'cs', JSON.stringify([cupperId])) // Cupper is in the cupper_ids JSONB array
 
     if (sessionsError) {
       console.error('Error fetching cupping sessions:', sessionsError)

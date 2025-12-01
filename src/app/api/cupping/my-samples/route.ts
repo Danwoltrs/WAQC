@@ -78,6 +78,7 @@ export async function GET(request: NextRequest) {
 
     // Get cupping sessions where this user is assigned
     // Use admin client to bypass RLS - we filter by user.id in the contains query
+    // Use .filter() with 'cs' for JSONB array contains (avoids incorrect format from .contains())
     const { data: sessions, error: sessionsError } = await (supabaseAdmin as any)
       .from('cupping_sessions')
       .select(`
@@ -98,7 +99,7 @@ export async function GET(request: NextRequest) {
         finalized_at
       `)
       .in('status', statusFilter)
-      .contains('cupper_ids', [user.id])
+      .filter('cupper_ids', 'cs', JSON.stringify([user.id]))
 
     if (sessionsError) {
       console.error('Error fetching cupping sessions:', sessionsError)
