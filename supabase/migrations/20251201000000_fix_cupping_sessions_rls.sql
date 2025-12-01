@@ -6,6 +6,7 @@
 DROP POLICY IF EXISTS "Users can view relevant cupping sessions" ON cupping_sessions;
 
 -- Create new policy that works with JSONB cupper_ids array
+-- Note: auth.uid() returns UUID, participants is text[], cupper_ids is JSONB
 CREATE POLICY "Users can view relevant cupping sessions"
 ON cupping_sessions
 FOR SELECT
@@ -17,8 +18,8 @@ USING (
   -- User is in cupper_ids (JSONB array contains the user's UUID as text)
   cupper_ids @> to_jsonb(ARRAY[auth.uid()::text])
   OR
-  -- User is in participants (text array)
-  auth.uid()::text = ANY(participants)
+  -- User is in participants (cast UUID to text for comparison with text array)
+  (auth.uid())::text = ANY(participants)
 );
 
 -- Also add policy for UPDATE so cuppers can update session progress
@@ -36,7 +37,7 @@ USING (
   cupper_ids @> to_jsonb(ARRAY[auth.uid()::text])
   OR
   -- User is in participants
-  auth.uid()::text = ANY(participants)
+  (auth.uid())::text = ANY(participants)
 )
 WITH CHECK (
   -- Same conditions for the updated row
@@ -44,5 +45,5 @@ WITH CHECK (
   OR
   cupper_ids @> to_jsonb(ARRAY[auth.uid()::text])
   OR
-  auth.uid()::text = ANY(participants)
+  (auth.uid())::text = ANY(participants)
 );
