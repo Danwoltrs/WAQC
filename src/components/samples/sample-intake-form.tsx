@@ -28,7 +28,9 @@ const initialFormData: FormData = {
   client_id: '',
   laboratory_id: '',
   exporter_sample_number: '',
-  exporter: '',
+  seller: '', // The trading company that sold the coffee
+  shipper: '', // The actual exporter that shipped the coffee
+  same_seller_shipper: true, // Default: seller is same as shipper
   buyer: '',
   roaster: '',
   origin: '',
@@ -91,19 +93,19 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     // Don't save empty forms or when showing success view
     if (success) return
     // Don't save if form is essentially empty (just reset)
-    if (!formData.exporter && !formData.buyer && !formData.sample_type) return
+    if (!formData.seller && !formData.buyer && !formData.sample_type) return
 
     const dataToSave = { ...formData, photo_file: null }
     localStorage.setItem('sample-intake-form', JSON.stringify(dataToSave))
   }, [formData, success])
 
-  // Client auto-detection based on buyer/exporter names
+  // Client auto-detection based on buyer/seller names
   // For PSS/SS samples: buyer is the client (they own quality specs)
   // For type samples: either can be used
   useEffect(() => {
-    if (formData.buyer || formData.exporter) {
+    if (formData.buyer || formData.seller) {
       // Prioritize buyer for client matching (PSS/SS samples need buyer's quality specs)
-      const searchTerm = (formData.buyer || formData.exporter).toLowerCase()
+      const searchTerm = (formData.buyer || formData.seller).toLowerCase()
       const filtered = clients.filter(client =>
         client.company.toLowerCase().includes(searchTerm) ||
         client.name.toLowerCase().includes(searchTerm)
@@ -119,7 +121,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     } else {
       setFilteredClients([])
     }
-  }, [formData.exporter, formData.buyer, clients])
+  }, [formData.seller, formData.buyer, clients])
 
   // Auto-populate laboratory and origin for user's assigned lab
   useEffect(() => {
@@ -231,9 +233,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 1:
+        // Seller is required, shipper is required only if same_seller_shipper is false
+        const hasShipper = formData.same_seller_shipper || !!formData.shipper
         const baseValidation = !!(
           formData.laboratory_id &&
-          formData.exporter &&
+          formData.seller &&
+          hasShipper &&
           formData.origin &&
           formData.sample_type
         )
@@ -290,22 +295,44 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     setError(null)
 
     try {
-      // Look up exporter UUID from exporter name
-      let exporter_id: string | undefined
-      if (formData.exporter) {
-        const { data: exporterData, error: exporterError } = await supabase
+      // Look up seller UUID from seller name
+      let seller_id: string | undefined
+      if (formData.seller) {
+        const { data: sellerData, error: sellerError } = await supabase
           .from('exporters')
           .select('id')
-          .ilike('name', formData.exporter)
+          .ilike('name', formData.seller)
           .limit(1)
           .single()
 
-        if (exporterError) {
-          console.error('Error looking up exporter:', exporterError)
-          throw new Error('Failed to find exporter. Please check the exporter name.')
+        if (sellerError) {
+          console.error('Error looking up seller:', sellerError)
+          throw new Error('Failed to find seller. Please check the seller name.')
         }
 
-        exporter_id = exporterData?.id
+        seller_id = sellerData?.id
+      }
+
+      // Look up shipper (exporter) UUID
+      // If same_seller_shipper is true, shipper = seller
+      // Otherwise, look up the separate shipper name
+      let exporter_id: string | undefined
+      if (formData.same_seller_shipper) {
+        exporter_id = seller_id // Shipper is same as seller
+      } else if (formData.shipper) {
+        const { data: shipperData, error: shipperError } = await supabase
+          .from('exporters')
+          .select('id')
+          .ilike('name', formData.shipper)
+          .limit(1)
+          .single()
+
+        if (shipperError) {
+          console.error('Error looking up shipper:', shipperError)
+          throw new Error('Failed to find shipper. Please check the shipper name.')
+        }
+
+        exporter_id = shipperData?.id
       }
 
       // Look up importer UUID from buyer name (if provided)
@@ -338,7 +365,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         client_id: formData.client_id || undefined,
         laboratory_id: formData.laboratory_id,
         origin: formData.origin,
-        exporter_id: exporter_id,
+        seller_id: seller_id,
+        exporter_id: exporter_id, // This is the shipper
+        same_seller_shipper: formData.same_seller_shipper,
         importer_id: importer_id,
         roaster_id: roaster_id,
         processing_method: formData.processing_method,
@@ -432,60 +461,64 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         </div>
       </HeaderWrapper>
 
-      <ContentWrapper className={asDialog ? 'space-y-6' : 'space-y-6'}>
-        {error && (
-          <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
-            <AlertCircle className="h-4 w-4" />
-            {error}
-          </div>
-        )}
+      <ContentWrapper className={asDialog ? 'flex flex-col h-full' : 'flex flex-col h-full'}>
+        {/* Scrollable content area */}
+        <div className="flex-1 overflow-y-auto space-y-6 pb-4">
+          {error && (
+            <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
+              <AlertCircle className="h-4 w-4" />
+              {error}
+            </div>
+          )}
 
-        {currentStep === 1 && (
-          <BasicInfoStep
-            formData={formData}
-            updateFormData={updateFormData}
-            clients={clients}
-            laboratories={laboratories}
-            filteredClients={filteredClients}
-            approvedPSSSamples={approvedPSSSamples}
-          />
-        )}
+          {currentStep === 1 && (
+            <BasicInfoStep
+              formData={formData}
+              updateFormData={updateFormData}
+              clients={clients}
+              laboratories={laboratories}
+              filteredClients={filteredClients}
+              approvedPSSSamples={approvedPSSSamples}
+            />
+          )}
 
-        {currentStep === 2 && (
-          <TrackingNumbersStep
-            formData={formData}
-            updateFormData={updateFormData}
-            clients={clients}
-            laboratories={laboratories}
-            filteredClients={filteredClients}
-            approvedPSSSamples={approvedPSSSamples}
-          />
-        )}
+          {currentStep === 2 && (
+            <TrackingNumbersStep
+              formData={formData}
+              updateFormData={updateFormData}
+              clients={clients}
+              laboratories={laboratories}
+              filteredClients={filteredClients}
+              approvedPSSSamples={approvedPSSSamples}
+            />
+          )}
 
-        {currentStep === 3 && (
-          <QuantityStep
-            formData={formData}
-            updateFormData={updateFormData}
-            clients={clients}
-            laboratories={laboratories}
-            filteredClients={filteredClients}
-            approvedPSSSamples={approvedPSSSamples}
-          />
-        )}
+          {currentStep === 3 && (
+            <QuantityStep
+              formData={formData}
+              updateFormData={updateFormData}
+              clients={clients}
+              laboratories={laboratories}
+              filteredClients={filteredClients}
+              approvedPSSSamples={approvedPSSSamples}
+            />
+          )}
 
-        {currentStep === 4 && (
-          <SampleDetailsStep
-            formData={formData}
-            updateFormData={updateFormData}
-            clients={clients}
-            laboratories={laboratories}
-            filteredClients={filteredClients}
-            approvedPSSSamples={approvedPSSSamples}
-            onPhotoUpload={handlePhotoUpload}
-          />
-        )}
+          {currentStep === 4 && (
+            <SampleDetailsStep
+              formData={formData}
+              updateFormData={updateFormData}
+              clients={clients}
+              laboratories={laboratories}
+              filteredClients={filteredClients}
+              approvedPSSSamples={approvedPSSSamples}
+              onPhotoUpload={handlePhotoUpload}
+            />
+          )}
+        </div>
 
-        <div className="flex justify-between pt-4 border-t">
+        {/* Fixed footer */}
+        <div className="flex-shrink-0 flex justify-between pt-4 border-t bg-background sticky bottom-0">
           <Button
             type="button"
             variant="outline"

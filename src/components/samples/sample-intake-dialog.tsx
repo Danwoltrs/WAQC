@@ -17,11 +17,13 @@ export function SampleIntakeDialog({ open, onOpenChange }: SampleIntakeDialogPro
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
+      <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col overflow-hidden">
+        <DialogHeader className="flex-shrink-0">
           <DialogTitle>Sample Intake</DialogTitle>
         </DialogHeader>
-        <SampleIntakeForm onSuccess={handleSuccess} asDialog={true} />
+        <div className="flex-1 min-h-0">
+          <SampleIntakeForm onSuccess={handleSuccess} asDialog={true} />
+        </div>
       </DialogContent>
     </Dialog>
   )

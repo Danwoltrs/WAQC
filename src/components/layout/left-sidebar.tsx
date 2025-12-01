@@ -426,17 +426,18 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
           {/* Main Navigation */}
           <div className="space-y-1">
             {filterNavByPermissions(navigation).map((item) => {
-              const Icon = item.icon
-              const active = isActive(item.href)
-              const hasSubmenu = item.submenu && item.submenu.length > 0
-              const submenuExpanded = item.href ? expandedMenus.has(item.href) : false
-              const submenuActive = isSubmenuActive(item.submenu)
+              const itemWithBadge = getNavItemWithBadge(item)
+              const Icon = itemWithBadge.icon
+              const active = isActive(itemWithBadge.href)
+              const hasSubmenu = itemWithBadge.submenu && itemWithBadge.submenu.length > 0
+              const submenuExpanded = itemWithBadge.href ? expandedMenus.has(itemWithBadge.href) : false
+              const submenuActive = isSubmenuActive(itemWithBadge.submenu)
               const filteredSubmenu = hasSubmenu
-                ? item.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
+                ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
                 : []
 
               return (
-                <div key={item.href || item.title}>
+                <div key={itemWithBadge.href || itemWithBadge.title}>
                   {/* Main nav item */}
                   {hasSubmenu && filteredSubmenu.length > 0 ? (
                     <div
@@ -447,20 +448,20 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                           : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
                       )}
                     >
-                      {item.href ? (
-                        <Link href={item.href} className="flex items-center gap-3 flex-1 min-w-0" onClick={handleLinkClick}>
+                      {itemWithBadge.href ? (
+                        <Link href={itemWithBadge.href} className="flex items-center gap-3 flex-1 min-w-0" onClick={handleLinkClick}>
                           <Icon className="h-4 w-4 flex-shrink-0" />
-                          {isOpen && <span className="truncate">{item.title}</span>}
+                          {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
                         </Link>
                       ) : (
                         <div className="flex items-center gap-3 flex-1 min-w-0">
                           <Icon className="h-4 w-4 flex-shrink-0" />
-                          {isOpen && <span className="truncate">{item.title}</span>}
+                          {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
                         </div>
                       )}
-                      {isOpen && item.href && (
+                      {isOpen && itemWithBadge.href && (
                         <button
-                          onClick={() => toggleSubmenu(item.href!)}
+                          onClick={() => toggleSubmenu(itemWithBadge.href!)}
                           className="p-1 hover:bg-accent/50 rounded transition-colors"
                         >
                           {submenuExpanded ? (
@@ -471,9 +472,9 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                         </button>
                       )}
                     </div>
-                  ) : item.href ? (
+                  ) : itemWithBadge.href ? (
                     <Link
-                      href={item.href}
+                      href={itemWithBadge.href}
                       onClick={handleLinkClick}
                       className={cn(
                         'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
@@ -483,13 +484,18 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                         !isOpen && 'justify-center'
                       )}
                     >
-                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      <div className="relative">
+                        <Icon className="h-4 w-4 flex-shrink-0" />
+                        {!isOpen && itemWithBadge.badge && (
+                          <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
+                        )}
+                      </div>
                       {isOpen && (
                         <>
-                          <span className="truncate">{item.title}</span>
-                          {item.badge && (
-                            <span className="ml-auto text-xs bg-primary text-primary-foreground px-1.5 py-0.5 rounded">
-                              {item.badge}
+                          <span className="truncate">{itemWithBadge.title}</span>
+                          {itemWithBadge.badge && (
+                            <span className="ml-auto text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">
+                              {itemWithBadge.badge}
                             </span>
                           )}
                         </>

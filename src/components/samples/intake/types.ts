@@ -9,7 +9,9 @@ export interface FormData {
   client_id: string
   laboratory_id: string
   exporter_sample_number: string // Exporter's sample identification number
-  exporter: string
+  seller: string // The trading company that sold the coffee (e.g., Louis Dreyfus)
+  shipper: string // The actual exporter that shipped the coffee (e.g., COOXUPE)
+  same_seller_shipper: boolean // If true, seller is same as shipper
   buyer: string
   roaster: string
   origin: string

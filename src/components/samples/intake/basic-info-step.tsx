@@ -285,54 +285,134 @@ export function BasicInfoStep({
             </p>
           </div>
 
-      {/* Exporter and Buyer row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <Label htmlFor="exporter">Exporter *</Label>
-          <Select
-            value={formData.exporter === '' ? 'custom' : exporters.find(c => (c.fantasy_name || c.company) === formData.exporter) ? formData.exporter : 'custom'}
-            onValueChange={(value) => {
-              if (value === 'new') {
-                setCreateClientType('exporter')
-                setShowCreateClientDialog(true)
-              } else if (value !== 'custom') {
-                updateFormData('exporter', value)
-              }
-            }}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select existing or type new" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="custom">Type custom name...</SelectItem>
-              <SelectItem value="new">+ Create New Exporter</SelectItem>
-              {exporters.length > 0 ? (
-                <>
-                  <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                    Exporters
+      {/* Seller, Shipper, and Buyer section */}
+      <div className="space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Seller field */}
+          <div className="space-y-2">
+            <Label htmlFor="seller">Seller *</Label>
+            <Select
+              value={formData.seller === '' ? 'custom' : exporters.find(c => (c.fantasy_name || c.company) === formData.seller) ? formData.seller : 'custom'}
+              onValueChange={(value) => {
+                if (value === 'new') {
+                  setCreateClientType('exporter')
+                  setShowCreateClientDialog(true)
+                } else if (value !== 'custom') {
+                  updateFormData('seller', value)
+                }
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select seller" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="custom">Type custom name...</SelectItem>
+                <SelectItem value="new">+ Create New Seller</SelectItem>
+                {exporters.length > 0 ? (
+                  <>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                      Sellers / Exporters
+                    </div>
+                    {exporters.map((client) => (
+                      <SelectItem key={client.id} value={client.fantasy_name || client.company}>
+                        {client.fantasy_name || client.company}
+                      </SelectItem>
+                    ))}
+                  </>
+                ) : (
+                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                    No sellers registered
                   </div>
-                  {exporters.map((client) => (
-                    <SelectItem key={client.id} value={client.fantasy_name || client.company}>
-                      {client.fantasy_name || client.company}
-                    </SelectItem>
-                  ))}
-                </>
-              ) : (
-                <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                  No exporters registered
-                </div>
-              )}
-            </SelectContent>
-          </Select>
-          {(formData.exporter === '' || !exporters.find(c => (c.fantasy_name || c.company) === formData.exporter)) && (
-            <Input
-              id="exporter"
-              value={formData.exporter}
-              onChange={(e) => updateFormData('exporter', e.target.value)}
-              placeholder="Enter exporter name"
-            />
-          )}
+                )}
+              </SelectContent>
+            </Select>
+            {(formData.seller === '' || !exporters.find(c => (c.fantasy_name || c.company) === formData.seller)) && (
+              <Input
+                id="seller"
+                value={formData.seller}
+                onChange={(e) => updateFormData('seller', e.target.value)}
+                placeholder="Enter seller name (e.g., Louis Dreyfus)"
+              />
+            )}
+            <p className="text-xs text-muted-foreground">
+              The trading company that sold the coffee
+            </p>
+          </div>
+
+          {/* Same seller and shipper checkbox + conditional Shipper field */}
+          <div className="space-y-2">
+            <div className="flex items-center space-x-2 mb-2">
+              <Checkbox
+                id="same_seller_shipper"
+                checked={formData.same_seller_shipper}
+                onCheckedChange={(checked) => {
+                  updateFormData('same_seller_shipper', checked as boolean)
+                  if (checked) {
+                    updateFormData('shipper', '') // Clear shipper when same as seller
+                  }
+                }}
+              />
+              <Label htmlFor="same_seller_shipper" className="text-sm cursor-pointer">
+                Same seller and shipper
+              </Label>
+            </div>
+
+            {!formData.same_seller_shipper && (
+              <>
+                <Label htmlFor="shipper">Shipper *</Label>
+                <Select
+                  value={formData.shipper === '' ? 'custom' : exporters.find(c => (c.fantasy_name || c.company) === formData.shipper) ? formData.shipper : 'custom'}
+                  onValueChange={(value) => {
+                    if (value === 'new') {
+                      setCreateClientType('exporter')
+                      setShowCreateClientDialog(true)
+                    } else if (value !== 'custom') {
+                      updateFormData('shipper', value)
+                    }
+                  }}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select shipper" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="custom">Type custom name...</SelectItem>
+                    <SelectItem value="new">+ Create New Shipper</SelectItem>
+                    {exporters.length > 0 ? (
+                      <>
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                          Shippers / Exporters
+                        </div>
+                        {exporters.map((client) => (
+                          <SelectItem key={client.id} value={client.fantasy_name || client.company}>
+                            {client.fantasy_name || client.company}
+                          </SelectItem>
+                        ))}
+                      </>
+                    ) : (
+                      <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                        No shippers registered
+                      </div>
+                    )}
+                  </SelectContent>
+                </Select>
+                {(formData.shipper === '' || !exporters.find(c => (c.fantasy_name || c.company) === formData.shipper)) && (
+                  <Input
+                    id="shipper"
+                    value={formData.shipper}
+                    onChange={(e) => updateFormData('shipper', e.target.value)}
+                    placeholder="Enter shipper name (e.g., COOXUPE)"
+                  />
+                )}
+                <p className="text-xs text-muted-foreground">
+                  The actual exporter that shipped the coffee
+                </p>
+              </>
+            )}
+          </div>
         </div>
+
+        {/* Buyer row */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
 
         <div className="space-y-2">
           <Label htmlFor="buyer">
@@ -605,6 +685,7 @@ export function BasicInfoStep({
         </div>
       )}
 
+      </div>
         </>
       )}
 
@@ -645,7 +726,9 @@ export function BasicInfoStep({
         onSuccess={(clientName) => {
           // Update the appropriate field based on client type
           if (createClientType === 'exporter') {
-            updateFormData('exporter', clientName)
+            // When creating from Seller field, update seller; from Shipper field, update shipper
+            // For now, default to seller since that's the primary use case
+            updateFormData('seller', clientName)
           } else if (createClientType === 'buyer') {
             updateFormData('buyer', clientName)
           } else if (createClientType === 'roaster') {

@@ -108,6 +108,7 @@ interface GradingData {
   screen_sizes: { [key: string]: number } // Stores grams
   screen_sizes_percentages: { [key: string]: number } // Calculated percentages
   moisture_percentage: number
+  density?: number // Density in G/L (e.g., 0.700)
   quakers_count: number
   defect_counts: { [defectName: string]: number }
   defects_primary: number
@@ -472,6 +473,9 @@ export default function GradingPage() {
                       }
                       if (greenBeanData.moisture_percentage != null) {
                         defaultGradingData.moisture_percentage = greenBeanData.moisture_percentage
+                      }
+                      if (greenBeanData.density != null) {
+                        defaultGradingData.density = greenBeanData.density
                       }
                       if (greenBeanData.quakers != null) {
                         defaultGradingData.quakers_count = greenBeanData.quakers
@@ -1015,7 +1019,7 @@ export default function GradingPage() {
     setGradingDataMap(new Map(gradingDataMap))
   }
 
-  const handleFieldChange = (sampleId: string, field: 'moisture_percentage' | 'quakers_count', value: number) => {
+  const handleFieldChange = (sampleId: string, field: 'moisture_percentage' | 'density' | 'quakers_count', value: number) => {
     const gradingData = gradingDataMap.get(sampleId)
     if (!gradingData) return
 
@@ -1054,6 +1058,7 @@ export default function GradingPage() {
         green_bean_data: {
           screen_sizes: gradingData.screen_sizes,
           moisture_percentage: gradingData.moisture_percentage,
+          density: gradingData.density,
           quakers: gradingData.quakers_count,
           green_aspect: gradingData.green_aspect,
           defects: {
@@ -1593,6 +1598,23 @@ export default function GradingPage() {
                                   />
                                   <div className="text-xs text-muted-foreground"></div>
                                 </div>
+
+                                {/* Density */}
+                                <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
+                                  <Label className="text-sm whitespace-nowrap">
+                                    Density (G/L)
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.001"
+                                    value={gradingData?.density || ''}
+                                    onChange={(e) => handleFieldChange(sample.id, 'density', parseFloat(e.target.value) || 0)}
+                                    placeholder="0.700"
+                                    className="h-8 text-sm w-20"
+                                  />
+                                  <div className="text-xs text-muted-foreground"></div>
+                                </div>
                               </div>
                             ) : (
                               <>
@@ -1624,6 +1646,23 @@ export default function GradingPage() {
                                     value={gradingData?.moisture_percentage || 0}
                                     onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
                                     className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                  />
+                                  <div className="text-xs text-muted-foreground"></div>
+                                </div>
+
+                                {/* Density */}
+                                <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
+                                  <Label className="text-sm whitespace-nowrap">
+                                    Density (G/L)
+                                  </Label>
+                                  <Input
+                                    type="number"
+                                    min="0"
+                                    step="0.001"
+                                    value={gradingData?.density || ''}
+                                    onChange={(e) => handleFieldChange(sample.id, 'density', parseFloat(e.target.value) || 0)}
+                                    placeholder="0.700"
+                                    className="h-8 text-sm w-20"
                                   />
                                   <div className="text-xs text-muted-foreground"></div>
                                 </div>
