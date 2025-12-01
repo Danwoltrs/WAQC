@@ -272,9 +272,10 @@ export function PrintCuppingCardsDialog({
           console.log(`Extracted attributes for ${sample.tracking_number}:`, attributes)
           console.log(`Generating QR code for sample ${sample.tracking_number}`)
 
-          // Generate QR code - SIMPLIFIED for better detection
-          // Format: WAQC:sample_id:tracking_number (shorter = more reliable scanning)
-          const qrContent = `WAQC:${sample.id}:${sample.tracking_number}`
+          // Generate QR code with template ID for reliable attribute matching
+          // Format: WAQC:sample_id:tracking_number:template_id (template_id helps OCR use correct attributes)
+          const templateId = template?.id || ''
+          const qrContent = `WAQC:${sample.id}:${sample.tracking_number}:${templateId}`
           const qrCodeDataUrl = await QRCode.toDataURL(qrContent, {
             width: 250,  // Slightly larger for better scanning
             margin: 2,   // More margin for edge detection

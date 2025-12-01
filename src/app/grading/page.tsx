@@ -16,7 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Save, Eye, EyeOff } from 'lucide-react'
+import { Save, Eye, EyeOff, Camera } from 'lucide-react'
+import { DefectPhotoUpload } from '@/components/grading/defect-photo-upload'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
   DefectConfig,
@@ -96,6 +97,12 @@ interface ClientQuality {
   template_id: string
 }
 
+interface DefectPhoto {
+  path: string
+  url: string | null
+  filename: string
+}
+
 interface GradingData {
   sample_id: string
   screen_sizes: { [key: string]: number } // Stores grams
@@ -164,6 +171,9 @@ export default function GradingPage() {
 
   // Roast aspect options per sample (array of objects with label and value)
   const [roastAspectOptionsMap, setRoastAspectOptionsMap] = useState<Map<string, Array<{label: string; value: number}>>>(new Map())
+
+  // Defect photos per sample
+  const [defectPhotosMap, setDefectPhotosMap] = useState<Map<string, DefectPhoto[]>>(new Map())
 
   // Watch for theme changes
   useEffect(() => {
@@ -423,6 +433,7 @@ export default function GradingPage() {
             const newClientQualityMap = new Map<string, ClientQuality>()
             const newGreenAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
             const newRoastAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
+            const newDefectPhotosMap = new Map<string, DefectPhoto[]>()
 
             for (const sample of detailsData.samples) {
               console.log(`[LOAD] Processing sample: ${sample.tracking_number} (ID: ${sample.id})`)
@@ -496,6 +507,19 @@ export default function GradingPage() {
                 console.error(`Error loading quality assessment for sample ${sample.id}:`, error)
               }
 
+              // Load defect photos for this sample
+              try {
+                const photosResponse = await fetch(`/api/samples/${sample.id}/photos`)
+                if (photosResponse.ok) {
+                  const photosData = await photosResponse.json()
+                  if (photosData.photos && photosData.photos.length > 0) {
+                    newDefectPhotosMap.set(sample.id, photosData.photos)
+                  }
+                }
+              } catch (error) {
+                console.error(`Error loading photos for sample ${sample.id}:`, error)
+              }
+
               newGradingMap.set(sample.id, defaultGradingData)
 
               // Load defect configuration and screen constraints for this sample
@@ -524,6 +548,7 @@ export default function GradingPage() {
             setRoastAspectConstraintsMap(newRoastAspectConstraintsMap)
             setGreenAspectOptionsMap(newGreenAspectOptionsMap)
             setRoastAspectOptionsMap(newRoastAspectOptionsMap)
+            setDefectPhotosMap(newDefectPhotosMap)
           }
         } else {
           // No samples assigned - this is normal if user isn't assigned to any sessions
@@ -1004,6 +1029,10 @@ export default function GradingPage() {
 
     gradingData[field] = value
     setGradingDataMap(new Map(gradingDataMap))
+  }
+
+  const handlePhotosChange = (sampleId: string, photos: DefectPhoto[]) => {
+    setDefectPhotosMap(new Map(defectPhotosMap.set(sampleId, photos)))
   }
 
   const handleSaveCurrent = async () => {
@@ -1837,6 +1866,22 @@ export default function GradingPage() {
                         }
                         return null
                       })()}
+                    </CardContent>
+                  </Card>
+
+                  {/* Defect Photos */}
+                  <Card className="w-full lg:w-64 self-start">
+                    <CardContent className="pt-4">
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Camera className="h-4 w-4" />
+                        Defect Photos
+                      </h3>
+                      <DefectPhotoUpload
+                        sampleId={sample.id}
+                        photos={defectPhotosMap.get(sample.id) || []}
+                        onPhotosChange={(photos) => handlePhotosChange(sample.id, photos)}
+                        disabled={saving}
+                      />
                     </CardContent>
                   </Card>
                 </div>

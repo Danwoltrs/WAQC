@@ -110,10 +110,42 @@ export async function POST(request: NextRequest) {
     console.log(`[OCR] ${cuppers.length} assigned cuppers:`, cuppers.map(c => c.name))
 
     // Step 4: Get cupping attributes from template
-    const templateParams = sample.quality_spec?.template?.parameters as Record<string, any> | null
+    // Priority: 1. Template ID from QR code, 2. Sample's quality_spec template
+    let templateParams: Record<string, any> | null = null
+    let templateName = 'DEFAULT'
+
+    // If QR code contains template_id, fetch that template directly
+    if (qrResult.template_id) {
+      console.log('[OCR] Using template_id from QR code:', qrResult.template_id)
+      const { data: qrTemplate, error: qrTemplateError } = await supabase
+        .from('quality_templates')
+        .select('id, name, parameters')
+        .eq('id', qrResult.template_id)
+        .single()
+
+      if (!qrTemplateError && qrTemplate) {
+        templateParams = qrTemplate.parameters as Record<string, any>
+        templateName = qrTemplate.name
+        console.log('[OCR] Template from QR:', templateName)
+      } else {
+        console.log('[OCR] Failed to fetch template from QR:', qrTemplateError?.message)
+      }
+    }
+
+    // Fallback to sample's quality_spec template if QR template not found
+    if (!templateParams) {
+      templateParams = sample.quality_spec?.template?.parameters as Record<string, any> | null
+      templateName = sample.quality_spec?.template?.name || 'DEFAULT'
+      console.log('[OCR] Using template from sample quality_spec:', templateName)
+    }
+
+    console.log('[OCR] Template params cupping_attributes:', templateParams?.cupping_attributes ? `${templateParams.cupping_attributes.length} attrs` : 'NULL')
+
     const attributes = templateParams?.cupping_attributes?.map(
       (a: any) => typeof a === 'string' ? a : a.attribute
     ) || DEFAULT_ATTRIBUTES
+
+    console.log('[OCR] Using attributes:', attributes.join(', '))
 
     // Step 5: Extract scores using Gemini Vision
     console.log('[OCR] Extracting scores with Gemini Vision...')
@@ -144,7 +176,12 @@ export async function POST(request: NextRequest) {
         id: sample.id,
         tracking_number: sample.tracking_number,
         sample_type: sample.sample_type,
-        quality_template: sample.quality_spec?.template,
+        // Return the template we actually used (from QR or quality_spec)
+        quality_template: {
+          id: qrResult.template_id || sample.quality_spec?.template?.id,
+          name: templateName,
+          parameters: templateParams,
+        },
       },
       extracted_scores: extraction.cupperScores,
       assigned_cuppers: cuppers,
@@ -155,6 +192,8 @@ export async function POST(request: NextRequest) {
       debug: {
         model: 'gemini-2.0-flash',
         attributesUsed: attributes,
+        templateSource: qrResult.template_id ? 'qr_code' : 'quality_spec',
+        templateName,
         cuppersProvided: cuppers.length,
         cuppersExtracted: extraction.cupperScores.length,
       }
@@ -318,6 +357,9 @@ async function extractScoresWithGemini(
     const cupperNames = assignedCuppers.map(c => c.name).join(', ')
     const attrNames = attributes.join(', ')
 
+    // Build the JSON example with ALL attributes for better Gemini compliance
+    const attrExample = attributes.map((a, i) => `        "${a}": ${7 + (i * 0.25).toFixed(2)}`).join(',\n')
+
     const prompt = `Analyze this handwritten coffee cupping card image carefully.
 
 The card has a table structure with:
@@ -332,8 +374,9 @@ IMPORTANT INSTRUCTIONS:
 2. Pay attention to which row each score belongs to (match with cupper name on the left)
 3. Pay attention to which column each score belongs to (match with attribute header at top)
 4. If a score is hard to read, make your best estimate based on the handwriting style
-5. Include ALL ${attributes.length} attributes for each cupper (${attributes.join(', ')})
+5. Include ALL ${attributes.length} attributes for each cupper
 6. If a cell appears empty, use null
+7. CRITICAL: Use the EXACT attribute names I provided: ${attributes.join(', ')}
 
 Return ONLY valid JSON (no markdown, no code blocks, just the JSON object):
 {
@@ -341,8 +384,7 @@ Return ONLY valid JSON (no markdown, no code blocks, just the JSON object):
     {
       "name": "CupperName",
       "scores": {
-        "${attributes[0]}": 7.5,
-        "${attributes[1]}": 7.0
+${attrExample}
       }
     }
   ],
@@ -353,6 +395,7 @@ Return ONLY valid JSON (no markdown, no code blocks, just the JSON object):
 
 Rules for the response:
 - "name" should match one of the cupper names I provided: ${cupperNames}
+- The "scores" object MUST use these EXACT attribute keys: ${attributes.map(a => `"${a}"`).join(', ')}
 - Scores should be numbers (not strings), or null if unreadable
 - "confidence" is your overall confidence level 0-100 for the extraction
 - "taints" and "faults" are arrays of strings (empty if none written)
@@ -399,12 +442,49 @@ Rules for the response:
         a => a.name.toLowerCase().includes(c.name?.toLowerCase()) || c.name?.toLowerCase().includes(a.name.toLowerCase())
       ) || assignedCuppers[idx]
 
-      // Ensure all attributes are present
+      // Ensure all attributes are present - use case-insensitive matching
       const scores: Record<string, number> = {}
+
+      // Build a map of lowercase keys to original Gemini response keys
+      const geminiScoresLower: Record<string, string> = {}
+      if (c.scores) {
+        for (const key of Object.keys(c.scores)) {
+          geminiScoresLower[key.toLowerCase()] = key
+        }
+      }
+
       for (const attr of attributes) {
-        const score = c.scores?.[attr]
+        // Try exact match first
+        let score = c.scores?.[attr]
+        let matchType = 'exact'
+
+        // If no exact match, try case-insensitive match
+        if (score === null || score === undefined) {
+          const lowerAttr = attr.toLowerCase()
+          const matchingKey = geminiScoresLower[lowerAttr]
+          if (matchingKey) {
+            score = c.scores[matchingKey]
+            matchType = 'case-insensitive'
+          }
+        }
+
+        // If still no match, try partial matching (e.g., "Fragrance" in "Fragrance/Aroma")
+        if (score === null || score === undefined) {
+          const lowerAttr = attr.toLowerCase()
+          for (const [lowerKey, originalKey] of Object.entries(geminiScoresLower)) {
+            if (lowerKey.includes(lowerAttr) || lowerAttr.includes(lowerKey)) {
+              score = c.scores[originalKey]
+              matchType = `partial(${originalKey})`
+              break
+            }
+          }
+        }
+
         if (score !== null && score !== undefined && !isNaN(Number(score))) {
           scores[attr] = Number(score)
+          console.log(`[GEMINI] Cupper ${c.name}: ${attr} = ${score} (${matchType})`)
+        } else {
+          console.log(`[GEMINI] Cupper ${c.name}: ${attr} = NO MATCH (Gemini keys: ${Object.keys(c.scores || {}).join(', ')})`)
         }
       }
 
@@ -468,6 +548,7 @@ function createEmptyExtraction(assignedCuppers: Array<{ id: string; name: string
 interface QRData {
   sample_id: string
   tracking_number: string
+  template_id?: string  // Optional template ID from QR code
   type: string
 }
 
@@ -496,17 +577,44 @@ async function detectQRCode(imageUrl: string | null, imageBuffer: Buffer | null)
   return null
 }
 
-// Parse QR code content - supports both formats:
-// 1. New simplified: "WAQC:sample_id:tracking_number"
-// 2. Legacy JSON: {"sample_id":"...","tracking_number":"..."}
+// Parse QR code content - supports multiple formats:
+// 1. New with template: "WAQC:sample_id:tracking_number:template_id"
+// 2. Old simplified: "WAQC:sample_id:tracking_number"
+// 3. Legacy JSON: {"sample_id":"...","tracking_number":"..."}
 function parseQRContent(rawValue: string): QRData | null {
-  // Try new simplified format first: WAQC:uuid:tracking
+  // Try WAQC format first
   if (rawValue.startsWith('WAQC:')) {
     const parts = rawValue.split(':')
     if (parts.length >= 3) {
+      // Check if we have a UUID at position 3 (template_id)
+      // UUIDs are 36 chars with format: xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
+      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
+
+      // Format: WAQC:sample_id:tracking_number:template_id
+      // sample_id is a UUID at parts[1]
+      // tracking_number is at parts[2]
+      // template_id (optional) is a UUID at parts[3] if present
+
+      const sample_id = parts[1]
+      let tracking_number = parts[2]
+      let template_id: string | undefined
+
+      // Check if last part is a UUID (template_id)
+      if (parts.length >= 4 && isUUID(parts[parts.length - 1])) {
+        template_id = parts[parts.length - 1]
+        // Tracking number is everything between sample_id and template_id
+        tracking_number = parts.slice(2, parts.length - 1).join(':')
+      } else {
+        // No template_id, tracking number is everything after sample_id
+        tracking_number = parts.slice(2).join(':')
+      }
+
+      console.log(`[QR] Parsed: sample=${sample_id}, tracking=${tracking_number}, template=${template_id || 'none'}`)
+
       return {
-        sample_id: parts[1],
-        tracking_number: parts.slice(2).join(':'), // Handle tracking numbers with colons
+        sample_id,
+        tracking_number,
+        template_id,
         type: 'cupping_card'
       }
     }
@@ -519,6 +627,7 @@ function parseQRContent(rawValue: string): QRData | null {
       return {
         sample_id: parsed.sample_id,
         tracking_number: parsed.tracking_number,
+        template_id: parsed.template_id,
         type: parsed.type || 'cupping_card'
       }
     }

@@ -156,7 +156,7 @@
         "id": 7,
         "title": "Build Green Bean Analysis Interface",
         "description": "Create green bean quality assessment form with client-specific defects, dynamic screen sizes, and automatic out-of-spec warnings",
-        "status": "in-progress",
+        "status": "done",
         "dependencies": [
           "6"
         ],
@@ -172,7 +172,7 @@
               2
             ],
             "details": "Add photo upload capability that stores images in the defect_photos array field of quality_assessments table. Implement client-side image compression before upload. Allow multiple photos per assessment. Provide photo preview and management interface. Connect to Supabase storage for actual file storage with proper references in the defect_photos array.\n<info added on 2025-11-03T15:37:12.918Z>\nLet me analyze the codebase first to understand the current implementation and how this deferral relates to the batch grading interface.STATUS UPDATE (2025-11-03): Photo upload functionality for defect documentation was identified during comprehensive batch grading interface implementation but intentionally deferred. Current batch grading workflow at src/app/assessment/grading/batch/page.tsx prioritizes speed and efficiency during quality assessment process. Numerical data entry (defect counts, screen sizes, moisture, quakers) provides sufficient information for immediate grading decisions. Photo documentation would slow down batch processing workflow where time efficiency is critical for laboratory productivity. Feature remains in pending status for future enhancement phase when user feedback indicates demand for visual defect documentation without impacting grading speed. Decision aligns with laboratory workflow priorities emphasizing throughput over comprehensive documentation during initial assessment phase.\n</info added on 2025-11-03T15:37:12.918Z>",
-            "status": "pending",
+            "status": "done",
             "testStrategy": "Test photo upload and compression, test multiple photo handling, test Supabase storage integration",
             "parentId": "undefined"
           },
@@ -1616,6 +1616,17 @@
         ],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 44,
+        "title": "Single-Cupper Session Auto-Detection for Validation",
+        "description": "Implement automatic detection of single-cupper sessions that bypass the 2-cupper minimum validation rule for emergency/holiday situations.",
+        "details": "COMPLETED (2025-12-01): Implemented automatic single-cupper session detection.\n\nPROBLEM:\n- Labs normally require 2 cuppers minimum for validation\n- Emergency/holiday situations sometimes require a single cupper to complete the entire workflow\n- Previously required manual setting of allow_single_cupper flag\n\nSOLUTION:\nAutomatically detect when only 1 cupper is assigned to a session and bypass the 2-cupper minimum.\n\nCHANGES MADE:\n\n1. **API Endpoint** (src/app/api/cupping/validate/route.ts):\n   - Added detection: `const assignedCupperCount = (session.cupper_ids as string[])?.length || 0`\n   - Added flag: `const isSingleCupperSession = assignedCupperCount === 1`\n   - Updated min requirement: `(session.allow_single_cupper || isSingleCupperSession) ? 1 : 2`\n   - Added to response: `is_single_cupper_session`, `assigned_cuppers`, `is_single_cupper_exception`\n\n2. **Database Function** (database/migrations/123_cupping_access_control.sql):\n   - Added variables: `v_assigned_cupper_count`, `v_is_single_cupper_session`\n   - Count cuppers: `jsonb_array_length(COALESCE(v_session_record.cupper_ids, '[]'::jsonb))`\n   - Updated logic: `IF v_session_record.allow_single_cupper OR v_is_single_cupper_session THEN`\n\nBEHAVIOR:\n- When assigning cuppers, if only 1 cupper is assigned, system auto-treats as exception\n- Single cupper can validate their own scores after completing them\n- No manual configuration needed - detected by cupper_ids array length\n\nCommit: 6ac74b4",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -1628,7 +1639,7 @@
       ],
       "created": "2025-11-26T13:11:34.127Z",
       "description": "Tasks for master context",
-      "updated": "2025-11-27T16:40:52.476Z"
+      "updated": "2025-12-01T12:15:32.866Z"
     }
   }
 }
