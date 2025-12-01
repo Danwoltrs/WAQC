@@ -3,21 +3,10 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { notifications } from '@/lib/notifications'
 
-// Create admin client with service role key (bypasses RLS)
-const supabaseAdmin = createSupabaseClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-  {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
-    },
-  }
-)
-
 /**
  * POST /api/notifications/samples-assigned
  * Creates a cupping session and sends notifications to assigned cuppers
+ * Also moves samples to 'analysis' workflow stage
  * Body: { cupper_ids: string[], sample_ids: string[], session_id?: string }
  */
 export async function POST(request: NextRequest) {
@@ -50,22 +39,47 @@ export async function POST(request: NextRequest) {
 
     console.log(`Creating cupping session for ${cupper_ids.length} cupper(s) and ${sample_ids.length} sample(s)`)
 
+    // Create admin client if service role key is available (for RLS bypass)
+    // Fall back to authenticated client if not available
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+    let dbClient: any = supabase // Use authenticated client by default
+
+    if (serviceRoleKey) {
+      dbClient = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        serviceRoleKey,
+        {
+          auth: {
+            autoRefreshToken: false,
+            persistSession: false,
+          },
+        }
+      )
+      console.log('Using admin client (service role)')
+    } else {
+      console.log('SUPABASE_SERVICE_ROLE_KEY not set - using authenticated client')
+    }
+
     // Track which cuppers are newly added (for notifications)
     let newCupperIds: string[] = cupper_ids
     let finalSessionId = session_id
 
     // Check if there's already an active session containing ANY of these samples
     // This prevents duplicate sessions for the same samples
-    const { data: existingSessions } = await supabaseAdmin
+    const { data: existingSessions, error: sessionQueryError } = await dbClient
       .from('cupping_sessions')
       .select('id, cupper_ids, sample_ids')
       .eq('status', 'active')
       .eq('laboratory_id', profile?.laboratory_id)
 
+    if (sessionQueryError) {
+      console.error('Error querying existing sessions:', sessionQueryError)
+    }
+
     // Find a session that has overlapping samples
-    const matchingSession = existingSessions?.find(session => {
+    const matchingSession = existingSessions?.find((session: any) => {
       const sessionSamples = (session.sample_ids as string[]) || []
-      return sample_ids.some(id => sessionSamples.includes(id))
+      return sample_ids.some((id: string) => sessionSamples.includes(id))
     })
 
     if (matchingSession && !session_id) {
@@ -81,7 +95,7 @@ export async function POST(request: NextRequest) {
       const existingSampleIds = (matchingSession.sample_ids as string[]) || []
       const mergedSampleIds = [...new Set([...existingSampleIds, ...sample_ids])]
 
-      const { error: updateError } = await supabaseAdmin
+      const { error: updateError } = await dbClient
         .from('cupping_sessions')
         .update({
           cupper_ids: mergedCupperIds,
@@ -102,7 +116,7 @@ export async function POST(request: NextRequest) {
       console.log(`Updated existing cupping session: ${finalSessionId} (added ${newCupperIds.length} new cupper(s))`)
     } else if (!finalSessionId) {
       // Create a new cupping session with the assigned cuppers and samples
-      const { data: newSession, error: sessionError } = await supabaseAdmin
+      const { data: newSession, error: sessionError } = await dbClient
         .from('cupping_sessions')
         .insert({
           sample_ids: sample_ids,
@@ -130,7 +144,7 @@ export async function POST(request: NextRequest) {
       console.log(`Created cupping session: ${finalSessionId}`)
     } else {
       // Update existing session by session_id
-      const { data: existingSession } = await supabaseAdmin
+      const { data: existingSession } = await dbClient
         .from('cupping_sessions')
         .select('cupper_ids, sample_ids')
         .eq('id', session_id)
@@ -143,7 +157,7 @@ export async function POST(request: NextRequest) {
         const mergedCupperIds = [...new Set([...existingCupperIds, ...cupper_ids])]
         const mergedSampleIds = [...new Set([...(existingSession.sample_ids || []), ...sample_ids])]
 
-        await supabaseAdmin
+        await dbClient
           .from('cupping_sessions')
           .update({
             cupper_ids: mergedCupperIds,
@@ -157,25 +171,43 @@ export async function POST(request: NextRequest) {
 
     // CRITICAL: Move samples to 'analysis' workflow stage so they appear in /cupping page
     console.log(`Moving ${sample_ids.length} samples to analysis stage...`)
-    const { error: sampleUpdateError } = await supabaseAdmin
+
+    // Update samples - try without the workflow_stage filter first for broader compatibility
+    const { data: updatedSamples, error: sampleUpdateError } = await dbClient
       .from('samples')
       .update({
         workflow_stage: 'analysis',
         status: 'in_progress',
       })
       .in('id', sample_ids)
-      .eq('workflow_stage', 'received') // Only update samples that are still in 'received'
+      .select('id, workflow_stage')
 
     if (sampleUpdateError) {
       console.error('Failed to update sample workflow_stage:', sampleUpdateError)
-      // Don't fail the request - session was created successfully
+      // Try alternative approach: update each sample individually
+      console.log('Trying individual sample updates...')
+      for (const sampleId of sample_ids) {
+        const { error: individualError } = await dbClient
+          .from('samples')
+          .update({
+            workflow_stage: 'analysis',
+            status: 'in_progress',
+          })
+          .eq('id', sampleId)
+
+        if (individualError) {
+          console.error(`Failed to update sample ${sampleId}:`, individualError)
+        } else {
+          console.log(`Updated sample ${sampleId} to analysis stage`)
+        }
+      }
     } else {
-      console.log(`Samples moved to analysis stage`)
+      console.log(`Successfully updated ${updatedSamples?.length || 0} samples to analysis stage`)
     }
 
     // Create/update quality_assessments to mark samples ready for grading and cupping
     for (const sampleId of sample_ids) {
-      const { error: assessmentError } = await supabaseAdmin
+      const { error: assessmentError } = await dbClient
         .from('quality_assessments')
         .upsert({
           sample_id: sampleId,
