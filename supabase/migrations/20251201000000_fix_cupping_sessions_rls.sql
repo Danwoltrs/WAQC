@@ -2,8 +2,11 @@
 -- The previous policy used ANY() with participants which has type mismatch issues
 -- This migration updates the policy to use JSONB contains operator for cupper_ids
 --
--- Note: auth.uid() returns UUID type, but created_by and participants are text type
--- All comparisons must cast auth.uid() to text
+-- Note:
+-- - auth.uid() returns UUID
+-- - created_by is UUID
+-- - participants is text[] (but stores UUIDs as text, so cast to uuid[])
+-- - cupper_ids is JSONB array of strings
 
 -- Drop existing policy
 DROP POLICY IF EXISTS "Users can view relevant cupping sessions" ON cupping_sessions;
@@ -14,14 +17,14 @@ ON cupping_sessions
 FOR SELECT
 TO authenticated
 USING (
-  -- User created the session (cast UUID to text)
-  created_by = (auth.uid())::text
+  -- User created the session (cast both to text for safe comparison)
+  created_by::text = (auth.uid())::text
   OR
   -- User is in cupper_ids (JSONB array contains the user's UUID as text)
   cupper_ids @> to_jsonb(ARRAY[(auth.uid())::text])
   OR
-  -- User is in participants (text array)
-  (auth.uid())::text = ANY(participants)
+  -- User is in participants (cast text[] to uuid[] for comparison)
+  auth.uid() = ANY(participants::uuid[])
 );
 
 -- Also add policy for UPDATE so cuppers can update session progress
@@ -32,16 +35,16 @@ ON cupping_sessions
 FOR UPDATE
 TO authenticated
 USING (
-  created_by = (auth.uid())::text
+  created_by::text = (auth.uid())::text
   OR
   cupper_ids @> to_jsonb(ARRAY[(auth.uid())::text])
   OR
-  (auth.uid())::text = ANY(participants)
+  auth.uid() = ANY(participants::uuid[])
 )
 WITH CHECK (
-  created_by = (auth.uid())::text
+  created_by::text = (auth.uid())::text
   OR
   cupper_ids @> to_jsonb(ARRAY[(auth.uid())::text])
   OR
-  (auth.uid())::text = ANY(participants)
+  auth.uid() = ANY(participants::uuid[])
 );
