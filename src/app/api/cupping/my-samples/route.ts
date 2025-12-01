@@ -154,7 +154,6 @@ export async function GET(request: NextRequest) {
         status,
         quality_spec_id,
         client:clients(id, company, fantasy_name),
-        supplier:suppliers(id, company),
         quality_spec:client_qualities(
           id,
           custom_name,
