@@ -119,6 +119,15 @@ export default function GradingPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
+  // User permission state (for access control)
+  const [userProfile, setUserProfile] = useState<{
+    id: string
+    is_cupper: boolean
+    is_q_grader: boolean
+    is_master_cupper: boolean
+    laboratory_id: string
+  } | null>(null)
+
   // Theme tracking for chart re-rendering
   const [theme, setTheme] = useState<'light' | 'dark'>(() => isDarkMode() ? 'dark' : 'light')
 
@@ -374,15 +383,21 @@ export default function GradingPage() {
   const loadSamples = async () => {
     try {
       setLoading(true)
-      // Load samples in 'analysis' workflow stage
-      const response = await fetch('/api/samples?workflow_stage=analysis&limit=100')
+      // Load samples assigned to the current user through cupping sessions
+      // This ensures only cuppers who were assigned to the session can see the samples
+      const response = await fetch('/api/cupping/my-samples?include_completed=true')
       const data = await response.json()
 
-      if (response.ok && data.samples) {
-        // Load full details for each sample
-        const sampleIds = data.samples.map((s: Sample) => s.id)
+      if (response.ok) {
+        // Store user profile for permission checks
+        if (data.user_profile) {
+          setUserProfile(data.user_profile)
+        }
 
-        if (sampleIds.length > 0) {
+        if (data.samples && data.samples.length > 0) {
+          // Load full details for each sample
+          const sampleIds = data.samples.map((s: Sample) => s.id)
+
           const detailsResponse = await fetch('/api/samples/bulk-details', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -510,6 +525,10 @@ export default function GradingPage() {
             setGreenAspectOptionsMap(newGreenAspectOptionsMap)
             setRoastAspectOptionsMap(newRoastAspectOptionsMap)
           }
+        } else {
+          // No samples assigned - this is normal if user isn't assigned to any sessions
+          setSamples([])
+          console.log('No samples assigned:', data.message)
         }
       }
     } catch (error) {
@@ -1110,9 +1129,14 @@ export default function GradingPage() {
       <MainLayout>
         <div className="flex items-center justify-center h-full">
           <div className="text-center space-y-4">
-            <h2 className="text-xl font-semibold">No samples ready for grading</h2>
-            <p className="text-muted-foreground">
-              Samples must be in the analysis stage to appear here.
+            <h2 className="text-xl font-semibold">No samples assigned to you</h2>
+            <p className="text-muted-foreground max-w-md">
+              You don&apos;t have any samples assigned for grading.
+              {userProfile?.is_cupper || userProfile?.is_q_grader ? (
+                <> Samples must be assigned to you through a cupping session.</>
+              ) : (
+                <> You need to be designated as a cupper to see grading samples.</>
+              )}
             </p>
             <Button onClick={() => router.push('/samples')}>
               Back to Samples

@@ -59,10 +59,39 @@ interface IndividualScore {
   created_at: string
 }
 
+interface ValidationPermissions {
+  can_validate: boolean
+  reason: string
+  session: {
+    id: string
+    status: string
+    sample_ids: string[]
+    cupper_ids: string[]
+    min_cuppers_required: number
+    allow_single_cupper: boolean
+  } | null
+  user_profile: {
+    id: string
+    is_cupper: boolean
+    is_q_grader: boolean
+    is_master_cupper: boolean
+    is_global_admin: boolean
+    is_assigned: boolean
+    has_completed: boolean
+  }
+  stats: {
+    total_samples: number
+    completed_cuppers: number
+    min_cuppers_required: number
+    has_master_cupper_assigned: boolean
+  }
+}
+
 interface CuppingValidationModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   sampleId: string | null
+  sessionId?: string | null
   sampleTrackingNumber?: string
   onFinalize?: () => void
   onEditScore?: (cupperId: string) => void
@@ -72,6 +101,7 @@ export function CuppingValidationModal({
   open,
   onOpenChange,
   sampleId,
+  sessionId,
   sampleTrackingNumber,
   onFinalize,
   onEditScore,
@@ -80,13 +110,34 @@ export function CuppingValidationModal({
   const [loading, setLoading] = useState(false)
   const [aggregated, setAggregated] = useState<AggregatedScores | null>(null)
   const [individualScores, setIndividualScores] = useState<IndividualScore[]>([])
+  const [permissions, setPermissions] = useState<ValidationPermissions | null>(null)
 
-  // Fetch aggregated scores when modal opens
+  // Fetch aggregated scores and permissions when modal opens
   useEffect(() => {
     if (open && sampleId) {
       fetchAggregatedScores()
+      fetchPermissions()
     }
-  }, [open, sampleId])
+  }, [open, sampleId, sessionId])
+
+  const fetchPermissions = async () => {
+    if (!sampleId && !sessionId) return
+
+    try {
+      const params = new URLSearchParams()
+      if (sessionId) params.set('session_id', sessionId)
+      if (sampleId) params.set('sample_id', sampleId)
+
+      const response = await fetch(`/api/cupping/validate?${params.toString()}`)
+      const data = await response.json()
+
+      if (response.ok) {
+        setPermissions(data)
+      }
+    } catch (error) {
+      console.error('Error fetching validation permissions:', error)
+    }
+  }
 
   const fetchAggregatedScores = async () => {
     if (!sampleId) return
@@ -119,6 +170,16 @@ export function CuppingValidationModal({
   }
 
   const handleFinalize = () => {
+    // Check permission first
+    if (!permissions?.can_validate) {
+      toast({
+        title: 'Cannot Validate',
+        description: permissions?.reason || 'You do not have permission to validate this session',
+        variant: 'destructive',
+      })
+      return
+    }
+
     if (aggregated?.hasDiscrepancies) {
       toast({
         title: 'Cannot Finalize',
@@ -130,6 +191,20 @@ export function CuppingValidationModal({
 
     onFinalize?.()
     onOpenChange(false)
+  }
+
+  // Determine if button should be disabled
+  const canFinalize = permissions?.can_validate && !aggregated?.hasDiscrepancies
+
+  // Get button text based on state
+  const getButtonText = () => {
+    if (!permissions?.can_validate) {
+      return permissions?.reason || 'Validation Not Allowed'
+    }
+    if (aggregated?.hasDiscrepancies) {
+      return 'Resolve Discrepancies First'
+    }
+    return 'Finalize Scores'
   }
 
   const handleEditCupperScore = (cupperId: string) => {
@@ -428,27 +503,48 @@ export function CuppingValidationModal({
           </TabsContent>
         </Tabs>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Close
-          </Button>
-          <Button
-            onClick={handleFinalize}
-            disabled={aggregated.hasDiscrepancies}
-            className={aggregated.hasDiscrepancies ? '' : 'bg-green-600 hover:bg-green-700'}
-          >
-            {aggregated.hasDiscrepancies ? (
-              <>
-                <AlertCircle className="h-4 w-4 mr-2" />
-                Resolve Discrepancies First
-              </>
-            ) : (
-              <>
-                <CheckCircle2 className="h-4 w-4 mr-2" />
-                Finalize Scores
-              </>
-            )}
-          </Button>
+        <DialogFooter className="flex-col sm:flex-row gap-2">
+          {/* Permission status indicator */}
+          {permissions && !permissions.can_validate && (
+            <div className="flex-1 text-sm text-muted-foreground text-left">
+              {permissions.reason}
+            </div>
+          )}
+
+          {/* Cupper stats */}
+          {permissions?.stats && (
+            <div className="text-xs text-muted-foreground">
+              {permissions.stats.completed_cuppers}/{permissions.stats.min_cuppers_required} cuppers completed
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <Button variant="outline" onClick={() => onOpenChange(false)}>
+              Close
+            </Button>
+            <Button
+              onClick={handleFinalize}
+              disabled={!canFinalize}
+              className={canFinalize ? 'bg-green-600 hover:bg-green-700' : ''}
+            >
+              {!permissions?.can_validate ? (
+                <>
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  {getButtonText()}
+                </>
+              ) : aggregated.hasDiscrepancies ? (
+                <>
+                  <AlertCircle className="h-4 w-4 mr-2" />
+                  Resolve Discrepancies First
+                </>
+              ) : (
+                <>
+                  <CheckCircle2 className="h-4 w-4 mr-2" />
+                  Finalize Scores
+                </>
+              )}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
