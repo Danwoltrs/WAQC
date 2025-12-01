@@ -116,9 +116,9 @@ function AcceptInviteContent() {
 
       setSuccess(true)
 
-      // Redirect to dashboard after 2 seconds
+      // Redirect to home (samples page) after 2 seconds
       setTimeout(() => {
-        router.push('/dashboard')
+        router.push('/')
       }, 2000)
     } catch (err: any) {
       console.error('Error accepting invitation:', err)
@@ -143,7 +143,7 @@ function AcceptInviteContent() {
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+          redirectTo: `${window.location.origin}/auth/callback?next=/`,
           scopes: 'email profile openid',
         },
       })
