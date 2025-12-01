@@ -65,19 +65,19 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
             <span className="text-muted-foreground">Type:</span> {formData.sample_type?.toUpperCase() || '-'}
           </div>
           <div>
-            <span className="text-muted-foreground">Exporter:</span> {formData.exporter || '-'}
+            <span className="text-muted-foreground">Seller:</span> {formData.seller || '-'}
           </div>
           <div>
-            <span className="text-muted-foreground">Buyer:</span> {formData.buyer || '-'}
+            <span className="text-muted-foreground">Shipper:</span> {formData.shipper || '-'}
           </div>
+          {formData.buyer && (
+            <div>
+              <span className="text-muted-foreground">Buyer:</span> {formData.buyer}
+            </div>
+          )}
           {formData.roaster && (
             <div>
               <span className="text-muted-foreground">Roaster:</span> {formData.roaster}
-            </div>
-          )}
-          {formData.supplier && (
-            <div>
-              <span className="text-muted-foreground">Supplier:</span> {formData.supplier}
             </div>
           )}
           {formData.quality_name && (

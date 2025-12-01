@@ -6581,7 +6581,9 @@ export type Database = {
           roaster_contract_nr: string | null
           roaster_id: string | null
           roaster_legacy: string | null
+          same_seller_shipper: boolean | null
           sample_type: Database["public"]["Enums"]["sample_type_enum"] | null
+          seller_id: string | null
           status: Database["public"]["Enums"]["sample_status"] | null
           storage_position: string | null
           supplier_type: string | null
@@ -6627,7 +6629,9 @@ export type Database = {
           roaster_contract_nr?: string | null
           roaster_id?: string | null
           roaster_legacy?: string | null
+          same_seller_shipper?: boolean | null
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
+          seller_id?: string | null
           status?: Database["public"]["Enums"]["sample_status"] | null
           storage_position?: string | null
           supplier_type?: string | null
@@ -6673,7 +6677,9 @@ export type Database = {
           roaster_contract_nr?: string | null
           roaster_id?: string | null
           roaster_legacy?: string | null
+          same_seller_shipper?: boolean | null
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
+          seller_id?: string | null
           status?: Database["public"]["Enums"]["sample_status"] | null
           storage_position?: string | null
           supplier_type?: string | null
