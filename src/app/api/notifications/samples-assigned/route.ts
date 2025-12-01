@@ -121,6 +121,7 @@ export async function POST(request: NextRequest) {
         .insert({
           sample_ids: sample_ids,
           cupper_ids: cupper_ids,
+          participants: cupper_ids, // Required NOT NULL field - same as cupper_ids
           status: 'active',
           session_type: 'regular',
           session_date: new Date().toISOString(),
