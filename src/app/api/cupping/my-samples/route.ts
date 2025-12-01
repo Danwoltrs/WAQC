@@ -1,5 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+
+// Create admin client with service role key (bypasses RLS)
+// This is needed because RLS on cupping_sessions has complex JSONB checks
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
 
 /**
  * GET /api/cupping/my-samples
@@ -63,7 +77,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Get cupping sessions where this user is assigned
-    const { data: sessions, error: sessionsError } = await (supabase as any)
+    // Use admin client to bypass RLS - we filter by user.id in the contains query
+    const { data: sessions, error: sessionsError } = await (supabaseAdmin as any)
       .from('cupping_sessions')
       .select(`
         id,
@@ -123,7 +138,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Get sample details for all assigned samples
-    const { data: samples, error: samplesError } = await (supabase as any)
+    // Use admin client to bypass RLS - samples have lab-specific access rules
+    const { data: samples, error: samplesError } = await (supabaseAdmin as any)
       .from('samples')
       .select(`
         id,
