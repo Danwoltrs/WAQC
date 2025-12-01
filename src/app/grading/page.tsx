@@ -1582,38 +1582,39 @@ export default function GradingPage() {
                                   <div className="text-xs text-muted-foreground"></div>
                                 </div>
 
-                                {/* Humidity */}
-                                <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
-                                  <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
-                                    Humidity (%)
-                                  </Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    step="0.1"
-                                    value={gradingData?.moisture_percentage || 0}
-                                    onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
-                                    className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
-                                  />
-                                  <div className="text-xs text-muted-foreground"></div>
-                                </div>
+                                {/* Humidity and Density side by side */}
+                                <div className="flex gap-4">
+                                  {/* Humidity */}
+                                  <div className="grid grid-cols-[90px_70px] gap-2 items-center">
+                                    <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                      Humidity (%)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      step="0.1"
+                                      value={gradingData?.moisture_percentage || 0}
+                                      onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
+                                      className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                    />
+                                  </div>
 
-                                {/* Density */}
-                                <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
-                                  <Label className="text-sm whitespace-nowrap">
-                                    Density (G/L)
-                                  </Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    step="0.001"
-                                    value={gradingData?.density || ''}
-                                    onChange={(e) => handleFieldChange(sample.id, 'density', parseFloat(e.target.value) || 0)}
-                                    placeholder="0.700"
-                                    className="h-8 text-sm w-20"
-                                  />
-                                  <div className="text-xs text-muted-foreground"></div>
+                                  {/* Density */}
+                                  <div className="grid grid-cols-[90px_70px] gap-2 items-center">
+                                    <Label className="text-sm whitespace-nowrap">
+                                      Density (G/L)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.001"
+                                      value={gradingData?.density || ''}
+                                      onChange={(e) => handleFieldChange(sample.id, 'density', parseFloat(e.target.value) || 0)}
+                                      placeholder="0.700"
+                                      className="h-8 text-sm w-20"
+                                    />
+                                  </div>
                                 </div>
                               </div>
                             ) : (
@@ -1633,38 +1634,39 @@ export default function GradingPage() {
                                   </div>
                                 )}
 
-                                {/* Humidity */}
-                                <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
-                                  <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
-                                    Humidity (%)
-                                  </Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    max="100"
-                                    step="0.1"
-                                    value={gradingData?.moisture_percentage || 0}
-                                    onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
-                                    className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
-                                  />
-                                  <div className="text-xs text-muted-foreground"></div>
-                                </div>
+                                {/* Humidity and Density side by side */}
+                                <div className="flex gap-4">
+                                  {/* Humidity */}
+                                  <div className="grid grid-cols-[90px_70px] gap-2 items-center">
+                                    <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                      Humidity (%)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      max="100"
+                                      step="0.1"
+                                      value={gradingData?.moisture_percentage || 0}
+                                      onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
+                                      className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                    />
+                                  </div>
 
-                                {/* Density */}
-                                <div className="grid grid-cols-[90px_70px_50px] gap-2 items-center">
-                                  <Label className="text-sm whitespace-nowrap">
-                                    Density (G/L)
-                                  </Label>
-                                  <Input
-                                    type="number"
-                                    min="0"
-                                    step="0.001"
-                                    value={gradingData?.density || ''}
-                                    onChange={(e) => handleFieldChange(sample.id, 'density', parseFloat(e.target.value) || 0)}
-                                    placeholder="0.700"
-                                    className="h-8 text-sm w-20"
-                                  />
-                                  <div className="text-xs text-muted-foreground"></div>
+                                  {/* Density */}
+                                  <div className="grid grid-cols-[90px_70px] gap-2 items-center">
+                                    <Label className="text-sm whitespace-nowrap">
+                                      Density (G/L)
+                                    </Label>
+                                    <Input
+                                      type="number"
+                                      min="0"
+                                      step="0.001"
+                                      value={gradingData?.density || ''}
+                                      onChange={(e) => handleFieldChange(sample.id, 'density', parseFloat(e.target.value) || 0)}
+                                      placeholder="0.700"
+                                      className="h-8 text-sm w-20"
+                                    />
+                                  </div>
                                 </div>
                               </>
                             )}
