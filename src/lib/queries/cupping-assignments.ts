@@ -169,3 +169,74 @@ export async function getPendingSamplesForLaboratory(
     return 0
   }
 }
+
+/**
+ * Get count of pending samples for grading (green bean assessment)
+ * Samples are considered pending for grading if:
+ * 1. They are in 'analysis' workflow stage
+ * 2. They don't have a completed green_bean_data assessment
+ *
+ * @param supabase - Supabase client instance
+ * @param laboratoryId - Laboratory ID (optional, filters by lab)
+ * @returns Count of pending samples for grading
+ */
+export async function getPendingSamplesForGrading(
+  supabase: SupabaseClient,
+  laboratoryId?: string
+): Promise<number> {
+  try {
+    // Get samples in 'analysis' stage
+    let query = supabase
+      .from('samples')
+      .select('id')
+      .eq('workflow_stage', 'analysis')
+      .is('deleted_at', null)
+
+    if (laboratoryId) {
+      query = query.eq('laboratory_id', laboratoryId)
+    }
+
+    const { data: samples, error: samplesError } = await query
+
+    if (samplesError || !samples || samples.length === 0) {
+      return 0
+    }
+
+    const sampleIds = samples.map(s => s.id)
+
+    // Get samples that have completed grading (green_bean_data has defect_count or total_defects)
+    const { data: gradedSamples, error: gradedError } = await supabase
+      .from('quality_assessments')
+      .select('sample_id, green_bean_data')
+      .in('sample_id', sampleIds)
+
+    if (gradedError) {
+      console.error('Error fetching quality_assessments:', gradedError)
+      return samples.length // Return all as pending if we can't check
+    }
+
+    // Filter to find samples with completed grading
+    const gradedSampleIds = new Set(
+      (gradedSamples || [])
+        .filter(qa => {
+          const data = qa.green_bean_data as any
+          // Consider graded if has defect_count, total_defects, or screen_size data
+          return data && (
+            data.defect_count !== undefined ||
+            data.total_defects !== undefined ||
+            data.screen_sizes !== undefined ||
+            data.completed === true
+          )
+        })
+        .map(qa => qa.sample_id)
+    )
+
+    // Count samples without completed grading
+    const pendingCount = sampleIds.filter(id => !gradedSampleIds.has(id)).length
+
+    return pendingCount
+  } catch (error) {
+    console.error('Error in getPendingSamplesForGrading:', error)
+    return 0
+  }
+}

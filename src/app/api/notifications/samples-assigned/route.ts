@@ -1,6 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { notifications } from '@/lib/notifications'
+
+// Create admin client with service role key (bypasses RLS)
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
 
 /**
  * POST /api/notifications/samples-assigned
@@ -37,13 +50,59 @@ export async function POST(request: NextRequest) {
 
     console.log(`Creating cupping session for ${cupper_ids.length} cupper(s) and ${sample_ids.length} sample(s)`)
 
-    // Create or update cupping session
+    // Track which cuppers are newly added (for notifications)
+    let newCupperIds: string[] = cupper_ids
     let finalSessionId = session_id
 
-    if (!finalSessionId) {
+    // Check if there's already an active session containing ANY of these samples
+    // This prevents duplicate sessions for the same samples
+    const { data: existingSessions } = await supabaseAdmin
+      .from('cupping_sessions')
+      .select('id, cupper_ids, sample_ids')
+      .eq('status', 'active')
+      .eq('laboratory_id', profile?.laboratory_id)
+
+    // Find a session that has overlapping samples
+    const matchingSession = existingSessions?.find(session => {
+      const sessionSamples = (session.sample_ids as string[]) || []
+      return sample_ids.some(id => sessionSamples.includes(id))
+    })
+
+    if (matchingSession && !session_id) {
+      // Found existing session - update it instead of creating new
+      finalSessionId = matchingSession.id
+      const existingCupperIds = (matchingSession.cupper_ids as string[]) || []
+
+      // Find truly new cuppers (not already in the session)
+      newCupperIds = cupper_ids.filter(id => !existingCupperIds.includes(id))
+
+      // Merge cuppers and samples
+      const mergedCupperIds = [...new Set([...existingCupperIds, ...cupper_ids])]
+      const existingSampleIds = (matchingSession.sample_ids as string[]) || []
+      const mergedSampleIds = [...new Set([...existingSampleIds, ...sample_ids])]
+
+      const { error: updateError } = await supabaseAdmin
+        .from('cupping_sessions')
+        .update({
+          cupper_ids: mergedCupperIds,
+          sample_ids: mergedSampleIds,
+          min_cuppers_required: Math.min(mergedCupperIds.length, 2),
+          allow_single_cupper: mergedCupperIds.length === 1,
+        })
+        .eq('id', finalSessionId)
+
+      if (updateError) {
+        console.error('Failed to update cupping session:', updateError)
+        return NextResponse.json({
+          error: 'Failed to update cupping session',
+          details: updateError.message
+        }, { status: 500 })
+      }
+
+      console.log(`Updated existing cupping session: ${finalSessionId} (added ${newCupperIds.length} new cupper(s))`)
+    } else if (!finalSessionId) {
       // Create a new cupping session with the assigned cuppers and samples
-      // Cast to any to bypass TypeScript strict checking for optional columns
-      const { data: newSession, error: sessionError } = await (supabase as any)
+      const { data: newSession, error: sessionError } = await supabaseAdmin
         .from('cupping_sessions')
         .insert({
           sample_ids: sample_ids,
@@ -53,8 +112,8 @@ export async function POST(request: NextRequest) {
           session_date: new Date().toISOString(),
           laboratory_id: profile?.laboratory_id,
           created_by: user.id,
-          min_cuppers_required: Math.min(cupper_ids.length, 2), // Require at least 2 or all assigned
-          allow_single_cupper: cupper_ids.length === 1, // Allow single cupper if only 1 assigned
+          min_cuppers_required: Math.min(cupper_ids.length, 2),
+          allow_single_cupper: cupper_ids.length === 1,
         })
         .select('id')
         .single()
@@ -70,18 +129,21 @@ export async function POST(request: NextRequest) {
       finalSessionId = newSession.id
       console.log(`Created cupping session: ${finalSessionId}`)
     } else {
-      // Update existing session to add cuppers and samples
-      const { data: existingSession } = await (supabase as any)
+      // Update existing session by session_id
+      const { data: existingSession } = await supabaseAdmin
         .from('cupping_sessions')
         .select('cupper_ids, sample_ids')
         .eq('id', session_id)
         .single()
 
       if (existingSession) {
-        const mergedCupperIds = [...new Set([...(existingSession.cupper_ids || []), ...cupper_ids])]
+        const existingCupperIds = (existingSession.cupper_ids as string[]) || []
+        newCupperIds = cupper_ids.filter(id => !existingCupperIds.includes(id))
+
+        const mergedCupperIds = [...new Set([...existingCupperIds, ...cupper_ids])]
         const mergedSampleIds = [...new Set([...(existingSession.sample_ids || []), ...sample_ids])]
 
-        await (supabase as any)
+        await supabaseAdmin
           .from('cupping_sessions')
           .update({
             cupper_ids: mergedCupperIds,
@@ -93,10 +155,48 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Send notification to each assigned cupper
-    console.log(`Sending notifications to ${cupper_ids.length} cupper(s)`)
+    // CRITICAL: Move samples to 'analysis' workflow stage so they appear in /cupping page
+    console.log(`Moving ${sample_ids.length} samples to analysis stage...`)
+    const { error: sampleUpdateError } = await supabaseAdmin
+      .from('samples')
+      .update({
+        workflow_stage: 'analysis',
+        status: 'in_progress',
+      })
+      .in('id', sample_ids)
+      .eq('workflow_stage', 'received') // Only update samples that are still in 'received'
+
+    if (sampleUpdateError) {
+      console.error('Failed to update sample workflow_stage:', sampleUpdateError)
+      // Don't fail the request - session was created successfully
+    } else {
+      console.log(`Samples moved to analysis stage`)
+    }
+
+    // Create/update quality_assessments to mark samples ready for grading and cupping
+    for (const sampleId of sample_ids) {
+      const { error: assessmentError } = await supabaseAdmin
+        .from('quality_assessments')
+        .upsert({
+          sample_id: sampleId,
+          green_bean_data: { ready_for_grading: true },
+          roast_data: { ready_for_cupping: true },
+          updated_at: new Date().toISOString(),
+        }, {
+          onConflict: 'sample_id',
+        })
+
+      if (assessmentError) {
+        console.warn(`Failed to update quality_assessment for sample ${sampleId}:`, assessmentError)
+      }
+    }
+
+    // Send notification only to NEW cuppers (not already assigned)
+    const cuppersToNotify = newCupperIds.length > 0 ? newCupperIds : []
+    console.log(`Sending notifications to ${cuppersToNotify.length} new cupper(s)`)
+
     const results = await Promise.all(
-      cupper_ids.map(cupperId =>
+      cuppersToNotify.map(cupperId =>
         notifications.samplesAssigned(cupperId, sample_ids.length, sample_ids, finalSessionId)
       )
     )
@@ -104,21 +204,33 @@ export async function POST(request: NextRequest) {
     const successCount = results.filter(r => r.success).length
     const failureCount = results.filter(r => !r.success).length
 
-    console.log(`Sent ${successCount}/${cupper_ids.length} notifications successfully`)
+    console.log(`Sent ${successCount}/${cuppersToNotify.length} notifications successfully`)
+
+    // Handle case where no new cuppers to notify (re-assignment)
+    if (cuppersToNotify.length === 0) {
+      return NextResponse.json({
+        message: `Cuppers already assigned. Session updated with ${sample_ids.length} sample(s).`,
+        sent: 0,
+        session_id: finalSessionId,
+        samples_updated: sample_ids.length
+      })
+    }
 
     if (failureCount > 0) {
       return NextResponse.json({
         message: `Partially successful: ${successCount} sent, ${failureCount} failed`,
         sent: successCount,
         failed: failureCount,
-        session_id: finalSessionId
+        session_id: finalSessionId,
+        samples_updated: sample_ids.length
       }, { status: 207 })
     }
 
     return NextResponse.json({
-      message: `Successfully sent ${successCount} notification${successCount !== 1 ? 's' : ''}`,
+      message: `Successfully sent ${successCount} notification${successCount !== 1 ? 's' : ''} and updated ${sample_ids.length} sample(s)`,
       sent: successCount,
-      session_id: finalSessionId
+      session_id: finalSessionId,
+      samples_updated: sample_ids.length
     })
   } catch (error) {
     console.error('Error in POST /api/notifications/samples-assigned:', error)

@@ -40,7 +40,7 @@ import { useSampleIntake } from '@/components/samples/sample-intake-provider'
 import { hasPermission } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
-import { getPendingSamplesForCupper } from '@/lib/queries/cupping-assignments'
+import { getPendingSamplesForCupper, getPendingSamplesForGrading } from '@/lib/queries/cupping-assignments'
 
 interface NavItem {
   title: string
@@ -182,6 +182,7 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   const { openIntakeDialog } = useSampleIntake()
   const [pendingRequestsCount, setPendingRequestsCount] = useState<number>(0)
   const [pendingSamplesCount, setPendingSamplesCount] = useState<number>(0)
+  const [pendingGradingSamplesCount, setPendingGradingSamplesCount] = useState<number>(0)
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['/']))
   const [hoverTimeoutId, setHoverTimeoutId] = useState<NodeJS.Timeout | null>(null)
   const [currentLanguage, setCurrentLanguage] = useState('EN')
@@ -286,6 +287,45 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
     }
   }, [profile, permissions])
 
+  // Fetch pending grading samples count
+  useEffect(() => {
+    const fetchPendingGradingSamples = async () => {
+      if (!profile?.laboratory_id || !hasPermission(permissions, 'conduct_assessments')) {
+        return
+      }
+
+      try {
+        const count = await getPendingSamplesForGrading(supabase, profile.laboratory_id)
+        setPendingGradingSamplesCount(count)
+      } catch (error) {
+        console.error('Error fetching pending grading samples count:', error)
+      }
+    }
+
+    fetchPendingGradingSamples()
+
+    // Set up real-time subscription for quality_assessments and samples
+    const gradingChannel = supabase
+      .channel('grading_changes')
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'quality_assessments' },
+        () => {
+          fetchPendingGradingSamples()
+        }
+      )
+      .on('postgres_changes',
+        { event: '*', schema: 'public', table: 'samples' },
+        () => {
+          fetchPendingGradingSamples()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(gradingChannel)
+    }
+  }, [profile, permissions])
+
   const filterNavByPermissions = (nav: NavItem[]) => {
     return nav.filter(item => !item.permission || hasPermission(permissions, item.permission))
   }
@@ -322,6 +362,9 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
     }
     if (item.href === '/cupping' && pendingSamplesCount > 0) {
       return { ...item, badge: String(pendingSamplesCount) }
+    }
+    if (item.href === '/grading' && pendingGradingSamplesCount > 0) {
+      return { ...item, badge: String(pendingGradingSamplesCount) }
     }
     return item
   }
