@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Save, X, Search, Building2, MapPin, Mail, Phone, AlertCircle, Plus, Trash2, Layers, FileText, Eye, Upload, ImageIcon } from 'lucide-react'
@@ -113,6 +114,12 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
   const [logoError, setLogoError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
 
+  // Unsaved changes tracking
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false)
+  const [showUnsavedDialog, setShowUnsavedDialog] = useState(false)
+  const initialDataRef = useRef<string | null>(null)
+  const isInitialLoadRef = useRef(true)
+
   // Legacy search state
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
@@ -123,9 +130,56 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
   useEffect(() => {
     if (mode === 'edit' && clientId) {
       loadClient()
+    } else if (mode === 'create') {
+      // For create mode, set initial state immediately
+      initialDataRef.current = JSON.stringify({
+        formData,
+        clientType: selectedClientType,
+        useOriginPricing,
+        logoUrl,
+        certificatePattern,
+      })
+      isInitialLoadRef.current = false
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId, mode])
+
+  // Track changes to detect unsaved modifications
+  useEffect(() => {
+    if (isInitialLoadRef.current || !initialDataRef.current) return
+
+    const currentState = JSON.stringify({
+      formData,
+      clientType: selectedClientType,
+      useOriginPricing,
+      logoUrl,
+      certificatePattern,
+    })
+
+    setHasUnsavedChanges(currentState !== initialDataRef.current)
+  }, [formData, selectedClientType, useOriginPricing, logoUrl, certificatePattern])
+
+  // Warn user before leaving page with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload)
+  }, [hasUnsavedChanges])
+
+  // Handle cancel with unsaved changes check
+  const handleCancel = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setShowUnsavedDialog(true)
+    } else {
+      router.back()
+    }
+  }, [hasUnsavedChanges, router])
 
   const loadClient = async () => {
     try {
@@ -152,6 +206,18 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
         if (data.client.has_origin_pricing) {
           await loadOriginPricing()
         }
+
+        // Store initial state for change detection (after a small delay to let state settle)
+        setTimeout(() => {
+          initialDataRef.current = JSON.stringify({
+            formData: data.client,
+            clientType: data.client.client_types?.[0] || '',
+            useOriginPricing: data.client.has_origin_pricing || false,
+            logoUrl: data.client.logo_url || null,
+            certificatePattern: data.client.certificate_pattern || DEFAULT_CERTIFICATE_PATTERN,
+          })
+          isInitialLoadRef.current = false
+        }, 100)
       } else {
         setError(data.error || 'Failed to load client')
       }
@@ -408,6 +474,8 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
           await saveOriginPricing(savedClientId)
         }
 
+        // Clear unsaved changes flag before navigation
+        setHasUnsavedChanges(false)
         router.push('/clients')
         router.refresh()
       } else {
@@ -446,7 +514,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-6">
+    <form id="client-form" onSubmit={handleSubmit} className="space-y-6">
       {error && (
         <div className="bg-destructive/10 text-destructive px-4 py-3 rounded-lg">
           {error}
@@ -1467,30 +1535,80 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
       )}
 
       {/* Form Actions */}
-      <div className="flex items-center justify-end gap-4">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.back()}
-          disabled={saving}
-        >
-          <X className="h-4 w-4 mr-2" />
-          Cancel
-        </Button>
-        <Button type="submit" disabled={saving}>
-          {saving ? (
-            <>
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            <>
-              <Save className="h-4 w-4 mr-2" />
-              {mode === 'create' ? 'Create Client' : 'Update Client'}
-            </>
-          )}
-        </Button>
+      {/* Spacer for sticky footer */}
+      <div className="h-20" />
+
+      {/* Sticky Footer */}
+      <div className="fixed bottom-0 left-0 right-0 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80 border-t z-50">
+        <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            {hasUnsavedChanges && (
+              <>
+                <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                <span>Unsaved changes</span>
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={handleCancel}
+              disabled={saving}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <Save className="h-4 w-4 mr-2" />
+                  {mode === 'create' ? 'Create Client' : 'Update Client'}
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </div>
+
+      {/* Unsaved Changes Dialog */}
+      <Dialog open={showUnsavedDialog} onOpenChange={setShowUnsavedDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Unsaved Changes</DialogTitle>
+            <DialogDescription>
+              You have unsaved changes. Do you want to save them before leaving?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setShowUnsavedDialog(false)
+                setHasUnsavedChanges(false)
+                router.back()
+              }}
+            >
+              Discard
+            </Button>
+            <Button
+              onClick={() => {
+                setShowUnsavedDialog(false)
+                // Trigger form submit
+                document.getElementById('client-form')?.dispatchEvent(
+                  new Event('submit', { cancelable: true, bubbles: true })
+                )
+              }}
+            >
+              Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </form>
   )
 }
