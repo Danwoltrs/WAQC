@@ -111,6 +111,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
   const [logoUrl, setLogoUrl] = useState<string | null>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [logoError, setLogoError] = useState<string | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
 
   // Legacy search state
   const [searchQuery, setSearchQuery] = useState('')
@@ -180,11 +181,8 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
     }
   }
 
-  // Logo upload handler
-  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) return
-
+  // Logo upload handler - accepts file from input or drag/drop
+  const processLogoFile = async (file: File) => {
     // Validate file type
     const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']
     if (!validTypes.includes(file.type)) {
@@ -239,6 +237,37 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
       setLogoError('Failed to upload logo. Please try again.')
     } finally {
       setUploadingLogo(false)
+    }
+  }
+
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (file) {
+      await processLogoFile(file)
+    }
+  }
+
+  // Drag and drop handlers
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(true)
+  }
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+  }
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragging(false)
+
+    const file = e.dataTransfer.files?.[0]
+    if (file) {
+      await processLogoFile(file)
     }
   }
 
@@ -1089,11 +1118,16 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                       Company Logo
                     </div>
                     <div className="flex items-center gap-4">
-                      {/* Logo Preview */}
-                      <div className="flex-shrink-0">
+                      {/* Logo Preview / Drop Zone */}
+                      <div
+                        className="flex-shrink-0"
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                        onDrop={handleDrop}
+                      >
                         {logoUrl ? (
                           <div className="relative group">
-                            <div className="w-20 h-20 rounded-lg border bg-muted/30 flex items-center justify-center overflow-hidden">
+                            <div className={`w-20 h-20 rounded-lg border bg-muted/30 flex items-center justify-center overflow-hidden transition-colors ${isDragging ? 'border-primary border-2' : ''}`}>
                               <img
                                 src={logoUrl}
                                 alt="Company logo"
@@ -1110,8 +1144,19 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                             </button>
                           </div>
                         ) : (
-                          <div className="w-20 h-20 rounded-lg border-2 border-dashed border-muted-foreground/25 flex items-center justify-center">
-                            <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
+                          <div
+                            className={`w-20 h-20 rounded-lg border-2 border-dashed flex items-center justify-center transition-colors cursor-pointer ${
+                              isDragging
+                                ? 'border-primary bg-primary/10'
+                                : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+                            }`}
+                            onClick={() => document.getElementById('logo-upload')?.click()}
+                          >
+                            {uploadingLogo ? (
+                              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
+                            ) : (
+                              <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
+                            )}
                           </div>
                         )}
                       </div>
