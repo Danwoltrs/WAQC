@@ -144,8 +144,10 @@ export async function PATCH(
       'city',
       'state',
       'country',
+      'zip_code',
       'email',
       'phone',
+      'vat_number',
       'client_types',
       'is_qc_client',
       'pricing_model',
@@ -155,11 +157,14 @@ export async function PATCH(
       'fee_payer',
       'payment_terms',
       'billing_notes',
+      'billing_basis',
+      'has_origin_pricing',
       'tracking_number_format',
       'certificate_pattern',
       'qc_enabled',
       'company_id',
-      'legacy_client_id'
+      'legacy_client_id',
+      'logo_url',
     ]
 
     for (const field of allowedFields) {

@@ -149,8 +149,10 @@ export async function POST(request: NextRequest) {
       city: body.city,
       state: body.state,
       country: body.country,
+      zip_code: body.zip_code,
       email: body.email,
       phone: body.phone,
+      vat_number: body.vat_number,
       client_types: body.client_types || [], // Array of client types
       is_qc_client: body.is_qc_client !== undefined ? body.is_qc_client : true,
       // Pricing fields
@@ -161,11 +163,14 @@ export async function POST(request: NextRequest) {
       fee_payer: body.fee_payer || 'client_pays',
       payment_terms: body.payment_terms,
       billing_notes: body.billing_notes,
+      billing_basis: body.billing_basis || 'approved_only',
+      has_origin_pricing: body.has_origin_pricing || false,
       tracking_number_format: body.tracking_number_format,
       certificate_pattern: body.certificate_pattern, // Certificate numbering pattern
       qc_enabled: body.qc_enabled !== undefined ? body.qc_enabled : true,
       company_id: body.company_id, // Link to companies table if imported
-      legacy_client_id: body.legacy_client_id // For imported clients
+      legacy_client_id: body.legacy_client_id, // For imported clients
+      logo_url: body.logo_url, // Company logo for certificates
     }
 
     // Insert client

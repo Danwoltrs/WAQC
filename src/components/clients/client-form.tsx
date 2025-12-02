@@ -9,8 +9,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Loader2, Save, X, Search, Building2, MapPin, Mail, Phone, AlertCircle, Plus, Trash2, Layers, FileText, Eye } from 'lucide-react'
-import { Database } from '@/lib/supabase'
+import { Loader2, Save, X, Search, Building2, MapPin, Mail, Phone, AlertCircle, Plus, Trash2, Layers, FileText, Eye, Upload, ImageIcon } from 'lucide-react'
+import { Database, supabase } from '@/lib/supabase'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN, generateCertificatePreview } from '@/types/certificate-pattern'
@@ -107,6 +107,11 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
   // Certificate pattern state
   const [certificatePattern, setCertificatePattern] = useState<CertificatePattern>(DEFAULT_CERTIFICATE_PATTERN)
 
+  // Logo upload state
+  const [logoUrl, setLogoUrl] = useState<string | null>(null)
+  const [uploadingLogo, setUploadingLogo] = useState(false)
+  const [logoError, setLogoError] = useState<string | null>(null)
+
   // Legacy search state
   const [searchQuery, setSearchQuery] = useState('')
   const [searching, setSearching] = useState(false)
@@ -131,6 +136,11 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
         setFormData(data.client)
         setSelectedClientType(data.client.client_types?.[0] || '')
         setUseOriginPricing(data.client.has_origin_pricing || false)
+
+        // Load logo URL if it exists
+        if (data.client.logo_url) {
+          setLogoUrl(data.client.logo_url)
+        }
 
         // Load certificate pattern if it exists
         if (data.client.certificate_pattern) {
@@ -167,6 +177,95 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
       console.error('Error loading origin pricing:', err)
     } finally {
       setLoadingOriginPricing(false)
+    }
+  }
+
+  // Logo upload handler
+  const handleLogoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    // Validate file type
+    const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']
+    if (!validTypes.includes(file.type)) {
+      setLogoError('Please upload a PNG, JPEG, WebP, or SVG image')
+      return
+    }
+
+    // Validate file size (2MB max)
+    if (file.size > 2 * 1024 * 1024) {
+      setLogoError('Logo must be smaller than 2MB')
+      return
+    }
+
+    setUploadingLogo(true)
+    setLogoError(null)
+
+    try {
+      // Generate a unique filename using timestamp and random string
+      const fileExt = file.name.split('.').pop()
+      const fileName = `${clientId || 'new'}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
+      const filePath = `${fileName}`
+
+      // Upload to Supabase Storage
+      const { error: uploadError } = await supabase.storage
+        .from('client-logos')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false
+        })
+
+      if (uploadError) {
+        throw uploadError
+      }
+
+      // Get the public URL
+      const { data: urlData } = supabase.storage
+        .from('client-logos')
+        .getPublicUrl(filePath)
+
+      if (urlData?.publicUrl) {
+        // If there's an existing logo, delete the old one
+        if (logoUrl) {
+          const oldPath = logoUrl.split('/client-logos/').pop()
+          if (oldPath) {
+            await supabase.storage.from('client-logos').remove([oldPath])
+          }
+        }
+        setLogoUrl(urlData.publicUrl)
+      }
+    } catch (err) {
+      console.error('Logo upload error:', err)
+      setLogoError('Failed to upload logo. Please try again.')
+    } finally {
+      setUploadingLogo(false)
+    }
+  }
+
+  // Logo delete handler
+  const handleLogoDelete = async () => {
+    if (!logoUrl) return
+
+    setUploadingLogo(true)
+    setLogoError(null)
+
+    try {
+      const filePath = logoUrl.split('/client-logos/').pop()
+      if (filePath) {
+        const { error } = await supabase.storage
+          .from('client-logos')
+          .remove([filePath])
+
+        if (error) {
+          throw error
+        }
+      }
+      setLogoUrl(null)
+    } catch (err) {
+      console.error('Logo delete error:', err)
+      setLogoError('Failed to delete logo. Please try again.')
+    } finally {
+      setUploadingLogo(false)
     }
   }
 
@@ -258,6 +357,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
         has_origin_pricing: useOriginPricing,
         certificate_pattern: certificatePattern,
         tracking_number_format: certificatePattern, // Use same config for tracking numbers
+        logo_url: logoUrl, // Include the logo URL
       }
 
       const url = mode === 'create' ? '/api/clients' : `/api/clients/${clientId}`
@@ -980,8 +1080,100 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                 {/* Vertical Separator */}
                 <div className="hidden lg:block bg-border" />
 
-                {/* Right side: Certificate Pattern Configuration */}
+                {/* Right side: Logo & Certificate Pattern Configuration */}
                 <div className="space-y-4">
+                  {/* Company Logo Section */}
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2 text-sm font-semibold">
+                      <ImageIcon className="h-4 w-4" />
+                      Company Logo
+                    </div>
+                    <div className="flex items-center gap-4">
+                      {/* Logo Preview */}
+                      <div className="flex-shrink-0">
+                        {logoUrl ? (
+                          <div className="relative group">
+                            <div className="w-20 h-20 rounded-lg border bg-muted/30 flex items-center justify-center overflow-hidden">
+                              <img
+                                src={logoUrl}
+                                alt="Company logo"
+                                className="max-w-full max-h-full object-contain"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={handleLogoDelete}
+                              disabled={uploadingLogo}
+                              className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <X className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="w-20 h-20 rounded-lg border-2 border-dashed border-muted-foreground/25 flex items-center justify-center">
+                            <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Upload Controls */}
+                      <div className="flex-1 space-y-2">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={uploadingLogo}
+                          onClick={() => document.getElementById('logo-upload')?.click()}
+                          className="w-full"
+                        >
+                          {uploadingLogo ? (
+                            <>
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Uploading...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-4 w-4 mr-2" />
+                              {logoUrl ? 'Change' : 'Upload'}
+                            </>
+                          )}
+                        </Button>
+                        {logoUrl && (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={uploadingLogo}
+                            onClick={handleLogoDelete}
+                            className="w-full text-destructive hover:text-destructive"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Remove
+                          </Button>
+                        )}
+                        <input
+                          id="logo-upload"
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                          className="hidden"
+                          onChange={handleLogoUpload}
+                        />
+                      </div>
+                    </div>
+                    {logoError && (
+                      <div className="flex items-center gap-2 text-xs text-destructive">
+                        <AlertCircle className="h-3 w-3" />
+                        {logoError}
+                      </div>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      For certificates. PNG recommended, max 2MB.
+                    </p>
+                  </div>
+
+                  {/* Horizontal Separator */}
+                  <div className="border-t" />
+
                   <div className="flex items-center gap-2 text-sm font-semibold">
                     <FileText className="h-4 w-4" />
                     Certificate Pattern
