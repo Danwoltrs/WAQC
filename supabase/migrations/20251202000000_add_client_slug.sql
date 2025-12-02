@@ -1,6 +1,9 @@
 -- Add slug column to clients table
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS slug TEXT UNIQUE;
 
+-- Enable unaccent extension to handle accented characters (é → e, ñ → n, etc.)
+CREATE EXTENSION IF NOT EXISTS unaccent;
+
 -- Create function to generate slug from text
 CREATE OR REPLACE FUNCTION generate_client_slug(input_text TEXT)
 RETURNS TEXT AS $$
@@ -9,8 +12,9 @@ DECLARE
   final_slug TEXT;
   counter INTEGER := 0;
 BEGIN
-  -- Convert to lowercase, replace spaces and special chars with hyphens
-  base_slug := LOWER(TRIM(input_text));
+  -- Convert to lowercase and remove accents (é → e, ñ → n, ü → u, etc.)
+  base_slug := LOWER(TRIM(unaccent(input_text)));
+  -- Replace spaces and special chars with hyphens, keep only a-z and 0-9
   base_slug := REGEXP_REPLACE(base_slug, '[^a-z0-9]+', '-', 'g');
   base_slug := REGEXP_REPLACE(base_slug, '^-+|-+$', '', 'g'); -- Trim leading/trailing hyphens
   base_slug := SUBSTRING(base_slug FROM 1 FOR 50); -- Limit length
