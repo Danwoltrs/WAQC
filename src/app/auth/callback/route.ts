@@ -27,8 +27,8 @@ export async function GET(request: NextRequest) {
   try {
     const cookieStore = await cookies()
 
-    // Create response to set cookies properly
-    const response = NextResponse.redirect(`${requestUrl.origin}${next}`)
+    // Collect cookies to set on response
+    const cookiesToSet: Array<{ name: string; value: string; options: any }> = []
 
     const supabase = createServerClient<Database>(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -39,21 +39,12 @@ export async function GET(request: NextRequest) {
             return cookieStore.get(name)?.value
           },
           set(name: string, value: string, options: any) {
-            try {
-              cookieStore.set({ name, value, ...options })
-              response.cookies.set({ name, value, ...options })
-            } catch (error) {
-              // Handle cookie setting errors in production
-              console.error('Error setting cookie:', name, error)
-            }
+            // Collect cookies to set later on the response
+            cookiesToSet.push({ name, value, options })
           },
           remove(name: string, options: any) {
-            try {
-              cookieStore.set({ name, value: '', ...options })
-              response.cookies.set({ name, value: '', ...options })
-            } catch (error) {
-              console.error('Error removing cookie:', name, error)
-            }
+            // Collect cookie removal
+            cookiesToSet.push({ name, value: '', options: { ...options, maxAge: 0 } })
           },
         },
       }
@@ -77,6 +68,16 @@ export async function GET(request: NextRequest) {
     }
 
     console.log('Successfully created session for user:', data.user?.id)
+    console.log('Setting', cookiesToSet.length, 'cookies on response')
+
+    // Create redirect response AFTER exchanging code
+    const response = NextResponse.redirect(`${requestUrl.origin}${next}`)
+
+    // Set all collected cookies on the response
+    for (const cookie of cookiesToSet) {
+      response.cookies.set(cookie.name, cookie.value, cookie.options)
+    }
+
     return response
 
   } catch (error) {
