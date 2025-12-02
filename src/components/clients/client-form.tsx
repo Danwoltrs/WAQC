@@ -1117,21 +1117,20 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                       <ImageIcon className="h-4 w-4" />
                       Company Logo
                     </div>
-                    <div className="flex items-center gap-4">
+                    <div className="space-y-3">
                       {/* Logo Preview / Drop Zone */}
                       <div
-                        className="flex-shrink-0"
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
                         onDrop={handleDrop}
                       >
                         {logoUrl ? (
                           <div className="relative group">
-                            <div className={`w-20 h-20 rounded-lg border bg-muted/30 flex items-center justify-center overflow-hidden transition-colors ${isDragging ? 'border-primary border-2' : ''}`}>
+                            <div className={`w-full h-28 rounded-lg border bg-muted/30 flex items-center justify-center overflow-hidden transition-colors ${isDragging ? 'border-primary border-2' : ''}`}>
                               <img
                                 src={logoUrl}
                                 alt="Company logo"
-                                className="max-w-full max-h-full object-contain"
+                                className="max-w-full max-h-full object-contain p-2"
                               />
                             </div>
                             <button
@@ -1145,7 +1144,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                           </div>
                         ) : (
                           <div
-                            className={`w-20 h-20 rounded-lg border-2 border-dashed flex items-center justify-center transition-colors cursor-pointer ${
+                            className={`w-full h-28 rounded-lg border-2 border-dashed flex flex-col items-center justify-center gap-1 transition-colors cursor-pointer ${
                               isDragging
                                 ? 'border-primary bg-primary/10'
                                 : 'border-muted-foreground/25 hover:border-muted-foreground/50'
@@ -1155,30 +1154,30 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                             {uploadingLogo ? (
                               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground/50" />
                             ) : (
-                              <ImageIcon className="h-8 w-8 text-muted-foreground/50" />
+                              <>
+                                <ImageIcon className="h-6 w-6 text-muted-foreground/40" />
+                                <span className="text-xs text-muted-foreground/60">Drop image here</span>
+                              </>
                             )}
                           </div>
                         )}
                       </div>
 
                       {/* Upload Controls */}
-                      <div className="flex-1 space-y-2">
+                      <div className="flex gap-2">
                         <Button
                           type="button"
                           variant="outline"
                           size="sm"
                           disabled={uploadingLogo}
                           onClick={() => document.getElementById('logo-upload')?.click()}
-                          className="w-full"
+                          className="flex-1 h-7 text-xs"
                         >
                           {uploadingLogo ? (
-                            <>
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                              Uploading...
-                            </>
+                            <Loader2 className="h-3 w-3 animate-spin" />
                           ) : (
                             <>
-                              <Upload className="h-4 w-4 mr-2" />
+                              <Upload className="h-3 w-3 mr-1" />
                               {logoUrl ? 'Change' : 'Upload'}
                             </>
                           )}
@@ -1190,20 +1189,19 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                             size="sm"
                             disabled={uploadingLogo}
                             onClick={handleLogoDelete}
-                            className="w-full text-destructive hover:text-destructive"
+                            className="h-7 text-xs text-destructive hover:text-destructive px-2"
                           >
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Remove
+                            <Trash2 className="h-3 w-3" />
                           </Button>
                         )}
-                        <input
-                          id="logo-upload"
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                          className="hidden"
-                          onChange={handleLogoUpload}
-                        />
                       </div>
+                      <input
+                        id="logo-upload"
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                        className="hidden"
+                        onChange={handleLogoUpload}
+                      />
                     </div>
                     {logoError && (
                       <div className="flex items-center gap-2 text-xs text-destructive">
