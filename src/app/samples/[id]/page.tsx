@@ -11,7 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   ArrowLeft, CheckCircle, XCircle, Clock, AlertCircle, MapPin,
   Calendar, Package, FileText, Activity, Download, Printer,
-  QrCode, Edit, Trash2, User, Building2
+  QrCode, Edit, Trash2, User, Building2, Award, Loader2
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -108,6 +108,8 @@ export default function SampleDetailPage() {
   const [activityLog, setActivityLog] = useState<ActivityLog[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
+  const [generatingCertificate, setGeneratingCertificate] = useState(false)
+  const [downloadingCertificate, setDownloadingCertificate] = useState(false)
 
   useEffect(() => {
     if (params.id) {
@@ -137,8 +139,18 @@ export default function SampleDetailPage() {
         setAssessments(assessmentsData.assessments)
       }
 
-      // TODO: Load certificates when endpoint is available
-      // const certsRes = await fetch(`/api/certificates?sample_id=${params.id}`)
+      // Load certificates
+      const certsRes = await fetch(`/api/samples/${params.id}/certificate`)
+      if (certsRes.status === 200) {
+        // PDF response means certificate exists
+        setCertificates([{
+          id: 'current',
+          sample_id: params.id as string,
+          certificate_number: 'Available',
+          status: 'issued',
+          created_at: new Date().toISOString()
+        }])
+      }
 
       // TODO: Load activity log when endpoint is available
       // const activityRes = await fetch(`/api/activity-log?sample_id=${params.id}`)
@@ -191,6 +203,68 @@ export default function SampleDetailPage() {
       alert(error instanceof Error ? error.message : 'Failed to delete sample')
     } finally {
       setDeleting(false)
+    }
+  }
+
+  const handleGenerateCertificate = async () => {
+    if (!sample) return
+
+    try {
+      setGeneratingCertificate(true)
+
+      // First, create a certificate record if it doesn't exist
+      const createRes = await fetch(`/api/samples/${sample.id}/certificate`, {
+        method: 'POST'
+      })
+
+      if (!createRes.ok) {
+        const data = await createRes.json()
+        throw new Error(data.error || 'Failed to create certificate')
+      }
+
+      // Then download the PDF
+      await handleDownloadCertificate()
+
+      // Reload sample details to update certificate info
+      await loadSampleDetails()
+    } catch (error) {
+      console.error('Error generating certificate:', error)
+      alert(error instanceof Error ? error.message : 'Failed to generate certificate')
+    } finally {
+      setGeneratingCertificate(false)
+    }
+  }
+
+  const handleDownloadCertificate = async () => {
+    if (!sample) return
+
+    try {
+      setDownloadingCertificate(true)
+
+      const response = await fetch(`/api/samples/${sample.id}/certificate`)
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to download certificate')
+      }
+
+      // Get the PDF blob
+      const blob = await response.blob()
+
+      // Create download link
+      const url = window.URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `certificate-${parseTrackingNumber(sample.tracking_number)}.pdf`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      window.URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Error downloading certificate:', error)
+      alert(error instanceof Error ? error.message : 'Failed to download certificate')
+    } finally {
+      setDownloadingCertificate(false)
     }
   }
 
@@ -318,6 +392,19 @@ export default function SampleDetailPage() {
             <Button variant="outline" size="sm">
               <QrCode className="h-4 w-4 mr-2" />
               QR Code
+            </Button>
+            <Button
+              variant="default"
+              size="sm"
+              onClick={certificates.length > 0 ? handleDownloadCertificate : handleGenerateCertificate}
+              disabled={generatingCertificate || downloadingCertificate}
+            >
+              {generatingCertificate || downloadingCertificate ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Award className="h-4 w-4 mr-2" />
+              )}
+              {certificates.length > 0 ? 'Download Certificate' : 'Generate Certificate'}
             </Button>
             <Button variant="outline" size="sm">
               <Edit className="h-4 w-4 mr-2" />
@@ -588,39 +675,82 @@ export default function SampleDetailPage() {
           </TabsContent>
 
           <TabsContent value="certificates" className="space-y-4">
-            {certificates.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <FileText className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-semibold mb-2">No certificates yet</h3>
-                  <p className="text-muted-foreground">
-                    Certificates will be generated after cupping is complete
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4">
-                {certificates.map((cert) => (
-                  <Card key={cert.id}>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">{cert.certificate_number}</CardTitle>
-                        <Badge>{cert.status}</Badge>
-                      </div>
-                      <CardDescription>
-                        Issued: {cert.issued_date ? new Date(cert.issued_date).toLocaleDateString() : 'Pending'}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      <Button variant="outline" size="sm">
-                        <Download className="h-4 w-4 mr-2" />
-                        Download PDF
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle>Quality Certificate</CardTitle>
+                    <CardDescription>
+                      Generate and download the official quality certificate for this sample
+                    </CardDescription>
+                  </div>
+                  {certificates.length > 0 && (
+                    <Badge variant="default" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Available
+                    </Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-col items-center py-6 space-y-4">
+                  <Award className="h-16 w-16 text-muted-foreground" />
+
+                  {certificates.length === 0 ? (
+                    <>
+                      <p className="text-muted-foreground text-center max-w-md">
+                        Generate an official quality certificate containing all analysis data,
+                        cupping scores, and supply chain information for this sample.
+                      </p>
+                      <Button
+                        onClick={handleGenerateCertificate}
+                        disabled={generatingCertificate}
+                      >
+                        {generatingCertificate ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Award className="h-4 w-4 mr-2" />
+                        )}
+                        {generatingCertificate ? 'Generating...' : 'Generate Certificate'}
                       </Button>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-muted-foreground text-center max-w-md">
+                        The quality certificate for this sample is ready for download.
+                        It includes all analysis results, cupping scores, and traceability information.
+                      </p>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="default"
+                          onClick={handleDownloadCertificate}
+                          disabled={downloadingCertificate}
+                        >
+                          {downloadingCertificate ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Download className="h-4 w-4 mr-2" />
+                          )}
+                          {downloadingCertificate ? 'Downloading...' : 'Download PDF'}
+                        </Button>
+                        <Button
+                          variant="outline"
+                          onClick={handleGenerateCertificate}
+                          disabled={generatingCertificate}
+                        >
+                          {generatingCertificate ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <FileText className="h-4 w-4 mr-2" />
+                          )}
+                          Regenerate
+                        </Button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="activity" className="space-y-4">
