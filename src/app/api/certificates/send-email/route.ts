@@ -251,7 +251,7 @@ export async function POST(request: NextRequest) {
 
         // Send email with Resend
         const { error: emailError } = await resend.emails.send({
-          from: 'Wolthers QC <noreply@wolthers.com>',
+          from: 'Wolthers QC <qualitycontrol@wolthers.com>',
           to: email,
           subject: `Quality Certificates: ${certNumbers}`,
           html: `
