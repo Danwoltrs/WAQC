@@ -123,8 +123,8 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
 
     console.log('No profile found, creating one for user:', user.id)
 
-    // Check for pending invitation
-    const { data: invitation } = await supabaseAdmin
+    // Check for pending invitation (cast to any since DB has columns not in types)
+    const { data: invitationData } = await supabaseAdmin
       .from('user_invitations')
       .select('*')
       .ilike('email', user.email || '')
@@ -133,6 +133,9 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
+
+    // Cast to any to access columns that exist in DB but not in generated types
+    const invitation = invitationData as any
 
     // Get default laboratory
     const { data: defaultLab } = await supabaseAdmin
@@ -153,10 +156,10 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
         .insert({
           id: user.id,
           email: user.email || '',
-          first_name: invitation.first_name,
-          last_name: invitation.last_name,
-          full_name: `${invitation.first_name} ${invitation.last_name}`,
-          qc_role: invitation.qc_role,
+          first_name: invitation.first_name || '',
+          last_name: invitation.last_name || '',
+          full_name: `${invitation.first_name || ''} ${invitation.last_name || ''}`.trim() || user.email?.split('@')[0] || 'User',
+          qc_role: invitation.qc_role || 'lab_personnel',
           qc_enabled: invitation.qc_enabled ?? true,
           is_cupper: invitation.is_cupper ?? false,
           is_q_grader: invitation.is_q_grader ?? false,
