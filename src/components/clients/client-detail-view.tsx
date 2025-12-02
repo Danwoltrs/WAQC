@@ -106,19 +106,22 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">
-            <div className="flex items-start gap-4">
+            <div className="flex items-center gap-5">
               {/* Company Logo */}
               {client.logo_url && (
-                <div className="w-16 h-16 rounded-lg border bg-muted/30 flex items-center justify-center overflow-hidden flex-shrink-0">
-                  <img
-                    src={client.logo_url}
-                    alt={`${client.company} logo`}
-                    className="max-w-full max-h-full object-contain"
-                  />
-                </div>
+                <>
+                  <div className="h-[60px] flex items-center justify-center flex-shrink-0">
+                    <img
+                      src={client.logo_url}
+                      alt={`${client.company} logo`}
+                      className="h-[60px] w-auto object-contain"
+                    />
+                  </div>
+                  <div className="h-12 w-px bg-border" />
+                </>
               )}
               <div>
-                <CardTitle className="text-2xl">{client.company}</CardTitle>
+                <CardTitle className="text-2xl">{client.fantasy_name || client.company}</CardTitle>
                 <CardDescription className="text-base mt-1">{client.name}</CardDescription>
               </div>
             </div>
