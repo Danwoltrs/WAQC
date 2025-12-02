@@ -393,15 +393,7 @@ export default function CertificatesPage() {
 
   return (
     <MainLayout>
-      <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-2xl font-semibold">Certificates</h1>
-            <p className="text-muted-foreground">Manage and distribute quality certificates</p>
-          </div>
-        </div>
-
+      <div className="space-y-4">
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">
