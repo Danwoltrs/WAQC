@@ -1627,6 +1627,17 @@
         "dependencies": [],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 45,
+        "title": "Client URL Slugs Implementation",
+        "description": "Replace UUID-based client URLs with human-readable slugs based on fantasy name",
+        "details": "IMPLEMENTATION COMPLETED (2025-12-02):\n\n**Database Migration** (supabase/migrations/20251202000000_add_client_slug.sql):\n- Added `slug` column to clients table with unique constraint\n- Enabled `unaccent` PostgreSQL extension for accented character handling (é → e, ñ → n)\n- Created `generate_client_slug()` function:\n  - Converts fantasy_name/company to lowercase URL-safe slug\n  - Uses unaccent to transliterate accented characters\n  - Handles duplicates by appending -1, -2, etc.\n  - Limits to 50 characters\n- Created trigger `trigger_set_client_slug` for auto-generation on insert\n- Backfills existing clients with slugs\n- Added index `idx_clients_slug` for fast lookups\n\n**API Updates** (src/app/api/clients/[id]/route.ts):\n- Added `isUUID()` helper function to detect UUID vs slug\n- GET, PATCH, DELETE routes now support lookup by UUID or slug\n- Uses actual client.id (UUID) for all subsequent queries after initial lookup\n- Fully backward compatible - old UUID links still work\n\n**Frontend Updates** (src/app/clients/page.tsx):\n- Added `slug` field to Client interface\n- Updated links to use `client.slug || client.id` for fallback\n\n**Example Results**:\n- /clients/dunkin instead of /clients/38bed9ad-a915-4110-b313-1492809e6c24\n- Douqué → douque (accents handled)\n- Café São Paulo → cafe-sao-paulo\n\n**Commits**: 11870c3, 1121217",
+        "testStrategy": "",
+        "status": "done",
+        "dependencies": [],
+        "priority": "medium",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -1639,7 +1650,7 @@
       ],
       "created": "2025-11-26T13:11:34.127Z",
       "description": "Tasks for master context",
-      "updated": "2025-12-01T12:15:32.866Z"
+      "updated": "2025-12-02T12:59:49.685Z"
     }
   }
 }

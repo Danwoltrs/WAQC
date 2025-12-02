@@ -1,4 +1,5 @@
 import { createServerClient } from '@supabase/ssr'
+import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import type { Database } from '@/lib/supabase'
@@ -67,7 +68,14 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    console.log('Successfully created session for user:', data.user?.id)
+    const user = data.user
+    console.log('Successfully created session for user:', user?.id)
+
+    // Ensure user has a profile (handles edge cases where trigger didn't fire)
+    if (user) {
+      await ensureUserProfile(user)
+    }
+
     console.log('Setting', cookiesToSet.length, 'cookies on response')
 
     // Create redirect response AFTER exchanging code
@@ -85,5 +93,119 @@ export async function GET(request: NextRequest) {
     return NextResponse.redirect(
       `${requestUrl.origin}/?error=${encodeURIComponent('Authentication failed')}`
     )
+  }
+}
+
+/**
+ * Ensures a user has a profile. Creates one if missing.
+ * Uses service role to bypass RLS.
+ */
+async function ensureUserProfile(user: { id: string; email?: string; user_metadata?: any }) {
+  try {
+    // Create admin client to bypass RLS
+    const supabaseAdmin = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    )
+
+    // Check if profile exists
+    const { data: existingProfile } = await supabaseAdmin
+      .from('profiles')
+      .select('id')
+      .eq('id', user.id)
+      .single()
+
+    if (existingProfile) {
+      console.log('Profile already exists for user:', user.id)
+      return
+    }
+
+    console.log('No profile found, creating one for user:', user.id)
+
+    // Check for pending invitation
+    const { data: invitation } = await supabaseAdmin
+      .from('user_invitations')
+      .select('*')
+      .ilike('email', user.email || '')
+      .eq('status', 'pending')
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    // Get default laboratory
+    const { data: defaultLab } = await supabaseAdmin
+      .from('laboratories')
+      .select('id')
+      .eq('code', 'SANTOS_HQ')
+      .single()
+
+    const isWolthersEmail = user.email?.endsWith('@wolthers.com') || false
+    const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(user.email || '')
+
+    if (invitation) {
+      // Create profile from invitation data
+      console.log('Creating profile from invitation:', invitation.id)
+
+      const { error: insertError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: user.id,
+          email: user.email || '',
+          first_name: invitation.first_name,
+          last_name: invitation.last_name,
+          full_name: `${invitation.first_name} ${invitation.last_name}`,
+          qc_role: invitation.qc_role,
+          qc_enabled: invitation.qc_enabled ?? true,
+          is_cupper: invitation.is_cupper ?? false,
+          is_q_grader: invitation.is_q_grader ?? false,
+          is_global_admin: invitation.qc_role === 'global_admin' || invitation.qc_role === 'global_quality_admin',
+          laboratory_id: invitation.laboratory_id || defaultLab?.id || null,
+        })
+
+      if (insertError) {
+        console.error('Error creating profile from invitation:', insertError)
+        return
+      }
+
+      // Mark invitation as accepted
+      await supabaseAdmin
+        .from('user_invitations')
+        .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+        .eq('id', invitation.id)
+
+      console.log('Profile created and invitation accepted')
+    } else {
+      // Create basic profile from user metadata
+      console.log('Creating basic profile from user metadata')
+
+      const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User'
+      const nameParts = fullName.split(' ')
+      const firstName = nameParts[0] || ''
+      const lastName = nameParts.slice(1).join(' ') || ''
+
+      const { error: insertError } = await supabaseAdmin
+        .from('profiles')
+        .insert({
+          id: user.id,
+          email: user.email || '',
+          first_name: firstName,
+          last_name: lastName,
+          full_name: fullName,
+          qc_role: isGlobalAdmin ? 'global_admin' : 'lab_personnel',
+          qc_enabled: isWolthersEmail,
+          is_global_admin: isGlobalAdmin,
+          laboratory_id: isWolthersEmail ? (defaultLab?.id || null) : null,
+        })
+
+      if (insertError) {
+        console.error('Error creating basic profile:', insertError)
+      } else {
+        console.log('Basic profile created')
+      }
+    }
+  } catch (error) {
+    console.error('Error in ensureUserProfile:', error)
   }
 }
