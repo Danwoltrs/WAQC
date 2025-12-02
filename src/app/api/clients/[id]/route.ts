@@ -4,9 +4,15 @@ import { Database } from '@/lib/database.types'
 
 type ClientUpdate = Database['public']['Tables']['clients']['Update']
 
+// Helper to check if a string is a valid UUID
+function isUUID(str: string): boolean {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  return uuidRegex.test(str)
+}
+
 /**
  * GET /api/clients/[id]
- * Get a single client by ID
+ * Get a single client by ID or slug
  */
 export async function GET(
   request: NextRequest,
@@ -23,10 +29,13 @@ export async function GET(
 
     const { id } = await params
 
+    // Check if id is a UUID or slug and query accordingly
+    const lookupField = isUUID(id) ? 'id' : 'slug'
+
     const { data: client, error } = await supabase
       .from('clients')
       .select('*')
-      .eq('id', id)
+      .eq(lookupField, id)
       .single()
 
     if (error) {
@@ -37,11 +46,11 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch client' }, { status: 500 })
     }
 
-    // Fetch associated samples with recent history
+    // Fetch associated samples with recent history (use client.id not the slug param)
     const { data: samples, error: samplesError } = await supabase
       .from('samples')
       .select('id, tracking_number, origin, status, created_at, quality_spec_id')
-      .eq('client_id', id)
+      .eq('client_id', client.id)
       .order('created_at', { ascending: false })
       .limit(50)
 
@@ -59,7 +68,7 @@ export async function GET(
       rejected: samples?.filter((s: any) => s.status === 'rejected').length || 0,
     }
 
-    // Fetch quality specifications assigned to this client
+    // Fetch quality specifications assigned to this client (use client.id not the slug param)
     const { data: qualitySpecs, error: specsError } = await supabase
       .from('client_qualities')
       .select(`
@@ -74,7 +83,7 @@ export async function GET(
           parameters
         )
       `)
-      .eq('client_id', id)
+      .eq('client_id', client.id)
 
     if (specsError) {
       console.error('Error fetching quality specs:', specsError)
@@ -105,7 +114,7 @@ export async function GET(
 
 /**
  * PATCH /api/clients/[id]
- * Update a client
+ * Update a client by ID or slug
  */
 export async function PATCH(
   request: NextRequest,
@@ -123,11 +132,14 @@ export async function PATCH(
     const { id } = await params
     const body = await request.json()
 
+    // Check if id is a UUID or slug and query accordingly
+    const lookupField = isUUID(id) ? 'id' : 'slug'
+
     // Check if exists
     const { data: existing, error: fetchError } = await supabase
       .from('clients')
       .select('id')
-      .eq('id', id)
+      .eq(lookupField, id)
       .single()
 
     if (fetchError || !existing) {
@@ -173,11 +185,11 @@ export async function PATCH(
       }
     }
 
-    // Update client
+    // Update client using the actual UUID
     const { data: client, error: updateError } = await supabase
       .from('clients')
       .update(updateData)
-      .eq('id', id)
+      .eq('id', existing.id)
       .select()
       .single()
 
@@ -198,7 +210,7 @@ export async function PATCH(
 
 /**
  * DELETE /api/clients/[id]
- * Delete a client
+ * Delete a client by ID or slug
  */
 export async function DELETE(
   request: NextRequest,
@@ -215,11 +227,25 @@ export async function DELETE(
 
     const { id } = await params
 
+    // Check if id is a UUID or slug and query accordingly
+    const lookupField = isUUID(id) ? 'id' : 'slug'
+
+    // First lookup the client to get UUID
+    const { data: client, error: fetchError } = await supabase
+      .from('clients')
+      .select('id')
+      .eq(lookupField, id)
+      .single()
+
+    if (fetchError || !client) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
     // Check if client is in use by samples
     const { count: samplesCount } = await supabase
       .from('samples')
       .select('*', { count: 'exact', head: true })
-      .eq('client_id', id)
+      .eq('client_id', client.id)
 
     if (samplesCount && samplesCount > 0) {
       return NextResponse.json({
@@ -232,7 +258,7 @@ export async function DELETE(
     const { count: qualityCount } = await supabase
       .from('client_qualities')
       .select('*', { count: 'exact', head: true })
-      .eq('client_id', id)
+      .eq('client_id', client.id)
 
     if (qualityCount && qualityCount > 0) {
       return NextResponse.json({
@@ -241,11 +267,11 @@ export async function DELETE(
       }, { status: 400 })
     }
 
-    // Delete client
+    // Delete client using actual UUID
     const { error: deleteError } = await supabase
       .from('clients')
       .delete()
-      .eq('id', id)
+      .eq('id', client.id)
 
     if (deleteError) {
       console.error('Error deleting client:', deleteError)

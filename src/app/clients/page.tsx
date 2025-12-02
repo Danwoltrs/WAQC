@@ -51,6 +51,7 @@ interface AssignedQuality {
 
 interface Client {
   id: string
+  slug?: string
   name: string
   company: string
   fantasy_name?: string
@@ -500,12 +501,12 @@ export default function ClientsPage() {
                           </TableCell>
                           <TableCell className="text-right">
                             <div className="flex items-center justify-end gap-2">
-                              <Link href={`/clients/${client.id}`}>
+                              <Link href={`/clients/${client.slug || client.id}`}>
                                 <Button variant="ghost" size="sm" title="View details">
                                   <Eye className="h-4 w-4" />
                                 </Button>
                               </Link>
-                              <Link href={`/clients/${client.id}/edit`}>
+                              <Link href={`/clients/${client.slug || client.id}/edit`}>
                                 <Button variant="ghost" size="sm" title="Edit client">
                                   <Edit className="h-4 w-4" />
                                 </Button>
