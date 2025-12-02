@@ -34,12 +34,13 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0')
 
     // Build query with filters and join with related tables
+    // Note: Use explicit relationship names due to multiple FKs to exporters table
     let query = (supabase as any)
       .from('samples')
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
-        exporter:exporters(id, name, country),
+        exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country)
       `)
