@@ -387,8 +387,69 @@ function isSpecialtyTemplate(templateName: string | null | undefined): boolean {
 // Primary defects (SCA classification)
 const PRIMARY_DEFECTS = [
   'Full Black', 'Full Sour', 'Pod/Cherry', 'Large Husk',
-  'Stone/Stick', 'Foreign Material', 'Severe Broca'
+  'Stone/Stick', 'Foreign Material', 'Severe Broca',
+  'Dried Cherry', 'Fungus Damage', 'Severe Insect Damage', 'Foreign Matter'
 ]
+
+// Standard defect weights (SCA/Brazil standard - matches grading page)
+// All primary defects have weight 1.0
+// Secondary defects have variable weights
+const DEFECT_WEIGHTS: Record<string, number> = {
+  // Primary (1.0)
+  'Full Black': 1.0,
+  'Full Sour': 1.0,
+  'Pod/Cherry': 1.0,
+  'Dried Cherry/Pod': 1.0,
+  'Dried Cherry': 1.0,
+  'Large Husk': 1.0,
+  'Stone/Stick': 1.0,
+  'Foreign Material': 1.0,
+  'Foreign Matter': 1.0,
+  'Fungus Damage': 1.0,
+  'Fungus Damaged': 1.0,
+  'Severe Insect Damage': 1.0,
+  // Secondary (variable)
+  'Severe Broca': 0.2,
+  'Minor Broca': 0.1,
+  'Minor Insect Damage': 0.2,
+  'Broken': 0.2,
+  'Broken/Chipped': 0.2,
+  'Unripe/Immature': 0.2,
+  'Immature': 0.2,
+  'Immature/Unripe': 0.25,
+  'Bad Formed': 0.2,
+  'Shells': 0.34,
+  'Shell': 0.2,
+  'Partial Husk': 0.5,
+  'Parchment': 0.2,
+  'Hull/Husk': 0.2,
+  'Partial Sour': 0.5,
+  'Partial Black': 0.5,
+  'Floater': 0.2,
+  'Withered': 0.2,
+}
+
+/**
+ * Get weight for a defect name using standard SCA weights
+ */
+function getDefectWeight(name: string): number {
+  // First try exact match
+  if (DEFECT_WEIGHTS[name] !== undefined) {
+    return DEFECT_WEIGHTS[name]
+  }
+  // Try case-insensitive match
+  const lowerName = name.toLowerCase()
+  for (const [key, weight] of Object.entries(DEFECT_WEIGHTS)) {
+    if (key.toLowerCase() === lowerName) {
+      return weight
+    }
+  }
+  // Default: primary defects get 1.0, secondary get 0.2
+  const isPrimary = PRIMARY_DEFECTS.some(pd =>
+    name.toLowerCase().includes(pd.toLowerCase())
+  )
+  return isPrimary ? 1.0 : 0.2
+}
 
 /**
  * Parse defects from green bean data
@@ -396,6 +457,9 @@ const PRIMARY_DEFECTS = [
  * 1. counts format: {counts: {defectName: count}, primary: 0, secondary: 19.04}
  * 2. array format: [{name, count, category}]
  * 3. object format: {primary: [...], secondary: [...]}
+ *
+ * Returns weighted counts (count * weight) for display
+ * Uses pre-calculated totals from data when available
  */
 function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
   if (!defectsData || typeof defectsData !== 'object') return null
@@ -406,22 +470,32 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
   let totalPrimary = 0
   let totalSecondary = 0
 
+  // Check for pre-calculated totals (from grading page - these are already weighted)
+  const hasPreCalcTotals = typeof defects.primary === 'number' && typeof defects.secondary === 'number'
+
   // Handle counts format: {counts: {defectName: count}, primary: 0, secondary: 19.04}
   if (defects.counts && typeof defects.counts === 'object') {
     const counts = defects.counts as Record<string, number>
-    for (const [name, count] of Object.entries(counts)) {
-      if (typeof count === 'number' && count > 0) {
+    for (const [name, rawCount] of Object.entries(counts)) {
+      if (typeof rawCount === 'number' && rawCount > 0) {
+        const weight = getDefectWeight(name)
+        const weightedCount = rawCount * weight
         const isPrimary = PRIMARY_DEFECTS.some(pd =>
           name.toLowerCase().includes(pd.toLowerCase())
         )
         if (isPrimary) {
-          primary.push({ name, count })
-          totalPrimary += count
+          primary.push({ name, count: weightedCount })
+          if (!hasPreCalcTotals) totalPrimary += weightedCount
         } else {
-          secondary.push({ name, count })
-          totalSecondary += count
+          secondary.push({ name, count: weightedCount })
+          if (!hasPreCalcTotals) totalSecondary += weightedCount
         }
       }
+    }
+    // Use pre-calculated totals if available (more accurate)
+    if (hasPreCalcTotals) {
+      totalPrimary = defects.primary as number
+      totalSecondary = defects.secondary as number
     }
   }
   // Handle array format
@@ -430,12 +504,14 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
       if (defect && typeof defect === 'object') {
         const d = defect as { name?: string; count?: number; category?: string }
         if (d.name && d.count && d.count > 0) {
+          const weight = getDefectWeight(d.name)
+          const weightedCount = d.count * weight
           if (d.category === 'primary') {
-            primary.push({ name: d.name, count: d.count })
-            totalPrimary += d.count
+            primary.push({ name: d.name, count: weightedCount })
+            totalPrimary += weightedCount
           } else {
-            secondary.push({ name: d.name, count: d.count })
-            totalSecondary += d.count
+            secondary.push({ name: d.name, count: weightedCount })
+            totalSecondary += weightedCount
           }
         }
       }
@@ -446,22 +522,30 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
     if (defects.primary && Array.isArray(defects.primary)) {
       for (const d of defects.primary as Array<{ name?: string; count?: number }>) {
         if (d.name && d.count && d.count > 0) {
-          primary.push({ name: d.name, count: d.count })
-          totalPrimary += d.count
+          const weight = getDefectWeight(d.name)
+          const weightedCount = d.count * weight
+          primary.push({ name: d.name, count: weightedCount })
+          totalPrimary += weightedCount
         }
       }
     }
     if (defects.secondary && Array.isArray(defects.secondary)) {
       for (const d of defects.secondary as Array<{ name?: string; count?: number }>) {
         if (d.name && d.count && d.count > 0) {
-          secondary.push({ name: d.name, count: d.count })
-          totalSecondary += d.count
+          const weight = getDefectWeight(d.name)
+          const weightedCount = d.count * weight
+          secondary.push({ name: d.name, count: weightedCount })
+          totalSecondary += weightedCount
         }
       }
     }
   }
 
   if (primary.length === 0 && secondary.length === 0) return null
+
+  // Sort by weighted count descending (highest defects first)
+  primary.sort((a, b) => b.count - a.count)
+  secondary.sort((a, b) => b.count - a.count)
 
   return {
     primary,

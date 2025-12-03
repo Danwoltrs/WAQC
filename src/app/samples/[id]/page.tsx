@@ -240,7 +240,10 @@ export default function SampleDetailPage() {
 
       if (!createRes.ok) {
         const data = await createRes.json()
-        throw new Error(data.error || 'Failed to create certificate')
+        const errorMsg = data.details
+          ? `${data.error}: ${data.details}`
+          : (data.error || 'Failed to create certificate')
+        throw new Error(errorMsg)
       }
 
       // Then download the PDF
