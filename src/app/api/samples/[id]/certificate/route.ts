@@ -223,6 +223,11 @@ export async function POST(
     const issuedTo = clientData?.company || clientData?.name || 'Unknown Client'
 
     // Create certificate record
+    // valid_from is today, valid_until is 1 year from now
+    const validFrom = new Date()
+    const validUntil = new Date(validFrom)
+    validUntil.setFullYear(validUntil.getFullYear() + 1)
+
     const { data: newCert, error: createError } = await supabase
       .from('certificates')
       .insert({
@@ -231,7 +236,8 @@ export async function POST(
         issued_to: issuedTo,
         issued_by: user.id,
         status: 'issued',
-        valid_from: new Date().toISOString(),
+        valid_from: validFrom.toISOString(),
+        valid_until: validUntil.toISOString(),
         is_rejected: isRejected,
       })
       .select('id, certificate_number, created_at')
