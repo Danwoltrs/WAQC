@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
         equivalent_60kg_bags,
         quality_spec_id,
         client_id,
-        exporter:exporters(name),
+        exporter:exporters!samples_exporter_id_fkey(name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,

@@ -52,7 +52,7 @@ export async function GET(request: NextRequest) {
             company,
             fantasy_name
           ),
-          exporter:exporters(
+          exporter:exporters!samples_exporter_id_fkey(
             id,
             name,
             contact_email

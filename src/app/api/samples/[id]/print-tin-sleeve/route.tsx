@@ -50,7 +50,7 @@ export async function GET(
         quality_name,
         hide_exporter_on_label,
         client_id,
-        exporter:exporters(name),
+        exporter:exporters!samples_exporter_id_fkey(name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,

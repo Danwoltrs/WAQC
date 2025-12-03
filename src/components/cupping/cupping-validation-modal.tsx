@@ -746,7 +746,7 @@ export function CuppingValidationModal({
                 ) : (
                   <FileCheck className="h-4 w-4 mr-2" />
                 )}
-                Validate & Generate Certificate
+                Validate & Certify
               </Button>
             ) : (
               <Button disabled>

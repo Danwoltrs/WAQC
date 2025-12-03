@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
         container_nr,
         oic_number,
         client_id,
-        exporter:exporters(name),
+        exporter:exporters!samples_exporter_id_fkey(name),
         supplier:suppliers(name),
         clients!inner (
           id,

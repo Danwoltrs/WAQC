@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
         ico_number,
         quality_spec_id,
         client_id,
-        exporter:exporters(name),
+        exporter:exporters!samples_exporter_id_fkey(name),
         quality_spec:client_qualities(
           custom_name,
           quality_code,

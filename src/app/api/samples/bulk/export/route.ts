@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
         clients!samples_client_id_fkey(company, name),
         laboratories!samples_laboratory_id_fkey(name, location),
         supplier:suppliers(name),
-        exporter:exporters(name),
+        exporter:exporters!samples_exporter_id_fkey(name),
         buyer:buyers(name),
         roaster:roasters(name),
         importer:buyers!samples_importer_id_fkey(name)

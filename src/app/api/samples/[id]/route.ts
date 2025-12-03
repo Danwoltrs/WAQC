@@ -29,7 +29,7 @@ export async function GET(
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
-        exporter:exporters(id, name, country),
+        exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country)
       `)
