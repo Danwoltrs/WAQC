@@ -195,8 +195,12 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     .limit(1)
     .single()
 
-  // Fetch cupping scores - average across all cuppers for completed sessions
-  const { data: cuppingScores } = await supabase
+  // Fetch cupping scores - average across all cuppers
+  // First try to get scores from completed/finalized sessions, then fall back to any scores
+  let cuppingScores = null
+
+  // Try completed sessions first
+  const { data: completedScores } = await supabase
     .from('cupping_scores')
     .select(`
       scores,
@@ -209,6 +213,22 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     .eq('sample_id', sampleId)
     .eq('cupping_sessions.status', 'completed')
     .order('created_at', { ascending: false })
+
+  if (completedScores && completedScores.length > 0) {
+    cuppingScores = completedScores
+  } else {
+    // Fall back to any cupping scores for this sample (for certified samples with orphaned sessions)
+    const { data: allScores } = await supabase
+      .from('cupping_scores')
+      .select(`
+        scores,
+        notes
+      `)
+      .eq('sample_id', sampleId)
+      .order('created_at', { ascending: false })
+
+    cuppingScores = allScores
+  }
 
   // Fetch certificate
   const { data: certificate } = await supabase
