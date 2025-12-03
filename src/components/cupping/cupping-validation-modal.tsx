@@ -244,16 +244,27 @@ export function CuppingValidationModal({
 
       // Show result based on auto-determined decision
       const isApproved = data.decision === 'approved'
-      toast({
-        title: isApproved ? 'Sample Approved' : 'Sample Rejected',
-        description: data.message || (isApproved
-          ? `Certificate ${data.certificate?.certificate_number || 'generated'} created successfully`
-          : `Certificate ${data.certificate?.certificate_number || 'generated'} created (rejected)`),
-        variant: isApproved ? 'default' : 'destructive',
-      })
+      const isPending = data.decision === 'pending'
+      const isRejected = data.decision === 'rejected'
 
-      // Show violations if any
-      if (data.violations && data.violations.length > 0) {
+      if (isPending) {
+        // Grading not complete - show info message
+        toast({
+          title: 'Cupping Scores Finalized',
+          description: data.message || 'Sample moved to Review. Certificate will be generated after grading is complete.',
+        })
+      } else {
+        toast({
+          title: isApproved ? 'Sample Approved' : 'Sample Rejected',
+          description: data.message || (isApproved
+            ? `Certificate ${data.certificate?.certificate_number || 'generated'} created successfully`
+            : `Certificate ${data.certificate?.certificate_number || 'generated'} created (rejected)`),
+          variant: isApproved ? 'default' : 'destructive',
+        })
+      }
+
+      // Show violations if any (only for approved/rejected, not pending)
+      if (!isPending && data.violations && data.violations.length > 0) {
         setTimeout(() => {
           toast({
             title: 'Quality Spec Violations',

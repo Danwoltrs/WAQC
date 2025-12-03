@@ -110,23 +110,43 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
+    // Check if grading data exists for this sample
+    const { data: gradingData, error: gradingError } = await supabaseAdmin
+      .from('quality_assessments')
+      .select('id, green_bean_data')
+      .eq('sample_id', sample_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    const hasGradingData = !gradingError && gradingData && gradingData.green_bean_data
+
     // Auto-determine approval/rejection based on quality specifications
-    const complianceResult = await evaluateQualityCompliance(
-      sample_id,
-      sample.quality_spec_id
-    )
+    // Only evaluate compliance if grading data exists
+    let complianceResult: QualityComplianceResult = { approved: true, violations: [] }
+    let decision: 'approved' | 'rejected' | 'pending' = 'pending'
+    let newWorkflowStage: string
 
-    const decision = complianceResult.approved ? 'approved' : 'rejected'
-
-    // Determine workflow_stage based on decision
-    const newWorkflowStage = decision === 'approved' ? 'certified' : 'rejected'
+    if (hasGradingData) {
+      // Both cupping and grading are complete - evaluate compliance
+      complianceResult = await evaluateQualityCompliance(
+        sample_id,
+        sample.quality_spec_id
+      )
+      decision = complianceResult.approved ? 'approved' : 'rejected'
+      newWorkflowStage = decision === 'approved' ? 'certified' : 'rejected'
+    } else {
+      // Only cupping is complete - move to review stage, awaiting grading
+      decision = 'pending'
+      newWorkflowStage = 'review'
+    }
 
     // Get current workflow stage to handle transitions correctly
     // Valid transitions: cupping → review → certified/rejected
     // We may need to transition through 'review' first
     const currentWorkflowStage = sample.workflow_stage
 
-    // If coming from cupping, we need to go through review first
+    // If coming from cupping or analysis, we need to go through review first
     if (currentWorkflowStage === 'cupping' || currentWorkflowStage === 'analysis') {
       // First transition to review
       const { error: reviewTransitionError } = await supabaseAdmin
@@ -146,94 +166,100 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Now update to final status and workflow_stage
-    const { error: sampleUpdateError } = await supabaseAdmin
-      .from('samples')
-      .update({
-        status: decision,
-        workflow_stage: newWorkflowStage,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', sample_id)
-
-    if (sampleUpdateError) {
-      console.error('Error updating sample:', sampleUpdateError)
-      return NextResponse.json({
-        error: 'Failed to update sample status',
-        details: sampleUpdateError.message
-      }, { status: 500 })
-    }
-
-    // Create certificate (for both approved and rejected)
-    let certificate = null
-
-    // Check if certificate already exists
-    const { data: existingCert } = await supabaseAdmin
-      .from('certificates')
-      .select('id, certificate_number')
-      .eq('sample_id', sample_id)
-      .single()
-
-    if (!existingCert) {
-      // Certificate number uses tracking_number (R- prefix for rejected)
-      const certificateNumber = decision === 'rejected'
-        ? `R-${sample.tracking_number}`
-        : sample.tracking_number
-
-      // Get client info for issued_to
-      const { data: client } = await supabaseAdmin
-        .from('clients')
-        .select('name, company, fantasy_name')
-        .eq('id', sample.client_id)
-        .single()
-
-      const issuedTo = client?.fantasy_name || client?.company || client?.name || 'Unknown Client'
-
-      // Create certificate with compliance info
-      const { data: newCert, error: certError } = await supabaseAdmin
-        .from('certificates')
-        .insert({
-          sample_id: sample_id,
-          certificate_number: certificateNumber,
-          issued_to: issuedTo,
-          issued_by: user.id,
-          status: 'issued',
-          is_rejected: decision === 'rejected',
-          compliance_violations: complianceResult.violations.length > 0
-            ? complianceResult.violations
-            : null,
-        })
-        .select('id, certificate_number, created_at, is_rejected, compliance_violations')
-        .single()
-
-      if (certError) {
-        console.error('Error creating certificate:', certError)
-        // Don't fail the entire request, just log the error
-      } else {
-        certificate = newCert
-      }
-    } else {
-      // Update existing certificate if decision changed
-      const { data: updatedCert, error: updateCertError } = await supabaseAdmin
-        .from('certificates')
+    // Update sample status and workflow_stage based on completion state
+    if (hasGradingData) {
+      // Both cupping and grading complete - finalize to certified/rejected
+      const { error: sampleUpdateError } = await supabaseAdmin
+        .from('samples')
         .update({
-          certificate_number: decision === 'rejected'
-            ? `R-${sample.tracking_number}`
-            : sample.tracking_number,
-          is_rejected: decision === 'rejected',
-          compliance_violations: complianceResult.violations.length > 0
-            ? complianceResult.violations
-            : null,
+          status: decision,
+          workflow_stage: newWorkflowStage,
           updated_at: new Date().toISOString()
         })
-        .eq('id', existingCert.id)
-        .select('id, certificate_number, created_at, is_rejected, compliance_violations')
+        .eq('id', sample_id)
+
+      if (sampleUpdateError) {
+        console.error('Error updating sample:', sampleUpdateError)
+        return NextResponse.json({
+          error: 'Failed to update sample status',
+          details: sampleUpdateError.message
+        }, { status: 500 })
+      }
+    }
+    // If no grading data, sample stays in 'review' stage (already transitioned above)
+
+    // Create certificate only if both cupping AND grading are complete
+    let certificate = null
+
+    if (hasGradingData) {
+      // Check if certificate already exists
+      const { data: existingCert } = await supabaseAdmin
+        .from('certificates')
+        .select('id, certificate_number')
+        .eq('sample_id', sample_id)
         .single()
 
-      if (!updateCertError) {
-        certificate = updatedCert
+      if (!existingCert) {
+        // Certificate number uses tracking_number (R- prefix for rejected)
+        const certificateNumber = decision === 'rejected'
+          ? `R-${sample.tracking_number}`
+          : sample.tracking_number
+
+        // Get client info for issued_to
+        const { data: client } = await supabaseAdmin
+          .from('clients')
+          .select('name, company, fantasy_name')
+          .eq('id', sample.client_id)
+          .single()
+
+        const issuedTo = client?.fantasy_name || client?.company || client?.name || 'Unknown Client'
+
+        // Create certificate with compliance info
+        const { data: newCert, error: certError } = await supabaseAdmin
+          .from('certificates')
+          .insert({
+            sample_id: sample_id,
+            certificate_number: certificateNumber,
+            issued_to: issuedTo,
+            issued_by: user.id,
+            status: 'issued',
+            is_rejected: decision === 'rejected',
+            compliance_violations: complianceResult.violations.length > 0
+              ? complianceResult.violations
+              : null,
+          })
+          .select('id, certificate_number, created_at, is_rejected, compliance_violations')
+          .single()
+
+        if (certError) {
+          console.error('Error creating certificate:', certError)
+          // Don't fail the entire request, just log the error
+        } else {
+          certificate = newCert
+        }
       } else {
-        certificate = existingCert
+        // Update existing certificate if decision changed
+        const { data: updatedCert, error: updateCertError } = await supabaseAdmin
+          .from('certificates')
+          .update({
+            certificate_number: decision === 'rejected'
+              ? `R-${sample.tracking_number}`
+              : sample.tracking_number,
+            is_rejected: decision === 'rejected',
+            compliance_violations: complianceResult.violations.length > 0
+              ? complianceResult.violations
+              : null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingCert.id)
+          .select('id, certificate_number, created_at, is_rejected, compliance_violations')
+          .single()
+
+        if (!updateCertError) {
+          certificate = updatedCert
+        } else {
+          certificate = existingCert
+        }
       }
     }
 
@@ -291,12 +317,21 @@ export async function POST(request: NextRequest) {
       console.error('Error logging audit:', auditError)
     }
 
+    // Build response message based on completion state
+    let message: string
+    if (decision === 'pending') {
+      message = `Cupping scores finalized - Sample moved to Review. Certificate will be generated after grading is complete.`
+    } else if (decision === 'approved') {
+      message = `Sample approved - Certificate ${certificate?.certificate_number || sample.tracking_number} generated`
+    } else {
+      message = `Sample rejected - Certificate ${certificate?.certificate_number || 'R-' + sample.tracking_number} generated`
+    }
+
     return NextResponse.json({
       success: true,
       decision,
-      message: decision === 'approved'
-        ? `Sample approved - Certificate ${certificate?.certificate_number || sample.tracking_number} generated`
-        : `Sample rejected - Certificate ${certificate?.certificate_number || 'R-' + sample.tracking_number} generated`,
+      message,
+      grading_pending: !hasGradingData,
       violations: complianceResult.violations,
       sample: {
         id: sample_id,
