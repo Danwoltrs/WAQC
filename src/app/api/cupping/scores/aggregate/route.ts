@@ -10,6 +10,11 @@ interface CupperScore {
   created_at: string
 }
 
+interface DefectWithLevel {
+  name: string
+  level: number
+}
+
 interface AttributeStats {
   mean: number
   median: number
@@ -21,6 +26,15 @@ interface AttributeStats {
   outliers: string[] // Cupper IDs who are outliers
   finalScore: number // Rounded average score (to nearest 0.25)
   range: number // max - min (discrepancy amount)
+}
+
+interface DefectLevelStats {
+  defectName: string
+  type: 'taint' | 'fault'
+  levels: Map<string, number> // cupper name -> level
+  hasDiscrepancy: boolean
+  range: number
+  outliers: string[]
 }
 
 interface AggregatedScores {
@@ -37,6 +51,7 @@ interface AggregatedScores {
     taints: string[]
     faults: string[]
   }
+  defect_levels: DefectLevelStats[]
   hasDiscrepancies: boolean
   discrepancy_flags: string[]
 }
@@ -169,6 +184,11 @@ export async function GET(request: NextRequest) {
     const allFaults = new Set<string>()
     const cupperDefects: Map<string, { taints: Set<string>; faults: Set<string> }> = new Map()
 
+    // Track defect levels per cupper for level discrepancy detection
+    // Structure: Map<defectName, Map<cupperName, level>>
+    const taintLevels: Map<string, Map<string, number>> = new Map()
+    const faultLevels: Map<string, Map<string, number>> = new Map()
+
     scores.forEach((score: any) => {
       const cupperName = score.cupper?.full_name || score.cupper_id || 'Unknown'
       const defects = score.defects || {}
@@ -179,26 +199,121 @@ export async function GET(request: NextRequest) {
       }
       const cupperDefectSet = cupperDefects.get(cupperName)!
 
+      // Handle taints (both simple array and with_levels format)
       if (defects.taints) {
         defects.taints.forEach((taint: string) => {
           allTaints.add(taint)
           cupperDefectSet.taints.add(taint)
         })
       }
+
+      // Handle taints with levels (e.g., { name: 'woody', level: 3 })
+      if (defects.taints_with_levels && Array.isArray(defects.taints_with_levels)) {
+        defects.taints_with_levels.forEach((taint: DefectWithLevel) => {
+          const defectName = taint.name
+          allTaints.add(defectName)
+          cupperDefectSet.taints.add(defectName)
+
+          // Track level per cupper
+          if (!taintLevels.has(defectName)) {
+            taintLevels.set(defectName, new Map())
+          }
+          taintLevels.get(defectName)!.set(cupperName, taint.level || 0)
+        })
+      }
+
+      // Handle faults (both simple array and with_levels format)
       if (defects.faults) {
         defects.faults.forEach((fault: string) => {
           allFaults.add(fault)
           cupperDefectSet.faults.add(fault)
         })
       }
+
+      // Handle faults with levels
+      if (defects.faults_with_levels && Array.isArray(defects.faults_with_levels)) {
+        defects.faults_with_levels.forEach((fault: DefectWithLevel) => {
+          const defectName = fault.name
+          allFaults.add(defectName)
+          cupperDefectSet.faults.add(defectName)
+
+          // Track level per cupper
+          if (!faultLevels.has(defectName)) {
+            faultLevels.set(defectName, new Map())
+          }
+          faultLevels.get(defectName)!.set(cupperName, fault.level || 0)
+        })
+      }
     })
 
-    // Check for defect discrepancies (when cuppers disagree on defects)
-    if (cupperDefects.size > 1) {
-      // Check if all cuppers identified the same defects
-      const allCupperTaints = Array.from(cupperDefects.values()).map(d => d.taints)
-      const allCupperFaults = Array.from(cupperDefects.values()).map(d => d.faults)
+    // Check for defect level discrepancies (0.5 threshold same as attributes)
+    const defectLevelStats: DefectLevelStats[] = []
+    const MAX_LEVEL_DISCREPANCY = 0.5
 
+    // Check taint level discrepancies
+    taintLevels.forEach((cupperLevelsMap, defectName) => {
+      if (cupperLevelsMap.size > 1) {
+        const levels = Array.from(cupperLevelsMap.values())
+        const minLevel = Math.min(...levels)
+        const maxLevel = Math.max(...levels)
+        const range = maxLevel - minLevel
+
+        const hasDiscrepancy = range > MAX_LEVEL_DISCREPANCY
+        const outliers = hasDiscrepancy ? Array.from(cupperLevelsMap.keys()) : []
+
+        defectLevelStats.push({
+          defectName,
+          type: 'taint',
+          levels: cupperLevelsMap,
+          hasDiscrepancy,
+          range,
+          outliers
+        })
+
+        if (hasDiscrepancy) {
+          const levelDetails = Array.from(cupperLevelsMap.entries())
+            .map(([cupper, level]) => `${cupper}: ${level}`)
+            .join(', ')
+          discrepancyFlags.push(
+            `Defect Level (Taint) "${defectName}": Discrepancy of ${range.toFixed(1)} exceeds 0.5 limit (${levelDetails})`
+          )
+        }
+      }
+    })
+
+    // Check fault level discrepancies
+    faultLevels.forEach((cupperLevelsMap, defectName) => {
+      if (cupperLevelsMap.size > 1) {
+        const levels = Array.from(cupperLevelsMap.values())
+        const minLevel = Math.min(...levels)
+        const maxLevel = Math.max(...levels)
+        const range = maxLevel - minLevel
+
+        const hasDiscrepancy = range > MAX_LEVEL_DISCREPANCY
+        const outliers = hasDiscrepancy ? Array.from(cupperLevelsMap.keys()) : []
+
+        defectLevelStats.push({
+          defectName,
+          type: 'fault',
+          levels: cupperLevelsMap,
+          hasDiscrepancy,
+          range,
+          outliers
+        })
+
+        if (hasDiscrepancy) {
+          const levelDetails = Array.from(cupperLevelsMap.entries())
+            .map(([cupper, level]) => `${cupper}: ${level}`)
+            .join(', ')
+          discrepancyFlags.push(
+            `Defect Level (Fault) "${defectName}": Discrepancy of ${range.toFixed(1)} exceeds 0.5 limit (${levelDetails})`
+          )
+        }
+      }
+    })
+
+    // Check for defect presence discrepancies (when cuppers disagree on defects)
+    if (cupperDefects.size > 1) {
       // Check taint discrepancies
       allTaints.forEach((taint) => {
         const cuppersWithTaint = Array.from(cupperDefects.entries())
@@ -227,6 +342,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Build aggregated result
+    // Convert Map to serializable object for defect_levels
+    const serializableDefectLevelStats = defectLevelStats.map(stat => ({
+      ...stat,
+      levels: Object.fromEntries(stat.levels) // Convert Map to object
+    }))
+
     const aggregated: AggregatedScores = {
       sample_id: sampleId || scores[0].sample?.id || '',
       sample_tracking_number: scores[0].sample?.tracking_number || 'Unknown',
@@ -237,6 +358,7 @@ export async function GET(request: NextRequest) {
         taints: Array.from(allTaints),
         faults: Array.from(allFaults),
       },
+      defect_levels: serializableDefectLevelStats as any,
       hasDiscrepancies: discrepancyFlags.length > 0,
       discrepancy_flags: discrepancyFlags,
     }

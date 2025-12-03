@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
-import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X, ThumbsUp, ThumbsDown } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X, FileCheck } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface AttributeStats {
@@ -196,7 +196,7 @@ export function CuppingValidationModal({
     }
   }
 
-  const handleFinalize = async (decision: 'approved' | 'rejected') => {
+  const handleFinalize = async () => {
     // Check permission first
     if (!permissions?.can_validate) {
       toast({
@@ -233,7 +233,6 @@ export function CuppingValidationModal({
         body: JSON.stringify({
           session_id: permissions.session.id,
           sample_id: sampleId,
-          decision,
         }),
       })
 
@@ -243,12 +242,26 @@ export function CuppingValidationModal({
         throw new Error(data.error || 'Failed to finalize scores')
       }
 
+      // Show result based on auto-determined decision
+      const isApproved = data.decision === 'approved'
       toast({
-        title: decision === 'approved' ? 'Sample Approved' : 'Sample Rejected',
-        description: decision === 'approved'
+        title: isApproved ? 'Sample Approved' : 'Sample Rejected',
+        description: data.message || (isApproved
           ? `Certificate ${data.certificate?.certificate_number || 'generated'} created successfully`
-          : 'Sample has been marked as rejected',
+          : `Certificate ${data.certificate?.certificate_number || 'generated'} created (rejected)`),
+        variant: isApproved ? 'default' : 'destructive',
       })
+
+      // Show violations if any
+      if (data.violations && data.violations.length > 0) {
+        setTimeout(() => {
+          toast({
+            title: 'Quality Spec Violations',
+            description: data.violations.slice(0, 3).join('; ') + (data.violations.length > 3 ? `... and ${data.violations.length - 3} more` : ''),
+            variant: 'destructive',
+          })
+        }, 500)
+      }
 
       onFinalize?.()
       onOpenChange(false)
@@ -723,32 +736,18 @@ export function CuppingValidationModal({
               Close
             </Button>
             {canFinalize ? (
-              <>
-                <Button
-                  onClick={() => handleFinalize('rejected')}
-                  disabled={finalizing}
-                  variant="destructive"
-                >
-                  {finalizing ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <ThumbsDown className="h-4 w-4 mr-2" />
-                  )}
-                  Reject
-                </Button>
-                <Button
-                  onClick={() => handleFinalize('approved')}
-                  disabled={finalizing}
-                  className="bg-green-600 hover:bg-green-700"
-                >
-                  {finalizing ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <ThumbsUp className="h-4 w-4 mr-2" />
-                  )}
-                  Approve & Certify
-                </Button>
-              </>
+              <Button
+                onClick={handleFinalize}
+                disabled={finalizing}
+                className="bg-primary hover:bg-primary/90"
+              >
+                {finalizing ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <FileCheck className="h-4 w-4 mr-2" />
+                )}
+                Validate & Generate Certificate
+              </Button>
             ) : (
               <Button disabled>
                 <AlertCircle className="h-4 w-4 mr-2" />
