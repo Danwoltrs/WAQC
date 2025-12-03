@@ -99,7 +99,7 @@ export async function POST(request: NextRequest) {
       }, { status: 403 })
     }
 
-    // Get the sample with quality spec info
+    // Get the sample with quality spec info and current workflow stage
     const { data: sample, error: sampleError } = await supabaseAdmin
       .from('samples')
       .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id')
@@ -121,7 +121,32 @@ export async function POST(request: NextRequest) {
     // Determine workflow_stage based on decision
     const newWorkflowStage = decision === 'approved' ? 'certified' : 'rejected'
 
-    // Update sample status and workflow_stage
+    // Get current workflow stage to handle transitions correctly
+    // Valid transitions: cupping → review → certified/rejected
+    // We may need to transition through 'review' first
+    const currentWorkflowStage = sample.workflow_stage
+
+    // If coming from cupping, we need to go through review first
+    if (currentWorkflowStage === 'cupping' || currentWorkflowStage === 'analysis') {
+      // First transition to review
+      const { error: reviewTransitionError } = await supabaseAdmin
+        .from('samples')
+        .update({
+          workflow_stage: 'review',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', sample_id)
+
+      if (reviewTransitionError) {
+        console.error('Error transitioning to review:', reviewTransitionError)
+        return NextResponse.json({
+          error: 'Failed to transition sample to review stage',
+          details: reviewTransitionError.message
+        }, { status: 500 })
+      }
+    }
+
+    // Now update to final status and workflow_stage
     const { error: sampleUpdateError } = await supabaseAdmin
       .from('samples')
       .update({
