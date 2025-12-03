@@ -1,7 +1,7 @@
 /**
  * Certificate sample info component
- * Displays supply chain, certificate #, sample details, and origin
- * Redesigned to merge supply chain info and use consistent font sizes
+ * Displays supply chain, sample details in compact rows
+ * Redesigned: one line for Type, Bags, Processing, Origin
  */
 
 import React from 'react'
@@ -42,14 +42,13 @@ const infoStyles = StyleSheet.create({
     color: COLORS.muted,
     marginLeft: 4,
   },
-  // Details row (Certificate #, Type, Bags)
+  // Single details row (Type, Bags, Processing, Origin)
   detailsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 16,
     paddingHorizontal: 8,
     paddingVertical: 6,
-    marginBottom: 4,
   },
   item: {
     flexDirection: 'row',
@@ -65,14 +64,6 @@ const infoStyles = StyleSheet.create({
     fontSize: 9,
     fontWeight: 600,
     color: COLORS.dark,
-  },
-  // Origin row with flag
-  originRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
-    paddingHorizontal: 8,
-    paddingVertical: 6,
   },
   originItem: {
     flexDirection: 'row',
@@ -90,8 +81,6 @@ interface CertificateSampleInfoProps {
   // Supply chain
   exporter: SupplyChainEntity
   roaster: SupplyChainEntity
-  // Certificate info
-  certificateNumber: string | null
   // Sample info
   sampleType: string | null
   bags: number | null
@@ -107,7 +96,6 @@ interface CertificateSampleInfoProps {
 export function CertificateSampleInfo({
   exporter,
   roaster,
-  certificateNumber,
   sampleType,
   bags,
   bagWeight,
@@ -166,15 +154,8 @@ export function CertificateSampleInfo({
         </View>
       )}
 
-      {/* Row 2: Certificate #, Type, Bags */}
+      {/* Row 2: Type, Bags, Processing, ICO, Origin - all in one line */}
       <View style={infoStyles.detailsRow}>
-        {certificateNumber && (
-          <View style={infoStyles.item}>
-            <Text style={infoStyles.label}>Certificate #:</Text>
-            <Text style={infoStyles.value}>{certificateNumber}</Text>
-          </View>
-        )}
-
         <View style={infoStyles.item}>
           <Text style={infoStyles.label}>Type:</Text>
           <Text style={infoStyles.value}>{formatSampleType(sampleType)}</Text>
@@ -184,10 +165,7 @@ export function CertificateSampleInfo({
           <Text style={infoStyles.label}>Bags:</Text>
           <Text style={infoStyles.value}>{formatBags()}</Text>
         </View>
-      </View>
 
-      {/* Row 3: Processing, ICO, Origin with flag */}
-      <View style={infoStyles.originRow}>
         {processingMethod && (
           <View style={infoStyles.item}>
             <Text style={infoStyles.label}>Processing:</Text>

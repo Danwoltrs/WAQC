@@ -9,7 +9,7 @@ import { Document, Page, StyleSheet } from '@react-pdf/renderer'
 import { CertificateHeader } from './certificate-header'
 import { CertificateSampleInfo } from './certificate-sample-info'
 import { CertificateAnalysis } from './certificate-analysis'
-import { CertificateCupping } from './certificate-cupping'
+import { CertificateCuppingDefects } from './certificate-cupping-defects'
 import { CertificateFooter } from './certificate-footer'
 import type { CertificateData } from '@/lib/certificate-data'
 
@@ -50,20 +50,20 @@ export function QualityCertificate({
   return (
     <Document>
       <Page size="A4" style={pageStyles.page}>
-        {/* Header with logos, title, status, dates */}
+        {/* Header with logos, title, status, dates, certificate # */}
         <CertificateHeader
           wolthersLogoBase64={wolthersLogoBase64}
           clientLogoBase64={clientLogoBase64}
+          certificateNumber={certificate?.certificate_number || null}
           status={sample.status}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
         />
 
-        {/* Sample Information (merged with supply chain) */}
+        {/* Sample Information (supply chain, type, bags, processing, origin) */}
         <CertificateSampleInfo
           exporter={supplyChain.exporter}
           roaster={supplyChain.roaster}
-          certificateNumber={certificate?.certificate_number || null}
           sampleType={sample.sample_type}
           bags={sample.bags}
           bagWeight={sample.bag_weight_kg}
@@ -74,16 +74,17 @@ export function QualityCertificate({
           flagBase64={flagBase64}
         />
 
-        {/* Green Bean Analysis (two-column: screen sizes + defects) */}
+        {/* Green Bean Analysis (screen sizes + properties + roast) */}
         <CertificateAnalysis
           greenBean={greenBeanAnalysis}
           greenAspect={greenBeanAnalysis?.green_aspect}
+          roastAnalysis={roastAnalysis}
         />
 
-        {/* Cupping Scores with integrated Roast Analysis */}
-        <CertificateCupping
+        {/* Cupping Scores (1/3) + Defects (2/3) */}
+        <CertificateCuppingDefects
           cuppingData={cuppingData}
-          roastAnalysis={roastAnalysis}
+          defects={greenBeanAnalysis?.defects || null}
           hasQualityTemplate={qualitySpec?.has_validation || false}
         />
 
@@ -106,5 +107,6 @@ export { CertificateHeader } from './certificate-header'
 export { CertificateSampleInfo } from './certificate-sample-info'
 export { CertificateAnalysis } from './certificate-analysis'
 export { CertificateCupping } from './certificate-cupping'
+export { CertificateCuppingDefects } from './certificate-cupping-defects'
 export { CertificateFooter } from './certificate-footer'
 export { COLORS, styles } from './certificate-styles'

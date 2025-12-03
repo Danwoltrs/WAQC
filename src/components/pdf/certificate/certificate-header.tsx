@@ -17,6 +17,9 @@ const headerStyles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'flex-start',
   },
+  leftContent: {
+    width: 120,
+  },
   logoContainer: {
     width: 100,
     height: 40,
@@ -25,6 +28,12 @@ const headerStyles = StyleSheet.create({
     width: 100,
     height: 40,
     objectFit: 'contain',
+  },
+  certificateNumber: {
+    fontSize: 8,
+    fontWeight: 600,
+    color: COLORS.dark,
+    marginTop: 4,
   },
   centerContent: {
     flex: 1,
@@ -71,6 +80,7 @@ const headerStyles = StyleSheet.create({
 interface CertificateHeaderProps {
   wolthersLogoBase64?: string
   clientLogoBase64?: string
+  certificateNumber: string | null
   status: string | null
   issuedDate: string | null
   validUntil: string | null
@@ -79,6 +89,7 @@ interface CertificateHeaderProps {
 export function CertificateHeader({
   wolthersLogoBase64,
   clientLogoBase64,
+  certificateNumber,
   status,
   issuedDate,
   validUntil,
@@ -104,13 +115,20 @@ export function CertificateHeader({
   return (
     <View style={headerStyles.container}>
       <View style={headerStyles.topRow}>
-        {/* Wolthers logo (left) */}
-        <View style={headerStyles.logoContainer}>
-          {wolthersLogoBase64 ? (
-            <Image src={wolthersLogoBase64} style={headerStyles.logo} />
-          ) : (
-            <Text style={{ fontSize: 12, fontWeight: 700, color: COLORS.dark }}>
-              WOLTHERS
+        {/* Wolthers logo + certificate # (left) */}
+        <View style={headerStyles.leftContent}>
+          <View style={headerStyles.logoContainer}>
+            {wolthersLogoBase64 ? (
+              <Image src={wolthersLogoBase64} style={headerStyles.logo} />
+            ) : (
+              <Text style={{ fontSize: 12, fontWeight: 700, color: COLORS.dark }}>
+                WOLTHERS
+              </Text>
+            )}
+          </View>
+          {certificateNumber && (
+            <Text style={headerStyles.certificateNumber}>
+              #{certificateNumber}
             </Text>
           )}
         </View>

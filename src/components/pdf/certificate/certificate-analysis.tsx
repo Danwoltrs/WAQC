@@ -1,13 +1,14 @@
 /**
  * Certificate analysis component
- * Two-column layout: Screen sizes (left) + Defects (right)
- * Bottom row: Moisture | Density | Green Aspect
+ * Two-column layout: Screen sizes (left) + Properties & Roast (right)
+ * Properties: Moisture, Density, Aspect
+ * Roast Analysis: Agtron, Quakers, Level, Date (if available)
  */
 
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
-import type { GreenBeanAnalysis } from '@/lib/certificate-data'
+import type { GreenBeanAnalysis, RoastAnalysis } from '@/lib/certificate-data'
 
 const analysisStyles = StyleSheet.create({
   container: {
@@ -31,7 +32,6 @@ const analysisStyles = StyleSheet.create({
   twoColumnRow: {
     flexDirection: 'row',
     gap: 16,
-    marginBottom: 10,
   },
   column: {
     flex: 1,
@@ -61,79 +61,50 @@ const analysisStyles = StyleSheet.create({
     fontWeight: 600,
     color: COLORS.dark,
   },
-  // Defects section
-  defectItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 3,
+  // Properties section
+  propertiesContainer: {
+    marginBottom: 10,
   },
-  defectName: {
-    width: 80,
-    fontSize: 8,
-    color: COLORS.dark,
-  },
-  defectBarContainer: {
-    flex: 1,
-    height: 8,
-    backgroundColor: COLORS.borderLight,
-    borderRadius: 2,
-    marginHorizontal: 6,
-    overflow: 'hidden',
-  },
-  defectBar: {
-    height: '100%',
-    borderRadius: 2,
-  },
-  defectCount: {
-    width: 20,
-    fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.dark,
-    textAlign: 'right',
-  },
-  defectTotals: {
-    marginTop: 6,
-    paddingTop: 6,
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.border,
-  },
-  defectTotalRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 12,
-  },
-  defectTotalItem: {
-    flexDirection: 'row',
-    alignItems: 'baseline',
-  },
-  defectTotalLabel: {
-    fontSize: 7,
-    color: COLORS.muted,
-    marginRight: 3,
-  },
-  defectTotalValue: {
-    fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.dark,
-  },
-  // Bottom row (moisture, density, aspect)
-  bottomRow: {
+  propertyRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingTop: 8,
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.border,
-  },
-  bottomItem: {
-    flexDirection: 'row',
     alignItems: 'baseline',
+    paddingVertical: 2,
   },
-  bottomLabel: {
+  propertyLabel: {
     fontSize: 8,
     color: COLORS.muted,
-    marginRight: 4,
   },
-  bottomValue: {
+  propertyValue: {
+    fontSize: 9,
+    fontWeight: 600,
+    color: COLORS.dark,
+  },
+  // Roast section
+  roastContainer: {
+    marginTop: 10,
+    paddingTop: 8,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.borderLight,
+  },
+  roastTitle: {
+    fontSize: 8,
+    fontWeight: 600,
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    marginBottom: 6,
+  },
+  roastItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    paddingVertical: 2,
+  },
+  roastLabel: {
+    fontSize: 8,
+    color: COLORS.muted,
+  },
+  roastValue: {
     fontSize: 9,
     fontWeight: 600,
     color: COLORS.dark,
@@ -147,6 +118,7 @@ const analysisStyles = StyleSheet.create({
 interface CertificateAnalysisProps {
   greenBean: GreenBeanAnalysis | null
   greenAspect?: string | null
+  roastAnalysis?: RoastAnalysis | null
 }
 
 function ScreenSizesList({ screenSizes }: { screenSizes: Record<string, number> | null }) {
@@ -186,74 +158,64 @@ function ScreenSizesList({ screenSizes }: { screenSizes: Record<string, number> 
   )
 }
 
-function DefectsList({ defects }: { defects: GreenBeanAnalysis['defects'] }) {
-  if (!defects) {
-    return <Text style={analysisStyles.emptyText}>No defects recorded</Text>
-  }
+function RoastSection({ roast }: { roast: RoastAnalysis | null }) {
+  if (!roast) return null
 
-  const allDefects = [
-    ...(defects.primary || []).map(d => ({ ...d, type: 'primary' })),
-    ...(defects.secondary || []).map(d => ({ ...d, type: 'secondary' })),
-  ]
+  const hasAnyData = roast.agtron_score !== null ||
+    roast.quaker_count !== null ||
+    roast.roast_level ||
+    roast.roast_date
 
-  if (allDefects.length === 0) {
-    return <Text style={analysisStyles.emptyText}>No defects recorded</Text>
-  }
-
-  // Find max for scaling bars
-  const maxCount = Math.max(...allDefects.map(d => d.count), 1)
-  const totalDefects = defects.total_primary + defects.total_secondary
+  if (!hasAnyData) return null
 
   return (
-    <View>
-      {allDefects.map((defect, index) => (
-        <View key={index} style={analysisStyles.defectItem}>
-          <Text style={analysisStyles.defectName}>{defect.name}</Text>
-          <View style={analysisStyles.defectBarContainer}>
-            <View
-              style={[
-                analysisStyles.defectBar,
-                {
-                  width: `${(defect.count / maxCount) * 100}%`,
-                  backgroundColor: defect.type === 'primary' ? COLORS.rejected : COLORS.secondary,
-                },
-              ]}
-            />
-          </View>
-          <Text style={analysisStyles.defectCount}>{defect.count}</Text>
-        </View>
-      ))}
+    <View style={analysisStyles.roastContainer}>
+      <Text style={analysisStyles.roastTitle}>Roast Analysis</Text>
 
-      <View style={analysisStyles.defectTotals}>
-        <View style={analysisStyles.defectTotalRow}>
-          <View style={analysisStyles.defectTotalItem}>
-            <Text style={analysisStyles.defectTotalLabel}>Primary:</Text>
-            <Text style={analysisStyles.defectTotalValue}>{defects.total_primary}</Text>
-          </View>
-          <View style={analysisStyles.defectTotalItem}>
-            <Text style={analysisStyles.defectTotalLabel}>Secondary:</Text>
-            <Text style={analysisStyles.defectTotalValue}>{defects.total_secondary}</Text>
-          </View>
-          <View style={analysisStyles.defectTotalItem}>
-            <Text style={analysisStyles.defectTotalLabel}>Total:</Text>
-            <Text style={analysisStyles.defectTotalValue}>{totalDefects}</Text>
-          </View>
+      {roast.agtron_score !== null && (
+        <View style={analysisStyles.roastItem}>
+          <Text style={analysisStyles.roastLabel}>Agtron:</Text>
+          <Text style={analysisStyles.roastValue}>{roast.agtron_score}</Text>
         </View>
-      </View>
+      )}
+
+      {roast.quaker_count !== null && (
+        <View style={analysisStyles.roastItem}>
+          <Text style={analysisStyles.roastLabel}>Quakers:</Text>
+          <Text style={analysisStyles.roastValue}>{roast.quaker_count}</Text>
+        </View>
+      )}
+
+      {roast.roast_level && (
+        <View style={analysisStyles.roastItem}>
+          <Text style={analysisStyles.roastLabel}>Level:</Text>
+          <Text style={analysisStyles.roastValue}>{roast.roast_level}</Text>
+        </View>
+      )}
+
+      {roast.roast_date && (
+        <View style={analysisStyles.roastItem}>
+          <Text style={analysisStyles.roastLabel}>Date:</Text>
+          <Text style={analysisStyles.roastValue}>
+            {new Date(roast.roast_date).toLocaleDateString('en-GB')}
+          </Text>
+        </View>
+      )}
     </View>
   )
 }
 
-export function CertificateAnalysis({ greenBean, greenAspect }: CertificateAnalysisProps) {
-  const hasData = greenBean && (
-    greenBean.moisture_percentage ||
-    greenBean.density ||
-    greenBean.screen_sizes ||
-    greenBean.defects
+export function CertificateAnalysis({ greenBean, greenAspect, roastAnalysis }: CertificateAnalysisProps) {
+  const hasScreenSizes = greenBean?.screen_sizes && Object.keys(greenBean.screen_sizes).length > 0
+  const hasProperties = greenBean?.moisture_percentage || greenBean?.density || greenAspect
+  const hasRoast = roastAnalysis && (
+    roastAnalysis.agtron_score !== null ||
+    roastAnalysis.quaker_count !== null ||
+    roastAnalysis.roast_level
   )
 
   // If no analysis data, don't render
-  if (!hasData) {
+  if (!hasScreenSizes && !hasProperties && !hasRoast) {
     return null
   }
 
@@ -261,7 +223,6 @@ export function CertificateAnalysis({ greenBean, greenAspect }: CertificateAnaly
     <View style={analysisStyles.container}>
       <Text style={analysisStyles.sectionTitle}>Green Bean Analysis</Text>
 
-      {/* Two columns: Screen Sizes (left) + Defects (right) */}
       <View style={analysisStyles.twoColumnRow}>
         {/* Left column: Screen sizes */}
         <View style={analysisStyles.column}>
@@ -269,36 +230,38 @@ export function CertificateAnalysis({ greenBean, greenAspect }: CertificateAnaly
           <ScreenSizesList screenSizes={greenBean?.screen_sizes || null} />
         </View>
 
-        {/* Right column: Defects */}
+        {/* Right column: Properties + Roast Analysis */}
         <View style={analysisStyles.column}>
-          <Text style={analysisStyles.columnTitle}>Defects</Text>
-          <DefectsList defects={greenBean?.defects || null} />
-        </View>
-      </View>
+          {/* Properties: Moisture, Density, Aspect */}
+          <View style={analysisStyles.propertiesContainer}>
+            <Text style={analysisStyles.columnTitle}>Properties</Text>
 
-      {/* Bottom row: Moisture | Density | Aspect */}
-      <View style={analysisStyles.bottomRow}>
-        <View style={analysisStyles.bottomItem}>
-          <Text style={analysisStyles.bottomLabel}>Moisture:</Text>
-          <Text style={analysisStyles.bottomValue}>
-            {greenBean?.moisture_percentage
-              ? `${greenBean.moisture_percentage.toFixed(1)}%`
-              : '-'}
-          </Text>
-        </View>
+            <View style={analysisStyles.propertyRow}>
+              <Text style={analysisStyles.propertyLabel}>Moisture:</Text>
+              <Text style={analysisStyles.propertyValue}>
+                {greenBean?.moisture_percentage
+                  ? `${greenBean.moisture_percentage.toFixed(1)}%`
+                  : '-'}
+              </Text>
+            </View>
 
-        <View style={analysisStyles.bottomItem}>
-          <Text style={analysisStyles.bottomLabel}>Density:</Text>
-          <Text style={analysisStyles.bottomValue}>
-            {greenBean?.density ? `${greenBean.density.toFixed(2)} g/mL` : '-'}
-          </Text>
-        </View>
+            <View style={analysisStyles.propertyRow}>
+              <Text style={analysisStyles.propertyLabel}>Density:</Text>
+              <Text style={analysisStyles.propertyValue}>
+                {greenBean?.density ? `${greenBean.density.toFixed(2)} g/mL` : '-'}
+              </Text>
+            </View>
 
-        <View style={analysisStyles.bottomItem}>
-          <Text style={analysisStyles.bottomLabel}>Aspect:</Text>
-          <Text style={analysisStyles.bottomValue}>
-            {greenAspect || '-'}
-          </Text>
+            <View style={analysisStyles.propertyRow}>
+              <Text style={analysisStyles.propertyLabel}>Aspect:</Text>
+              <Text style={analysisStyles.propertyValue}>
+                {greenAspect || '-'}
+              </Text>
+            </View>
+          </View>
+
+          {/* Roast Analysis (if available) */}
+          <RoastSection roast={roastAnalysis || null} />
         </View>
       </View>
     </View>
