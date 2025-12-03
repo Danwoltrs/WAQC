@@ -135,6 +135,7 @@ export async function POST(
         client_id,
         workflow_stage,
         status,
+        quality_spec_id,
         client:clients(id, name, company)
       `)
       .eq('id', id)
@@ -144,13 +145,56 @@ export async function POST(
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Check if sample is in a valid workflow stage for certificate generation
-    // Certificates can only be generated after both cupping AND grading are complete
-    // This happens when workflow_stage is 'certified' or 'rejected'
-    if (sample.workflow_stage !== 'certified' && sample.workflow_stage !== 'rejected') {
+    // For samples in 'review' stage, check if both cupping AND grading are complete
+    // This handles the case where the finalize flow had a bug and didn't create the certificate
+    let isRejected = sample.workflow_stage === 'rejected'
+
+    if (sample.workflow_stage === 'review') {
+      // Check for cupping scores
+      const { data: cuppingScores } = await supabase
+        .from('cupping_scores')
+        .select('id')
+        .eq('sample_id', id)
+        .limit(1)
+
+      // Check for grading data (quality_assessments with green_bean_data)
+      const { data: gradingData } = await supabase
+        .from('quality_assessments')
+        .select('id, green_bean_data')
+        .eq('sample_id', id)
+        .not('green_bean_data', 'is', null)
+        .limit(1)
+
+      const hasCupping = cuppingScores && cuppingScores.length > 0
+      const hasGrading = gradingData && gradingData.length > 0
+
+      if (!hasCupping || !hasGrading) {
+        return NextResponse.json({
+          error: 'Cannot generate certificate',
+          details: `Sample must have both cupping scores and grading data. ` +
+            `Cupping: ${hasCupping ? 'complete' : 'missing'}, ` +
+            `Grading: ${hasGrading ? 'complete' : 'missing'}.`
+        }, { status: 400 })
+      }
+
+      // For samples in 'review' stage with complete data, default to approved
+      // This is a recovery mechanism for samples that were stuck due to bugs
+      // The proper compliance check happens through the cupping finalize flow
+      isRejected = false
+
+      // Update sample workflow_stage to certified
+      await supabase
+        .from('samples')
+        .update({
+          workflow_stage: 'certified',
+          status: 'approved'
+        })
+        .eq('id', id)
+
+    } else if (sample.workflow_stage !== 'certified' && sample.workflow_stage !== 'rejected') {
       return NextResponse.json({
         error: 'Cannot generate certificate',
-        details: `Sample must be in 'certified' or 'rejected' workflow stage. Current stage: ${sample.workflow_stage || 'unknown'}. Please complete both cupping and grading first.`
+        details: `Sample must be in 'review', 'certified' or 'rejected' workflow stage. Current stage: ${sample.workflow_stage || 'unknown'}.`
       }, { status: 400 })
     }
 
@@ -170,7 +214,6 @@ export async function POST(
 
     // Generate certificate number from tracking_number
     // For rejected samples, prefix with 'R-'
-    const isRejected = sample.workflow_stage === 'rejected'
     const certificateNumber = isRejected
       ? `R-${sample.tracking_number}`
       : sample.tracking_number

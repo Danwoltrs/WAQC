@@ -393,8 +393,8 @@ export default function SampleDetailPage() {
               <QrCode className="h-4 w-4 mr-2" />
               QR Code
             </Button>
-            {/* Only show certificate button if sample is certified/rejected OR has existing certificate */}
-            {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || certificates.length > 0) && (
+            {/* Show certificate button if sample is certified/rejected/review OR has existing certificate */}
+            {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review' || certificates.length > 0) && (
               <Button
                 variant="default"
                 size="sm"
@@ -701,12 +701,17 @@ export default function SampleDetailPage() {
 
                   {certificates.length === 0 ? (
                     <>
-                      {sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' ? (
+                      {sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review' ? (
                         <>
                           <p className="text-muted-foreground text-center max-w-md">
                             Generate an official quality certificate containing all analysis data,
                             cupping scores, and supply chain information for this sample.
                           </p>
+                          {sample.workflow_stage === 'review' && (
+                            <p className="text-sm text-amber-600 dark:text-amber-400">
+                              Note: Both cupping and grading must be complete. The system will verify this before generating.
+                            </p>
+                          )}
                           <Button
                             onClick={handleGenerateCertificate}
                             disabled={generatingCertificate}
