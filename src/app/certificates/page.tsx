@@ -391,9 +391,99 @@ export default function CertificatesPage() {
 
   const recipientAvailability = getSelectedCertificateRecipients()
 
+  // Certificate preview modal state
+  const [previewCertificate, setPreviewCertificate] = useState<Certificate | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  const [showSingleEmailDialog, setShowSingleEmailDialog] = useState(false)
+  const [singleEmailSending, setSingleEmailSending] = useState(false)
+  const [singleEmailRecipients, setSingleEmailRecipients] = useState({
+    exporter: true,
+    importer: true,
+    roaster: true
+  })
+
+  // Handle opening preview modal
+  const handleViewCertificate = async (cert: Certificate) => {
+    setPreviewCertificate(cert)
+    setPreviewLoading(true)
+    setPreviewPdfUrl(null)
+
+    try {
+      if (cert.sample_id) {
+        const response = await fetch(`/api/samples/${cert.sample_id}/certificate`)
+        if (response.ok) {
+          const blob = await response.blob()
+          const url = window.URL.createObjectURL(blob)
+          setPreviewPdfUrl(url)
+        }
+      }
+    } catch (error) {
+      console.error('Error loading certificate preview:', error)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  // Handle closing preview modal
+  const handleClosePreview = () => {
+    if (previewPdfUrl) {
+      window.URL.revokeObjectURL(previewPdfUrl)
+    }
+    setPreviewCertificate(null)
+    setPreviewPdfUrl(null)
+    setPreviewLoading(false)
+  }
+
+  // Handle single certificate email
+  const handleSingleEmail = async () => {
+    if (!previewCertificate) return
+    if (!singleEmailRecipients.exporter && !singleEmailRecipients.importer && !singleEmailRecipients.roaster) {
+      alert('Please select at least one recipient type')
+      return
+    }
+
+    try {
+      setSingleEmailSending(true)
+
+      const response = await fetch('/api/certificates/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          certificateIds: [previewCertificate.id],
+          recipients: singleEmailRecipients
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert(`Email sent successfully to ${data.successful} recipient(s)`)
+        setShowSingleEmailDialog(false)
+      } else {
+        alert(`Failed to send email: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('Error sending email:', error)
+      alert('Failed to send email')
+    } finally {
+      setSingleEmailSending(false)
+    }
+  }
+
+  // Get recipient availability for single certificate
+  const getSingleCertRecipients = (cert: Certificate | null) => {
+    if (!cert) return { hasExporter: false, hasImporter: false, hasRoaster: false }
+    return {
+      hasExporter: !!cert.sample?.exporter?.contact_email,
+      hasImporter: !!cert.sample?.importer?.contact_email,
+      hasRoaster: !!cert.sample?.roaster?.contact_email
+    }
+  }
+
   return (
     <MainLayout>
-      <div className="space-y-4">
+      <div className="p-6 space-y-4">
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">
@@ -622,16 +712,16 @@ export default function CertificatesPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  asChild
+                                  onClick={() => handleViewCertificate(cert)}
+                                  title="View Certificate"
                                 >
-                                  <Link href={`/samples/${cert.sample_id}`}>
-                                    <Eye className="h-4 w-4" />
-                                  </Link>
+                                  <Eye className="h-4 w-4" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => handleDownload(cert.sample_id!, cert.certificate_number)}
+                                  title="Download Certificate"
                                 >
                                   <Download className="h-4 w-4" />
                                 </Button>
@@ -801,6 +891,190 @@ export default function CertificatesPage() {
                 </DialogFooter>
               </>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* Certificate Preview Modal */}
+        <Dialog open={!!previewCertificate} onOpenChange={(open) => !open && handleClosePreview()}>
+          <DialogContent className="sm:max-w-[900px] max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Certificate {previewCertificate?.certificate_number}
+              </DialogTitle>
+              <DialogDescription>
+                {previewCertificate?.sample?.origin && (
+                  <span>Origin: {previewCertificate.sample.origin}</span>
+                )}
+                {previewCertificate?.sample?.client && (
+                  <span className="ml-4">
+                    Client: {previewCertificate.sample.client.fantasy_name ||
+                            previewCertificate.sample.client.company ||
+                            previewCertificate.sample.client.name}
+                  </span>
+                )}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 min-h-[500px] bg-muted rounded-lg overflow-hidden">
+              {previewLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : previewPdfUrl ? (
+                <iframe
+                  src={previewPdfUrl}
+                  className="w-full h-[500px] border-0"
+                  title="Certificate Preview"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  Unable to load certificate preview
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="flex-row gap-2 sm:gap-2">
+              {previewCertificate?.sample_id && (
+                <>
+                  <Button
+                    variant="outline"
+                    onClick={() => handleDownload(previewCertificate.sample_id!, previewCertificate.certificate_number)}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Download
+                  </Button>
+                  <Button
+                    variant="outline"
+                    onClick={() => setShowSingleEmailDialog(true)}
+                  >
+                    <Mail className="h-4 w-4 mr-2" />
+                    Send Email
+                  </Button>
+                </>
+              )}
+              <Button variant="default" onClick={handleClosePreview}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Single Certificate Email Dialog */}
+        <Dialog open={showSingleEmailDialog} onOpenChange={setShowSingleEmailDialog}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Send Certificate via Email</DialogTitle>
+              <DialogDescription>
+                Send certificate {previewCertificate?.certificate_number} to selected recipients.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-3">
+                {(() => {
+                  const availability = getSingleCertRecipients(previewCertificate)
+                  return (
+                    <>
+                      <div className="flex items-center space-x-3">
+                        <Checkbox
+                          id="single-exporter"
+                          checked={singleEmailRecipients.exporter}
+                          onCheckedChange={(checked) =>
+                            setSingleEmailRecipients(prev => ({ ...prev, exporter: !!checked }))
+                          }
+                          disabled={!availability.hasExporter}
+                        />
+                        <label
+                          htmlFor="single-exporter"
+                          className={`text-sm font-medium leading-none ${
+                            !availability.hasExporter ? 'text-muted-foreground' : ''
+                          }`}
+                        >
+                          Exporter
+                          {!availability.hasExporter && (
+                            <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
+                          )}
+                          {availability.hasExporter && previewCertificate?.sample?.exporter?.contact_email && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              ({previewCertificate.sample.exporter.contact_email})
+                            </span>
+                          )}
+                        </label>
+                      </div>
+
+                      <div className="flex items-center space-x-3">
+                        <Checkbox
+                          id="single-importer"
+                          checked={singleEmailRecipients.importer}
+                          onCheckedChange={(checked) =>
+                            setSingleEmailRecipients(prev => ({ ...prev, importer: !!checked }))
+                          }
+                          disabled={!availability.hasImporter}
+                        />
+                        <label
+                          htmlFor="single-importer"
+                          className={`text-sm font-medium leading-none ${
+                            !availability.hasImporter ? 'text-muted-foreground' : ''
+                          }`}
+                        >
+                          Importer
+                          {!availability.hasImporter && (
+                            <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
+                          )}
+                          {availability.hasImporter && previewCertificate?.sample?.importer?.contact_email && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              ({previewCertificate.sample.importer.contact_email})
+                            </span>
+                          )}
+                        </label>
+                      </div>
+
+                      <div className="flex items-center space-x-3">
+                        <Checkbox
+                          id="single-roaster"
+                          checked={singleEmailRecipients.roaster}
+                          onCheckedChange={(checked) =>
+                            setSingleEmailRecipients(prev => ({ ...prev, roaster: !!checked }))
+                          }
+                          disabled={!availability.hasRoaster}
+                        />
+                        <label
+                          htmlFor="single-roaster"
+                          className={`text-sm font-medium leading-none ${
+                            !availability.hasRoaster ? 'text-muted-foreground' : ''
+                          }`}
+                        >
+                          Roaster
+                          {!availability.hasRoaster && (
+                            <span className="ml-2 text-xs text-muted-foreground">(no email)</span>
+                          )}
+                          {availability.hasRoaster && previewCertificate?.sample?.roaster?.contact_email && (
+                            <span className="ml-2 text-xs text-muted-foreground">
+                              ({previewCertificate.sample.roaster.contact_email})
+                            </span>
+                          )}
+                        </label>
+                      </div>
+                    </>
+                  )
+                })()}
+              </div>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowSingleEmailDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSingleEmail} disabled={singleEmailSending}>
+                {singleEmailSending ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Mail className="h-4 w-4 mr-2" />
+                )}
+                Send Email
+              </Button>
+            </DialogFooter>
           </DialogContent>
         </Dialog>
       </div>

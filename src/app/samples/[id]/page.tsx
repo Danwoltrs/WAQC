@@ -11,8 +11,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   ArrowLeft, CheckCircle, XCircle, Clock, AlertCircle, MapPin,
   Calendar, Package, FileText, Activity, Download, Printer,
-  QrCode, Edit, Trash2, User, Building2, Award, Loader2
+  QrCode, Edit, Trash2, User, Building2, Award, Loader2, Eye, Mail
 } from 'lucide-react'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Checkbox } from '@/components/ui/checkbox'
 import Link from 'next/link'
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -110,6 +119,18 @@ export default function SampleDetailPage() {
   const [deleting, setDeleting] = useState(false)
   const [generatingCertificate, setGeneratingCertificate] = useState(false)
   const [downloadingCertificate, setDownloadingCertificate] = useState(false)
+
+  // Certificate preview modal states
+  const [showCertificateModal, setShowCertificateModal] = useState(false)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  const [showEmailDialog, setShowEmailDialog] = useState(false)
+  const [sendingEmail, setSendingEmail] = useState(false)
+  const [emailRecipients, setEmailRecipients] = useState({
+    exporter: true,
+    importer: true,
+    roaster: true
+  })
 
   useEffect(() => {
     if (params.id) {
@@ -268,6 +289,83 @@ export default function SampleDetailPage() {
     }
   }
 
+  // Open certificate preview modal
+  const handleViewCertificate = async () => {
+    if (!sample) return
+
+    setShowCertificateModal(true)
+    setPreviewLoading(true)
+    setPreviewPdfUrl(null)
+
+    try {
+      const response = await fetch(`/api/samples/${sample.id}/certificate`)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        setPreviewPdfUrl(url)
+      }
+    } catch (error) {
+      console.error('Error loading certificate preview:', error)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  // Close certificate preview modal
+  const handleClosePreview = () => {
+    if (previewPdfUrl) {
+      window.URL.revokeObjectURL(previewPdfUrl)
+    }
+    setShowCertificateModal(false)
+    setPreviewPdfUrl(null)
+    setPreviewLoading(false)
+  }
+
+  // Send certificate via email
+  const handleSendEmail = async () => {
+    if (!sample) return
+    if (!emailRecipients.exporter && !emailRecipients.importer && !emailRecipients.roaster) {
+      alert('Please select at least one recipient type')
+      return
+    }
+
+    try {
+      setSendingEmail(true)
+
+      // First get the certificate ID
+      const certRes = await fetch(`/api/certificates?sample_id=${sample.id}`)
+      const certData = await certRes.json()
+
+      if (!certRes.ok || !certData.certificates?.length) {
+        alert('Certificate not found')
+        return
+      }
+
+      const response = await fetch('/api/certificates/send-email', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          certificateIds: [certData.certificates[0].id],
+          recipients: emailRecipients
+        })
+      })
+
+      const data = await response.json()
+
+      if (response.ok) {
+        alert(`Email sent successfully to ${data.successful} recipient(s)`)
+        setShowEmailDialog(false)
+      } else {
+        alert(`Failed to send email: ${data.error}`)
+      }
+    } catch (error) {
+      console.error('Error sending email:', error)
+      alert('Failed to send email')
+    } finally {
+      setSendingEmail(false)
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: any; icon: any; label: string; className?: string }> = {
       received: { variant: 'secondary', icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -395,19 +493,35 @@ export default function SampleDetailPage() {
             </Button>
             {/* Show certificate button if sample is certified/rejected/review OR has existing certificate */}
             {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review' || certificates.length > 0) && (
-              <Button
-                variant="default"
-                size="sm"
-                onClick={certificates.length > 0 ? handleDownloadCertificate : handleGenerateCertificate}
-                disabled={generatingCertificate || downloadingCertificate}
-              >
-                {generatingCertificate || downloadingCertificate ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <Award className="h-4 w-4 mr-2" />
-                )}
-                {certificates.length > 0 ? 'Download Certificate' : 'Generate Certificate'}
-              </Button>
+              certificates.length > 0 ? (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleViewCertificate}
+                  disabled={previewLoading}
+                >
+                  {previewLoading ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Eye className="h-4 w-4 mr-2" />
+                  )}
+                  View Certificate
+                </Button>
+              ) : (
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleGenerateCertificate}
+                  disabled={generatingCertificate}
+                >
+                  {generatingCertificate ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Award className="h-4 w-4 mr-2" />
+                  )}
+                  Generate Certificate
+                </Button>
+              )
             )}
             <Button variant="outline" size="sm">
               <Edit className="h-4 w-4 mr-2" />
@@ -804,6 +918,147 @@ export default function SampleDetailPage() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {/* Certificate Preview Modal */}
+        <Dialog open={showCertificateModal} onOpenChange={(open) => !open && handleClosePreview()}>
+          <DialogContent className="sm:max-w-[900px] max-h-[90vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileText className="h-5 w-5" />
+                Certificate {parseTrackingNumber(sample?.tracking_number || '')}
+              </DialogTitle>
+              <DialogDescription>
+                {sample?.origin && <span>Origin: {sample.origin}</span>}
+                {sample?.quality_name && <span className="ml-4">Quality: {sample.quality_name}</span>}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 min-h-[500px] bg-muted rounded-lg overflow-hidden">
+              {previewLoading ? (
+                <div className="flex items-center justify-center h-full">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : previewPdfUrl ? (
+                <iframe
+                  src={previewPdfUrl}
+                  className="w-full h-[500px] border-0"
+                  title="Certificate Preview"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  Unable to load certificate preview
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="flex-row gap-2 sm:gap-2">
+              <Button
+                variant="outline"
+                onClick={handleDownloadCertificate}
+                disabled={downloadingCertificate}
+              >
+                {downloadingCertificate ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Download
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setShowEmailDialog(true)}
+              >
+                <Mail className="h-4 w-4 mr-2" />
+                Send Email
+              </Button>
+              <Button variant="default" onClick={handleClosePreview}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Email Dialog */}
+        <Dialog open={showEmailDialog} onOpenChange={setShowEmailDialog}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle>Send Certificate via Email</DialogTitle>
+              <DialogDescription>
+                Send certificate to selected recipients.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 py-4">
+              <div className="space-y-3">
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="email-exporter"
+                    checked={emailRecipients.exporter}
+                    onCheckedChange={(checked) =>
+                      setEmailRecipients(prev => ({ ...prev, exporter: !!checked }))
+                    }
+                  />
+                  <label
+                    htmlFor="email-exporter"
+                    className="text-sm font-medium leading-none"
+                  >
+                    Exporter
+                  </label>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="email-importer"
+                    checked={emailRecipients.importer}
+                    onCheckedChange={(checked) =>
+                      setEmailRecipients(prev => ({ ...prev, importer: !!checked }))
+                    }
+                  />
+                  <label
+                    htmlFor="email-importer"
+                    className="text-sm font-medium leading-none"
+                  >
+                    Importer
+                  </label>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <Checkbox
+                    id="email-roaster"
+                    checked={emailRecipients.roaster}
+                    onCheckedChange={(checked) =>
+                      setEmailRecipients(prev => ({ ...prev, roaster: !!checked }))
+                    }
+                  />
+                  <label
+                    htmlFor="email-roaster"
+                    className="text-sm font-medium leading-none"
+                  >
+                    Roaster
+                  </label>
+                </div>
+              </div>
+
+              <p className="text-xs text-muted-foreground">
+                Recipients will receive an email with the certificate PDF attached.
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEmailDialog(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleSendEmail} disabled={sendingEmail}>
+                {sendingEmail ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Mail className="h-4 w-4 mr-2" />
+                )}
+                Send Email
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   )
