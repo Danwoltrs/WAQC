@@ -1,8 +1,7 @@
 /**
  * Certificate cupping component
- * Minimalistic two-column display: Attribute (with range) | Score
- * No title, no visual bars
- * Range shown as (center +/- tolerance) inline with attribute name
+ * Simple two-column display: Attribute (with range) | Score
+ * No title, compact spacing, all text 9pt
  */
 
 import React from 'react'
@@ -20,29 +19,26 @@ const cuppingStyles = StyleSheet.create({
   tableRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     paddingVertical: 2,
     borderBottomWidth: 0.5,
     borderBottomColor: COLORS.borderLight,
   },
-  colAttribute: {
-    flex: 3,
-  },
-  colScore: {
-    flex: 1,
-    textAlign: 'right',
-  },
-  attributeName: {
-    fontSize: 8,
+  attributeText: {
+    fontSize: 9,
     color: COLORS.dark,
+    flex: 1,
   },
   rangeText: {
-    fontSize: 7,
+    fontSize: 8,
     color: COLORS.muted,
   },
   scoreText: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 600,
     color: COLORS.dark,
+    marginLeft: 8,
+    minWidth: 35,
     textAlign: 'right',
   },
   scoreOutOfSpec: {
@@ -58,7 +54,7 @@ const cuppingStyles = StyleSheet.create({
     borderTopColor: COLORS.border,
   },
   finalScoreLabel: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 600,
     color: COLORS.dark,
     marginRight: 8,
@@ -75,13 +71,13 @@ const cuppingStyles = StyleSheet.create({
     borderTopColor: COLORS.borderLight,
   },
   commentsLabel: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.muted,
     marginBottom: 2,
   },
   commentsText: {
-    fontSize: 8,
+    fontSize: 9,
     color: COLORS.dark,
   },
 })
@@ -91,14 +87,13 @@ function formatRange(min: number | null, max: number | null): string {
   if (min === null || max === null) return ''
   const center = (min + max) / 2
   const tolerance = (max - min) / 2
-  // Use integer if tolerance is whole number
   const toleranceStr = tolerance % 1 === 0 ? tolerance.toString() : tolerance.toFixed(1)
-  return `(${center.toFixed(1)} +/- ${toleranceStr})`
+  return ` (${center.toFixed(1)} +/- ${toleranceStr})`
 }
 
 // Check if score is within spec range
 function isInSpec(score: number, min: number | null, max: number | null): boolean {
-  if (min === null || max === null) return true // No spec means always in spec
+  if (min === null || max === null) return true
   return score >= min && score <= max
 }
 
@@ -111,28 +106,23 @@ function AttributeRow({ attribute, showRange }: AttributeRowProps) {
   const { name, score, allowedMin, allowedMax } = attribute
   const inSpec = isInSpec(score, allowedMin, allowedMax)
   const rangeStr = showRange && allowedMin !== null && allowedMax !== null
-    ? ` ${formatRange(allowedMin, allowedMax)}`
+    ? formatRange(allowedMin, allowedMax)
     : ''
 
   return (
     <View style={cuppingStyles.tableRow}>
-      <View style={cuppingStyles.colAttribute}>
-        <Text style={cuppingStyles.attributeName}>
-          {name}
-          {rangeStr && <Text style={cuppingStyles.rangeText}>{rangeStr}</Text>}
-        </Text>
-      </View>
-
-      <View style={cuppingStyles.colScore}>
-        <Text
-          style={[
-            cuppingStyles.scoreText,
-            !inSpec && showRange ? cuppingStyles.scoreOutOfSpec : {},
-          ]}
-        >
-          {score.toFixed(2)}
-        </Text>
-      </View>
+      <Text style={cuppingStyles.attributeText}>
+        {name}
+        {rangeStr && <Text style={cuppingStyles.rangeText}>{rangeStr}</Text>}
+      </Text>
+      <Text
+        style={[
+          cuppingStyles.scoreText,
+          !inSpec && showRange ? cuppingStyles.scoreOutOfSpec : {},
+        ]}
+      >
+        {score.toFixed(2)}
+      </Text>
     </View>
   )
 }
@@ -146,20 +136,16 @@ export function CertificateCupping({
   cuppingData,
   hasQualityTemplate = false,
 }: CertificateCuppingProps) {
-  // If no cupping data, don't render
   if (!cuppingData || cuppingData.attributes.length === 0) {
     return null
   }
 
   const { attributes, overallScore, comments, isSpecialty } = cuppingData
-
-  // Show ranges only if we have a quality template with validation
   const showRanges = hasQualityTemplate
 
   return (
     <View style={cuppingStyles.container}>
       <View style={cuppingStyles.table}>
-        {/* Rows */}
         {attributes.map((attr, index) => (
           <AttributeRow
             key={index}
@@ -169,7 +155,6 @@ export function CertificateCupping({
         ))}
       </View>
 
-      {/* Final Score - only for specialty coffees */}
       {isSpecialty && overallScore !== null && (
         <View style={cuppingStyles.finalScoreContainer}>
           <Text style={cuppingStyles.finalScoreLabel}>FINAL:</Text>
@@ -177,7 +162,6 @@ export function CertificateCupping({
         </View>
       )}
 
-      {/* Comments */}
       {comments && (
         <View style={cuppingStyles.commentsContainer}>
           <Text style={cuppingStyles.commentsLabel}>Notes:</Text>

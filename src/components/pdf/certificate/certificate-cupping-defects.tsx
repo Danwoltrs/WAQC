@@ -1,7 +1,7 @@
 /**
  * Certificate cupping and defects combined section
  * Layout: Cupping (1/3) | Defects (2/3) - Primary and Secondary columns
- * No charts, just numbers
+ * No titles, no charts, just numbers, compact spacing
  */
 
 import React from 'react'
@@ -24,38 +24,24 @@ const sectionStyles = StyleSheet.create({
   },
   // Cupping column - 1/3
   cuppingColumn: {
-    flex: 1,
+    width: 180,
     paddingRight: 12,
     borderRightWidth: 0.5,
     borderRightColor: COLORS.borderLight,
   },
-  cuppingTitle: {
-    fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.muted,
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
   // Defects column - 2/3
   defectsColumn: {
-    flex: 2,
-  },
-  defectsTitle: {
-    fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.muted,
-    textTransform: 'uppercase',
-    marginBottom: 6,
+    flex: 1,
   },
   defectsRow: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 24,
   },
   defectTypeColumn: {
     flex: 1,
   },
   defectTypeTitle: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.muted,
     textTransform: 'uppercase',
@@ -68,13 +54,14 @@ const sectionStyles = StyleSheet.create({
     paddingVertical: 1,
   },
   defectName: {
-    fontSize: 8,
+    fontSize: 9,
     color: COLORS.dark,
   },
   defectCount: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 600,
     color: COLORS.dark,
+    marginLeft: 8,
   },
   defectTotal: {
     flexDirection: 'row',
@@ -86,7 +73,7 @@ const sectionStyles = StyleSheet.create({
     borderTopColor: COLORS.border,
   },
   totalLabel: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 600,
     color: COLORS.dark,
   },
@@ -96,7 +83,7 @@ const sectionStyles = StyleSheet.create({
     color: COLORS.dark,
   },
   emptyText: {
-    fontSize: 8,
+    fontSize: 9,
     color: COLORS.mutedLight,
   },
 })
@@ -112,49 +99,46 @@ function DefectsList({ defects }: DefectsListProps) {
   const totalSecondary = defects?.total_secondary || 0
 
   return (
-    <View>
-      <Text style={sectionStyles.defectsTitle}>Defects</Text>
-      <View style={sectionStyles.defectsRow}>
-        {/* Primary Defects Column */}
-        <View style={sectionStyles.defectTypeColumn}>
-          <Text style={sectionStyles.defectTypeTitle}>Primary</Text>
-          {primaryDefects.length === 0 ? (
-            <Text style={sectionStyles.emptyText}>None</Text>
-          ) : (
-            <>
-              {primaryDefects.map((defect, index) => (
-                <View key={index} style={sectionStyles.defectItem}>
-                  <Text style={sectionStyles.defectName}>{defect.name}</Text>
-                  <Text style={sectionStyles.defectCount}>{defect.count}</Text>
-                </View>
-              ))}
-            </>
-          )}
-          <View style={sectionStyles.defectTotal}>
-            <Text style={sectionStyles.totalLabel}>Total:</Text>
-            <Text style={sectionStyles.totalValue}>{totalPrimary}</Text>
-          </View>
+    <View style={sectionStyles.defectsRow}>
+      {/* Primary Defects Column */}
+      <View style={sectionStyles.defectTypeColumn}>
+        <Text style={sectionStyles.defectTypeTitle}>Primary</Text>
+        {primaryDefects.length === 0 ? (
+          <Text style={sectionStyles.emptyText}>None</Text>
+        ) : (
+          <>
+            {primaryDefects.map((defect, index) => (
+              <View key={index} style={sectionStyles.defectItem}>
+                <Text style={sectionStyles.defectName}>{defect.name}</Text>
+                <Text style={sectionStyles.defectCount}>{defect.count}</Text>
+              </View>
+            ))}
+          </>
+        )}
+        <View style={sectionStyles.defectTotal}>
+          <Text style={sectionStyles.totalLabel}>Total:</Text>
+          <Text style={sectionStyles.totalValue}>{totalPrimary}</Text>
         </View>
+      </View>
 
-        {/* Secondary Defects Column */}
-        <View style={sectionStyles.defectTypeColumn}>
-          <Text style={sectionStyles.defectTypeTitle}>Secondary</Text>
-          {secondaryDefects.length === 0 ? (
-            <Text style={sectionStyles.emptyText}>None</Text>
-          ) : (
-            <>
-              {secondaryDefects.map((defect, index) => (
-                <View key={index} style={sectionStyles.defectItem}>
-                  <Text style={sectionStyles.defectName}>{defect.name}</Text>
-                  <Text style={sectionStyles.defectCount}>{defect.count}</Text>
-                </View>
-              ))}
-            </>
-          )}
-          <View style={sectionStyles.defectTotal}>
-            <Text style={sectionStyles.totalLabel}>Total:</Text>
-            <Text style={sectionStyles.totalValue}>{totalSecondary}</Text>
-          </View>
+      {/* Secondary Defects Column */}
+      <View style={sectionStyles.defectTypeColumn}>
+        <Text style={sectionStyles.defectTypeTitle}>Secondary</Text>
+        {secondaryDefects.length === 0 ? (
+          <Text style={sectionStyles.emptyText}>None</Text>
+        ) : (
+          <>
+            {secondaryDefects.map((defect, index) => (
+              <View key={index} style={sectionStyles.defectItem}>
+                <Text style={sectionStyles.defectName}>{defect.name}</Text>
+                <Text style={sectionStyles.defectCount}>{defect.count}</Text>
+              </View>
+            ))}
+          </>
+        )}
+        <View style={sectionStyles.defectTotal}>
+          <Text style={sectionStyles.totalLabel}>Total:</Text>
+          <Text style={sectionStyles.totalValue}>{totalSecondary}</Text>
         </View>
       </View>
     </View>
@@ -175,7 +159,6 @@ export function CertificateCuppingDefects({
   const hasCupping = cuppingData && cuppingData.attributes.length > 0
   const hasDefects = defects && (defects.primary.length > 0 || defects.secondary.length > 0)
 
-  // If neither cupping nor defects, don't render
   if (!hasCupping && !hasDefects) {
     return null
   }
@@ -193,7 +176,6 @@ export function CertificateCuppingDefects({
   if (hasCupping && !hasDefects) {
     return (
       <View style={sectionStyles.container}>
-        <Text style={sectionStyles.cuppingTitle}>Cupping Scores</Text>
         <CertificateCupping
           cuppingData={cuppingData}
           hasQualityTemplate={hasQualityTemplate}
@@ -202,20 +184,19 @@ export function CertificateCuppingDefects({
     )
   }
 
-  // Both cupping and defects - show side by side (1/3 + 2/3)
+  // Both cupping and defects - show side by side
   return (
     <View style={sectionStyles.container}>
       <View style={sectionStyles.row}>
-        {/* Cupping - 1/3 */}
+        {/* Cupping */}
         <View style={sectionStyles.cuppingColumn}>
-          <Text style={sectionStyles.cuppingTitle}>Cupping Scores</Text>
           <CertificateCupping
             cuppingData={cuppingData}
             hasQualityTemplate={hasQualityTemplate}
           />
         </View>
 
-        {/* Defects - 2/3 */}
+        {/* Defects */}
         <View style={sectionStyles.defectsColumn}>
           <DefectsList defects={defects} />
         </View>

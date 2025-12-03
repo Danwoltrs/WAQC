@@ -1,7 +1,7 @@
 /**
  * Certificate sample info component
  * Displays supply chain, sample details in compact rows
- * Redesigned: one line for Type, Bags, Processing, Origin
+ * All text same size (9pt), only contracts smaller (8pt)
  */
 
 import React from 'react'
@@ -27,8 +27,7 @@ const infoStyles = StyleSheet.create({
     alignItems: 'baseline',
   },
   entityLabel: {
-    fontSize: 8,
-    fontWeight: 600,
+    fontSize: 9,
     color: COLORS.muted,
     marginRight: 4,
   },
@@ -42,11 +41,10 @@ const infoStyles = StyleSheet.create({
     color: COLORS.muted,
     marginLeft: 4,
   },
-  // Single details row (Type, Bags, Processing, Origin)
+  // Single details row - spread across full width
   detailsRow: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 16,
+    justifyContent: 'space-between',
     paddingHorizontal: 8,
     paddingVertical: 6,
   },
@@ -55,8 +53,7 @@ const infoStyles = StyleSheet.create({
     alignItems: 'baseline',
   },
   label: {
-    fontSize: 8,
-    fontWeight: 600,
+    fontSize: 9,
     color: COLORS.muted,
     marginRight: 4,
   },
@@ -154,7 +151,7 @@ export function CertificateSampleInfo({
         </View>
       )}
 
-      {/* Row 2: Type, Bags, Processing, ICO, Origin - all in one line */}
+      {/* Row 2: Type, Bags, Processing, ICO, Origin - spread across full width */}
       <View style={infoStyles.detailsRow}>
         <View style={infoStyles.item}>
           <Text style={infoStyles.label}>Type:</Text>
@@ -166,12 +163,10 @@ export function CertificateSampleInfo({
           <Text style={infoStyles.value}>{formatBags()}</Text>
         </View>
 
-        {processingMethod && (
-          <View style={infoStyles.item}>
-            <Text style={infoStyles.label}>Processing:</Text>
-            <Text style={infoStyles.value}>{processingMethod}</Text>
-          </View>
-        )}
+        <View style={infoStyles.item}>
+          <Text style={infoStyles.label}>Processing:</Text>
+          <Text style={infoStyles.value}>{processingMethod || '-'}</Text>
+        </View>
 
         {icoNumber && (
           <View style={infoStyles.item}>

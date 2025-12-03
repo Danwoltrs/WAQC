@@ -384,8 +384,18 @@ function isSpecialtyTemplate(templateName: string | null | undefined): boolean {
   )
 }
 
+// Primary defects (SCA classification)
+const PRIMARY_DEFECTS = [
+  'Full Black', 'Full Sour', 'Pod/Cherry', 'Large Husk',
+  'Stone/Stick', 'Foreign Material', 'Severe Broca'
+]
+
 /**
  * Parse defects from green bean data
+ * Handles multiple formats:
+ * 1. counts format: {counts: {defectName: count}, primary: 0, secondary: 19.04}
+ * 2. array format: [{name, count, category}]
+ * 3. object format: {primary: [...], secondary: [...]}
  */
 function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
   if (!defectsData || typeof defectsData !== 'object') return null
@@ -396,8 +406,26 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
   let totalPrimary = 0
   let totalSecondary = 0
 
+  // Handle counts format: {counts: {defectName: count}, primary: 0, secondary: 19.04}
+  if (defects.counts && typeof defects.counts === 'object') {
+    const counts = defects.counts as Record<string, number>
+    for (const [name, count] of Object.entries(counts)) {
+      if (typeof count === 'number' && count > 0) {
+        const isPrimary = PRIMARY_DEFECTS.some(pd =>
+          name.toLowerCase().includes(pd.toLowerCase())
+        )
+        if (isPrimary) {
+          primary.push({ name, count })
+          totalPrimary += count
+        } else {
+          secondary.push({ name, count })
+          totalSecondary += count
+        }
+      }
+    }
+  }
   // Handle array format
-  if (Array.isArray(defects)) {
+  else if (Array.isArray(defects)) {
     for (const defect of defects) {
       if (defect && typeof defect === 'object') {
         const d = defect as { name?: string; count?: number; category?: string }
@@ -413,7 +441,7 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
       }
     }
   }
-  // Handle object format with primary/secondary keys
+  // Handle object format with primary/secondary arrays
   else {
     if (defects.primary && Array.isArray(defects.primary)) {
       for (const d of defects.primary as Array<{ name?: string; count?: number }>) {

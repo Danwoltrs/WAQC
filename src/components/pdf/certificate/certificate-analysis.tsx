@@ -1,8 +1,7 @@
 /**
  * Certificate analysis component
  * Two-column layout: Screen sizes (left) + Properties & Roast (right)
- * Properties: Moisture, Density, Aspect
- * Roast Analysis: Agtron, Quakers, Level, Date (if available)
+ * No section titles, compact spacing, numbers close to labels
  */
 
 import React from 'react'
@@ -18,62 +17,47 @@ const analysisStyles = StyleSheet.create({
     borderColor: COLORS.border,
     borderRadius: 4,
   },
-  sectionTitle: {
-    fontSize: 9,
-    fontWeight: 700,
-    color: COLORS.dark,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    marginBottom: 10,
-    paddingBottom: 4,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.borderLight,
-  },
   twoColumnRow: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 20,
   },
-  column: {
+  leftColumn: {
+    width: 120,
+  },
+  rightColumn: {
     flex: 1,
   },
-  columnTitle: {
-    fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.muted,
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  // Screen sizes vertical list
+  // Screen sizes - compact list
   screenSizeItem: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: 2,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.borderLight,
+    paddingVertical: 1,
   },
   screenLabel: {
-    fontSize: 8,
+    fontSize: 9,
     color: COLORS.dark,
   },
   screenValue: {
-    fontSize: 8,
+    fontSize: 9,
     fontWeight: 600,
     color: COLORS.dark,
+    marginLeft: 8,
   },
-  // Properties section
-  propertiesContainer: {
-    marginBottom: 10,
-  },
-  propertyRow: {
+  // Properties section - horizontal layout
+  propertiesRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    gap: 24,
+    marginBottom: 8,
+  },
+  propertyItem: {
+    flexDirection: 'row',
     alignItems: 'baseline',
-    paddingVertical: 2,
   },
   propertyLabel: {
-    fontSize: 8,
+    fontSize: 9,
     color: COLORS.muted,
+    marginRight: 4,
   },
   propertyValue: {
     fontSize: 9,
@@ -82,8 +66,7 @@ const analysisStyles = StyleSheet.create({
   },
   // Roast section
   roastContainer: {
-    marginTop: 10,
-    paddingTop: 8,
+    paddingTop: 6,
     borderTopWidth: 0.5,
     borderTopColor: COLORS.borderLight,
   },
@@ -92,17 +75,21 @@ const analysisStyles = StyleSheet.create({
     fontWeight: 600,
     color: COLORS.muted,
     textTransform: 'uppercase',
-    marginBottom: 6,
+    marginBottom: 4,
+  },
+  roastRow: {
+    flexDirection: 'row',
+    gap: 16,
+    flexWrap: 'wrap',
   },
   roastItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'baseline',
-    paddingVertical: 2,
   },
   roastLabel: {
-    fontSize: 8,
+    fontSize: 9,
     color: COLORS.muted,
+    marginRight: 4,
   },
   roastValue: {
     fontSize: 9,
@@ -110,7 +97,7 @@ const analysisStyles = StyleSheet.create({
     color: COLORS.dark,
   },
   emptyText: {
-    fontSize: 8,
+    fontSize: 9,
     color: COLORS.mutedLight,
   },
 })
@@ -123,7 +110,7 @@ interface CertificateAnalysisProps {
 
 function ScreenSizesList({ screenSizes }: { screenSizes: Record<string, number> | null }) {
   if (!screenSizes || Object.keys(screenSizes).length === 0) {
-    return <Text style={analysisStyles.emptyText}>No data</Text>
+    return <Text style={analysisStyles.emptyText}>-</Text>
   }
 
   // Sort screen sizes: largest first, Pan always last
@@ -134,14 +121,13 @@ function ScreenSizesList({ screenSizes }: { screenSizes: Record<string, number> 
       const bIsPan = b[0].toLowerCase() === 'pan'
       if (aIsPan) return 1
       if (bIsPan) return -1
-      // Extract numeric part for sorting
       const aNum = parseInt(a[0].replace(/\D/g, '')) || 0
       const bNum = parseInt(b[0].replace(/\D/g, '')) || 0
-      return bNum - aNum // Descending (largest first)
+      return bNum - aNum
     })
 
   if (sortedSizes.length === 0) {
-    return <Text style={analysisStyles.emptyText}>No data</Text>
+    return <Text style={analysisStyles.emptyText}>-</Text>
   }
 
   return (
@@ -171,36 +157,34 @@ function RoastSection({ roast }: { roast: RoastAnalysis | null }) {
   return (
     <View style={analysisStyles.roastContainer}>
       <Text style={analysisStyles.roastTitle}>Roast Analysis</Text>
-
-      {roast.agtron_score !== null && (
-        <View style={analysisStyles.roastItem}>
-          <Text style={analysisStyles.roastLabel}>Agtron:</Text>
-          <Text style={analysisStyles.roastValue}>{roast.agtron_score}</Text>
-        </View>
-      )}
-
-      {roast.quaker_count !== null && (
-        <View style={analysisStyles.roastItem}>
-          <Text style={analysisStyles.roastLabel}>Quakers:</Text>
-          <Text style={analysisStyles.roastValue}>{roast.quaker_count}</Text>
-        </View>
-      )}
-
-      {roast.roast_level && (
-        <View style={analysisStyles.roastItem}>
-          <Text style={analysisStyles.roastLabel}>Level:</Text>
-          <Text style={analysisStyles.roastValue}>{roast.roast_level}</Text>
-        </View>
-      )}
-
-      {roast.roast_date && (
-        <View style={analysisStyles.roastItem}>
-          <Text style={analysisStyles.roastLabel}>Date:</Text>
-          <Text style={analysisStyles.roastValue}>
-            {new Date(roast.roast_date).toLocaleDateString('en-GB')}
-          </Text>
-        </View>
-      )}
+      <View style={analysisStyles.roastRow}>
+        {roast.agtron_score !== null && (
+          <View style={analysisStyles.roastItem}>
+            <Text style={analysisStyles.roastLabel}>Agtron:</Text>
+            <Text style={analysisStyles.roastValue}>{roast.agtron_score}</Text>
+          </View>
+        )}
+        {roast.quaker_count !== null && (
+          <View style={analysisStyles.roastItem}>
+            <Text style={analysisStyles.roastLabel}>Quakers:</Text>
+            <Text style={analysisStyles.roastValue}>{roast.quaker_count}</Text>
+          </View>
+        )}
+        {roast.roast_level && (
+          <View style={analysisStyles.roastItem}>
+            <Text style={analysisStyles.roastLabel}>Level:</Text>
+            <Text style={analysisStyles.roastValue}>{roast.roast_level}</Text>
+          </View>
+        )}
+        {roast.roast_date && (
+          <View style={analysisStyles.roastItem}>
+            <Text style={analysisStyles.roastLabel}>Date:</Text>
+            <Text style={analysisStyles.roastValue}>
+              {new Date(roast.roast_date).toLocaleDateString('en-GB')}
+            </Text>
+          </View>
+        )}
+      </View>
     </View>
   )
 }
@@ -214,29 +198,23 @@ export function CertificateAnalysis({ greenBean, greenAspect, roastAnalysis }: C
     roastAnalysis.roast_level
   )
 
-  // If no analysis data, don't render
   if (!hasScreenSizes && !hasProperties && !hasRoast) {
     return null
   }
 
   return (
     <View style={analysisStyles.container}>
-      <Text style={analysisStyles.sectionTitle}>Green Bean Analysis</Text>
-
       <View style={analysisStyles.twoColumnRow}>
-        {/* Left column: Screen sizes */}
-        <View style={analysisStyles.column}>
-          <Text style={analysisStyles.columnTitle}>Screen Sizes</Text>
+        {/* Left column: Screen sizes - compact */}
+        <View style={analysisStyles.leftColumn}>
           <ScreenSizesList screenSizes={greenBean?.screen_sizes || null} />
         </View>
 
         {/* Right column: Properties + Roast Analysis */}
-        <View style={analysisStyles.column}>
-          {/* Properties: Moisture, Density, Aspect */}
-          <View style={analysisStyles.propertiesContainer}>
-            <Text style={analysisStyles.columnTitle}>Properties</Text>
-
-            <View style={analysisStyles.propertyRow}>
+        <View style={analysisStyles.rightColumn}>
+          {/* Properties in a row */}
+          <View style={analysisStyles.propertiesRow}>
+            <View style={analysisStyles.propertyItem}>
               <Text style={analysisStyles.propertyLabel}>Moisture:</Text>
               <Text style={analysisStyles.propertyValue}>
                 {greenBean?.moisture_percentage
@@ -245,14 +223,14 @@ export function CertificateAnalysis({ greenBean, greenAspect, roastAnalysis }: C
               </Text>
             </View>
 
-            <View style={analysisStyles.propertyRow}>
+            <View style={analysisStyles.propertyItem}>
               <Text style={analysisStyles.propertyLabel}>Density:</Text>
               <Text style={analysisStyles.propertyValue}>
                 {greenBean?.density ? `${greenBean.density.toFixed(2)} g/mL` : '-'}
               </Text>
             </View>
 
-            <View style={analysisStyles.propertyRow}>
+            <View style={analysisStyles.propertyItem}>
               <Text style={analysisStyles.propertyLabel}>Aspect:</Text>
               <Text style={analysisStyles.propertyValue}>
                 {greenAspect || '-'}
