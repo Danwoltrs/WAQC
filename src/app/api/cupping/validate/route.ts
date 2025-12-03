@@ -102,14 +102,34 @@ export async function GET(request: NextRequest) {
 
     // Count completed cuppers (those who have submitted scores for ALL samples)
     const sampleIds = session.sample_ids || []
-    const { data: scores, error: scoresError } = await supabase
+
+    // First try to get scores by session_id
+    let { data: scores, error: scoresError } = await supabase
       .from('cupping_scores')
       .select('cupper_id, sample_id')
       .eq('session_id', session.id)
 
     if (scoresError) {
-      console.error('Error fetching scores:', scoresError)
+      console.error('Error fetching scores by session_id:', scoresError)
     }
+
+    // If no scores found by session_id, fallback to checking by sample_ids
+    // This handles legacy scores saved without session_id
+    if (!scores || scores.length === 0) {
+      console.log('[VALIDATE] No scores found by session_id, trying sample_ids fallback')
+      const { data: sampleScores, error: sampleScoresError } = await supabase
+        .from('cupping_scores')
+        .select('cupper_id, sample_id')
+        .in('sample_id', sampleIds)
+
+      if (sampleScoresError) {
+        console.error('Error fetching scores by sample_ids:', sampleScoresError)
+      } else {
+        scores = sampleScores
+      }
+    }
+
+    console.log(`[VALIDATE] Found ${scores?.length || 0} scores for session ${session.id}`)
 
     // Count how many samples each cupper has scored
     const cupperSampleCounts = new Map<string, number>()
@@ -137,6 +157,8 @@ export async function GET(request: NextRequest) {
     const minCuppersRequired = (session.allow_single_cupper || isSingleCupperSession)
       ? 1
       : (session.min_cuppers_required || 2)
+
+    console.log(`[VALIDATE] Completed cuppers: ${completedCupperCount}/${minCuppersRequired}, totalSamples: ${totalSamples}`)
 
     const hasEnoughCuppers = completedCupperCount >= minCuppersRequired
 

@@ -44,6 +44,19 @@ export async function POST(
       return NextResponse.json({ error: 'Invalid defects data' }, { status: 400 })
     }
 
+    // Find the active cupping session that contains this sample
+    // This ensures scores are linked to the correct session for validation
+    const { data: activeSessions } = await supabaseAdmin
+      .from('cupping_sessions')
+      .select('id')
+      .contains('sample_ids', [sampleId])
+      .in('status', ['active', 'review'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+
+    const sessionId = activeSessions?.[0]?.id || null
+    console.log(`[CUPPING SCORE] Saving score for sample ${sampleId}, session ${sessionId}`)
+
     // Check if cupping score already exists for this sample and cupper (using admin client)
     const { data: existingScore } = await supabaseAdmin
       .from('cupping_scores')
@@ -64,6 +77,7 @@ export async function POST(
     const cuppingScoreData = {
       sample_id: sampleId,
       cupper_id: user.id,
+      session_id: sessionId, // Link to active session for validation tracking
       scores: scoresObject,
       defects: defects // Store the full defects structure (with taints and faults arrays)
     }

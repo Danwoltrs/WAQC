@@ -252,6 +252,7 @@ export async function GET(request: NextRequest) {
       success: true,
       aggregated,
       individual_scores: scores.map((score: any) => ({
+        score_id: score.id, // Include score ID for editing
         cupper_id: score.cupper_id,
         cupper_name: score.cupper?.full_name || 'Unknown',
         scores: score.scores,

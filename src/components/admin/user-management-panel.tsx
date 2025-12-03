@@ -56,6 +56,7 @@ type Profile = Database['public']['Tables']['profiles']['Row'] & {
   last_name?: string | null
   is_cupper?: boolean | null
   is_q_grader?: boolean | null
+  is_master_cupper?: boolean | null
   last_login_at?: string | null
 }
 
@@ -129,6 +130,7 @@ export function UserManagementPanel() {
     laboratory_id: '',
     is_cupper: false,
     is_q_grader: false,
+    is_master_cupper: false,
     qc_enabled: false,
   })
 
@@ -271,7 +273,7 @@ export function UserManagementPanel() {
 
   const handleToggleField = async (
     userId: string,
-    field: 'is_cupper' | 'qc_enabled' | 'is_q_grader',
+    field: 'is_cupper' | 'qc_enabled' | 'is_q_grader' | 'is_master_cupper',
     currentValue: boolean
   ) => {
     try {
@@ -381,6 +383,7 @@ export function UserManagementPanel() {
         laboratory_id: '',
         is_cupper: false,
         is_q_grader: false,
+        is_master_cupper: false,
         qc_enabled: false,
       })
     } catch (error) {
@@ -453,6 +456,10 @@ export function UserManagementPanel() {
         case 'q_grader':
           aValue = a.is_q_grader ? 1 : 0
           bValue = b.is_q_grader ? 1 : 0
+          break
+        case 'master_cupper':
+          aValue = a.is_master_cupper ? 1 : 0
+          bValue = b.is_master_cupper ? 1 : 0
           break
         default:
           return 0
@@ -559,6 +566,15 @@ export function UserManagementPanel() {
                         {getSortIcon('q_grader')}
                       </div>
                     </TableHead>
+                    <TableHead
+                      className="cursor-pointer select-none"
+                      onClick={() => handleSort('master_cupper')}
+                    >
+                      <div className="flex items-center">
+                        Master Cupper
+                        {getSortIcon('master_cupper')}
+                      </div>
+                    </TableHead>
                     <TableHead>Created</TableHead>
                     {profile?.qc_role === 'global_admin' && <TableHead>Last Login</TableHead>}
                     <TableHead>Actions</TableHead>
@@ -567,7 +583,7 @@ export function UserManagementPanel() {
                 <TableBody>
                   {filteredUsers.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={10} className="text-center text-muted-foreground">
+                      <TableCell colSpan={11} className="text-center text-muted-foreground">
                         No users found
                       </TableCell>
                     </TableRow>
@@ -630,6 +646,14 @@ export function UserManagementPanel() {
                               checked={user.is_q_grader || false}
                               onCheckedChange={() =>
                                 handleToggleField(user.id, 'is_q_grader', user.is_q_grader || false)
+                              }
+                            />
+                          </TableCell>
+                          <TableCell className="text-center">
+                            <Checkbox
+                              checked={user.is_master_cupper || false}
+                              onCheckedChange={() =>
+                                handleToggleField(user.id, 'is_master_cupper', user.is_master_cupper || false)
                               }
                             />
                           </TableCell>
@@ -859,6 +883,16 @@ export function UserManagementPanel() {
                   }
                 />
                 <Label htmlFor="invite-q-grader">Q Grader</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="invite-master-cupper"
+                  checked={inviteForm.is_master_cupper}
+                  onCheckedChange={(checked) =>
+                    setInviteForm({ ...inviteForm, is_master_cupper: checked as boolean })
+                  }
+                />
+                <Label htmlFor="invite-master-cupper">Master Cupper</Label>
               </div>
               <div className="flex items-center space-x-2">
                 <Checkbox

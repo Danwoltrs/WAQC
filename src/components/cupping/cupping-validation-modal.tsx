@@ -14,7 +14,8 @@ import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
-import { AlertCircle, CheckCircle2, Edit, Loader2 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
+import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface AttributeStats {
@@ -49,6 +50,7 @@ interface AggregatedScores {
 }
 
 interface IndividualScore {
+  score_id?: string
   cupper_id: string
   cupper_name: string
   scores: Record<string, number>
@@ -57,6 +59,13 @@ interface IndividualScore {
     faults?: string[]
   }
   created_at: string
+}
+
+interface EditingState {
+  cupperId: string
+  attribute: string
+  originalValue: number
+  newValue: number
 }
 
 interface ValidationPermissions {
@@ -111,6 +120,23 @@ export function CuppingValidationModal({
   const [aggregated, setAggregated] = useState<AggregatedScores | null>(null)
   const [individualScores, setIndividualScores] = useState<IndividualScore[]>([])
   const [permissions, setPermissions] = useState<ValidationPermissions | null>(null)
+  const [editing, setEditing] = useState<EditingState | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  // Check if user can edit scores based on permissions
+  const canEditScores = () => {
+    if (!permissions) return false
+    const { user_profile, stats } = permissions
+    // Global admins can always edit
+    if (user_profile.is_global_admin) return true
+    // Master cuppers can edit
+    if (user_profile.is_master_cupper) return true
+    // If no master cupper assigned, any assigned cupper can edit
+    if (!stats.has_master_cupper_assigned && user_profile.is_assigned) return true
+    // Q-graders can edit
+    if (user_profile.is_q_grader) return true
+    return false
+  }
 
   // Fetch aggregated scores and permissions when modal opens
   useEffect(() => {
@@ -207,9 +233,87 @@ export function CuppingValidationModal({
     return 'Finalize Scores'
   }
 
+  const startEditing = (cupperId: string, attribute: string, currentValue: number) => {
+    if (!canEditScores()) {
+      toast({
+        title: 'Permission Denied',
+        description: 'Only master cuppers can edit scores when a master cupper is assigned to the session',
+        variant: 'destructive',
+      })
+      return
+    }
+    setEditing({
+      cupperId,
+      attribute,
+      originalValue: currentValue,
+      newValue: currentValue,
+    })
+  }
+
+  const cancelEditing = () => {
+    setEditing(null)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editing) return
+
+    const score = individualScores.find(s => s.cupper_id === editing.cupperId)
+    if (!score?.score_id) {
+      toast({
+        title: 'Error',
+        description: 'Cannot find score to update',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/cupping/scores/${score.score_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          attribute: editing.attribute,
+          value: editing.newValue,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to update score')
+      }
+
+      toast({
+        title: 'Score Updated',
+        description: `${editing.attribute} updated from ${editing.originalValue} to ${editing.newValue}`,
+      })
+
+      // Refresh the data
+      await fetchAggregatedScores()
+      setEditing(null)
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to save score',
+        variant: 'destructive',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
   const handleEditCupperScore = (cupperId: string) => {
+    // Legacy handler - now we use inline editing
+    if (!canEditScores()) {
+      toast({
+        title: 'Permission Denied',
+        description: 'Only master cuppers can edit scores when a master cupper is assigned to the session',
+        variant: 'destructive',
+      })
+      return
+    }
     onEditScore?.(cupperId)
-    onOpenChange(false)
   }
 
   if (loading) {
@@ -342,7 +446,14 @@ export function CuppingValidationModal({
           <TabsContent value="comparison" className="space-y-4">
             <Card>
               <CardHeader>
-                <CardTitle>Cupper Score Comparison</CardTitle>
+                <CardTitle className="flex items-center justify-between">
+                  <span>Cupper Score Comparison</span>
+                  {canEditScores() && (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      Click any score to edit
+                    </span>
+                  )}
+                </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="overflow-x-auto">
@@ -352,16 +463,7 @@ export function CuppingValidationModal({
                         <th className="text-left p-2 font-semibold">Attribute</th>
                         {individualScores.map((score) => (
                           <th key={score.cupper_id} className="text-center p-2 font-semibold">
-                            <div className="flex flex-col items-center gap-1">
-                              <span>{score.cupper_name}</span>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => handleEditCupperScore(score.cupper_id)}
-                              >
-                                <Edit className="h-3 w-3" />
-                              </Button>
-                            </div>
+                            <span>{score.cupper_name}</span>
                           </th>
                         ))}
                         <th className="text-center p-2 font-semibold">Final</th>
@@ -371,18 +473,71 @@ export function CuppingValidationModal({
                       {Object.entries(aggregated.attributes).map(([attribute, stats]) => (
                         <tr key={attribute} className="border-b">
                           <td className="p-2 font-medium">{attribute}</td>
-                          {individualScores.map((score) => (
-                            <td
-                              key={`${attribute}-${score.cupper_id}`}
-                              className={`text-center p-2 ${
-                                stats.hasDiscrepancy
-                                  ? 'bg-red-50 dark:bg-red-950'
-                                  : ''
-                              }`}
-                            >
-                              {score.scores[attribute]?.toFixed(2) || 'N/A'}
-                            </td>
-                          ))}
+                          {individualScores.map((score) => {
+                            const isEditing = editing?.cupperId === score.cupper_id && editing?.attribute === attribute
+                            const cellValue = score.scores[attribute]
+
+                            return (
+                              <td
+                                key={`${attribute}-${score.cupper_id}`}
+                                className={`text-center p-2 ${
+                                  stats.hasDiscrepancy
+                                    ? 'bg-red-50 dark:bg-red-950'
+                                    : ''
+                                } ${canEditScores() && !isEditing ? 'cursor-pointer hover:bg-accent' : ''}`}
+                                onClick={() => {
+                                  if (!isEditing && cellValue !== undefined) {
+                                    startEditing(score.cupper_id, attribute, cellValue)
+                                  }
+                                }}
+                              >
+                                {isEditing ? (
+                                  <div className="flex items-center gap-1 justify-center">
+                                    <Input
+                                      type="number"
+                                      step="0.25"
+                                      value={editing.newValue}
+                                      onChange={(e) => setEditing({
+                                        ...editing,
+                                        newValue: parseFloat(e.target.value) || 0
+                                      })}
+                                      className="w-16 h-7 text-center text-sm"
+                                      autoFocus
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Enter') handleSaveEdit()
+                                        if (e.key === 'Escape') cancelEditing()
+                                      }}
+                                    />
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 w-7 p-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        handleSaveEdit()
+                                      }}
+                                      disabled={saving}
+                                    >
+                                      {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 text-green-600" />}
+                                    </Button>
+                                    <Button
+                                      size="sm"
+                                      variant="ghost"
+                                      className="h-7 w-7 p-0"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        cancelEditing()
+                                      }}
+                                    >
+                                      <X className="h-3 w-3 text-red-600" />
+                                    </Button>
+                                  </div>
+                                ) : (
+                                  <span>{cellValue?.toFixed(2) || 'N/A'}</span>
+                                )}
+                              </td>
+                            )
+                          })}
                           <td
                             className={`text-center p-2 font-bold ${
                               stats.hasDiscrepancy
