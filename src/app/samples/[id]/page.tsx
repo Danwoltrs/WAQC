@@ -393,19 +393,22 @@ export default function SampleDetailPage() {
               <QrCode className="h-4 w-4 mr-2" />
               QR Code
             </Button>
-            <Button
-              variant="default"
-              size="sm"
-              onClick={certificates.length > 0 ? handleDownloadCertificate : handleGenerateCertificate}
-              disabled={generatingCertificate || downloadingCertificate}
-            >
-              {generatingCertificate || downloadingCertificate ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : (
-                <Award className="h-4 w-4 mr-2" />
-              )}
-              {certificates.length > 0 ? 'Download Certificate' : 'Generate Certificate'}
-            </Button>
+            {/* Only show certificate button if sample is certified/rejected OR has existing certificate */}
+            {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || certificates.length > 0) && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={certificates.length > 0 ? handleDownloadCertificate : handleGenerateCertificate}
+                disabled={generatingCertificate || downloadingCertificate}
+              >
+                {generatingCertificate || downloadingCertificate ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Award className="h-4 w-4 mr-2" />
+                )}
+                {certificates.length > 0 ? 'Download Certificate' : 'Generate Certificate'}
+              </Button>
+            )}
             <Button variant="outline" size="sm">
               <Edit className="h-4 w-4 mr-2" />
               Edit
@@ -698,21 +701,34 @@ export default function SampleDetailPage() {
 
                   {certificates.length === 0 ? (
                     <>
-                      <p className="text-muted-foreground text-center max-w-md">
-                        Generate an official quality certificate containing all analysis data,
-                        cupping scores, and supply chain information for this sample.
-                      </p>
-                      <Button
-                        onClick={handleGenerateCertificate}
-                        disabled={generatingCertificate}
-                      >
-                        {generatingCertificate ? (
-                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        ) : (
-                          <Award className="h-4 w-4 mr-2" />
-                        )}
-                        {generatingCertificate ? 'Generating...' : 'Generate Certificate'}
-                      </Button>
+                      {sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' ? (
+                        <>
+                          <p className="text-muted-foreground text-center max-w-md">
+                            Generate an official quality certificate containing all analysis data,
+                            cupping scores, and supply chain information for this sample.
+                          </p>
+                          <Button
+                            onClick={handleGenerateCertificate}
+                            disabled={generatingCertificate}
+                          >
+                            {generatingCertificate ? (
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            ) : (
+                              <Award className="h-4 w-4 mr-2" />
+                            )}
+                            {generatingCertificate ? 'Generating...' : 'Generate Certificate'}
+                          </Button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-muted-foreground text-center max-w-md">
+                            Certificate generation is available after both cupping and grading are complete.
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Current workflow stage: <span className="font-medium">{sample.workflow_stage || 'received'}</span>
+                          </p>
+                        </>
+                      )}
                     </>
                   ) : (
                     <>

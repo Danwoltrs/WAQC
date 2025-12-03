@@ -126,13 +126,15 @@ export async function POST(
 
     const { id } = await params
 
-    // Check if sample exists with client info
+    // Check if sample exists with workflow stage and client info
     const { data: sample, error: sampleError } = await supabase
       .from('samples')
       .select(`
         id,
         tracking_number,
         client_id,
+        workflow_stage,
+        status,
         client:clients(id, name, company)
       `)
       .eq('id', id)
@@ -140,6 +142,16 @@ export async function POST(
 
     if (sampleError || !sample) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+    }
+
+    // Check if sample is in a valid workflow stage for certificate generation
+    // Certificates can only be generated after both cupping AND grading are complete
+    // This happens when workflow_stage is 'certified' or 'rejected'
+    if (sample.workflow_stage !== 'certified' && sample.workflow_stage !== 'rejected') {
+      return NextResponse.json({
+        error: 'Cannot generate certificate',
+        details: `Sample must be in 'certified' or 'rejected' workflow stage. Current stage: ${sample.workflow_stage || 'unknown'}. Please complete both cupping and grading first.`
+      }, { status: 400 })
     }
 
     // Check if certificate already exists
@@ -156,8 +168,12 @@ export async function POST(
       })
     }
 
-    // Generate certificate number
-    const certificateNumber = await generateCertificateNumber(supabase, sample.client_id)
+    // Generate certificate number from tracking_number
+    // For rejected samples, prefix with 'R-'
+    const isRejected = sample.workflow_stage === 'rejected'
+    const certificateNumber = isRejected
+      ? `R-${sample.tracking_number}`
+      : sample.tracking_number
 
     // Get client name for issued_to (required field)
     const clientData = sample.client as { name?: string; company?: string } | null
@@ -172,6 +188,8 @@ export async function POST(
         issued_to: issuedTo,
         issued_by: user.id,
         status: 'issued',
+        valid_from: new Date().toISOString(),
+        is_rejected: isRejected,
       })
       .select('id, certificate_number, created_at')
       .single()
@@ -194,33 +212,3 @@ export async function POST(
   }
 }
 
-/**
- * Generate a unique certificate number
- * Format: WAQC-YYYY-NNNNNN (e.g., WAQC-2024-000001)
- */
-async function generateCertificateNumber(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  clientId: string | null
-): Promise<string> {
-  const year = new Date().getFullYear()
-  const prefix = `WAQC-${year}-`
-
-  // Get the latest certificate number for this year
-  const { data: latestCert } = await supabase
-    .from('certificates')
-    .select('certificate_number')
-    .like('certificate_number', `${prefix}%`)
-    .order('certificate_number', { ascending: false })
-    .limit(1)
-    .single()
-
-  let nextNumber = 1
-  if (latestCert?.certificate_number) {
-    const match = latestCert.certificate_number.match(/WAQC-\d{4}-(\d+)/)
-    if (match) {
-      nextNumber = parseInt(match[1], 10) + 1
-    }
-  }
-
-  return `${prefix}${nextNumber.toString().padStart(6, '0')}`
-}
