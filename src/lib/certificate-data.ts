@@ -17,6 +17,7 @@ export interface GreenBeanAnalysis {
   moisture_percentage: number | null
   density: number | null
   humidity: number | null
+  green_aspect: string | null
   screen_sizes: Record<string, number> | null
   defects: {
     primary: Array<{ name: string; count: number }>
@@ -99,6 +100,7 @@ export interface CertificateData {
     name: string | null
     template_name: string | null
     is_specialty: boolean
+    has_validation: boolean
   } | null
 }
 
@@ -256,10 +258,13 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       .single()
 
     if (spec) {
+      const templateParams = (spec.template as { name?: string; parameters?: unknown })?.parameters
+      const hasValidation = Boolean(templateParams)
       qualitySpec = {
         name: spec.custom_name,
         template_name: (spec.template as { name?: string })?.name || null,
         is_specialty: isSpecialtyTemplate((spec.template as { name?: string })?.name),
+        has_validation: hasValidation,
       }
       isSpecialty = qualitySpec.is_specialty
     }
@@ -273,6 +278,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       moisture_percentage: (gbd.moisture_percentage as number) || null,
       density: (gbd.density as number) || null,
       humidity: (gbd.humidity as number) || null,
+      green_aspect: (gbd.green_aspect as string) || (gbd.aspect as string) || null,
       screen_sizes: (gbd.screen_sizes as Record<string, number>) || null,
       defects: parseDefects(gbd.defects),
     }

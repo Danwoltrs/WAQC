@@ -26,12 +26,20 @@ export async function GET(
     }
 
     const { id } = await params
+    console.log('[Certificate] Generating PDF for sample:', id)
 
     // Get certificate data
     const certificateData = await getCertificateData(id)
     if (!certificateData) {
+      console.error('[Certificate] No certificate data found for sample:', id)
       return NextResponse.json({ error: 'Sample not found or no data available' }, { status: 404 })
     }
+    console.log('[Certificate] Got certificate data:', {
+      sampleId: certificateData.sample?.id,
+      hasCupping: !!certificateData.cuppingData,
+      hasGreenBean: !!certificateData.greenBeanAnalysis,
+      hasCertificate: !!certificateData.certificate,
+    })
 
     // Load Wolthers logo from public directory
     let wolthersLogoBase64: string | undefined
@@ -78,6 +86,7 @@ export async function GET(
     // Render PDF to buffer
     // Type assertion needed because QualityCertificate returns a Document element
     // but renderToBuffer's types expect DocumentProps directly
+    console.log('[Certificate] Rendering PDF...')
     const certificateElement = React.createElement(QualityCertificate, {
       data: certificateData,
       wolthersLogoBase64,
@@ -85,6 +94,7 @@ export async function GET(
       flagBase64,
     })
     const pdfBuffer = await renderToBuffer(certificateElement as any)
+    console.log('[Certificate] PDF rendered, buffer size:', pdfBuffer.length)
 
     // Generate filename
     const certificateNumber = certificateData.certificate?.certificate_number || certificateData.sample.tracking_number
@@ -143,6 +153,15 @@ export async function POST(
 
     if (sampleError || !sample) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+    }
+
+    // Validate tracking number before proceeding
+    if (!sample.tracking_number || sample.tracking_number === 'null' || sample.tracking_number === '') {
+      console.error('Cannot create certificate: invalid tracking_number for sample', id, sample.tracking_number)
+      return NextResponse.json({
+        error: 'Cannot generate certificate - sample has invalid tracking number',
+        details: 'Please contact an administrator to fix the sample tracking number.'
+      }, { status: 400 })
     }
 
     // For samples in 'review' stage, check if both cupping AND grading are complete

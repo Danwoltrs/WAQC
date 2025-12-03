@@ -200,6 +200,15 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (!existingCert) {
+        // Validate tracking number before creating certificate
+        if (!sample.tracking_number || sample.tracking_number === 'null' || sample.tracking_number === '') {
+          console.error('Cannot create certificate: invalid tracking_number for sample', sample_id, sample.tracking_number)
+          return NextResponse.json({
+            error: 'Cannot generate certificate - sample has invalid tracking number',
+            details: 'Please contact an administrator to fix the sample tracking number.'
+          }, { status: 400 })
+        }
+
         // Certificate number uses tracking_number (R- prefix for rejected)
         const certificateNumber = decision === 'rejected'
           ? `R-${sample.tracking_number}`

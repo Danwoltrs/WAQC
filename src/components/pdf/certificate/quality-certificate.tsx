@@ -1,15 +1,14 @@
 /**
  * Main Quality Certificate PDF Document
  * Assembles all certificate components into a single A4 page
+ * Redesigned for minimalistic professional look
  */
 
 import React from 'react'
 import { Document, Page, StyleSheet } from '@react-pdf/renderer'
 import { CertificateHeader } from './certificate-header'
 import { CertificateSampleInfo } from './certificate-sample-info'
-import { CertificateSupplyChain } from './certificate-supply-chain'
 import { CertificateAnalysis } from './certificate-analysis'
-import { CertificateDefectChart } from './certificate-defect-chart'
 import { CertificateCupping } from './certificate-cupping'
 import { CertificateFooter } from './certificate-footer'
 import type { CertificateData } from '@/lib/certificate-data'
@@ -40,59 +39,53 @@ export function QualityCertificate({
   const {
     sample,
     supplyChain,
-    client,
     laboratory,
     greenBeanAnalysis,
     roastAnalysis,
     cuppingData,
     certificate,
+    qualitySpec,
   } = data
 
   return (
     <Document>
       <Page size="A4" style={pageStyles.page}>
-        {/* Header with logos, certificate number, flag, dates, status */}
+        {/* Header with logos, title, status, dates */}
         <CertificateHeader
           wolthersLogoBase64={wolthersLogoBase64}
           clientLogoBase64={clientLogoBase64}
-          flagBase64={flagBase64}
-          certificateNumber={certificate?.certificate_number || null}
-          origin={sample.origin_display}
           status={sample.status}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
         />
 
-        {/* Sample Information */}
+        {/* Sample Information (merged with supply chain) */}
         <CertificateSampleInfo
-          trackingNumber={sample.tracking_number}
+          exporter={supplyChain.exporter}
+          roaster={supplyChain.roaster}
+          certificateNumber={certificate?.certificate_number || null}
           sampleType={sample.sample_type}
           bags={sample.bags}
           bagWeight={sample.bag_weight_kg}
           processingMethod={sample.processing_method}
           icoNumber={sample.ico_number}
-          containerNr={sample.container_nr}
+          origin={sample.origin}
+          originDisplay={sample.origin_display}
+          flagBase64={flagBase64}
         />
 
-        {/* Supply Chain (single line) */}
-        <CertificateSupplyChain
-          exporter={supplyChain.exporter}
-          importer={supplyChain.importer}
-          roaster={supplyChain.roaster}
-          wolthersContract={supplyChain.wolthersContract}
-        />
-
-        {/* Analysis: Green Bean + Roast (two columns) */}
+        {/* Green Bean Analysis (two-column: screen sizes + defects) */}
         <CertificateAnalysis
           greenBean={greenBeanAnalysis}
-          roast={roastAnalysis}
+          greenAspect={greenBeanAnalysis?.green_aspect}
         />
 
-        {/* Defect Charts (primary and secondary, conditional) */}
-        <CertificateDefectChart defects={greenBeanAnalysis?.defects || null} />
-
-        {/* Cupping Scores with range bars */}
-        <CertificateCupping cuppingData={cuppingData} />
+        {/* Cupping Scores with integrated Roast Analysis */}
+        <CertificateCupping
+          cuppingData={cuppingData}
+          roastAnalysis={roastAnalysis}
+          hasQualityTemplate={qualitySpec?.has_validation || false}
+        />
 
         {/* Footer with lab info */}
         <CertificateFooter
@@ -111,10 +104,7 @@ export function QualityCertificate({
 // Export all components for potential individual use
 export { CertificateHeader } from './certificate-header'
 export { CertificateSampleInfo } from './certificate-sample-info'
-export { CertificateSupplyChain } from './certificate-supply-chain'
 export { CertificateAnalysis } from './certificate-analysis'
-export { CertificateDefectChart } from './certificate-defect-chart'
 export { CertificateCupping } from './certificate-cupping'
 export { CertificateFooter } from './certificate-footer'
-export { RangeBar, DefectBar } from './certificate-range-bar'
 export { COLORS, styles } from './certificate-styles'

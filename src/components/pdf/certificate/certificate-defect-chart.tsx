@@ -72,7 +72,6 @@ const defectStyles = StyleSheet.create({
   noDefectsText: {
     fontSize: 8,
     color: COLORS.mutedLight,
-    fontStyle: 'italic',
   },
 })
 

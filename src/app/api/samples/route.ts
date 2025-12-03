@@ -164,12 +164,28 @@ export async function POST(request: NextRequest) {
     }
 
     // Extract the tracking number string from the RPC response
+    // CRITICAL: Validate that we got a real tracking number, not null
     // The RPC call returns the string directly, not wrapped in an object
-    const trackingNumber = typeof trackingNumberData === 'string'
-      ? trackingNumberData
-      : String(trackingNumberData)
+    if (trackingNumberData === null || trackingNumberData === undefined) {
+      console.error('Tracking number generation returned null for client:', clientId, 'origin:', body.origin)
+      return NextResponse.json({
+        error: 'Failed to generate tracking number - client configuration may be invalid',
+        details: 'The tracking number format for this client is not properly configured. Please contact an administrator.'
+      }, { status: 500 })
+    }
 
-    console.log('Generated tracking number:', trackingNumber, 'Type:', typeof trackingNumberData, 'Raw:', trackingNumberData)
+    const trackingNumber = String(trackingNumberData)
+
+    // Additional validation - ensure we don't have the literal string "null"
+    if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
+      console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
+      return NextResponse.json({
+        error: 'Failed to generate valid tracking number',
+        details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
+      }, { status: 500 })
+    }
+
+    console.log('Generated tracking number:', trackingNumber, 'for client:', clientId)
 
     // Calculate bag weight if both quantity and count are provided
     let bagWeightKg: number | null = null
