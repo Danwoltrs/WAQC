@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
-import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X, ThumbsUp, ThumbsDown } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface AttributeStats {
@@ -122,6 +122,7 @@ export function CuppingValidationModal({
   const [permissions, setPermissions] = useState<ValidationPermissions | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [saving, setSaving] = useState(false)
+  const [finalizing, setFinalizing] = useState(false)
 
   // Check if user can edit scores based on permissions
   const canEditScores = () => {
@@ -195,7 +196,7 @@ export function CuppingValidationModal({
     }
   }
 
-  const handleFinalize = () => {
+  const handleFinalize = async (decision: 'approved' | 'rejected') => {
     // Check permission first
     if (!permissions?.can_validate) {
       toast({
@@ -215,8 +216,52 @@ export function CuppingValidationModal({
       return
     }
 
-    onFinalize?.()
-    onOpenChange(false)
+    if (!sampleId || !permissions?.session?.id) {
+      toast({
+        title: 'Error',
+        description: 'Missing sample or session information',
+        variant: 'destructive',
+      })
+      return
+    }
+
+    setFinalizing(true)
+    try {
+      const response = await fetch('/api/cupping/finalize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          session_id: permissions.session.id,
+          sample_id: sampleId,
+          decision,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to finalize scores')
+      }
+
+      toast({
+        title: decision === 'approved' ? 'Sample Approved' : 'Sample Rejected',
+        description: decision === 'approved'
+          ? `Certificate ${data.certificate?.certificate_number || 'generated'} created successfully`
+          : 'Sample has been marked as rejected',
+      })
+
+      onFinalize?.()
+      onOpenChange(false)
+    } catch (error) {
+      console.error('Error finalizing scores:', error)
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to finalize scores',
+        variant: 'destructive',
+      })
+    } finally {
+      setFinalizing(false)
+    }
   }
 
   // Determine if button should be disabled
@@ -677,28 +722,39 @@ export function CuppingValidationModal({
             <Button variant="outline" onClick={() => onOpenChange(false)}>
               Close
             </Button>
-            <Button
-              onClick={handleFinalize}
-              disabled={!canFinalize}
-              className={canFinalize ? 'bg-green-600 hover:bg-green-700' : ''}
-            >
-              {!permissions?.can_validate ? (
-                <>
-                  <AlertCircle className="h-4 w-4 mr-2" />
-                  {getButtonText()}
-                </>
-              ) : aggregated.hasDiscrepancies ? (
-                <>
-                  <AlertCircle className="h-4 w-4 mr-2" />
-                  Resolve Discrepancies First
-                </>
-              ) : (
-                <>
-                  <CheckCircle2 className="h-4 w-4 mr-2" />
-                  Finalize Scores
-                </>
-              )}
-            </Button>
+            {canFinalize ? (
+              <>
+                <Button
+                  onClick={() => handleFinalize('rejected')}
+                  disabled={finalizing}
+                  variant="destructive"
+                >
+                  {finalizing ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <ThumbsDown className="h-4 w-4 mr-2" />
+                  )}
+                  Reject
+                </Button>
+                <Button
+                  onClick={() => handleFinalize('approved')}
+                  disabled={finalizing}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  {finalizing ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <ThumbsUp className="h-4 w-4 mr-2" />
+                  )}
+                  Approve & Certify
+                </Button>
+              </>
+            ) : (
+              <Button disabled>
+                <AlertCircle className="h-4 w-4 mr-2" />
+                {getButtonText()}
+              </Button>
+            )}
           </div>
         </DialogFooter>
       </DialogContent>
