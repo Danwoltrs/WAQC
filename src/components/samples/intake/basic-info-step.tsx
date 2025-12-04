@@ -7,12 +7,14 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Smartphone, Camera } from 'lucide-react'
+import { Smartphone, Camera, ChevronsUpDown, X } from 'lucide-react'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { ClientAutoDetection } from '@/components/clients/client-auto-detection'
 import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
 import { CreateClientDialog } from './create-client-dialog'
 import { StepComponentProps } from './types'
-import { ORIGINS, PROCESSING_METHODS } from './constants'
+import { ORIGINS, PROCESSING_METHODS, MICRO_ORIGINS } from './constants'
 
 export function BasicInfoStep({
   formData,
@@ -30,6 +32,7 @@ export function BasicInfoStep({
   const [selectedBuyerClient, setSelectedBuyerClient] = useState<any>(null)
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientType, setCreateClientType] = useState<'exporter' | 'buyer' | 'roaster'>('exporter')
+  const [microOriginOpen, setMicroOriginOpen] = useState(false)
 
   // Memoize filtered client lists to prevent unnecessary re-renders
   const exporters = useMemo(() =>
@@ -72,10 +75,50 @@ export function BasicInfoStep({
 
   // Auto-select origin if there's only one supported origin
   useEffect(() => {
-    if (supportedOrigins.length === 1 && !formData.origin) {
+    if (supportedOrigins.length === 1 && formData.origin !== supportedOrigins[0]) {
       updateFormData('origin', supportedOrigins[0])
     }
+    // Clear origin if it's not in supported origins (e.g., lab changed)
+    if (formData.origin && supportedOrigins.length > 0 && !supportedOrigins.includes(formData.origin)) {
+      updateFormData('origin', supportedOrigins.length === 1 ? supportedOrigins[0] : '')
+    }
   }, [supportedOrigins, formData.origin, updateFormData])
+
+  // Get available micro-origins for selected origin
+  const availableMicroOrigins = useMemo(() => {
+    if (!formData.origin) return []
+    return MICRO_ORIGINS[formData.origin] || []
+  }, [formData.origin])
+
+  // Clear micro-origin when origin changes (check if any selected micro-origins are invalid)
+  useEffect(() => {
+    if (formData.micro_origin && availableMicroOrigins.length > 0) {
+      const selectedMicroOrigins = formData.micro_origin.split(' | ').filter(Boolean)
+      const validMicroOrigins = selectedMicroOrigins.filter(mo => availableMicroOrigins.includes(mo))
+      if (validMicroOrigins.length !== selectedMicroOrigins.length) {
+        updateFormData('micro_origin', validMicroOrigins.join(' | '))
+      }
+    }
+  }, [formData.origin, formData.micro_origin, availableMicroOrigins, updateFormData])
+
+  // Parse selected micro-origins from pipe-separated string
+  const selectedMicroOrigins = useMemo(() => {
+    if (!formData.micro_origin) return []
+    return formData.micro_origin.split(' | ').filter(Boolean)
+  }, [formData.micro_origin])
+
+  // Toggle a micro-origin selection
+  const toggleMicroOrigin = (region: string) => {
+    const current = selectedMicroOrigins
+    const isSelected = current.includes(region)
+    let updated: string[]
+    if (isSelected) {
+      updated = current.filter(r => r !== region)
+    } else {
+      updated = [...current, region]
+    }
+    updateFormData('micro_origin', updated.join(' | '))
+  }
 
   // Detect iOS
   useEffect(() => {
@@ -236,14 +279,74 @@ export function BasicInfoStep({
           </div>
           <div className="space-y-2">
             <Label htmlFor="micro_origin">Micro-Origin</Label>
-            <Input
-              id="micro_origin"
-              value={formData.micro_origin}
-              onChange={(e) => updateFormData('micro_origin', e.target.value)}
-              placeholder="e.g., Sul de Minas, Cerrado"
-            />
+            {availableMicroOrigins.length > 0 ? (
+              <Popover open={microOriginOpen} onOpenChange={setMicroOriginOpen}>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    role="combobox"
+                    aria-expanded={microOriginOpen}
+                    className="w-full justify-between h-auto min-h-10 font-normal"
+                    disabled={!formData.origin}
+                  >
+                    {selectedMicroOrigins.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {selectedMicroOrigins.map((region) => (
+                          <Badge
+                            key={region}
+                            variant="secondary"
+                            className="mr-1"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              toggleMicroOrigin(region)
+                            }}
+                          >
+                            {region}
+                            <X className="ml-1 h-3 w-3 cursor-pointer" />
+                          </Badge>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground">Select micro-origin(s)...</span>
+                    )}
+                    <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-0" align="start">
+                  <Command>
+                    <CommandInput placeholder="Search regions..." />
+                    <CommandList>
+                      <CommandEmpty>No region found.</CommandEmpty>
+                      <CommandGroup>
+                        {availableMicroOrigins.map((region) => (
+                          <CommandItem
+                            key={region}
+                            value={region}
+                            onSelect={() => toggleMicroOrigin(region)}
+                          >
+                            <Checkbox
+                              checked={selectedMicroOrigins.includes(region)}
+                              className="mr-2"
+                            />
+                            {region}
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            ) : (
+              <Input
+                id="micro_origin"
+                value={formData.micro_origin}
+                onChange={(e) => updateFormData('micro_origin', e.target.value)}
+                placeholder={formData.origin ? "Enter micro-origin" : "Select origin first"}
+                disabled={!formData.origin}
+              />
+            )}
             <p className="text-xs text-muted-foreground">
-              Specific region within origin country
+              Select one or more regions for blends
             </p>
           </div>
         </div>
