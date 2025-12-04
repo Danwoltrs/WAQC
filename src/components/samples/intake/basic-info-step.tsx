@@ -181,7 +181,7 @@ export function BasicInfoStep({
         <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">
           Step 1: Select Sample Type
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="sample_type">Sample Type *</Label>
             <Select
@@ -233,6 +233,18 @@ export function BasicInfoStep({
                 This laboratory only handles {supportedOrigins[0]} origins
               </p>
             )}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="micro_origin">Micro-Origin</Label>
+            <Input
+              id="micro_origin"
+              value={formData.micro_origin}
+              onChange={(e) => updateFormData('micro_origin', e.target.value)}
+              placeholder="e.g., Sul de Minas, Cerrado"
+            />
+            <p className="text-xs text-muted-foreground">
+              Specific region within origin country
+            </p>
           </div>
         </div>
       </div>

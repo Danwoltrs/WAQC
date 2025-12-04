@@ -34,6 +34,7 @@ const initialFormData: FormData = {
   buyer: '',
   roaster: '',
   origin: '',
+  micro_origin: '',
   supplier: '',
   processing_method: '',
   sample_type: '',
@@ -53,6 +54,7 @@ const initialFormData: FormData = {
   bags_quantity_mt: '',
   equivalent_60kg_bags: '',
   bulk_container_count: '',
+  shipment_month: '',
   arrival_date: new Date().toISOString().split('T')[0],
   notes: '',
   photo_file: null
@@ -365,6 +367,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         client_id: formData.client_id || undefined,
         laboratory_id: formData.laboratory_id,
         origin: formData.origin,
+        micro_origin: formData.micro_origin || undefined,
         seller_id: seller_id,
         exporter_id: exporter_id, // This is the shipper
         same_seller_shipper: formData.same_seller_shipper,
@@ -385,6 +388,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         bag_count: formData.bag_count ? parseInt(formData.bag_count) : undefined,
         bag_weight_kg: formData.bag_weight_kg ? parseFloat(formData.bag_weight_kg) : undefined,
         bag_type: formData.bag_type || undefined,
+        shipment_month: formData.shipment_month || undefined,
         status: 'received',
         workflow_stage: 'received'
       }

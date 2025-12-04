@@ -82,11 +82,14 @@ interface CertificateSampleInfoProps {
   sampleType: string | null
   bags: number | null
   bagWeight: number | null
+  bagsQuantityMt: number | null
   processingMethod: string | null
   icoNumber: string | null
+  shipmentMonth: string | null
   // Origin
   origin: string
   originDisplay: string
+  microOrigin: string | null
   flagBase64?: string
 }
 
@@ -96,10 +99,13 @@ export function CertificateSampleInfo({
   sampleType,
   bags,
   bagWeight,
+  bagsQuantityMt,
   processingMethod,
   icoNumber,
+  shipmentMonth,
   origin,
   originDisplay,
+  microOrigin,
   flagBase64,
 }: CertificateSampleInfoProps) {
   // Format sample type display
@@ -113,13 +119,42 @@ export function CertificateSampleInfo({
     return typeMap[type.toLowerCase()] || type.toUpperCase()
   }
 
-  // Format bags display
+  // Format bags display - show M/T primarily if available
   const formatBags = (): string => {
+    if (bagsQuantityMt) {
+      // Show M/T as primary with bag count as reference
+      const mtStr = `${bagsQuantityMt.toFixed(3)} M/T`
+      if (bags && bagWeight) {
+        return `${mtStr} (${bags} x ${bagWeight}kg)`
+      }
+      return mtStr
+    }
     if (!bags) return '-'
     if (bagWeight) {
       return `${bags} x ${bagWeight}kg`
     }
     return `${bags}`
+  }
+
+  // Format shipment month (YYYY-MM to Month YYYY)
+  const formatShipmentMonth = (month: string | null): string => {
+    if (!month) return '-'
+    const [year, monthNum] = month.split('-')
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    const monthIndex = parseInt(monthNum, 10) - 1
+    if (monthIndex >= 0 && monthIndex < 12) {
+      return `${monthNames[monthIndex]} ${year}`
+    }
+    return month
+  }
+
+  // Format origin with micro-origin
+  const formatOrigin = (): string => {
+    const baseOrigin = originDisplay || origin
+    if (microOrigin) {
+      return `${baseOrigin} - ${microOrigin}`
+    }
+    return baseOrigin
   }
 
   const hasExporter = Boolean(exporter.name)
@@ -175,9 +210,16 @@ export function CertificateSampleInfo({
           </View>
         )}
 
+        {shipmentMonth && (
+          <View style={infoStyles.item}>
+            <Text style={infoStyles.label}>Shipment:</Text>
+            <Text style={infoStyles.value}>{formatShipmentMonth(shipmentMonth)}</Text>
+          </View>
+        )}
+
         <View style={infoStyles.originItem}>
           <Text style={infoStyles.label}>Origin:</Text>
-          <Text style={infoStyles.value}>{originDisplay || origin}</Text>
+          <Text style={infoStyles.value}>{formatOrigin()}</Text>
           {flagBase64 && (
             <Image src={flagBase64} style={infoStyles.flag} />
           )}

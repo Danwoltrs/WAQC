@@ -28,7 +28,7 @@ interface QualityTemplateParameters {
 /**
  * POST /api/cupping/finalize
  * Finalize cupping scores for a session:
- * 1. Auto-determine approval/rejection based on quality specs
+ * 1. Auto-determine approval/rejection based on quality specs (or use manual decision)
  * 2. Update session status to 'completed'
  * 3. Update sample workflow_stage to 'certified' or 'rejected'
  * 4. Create certificate record with tracking_number (R- prefix if rejected)
@@ -36,7 +36,8 @@ interface QualityTemplateParameters {
  * Body: {
  *   session_id: string,
  *   sample_id: string,
- *   notes?: string
+ *   notes?: string,
+ *   manual_decision?: 'approved' | 'rejected' // Override auto-determination when no quality template
  * }
  */
 export async function POST(request: NextRequest) {
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { session_id, sample_id, notes } = body
+    const { session_id, sample_id, notes, manual_decision } = body
 
     if (!session_id || !sample_id) {
       return NextResponse.json({
@@ -126,6 +127,7 @@ export async function POST(request: NextRequest) {
     let complianceResult: QualityComplianceResult = { approved: true, violations: [] }
     let decision: 'approved' | 'rejected' | 'pending' = 'pending'
     let newWorkflowStage: string
+    let isManualDecision = false
 
     if (hasGradingData) {
       // Both cupping and grading are complete - evaluate compliance
@@ -133,7 +135,31 @@ export async function POST(request: NextRequest) {
         sample_id,
         sample.quality_spec_id
       )
-      decision = complianceResult.approved ? 'approved' : 'rejected'
+
+      // Check if manual decision is provided and there's no quality template (auto-approve scenario)
+      // Manual decision only applies when there are no validation rules to override
+      if (manual_decision && (manual_decision === 'approved' || manual_decision === 'rejected')) {
+        // Check if quality spec has a template with validation rules
+        const hasValidationRules = await checkHasValidationRules(sample.quality_spec_id)
+
+        if (!hasValidationRules) {
+          // No validation rules - use manual decision
+          decision = manual_decision
+          isManualDecision = true
+          complianceResult = {
+            approved: manual_decision === 'approved',
+            violations: manual_decision === 'rejected'
+              ? ['Manual rejection by cupper']
+              : []
+          }
+        } else {
+          // Has validation rules - use auto-determined result
+          decision = complianceResult.approved ? 'approved' : 'rejected'
+        }
+      } else {
+        decision = complianceResult.approved ? 'approved' : 'rejected'
+      }
+
       newWorkflowStage = decision === 'approved' ? 'certified' : 'rejected'
     } else {
       // Only cupping is complete - move to review stage, awaiting grading
@@ -317,7 +343,8 @@ export async function POST(request: NextRequest) {
             notes,
             certificate_number: certificate?.certificate_number,
             violations: complianceResult.violations,
-            auto_determined: true,
+            auto_determined: !isManualDecision,
+            manual_decision: isManualDecision,
             finalized_at: new Date().toISOString()
           },
           laboratory_id: session.laboratory_id
@@ -554,4 +581,47 @@ async function evaluateQualityCompliance(
     approved: violations.length === 0,
     violations
   }
+}
+
+/**
+ * Check if a quality spec has validation rules (a template with parameters)
+ * Used to determine if manual decision should be allowed
+ */
+async function checkHasValidationRules(qualitySpecId: string | null): Promise<boolean> {
+  if (!qualitySpecId) {
+    return false
+  }
+
+  const { data: qualitySpec, error } = await supabaseAdmin
+    .from('client_qualities')
+    .select(`
+      id,
+      template:quality_templates(
+        id,
+        parameters
+      )
+    `)
+    .eq('id', qualitySpecId)
+    .single()
+
+  if (error || !qualitySpec?.template) {
+    return false
+  }
+
+  const template = qualitySpec.template as any
+  const parameters = template.parameters
+
+  // Check if there are any validation rules defined
+  if (!parameters || typeof parameters !== 'object') {
+    return false
+  }
+
+  // Check for cupping attributes or defect limits
+  const hasRules = Boolean(
+    parameters.cupping_attributes ||
+    parameters.defect_limits ||
+    parameters.screen_sizes
+  )
+
+  return hasRules
 }

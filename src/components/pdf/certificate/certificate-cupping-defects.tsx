@@ -1,7 +1,7 @@
 /**
  * Certificate cupping and defects combined section
  * Layout: Cupping (1/3) | Defects (2/3) - Primary and Secondary columns
- * No titles, no charts, just numbers, compact spacing
+ * Shows defect weight calculations inline: name | count x weight = weighted
  */
 
 import React from 'react'
@@ -33,9 +33,32 @@ const sectionStyles = StyleSheet.create({
   defectsColumn: {
     flex: 1,
   },
+  // Defects summary header
+  defectsSummary: {
+    flexDirection: 'row',
+    justifyContent: 'flex-start',
+    gap: 8,
+    marginBottom: 8,
+    paddingBottom: 6,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.border,
+  },
+  summaryItem: {
+    fontSize: 8,
+    color: COLORS.muted,
+  },
+  summaryValue: {
+    fontWeight: 600,
+    color: COLORS.dark,
+  },
+  summaryTotal: {
+    fontSize: 8,
+    fontWeight: 700,
+    color: COLORS.dark,
+  },
   defectsRow: {
     flexDirection: 'row',
-    gap: 24,
+    gap: 16,
   },
   defectTypeColumn: {
     flex: 1,
@@ -54,14 +77,31 @@ const sectionStyles = StyleSheet.create({
     paddingVertical: 1,
   },
   defectName: {
-    fontSize: 9,
+    fontSize: 8,
     color: COLORS.dark,
+    flex: 1,
   },
-  defectCount: {
-    fontSize: 9,
+  defectCalc: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    gap: 2,
+  },
+  defectRawCount: {
+    fontSize: 8,
+    color: COLORS.dark,
+    textAlign: 'right',
+    minWidth: 16,
+  },
+  defectWeight: {
+    fontSize: 6,
+    color: COLORS.muted,
+  },
+  defectWeighted: {
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.dark,
-    marginLeft: 8,
+    textAlign: 'right',
+    minWidth: 20,
   },
   defectTotal: {
     flexDirection: 'row',
@@ -73,7 +113,7 @@ const sectionStyles = StyleSheet.create({
     borderTopColor: COLORS.border,
   },
   totalLabel: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.dark,
   },
@@ -83,7 +123,7 @@ const sectionStyles = StyleSheet.create({
     color: COLORS.dark,
   },
   emptyText: {
-    fontSize: 9,
+    fontSize: 8,
     color: COLORS.mutedLight,
   },
 })
@@ -97,48 +137,81 @@ function DefectsList({ defects }: DefectsListProps) {
   const secondaryDefects = defects?.secondary || []
   const totalPrimary = defects?.total_primary || 0
   const totalSecondary = defects?.total_secondary || 0
+  const grandTotal = totalPrimary + totalSecondary
+
+  // Format number for display
+  const formatNum = (n: number) => {
+    if (Number.isInteger(n)) return n.toString()
+    return n.toFixed(1)
+  }
 
   return (
-    <View style={sectionStyles.defectsRow}>
-      {/* Primary Defects Column */}
-      <View style={sectionStyles.defectTypeColumn}>
-        <Text style={sectionStyles.defectTypeTitle}>Primary</Text>
-        {primaryDefects.length === 0 ? (
-          <Text style={sectionStyles.emptyText}>None</Text>
-        ) : (
-          <>
-            {primaryDefects.map((defect, index) => (
-              <View key={index} style={sectionStyles.defectItem}>
-                <Text style={sectionStyles.defectName}>{defect.name}</Text>
-                <Text style={sectionStyles.defectCount}>{defect.count}</Text>
-              </View>
-            ))}
-          </>
-        )}
-        <View style={sectionStyles.defectTotal}>
-          <Text style={sectionStyles.totalLabel}>Total:</Text>
-          <Text style={sectionStyles.totalValue}>{totalPrimary}</Text>
-        </View>
+    <View>
+      {/* Summary Header */}
+      <View style={sectionStyles.defectsSummary}>
+        <Text style={sectionStyles.summaryItem}>
+          Primary: <Text style={sectionStyles.summaryValue}>{formatNum(totalPrimary)}</Text>
+        </Text>
+        <Text style={sectionStyles.summaryItem}>|</Text>
+        <Text style={sectionStyles.summaryItem}>
+          Secondary: <Text style={sectionStyles.summaryValue}>{formatNum(totalSecondary)}</Text>
+        </Text>
+        <Text style={sectionStyles.summaryItem}>|</Text>
+        <Text style={sectionStyles.summaryTotal}>
+          Total: {formatNum(grandTotal)}
+        </Text>
       </View>
 
-      {/* Secondary Defects Column */}
-      <View style={sectionStyles.defectTypeColumn}>
-        <Text style={sectionStyles.defectTypeTitle}>Secondary</Text>
-        {secondaryDefects.length === 0 ? (
-          <Text style={sectionStyles.emptyText}>None</Text>
-        ) : (
-          <>
-            {secondaryDefects.map((defect, index) => (
-              <View key={index} style={sectionStyles.defectItem}>
-                <Text style={sectionStyles.defectName}>{defect.name}</Text>
-                <Text style={sectionStyles.defectCount}>{defect.count}</Text>
-              </View>
-            ))}
-          </>
-        )}
-        <View style={sectionStyles.defectTotal}>
-          <Text style={sectionStyles.totalLabel}>Total:</Text>
-          <Text style={sectionStyles.totalValue}>{totalSecondary}</Text>
+      {/* Defects Columns */}
+      <View style={sectionStyles.defectsRow}>
+        {/* Primary Defects Column */}
+        <View style={sectionStyles.defectTypeColumn}>
+          <Text style={sectionStyles.defectTypeTitle}>Primary</Text>
+          {primaryDefects.length === 0 ? (
+            <Text style={sectionStyles.emptyText}>None</Text>
+          ) : (
+            <>
+              {primaryDefects.map((defect, index) => (
+                <View key={index} style={sectionStyles.defectItem}>
+                  <Text style={sectionStyles.defectName}>{defect.name}</Text>
+                  <View style={sectionStyles.defectCalc}>
+                    <Text style={sectionStyles.defectRawCount}>{defect.rawCount}</Text>
+                    <Text style={sectionStyles.defectWeight}>x{defect.weight}</Text>
+                    <Text style={sectionStyles.defectWeighted}>{formatNum(defect.weightedCount)}</Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+          <View style={sectionStyles.defectTotal}>
+            <Text style={sectionStyles.totalLabel}>Total:</Text>
+            <Text style={sectionStyles.totalValue}>{formatNum(totalPrimary)}</Text>
+          </View>
+        </View>
+
+        {/* Secondary Defects Column */}
+        <View style={sectionStyles.defectTypeColumn}>
+          <Text style={sectionStyles.defectTypeTitle}>Secondary</Text>
+          {secondaryDefects.length === 0 ? (
+            <Text style={sectionStyles.emptyText}>None</Text>
+          ) : (
+            <>
+              {secondaryDefects.map((defect, index) => (
+                <View key={index} style={sectionStyles.defectItem}>
+                  <Text style={sectionStyles.defectName}>{defect.name}</Text>
+                  <View style={sectionStyles.defectCalc}>
+                    <Text style={sectionStyles.defectRawCount}>{defect.rawCount}</Text>
+                    <Text style={sectionStyles.defectWeight}>x{defect.weight}</Text>
+                    <Text style={sectionStyles.defectWeighted}>{formatNum(defect.weightedCount)}</Text>
+                  </View>
+                </View>
+              ))}
+            </>
+          )}
+          <View style={sectionStyles.defectTotal}>
+            <Text style={sectionStyles.totalLabel}>Total:</Text>
+            <Text style={sectionStyles.totalValue}>{formatNum(totalSecondary)}</Text>
+          </View>
         </View>
       </View>
     </View>

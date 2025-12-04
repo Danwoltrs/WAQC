@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
-import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X, FileCheck } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X, FileCheck, Check, XCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface AttributeStats {
@@ -96,6 +96,11 @@ interface ValidationPermissions {
   }
 }
 
+interface QualitySpecInfo {
+  has_validation_rules: boolean
+  quality_spec_name: string | null
+}
+
 interface CuppingValidationModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -120,6 +125,7 @@ export function CuppingValidationModal({
   const [aggregated, setAggregated] = useState<AggregatedScores | null>(null)
   const [individualScores, setIndividualScores] = useState<IndividualScore[]>([])
   const [permissions, setPermissions] = useState<ValidationPermissions | null>(null)
+  const [qualitySpecInfo, setQualitySpecInfo] = useState<QualitySpecInfo | null>(null)
   const [editing, setEditing] = useState<EditingState | null>(null)
   const [saving, setSaving] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
@@ -139,11 +145,12 @@ export function CuppingValidationModal({
     return false
   }
 
-  // Fetch aggregated scores and permissions when modal opens
+  // Fetch aggregated scores, permissions, and quality spec info when modal opens
   useEffect(() => {
     if (open && sampleId) {
       fetchAggregatedScores()
       fetchPermissions()
+      fetchQualitySpecInfo()
     }
   }, [open, sampleId, sessionId])
 
@@ -163,6 +170,25 @@ export function CuppingValidationModal({
       }
     } catch (error) {
       console.error('Error fetching validation permissions:', error)
+    }
+  }
+
+  const fetchQualitySpecInfo = async () => {
+    if (!sampleId) return
+
+    try {
+      const response = await fetch(`/api/samples/${sampleId}/quality-spec`)
+      const data = await response.json()
+
+      if (response.ok) {
+        setQualitySpecInfo(data)
+      } else {
+        // No quality spec or error - assume no validation rules
+        setQualitySpecInfo({ has_validation_rules: false, quality_spec_name: null })
+      }
+    } catch (error) {
+      console.error('Error fetching quality spec info:', error)
+      setQualitySpecInfo({ has_validation_rules: false, quality_spec_name: null })
     }
   }
 
@@ -196,7 +222,7 @@ export function CuppingValidationModal({
     }
   }
 
-  const handleFinalize = async () => {
+  const handleFinalize = async (manualDecision?: 'approved' | 'rejected') => {
     // Check permission first
     if (!permissions?.can_validate) {
       toast({
@@ -233,6 +259,7 @@ export function CuppingValidationModal({
         body: JSON.stringify({
           session_id: permissions.session.id,
           sample_id: sampleId,
+          manual_decision: manualDecision,
         }),
       })
 
@@ -747,18 +774,50 @@ export function CuppingValidationModal({
               Close
             </Button>
             {canFinalize ? (
-              <Button
-                onClick={handleFinalize}
-                disabled={finalizing}
-                className="bg-primary hover:bg-primary/90"
-              >
-                {finalizing ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <FileCheck className="h-4 w-4 mr-2" />
-                )}
-                Validate & Certify
-              </Button>
+              // Show different buttons based on whether validation rules exist
+              qualitySpecInfo && !qualitySpecInfo.has_validation_rules ? (
+                // No validation rules - show manual Approve/Reject buttons
+                <>
+                  <Button
+                    onClick={() => handleFinalize('rejected')}
+                    disabled={finalizing}
+                    variant="destructive"
+                  >
+                    {finalizing ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <XCircle className="h-4 w-4 mr-2" />
+                    )}
+                    Reject
+                  </Button>
+                  <Button
+                    onClick={() => handleFinalize('approved')}
+                    disabled={finalizing}
+                    className="bg-green-600 hover:bg-green-700"
+                  >
+                    {finalizing ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <Check className="h-4 w-4 mr-2" />
+                    )}
+                    Approve
+                  </Button>
+                </>
+              ) : (
+                // Has validation rules - use auto-determined decision
+                <Button
+                  onClick={() => handleFinalize()}
+                  disabled={finalizing}
+                  className="bg-primary hover:bg-primary/90"
+                >
+                  {finalizing ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <FileCheck className="h-4 w-4 mr-2" />
+                  )}
+                  Validate & Certify
+                </Button>
+              )
             ) : (
               <Button disabled>
                 <AlertCircle className="h-4 w-4 mr-2" />

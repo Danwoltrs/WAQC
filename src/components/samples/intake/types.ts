@@ -15,6 +15,7 @@ export interface FormData {
   buyer: string
   roaster: string
   origin: string
+  micro_origin: string
   supplier: string
   processing_method: string
   sample_type: 'pss' | 'ss' | 'type' | ''
@@ -38,6 +39,7 @@ export interface FormData {
   bags_quantity_mt: string // Auto-calculated
   equivalent_60kg_bags: string // Auto-calculated
   bulk_container_count: string // Auto-calculated for bulk type
+  shipment_month: string // YYYY-MM format
 
   // Sample Details
   arrival_date: string

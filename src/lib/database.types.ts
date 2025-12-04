@@ -6574,6 +6574,7 @@ export type Database = {
           importer_id: string | null
           importer_legacy: string | null
           laboratory_id: string | null
+          micro_origin: string | null
           origin: string
           processing_method: string | null
           quality_name: string | null
@@ -6584,6 +6585,7 @@ export type Database = {
           same_seller_shipper: boolean | null
           sample_type: Database["public"]["Enums"]["sample_type_enum"] | null
           seller_id: string | null
+          shipment_month: string | null
           status: Database["public"]["Enums"]["sample_status"] | null
           storage_position: string | null
           supplier_type: string | null
@@ -6622,6 +6624,7 @@ export type Database = {
           importer_id?: string | null
           importer_legacy?: string | null
           laboratory_id?: string | null
+          micro_origin?: string | null
           origin: string
           processing_method?: string | null
           quality_name?: string | null
@@ -6632,6 +6635,7 @@ export type Database = {
           same_seller_shipper?: boolean | null
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
           seller_id?: string | null
+          shipment_month?: string | null
           status?: Database["public"]["Enums"]["sample_status"] | null
           storage_position?: string | null
           supplier_type?: string | null
@@ -6670,6 +6674,7 @@ export type Database = {
           importer_id?: string | null
           importer_legacy?: string | null
           laboratory_id?: string | null
+          micro_origin?: string | null
           origin?: string
           processing_method?: string | null
           quality_name?: string | null
@@ -6680,6 +6685,7 @@ export type Database = {
           same_seller_shipper?: boolean | null
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
           seller_id?: string | null
+          shipment_month?: string | null
           status?: Database["public"]["Enums"]["sample_status"] | null
           storage_position?: string | null
           supplier_type?: string | null

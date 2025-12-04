@@ -44,6 +44,34 @@ const cuppingStyles = StyleSheet.create({
   scoreOutOfSpec: {
     color: COLORS.rejected,
   },
+  // Taints/Faults section
+  taintsFaultsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 6,
+    paddingTop: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.borderLight,
+  },
+  taintsFaultsItem: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+  },
+  taintsFaultsLabel: {
+    fontSize: 8,
+    fontWeight: 600,
+    color: COLORS.muted,
+    marginRight: 4,
+  },
+  taintsFaultsValue: {
+    fontSize: 9,
+    fontWeight: 600,
+    color: COLORS.dark,
+  },
+  taintsFaultsNone: {
+    fontSize: 9,
+    color: COLORS.mutedLight,
+  },
   finalScoreContainer: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
@@ -140,8 +168,12 @@ export function CertificateCupping({
     return null
   }
 
-  const { attributes, overallScore, comments, isSpecialty } = cuppingData
+  const { attributes, overallScore, comments, isSpecialty, taints, faults } = cuppingData
   const showRanges = hasQualityTemplate
+
+  // Check if taints or faults have values
+  const hasTaints = taints !== null && taints > 0
+  const hasFaults = faults !== null && faults > 0
 
   return (
     <View style={cuppingStyles.container}>
@@ -155,17 +187,30 @@ export function CertificateCupping({
         ))}
       </View>
 
+      {/* Taints & Faults */}
+      <View style={cuppingStyles.taintsFaultsContainer}>
+        <View style={cuppingStyles.taintsFaultsItem}>
+          <Text style={cuppingStyles.taintsFaultsLabel}>Taints:</Text>
+          {hasTaints ? (
+            <Text style={cuppingStyles.taintsFaultsValue}>{taints}</Text>
+          ) : (
+            <Text style={cuppingStyles.taintsFaultsNone}>None</Text>
+          )}
+        </View>
+        <View style={cuppingStyles.taintsFaultsItem}>
+          <Text style={cuppingStyles.taintsFaultsLabel}>Faults:</Text>
+          {hasFaults ? (
+            <Text style={cuppingStyles.taintsFaultsValue}>{faults}</Text>
+          ) : (
+            <Text style={cuppingStyles.taintsFaultsNone}>None</Text>
+          )}
+        </View>
+      </View>
+
       {isSpecialty && overallScore !== null && (
         <View style={cuppingStyles.finalScoreContainer}>
           <Text style={cuppingStyles.finalScoreLabel}>FINAL:</Text>
           <Text style={cuppingStyles.finalScoreValue}>{overallScore.toFixed(2)}</Text>
-        </View>
-      )}
-
-      {comments && (
-        <View style={cuppingStyles.commentsContainer}>
-          <Text style={cuppingStyles.commentsLabel}>Notes:</Text>
-          <Text style={cuppingStyles.commentsText}>{comments}</Text>
         </View>
       )}
     </View>

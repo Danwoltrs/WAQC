@@ -264,6 +264,20 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
           </p>
         </div>
       )}
+
+      {/* Shipment Month */}
+      <div className="space-y-2">
+        <Label htmlFor="shipment_month">Shipment Month</Label>
+        <Input
+          id="shipment_month"
+          type="month"
+          value={formData.shipment_month}
+          onChange={(e) => updateFormData('shipment_month', e.target.value)}
+        />
+        <p className="text-xs text-muted-foreground">
+          Expected month of shipment (optional)
+        </p>
+      </div>
     </div>
   )
 }

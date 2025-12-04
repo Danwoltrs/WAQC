@@ -7,7 +7,7 @@ import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
 import { DefectBar } from './certificate-range-bar'
-import type { GreenBeanAnalysis } from '@/lib/certificate-data'
+import type { GreenBeanAnalysis, DefectItem } from '@/lib/certificate-data'
 
 const defectStyles = StyleSheet.create({
   container: {
@@ -77,14 +77,14 @@ const defectStyles = StyleSheet.create({
 
 interface DefectChartProps {
   title: string
-  defects: Array<{ name: string; count: number }>
+  defects: DefectItem[]
   total: number
   barColor?: string
 }
 
 function DefectChart({ title, defects, total, barColor = COLORS.accent }: DefectChartProps) {
-  // Find max count for scaling bars
-  const maxCount = Math.max(...defects.map((d) => d.count), 1)
+  // Find max count for scaling bars (use rawCount)
+  const maxCount = Math.max(...defects.map((d) => d.rawCount), 1)
 
   return (
     <View style={defectStyles.chartSection}>
@@ -95,14 +95,14 @@ function DefectChart({ title, defects, total, barColor = COLORS.accent }: Defect
           <Text style={defectStyles.defectName}>{defect.name}</Text>
           <View style={defectStyles.barContainer}>
             <DefectBar
-              count={defect.count}
+              count={defect.rawCount}
               maxCount={maxCount}
               width={120}
               height={10}
               color={barColor}
             />
           </View>
-          <Text style={defectStyles.countText}>{defect.count}</Text>
+          <Text style={defectStyles.countText}>{defect.rawCount}</Text>
         </View>
       ))}
 

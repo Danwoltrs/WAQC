@@ -13,6 +13,13 @@ export interface SupplyChainEntity {
   contract: string | null
 }
 
+export interface DefectItem {
+  name: string
+  rawCount: number
+  weight: number
+  weightedCount: number
+}
+
 export interface GreenBeanAnalysis {
   moisture_percentage: number | null
   density: number | null
@@ -20,8 +27,8 @@ export interface GreenBeanAnalysis {
   green_aspect: string | null
   screen_sizes: Record<string, number> | null
   defects: {
-    primary: Array<{ name: string; count: number }>
-    secondary: Array<{ name: string; count: number }>
+    primary: DefectItem[]
+    secondary: DefectItem[]
     total_primary: number
     total_secondary: number
   } | null
@@ -46,6 +53,8 @@ export interface CuppingData {
   overallScore: number | null
   comments: string | null
   isSpecialty: boolean
+  taints: number | null
+  faults: number | null
 }
 
 export interface CertificateData {
@@ -54,10 +63,13 @@ export interface CertificateData {
     tracking_number: string
     origin: string
     origin_display: string
+    micro_origin: string | null
     sample_type: string | null
     processing_method: string | null
     bags: number | null
     bag_weight_kg: number | null
+    bags_quantity_mt: number | null
+    shipment_month: string | null
     ico_number: string | null
     container_nr: string | null
     created_at: string | null
@@ -117,10 +129,13 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       id,
       tracking_number,
       origin,
+      micro_origin,
       sample_type,
       processing_method,
       bags,
       bag_weight_kg,
+      bags_quantity_mt,
+      shipment_month,
       ico_number,
       container_nr,
       created_at,
@@ -324,10 +339,13 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       tracking_number: sample.tracking_number,
       origin: sample.origin,
       origin_display: getCountryName(sample.origin),
+      micro_origin: sample.micro_origin,
       sample_type: sample.sample_type,
       processing_method: sample.processing_method,
       bags: sample.bags,
       bag_weight_kg: sample.bag_weight_kg,
+      bags_quantity_mt: sample.bags_quantity_mt,
+      shipment_month: sample.shipment_month,
       ico_number: sample.ico_number,
       container_nr: sample.container_nr,
       created_at: sample.created_at,
@@ -458,15 +476,15 @@ function getDefectWeight(name: string): number {
  * 2. array format: [{name, count, category}]
  * 3. object format: {primary: [...], secondary: [...]}
  *
- * Returns weighted counts (count * weight) for display
+ * Returns defects with rawCount, weight, and weightedCount for display
  * Uses pre-calculated totals from data when available
  */
 function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
   if (!defectsData || typeof defectsData !== 'object') return null
 
   const defects = defectsData as Record<string, unknown>
-  const primary: Array<{ name: string; count: number }> = []
-  const secondary: Array<{ name: string; count: number }> = []
+  const primary: DefectItem[] = []
+  const secondary: DefectItem[] = []
   let totalPrimary = 0
   let totalSecondary = 0
 
@@ -484,10 +502,10 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
           name.toLowerCase().includes(pd.toLowerCase())
         )
         if (isPrimary) {
-          primary.push({ name, count: weightedCount })
+          primary.push({ name, rawCount, weight, weightedCount })
           if (!hasPreCalcTotals) totalPrimary += weightedCount
         } else {
-          secondary.push({ name, count: weightedCount })
+          secondary.push({ name, rawCount, weight, weightedCount })
           if (!hasPreCalcTotals) totalSecondary += weightedCount
         }
       }
@@ -507,10 +525,10 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
           const weight = getDefectWeight(d.name)
           const weightedCount = d.count * weight
           if (d.category === 'primary') {
-            primary.push({ name: d.name, count: weightedCount })
+            primary.push({ name: d.name, rawCount: d.count, weight, weightedCount })
             totalPrimary += weightedCount
           } else {
-            secondary.push({ name: d.name, count: weightedCount })
+            secondary.push({ name: d.name, rawCount: d.count, weight, weightedCount })
             totalSecondary += weightedCount
           }
         }
@@ -524,7 +542,7 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
         if (d.name && d.count && d.count > 0) {
           const weight = getDefectWeight(d.name)
           const weightedCount = d.count * weight
-          primary.push({ name: d.name, count: weightedCount })
+          primary.push({ name: d.name, rawCount: d.count, weight, weightedCount })
           totalPrimary += weightedCount
         }
       }
@@ -534,7 +552,7 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
         if (d.name && d.count && d.count > 0) {
           const weight = getDefectWeight(d.name)
           const weightedCount = d.count * weight
-          secondary.push({ name: d.name, count: weightedCount })
+          secondary.push({ name: d.name, rawCount: d.count, weight, weightedCount })
           totalSecondary += weightedCount
         }
       }
@@ -544,8 +562,8 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
   if (primary.length === 0 && secondary.length === 0) return null
 
   // Sort by weighted count descending (highest defects first)
-  primary.sort((a, b) => b.count - a.count)
-  secondary.sort((a, b) => b.count - a.count)
+  primary.sort((a, b) => b.weightedCount - a.weightedCount)
+  secondary.sort((a, b) => b.weightedCount - a.weightedCount)
 
   return {
     primary,
@@ -565,6 +583,8 @@ function processCuppingScores(
   // Collect all scores by attribute
   const attributeScores: Record<string, number[]> = {}
   const allNotes: string[] = []
+  const taintsCounts: number[] = []
+  const faultsCounts: number[] = []
 
   for (const score of cuppingScores) {
     if (score.notes) {
@@ -572,13 +592,20 @@ function processCuppingScores(
     }
 
     if (score.scores && typeof score.scores === 'object') {
-      const scores = score.scores as Record<string, number>
+      const scores = score.scores as Record<string, unknown>
       for (const [attr, value] of Object.entries(scores)) {
         if (typeof value === 'number') {
-          if (!attributeScores[attr]) {
-            attributeScores[attr] = []
+          // Check if this is taints or faults count
+          if (attr.toLowerCase() === 'taints' || attr.toLowerCase() === 'taint') {
+            taintsCounts.push(value)
+          } else if (attr.toLowerCase() === 'faults' || attr.toLowerCase() === 'fault') {
+            faultsCounts.push(value)
+          } else {
+            if (!attributeScores[attr]) {
+              attributeScores[attr] = []
+            }
+            attributeScores[attr].push(value)
           }
-          attributeScores[attr].push(value)
         }
       }
     }
@@ -634,10 +661,20 @@ function processCuppingScores(
   // For other methods, it might be an average
   const overallScore = scoreCount > 0 ? Math.round(totalScore * 100) / 100 : null
 
+  // Calculate average taints and faults (sum up if multiple cuppers)
+  const taints = taintsCounts.length > 0
+    ? Math.round(taintsCounts.reduce((a, b) => a + b, 0) / taintsCounts.length * 10) / 10
+    : null
+  const faults = faultsCounts.length > 0
+    ? Math.round(faultsCounts.reduce((a, b) => a + b, 0) / faultsCounts.length * 10) / 10
+    : null
+
   return {
     attributes,
     overallScore,
     comments: allNotes.length > 0 ? allNotes.join(' | ') : null,
     isSpecialty,
+    taints,
+    faults,
   }
 }

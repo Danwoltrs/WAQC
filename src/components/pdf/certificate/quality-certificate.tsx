@@ -10,6 +10,7 @@ import { CertificateHeader } from './certificate-header'
 import { CertificateSampleInfo } from './certificate-sample-info'
 import { CertificateAnalysis } from './certificate-analysis'
 import { CertificateCuppingDefects } from './certificate-cupping-defects'
+import { CertificateComments } from './certificate-comments'
 import { CertificateFooter } from './certificate-footer'
 import type { CertificateData } from '@/lib/certificate-data'
 
@@ -67,10 +68,13 @@ export function QualityCertificate({
           sampleType={sample.sample_type}
           bags={sample.bags}
           bagWeight={sample.bag_weight_kg}
+          bagsQuantityMt={sample.bags_quantity_mt}
           processingMethod={sample.processing_method}
           icoNumber={sample.ico_number}
+          shipmentMonth={sample.shipment_month}
           origin={sample.origin}
           originDisplay={sample.origin_display}
+          microOrigin={sample.micro_origin}
           flagBase64={flagBase64}
         />
 
@@ -86,6 +90,11 @@ export function QualityCertificate({
           cuppingData={cuppingData}
           defects={greenBeanAnalysis?.defects || null}
           hasQualityTemplate={qualitySpec?.has_validation || false}
+        />
+
+        {/* Notes section at bottom */}
+        <CertificateComments
+          cuppingNotes={cuppingData?.comments || null}
         />
 
         {/* Footer with lab info */}
@@ -108,5 +117,6 @@ export { CertificateSampleInfo } from './certificate-sample-info'
 export { CertificateAnalysis } from './certificate-analysis'
 export { CertificateCupping } from './certificate-cupping'
 export { CertificateCuppingDefects } from './certificate-cupping-defects'
+export { CertificateComments } from './certificate-comments'
 export { CertificateFooter } from './certificate-footer'
 export { COLORS, styles } from './certificate-styles'

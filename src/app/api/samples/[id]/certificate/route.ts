@@ -22,8 +22,10 @@ export async function GET(
     // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      console.error('[Certificate GET] Auth error:', authError?.message || 'No user found')
+      return NextResponse.json({ error: 'Unauthorized', details: authError?.message }, { status: 401 })
     }
+    console.log('[Certificate GET] Authenticated user:', user.id)
 
     const { id } = await params
     console.log('[Certificate] Generating PDF for sample:', id)
