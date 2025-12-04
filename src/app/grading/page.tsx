@@ -899,7 +899,7 @@ export default function GradingPage() {
       } else if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
         // For non-type samples: use template screen size requirements
         // Sort from largest to smallest: 19 → 18 → ... → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
-        const constraints = sample.quality_spec.template.parameters.screen_size_requirements.constraints || []
+        const constraints = (sample.quality_spec.template.parameters.screen_size_requirements.constraints || []) as ScreenSizeConstraint[]
         const sortedConstraints = sortScreenSizes(constraints)
         screenConstraintsMap.set(sample.id, sortedConstraints)
 
