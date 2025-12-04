@@ -10,6 +10,8 @@ import {
   FormData,
   Client,
   Laboratory,
+  Exporter,
+  Importer,
   SampleInsert,
   STEPS,
   BasicInfoStep,
@@ -68,15 +70,19 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const [success, setSuccess] = useState(false)
   const [clients, setClients] = useState<Client[]>([])
   const [laboratories, setLaboratories] = useState<Laboratory[]>([])
+  const [exporters, setExporters] = useState<Exporter[]>([])
+  const [importers, setImporters] = useState<Importer[]>([])
   const [filteredClients, setFilteredClients] = useState<Client[]>([])
   const [approvedPSSSamples, setApprovedPSSSamples] = useState<any[]>([])
   const [generatedTrackingNumber, setGeneratedTrackingNumber] = useState<string>('')
   const [formData, setFormData] = useState<FormData>(initialFormData)
 
-  // Load clients and laboratories
+  // Load clients, laboratories, exporters, and importers
   useEffect(() => {
     loadClients()
     loadLaboratories()
+    loadExporters()
+    loadImporters()
 
     // Load saved form data from localStorage
     const savedData = localStorage.getItem('sample-intake-form')
@@ -225,6 +231,44 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
     if (data && !error) {
       setApprovedPSSSamples(data)
+    }
+  }
+
+  const loadExporters = async () => {
+    const { data, error } = await supabase
+      .from('exporters')
+      .select('*')
+      .order('name')
+
+    if (data && !error) {
+      // Deduplicate by name (case-insensitive)
+      const seen = new Set<string>()
+      const unique = data.filter(exp => {
+        const key = exp.name.toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      setExporters(unique as unknown as Exporter[])
+    }
+  }
+
+  const loadImporters = async () => {
+    const { data, error } = await supabase
+      .from('importers')
+      .select('*')
+      .order('name')
+
+    if (data && !error) {
+      // Deduplicate by name (case-insensitive)
+      const seen = new Set<string>()
+      const unique = data.filter(imp => {
+        const key = imp.name.toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      setImporters(unique as unknown as Importer[])
     }
   }
 
@@ -483,6 +527,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               laboratories={laboratories}
               filteredClients={filteredClients}
               approvedPSSSamples={approvedPSSSamples}
+              exporters={exporters}
+              importers={importers}
             />
           )}
 

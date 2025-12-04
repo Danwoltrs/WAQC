@@ -3,6 +3,8 @@ import { Database } from '@/lib/supabase'
 export type SampleInsert = Database['public']['Tables']['samples']['Insert']
 export type Client = Database['public']['Tables']['clients']['Row']
 export type Laboratory = Database['public']['Tables']['laboratories']['Row']
+export type Exporter = Database['public']['Tables']['exporters']['Row']
+export type Importer = Database['public']['Tables']['importers']['Row']
 
 export interface FormData {
   // Basic Info
@@ -60,5 +62,7 @@ export interface StepComponentProps {
   laboratories: Laboratory[]
   filteredClients: Client[]
   approvedPSSSamples: any[]
+  exporters?: Exporter[]
+  importers?: Importer[]
   error?: string | null
 }
