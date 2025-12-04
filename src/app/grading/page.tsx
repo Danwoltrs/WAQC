@@ -36,7 +36,8 @@ import {
 import {
   ScreenSizeConstraint,
   getConstraintDisplayText,
-  validateScreenSizeDistribution
+  validateScreenSizeDistribution,
+  sortScreenSizes
 } from '@/types/screen-size-constraints'
 import {
   SampleVisibilitySettings,
@@ -840,23 +841,23 @@ export default function GradingPage() {
       }
 
       // Load screen size constraints
-      // For TYPE SAMPLES: ALWAYS use all 13 standard screens regardless of template
+      // For TYPE SAMPLES: ALWAYS use all standard screens regardless of template
+      // Ordered from largest to smallest: 19 → 18 → ... → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
       if (sample.sample_type === 'type') {
         // Type samples show all common screen sizes including peaberries and Pan
         const allScreens: ScreenSizeConstraint[] = [
-          { screen_size: '20', constraint_type: 'any', display_order: 0 },
-          { screen_size: '19', constraint_type: 'any', display_order: 1 },
-          { screen_size: '18', constraint_type: 'any', display_order: 2 },
-          { screen_size: '17', constraint_type: 'any', display_order: 3 },
-          { screen_size: '16', constraint_type: 'any', display_order: 4 },
-          { screen_size: '15', constraint_type: 'any', display_order: 5 },
-          { screen_size: '14', constraint_type: 'any', display_order: 6 },
-          { screen_size: '13', constraint_type: 'any', display_order: 7 },
-          { screen_size: '12', constraint_type: 'any', display_order: 8 },
-          { screen_size: 'Peas 11', constraint_type: 'any', display_order: 9 },
-          { screen_size: 'Peas 10', constraint_type: 'any', display_order: 10 },
-          { screen_size: 'Peas 9', constraint_type: 'any', display_order: 11 },
-          { screen_size: 'Pan', constraint_type: 'any', display_order: 12 }
+          { screen_size: '19', constraint_type: 'any', display_order: 0 },
+          { screen_size: '18', constraint_type: 'any', display_order: 1 },
+          { screen_size: '17', constraint_type: 'any', display_order: 2 },
+          { screen_size: '16', constraint_type: 'any', display_order: 3 },
+          { screen_size: '15', constraint_type: 'any', display_order: 4 },
+          { screen_size: '14', constraint_type: 'any', display_order: 5 },
+          { screen_size: '13', constraint_type: 'any', display_order: 6 },
+          { screen_size: '12', constraint_type: 'any', display_order: 7 },
+          { screen_size: 'Peas 11', constraint_type: 'any', display_order: 8 },
+          { screen_size: 'Peas 10', constraint_type: 'any', display_order: 9 },
+          { screen_size: 'Peas 9', constraint_type: 'any', display_order: 10 },
+          { screen_size: 'Pan', constraint_type: 'any', display_order: 11 }
         ]
         screenConstraintsMap.set(sample.id, allScreens)
 
@@ -897,14 +898,16 @@ export default function GradingPage() {
         roastAspectOptionsMap.set(sample.id, standardRoastOptions)
       } else if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
         // For non-type samples: use template screen size requirements
+        // Sort from largest to smallest: 19 → 18 → ... → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
         const constraints = sample.quality_spec.template.parameters.screen_size_requirements.constraints || []
-        screenConstraintsMap.set(sample.id, constraints)
+        const sortedConstraints = sortScreenSizes(constraints)
+        screenConstraintsMap.set(sample.id, sortedConstraints)
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
           // Preserve existing loaded screen sizes
           const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
-          constraints.forEach((constraint: ScreenSizeConstraint) => {
+          sortedConstraints.forEach((constraint: ScreenSizeConstraint) => {
             // Only initialize to 0 if not already loaded from quality assessment
             if (!(constraint.screen_size in screenSizes)) {
               screenSizes[constraint.screen_size] = 0

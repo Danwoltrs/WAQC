@@ -8,6 +8,7 @@ import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
 import type { GreenBeanAnalysis, RoastAnalysis } from '@/lib/certificate-data'
+import { getScreenSizeOrder } from '@/types/screen-size-constraints'
 
 const analysisStyles = StyleSheet.create({
   container: {
@@ -114,18 +115,11 @@ function ScreenSizesList({ screenSizes }: { screenSizes: Record<string, number> 
     return <Text style={analysisStyles.emptyText}>-</Text>
   }
 
-  // Sort screen sizes: largest first, Pan always last
+  // Sort screen sizes from largest to smallest using consistent ordering
+  // Order: 19 → 18 → 17 → 16 → 15 → 14 → 13 → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
   const sortedSizes = Object.entries(screenSizes)
     .filter(([, value]) => value > 0)
-    .sort((a, b) => {
-      const aIsPan = a[0].toLowerCase() === 'pan'
-      const bIsPan = b[0].toLowerCase() === 'pan'
-      if (aIsPan) return 1
-      if (bIsPan) return -1
-      const aNum = parseInt(a[0].replace(/\D/g, '')) || 0
-      const bNum = parseInt(b[0].replace(/\D/g, '')) || 0
-      return bNum - aNum
-    })
+    .sort((a, b) => getScreenSizeOrder(a[0]) - getScreenSizeOrder(b[0]))
 
   if (sortedSizes.length === 0) {
     return <Text style={analysisStyles.emptyText}>-</Text>

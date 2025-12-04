@@ -53,22 +53,106 @@ export interface ScreenSizeRequirements {
 
 /**
  * Standard screen sizes available in the system
+ * Ordered from largest to smallest: 19 → 18 → ... → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
  */
 export const STANDARD_SCREEN_SIZES = [
-  'Pan',
-  'Peas 9',
-  'Peas 10',
-  'Peas 11',
-  'Screen 12',
-  'Screen 13',
-  'Screen 14',
-  'Screen 15',
-  'Screen 16',
-  'Screen 17',
-  'Screen 18',
   'Screen 19',
-  'Screen 20'
+  'Screen 18',
+  'Screen 17',
+  'Screen 16',
+  'Screen 15',
+  'Screen 14',
+  'Screen 13',
+  'Screen 12',
+  'Peas 11',
+  'Peas 10',
+  'Peas 9',
+  'Pan'
 ] as const
+
+/**
+ * Screen size sort order map (lower number = displayed first)
+ * Order: 19 → 18 → 17 → 16 → 15 → 14 → 13 → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
+ */
+export const SCREEN_SIZE_ORDER: Record<string, number> = {
+  '20': 0,
+  '19': 1,
+  '18': 2,
+  '17': 3,
+  '16': 4,
+  '15': 5,
+  '14': 6,
+  '13': 7,
+  '12': 8,
+  'Peas 11': 9,
+  'Peas 10': 10,
+  'Peas 9': 11,
+  'Pan': 12,
+  // Alternate formats
+  'Screen 20': 0,
+  'Screen 19': 1,
+  'Screen 18': 2,
+  'Screen 17': 3,
+  'Screen 16': 4,
+  'Screen 15': 5,
+  'Screen 14': 6,
+  'Screen 13': 7,
+  'Screen 12': 8,
+}
+
+/**
+ * Get the sort order for a screen size
+ * Returns a number where lower values should appear first (largest screens first, Pan last)
+ */
+export function getScreenSizeOrder(screenSize: string): number {
+  // Check direct match first
+  if (SCREEN_SIZE_ORDER[screenSize] !== undefined) {
+    return SCREEN_SIZE_ORDER[screenSize]
+  }
+
+  const lower = screenSize.toLowerCase()
+
+  // Pan is always last
+  if (lower === 'pan' || lower.includes('pan')) {
+    return 100
+  }
+
+  // Peaberries: Peas 11 → Peas 10 → Peas 9
+  if (lower.includes('peas') || lower.includes('pea')) {
+    const match = screenSize.match(/(\d+)/)
+    if (match) {
+      const num = parseInt(match[1])
+      // Peas 11 = order 9, Peas 10 = order 10, Peas 9 = order 11
+      return 20 - num // This gives: 11→9, 10→10, 9→11
+    }
+    return 50 // Unknown peaberry
+  }
+
+  // Regular screens: extract number and sort by size descending
+  const match = screenSize.match(/(\d+)/)
+  if (match) {
+    const num = parseInt(match[1])
+    // Screen 19 = order 1, Screen 18 = order 2, etc.
+    return 20 - num
+  }
+
+  return 99 // Unknown
+}
+
+/**
+ * Sort screen sizes from largest to smallest
+ * Order: 19 → 18 → 17 → 16 → 15 → 14 → 13 → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
+ */
+export function sortScreenSizes<T extends { screen_size: string }>(screens: T[]): T[] {
+  return [...screens].sort((a, b) => getScreenSizeOrder(a.screen_size) - getScreenSizeOrder(b.screen_size))
+}
+
+/**
+ * Sort screen size entries (key-value pairs) from largest to smallest
+ */
+export function sortScreenSizeEntries(entries: [string, number][]): [string, number][] {
+  return [...entries].sort((a, b) => getScreenSizeOrder(a[0]) - getScreenSizeOrder(b[0]))
+}
 
 export type StandardScreenSize = typeof STANDARD_SCREEN_SIZES[number]
 
