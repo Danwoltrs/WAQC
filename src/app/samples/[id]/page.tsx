@@ -279,7 +279,7 @@ export default function SampleDetailPage() {
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `certificate-${parseTrackingNumber(sample.tracking_number)}.pdf`
+      a.download = `${parseTrackingNumber(sample.tracking_number)}.pdf`
       document.body.appendChild(a)
       a.click()
       document.body.removeChild(a)

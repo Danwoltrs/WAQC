@@ -225,7 +225,7 @@ export async function POST(request: NextRequest) {
             const pdfBuffer = await renderToBuffer(certificateElement as any)
 
             attachments.push({
-              filename: `certificate-${cert.certificate_number}.pdf`,
+              filename: `${cert.certificate_number}.pdf`,
               content: Buffer.from(pdfBuffer)
             })
           } catch (pdfError) {

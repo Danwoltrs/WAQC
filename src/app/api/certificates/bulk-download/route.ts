@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
         const pdfBuffer = await renderToBuffer(certificateElement as any)
 
         // Add to ZIP with certificate number as filename
-        const filename = `certificate-${cert.certificate_number}.pdf`
+        const filename = `${cert.certificate_number}.pdf`
         zip.file(filename, pdfBuffer)
       } catch (pdfError) {
         console.error(`Error generating PDF for certificate ${cert.id}:`, pdfError)

@@ -106,9 +106,9 @@ export async function GET(
     const pdfBuffer = await renderToBuffer(certificateElement as any)
     console.log('[Certificate] PDF rendered, buffer size:', pdfBuffer.length)
 
-    // Generate filename
+    // Generate filename - just the certificate number
     const certificateNumber = certificateData.certificate?.certificate_number || certificateData.sample.tracking_number
-    const filename = `certificate-${certificateNumber}.pdf`
+    const filename = `${certificateNumber}.pdf`
 
     // Return PDF response - convert Buffer to Uint8Array for NextResponse
     return new NextResponse(new Uint8Array(pdfBuffer), {
