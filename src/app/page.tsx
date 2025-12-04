@@ -114,8 +114,9 @@ function DashboardContent() {
           quality_name,
           status,
           created_at,
-          client:clients(name)
+          client:clients(name, company)
         `)
+        .is('deleted_at', null) // Exclude soft-deleted samples
         .order('created_at', { ascending: false })
 
       if (error) throw error
@@ -123,7 +124,7 @@ function DashboardContent() {
       // Transform to flatten client name
       const transformedSamples = (data || []).map((sample: any) => ({
         ...sample,
-        buyer_name: sample.client?.name || null,
+        buyer_name: sample.client?.company || sample.client?.name || null,
         client: undefined
       }))
 
@@ -138,26 +139,26 @@ function DashboardContent() {
   // Organize samples by status
   const samplesByStatus = {
     inProgress: samples.filter(s => s.status === 'in_progress').map(s => ({
-      id: s.tracking_number,
-      origin: s.origin,
+      sampleId: s.id,
+      trackingNumber: s.tracking_number,
       client: s.buyer_name,
       quality: s.quality_name || 'Standard',
     })),
     underReview: samples.filter(s => s.status === 'under_review').map(s => ({
-      id: s.tracking_number,
-      origin: s.origin,
+      sampleId: s.id,
+      trackingNumber: s.tracking_number,
       client: s.buyer_name,
       quality: s.quality_name || 'Standard',
     })),
     approved: samples.filter(s => s.status === 'approved').map(s => ({
-      id: s.tracking_number,
-      origin: s.origin,
+      sampleId: s.id,
+      trackingNumber: s.tracking_number,
       client: s.buyer_name,
       quality: s.quality_name || 'Standard',
     })),
     rejected: samples.filter(s => s.status === 'rejected').map(s => ({
-      id: s.tracking_number,
-      origin: s.origin,
+      sampleId: s.id,
+      trackingNumber: s.tracking_number,
       client: s.buyer_name,
       quality: s.quality_name || 'Standard',
     })),
@@ -446,7 +447,119 @@ function DashboardContent() {
         onScoresSubmitted={handleScanComplete}
       />
 
-      {/* Sample Lanes - HIDDEN on mobile */}
+      {/* In Progress Lane - Cupping Table (Mobile) */}
+      {samplesByStatus.inProgress.length > 0 && (
+        <div className="sm:hidden space-y-4">
+          <div className="flex items-center gap-2">
+            <FlaskConical className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-bold">Cupping Table - In Progress</h2>
+            <span className="text-sm text-muted-foreground">
+              {samplesByStatus.inProgress.length} {samplesByStatus.inProgress.length === 1 ? 'sample' : 'samples'}
+            </span>
+          </div>
+          <Card className="p-4">
+            <div className="grid grid-cols-2 gap-3">
+              {samplesByStatus.inProgress.map((sample) => (
+                <div
+                  key={sample.sampleId}
+                  className="cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
+                  onClick={() => router.push('/cupping')}
+                >
+                  <p className="font-bold text-blue-600 dark:text-blue-400 mb-1 text-sm">{sample.trackingNumber}</p>
+                  {sample.client && <p className="text-xs text-foreground truncate">{sample.client}</p>}
+                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Under Review Lane (Mobile) */}
+      {samplesByStatus.underReview.length > 0 && (
+        <div className="sm:hidden space-y-4">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-bold">Under Review</h2>
+            <span className="text-sm text-muted-foreground">
+              {samplesByStatus.underReview.length} {samplesByStatus.underReview.length === 1 ? 'sample' : 'samples'}
+            </span>
+          </div>
+          <Card className="p-4">
+            <div className="grid grid-cols-2 gap-3">
+              {samplesByStatus.underReview.map((sample) => (
+                <div
+                  key={sample.sampleId}
+                  className="cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
+                  onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                >
+                  <p className="font-bold text-amber-600 dark:text-amber-400 mb-1 text-sm">{sample.trackingNumber}</p>
+                  {sample.client && <p className="text-xs text-foreground truncate">{sample.client}</p>}
+                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Approved Lane (Mobile) */}
+      {samplesByStatus.approved.length > 0 && (
+        <div className="sm:hidden space-y-4">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-bold">Approved</h2>
+            <span className="text-sm text-muted-foreground">
+              {samplesByStatus.approved.length} {samplesByStatus.approved.length === 1 ? 'sample' : 'samples'}
+            </span>
+          </div>
+          <Card className="p-4">
+            <div className="grid grid-cols-2 gap-3">
+              {samplesByStatus.approved.map((sample) => (
+                <div
+                  key={sample.sampleId}
+                  className="cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
+                  onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                >
+                  <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1 text-sm">{sample.trackingNumber}</p>
+                  {sample.client && <p className="text-xs text-foreground truncate">{sample.client}</p>}
+                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Rejected Lane (Mobile) */}
+      {samplesByStatus.rejected.length > 0 && (
+        <div className="sm:hidden space-y-4">
+          <div className="flex items-center gap-2">
+            <XCircle className="h-5 w-5 text-muted-foreground" />
+            <h2 className="text-lg font-bold">Rejected</h2>
+            <span className="text-sm text-muted-foreground">
+              {samplesByStatus.rejected.length} {samplesByStatus.rejected.length === 1 ? 'sample' : 'samples'}
+            </span>
+          </div>
+          <Card className="p-4">
+            <div className="grid grid-cols-2 gap-3">
+              {samplesByStatus.rejected.map((sample) => (
+                <div
+                  key={sample.sampleId}
+                  className="cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
+                  onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                >
+                  <p className="font-bold text-red-600 dark:text-red-400 mb-1 text-sm">{sample.trackingNumber}</p>
+                  {sample.client && <p className="text-xs text-foreground truncate">{sample.client}</p>}
+                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      )}
+
+      {/* Sample Lanes - Desktop only */}
       <div className="hidden sm:block space-y-8">
         {/* In Progress Lane - Cupping Table */}
         {samplesByStatus.inProgress.length > 0 && (
@@ -461,17 +574,19 @@ function DashboardContent() {
               </span>
             </div>
             <Card className="p-4 sm:p-6">
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-4">
+              <div className="flex flex-wrap gap-4">
                 {samplesByStatus.inProgress.map((sample, index) => (
-                  <div key={sample.id} className="flex items-center">
-                    <div className="cursor-pointer hover:bg-muted/50 p-2 sm:p-3 rounded-lg transition-colors w-full sm:w-auto">
-                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-1 text-sm sm:text-base">{sample.id}</p>
-                      <p className="text-xs sm:text-sm text-foreground truncate">{sample.origin}</p>
-                      {sample.client && <p className="text-xs text-muted-foreground truncate">{sample.client}</p>}
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{sample.quality}</p>
+                  <div key={sample.sampleId} className="flex items-center">
+                    <div
+                      className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                    >
+                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-1">{sample.trackingNumber}</p>
+                      {sample.client && <p className="text-sm text-foreground truncate">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
                     </div>
                     {index < samplesByStatus.inProgress.length - 1 && (
-                      <div className="hidden sm:block h-16 w-px bg-border mx-2" />
+                      <div className="h-16 w-px bg-border mx-2" />
                     )}
                   </div>
                 ))}
@@ -493,17 +608,19 @@ function DashboardContent() {
               </span>
             </div>
             <Card className="p-4 sm:p-6">
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-4">
+              <div className="flex flex-wrap gap-4">
                 {samplesByStatus.underReview.map((sample, index) => (
-                  <div key={sample.id} className="flex items-center">
-                    <div className="cursor-pointer hover:bg-muted/50 p-2 sm:p-3 rounded-lg transition-colors w-full sm:w-auto">
-                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-1 text-sm sm:text-base">{sample.id}</p>
-                      <p className="text-xs sm:text-sm text-foreground truncate">{sample.origin}</p>
-                      {sample.client && <p className="text-xs text-muted-foreground truncate">{sample.client}</p>}
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{sample.quality}</p>
+                  <div key={sample.sampleId} className="flex items-center">
+                    <div
+                      className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                    >
+                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-1">{sample.trackingNumber}</p>
+                      {sample.client && <p className="text-sm text-foreground truncate">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
                     </div>
                     {index < samplesByStatus.underReview.length - 1 && (
-                      <div className="hidden sm:block h-16 w-px bg-border mx-2" />
+                      <div className="h-16 w-px bg-border mx-2" />
                     )}
                   </div>
                 ))}
@@ -534,17 +651,19 @@ function DashboardContent() {
               </div>
             </div>
             <Card className="p-4 sm:p-6">
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-4">
+              <div className="flex flex-wrap gap-4">
                 {samplesByStatus.approved.map((sample, index) => (
-                  <div key={sample.id} className="flex items-center">
-                    <div className="cursor-pointer hover:bg-muted/50 p-2 sm:p-3 rounded-lg transition-colors w-full sm:w-auto">
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1 text-sm sm:text-base">{sample.id}</p>
-                      <p className="text-xs sm:text-sm text-foreground truncate">{sample.origin}</p>
-                      {sample.client && <p className="text-xs text-muted-foreground truncate">{sample.client}</p>}
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{sample.quality}</p>
+                  <div key={sample.sampleId} className="flex items-center">
+                    <div
+                      className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                    >
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1">{sample.trackingNumber}</p>
+                      {sample.client && <p className="text-sm text-foreground truncate">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
                     </div>
                     {index < samplesByStatus.approved.length - 1 && (
-                      <div className="hidden sm:block h-16 w-px bg-border mx-2" />
+                      <div className="h-16 w-px bg-border mx-2" />
                     )}
                   </div>
                 ))}
@@ -575,17 +694,19 @@ function DashboardContent() {
               </div>
             </div>
             <Card className="p-4 sm:p-6">
-              <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 sm:gap-4">
+              <div className="flex flex-wrap gap-4">
                 {samplesByStatus.rejected.map((sample, index) => (
-                  <div key={sample.id} className="flex items-center">
-                    <div className="cursor-pointer hover:bg-muted/50 p-2 sm:p-3 rounded-lg transition-colors w-full sm:w-auto">
-                      <p className="font-bold text-red-600 dark:text-red-400 mb-1 text-sm sm:text-base">{sample.id}</p>
-                      <p className="text-xs sm:text-sm text-foreground truncate">{sample.origin}</p>
-                      {sample.client && <p className="text-xs text-muted-foreground truncate">{sample.client}</p>}
-                      <p className="text-xs text-muted-foreground mt-1 truncate">{sample.quality}</p>
+                  <div key={sample.sampleId} className="flex items-center">
+                    <div
+                      className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                    >
+                      <p className="font-bold text-red-600 dark:text-red-400 mb-1">{sample.trackingNumber}</p>
+                      {sample.client && <p className="text-sm text-foreground truncate">{sample.client}</p>}
+                      <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
                     </div>
                     {index < samplesByStatus.rejected.length - 1 && (
-                      <div className="hidden sm:block h-16 w-px bg-border mx-2" />
+                      <div className="h-16 w-px bg-border mx-2" />
                     )}
                   </div>
                 ))}
