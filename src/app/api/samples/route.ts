@@ -35,6 +35,7 @@ export async function GET(request: NextRequest) {
 
     // Build query with filters and join with related tables
     // Note: Use explicit relationship names due to multiple FKs to exporters table
+    // Filter out soft-deleted samples (deleted_at is set on soft delete)
     let query = (supabase as any)
       .from('samples')
       .select(`
@@ -44,6 +45,7 @@ export async function GET(request: NextRequest) {
         importer:importers(id, name, country),
         roaster:roasters(id, name, country)
       `)
+      .is('deleted_at', null)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
@@ -63,10 +65,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch samples' }, { status: 500 })
     }
 
-    // Get total count for pagination
+    // Get total count for pagination (exclude soft-deleted samples)
     let countQuery = (supabase as any)
       .from('samples')
       .select('*', { count: 'exact', head: true })
+      .is('deleted_at', null)
 
     if (status) countQuery = countQuery.eq('status', status as Database['public']['Enums']['sample_status'])
     if (client_id) countQuery = countQuery.eq('client_id', client_id)

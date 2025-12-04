@@ -59,17 +59,26 @@ export function BasicInfoStep({
     ), [clients]
   )
 
-  // Get supported origins for selected laboratory
+  // Get supported origins for selected laboratory (or single available lab)
   const supportedOrigins = useMemo(() => {
-    if (!formData.laboratory_id) return ORIGINS
+    // Determine which lab to use: selected lab or single available lab
+    let labToUse = null
 
-    const selectedLab = laboratories.find(lab => lab.id === formData.laboratory_id)
-    if (!selectedLab || !selectedLab.supported_origins || selectedLab.supported_origins.length === 0) {
-      return ORIGINS
+    if (formData.laboratory_id) {
+      labToUse = laboratories.find(lab => lab.id === formData.laboratory_id)
+    } else if (laboratories.length === 1) {
+      // If only one lab available, use it even if not yet selected in form
+      labToUse = laboratories[0]
+    }
+
+    if (!labToUse || !labToUse.supported_origins || labToUse.supported_origins.length === 0) {
+      // No lab selected and multiple labs available - return empty to force lab selection first
+      // Or lab has no supported_origins configured - return all as fallback
+      return laboratories.length > 1 ? [] : ORIGINS
     }
 
     // Filter ORIGINS to only show supported ones
-    const labOrigins = selectedLab.supported_origins || []
+    const labOrigins = labToUse.supported_origins || []
     return ORIGINS.filter(origin => labOrigins.includes(origin))
   }, [formData.laboratory_id, laboratories])
 
@@ -258,10 +267,10 @@ export function BasicInfoStep({
             <Select
               value={formData.origin}
               onValueChange={(value) => updateFormData('origin', value)}
-              disabled={supportedOrigins.length === 1}
+              disabled={supportedOrigins.length <= 1}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select origin" />
+                <SelectValue placeholder={supportedOrigins.length === 0 ? "Select laboratory first" : "Select origin"} />
               </SelectTrigger>
               <SelectContent>
                 {supportedOrigins.map((origin) => (
@@ -271,6 +280,11 @@ export function BasicInfoStep({
                 ))}
               </SelectContent>
             </Select>
+            {supportedOrigins.length === 0 && laboratories.length > 1 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Select a laboratory below to see available origins
+              </p>
+            )}
             {supportedOrigins.length === 1 && (
               <p className="text-xs text-muted-foreground">
                 This laboratory only handles {supportedOrigins[0]} origins
