@@ -1,7 +1,7 @@
 /**
  * Certificate cupping and defects combined section
- * Layout: Cupping (1/3) | Defects (2/3) - Primary and Secondary columns
- * Shows defect weight calculations inline: name | count x weight = weighted
+ * Layout: Two separate bordered boxes - Cupping (left) | Defects (right)
+ * Defects displayed as compact columns: Name (wt), Count, FD
  */
 
 import React from 'react'
@@ -11,32 +11,32 @@ import { CertificateCupping } from './certificate-cupping'
 import type { CuppingData, GreenBeanAnalysis } from '@/lib/certificate-data'
 
 const sectionStyles = StyleSheet.create({
-  container: {
+  // Two-box layout container
+  twoBoxLayout: {
+    flexDirection: 'row',
+    gap: 8,
     marginBottom: 8,
-    padding: 10,
+  },
+  // Individual boxes with their own borders
+  // Cupping box is smaller (1/3), defects gets more space (2/3)
+  cuppingBox: {
+    width: '32%',
     borderWidth: 0.5,
     borderColor: COLORS.border,
     borderRadius: 4,
+    padding: 8,
   },
-  row: {
-    flexDirection: 'row',
-    gap: 16,
-  },
-  // Cupping column - 1/3
-  cuppingColumn: {
-    width: 180,
-    paddingRight: 12,
-    borderRightWidth: 0.5,
-    borderRightColor: COLORS.borderLight,
-  },
-  // Defects column - 2/3
-  defectsColumn: {
+  defectsBox: {
     flex: 1,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
+    borderRadius: 4,
+    padding: 10,
   },
-  // Defects summary header
+  // Defects summary header - centered
   defectsSummary: {
     flexDirection: 'row',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
     gap: 8,
     marginBottom: 8,
     paddingBottom: 6,
@@ -58,7 +58,7 @@ const sectionStyles = StyleSheet.create({
   },
   defectsRow: {
     flexDirection: 'row',
-    gap: 16,
+    gap: 20,
   },
   defectTypeColumn: {
     flex: 1,
@@ -70,38 +70,59 @@ const sectionStyles = StyleSheet.create({
     textTransform: 'uppercase',
     marginBottom: 4,
   },
-  defectItem: {
+  // Column header row
+  defectHeaderRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'baseline',
+    marginBottom: 2,
+    paddingBottom: 2,
+    borderBottomWidth: 0.25,
+    borderBottomColor: COLORS.borderLight,
+  },
+  defectNameHeader: {
+    flex: 1,
+    fontSize: 7,
+    color: COLORS.muted,
+  },
+  defectCountHeader: {
+    width: 20,
+    fontSize: 7,
+    color: COLORS.muted,
+    textAlign: 'right',
+  },
+  defectFDHeader: {
+    width: 24,
+    fontSize: 7,
+    color: COLORS.muted,
+    textAlign: 'right',
+  },
+  // Defect data rows - aligned columns, no wrapping
+  defectRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingVertical: 1,
   },
   defectName: {
+    flex: 1,
     fontSize: 8,
     color: COLORS.dark,
-    flex: 1,
-  },
-  defectCalc: {
     flexDirection: 'row',
-    alignItems: 'baseline',
-    gap: 2,
   },
-  defectRawCount: {
+  defectWeight: {
+    fontSize: 7,
+    color: COLORS.muted,
+  },
+  defectCount: {
+    width: 20,
     fontSize: 8,
     color: COLORS.dark,
     textAlign: 'right',
-    minWidth: 16,
   },
-  defectWeight: {
-    fontSize: 6,
-    color: COLORS.muted,
-  },
-  defectWeighted: {
+  defectFD: {
+    width: 24,
     fontSize: 8,
     fontWeight: 600,
     color: COLORS.dark,
     textAlign: 'right',
-    minWidth: 20,
   },
   defectTotal: {
     flexDirection: 'row',
@@ -167,18 +188,23 @@ function DefectsList({ defects }: DefectsListProps) {
         {/* Primary Defects Column */}
         <View style={sectionStyles.defectTypeColumn}>
           <Text style={sectionStyles.defectTypeTitle}>Primary</Text>
+          {/* Column headers */}
+          <View style={sectionStyles.defectHeaderRow}>
+            <Text style={sectionStyles.defectNameHeader}>Name</Text>
+            <Text style={sectionStyles.defectCountHeader}>Cnt</Text>
+            <Text style={sectionStyles.defectFDHeader}>FD</Text>
+          </View>
           {primaryDefects.length === 0 ? (
             <Text style={sectionStyles.emptyText}>None</Text>
           ) : (
             <>
               {primaryDefects.map((defect, index) => (
-                <View key={index} style={sectionStyles.defectItem}>
-                  <Text style={sectionStyles.defectName}>{defect.name}</Text>
-                  <View style={sectionStyles.defectCalc}>
-                    <Text style={sectionStyles.defectRawCount}>{defect.rawCount}</Text>
-                    <Text style={sectionStyles.defectWeight}>x{defect.weight}</Text>
-                    <Text style={sectionStyles.defectWeighted}>{formatNum(defect.weightedCount)}</Text>
-                  </View>
+                <View key={index} style={sectionStyles.defectRow}>
+                  <Text style={sectionStyles.defectName}>
+                    {defect.name} <Text style={sectionStyles.defectWeight}>({defect.weight})</Text>
+                  </Text>
+                  <Text style={sectionStyles.defectCount}>{defect.rawCount}</Text>
+                  <Text style={sectionStyles.defectFD}>{formatNum(defect.weightedCount)}</Text>
                 </View>
               ))}
             </>
@@ -192,18 +218,23 @@ function DefectsList({ defects }: DefectsListProps) {
         {/* Secondary Defects Column */}
         <View style={sectionStyles.defectTypeColumn}>
           <Text style={sectionStyles.defectTypeTitle}>Secondary</Text>
+          {/* Column headers */}
+          <View style={sectionStyles.defectHeaderRow}>
+            <Text style={sectionStyles.defectNameHeader}>Name</Text>
+            <Text style={sectionStyles.defectCountHeader}>Cnt</Text>
+            <Text style={sectionStyles.defectFDHeader}>FD</Text>
+          </View>
           {secondaryDefects.length === 0 ? (
             <Text style={sectionStyles.emptyText}>None</Text>
           ) : (
             <>
               {secondaryDefects.map((defect, index) => (
-                <View key={index} style={sectionStyles.defectItem}>
-                  <Text style={sectionStyles.defectName}>{defect.name}</Text>
-                  <View style={sectionStyles.defectCalc}>
-                    <Text style={sectionStyles.defectRawCount}>{defect.rawCount}</Text>
-                    <Text style={sectionStyles.defectWeight}>x{defect.weight}</Text>
-                    <Text style={sectionStyles.defectWeighted}>{formatNum(defect.weightedCount)}</Text>
-                  </View>
+                <View key={index} style={sectionStyles.defectRow}>
+                  <Text style={sectionStyles.defectName}>
+                    {defect.name} <Text style={sectionStyles.defectWeight}>({defect.weight})</Text>
+                  </Text>
+                  <Text style={sectionStyles.defectCount}>{defect.rawCount}</Text>
+                  <Text style={sectionStyles.defectFD}>{formatNum(defect.weightedCount)}</Text>
                 </View>
               ))}
             </>
@@ -236,19 +267,19 @@ export function CertificateCuppingDefects({
     return null
   }
 
-  // If only defects (no cupping), show defects full width
+  // If only defects (no cupping), show defects full width in its own box
   if (!hasCupping && hasDefects) {
     return (
-      <View style={sectionStyles.container}>
+      <View style={sectionStyles.defectsBox}>
         <DefectsList defects={defects} />
       </View>
     )
   }
 
-  // If only cupping (no defects), show cupping full width
+  // If only cupping (no defects), show cupping full width in its own box
   if (hasCupping && !hasDefects) {
     return (
-      <View style={sectionStyles.container}>
+      <View style={sectionStyles.cuppingBox}>
         <CertificateCupping
           cuppingData={cuppingData}
           hasQualityTemplate={hasQualityTemplate}
@@ -257,22 +288,20 @@ export function CertificateCuppingDefects({
     )
   }
 
-  // Both cupping and defects - show side by side
+  // Both cupping and defects - show in separate bordered boxes side by side
   return (
-    <View style={sectionStyles.container}>
-      <View style={sectionStyles.row}>
-        {/* Cupping */}
-        <View style={sectionStyles.cuppingColumn}>
-          <CertificateCupping
-            cuppingData={cuppingData}
-            hasQualityTemplate={hasQualityTemplate}
-          />
-        </View>
+    <View style={sectionStyles.twoBoxLayout}>
+      {/* Left Box: Cupping - with its own border */}
+      <View style={sectionStyles.cuppingBox}>
+        <CertificateCupping
+          cuppingData={cuppingData}
+          hasQualityTemplate={hasQualityTemplate}
+        />
+      </View>
 
-        {/* Defects */}
-        <View style={sectionStyles.defectsColumn}>
-          <DefectsList defects={defects} />
-        </View>
+      {/* Right Box: Defects - with its own border */}
+      <View style={sectionStyles.defectsBox}>
+        <DefectsList defects={defects} />
       </View>
     </View>
   )

@@ -36,6 +36,7 @@ import {
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
+import { trackingNumberToSlug } from '@/lib/utils'
 
 interface Sample {
   id: string
@@ -964,7 +965,7 @@ export default function SamplesPage() {
                         </td>
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-2">
-                            <Link href={`/samples/${sample.id}`}>
+                            <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
                               <Button variant="outline" size="sm">
                                 <Eye className="h-3 w-3 mr-1" />
                                 View

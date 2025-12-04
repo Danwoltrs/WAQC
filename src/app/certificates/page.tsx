@@ -37,6 +37,7 @@ import {
   XCircle,
 } from 'lucide-react'
 import Link from 'next/link'
+import { trackingNumberToSlug } from '@/lib/utils'
 
 interface Certificate {
   id: string
@@ -684,7 +685,7 @@ export default function CertificatesPage() {
                         <td className="py-3 px-2">
                           {cert.sample ? (
                             <Link
-                              href={`/samples/${cert.sample.id}`}
+                              href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
                               className="text-primary hover:underline"
                             >
                               {parseTrackingNumber(cert.sample.tracking_number)}

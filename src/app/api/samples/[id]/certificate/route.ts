@@ -4,6 +4,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
+import { resolveSampleId } from '@/lib/sample-utils'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -11,6 +12,7 @@ import path from 'path'
 /**
  * GET /api/samples/[id]/certificate
  * Generate and return a PDF quality certificate for a sample
+ * Supports both UUID and tracking number slug (e.g., SAK-048524_25)
  */
 export async function GET(
   request: NextRequest,
@@ -27,7 +29,13 @@ export async function GET(
     }
     console.log('[Certificate GET] Authenticated user:', user.id)
 
-    const { id } = await params
+    const { id: idOrSlug } = await params
+
+    // Resolve to UUID if tracking number slug was provided
+    const { id, error: resolveError } = await resolveSampleId(supabase, idOrSlug)
+    if (!id) {
+      return NextResponse.json({ error: resolveError || 'Sample not found' }, { status: 404 })
+    }
     console.log('[Certificate] Generating PDF for sample:', id)
 
     // Get certificate data
@@ -122,6 +130,7 @@ export async function GET(
 /**
  * POST /api/samples/[id]/certificate
  * Generate a certificate and save it to the database (creates certificate record if not exists)
+ * Supports both UUID and tracking number slug (e.g., SAK-048524_25)
  */
 export async function POST(
   request: NextRequest,
@@ -136,7 +145,13 @@ export async function POST(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
+    const { id: idOrSlug } = await params
+
+    // Resolve to UUID if tracking number slug was provided
+    const { id, error: resolveError } = await resolveSampleId(supabase, idOrSlug)
+    if (!id) {
+      return NextResponse.json({ error: resolveError || 'Sample not found' }, { status: 404 })
+    }
 
     // Check if sample exists with workflow stage and client info
     const { data: sample, error: sampleError } = await supabase

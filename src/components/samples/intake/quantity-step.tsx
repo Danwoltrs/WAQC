@@ -63,18 +63,27 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
     const bagWeight = parseFloat(formData.bag_weight_kg) || 0
 
     if (bagCount > 0 && bagWeight > 0) {
-      // Calculate total M/T
-      const totalMT = (bagCount * bagWeight) / 1000
-      updateFormData('bags_quantity_mt', totalMT.toFixed(3))
+      let totalMT: number
+      let equivalent: number
 
-      // Calculate equivalent 60kg bags
-      const equivalent = (bagCount * bagWeight) / 60
+      if (formData.bag_type === 'bulk') {
+        // For bulk: bag_count is equivalent 60kg bags (user input)
+        // So: totalMT = equivalent_bags * 60kg / 1000
+        totalMT = (bagCount * 60) / 1000
+        equivalent = bagCount // bag_count IS the equivalent 60kg bags
+      } else {
+        // For regular bags/big bags: normal calculation
+        totalMT = (bagCount * bagWeight) / 1000
+        equivalent = (bagCount * bagWeight) / 60
+      }
+
+      updateFormData('bags_quantity_mt', totalMT.toFixed(3))
       updateFormData('equivalent_60kg_bags', equivalent.toFixed(2))
     } else {
       updateFormData('bags_quantity_mt', '')
       updateFormData('equivalent_60kg_bags', '')
     }
-  }, [formData.bag_count, formData.bag_weight_kg])
+  }, [formData.bag_count, formData.bag_weight_kg, formData.bag_type])
 
   const availableWeights = formData.bag_type ? BAG_WEIGHTS[formData.bag_type as keyof typeof BAG_WEIGHTS] : []
 

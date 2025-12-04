@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
+import { isUUID, slugToTrackingNumber } from '@/lib/utils'
+import { resolveSampleId } from '@/lib/sample-utils'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
 /**
  * GET /api/samples/[id]
- * Get a single sample by ID
+ * Get a single sample by ID (UUID) or tracking number slug
+ * Supports: UUID like 89ed925b-65d2-4a1c-8dd3-db18447b4e4b
+ * Or tracking number slug like SAK-048524_25 (converted from SAK-048524/25)
  */
 export async function GET(
   request: NextRequest,
@@ -24,7 +28,11 @@ export async function GET(
     // Await params (Next.js 15)
     const { id } = await params
 
-    const { data: sample, error } = await supabase
+    // Determine if id is a UUID or tracking number slug
+    const lookupByUUID = isUUID(id)
+    const trackingNumber = lookupByUUID ? null : slugToTrackingNumber(id)
+
+    let query = supabase
       .from('samples')
       .select(`
         *,
@@ -33,8 +41,15 @@ export async function GET(
         importer:importers(id, name, country),
         roaster:roasters(id, name, country)
       `)
-      .eq('id', id)
-      .single()
+
+    // Query by UUID or tracking number
+    if (lookupByUUID) {
+      query = query.eq('id', id)
+    } else {
+      query = query.eq('tracking_number', trackingNumber!)
+    }
+
+    const { data: sample, error } = await query.single()
 
     if (error) {
       if (error.code === 'PGRST116') {
@@ -71,7 +86,7 @@ export async function GET(
 
 /**
  * PATCH /api/samples/[id]
- * Update a sample
+ * Update a sample (supports UUID or tracking number slug)
  */
 export async function PATCH(
   request: NextRequest,
@@ -87,7 +102,13 @@ export async function PATCH(
     }
 
     // Await params (Next.js 15)
-    const { id } = await params
+    const { id: idOrSlug } = await params
+
+    // Resolve to UUID
+    const { id, error: resolveError } = await resolveSampleId(supabase, idOrSlug)
+    if (!id) {
+      return NextResponse.json({ error: resolveError || 'Sample not found' }, { status: 404 })
+    }
 
     const body = await request.json()
 
@@ -175,7 +196,7 @@ export async function PATCH(
 
 /**
  * DELETE /api/samples/[id]
- * Soft delete a sample (global admins only)
+ * Soft delete a sample (global admins only, supports UUID or tracking number slug)
  */
 export async function DELETE(
   request: NextRequest,
@@ -204,7 +225,13 @@ export async function DELETE(
     }
 
     // Await params (Next.js 15)
-    const { id } = await params
+    const { id: idOrSlug } = await params
+
+    // Resolve to UUID
+    const { id, error: resolveError } = await resolveSampleId(supabase, idOrSlug)
+    if (!id) {
+      return NextResponse.json({ error: resolveError || 'Sample not found' }, { status: 404 })
+    }
 
     // Check if sample exists and is not already deleted
     const { data: existingSample, error: fetchError } = await supabase

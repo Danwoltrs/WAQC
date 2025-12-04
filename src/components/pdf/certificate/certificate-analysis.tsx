@@ -30,25 +30,26 @@ const analysisStyles = StyleSheet.create({
   // Screen sizes - compact list
   screenSizeItem: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-start',
     alignItems: 'center',
     paddingVertical: 1,
   },
   screenLabel: {
     fontSize: 9,
     color: COLORS.dark,
+    width: 50,
   },
   screenValue: {
     fontSize: 9,
     fontWeight: 600,
     color: COLORS.dark,
-    marginLeft: 8,
   },
-  // Properties section - horizontal layout
-  propertiesRow: {
-    flexDirection: 'row',
-    gap: 24,
+  // Properties section - vertical stack on right, aligned right
+  propertiesColumn: {
+    flexDirection: 'column',
+    gap: 4,
     marginBottom: 8,
+    alignItems: 'flex-end',
   },
   propertyItem: {
     flexDirection: 'row',
@@ -210,10 +211,10 @@ export function CertificateAnalysis({ greenBean, greenAspect, roastAnalysis }: C
           <ScreenSizesList screenSizes={greenBean?.screen_sizes || null} />
         </View>
 
-        {/* Right column: Properties + Roast Analysis */}
+        {/* Right column: Properties stacked vertically + Roast Analysis */}
         <View style={analysisStyles.rightColumn}>
-          {/* Properties in a row */}
-          <View style={analysisStyles.propertiesRow}>
+          {/* Properties stacked vertically */}
+          <View style={analysisStyles.propertiesColumn}>
             <View style={analysisStyles.propertyItem}>
               <Text style={analysisStyles.propertyLabel}>Moisture:</Text>
               <Text style={analysisStyles.propertyValue}>

@@ -67,8 +67,10 @@ export function QualityCertificate({
           roaster={supplyChain.roaster}
           sampleType={sample.sample_type}
           bags={sample.bags}
+          bagType={sample.bag_type}
           bagWeight={sample.bag_weight_kg}
           bagsQuantityMt={sample.bags_quantity_mt}
+          equivalent60kgBags={sample.equivalent_60kg_bags}
           processingMethod={sample.processing_method}
           icoNumber={sample.ico_number}
           shipmentMonth={sample.shipment_month}

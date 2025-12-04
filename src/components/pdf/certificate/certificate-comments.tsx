@@ -9,7 +9,8 @@ import { COLORS } from './certificate-styles'
 
 const commentsStyles = StyleSheet.create({
   container: {
-    marginBottom: 8,
+    marginTop: 'auto',
+    marginBottom: 40,
     padding: 10,
     borderWidth: 0.5,
     borderColor: COLORS.border,
@@ -46,20 +47,20 @@ export function CertificateComments({
   // Combine notes if both exist
   const hasNotes = cuppingNotes || additionalNotes
 
-  if (!hasNotes) {
-    return null
-  }
-
   // Build combined text
-  const notesText = [
-    cuppingNotes,
-    additionalNotes,
-  ].filter(Boolean).join('\n\n')
+  const notesText = hasNotes
+    ? [cuppingNotes, additionalNotes].filter(Boolean).join('\n\n')
+    : null
 
+  // ALWAYS render the box, even when empty
   return (
     <View style={commentsStyles.container}>
-      <Text style={commentsStyles.title}>Notes</Text>
-      <Text style={commentsStyles.commentsText}>{notesText}</Text>
+      <Text style={commentsStyles.title}>Comments</Text>
+      {notesText ? (
+        <Text style={commentsStyles.commentsText}>{notesText}</Text>
+      ) : (
+        <Text style={commentsStyles.emptyText}>No comments</Text>
+      )}
     </View>
   )
 }

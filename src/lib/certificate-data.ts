@@ -67,8 +67,10 @@ export interface CertificateData {
     sample_type: string | null
     processing_method: string | null
     bags: number | null
+    bag_type: string | null
     bag_weight_kg: number | null
     bags_quantity_mt: number | null
+    equivalent_60kg_bags: number | null
     shipment_month: string | null
     ico_number: string | null
     container_nr: string | null
@@ -133,8 +135,10 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       sample_type,
       processing_method,
       bags,
+      bag_type,
       bag_weight_kg,
       bags_quantity_mt,
+      equivalent_60kg_bags,
       shipment_month,
       ico_number,
       container_nr,
@@ -259,6 +263,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   // Fetch quality spec and template
   let qualitySpec = null
   let isSpecialty = false
+  let cuppingAttributeValidations: Record<string, { min?: number; max?: number }> | undefined
   if (sample.quality_spec_id) {
     const { data: spec } = await supabase
       .from('client_qualities')
@@ -273,13 +278,50 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       .single()
 
     if (spec) {
-      const templateParams = (spec.template as { name?: string; parameters?: unknown })?.parameters
-      const hasValidation = Boolean(templateParams)
+      // Template parameters structure from DB:
+      // cupping_attributes is an ARRAY of attribute configs
+      // Each attribute may have a validation_rule with min_value/max_value
+      interface CuppingAttributeConfig {
+        attribute: string
+        validation_rule?: {
+          type?: string
+          min_value?: number
+          max_value?: number
+        }
+      }
+      const templateParams = (spec.template as { name?: string; parameters?: unknown })?.parameters as {
+        cupping_attributes?: CuppingAttributeConfig[]
+      } | undefined
+
+      // Convert array-based cupping_attributes with validation_rule to our Record format
+      if (templateParams?.cupping_attributes && Array.isArray(templateParams.cupping_attributes)) {
+        cuppingAttributeValidations = {}
+        let hasAnyValidation = false
+        for (const attr of templateParams.cupping_attributes) {
+          if (attr.validation_rule) {
+            const min = attr.validation_rule.min_value
+            const max = attr.validation_rule.max_value
+            if (min !== undefined || max !== undefined) {
+              cuppingAttributeValidations[attr.attribute] = { min, max }
+              hasAnyValidation = true
+            }
+          }
+        }
+        // If no attributes have validation rules, clear the object
+        if (!hasAnyValidation) {
+          cuppingAttributeValidations = undefined
+        }
+      }
+
+      // Only set has_validation to true if there are actual cupping attribute validations
+      const hasCuppingValidation = cuppingAttributeValidations &&
+        Object.keys(cuppingAttributeValidations).length > 0
+
       qualitySpec = {
         name: spec.custom_name,
         template_name: (spec.template as { name?: string })?.name || null,
         is_specialty: isSpecialtyTemplate((spec.template as { name?: string })?.name),
-        has_validation: hasValidation,
+        has_validation: Boolean(hasCuppingValidation),
       }
       isSpecialty = qualitySpec.is_specialty
     }
@@ -321,7 +363,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   // Process cupping scores
   let cuppingData: CuppingData | null = null
   if (cuppingScores && cuppingScores.length > 0) {
-    cuppingData = processCuppingScores(cuppingScores, isSpecialty)
+    cuppingData = processCuppingScores(cuppingScores, isSpecialty, cuppingAttributeValidations)
   }
 
   // Calculate valid_until (6 months from issue date)
@@ -343,8 +385,10 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       sample_type: sample.sample_type,
       processing_method: sample.processing_method,
       bags: sample.bags,
+      bag_type: sample.bag_type,
       bag_weight_kg: sample.bag_weight_kg,
       bags_quantity_mt: sample.bags_quantity_mt,
+      equivalent_60kg_bags: sample.equivalent_60kg_bags,
       shipment_month: sample.shipment_month,
       ico_number: sample.ico_number,
       container_nr: sample.container_nr,
@@ -403,9 +447,10 @@ function isSpecialtyTemplate(templateName: string | null | undefined): boolean {
 }
 
 // Primary defects (SCA classification)
+// Note: Severe Broca is SECONDARY (weight 0.2), not primary
 const PRIMARY_DEFECTS = [
   'Full Black', 'Full Sour', 'Pod/Cherry', 'Large Husk',
-  'Stone/Stick', 'Foreign Material', 'Severe Broca',
+  'Stone/Stick', 'Foreign Material',
   'Dried Cherry', 'Fungus Damage', 'Severe Insect Damage', 'Foreign Matter'
 ]
 
@@ -573,12 +618,16 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
   }
 }
 
+// Type for cupping attribute validation ranges from quality template
+type CuppingAttributeValidations = Record<string, { min?: number; max?: number }>
+
 /**
  * Process cupping scores from multiple cuppers into averaged data
  */
 function processCuppingScores(
   cuppingScores: Array<{ scores: unknown; notes: string | null }>,
-  isSpecialty: boolean
+  isSpecialty: boolean,
+  attributeValidations?: CuppingAttributeValidations
 ): CuppingData {
   // Collect all scores by attribute
   const attributeScores: Record<string, number[]> = {}
@@ -646,11 +695,28 @@ function processCuppingScores(
     const scores = attributeScores[attr]
     const avg = scores.reduce((a, b) => a + b, 0) / scores.length
 
+    // Look up validation for this attribute (case-insensitive match)
+    let allowedMin: number | null = null
+    let allowedMax: number | null = null
+
+    if (attributeValidations) {
+      // Try exact match first, then case-insensitive match
+      const validation = attributeValidations[attr] ||
+        Object.entries(attributeValidations).find(
+          ([key]) => key.toLowerCase() === attr.toLowerCase()
+        )?.[1]
+
+      if (validation) {
+        allowedMin = validation.min ?? null
+        allowedMax = validation.max ?? null
+      }
+    }
+
     attributes.push({
       name: attr,
       score: Math.round(avg * 100) / 100,
-      allowedMin: 6.0, // Default SCA range
-      allowedMax: 10.0,
+      allowedMin,
+      allowedMax,
     })
 
     totalScore += avg

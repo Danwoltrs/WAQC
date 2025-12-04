@@ -81,8 +81,10 @@ interface CertificateSampleInfoProps {
   // Sample info
   sampleType: string | null
   bags: number | null
+  bagType: string | null
   bagWeight: number | null
   bagsQuantityMt: number | null
+  equivalent60kgBags: number | null
   processingMethod: string | null
   icoNumber: string | null
   shipmentMonth: string | null
@@ -98,8 +100,10 @@ export function CertificateSampleInfo({
   roaster,
   sampleType,
   bags,
+  bagType,
   bagWeight,
   bagsQuantityMt,
+  equivalent60kgBags,
   processingMethod,
   icoNumber,
   shipmentMonth,
@@ -119,21 +123,53 @@ export function CertificateSampleInfo({
     return typeMap[type.toLowerCase()] || type.toUpperCase()
   }
 
-  // Format bags display - show M/T primarily if available
-  const formatBags = (): string => {
-    if (bagsQuantityMt) {
-      // Show M/T as primary with bag count as reference
-      const mtStr = `${bagsQuantityMt.toFixed(3)} M/T`
-      if (bags && bagWeight) {
-        return `${mtStr} (${bags} x ${bagWeight}kg)`
+  // Format number with thousand separators, no .00 if whole number
+  const formatNumber = (n: number, decimals: number = 2): string => {
+    // Check if number is whole (no meaningful decimals)
+    const isWhole = Math.abs(n - Math.round(n)) < 0.001
+    if (isWhole) {
+      return Math.round(n).toLocaleString('en-US')
+    }
+    return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
+  }
+
+  // Format quantity display: "XX.XX MT (eq. XXXX x 60kg) in bulk/bags"
+  const formatQuantity = (): string => {
+    if (!bagsQuantityMt && !bags) return '-'
+
+    // Helper to get bag type label
+    const getBagTypeLabel = (type: string | null): string => {
+      switch (type) {
+        case 'bulk': return 'bulk'
+        case 'big_bag': return 'big bags'
+        case 'jute_bag': return 'jute bags'
+        case 'pp_bag': return 'PP bags'
+        default: return 'bags'
       }
-      return mtStr
     }
-    if (!bags) return '-'
-    if (bagWeight) {
-      return `${bags} x ${bagWeight}kg`
+
+    if (bagsQuantityMt) {
+      // Show M/T + equivalent 60kg bags + bag type
+      const mtStr = `${formatNumber(bagsQuantityMt)} MT`
+      const parts: string[] = [mtStr]
+
+      // Add equivalent 60kg bags if available
+      if (equivalent60kgBags) {
+        parts.push(`(eq. ${formatNumber(Math.round(equivalent60kgBags), 0)} x 60kg)`)
+      }
+
+      // Add bag type indicator
+      parts.push(`in ${getBagTypeLabel(bagType)}`)
+
+      return parts.join(' ')
     }
-    return `${bags}`
+
+    // Fallback to just bags if no M/T
+    const displayWeight = bagWeight || 60
+    if (bags && displayWeight) {
+      return `${bags} x ${displayWeight}kg ${getBagTypeLabel(bagType)}`
+    }
+    return `${bags} ${getBagTypeLabel(bagType)}`
   }
 
   // Format shipment month (YYYY-MM to Month YYYY)
@@ -194,8 +230,8 @@ export function CertificateSampleInfo({
         </View>
 
         <View style={infoStyles.item}>
-          <Text style={infoStyles.label}>Bags:</Text>
-          <Text style={infoStyles.value}>{formatBags()}</Text>
+          <Text style={infoStyles.label}>Quantity:</Text>
+          <Text style={infoStyles.value}>{formatQuantity()}</Text>
         </View>
 
         <View style={infoStyles.item}>
