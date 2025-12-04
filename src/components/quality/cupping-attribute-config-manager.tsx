@@ -20,6 +20,12 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Plus, X, Settings2, CheckCircle2, Copy, GripVertical } from 'lucide-react'
 import {
@@ -33,6 +39,7 @@ import {
   DragStartEvent,
   DragOverlay,
 } from '@dnd-kit/core'
+import { snapCenterToCursor } from '@dnd-kit/modifiers'
 import {
   arrayMove,
   SortableContext,
@@ -66,20 +73,24 @@ interface SortableAttributeCardProps {
   attr: AttributeWithScale
   index: number
   editingIndex: number | null
+  allAttributes: AttributeWithScale[]
   onRemove: () => void
   onUpdate: (updates: Partial<AttributeWithScale>) => void
   onToggleEdit: () => void
   onDuplicate: () => void
+  onCopyFrom: (sourceIndex: number) => void
 }
 
 function SortableAttributeCard({
   attr,
   index,
   editingIndex,
+  allAttributes,
   onRemove,
   onUpdate,
   onToggleEdit,
   onDuplicate,
+  onCopyFrom,
 }: SortableAttributeCardProps) {
   const {
     attributes,
@@ -260,17 +271,45 @@ function SortableAttributeCard({
             className="flex-1 h-8 text-xs"
           >
             <Settings2 className="h-3 w-3 mr-1" />
-            {editingIndex === index ? 'Hide' : 'Edit'} Scale
+            Edit Scale
           </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={onDuplicate}
-            className="h-8"
-          >
-            <Copy className="h-3 w-3" />
-          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8"
+                title="Copy settings from another attribute"
+              >
+                <Copy className="h-3 w-3" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={onDuplicate}>
+                <Copy className="h-3 w-3 mr-2" />
+                Duplicate Attribute
+              </DropdownMenuItem>
+              {allAttributes.filter((_, i) => i !== index).length > 0 && (
+                <>
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground border-t mt-1 pt-1">
+                    Copy scale from:
+                  </div>
+                  {allAttributes.map((otherAttr, otherIndex) => {
+                    if (otherIndex === index) return null
+                    return (
+                      <DropdownMenuItem
+                        key={otherAttr.id || otherIndex}
+                        onClick={() => onCopyFrom(otherIndex)}
+                      >
+                        {otherAttr.attribute}
+                      </DropdownMenuItem>
+                    )
+                  })}
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </CardContent>
     </Card>
@@ -391,6 +430,16 @@ export function CuppingAttributeConfigManager({
     setAttributes([...attributes, newAttr])
   }
 
+  const handleCopyFrom = (targetIndex: number, sourceIndex: number) => {
+    const sourceAttr = attributes[sourceIndex]
+    handleUpdateAttribute(targetIndex, {
+      scale: JSON.parse(JSON.stringify(sourceAttr.scale)),
+      validation_rule: sourceAttr.validation_rule
+        ? JSON.parse(JSON.stringify(sourceAttr.validation_rule))
+        : undefined
+    })
+  }
+
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -476,6 +525,7 @@ export function CuppingAttributeConfigManager({
                       onDragStart={handleDragStart}
                       onDragEnd={handleDragEnd}
                       onDragCancel={handleDragCancel}
+                      modifiers={[snapCenterToCursor]}
                     >
                       <SortableContext
                         items={attributes.map(attr => attr.id || '')}
@@ -488,10 +538,12 @@ export function CuppingAttributeConfigManager({
                               attr={attr}
                               index={index}
                               editingIndex={editingIndex}
+                              allAttributes={attributes}
                               onRemove={() => handleRemoveAttribute(index)}
                               onUpdate={(updates) => handleUpdateAttribute(index, updates)}
                               onToggleEdit={() => setEditingIndex(editingIndex === index ? null : index)}
                               onDuplicate={() => handleDuplicateAttribute(index)}
+                              onCopyFrom={(sourceIndex) => handleCopyFrom(index, sourceIndex)}
                             />
                           ))}
                         </div>
@@ -535,23 +587,6 @@ export function CuppingAttributeConfigManager({
               </CardContent>
             </Card>
 
-            {/* Scale Editor (shown when editing) */}
-            {editingIndex !== null && (
-              <Card className="border-2 border-primary">
-                <CardHeader>
-                  <CardTitle className="text-sm">
-                    Editing Scale: {attributes[editingIndex].attribute}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <ScaleBuilder
-                    value={attributes[editingIndex].scale}
-                    onChange={(scale) => handleUpdateAttributeScale(editingIndex, scale)}
-                    showTemplateSelector={true}
-                  />
-                </CardContent>
-              </Card>
-            )}
 
             {/* Summary */}
             <Card>
@@ -601,6 +636,38 @@ export function CuppingAttributeConfigManager({
               </Button>
             </DialogFooter>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Scale Editor Dialog - Centered Popup */}
+      <Dialog
+        open={editingIndex !== null}
+        onOpenChange={(open) => !open && setEditingIndex(null)}
+      >
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Settings2 className="h-5 w-5" />
+              Edit Scale: {editingIndex !== null ? attributes[editingIndex]?.attribute : ''}
+            </DialogTitle>
+            <DialogDescription>
+              Configure the scoring scale for this cupping attribute
+            </DialogDescription>
+          </DialogHeader>
+          {editingIndex !== null && attributes[editingIndex] && (
+            <div className="py-4">
+              <ScaleBuilder
+                value={attributes[editingIndex].scale}
+                onChange={(scale) => handleUpdateAttributeScale(editingIndex, scale)}
+                showTemplateSelector={true}
+              />
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingIndex(null)}>
+              Close
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

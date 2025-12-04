@@ -115,6 +115,7 @@ export interface CertificateData {
   qualitySpec: {
     name: string | null
     template_name: string | null
+    description: string | null
     is_specialty: boolean
     has_validation: boolean
   } | null
@@ -273,6 +274,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         custom_name,
         template:quality_templates(
           name,
+          description,
           parameters
         )
       `)
@@ -322,6 +324,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       qualitySpec = {
         name: spec.custom_name,
         template_name: (spec.template as { name?: string })?.name || null,
+        description: (spec.template as { description?: string })?.description || null,
         is_specialty: isSpecialtyTemplate((spec.template as { name?: string })?.name),
         has_validation: Boolean(hasCuppingValidation),
       }

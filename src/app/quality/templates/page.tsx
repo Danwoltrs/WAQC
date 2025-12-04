@@ -66,6 +66,7 @@ export default function QualityTemplatesPage() {
   const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
   const [viewingTemplate, setViewingTemplate] = useState<Template | null>(null)
   const [viewDialogOpen, setViewDialogOpen] = useState(false)
+  const [initialEditMode, setInitialEditMode] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null)
   const [clientsUsingTemplate, setClientsUsingTemplate] = useState<any[]>([])
@@ -151,11 +152,13 @@ export default function QualityTemplatesPage() {
 
   const handleEdit = (template: Template) => {
     setViewingTemplate(template)
+    setInitialEditMode(true)
     setViewDialogOpen(true)
   }
 
   const handleView = (template: Template) => {
     setViewingTemplate(template)
+    setInitialEditMode(false)
     setViewDialogOpen(true)
   }
 
@@ -750,6 +753,7 @@ export default function QualityTemplatesPage() {
           template={viewingTemplate}
           onSave={handleDialogSave}
           onTemplateUpdated={loadTemplates}
+          initialEditMode={initialEditMode}
         />
 
         {/* Version Comparison Dialog */}

@@ -29,12 +29,6 @@ const headerStyles = StyleSheet.create({
     height: 40,
     objectFit: 'contain',
   },
-  certificateNumber: {
-    fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.dark,
-    marginTop: 4,
-  },
   centerContent: {
     flex: 1,
     alignItems: 'center',
@@ -51,6 +45,12 @@ const headerStyles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 700,
     textTransform: 'uppercase',
+  },
+  certificateNumber: {
+    fontSize: 8,
+    fontWeight: 600,
+    color: COLORS.dark,
+    marginTop: 4,
   },
   rightContent: {
     width: 100,
@@ -70,6 +70,14 @@ const headerStyles = StyleSheet.create({
     color: COLORS.muted,
     marginBottom: 2,
   },
+  qualityDescription: {
+    textAlign: 'center',
+    fontSize: 9,
+    fontWeight: 500,
+    color: COLORS.dark,
+    marginTop: 8,
+    paddingHorizontal: 20,
+  },
   divider: {
     height: 0.5,
     backgroundColor: COLORS.border,
@@ -84,6 +92,7 @@ interface CertificateHeaderProps {
   status: string | null
   issuedDate: string | null
   validUntil: string | null
+  qualityDescription: string | null
 }
 
 export function CertificateHeader({
@@ -93,6 +102,7 @@ export function CertificateHeader({
   status,
   issuedDate,
   validUntil,
+  qualityDescription,
 }: CertificateHeaderProps) {
   const statusColor = getStatusColor(status)
   const statusText = getStatusText(status)
@@ -115,7 +125,7 @@ export function CertificateHeader({
   return (
     <View style={headerStyles.container}>
       <View style={headerStyles.topRow}>
-        {/* Wolthers logo + certificate # (left) */}
+        {/* Wolthers logo (left) */}
         <View style={headerStyles.leftContent}>
           <View style={headerStyles.logoContainer}>
             {wolthersLogoBase64 ? (
@@ -126,19 +136,19 @@ export function CertificateHeader({
               </Text>
             )}
           </View>
-          {certificateNumber && (
-            <Text style={headerStyles.certificateNumber}>
-              #{certificateNumber}
-            </Text>
-          )}
         </View>
 
-        {/* Center content - title and status */}
+        {/* Center content - title, status, and certificate number */}
         <View style={headerStyles.centerContent}>
           <Text style={headerStyles.title}>QUALITY CERTIFICATE</Text>
           <Text style={[headerStyles.statusText, { color: statusColor }]}>
             {statusText}
           </Text>
+          {certificateNumber && (
+            <Text style={headerStyles.certificateNumber}>
+              #{certificateNumber}
+            </Text>
+          )}
         </View>
 
         {/* Right content: Client logo + dates */}
@@ -159,6 +169,13 @@ export function CertificateHeader({
           </View>
         </View>
       </View>
+
+      {/* Quality Description - full width below header row */}
+      {qualityDescription && (
+        <Text style={headerStyles.qualityDescription}>
+          {qualityDescription}
+        </Text>
+      )}
 
       <View style={headerStyles.divider} />
     </View>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -52,6 +52,7 @@ interface TemplateViewDialogProps {
   template: Template | null
   onSave: (templateData: any) => Promise<void>
   onTemplateUpdated?: () => void
+  initialEditMode?: boolean
 }
 
 export function TemplateViewDialog({
@@ -60,9 +61,17 @@ export function TemplateViewDialog({
   template,
   onSave,
   onTemplateUpdated,
+  initialEditMode = false,
 }: TemplateViewDialogProps) {
-  const [isEditMode, setIsEditMode] = useState(false)
+  const [isEditMode, setIsEditMode] = useState(initialEditMode)
   const [activeTab, setActiveTab] = useState('view')
+
+  // Sync edit mode when dialog opens or initialEditMode changes
+  useEffect(() => {
+    if (open) {
+      setIsEditMode(initialEditMode)
+    }
+  }, [open, initialEditMode])
 
   if (!template) return null
 
