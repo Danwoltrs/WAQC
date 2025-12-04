@@ -1607,14 +1607,16 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                     {cuppingAttributes.map((attr, index) => (
                       <div key={index} className="text-xs truncate">
                         <span className="font-semibold">{attr.attribute}</span>
-                        {attr.abbreviation && (
-                          <span className="text-muted-foreground"> - {attr.abbreviation}</span>
-                        )}
                         <span className="text-muted-foreground">
                           {' '}- {attr.scale.type === 'numeric'
                             ? `${attr.scale.min}-${attr.scale.max}`
                             : `${attr.scale.options?.length || 0} options`}
                         </span>
+                        {attr.validation_rule && (
+                          <span className="text-muted-foreground">
+                            {' '}({formatValidationRule(attr.validation_rule, attr.scale)})
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

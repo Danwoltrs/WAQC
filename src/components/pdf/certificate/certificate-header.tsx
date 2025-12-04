@@ -70,14 +70,6 @@ const headerStyles = StyleSheet.create({
     color: COLORS.muted,
     marginBottom: 2,
   },
-  qualityDescription: {
-    textAlign: 'center',
-    fontSize: 9,
-    fontWeight: 500,
-    color: COLORS.dark,
-    marginTop: 8,
-    paddingHorizontal: 20,
-  },
   divider: {
     height: 0.5,
     backgroundColor: COLORS.border,
@@ -92,7 +84,6 @@ interface CertificateHeaderProps {
   status: string | null
   issuedDate: string | null
   validUntil: string | null
-  qualityDescription: string | null
 }
 
 export function CertificateHeader({
@@ -102,7 +93,6 @@ export function CertificateHeader({
   status,
   issuedDate,
   validUntil,
-  qualityDescription,
 }: CertificateHeaderProps) {
   const statusColor = getStatusColor(status)
   const statusText = getStatusText(status)
@@ -169,13 +159,6 @@ export function CertificateHeader({
           </View>
         </View>
       </View>
-
-      {/* Quality Description - full width below header row */}
-      {qualityDescription && (
-        <Text style={headerStyles.qualityDescription}>
-          {qualityDescription}
-        </Text>
-      )}
 
       <View style={headerStyles.divider} />
     </View>

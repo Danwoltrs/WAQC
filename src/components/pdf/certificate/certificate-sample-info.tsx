@@ -13,6 +13,20 @@ const infoStyles = StyleSheet.create({
   container: {
     marginBottom: 8,
   },
+  // Quality description row - above supply chain
+  qualityRow: {
+    marginBottom: 6,
+    paddingHorizontal: 8,
+  },
+  qualityLabel: {
+    fontSize: 8,
+    color: COLORS.muted,
+    marginBottom: 2,
+  },
+  qualityValue: {
+    fontSize: 9,
+    color: COLORS.dark,
+  },
   // Supply chain row (Exporter and Roaster)
   supplyChainRow: {
     flexDirection: 'row',
@@ -27,17 +41,20 @@ const infoStyles = StyleSheet.create({
     alignItems: 'baseline',
   },
   entityLabel: {
-    fontSize: 9,
+    fontSize: 8,
     color: COLORS.muted,
     marginRight: 4,
   },
   entityName: {
-    fontSize: 9,
-    fontWeight: 600,
+    fontSize: 8,
+    fontWeight: 400,
     color: COLORS.dark,
   },
+  entityNameBold: {
+    fontWeight: 600,
+  },
   entityContract: {
-    fontSize: 8,
+    fontSize: 7,
     color: COLORS.muted,
     marginLeft: 4,
   },
@@ -53,14 +70,17 @@ const infoStyles = StyleSheet.create({
     alignItems: 'baseline',
   },
   label: {
-    fontSize: 9,
+    fontSize: 8,
     color: COLORS.muted,
     marginRight: 4,
   },
   value: {
-    fontSize: 9,
-    fontWeight: 600,
+    fontSize: 8,
+    fontWeight: 400,
     color: COLORS.dark,
+  },
+  valueBold: {
+    fontWeight: 600,
   },
   originItem: {
     flexDirection: 'row',
@@ -93,6 +113,8 @@ interface CertificateSampleInfoProps {
   originDisplay: string
   microOrigin: string | null
   flagBase64?: string
+  // Quality description
+  qualityDescription: string | null
 }
 
 export function CertificateSampleInfo({
@@ -111,6 +133,7 @@ export function CertificateSampleInfo({
   originDisplay,
   microOrigin,
   flagBase64,
+  qualityDescription,
 }: CertificateSampleInfoProps) {
   // Format sample type display
   const formatSampleType = (type: string | null): string => {
@@ -198,13 +221,21 @@ export function CertificateSampleInfo({
 
   return (
     <View style={infoStyles.container}>
+      {/* Quality Description - above supply chain */}
+      {qualityDescription && (
+        <View style={infoStyles.qualityRow}>
+          <Text style={infoStyles.qualityLabel}>Quality:</Text>
+          <Text style={infoStyles.qualityValue}>{qualityDescription}</Text>
+        </View>
+      )}
+
       {/* Row 1: Supply Chain (Exporter and Roaster) */}
       {(hasExporter || hasRoaster) && (
         <View style={infoStyles.supplyChainRow}>
           {hasExporter && (
             <View style={infoStyles.entityGroup}>
               <Text style={infoStyles.entityLabel}>Exporter:</Text>
-              <Text style={infoStyles.entityName}>{exporter.name}</Text>
+              <Text style={[infoStyles.entityName, infoStyles.entityNameBold]}>{exporter.name}</Text>
               {exporter.contract && (
                 <Text style={infoStyles.entityContract}>({exporter.contract})</Text>
               )}
@@ -213,7 +244,7 @@ export function CertificateSampleInfo({
           {hasRoaster && (
             <View style={infoStyles.entityGroup}>
               <Text style={infoStyles.entityLabel}>Roaster:</Text>
-              <Text style={infoStyles.entityName}>{roaster.name}</Text>
+              <Text style={[infoStyles.entityName, infoStyles.entityNameBold]}>{roaster.name}</Text>
               {roaster.contract && (
                 <Text style={infoStyles.entityContract}>({roaster.contract})</Text>
               )}
@@ -226,7 +257,7 @@ export function CertificateSampleInfo({
       <View style={infoStyles.detailsRow}>
         <View style={infoStyles.item}>
           <Text style={infoStyles.label}>Type:</Text>
-          <Text style={infoStyles.value}>{formatSampleType(sampleType)}</Text>
+          <Text style={[infoStyles.value, infoStyles.valueBold]}>{formatSampleType(sampleType)}</Text>
         </View>
 
         <View style={infoStyles.item}>
@@ -255,7 +286,7 @@ export function CertificateSampleInfo({
 
         <View style={infoStyles.originItem}>
           <Text style={infoStyles.label}>Origin:</Text>
-          <Text style={infoStyles.value}>{formatOrigin()}</Text>
+          <Text style={[infoStyles.value, infoStyles.valueBold]}>{formatOrigin()}</Text>
           {flagBase64 && (
             <Image src={flagBase64} style={infoStyles.flag} />
           )}

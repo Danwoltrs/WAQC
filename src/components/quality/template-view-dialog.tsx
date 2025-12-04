@@ -11,7 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { Edit, X } from 'lucide-react'
+import { Edit } from 'lucide-react'
+import { formatValidationRule } from '@/types/attribute-scales'
 import { TemplateBuilder } from './template-builder'
 import { TemplateVersionHistory } from './template-version-history'
 
@@ -286,6 +287,11 @@ export function TemplateViewDialog({
                                   {attr.scale.type === 'numeric'
                                     ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
                                     : `${attr.scale.options?.length || 0} wording levels`}
+                                  {attr.validation_rule && (
+                                    <span className="ml-1">
+                                      - {formatValidationRule(attr.validation_rule, attr.scale)}
+                                    </span>
+                                  )}
                                 </div>
                               </div>
                             ))}

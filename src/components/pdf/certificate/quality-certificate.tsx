@@ -51,7 +51,7 @@ export function QualityCertificate({
   return (
     <Document>
       <Page size="A4" style={pageStyles.page}>
-        {/* Header with logos, title, status, dates, certificate #, quality description */}
+        {/* Header with logos, title, status, dates, certificate # */}
         <CertificateHeader
           wolthersLogoBase64={wolthersLogoBase64}
           clientLogoBase64={clientLogoBase64}
@@ -59,10 +59,9 @@ export function QualityCertificate({
           status={sample.status}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
-          qualityDescription={qualitySpec?.description || null}
         />
 
-        {/* Sample Information (supply chain, type, bags, processing, origin) */}
+        {/* Sample Information (quality, supply chain, type, bags, processing, origin) */}
         <CertificateSampleInfo
           exporter={supplyChain.exporter}
           roaster={supplyChain.roaster}
@@ -79,6 +78,7 @@ export function QualityCertificate({
           originDisplay={sample.origin_display}
           microOrigin={sample.micro_origin}
           flagBase64={flagBase64}
+          qualityDescription={qualitySpec?.description || null}
         />
 
         {/* Green Bean Analysis (screen sizes + properties + roast) */}

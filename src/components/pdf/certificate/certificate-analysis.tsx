@@ -36,13 +36,13 @@ const analysisStyles = StyleSheet.create({
     paddingVertical: 1,
   },
   screenLabel: {
-    fontSize: 9,
+    fontSize: 8,
     color: COLORS.dark,
     width: 50,
   },
   screenValue: {
-    fontSize: 9,
-    fontWeight: 600,
+    fontSize: 8,
+    fontWeight: 400,
     color: COLORS.dark,
   },
   // Properties section - vertical stack on right, aligned right
@@ -57,14 +57,17 @@ const analysisStyles = StyleSheet.create({
     alignItems: 'baseline',
   },
   propertyLabel: {
-    fontSize: 9,
+    fontSize: 8,
     color: COLORS.muted,
     marginRight: 4,
   },
   propertyValue: {
-    fontSize: 9,
-    fontWeight: 600,
+    fontSize: 8,
+    fontWeight: 400,
     color: COLORS.dark,
+  },
+  propertyValueBold: {
+    fontWeight: 600,
   },
   // Roast section
   roastContainer: {

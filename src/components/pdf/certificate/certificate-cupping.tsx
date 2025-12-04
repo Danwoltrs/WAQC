@@ -118,6 +118,15 @@ function formatRange(min: number | null, max: number | null): string {
   return ` (${center.toFixed(1)} +/- ${toleranceStr})`
 }
 
+// Format score - no decimals if whole number
+function formatScore(score: number): string {
+  // Check if the score is a whole number (or very close to it)
+  if (Math.abs(score - Math.round(score)) < 0.001) {
+    return Math.round(score).toString()
+  }
+  return score.toFixed(2)
+}
+
 // Check if score is within spec range
 function isInSpec(score: number, min: number | null, max: number | null): boolean {
   if (min === null || max === null) return true
@@ -148,7 +157,7 @@ function AttributeRow({ attribute, showRange }: AttributeRowProps) {
           !inSpec && showRange ? cuppingStyles.scoreOutOfSpec : {},
         ]}
       >
-        {score.toFixed(2)}
+        {formatScore(score)}
       </Text>
     </View>
   )
@@ -209,7 +218,7 @@ export function CertificateCupping({
       {isSpecialty && overallScore !== null && (
         <View style={cuppingStyles.finalScoreContainer}>
           <Text style={cuppingStyles.finalScoreLabel}>FINAL:</Text>
-          <Text style={cuppingStyles.finalScoreValue}>{overallScore.toFixed(2)}</Text>
+          <Text style={cuppingStyles.finalScoreValue}>{formatScore(overallScore)}</Text>
         </View>
       )}
     </View>
