@@ -22,7 +22,8 @@ const supabaseAdmin = createSupabaseClient(
  * Only returns samples where:
  * 1. User is in cupping_sessions.cupper_ids
  * 2. Session status is 'active' or 'review'
- * 3. Sample is in 'analysis' workflow stage
+ * 3. Sample is in 'analysis' or 'review' workflow stage
+ *    (review samples may still need grading before certificate can be generated)
  *
  * Query params:
  * - include_completed: 'true' to also include samples where user has already submitted scores
@@ -140,6 +141,7 @@ export async function GET(request: NextRequest) {
 
     // Get sample details for all assigned samples
     // Use admin client to bypass RLS - samples have lab-specific access rules
+    // Include samples in 'analysis' stage OR 'review' stage (review samples may still need grading)
     const { data: samples, error: samplesError } = await (supabaseAdmin as any)
       .from('samples')
       .select(`
@@ -164,7 +166,7 @@ export async function GET(request: NextRequest) {
         )
       `)
       .in('id', Array.from(allSampleIds))
-      .eq('workflow_stage', 'analysis')
+      .in('workflow_stage', ['analysis', 'review'])
 
     if (samplesError) {
       console.error('Error fetching samples:', samplesError)
