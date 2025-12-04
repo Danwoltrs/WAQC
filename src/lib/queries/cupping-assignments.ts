@@ -54,11 +54,13 @@ export async function getPendingSamplesForCupper(
     }
 
     // Step 3: Get all samples in 'analysis' stage from these sessions
+    // Exclude soft-deleted samples
     const { data: samples, error: samplesError } = await supabase
       .from('samples')
       .select('id')
       .in('id', sessionSampleIds)
       .eq('workflow_stage', 'analysis')
+      .is('deleted_at', null)
 
     if (samplesError) {
       console.error('Error fetching samples:', samplesError)
@@ -152,12 +154,13 @@ export async function getPendingSamplesForLaboratory(
       return 0
     }
 
-    // Count samples in 'analysis' stage
+    // Count samples in 'analysis' stage (exclude soft-deleted)
     const { count, error: countError } = await supabase
       .from('samples')
       .select('id', { count: 'exact', head: true })
       .in('id', sampleIds)
       .eq('workflow_stage', 'analysis')
+      .is('deleted_at', null)
 
     if (countError) {
       console.error('Error counting samples:', countError)

@@ -56,6 +56,43 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Filter out sample assignment notifications where all samples have been deleted
+    // Get all sample IDs referenced in sample_assignment notifications
+    const sampleAssignmentNotifs = (notifications || []).filter(
+      (n: any) => n.metadata?.type === 'sample_assignment' && n.metadata?.sample_ids?.length > 0
+    )
+
+    if (sampleAssignmentNotifs.length > 0) {
+      // Collect all sample IDs from these notifications
+      const allSampleIds = new Set<string>()
+      sampleAssignmentNotifs.forEach((n: any) => {
+        (n.metadata.sample_ids as string[]).forEach((id: string) => allSampleIds.add(id))
+      })
+
+      // Check which samples still exist (not deleted)
+      const { data: existingSamples } = await supabase
+        .from('samples')
+        .select('id')
+        .in('id', Array.from(allSampleIds))
+        .is('deleted_at', null)
+
+      const existingSampleIds = new Set((existingSamples || []).map((s: any) => s.id))
+
+      // Filter notifications: exclude sample_assignment notifications where ALL samples are deleted
+      const filteredNotifications = (notifications || []).filter((n: any) => {
+        if (n.metadata?.type === 'sample_assignment' && n.metadata?.sample_ids?.length > 0) {
+          // Check if at least one sample still exists
+          const hasExistingSample = (n.metadata.sample_ids as string[]).some(
+            (id: string) => existingSampleIds.has(id)
+          )
+          return hasExistingSample
+        }
+        return true
+      })
+
+      return NextResponse.json({ notifications: filteredNotifications })
+    }
+
     return NextResponse.json({ notifications })
   } catch (error) {
     console.error('Error in notifications API:', error)
