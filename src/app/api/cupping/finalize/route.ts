@@ -101,10 +101,12 @@ export async function POST(request: NextRequest) {
     }
 
     // Get the sample with quality spec info and current workflow stage
+    // Exclude soft-deleted samples
     const { data: sample, error: sampleError } = await supabaseAdmin
       .from('samples')
       .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id')
       .eq('id', sample_id)
+      .is('deleted_at', null)
       .single()
 
     if (sampleError || !sample) {

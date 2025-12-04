@@ -65,11 +65,12 @@ export async function POST(request: NextRequest) {
     const results = []
 
     for (const card of scores) {
-      // Verify sample exists
+      // Verify sample exists and is not deleted
       const { data: sample, error: sampleError } = await supabase
         .from('samples')
         .select('id, tracking_number')
         .eq('id', card.sample_id)
+        .is('deleted_at', null)
         .single()
 
       if (sampleError || !sample) {

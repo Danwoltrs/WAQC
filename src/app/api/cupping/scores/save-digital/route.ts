@@ -47,11 +47,12 @@ export async function POST(request: NextRequest) {
 
     console.log(`Saving digital cupping scores for sample ${sample_id} by user ${user.id}`)
 
-    // Verify sample exists
+    // Verify sample exists and is not deleted
     const { data: sample, error: sampleError } = await supabase
       .from('samples')
       .select('id, tracking_number')
       .eq('id', sample_id)
+      .is('deleted_at', null)
       .single()
 
     if (sampleError || !sample) {

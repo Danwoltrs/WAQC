@@ -142,6 +142,7 @@ export async function GET(request: NextRequest) {
     // Get sample details for all assigned samples
     // Use admin client to bypass RLS - samples have lab-specific access rules
     // Include samples in 'analysis' stage OR 'review' stage (review samples may still need grading)
+    // Exclude soft-deleted samples (deleted_at is set on soft delete)
     const { data: samples, error: samplesError } = await (supabaseAdmin as any)
       .from('samples')
       .select(`
@@ -167,6 +168,7 @@ export async function GET(request: NextRequest) {
       `)
       .in('id', Array.from(allSampleIds))
       .in('workflow_stage', ['analysis', 'review'])
+      .is('deleted_at', null)
 
     if (samplesError) {
       console.error('Error fetching samples:', samplesError)

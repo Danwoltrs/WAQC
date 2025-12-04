@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Fetch samples with all necessary relations for cupping cards
+    // Exclude soft-deleted samples
     const { data: samples, error } = await supabase
       .from('samples')
       .select(`
@@ -61,6 +62,7 @@ export async function POST(request: NextRequest) {
         )
       `)
       .in('id', sample_ids)
+      .is('deleted_at', null)
 
     if (error) {
       console.error('Error fetching sample details:', error)
