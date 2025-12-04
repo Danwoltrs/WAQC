@@ -158,12 +158,6 @@ const managementNav: NavItem[] = [
     permission: 'view_lab_finance',
   },
   {
-    title: 'Analytics',
-    href: '/analytics',
-    icon: BarChart3,
-    permission: 'view_lab_dashboard',
-  },
-  {
     title: 'Users',
     href: '/users',
     icon: Users,
