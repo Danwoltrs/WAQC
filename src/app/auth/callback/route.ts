@@ -72,8 +72,21 @@ export async function GET(request: NextRequest) {
     console.log('Successfully created session for user:', user?.id)
 
     // Ensure user has a profile (handles edge cases where trigger didn't fire)
+    // This is non-blocking - if it fails/times out, user can still proceed
+    // The auth-provider will retry profile creation client-side
     if (user) {
-      await ensureUserProfile(user)
+      try {
+        // Add 10s timeout to prevent hanging
+        const profilePromise = ensureUserProfile(user)
+        const timeoutPromise = new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error('Profile creation timeout')), 10000)
+        )
+
+        await Promise.race([profilePromise, timeoutPromise])
+      } catch (profileError) {
+        // Log but DON'T fail the auth callback - profile will be created client-side
+        console.error('Profile creation in callback failed (non-fatal):', profileError)
+      }
     }
 
     console.log('Setting', cookiesToSet.length, 'cookies on response')
@@ -153,7 +166,7 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
 
       const { error: insertError } = await supabaseAdmin
         .from('profiles')
-        .insert({
+        .upsert({
           id: user.id,
           email: user.email || '',
           first_name: invitation.first_name || '',
@@ -165,9 +178,13 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
           is_q_grader: invitation.is_q_grader ?? false,
           is_global_admin: invitation.qc_role === 'global_admin' || invitation.qc_role === 'global_quality_admin',
           laboratory_id: invitation.laboratory_id || defaultLab?.id || null,
+        }, {
+          onConflict: 'id',
+          ignoreDuplicates: true // Don't error on conflict, just skip
         })
 
-      if (insertError) {
+      if (insertError && insertError.code !== '23505') {
+        // Only log non-duplicate errors
         console.error('Error creating profile from invitation:', insertError)
         return
       }
@@ -178,7 +195,7 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
         .update({ status: 'accepted', accepted_at: new Date().toISOString() })
         .eq('id', invitation.id)
 
-      console.log('Profile created and invitation accepted')
+      console.log('Profile created/updated and invitation accepted')
     } else {
       // Create basic profile from user metadata
       console.log('Creating basic profile from user metadata')
@@ -190,7 +207,7 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
 
       const { error: insertError } = await supabaseAdmin
         .from('profiles')
-        .insert({
+        .upsert({
           id: user.id,
           email: user.email || '',
           first_name: firstName,
@@ -200,12 +217,16 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
           qc_enabled: isWolthersEmail,
           is_global_admin: isGlobalAdmin,
           laboratory_id: isWolthersEmail ? (defaultLab?.id || null) : null,
+        }, {
+          onConflict: 'id',
+          ignoreDuplicates: true // Don't error on conflict, just skip
         })
 
-      if (insertError) {
+      if (insertError && insertError.code !== '23505') {
+        // Only log non-duplicate errors
         console.error('Error creating basic profile:', insertError)
       } else {
-        console.log('Basic profile created')
+        console.log('Basic profile created/exists')
       }
     }
   } catch (error) {

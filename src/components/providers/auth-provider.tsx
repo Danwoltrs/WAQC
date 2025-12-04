@@ -8,10 +8,10 @@ import { NetworkError } from '@/components/errors/network-error'
 
 type Profile = Database['public']['Tables']['profiles']['Row']
 
-// Simple timeout wrapper - let Supabase handle retries internally
+// Timeout wrapper with better error handling
 async function withTimeout<T>(
   fn: () => Promise<T>,
-  timeoutMs: number = 5000,
+  timeoutMs: number = 8000,
   errorMessage: string = 'Request timeout'
 ): Promise<T> {
   const timeoutPromise = new Promise<never>((_, reject) =>
@@ -19,6 +19,28 @@ async function withTimeout<T>(
   )
 
   return Promise.race([fn(), timeoutPromise])
+}
+
+// Server-side profile creation via API (bypasses RLS)
+async function ensureProfileViaAPI(): Promise<{ success: boolean; profile?: any; error?: string }> {
+  try {
+    const response = await fetch('/api/profiles/ensure', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include'
+    })
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      return { success: false, error: data.error || 'Failed to create profile' }
+    }
+
+    const data = await response.json()
+    return { success: true, profile: data.profile }
+  } catch (error: any) {
+    console.error('[Auth] API profile creation failed:', error)
+    return { success: false, error: error.message }
+  }
 }
 
 interface AuthContextType {
@@ -267,14 +289,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
-    // ABSOLUTE MAXIMUM TIMEOUT - if we're still loading after 10s total, force show login
+    // ABSOLUTE MAXIMUM TIMEOUT - if we're still loading after 30s total, force show login
     // This is the last resort to prevent infinite loading screens
-    // Reduced from 15s since we have faster timeouts now (3s + 5s = 8s max)
+    // Increased to 30s to accommodate slow networks and give profile fetch time to complete
     const absoluteMaxTimeout = setTimeout(() => {
       console.error('[Auth] ⚠️ ABSOLUTE MAX TIMEOUT: Auth initialization took too long, forcing login screen')
       setLoading(false)
       setNetworkError(false) // Clear any network error to show login
-    }, 10000) // 10 seconds absolute maximum - no exceptions
+    }, 30000) // 30 seconds absolute maximum - generous for slow networks
 
     // Get initial session with retry logic and recovery
     const getSession = async (retries = 3) => {
@@ -302,22 +324,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         try {
           if (attempt > 0) {
             console.log(`[Auth] Retry attempt ${attempt + 1}/${retries} for getSession`)
-            // Exponential backoff: 1s, 2s, 4s
-            await new Promise(resolve => setTimeout(resolve, 1000 * Math.pow(2, attempt - 1)))
+            // Exponential backoff: 2s, 4s, 8s
+            await new Promise(resolve => setTimeout(resolve, 2000 * Math.pow(2, attempt - 1)))
           }
 
-          // On the first attempt, try to get existing session
-          // On subsequent attempts, clear potentially corrupted data first
-          if (attempt > 0) {
-            console.log('[Auth] Clearing potentially corrupted session data before retry')
-            clearCorruptedSession()
-          }
+          // IMPORTANT: Do NOT clear session data on retries
+          // Session might still be valid, just slow network
+          // Only manual clearWAQCSession() should clear data
 
           console.log(`[Auth] Attempting to get session (attempt ${attempt + 1}/${retries})...`)
-          console.log(`[Auth] Supabase URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL}`)
-          console.log(`[Auth] Timestamp: ${new Date().toISOString()}`)
 
-          // 10s timeout per attempt - reduced since we know auth works, just slow
+          // 15s timeout per attempt - generous for slow networks
           const startTime = Date.now()
           const result = await withTimeout(
             async () => {
@@ -326,15 +343,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               console.log(`[Auth] getSession() returned after ${Date.now() - startTime}ms`)
               return sessionResult
             },
-            10000,
+            15000,
             'Session fetch timeout'
           )
 
           if (result.error) {
             console.error('[Auth] Error getting session:', result.error)
-            // Don't retry on explicit errors, only on timeouts
-            setLoading(false)
-            return
+            // Don't retry on explicit auth errors
+            if (result.error.message?.includes('refresh_token') ||
+                result.error.message?.includes('invalid') ||
+                result.error.status === 401) {
+              console.log('[Auth] Auth token invalid, showing login')
+              setLoading(false)
+              clearTimeout(absoluteMaxTimeout)
+              return
+            }
+            // For other errors, continue to retry
+            continue
           }
 
           const session = result.data.session
@@ -344,8 +369,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(session.user)
             // Setup proactive token refresh
             setupTokenRefresh(session)
+
+            // Proactively refresh session to ensure we have fresh tokens
+            console.log('[Auth] Proactively refreshing session before profile fetch...')
+            const { data: refreshData } = await supabase.auth.refreshSession()
+            if (refreshData?.session) {
+              console.log('[Auth] Session refreshed successfully')
+            }
+
             try {
               await fetchProfile(session.user.id)
+              clearTimeout(absoluteMaxTimeout) // Clear timeout on success
             } catch (error) {
               console.error('[Auth] Failed to fetch profile during session setup:', error)
               setLoading(false)
@@ -353,6 +387,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } else {
             console.log('[Auth] No active session found (user needs to log in)')
             setLoading(false)
+            clearTimeout(absoluteMaxTimeout)
           }
 
           // Success - break out of retry loop
@@ -360,13 +395,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } catch (err: any) {
           console.error(`[Auth] ✗ Error getting session (attempt ${attempt + 1}/${retries}):`, err)
 
-          // If this was the last attempt, force cleanup and show login
+          // If this was the last attempt, just show login - DON'T clear session
+          // User may have valid session but slow network
           if (attempt === retries - 1) {
-            console.error('[Auth] All retry attempts failed - forcing clean state')
-            // Nuclear option: clear everything and force user to re-login
-            clearCorruptedSession()
+            console.error('[Auth] All retry attempts failed - showing login (session NOT cleared)')
+            console.log('[Auth] Tip: If stuck, user can run window.clearWAQCSession() in console')
             setLoading(false)
-            clearTimeout(absoluteMaxTimeout) // Clear timeout, we're done
+            clearTimeout(absoluteMaxTimeout)
           }
           // Otherwise, loop continues to next retry
         }
@@ -471,61 +506,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const createUserProfile = async (userId: string) => {
     try {
-      // Get user data from auth
-      const { data: { user } } = await supabase.auth.getUser()
-      if (!user) {
+      console.log('[Auth] Creating profile via server API for user:', userId)
+
+      // Use server-side API to create profile (bypasses RLS)
+      const result = await ensureProfileViaAPI()
+
+      if (!result.success) {
+        console.error('[Auth] Server profile creation failed:', result.error)
+        // Don't fail completely - user might still be able to use temp profile
         setLoading(false)
         return
       }
 
-      // Check if this is a global admin email
-      const isGlobalAdmin = ['daniel@wolthers.com', 'anderson@wolthers.com', 'edgar@wolthers.com'].includes(user.email || '')
-      const isWolthersUser = user.email?.endsWith('@wolthers.com') || false
-      
-      // Create profile with basic information
-      const { data: newProfile, error: createError } = await supabase
-        .from('profiles')
-        .insert({
-          id: userId,
-          email: user.email || '',
-          full_name: user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User',
-          qc_enabled: isGlobalAdmin || isWolthersUser, // Enable for admins and Wolthers users
-          qc_role: isGlobalAdmin ? 'global_admin' : 'lab_personnel',
-          is_global_admin: isGlobalAdmin,
-          laboratory_id: null,
-          qc_permissions: []
-        })
-        .select()
-        .single()
+      if (result.profile) {
+        console.log('[Auth] Profile created/retrieved via API:', result.profile.id)
 
-      if (createError) {
-        // Check if profile already exists (duplicate key error)
-        if (createError.code === '23505') {
-          console.log('Profile already exists, fetching existing profile')
-          await fetchProfile(userId)
-          return
-        }
-        console.error('Error creating profile:', {
-          error: createError,
-          code: createError?.code,
-          message: createError?.message,
-          details: createError?.details
-        })
-        setLoading(false)
-        return
-      }
+        // Set the profile in state
+        const profileData = result.profile as Profile
+        setProfile(profileData)
+        setCachedProfile(profileData)
 
-      console.log('Profile created successfully:', newProfile)
-      
-      // Log access request creation for non-admin Wolthers users
-      if (isWolthersUser && !isGlobalAdmin) {
-        console.log('Access request will be created automatically for @wolthers.com user:', user.email)
+        // Get permissions
+        const userPermissions = getUserPermissions(
+          (profileData.qc_role as UserRole) || 'lab_personnel',
+          undefined
+        )
+        setPermissions(userPermissions)
       }
-      
-      // Now fetch the created profile
-      await fetchProfile(userId)
     } catch (error) {
-      console.error('Error in createUserProfile:', error)
+      console.error('[Auth] Error in createUserProfile:', error)
+    } finally {
       setLoading(false)
     }
   }
@@ -549,15 +559,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         console.log('[Auth] Fetching profile for user:', userId)
 
-        // Retry with aggressive timeout - show UI fast, profile will load or use fallback
+        // Retry with reasonable timeout - balance between speed and reliability
         let profileData: Profile | null = null
         let error: any = null
-        const maxRetries = 2
+        const maxRetries = 3
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
-          // Reduced timeouts: 3s, 5s instead of 8s, 16s
-          // This gets users into the UI much faster on production
-          const timeoutMs = attempt === 1 ? 3000 : 5000
+          // Increased timeouts: 8s, 12s, 20s - more generous for slow networks
+          const timeoutMs = attempt === 1 ? 8000 : (attempt === 2 ? 12000 : 20000)
 
           try {
             console.log(`[Auth] Fetching profile data (attempt ${attempt}/${maxRetries}, timeout: ${timeoutMs}ms)...`)
@@ -583,12 +592,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } catch (err: any) {
             // If timeout and not last attempt, retry
             if ((err.message === 'Profile fetch timeout' || err.message?.includes('timeout')) && attempt < maxRetries) {
-              console.warn(`[Auth] ⚠ Profile fetch timed out on attempt ${attempt}, retrying...`)
+              console.warn(`[Auth] ⚠ Profile fetch timed out on attempt ${attempt}, retrying with longer timeout...`)
               error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
               continue
             } else if (err.message === 'Profile fetch timeout' || err.message?.includes('timeout')) {
-              // Last attempt timed out, use fallback
-              console.warn('[Auth] ⚠ Profile fetch timed out after all retries, using fallback')
+              // Last attempt timed out - try server API as fallback
+              console.warn('[Auth] ⚠ Profile fetch timed out after all retries, trying server API...')
+
+              // Try to get profile via server API (bypasses slow RLS)
+              const apiResult = await ensureProfileViaAPI()
+              if (apiResult.success && apiResult.profile) {
+                console.log('[Auth] ✓ Profile retrieved via server API')
+                profileData = apiResult.profile as Profile
+                error = null
+                break
+              }
+
+              // If API also failed, set timeout error for fallback handling
               error = { code: 'TIMEOUT', message: 'Profile fetch timeout' }
               break
             } else {
@@ -647,12 +667,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
             console.log('[Auth] ✓ User can now access dashboard with temporary profile')
 
-            // Try to create real profile in background (non-blocking)
-            setTimeout(() => {
-              createUserProfile(userId).catch(err =>
-                console.error('Background profile creation failed:', err)
-              )
-            }, 0)
+            // Try to create real profile in background via server API (non-blocking)
+            setTimeout(async () => {
+              try {
+                const result = await ensureProfileViaAPI()
+                if (result.success && result.profile) {
+                  console.log('[Auth] Background: Real profile created/retrieved')
+                  // Update with real profile data
+                  setProfile(result.profile as Profile)
+                  setCachedProfile(result.profile as Profile)
+                }
+              } catch (err) {
+                console.error('[Auth] Background profile creation failed:', err)
+              }
+            }, 100) // Small delay to let UI render first
 
             return
           }
