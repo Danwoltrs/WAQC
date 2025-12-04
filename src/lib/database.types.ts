@@ -1294,6 +1294,8 @@ export type Database = {
           certificate_config: Json | null
           certificate_delivery_timing: string | null
           certificate_pattern: Json | null
+          certificate_validity_enabled: boolean | null
+          certificate_validity_months: number | null
           city: string | null
           client_types: Database["public"]["Enums"]["client_type"][] | null
           company: string
@@ -1333,6 +1335,8 @@ export type Database = {
           certificate_config?: Json | null
           certificate_delivery_timing?: string | null
           certificate_pattern?: Json | null
+          certificate_validity_enabled?: boolean | null
+          certificate_validity_months?: number | null
           city?: string | null
           client_types?: Database["public"]["Enums"]["client_type"][] | null
           company: string
@@ -1372,6 +1376,8 @@ export type Database = {
           certificate_config?: Json | null
           certificate_delivery_timing?: string | null
           certificate_pattern?: Json | null
+          certificate_validity_enabled?: boolean | null
+          certificate_validity_months?: number | null
           city?: string | null
           client_types?: Database["public"]["Enums"]["client_type"][] | null
           company?: string

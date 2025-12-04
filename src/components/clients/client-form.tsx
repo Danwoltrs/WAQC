@@ -96,6 +96,8 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
     qc_enabled: true,
     billing_basis: 'approved_only',
     has_origin_pricing: false,
+    certificate_validity_enabled: false,
+    certificate_validity_months: 6,
   })
 
   const [selectedClientType, setSelectedClientType] = useState<string>('')
@@ -1280,6 +1282,46 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                     <p className="text-xs text-muted-foreground">
                       For certificates. PNG recommended, max 2MB.
                     </p>
+                  </div>
+
+                  {/* Certificate Validity Settings */}
+                  <div className="space-y-3 p-3 border rounded-lg bg-muted/30">
+                    <div className="flex items-center space-x-2">
+                      <Checkbox
+                        id="certificate_validity_enabled"
+                        checked={formData.certificate_validity_enabled || false}
+                        onCheckedChange={(checked) =>
+                          setFormData({
+                            ...formData,
+                            certificate_validity_enabled: checked as boolean,
+                          })
+                        }
+                      />
+                      <Label htmlFor="certificate_validity_enabled" className="text-sm font-normal cursor-pointer">
+                        Certificate Validity Period
+                      </Label>
+                    </div>
+                    {formData.certificate_validity_enabled && (
+                      <div className="pl-6 space-y-2">
+                        <Label className="text-xs text-muted-foreground">Months valid</Label>
+                        <Input
+                          type="number"
+                          min={1}
+                          max={24}
+                          value={formData.certificate_validity_months || 6}
+                          onChange={(e) =>
+                            setFormData({
+                              ...formData,
+                              certificate_validity_months: parseInt(e.target.value) || 6,
+                            })
+                          }
+                          className="w-20 h-8 text-sm"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Validity starts from 1st of the month following issue date
+                        </p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Horizontal Separator */}

@@ -151,9 +151,11 @@ export function CertificateHeader({
             <Text style={headerStyles.dateText}>
               Issue: {formatDate(issuedDate)}
             </Text>
-            <Text style={headerStyles.dateText}>
-              Valid: {formatDate(validUntil)}
-            </Text>
+            {validUntil && (
+              <Text style={headerStyles.dateText}>
+                Valid: {formatDate(validUntil)}
+              </Text>
+            )}
           </View>
         </View>
       </View>

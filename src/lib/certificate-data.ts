@@ -89,6 +89,8 @@ export interface CertificateData {
     company: string | null
     fantasy_name: string | null
     logo_url: string | null
+    certificate_validity_enabled: boolean | null
+    certificate_validity_months: number | null
   } | null
   laboratory: {
     id: string
@@ -168,7 +170,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   if (sample.client_id) {
     const { data } = await supabase
       .from('clients')
-      .select('id, name, company, fantasy_name, logo_url')
+      .select('id, name, company, fantasy_name, logo_url, certificate_validity_enabled, certificate_validity_months')
       .eq('id', sample.client_id)
       .single()
     client = data
@@ -366,12 +368,19 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     cuppingData = processCuppingScores(cuppingScores, isSpecialty, cuppingAttributeValidations)
   }
 
-  // Calculate valid_until (6 months from issue date)
+  // Calculate valid_until only if client has certificate validity enabled
+  // Validity starts from the first day of the month following the issue date
   let validUntil: string | null = null
-  if (certificate?.created_at) {
+  if (certificate?.created_at && client?.certificate_validity_enabled) {
     const issueDate = new Date(certificate.created_at)
-    const validDate = new Date(issueDate)
-    validDate.setMonth(validDate.getMonth() + 6)
+    // Start from first day of next month
+    const startDate = new Date(issueDate.getFullYear(), issueDate.getMonth() + 1, 1)
+    // Add the configured months (default 6)
+    const validityMonths = client.certificate_validity_months || 6
+    const validDate = new Date(startDate)
+    validDate.setMonth(validDate.getMonth() + validityMonths)
+    // Set to last day of that month (subtract 1 day from first of next month)
+    validDate.setDate(validDate.getDate() - 1)
     validUntil = validDate.toISOString().split('T')[0]
   }
 
