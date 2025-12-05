@@ -357,7 +357,73 @@ export function BasicInfoStep({
             </Select>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+          {/* Quality Specification - first column */}
+          <div className="space-y-2">
+            <Label htmlFor="quality_spec_id">Quality Specification *</Label>
+            {loadingQualities ? (
+              <div className="text-sm text-muted-foreground py-2">Loading qualities...</div>
+            ) : importerQualities.length > 0 ? (
+              <Select
+                value={formData.quality_spec_id || 'none'}
+                onValueChange={(value) => {
+                  if (value === 'none') {
+                    updateFormData('quality_spec_id', '')
+                    updateFormData('quality_name', '')
+                  } else {
+                    updateFormData('quality_spec_id', value)
+                    const selectedQuality = importerQualities.find(q => q.id === value)
+                    if (selectedQuality?.custom_name) {
+                      updateFormData('quality_name', selectedQuality.custom_name)
+                    }
+                    if (selectedImporterClient) {
+                      updateFormData('client_id', selectedImporterClient.id)
+                    }
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select quality specification" />
+                </SelectTrigger>
+                <SelectContent>
+                  {importerQualities.map((quality) => (
+                    <SelectItem key={quality.id} value={quality.id}>
+                      {quality.custom_name || quality.quality_code || 'Unnamed Quality'}
+                      {quality.origin && ` (${quality.origin})`}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : selectedImporterClient ? (
+              <div className="space-y-2">
+                <div className="p-2 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                  <p className="text-xs text-yellow-900 dark:text-yellow-100">
+                    No quality specs for this client
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setShowLinkTemplateDialog(true)}
+                  className="w-full text-xs"
+                >
+                  + Link Quality Template
+                </Button>
+              </div>
+            ) : (
+              <Select disabled>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select importer first" />
+                </SelectTrigger>
+                <SelectContent />
+              </Select>
+            )}
+            <p className="text-xs text-muted-foreground">
+              Select the quality specification that will be used to evaluate this sample
+            </p>
+          </div>
+          {/* Micro-Origin - second column */}
           <div className="space-y-2">
             <Label htmlFor="micro_origin">Micro-Origin</Label>
             {availableMicroOrigins.length > 0 ? (
@@ -430,6 +496,7 @@ export function BasicInfoStep({
               Select one or more regions for blends
             </p>
           </div>
+          {/* Exporter Sample Number - third column */}
           <div className="space-y-2">
             <Label htmlFor="exporter_sample_number">Exporter Sample Number</Label>
             <Input
@@ -768,89 +835,6 @@ export function BasicInfoStep({
             </Select>
           </div>
         </div>
-
-      {/* Quality fields row - 2 columns (removed Quality Name) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Quality Specification - Show for PSS/SS with importer/QC client selected (required) OR for type samples (optional) */}
-        {((formData.importer_is_qc_client && formData.importer) || (!formData.importer_is_qc_client && formData.qc_client)) && selectedImporterClient && (formData.sample_type === 'pss' || formData.sample_type === 'ss' || formData.sample_type === 'type') ? (
-          <div className="space-y-2">
-          <Label htmlFor="quality_spec_id">
-            Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
-          </Label>
-          {loadingQualities ? (
-            <div className="text-sm text-muted-foreground">Loading QC client qualities...</div>
-          ) : importerQualities.length > 0 ? (
-            <Select
-              value={formData.quality_spec_id || 'none'}
-              onValueChange={(value) => {
-                if (value === 'none') {
-                  updateFormData('quality_spec_id', '')
-                  updateFormData('quality_name', '')
-                } else {
-                  updateFormData('quality_spec_id', value)
-                  const selectedQuality = importerQualities.find(q => q.id === value)
-                  if (selectedQuality?.custom_name) {
-                    updateFormData('quality_name', selectedQuality.custom_name)
-                  }
-                  if (selectedImporterClient) {
-                    updateFormData('client_id', selectedImporterClient.id)
-                  }
-                }
-              }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={
-                  formData.sample_type === 'type'
-                    ? "Select quality (optional)"
-                    : "Select quality specification"
-                } />
-              </SelectTrigger>
-              <SelectContent>
-                {formData.sample_type === 'type' && (
-                  <SelectItem value="none">None - Use custom quality name</SelectItem>
-                )}
-                {importerQualities.map((quality) => (
-                  <SelectItem key={quality.id} value={quality.id}>
-                    {quality.custom_name || quality.quality_code || 'Unnamed Quality'}
-                    {quality.origin && ` (${quality.origin})`}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : formData.sample_type !== 'type' ? (
-            <div className="space-y-2">
-              <div className="p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-                <p className="text-sm text-yellow-900 dark:text-yellow-100">
-                  No quality specifications found for this QC client.
-                </p>
-                <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-                  You need to link a quality template to this QC client before proceeding.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowLinkTemplateDialog(true)}
-                disabled={!selectedImporterClient}
-              >
-                + Link Quality Template to QC Client
-              </Button>
-            </div>
-          ) : null}
-          {importerQualities.length > 0 && (
-            <p className="text-xs text-muted-foreground">
-              {formData.sample_type === 'type'
-                ? 'Optional: Select a quality template or leave blank to use custom quality name'
-                : 'Select the quality specification that will be used to evaluate this sample'}
-            </p>
-          )}
-          </div>
-        ) : (
-          <div></div>
-        )}
-
-      </div>
 
       {formData.sample_type === 'ss' && (
         <div className="space-y-2 bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
