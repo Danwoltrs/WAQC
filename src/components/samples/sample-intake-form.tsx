@@ -177,119 +177,112 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   }, [formData.sample_type])
 
   const loadClients = async () => {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('qc_enabled', true)
-      .order('company')
-
-    if (data && !error) {
-      setClients(data as Client[])
+    try {
+      const response = await fetch('/api/clients?qc_enabled=true&limit=500')
+      if (response.ok) {
+        const data = await response.json()
+        // Filter for qc_enabled since API might not support that filter directly
+        const qcEnabledClients = (data.clients || []).filter((c: any) => c.qc_enabled)
+        setClients(qcEnabledClients as Client[])
+      } else {
+        console.error('Failed to load clients:', response.status)
+      }
+    } catch (error) {
+      console.error('Error loading clients:', error)
     }
   }
 
   const loadLaboratories = async () => {
-    console.log('Loading laboratories. Profile:', profile)
-
-    if (profile?.laboratory_id && !profile?.is_global_admin) {
-      console.log('Loading specific lab for user:', profile.laboratory_id)
-      const { data, error } = await supabase
-        .from('laboratories')
-        .select('*')
-        .eq('id', profile.laboratory_id)
-        .eq('is_active', true)
-        .single()
-
-      if (error) {
-        console.error('Error loading user laboratory:', error)
-      }
-
-      if (data && !error) {
-        console.log('Loaded user laboratory:', data)
-        setLaboratories([data] as unknown as Laboratory[])
+    console.log('Loading laboratories via API')
+    try {
+      const response = await fetch('/api/laboratories')
+      if (response.ok) {
+        const data = await response.json()
+        // Filter for active labs only
+        const activeLabs = (data.laboratories || []).filter((lab: any) => lab.is_active)
+        console.log('Loaded laboratories:', activeLabs)
+        setLaboratories(activeLabs as unknown as Laboratory[])
       } else {
-        console.warn('No laboratory data returned for user')
+        console.error('Failed to load laboratories:', response.status)
       }
-    } else {
-      console.log('Loading all labs (user is global admin or has no lab assigned)')
-      const { data, error } = await supabase
-        .from('laboratories')
-        .select('*')
-        .eq('is_active', true)
-        .order('name')
-
-      if (error) {
-        console.error('Error loading laboratories:', error)
-      }
-
-      if (data && !error) {
-        console.log('Loaded laboratories:', data)
-        setLaboratories(data as unknown as Laboratory[])
-      }
+    } catch (error) {
+      console.error('Error loading laboratories:', error)
     }
   }
 
   const loadApprovedPSSSamples = async () => {
-    const { data, error } = await supabase
-      .from('samples')
-      .select('id, tracking_number, origin, supplier, created_at')
-      .eq('sample_type', 'pss')
-      .eq('status', 'approved')
-      .order('created_at', { ascending: false })
-      .limit(50)
-
-    if (data && !error) {
-      setApprovedPSSSamples(data)
+    try {
+      const response = await fetch('/api/samples?sample_type=pss&status=approved&limit=50')
+      if (response.ok) {
+        const data = await response.json()
+        setApprovedPSSSamples(data.samples || [])
+      } else {
+        console.error('Failed to load approved PSS samples:', response.status)
+      }
+    } catch (error) {
+      console.error('Error loading approved PSS samples:', error)
     }
   }
 
   const loadExporters = async () => {
-    const { data, error } = await supabase
-      .from('exporters')
-      .select('*')
-      .order('name')
-
-    if (data && !error) {
-      // Deduplicate by name (case-insensitive)
-      const seen = new Set<string>()
-      const unique = data.filter(exp => {
-        const key = exp.name.toLowerCase()
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-      setExporters(unique as unknown as Exporter[])
+    try {
+      const response = await fetch('/api/exporters')
+      if (response.ok) {
+        const data = await response.json()
+        const exportersList = data.exporters || []
+        // Deduplicate by name (case-insensitive)
+        const seen = new Set<string>()
+        const unique = exportersList.filter((exp: any) => {
+          const key = exp.name.toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        setExporters(unique as unknown as Exporter[])
+      } else {
+        console.error('Failed to load exporters:', response.status)
+      }
+    } catch (error) {
+      console.error('Error loading exporters:', error)
     }
   }
 
   const loadImporters = async () => {
-    const { data, error } = await supabase
-      .from('importers')
-      .select('*')
-      .order('name')
-
-    if (data && !error) {
-      // Deduplicate by name (case-insensitive)
-      const seen = new Set<string>()
-      const unique = data.filter(imp => {
-        const key = imp.name.toLowerCase()
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
-      setImporters(unique as unknown as Importer[])
+    try {
+      const response = await fetch('/api/importers')
+      if (response.ok) {
+        const data = await response.json()
+        const importersList = data.importers || []
+        // Deduplicate by name (case-insensitive)
+        const seen = new Set<string>()
+        const unique = importersList.filter((imp: any) => {
+          const key = imp.name.toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        setImporters(unique as unknown as Importer[])
+      } else {
+        console.error('Failed to load importers:', response.status)
+      }
+    } catch (error) {
+      console.error('Error loading importers:', error)
     }
   }
 
   const loadQcClients = async () => {
-    const { data, error } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('is_qc_client', true)
-      .order('company')
-
-    if (data && !error) {
-      setQcClients(data as Client[])
+    try {
+      const response = await fetch('/api/clients?limit=500')
+      if (response.ok) {
+        const data = await response.json()
+        // Filter for is_qc_client = true
+        const qcClientsList = (data.clients || []).filter((c: any) => c.is_qc_client)
+        setQcClients(qcClientsList as Client[])
+      } else {
+        console.error('Failed to load QC clients:', response.status)
+      }
+    } catch (error) {
+      console.error('Error loading QC clients:', error)
     }
   }
 
