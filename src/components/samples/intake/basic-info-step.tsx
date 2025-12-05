@@ -691,26 +691,42 @@ export function BasicInfoStep({
             </div>
           )}
 
-          {/* Roaster field - show on same row when importer_is_qc_client is true */}
-          {formData.importer_is_qc_client && (
+        </div>
+
+        {/* Supplier Name and Roaster row - side by side */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Supplier Name (left) - text input */}
           <div className="space-y-2">
-            <Label htmlFor="roaster">Roaster</Label>
+            <Label htmlFor="supplier">Supplier Name (Optional)</Label>
+            <Input
+              id="supplier"
+              value={formData.supplier}
+              onChange={(e) => updateFormData('supplier', e.target.value)}
+              placeholder="Farm or cooperative name"
+            />
+          </div>
+
+          {/* Roaster (right) - database dropdown only */}
+          <div className="space-y-2">
+            <Label htmlFor="roaster">Roaster (Optional)</Label>
             <Select
-              value={formData.roaster === '' ? 'custom' : roasters.find(c => (c.fantasy_name || c.company) === formData.roaster) ? formData.roaster : 'custom'}
+              value={formData.roaster || ''}
               onValueChange={(value) => {
                 if (value === 'new') {
                   setCreateClientType('roaster')
                   setShowCreateClientDialog(true)
-                } else if (value !== 'custom') {
+                } else if (value === 'none') {
+                  updateFormData('roaster', '')
+                } else {
                   updateFormData('roaster', value)
                 }
               }}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select existing or type new" />
+                <SelectValue placeholder="Select roaster" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="custom">Type custom name...</SelectItem>
+                <SelectItem value="none">No roaster</SelectItem>
                 <SelectItem value="new">+ Create New Roaster</SelectItem>
                 {roasters.length > 0 ? (
                   <>
@@ -730,79 +746,7 @@ export function BasicInfoStep({
                 )}
               </SelectContent>
             </Select>
-            {(formData.roaster === '' || !roasters.find(c => (c.fantasy_name || c.company) === formData.roaster)) && (
-              <Input
-                id="roaster"
-                value={formData.roaster}
-                onChange={(e) => updateFormData('roaster', e.target.value)}
-                placeholder="Enter roaster name"
-              />
-            )}
           </div>
-          )}
-        </div>
-
-        {/* Roaster row - show separately when QC client is separate from importer */}
-        {!formData.importer_is_qc_client && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="roaster">Roaster</Label>
-              <Select
-                value={formData.roaster === '' ? 'custom' : roasters.find(c => (c.fantasy_name || c.company) === formData.roaster) ? formData.roaster : 'custom'}
-                onValueChange={(value) => {
-                  if (value === 'new') {
-                    setCreateClientType('roaster')
-                    setShowCreateClientDialog(true)
-                  } else if (value !== 'custom') {
-                    updateFormData('roaster', value)
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select existing or type new" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="custom">Type custom name...</SelectItem>
-                  <SelectItem value="new">+ Create New Roaster</SelectItem>
-                  {roasters.length > 0 ? (
-                    <>
-                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                        Roasters
-                      </div>
-                      {roasters.map((client) => (
-                        <SelectItem key={client.id} value={client.fantasy_name || client.company}>
-                          {client.fantasy_name || client.company}
-                        </SelectItem>
-                      ))}
-                    </>
-                  ) : (
-                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                      No roasters registered
-                    </div>
-                  )}
-                </SelectContent>
-              </Select>
-              {(formData.roaster === '' || !roasters.find(c => (c.fantasy_name || c.company) === formData.roaster)) && (
-                <Input
-                  id="roaster"
-                  value={formData.roaster}
-                  onChange={(e) => updateFormData('roaster', e.target.value)}
-                  placeholder="Enter roaster name"
-                />
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Supplier row */}
-        <div className="space-y-2">
-          <Label htmlFor="supplier">Supplier Name (Optional)</Label>
-          <Input
-            id="supplier"
-            value={formData.supplier}
-            onChange={(e) => updateFormData('supplier', e.target.value)}
-            placeholder="Farm or cooperative name"
-          />
         </div>
 
       {/* Quality fields row - 2 columns (removed Quality Name) */}
