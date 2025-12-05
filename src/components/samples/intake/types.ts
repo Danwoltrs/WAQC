@@ -14,7 +14,9 @@ export interface FormData {
   seller: string // The trading company that sold the coffee (e.g., Louis Dreyfus)
   shipper: string // The actual exporter that shipped the coffee (e.g., COOXUPE)
   same_seller_shipper: boolean // If true, seller is same as shipper
-  buyer: string
+  importer: string // Renamed from buyer - the importing company
+  importer_is_qc_client: boolean // If true, importer is also the QC client
+  qc_client: string // Separate QC client name (when importer_is_qc_client is false)
   roaster: string
   origin: string
   micro_origin: string
@@ -28,9 +30,12 @@ export interface FormData {
 
   // Tracking Numbers
   wolthers_contract_nr: string
+  seller_contract_nr: string // Contract from seller
+  shipper_contract_nr: string // Contract from shipper (when different from seller)
   exporter_contract_nr: string
-  buyer_contract_nr: string
+  importer_contract_nr: string // Renamed from buyer_contract_nr
   roaster_contract_nr: string
+  qc_client_contract_nr: string // Contract from QC client (when separate from importer)
   ico_number: string
   container_nr: string
 
@@ -64,5 +69,6 @@ export interface StepComponentProps {
   approvedPSSSamples: any[]
   exporters?: Exporter[]
   importers?: Importer[]
+  qcClients?: Client[] // Clients where is_qc_client = true
   error?: string | null
 }

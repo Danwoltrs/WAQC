@@ -9,7 +9,7 @@ export interface SampleLabelData {
   quality_name: string // Client's quality name (e.g., "Alfenas Dulce") or template name fallback
   bags_quantity?: string // Number of bags (optional for Stocklot)
   wolthers_contract?: string // Wolthers contract (PSS and SS)
-  buyer_contract?: string // Buyer's contract (PSS and SS)
+  buyer_contract?: string // Importer's contract (PSS and SS)
   container_number?: string // Container number (SS only)
   oic_number?: string // OIC number (SS only)
   qr_code?: string // Data URL for QR code
@@ -142,7 +142,7 @@ export const SampleLabelDocument: React.FC<SampleLabelDocumentProps> = ({ labels
                   )}
                   {label.buyer_contract && (
                     <Text style={styles.infoRow}>
-                      <Text style={styles.label}>Buyer Contract: </Text>
+                      <Text style={styles.label}>Importer Contract: </Text>
                       <Text style={styles.value}>{label.buyer_contract}</Text>
                     </Text>
                   )}
@@ -200,7 +200,7 @@ export const SampleLabelDocument: React.FC<SampleLabelDocumentProps> = ({ labels
                   )}
                   {label.buyer_contract && (
                     <Text style={styles.infoRow}>
-                      <Text style={styles.label}>Buyer Contract: </Text>
+                      <Text style={styles.label}>Importer Contract: </Text>
                       <Text style={styles.value}>{label.buyer_contract}</Text>
                     </Text>
                   )}

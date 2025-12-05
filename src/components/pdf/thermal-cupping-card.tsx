@@ -317,7 +317,7 @@ export const ThermalCuppingCardDocument: React.FC<
                   </Text>
                 )}
                 {show_buyer && card.buyer_name && (
-                  <Text style={styles.infoRow}>Buyer: {card.buyer_name}</Text>
+                  <Text style={styles.infoRow}>Importer: {card.buyer_name}</Text>
                 )}
                 {show_exporter && card.exporter_name && (
                   <Text style={styles.infoRow}>

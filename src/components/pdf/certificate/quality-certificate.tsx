@@ -64,7 +64,9 @@ export function QualityCertificate({
         {/* Sample Information (quality, supply chain, type, bags, processing, origin) */}
         <CertificateSampleInfo
           exporter={supplyChain.exporter}
+          importer={supplyChain.importer}
           roaster={supplyChain.roaster}
+          qcClient={supplyChain.qcClient}
           sampleType={sample.sample_type}
           bags={sample.bags}
           bagType={sample.bag_type}

@@ -70,9 +70,14 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
           <div>
             <span className="text-muted-foreground">Shipper:</span> {formData.shipper || '-'}
           </div>
-          {formData.buyer && (
+          {formData.importer && (
             <div>
-              <span className="text-muted-foreground">Buyer:</span> {formData.buyer}
+              <span className="text-muted-foreground">Importer:</span> {formData.importer}
+            </div>
+          )}
+          {!formData.importer_is_qc_client && formData.qc_client && (
+            <div>
+              <span className="text-muted-foreground">QC Client:</span> {formData.qc_client}
             </div>
           )}
           {formData.roaster && (

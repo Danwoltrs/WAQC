@@ -19,19 +19,19 @@ import { AlertCircle, Loader2 } from 'lucide-react'
 interface CreateClientDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  clientType: 'exporter' | 'buyer' | 'roaster'
+  clientType: 'exporter' | 'importer' | 'roaster'
   onSuccess: (clientName: string) => void
 }
 
 const CLIENT_TYPE_LABELS = {
   exporter: 'Exporter',
-  buyer: 'Buyer/Importer',
+  importer: 'Importer',
   roaster: 'Roaster'
 }
 
 const CLIENT_TYPE_DB_VALUES = {
   exporter: ['exporter', 'producer_exporter'],
-  buyer: ['importer_buyer'],
+  importer: ['importer_buyer'],
   roaster: ['roaster', 'roaster_final_buyer']
 }
 
@@ -73,7 +73,7 @@ export function CreateClientDialog({
     try {
       // Determine API endpoint based on client type
       const apiEndpoint = clientType === 'exporter' ? '/api/exporters' :
-                         clientType === 'buyer' ? '/api/buyers' :
+                         clientType === 'importer' ? '/api/importers' :
                          '/api/roasters'
 
       const response = await fetch(apiEndpoint, {
@@ -98,7 +98,7 @@ export function CreateClientDialog({
       // Reset form and notify parent with the created entity's name
       resetForm()
       const entityKey = clientType === 'exporter' ? 'exporter' :
-                       clientType === 'buyer' ? 'buyer' :
+                       clientType === 'importer' ? 'importer' :
                        'roaster'
       onSuccess(data[entityKey]?.name || company)
       onOpenChange(false)
@@ -174,7 +174,7 @@ export function CreateClientDialog({
                   {clientType === 'roaster' && (
                     <>
                       <SelectItem value="roaster">Roaster</SelectItem>
-                      <SelectItem value="roaster_final_buyer">Roaster/Final Buyer</SelectItem>
+                      <SelectItem value="roaster_final_buyer">Roaster/Final Importer</SelectItem>
                     </>
                   )}
                 </SelectContent>

@@ -9,7 +9,7 @@ export interface TinSleeveLabelData {
   exporter: string // Exporter name
   client_quality_name?: string // Client's custom quality name (e.g., "Alfenas Dulce")
   quality_description: string // Full quality description (e.g., "Strictly Soft Cup - Natural")
-  contracts: string[] // Array of contract references (Wolthers, Buyer, Exporter, Roaster)
+  contracts: string[] // Array of contract references (Wolthers, Importer, Exporter, Roaster)
   packaging: string // Packaging type (e.g., "Jute Bags", "PP Bags", "Bulk")
   bags_display: string // Display string for bags (e.g., "Bulk (equiv. 12 bags)" or "10 x 60kg")
   qr_code?: string // Data URL for QR code

@@ -14,7 +14,7 @@ export interface SampleBagSleeveLabelData {
   ico_number?: string // ICO number (SS only)
   container_number?: string // Container number (SS only)
   contracts: Array<{ type: string; value: string }> // Contract references with types
-  buyer_reference?: string // Buyer reference
+  buyer_reference?: string // Importer reference
   logo_url: string // Wolthers logo URL
   qr_code?: string // Optional QR code data URL for certificate download
   laboratory?: {
@@ -227,7 +227,7 @@ export const SampleBagSleeveLabelDocument: React.FC<SampleBagSleeveLabelDocument
                     ))}
                     {label.buyer_reference && (
                       <Text style={styles.contractText}>
-                        <Text style={styles.contractLabel}>Buyer: </Text>
+                        <Text style={styles.contractLabel}>Importer: </Text>
                         {label.buyer_reference}
                       </Text>
                     )}

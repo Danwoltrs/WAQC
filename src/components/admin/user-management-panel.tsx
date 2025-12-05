@@ -97,7 +97,7 @@ const ROLE_LABELS: Record<UserRole, string> = {
   global_admin: 'Global Admin',
   client: 'Client',
   supplier: 'Supplier',
-  buyer: 'Buyer',
+  buyer: 'Importer',
 }
 
 export function UserManagementPanel() {

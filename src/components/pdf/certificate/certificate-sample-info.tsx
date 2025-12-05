@@ -97,7 +97,9 @@ const infoStyles = StyleSheet.create({
 interface CertificateSampleInfoProps {
   // Supply chain
   exporter: SupplyChainEntity
+  importer: SupplyChainEntity
   roaster: SupplyChainEntity
+  qcClient?: SupplyChainEntity
   // Sample info
   sampleType: string | null
   bags: number | null
@@ -119,7 +121,9 @@ interface CertificateSampleInfoProps {
 
 export function CertificateSampleInfo({
   exporter,
+  importer,
   roaster,
+  qcClient,
   sampleType,
   bags,
   bagType,
@@ -217,7 +221,10 @@ export function CertificateSampleInfo({
   }
 
   const hasExporter = Boolean(exporter.name)
+  const hasImporter = Boolean(importer.name)
   const hasRoaster = Boolean(roaster.name)
+  // Only show QC Client if it's different from importer
+  const hasQcClient = Boolean(qcClient?.name) && qcClient?.name !== importer.name
 
   return (
     <View style={infoStyles.container}>
@@ -229,8 +236,8 @@ export function CertificateSampleInfo({
         </View>
       )}
 
-      {/* Row 1: Supply Chain (Exporter and Roaster) */}
-      {(hasExporter || hasRoaster) && (
+      {/* Row 1: Supply Chain (Exporter > Importer > Roaster > QC Client) */}
+      {(hasExporter || hasImporter || hasRoaster || hasQcClient) && (
         <View style={infoStyles.supplyChainRow}>
           {hasExporter && (
             <View style={infoStyles.entityGroup}>
@@ -241,12 +248,30 @@ export function CertificateSampleInfo({
               )}
             </View>
           )}
+          {hasImporter && (
+            <View style={infoStyles.entityGroup}>
+              <Text style={infoStyles.entityLabel}>Importer:</Text>
+              <Text style={[infoStyles.entityName, infoStyles.entityNameBold]}>{importer.name}</Text>
+              {importer.contract && (
+                <Text style={infoStyles.entityContract}>({importer.contract})</Text>
+              )}
+            </View>
+          )}
           {hasRoaster && (
             <View style={infoStyles.entityGroup}>
               <Text style={infoStyles.entityLabel}>Roaster:</Text>
               <Text style={[infoStyles.entityName, infoStyles.entityNameBold]}>{roaster.name}</Text>
               {roaster.contract && (
                 <Text style={infoStyles.entityContract}>({roaster.contract})</Text>
+              )}
+            </View>
+          )}
+          {hasQcClient && qcClient && (
+            <View style={infoStyles.entityGroup}>
+              <Text style={infoStyles.entityLabel}>QC Client:</Text>
+              <Text style={[infoStyles.entityName, infoStyles.entityNameBold]}>{qcClient.name}</Text>
+              {qcClient.contract && (
+                <Text style={infoStyles.entityContract}>({qcClient.contract})</Text>
               )}
             </View>
           )}

@@ -1301,7 +1301,7 @@ export default function GradingPage() {
                       </Button>
                     )}
 
-                    {/* Client/Buyer */}
+                    {/* Client (QC Client) */}
                     {visibility.showBuyer && sample.client && (
                       <div className="flex items-center gap-1">
                         <span className="text-xs uppercase text-muted-foreground/70">Client:</span>

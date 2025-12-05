@@ -140,7 +140,7 @@ export async function POST(request: NextRequest) {
         contracts.push({ type: 'Wolthers', value: sample.wolthers_contract_nr })
       }
       if (sample.buyer_contract_nr) {
-        contracts.push({ type: 'Buyer', value: sample.buyer_contract_nr })
+        contracts.push({ type: 'Importer', value: sample.buyer_contract_nr })
       }
       if (sample.exporter_contract_nr) {
         contracts.push({ type: 'Exporter', value: sample.exporter_contract_nr })

@@ -1,6 +1,6 @@
 /**
  * Certificate supply chain component
- * Displays exporter > importer > roaster in a single line
+ * Displays exporter > importer > roaster > qc client in a single line
  */
 
 import React from 'react'
@@ -53,6 +53,7 @@ interface CertificateSupplyChainProps {
   exporter: SupplyChainEntity
   importer: SupplyChainEntity
   roaster: SupplyChainEntity
+  qcClient?: SupplyChainEntity
   wolthersContract: string | null
 }
 
@@ -80,13 +81,16 @@ export function CertificateSupplyChain({
   exporter,
   importer,
   roaster,
+  qcClient,
 }: CertificateSupplyChainProps) {
   const hasExporter = Boolean(exporter.name)
   const hasImporter = Boolean(importer.name)
   const hasRoaster = Boolean(roaster.name)
+  // Only show QC Client if it's different from importer
+  const hasQcClient = Boolean(qcClient?.name) && qcClient?.name !== importer.name
 
   // If no supply chain data, don't render
-  if (!hasExporter && !hasImporter && !hasRoaster) {
+  if (!hasExporter && !hasImporter && !hasRoaster && !hasQcClient) {
     return null
   }
 
@@ -96,7 +100,7 @@ export function CertificateSupplyChain({
         {hasExporter && (
           <>
             <EntityDisplay label="Exporter" entity={exporter} />
-            {(hasImporter || hasRoaster) && (
+            {(hasImporter || hasRoaster || hasQcClient) && (
               <Text style={chainStyles.arrow}>&gt;</Text>
             )}
           </>
@@ -105,11 +109,20 @@ export function CertificateSupplyChain({
         {hasImporter && (
           <>
             <EntityDisplay label="Importer" entity={importer} />
-            {hasRoaster && <Text style={chainStyles.arrow}>&gt;</Text>}
+            {(hasRoaster || hasQcClient) && <Text style={chainStyles.arrow}>&gt;</Text>}
           </>
         )}
 
-        {hasRoaster && <EntityDisplay label="Roaster" entity={roaster} />}
+        {hasRoaster && (
+          <>
+            <EntityDisplay label="Roaster" entity={roaster} />
+            {hasQcClient && <Text style={chainStyles.arrow}>&gt;</Text>}
+          </>
+        )}
+
+        {hasQcClient && qcClient && (
+          <EntityDisplay label="QC Client" entity={qcClient} />
+        )}
       </View>
     </View>
   )

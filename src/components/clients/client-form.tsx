@@ -40,17 +40,17 @@ const CLIENT_TYPE_OPTIONS = [
   { value: 'producer_exporter', label: 'Producer/Exporter' },
   { value: 'cooperative', label: 'Cooperative' },
   { value: 'exporter', label: 'Exporter' },
-  { value: 'importer_buyer', label: 'Importer/Buyer' },
+  { value: 'importer_buyer', label: 'Importer' },
   { value: 'roaster', label: 'Roaster' },
-  { value: 'final_buyer', label: 'Final Buyer' },
-  { value: 'roaster_final_buyer', label: 'Roaster/Final Buyer' },
+  { value: 'final_buyer', label: 'Final Importer' },
+  { value: 'roaster_final_buyer', label: 'Roaster/Final Importer' },
 ]
 
 const FEE_PAYER_OPTIONS = [
   { value: 'exporter', label: 'Exporter' },
   { value: 'importer', label: 'Importer' },
   { value: 'roaster', label: 'Roaster' },
-  { value: 'final_buyer', label: 'Final Buyer' },
+  { value: 'final_buyer', label: 'Final Importer' },
   { value: 'client_pays', label: 'Client Pays' },
 ]
 

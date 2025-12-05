@@ -668,10 +668,10 @@ export default function SampleDetailPage() {
                     <Separator />
 
                     <div>
-                      <div className="text-sm text-muted-foreground mb-1">Roaster / Buyer</div>
+                      <div className="text-sm text-muted-foreground mb-1">Roaster / Importer</div>
                       <div className="text-sm font-medium flex items-center gap-2">
                         <Building2 className="h-4 w-4" />
-                        {sample.roaster_name || sample.buyer || '-'}
+                        {sample.roaster_name || sample.importer_name || '-'}
                       </div>
                     </div>
                   </div>
@@ -691,7 +691,7 @@ export default function SampleDetailPage() {
                     <div className="text-sm text-muted-foreground">Exporter Contract:</div>
                     <div className="text-sm font-medium font-mono">{sample.exporter_contract_nr || '-'}</div>
 
-                    <div className="text-sm text-muted-foreground">Buyer Contract:</div>
+                    <div className="text-sm text-muted-foreground">Importer Contract:</div>
                     <div className="text-sm font-medium font-mono">{sample.buyer_contract_nr || '-'}</div>
 
                     <div className="text-sm text-muted-foreground">Roaster Contract:</div>

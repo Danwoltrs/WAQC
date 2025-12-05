@@ -6558,6 +6558,9 @@ export type Database = {
           bags: number | null
           bags_quantity_mt: number | null
           buyer_contract_nr: string | null
+          qc_client_contract_nr: string | null
+          seller_contract_nr: string | null
+          shipper_contract_nr: string | null
           calculated_client_fee: number | null
           calculated_lab_fee: number | null
           client_id: string | null
@@ -6608,6 +6611,9 @@ export type Database = {
           bags?: number | null
           bags_quantity_mt?: number | null
           buyer_contract_nr?: string | null
+          qc_client_contract_nr?: string | null
+          seller_contract_nr?: string | null
+          shipper_contract_nr?: string | null
           calculated_client_fee?: number | null
           calculated_lab_fee?: number | null
           client_id?: string | null
@@ -6658,6 +6664,9 @@ export type Database = {
           bags?: number | null
           bags_quantity_mt?: number | null
           buyer_contract_nr?: string | null
+          qc_client_contract_nr?: string | null
+          seller_contract_nr?: string | null
+          shipper_contract_nr?: string | null
           calculated_client_fee?: number | null
           calculated_lab_fee?: number | null
           client_id?: string | null

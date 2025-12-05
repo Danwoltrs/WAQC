@@ -33,7 +33,9 @@ const initialFormData: FormData = {
   seller: '', // The trading company that sold the coffee
   shipper: '', // The actual exporter that shipped the coffee
   same_seller_shipper: true, // Default: seller is same as shipper
-  buyer: '',
+  importer: '', // Renamed from buyer
+  importer_is_qc_client: true, // Default: importer is also the QC client
+  qc_client: '', // Separate QC client name when importer_is_qc_client is false
   roaster: '',
   origin: '',
   micro_origin: '',
@@ -45,9 +47,12 @@ const initialFormData: FormData = {
   quality_name: '',
   hide_exporter_on_label: false,
   wolthers_contract_nr: '',
+  seller_contract_nr: '',
+  shipper_contract_nr: '',
   exporter_contract_nr: '',
-  buyer_contract_nr: '',
+  importer_contract_nr: '', // Renamed from buyer_contract_nr
   roaster_contract_nr: '',
+  qc_client_contract_nr: '',
   ico_number: '',
   container_nr: '',
   bag_count: '',
@@ -72,6 +77,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const [laboratories, setLaboratories] = useState<Laboratory[]>([])
   const [exporters, setExporters] = useState<Exporter[]>([])
   const [importers, setImporters] = useState<Importer[]>([])
+  const [qcClients, setQcClients] = useState<Client[]>([]) // Clients where is_qc_client = true
   const [filteredClients, setFilteredClients] = useState<Client[]>([])
   const [approvedPSSSamples, setApprovedPSSSamples] = useState<any[]>([])
   const [generatedTrackingNumber, setGeneratedTrackingNumber] = useState<string>('')
@@ -83,6 +89,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     loadLaboratories()
     loadExporters()
     loadImporters()
+    loadQcClients()
 
     // Load saved form data from localStorage
     const savedData = localStorage.getItem('sample-intake-form')
@@ -101,19 +108,21 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     // Don't save empty forms or when showing success view
     if (success) return
     // Don't save if form is essentially empty (just reset)
-    if (!formData.seller && !formData.buyer && !formData.sample_type) return
+    if (!formData.seller && !formData.importer && !formData.sample_type) return
 
     const dataToSave = { ...formData, photo_file: null }
     localStorage.setItem('sample-intake-form', JSON.stringify(dataToSave))
   }, [formData, success])
 
-  // Client auto-detection based on buyer/seller names
-  // For PSS/SS samples: buyer is the client (they own quality specs)
+  // Client auto-detection based on importer/seller names
+  // For PSS/SS samples: importer or qc_client is the client (they own quality specs)
   // For type samples: either can be used
   useEffect(() => {
-    if (formData.buyer || formData.seller) {
-      // Prioritize buyer for client matching (PSS/SS samples need buyer's quality specs)
-      const searchTerm = (formData.buyer || formData.seller).toLowerCase()
+    // Use qc_client if separate, otherwise use importer
+    const clientName = formData.importer_is_qc_client ? formData.importer : formData.qc_client
+    if (clientName || formData.seller) {
+      // Prioritize importer/qc_client for client matching (PSS/SS samples need their quality specs)
+      const searchTerm = (clientName || formData.seller).toLowerCase()
       const filtered = clients.filter(client =>
         client.company.toLowerCase().includes(searchTerm) ||
         client.name.toLowerCase().includes(searchTerm)
@@ -129,7 +138,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     } else {
       setFilteredClients([])
     }
-  }, [formData.seller, formData.buyer, clients])
+  }, [formData.seller, formData.importer, formData.qc_client, formData.importer_is_qc_client, clients])
 
   // Auto-populate laboratory and origin for user's assigned lab
   useEffect(() => {
@@ -272,6 +281,18 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     }
   }
 
+  const loadQcClients = async () => {
+    const { data, error } = await supabase
+      .from('clients')
+      .select('*')
+      .eq('is_qc_client', true)
+      .order('company')
+
+    if (data && !error) {
+      setQcClients(data as Client[])
+    }
+  }
+
   const updateFormData = (field: keyof FormData, value: any) => {
     setFormData(prev => ({ ...prev, [field]: value }))
   }
@@ -289,9 +310,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           formData.sample_type
         )
 
-        // For PSS and SS samples, buyer and quality_spec_id are required
+        // For PSS and SS samples, importer (or qc_client if separate) and quality_spec_id are required
         if (formData.sample_type === 'pss' || formData.sample_type === 'ss') {
-          return baseValidation && !!(formData.buyer && formData.quality_spec_id)
+          const hasImporterOrQcClient = formData.importer_is_qc_client
+            ? !!formData.importer
+            : !!(formData.importer || formData.qc_client)
+          return baseValidation && hasImporterOrQcClient && !!formData.quality_spec_id
         }
 
         return baseValidation
@@ -381,17 +405,77 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         exporter_id = shipperData?.id
       }
 
-      // Look up importer UUID from buyer name (if provided)
+      // Look up importer UUID from importer name (if provided)
       let importer_id: string | undefined
-      if (formData.buyer) {
-        const { data: importerData } = await supabase
-          .from('importers')
+      if (formData.importer) {
+        // First check if it's from the clients table (when importer_is_qc_client is true and they selected a client)
+        const { data: clientAsImporter } = await supabase
+          .from('clients')
           .select('id')
-          .ilike('name', formData.buyer)
+          .or(`company.ilike.${formData.importer},fantasy_name.ilike.${formData.importer}`)
+          .eq('is_qc_client', true)
           .limit(1)
           .maybeSingle()
 
-        importer_id = importerData?.id
+        // If not found in clients, look in importers table
+        if (!clientAsImporter) {
+          const { data: importerData } = await supabase
+            .from('importers')
+            .select('id')
+            .ilike('name', formData.importer)
+            .limit(1)
+            .maybeSingle()
+
+          importer_id = importerData?.id
+        }
+        // Note: if it's a client (not importer), importer_id stays undefined, which is OK
+      }
+
+      // Determine client_id based on importer_is_qc_client checkbox
+      let qc_client_id: string | undefined = formData.client_id || undefined
+      if (formData.importer_is_qc_client) {
+        // The importer IS the QC client - find the client by matching importer name
+        if (formData.importer) {
+          const { data: clientData } = await supabase
+            .from('clients')
+            .select('id')
+            .or(`company.ilike.${formData.importer},fantasy_name.ilike.${formData.importer}`)
+            .eq('is_qc_client', true)
+            .limit(1)
+            .maybeSingle()
+
+          if (clientData) {
+            qc_client_id = clientData.id
+          } else {
+            // Check if the importer has a linked client_id
+            const { data: importerWithClient } = await supabase
+              .from('importers')
+              .select('client_id')
+              .ilike('name', formData.importer)
+              .not('client_id', 'is', null)
+              .limit(1)
+              .maybeSingle()
+
+            if (importerWithClient?.client_id) {
+              qc_client_id = importerWithClient.client_id
+            }
+          }
+        }
+      } else {
+        // QC client is separate - look up by qc_client name
+        if (formData.qc_client) {
+          const { data: separateClientData } = await supabase
+            .from('clients')
+            .select('id')
+            .or(`company.ilike.${formData.qc_client},fantasy_name.ilike.${formData.qc_client}`)
+            .eq('is_qc_client', true)
+            .limit(1)
+            .maybeSingle()
+
+          if (separateClientData) {
+            qc_client_id = separateClientData.id
+          }
+        }
       }
 
       // Look up roaster UUID from roaster name (if provided)
@@ -408,7 +492,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       }
 
       const sampleData: Partial<SampleInsert> = {
-        client_id: formData.client_id || undefined,
+        client_id: qc_client_id, // Use the resolved QC client ID
         laboratory_id: formData.laboratory_id,
         origin: formData.origin,
         micro_origin: formData.micro_origin || undefined,
@@ -423,9 +507,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         quality_name: formData.quality_name ? formData.quality_name.trim() : undefined,
         hide_exporter_on_label: formData.hide_exporter_on_label || false,
         wolthers_contract_nr: formData.wolthers_contract_nr || undefined,
+        seller_contract_nr: formData.seller_contract_nr || undefined,
+        shipper_contract_nr: formData.shipper_contract_nr || undefined,
         exporter_contract_nr: formData.exporter_contract_nr || undefined,
-        buyer_contract_nr: formData.buyer_contract_nr || undefined,
+        buyer_contract_nr: formData.importer_contract_nr || undefined, // Map to existing DB column
         roaster_contract_nr: formData.roaster_contract_nr || undefined,
+        qc_client_contract_nr: formData.qc_client_contract_nr || undefined,
         ico_number: formData.ico_number || undefined,
         container_nr: formData.container_nr || undefined,
         bags_quantity_mt: formData.bags_quantity_mt ? parseFloat(formData.bags_quantity_mt) : undefined,
@@ -529,6 +616,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               approvedPSSSamples={approvedPSSSamples}
               exporters={exporters}
               importers={importers}
+              qcClients={qcClients}
             />
           )}
 

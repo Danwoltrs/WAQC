@@ -81,6 +81,7 @@ export interface CertificateData {
     exporter: SupplyChainEntity
     importer: SupplyChainEntity
     roaster: SupplyChainEntity
+    qcClient: SupplyChainEntity
     wolthersContract: string | null
   }
   client: {
@@ -151,6 +152,9 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       exporter_contract_nr,
       roaster_contract_nr,
       buyer_contract_nr,
+      seller_contract_nr,
+      shipper_contract_nr,
+      qc_client_contract_nr,
       client_id,
       laboratory_id,
       quality_spec_id,
@@ -422,6 +426,11 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         name: roasterResult.data?.name || null,
         country: roasterResult.data?.country || null,
         contract: sample.roaster_contract_nr || null,
+      },
+      qcClient: {
+        name: client?.fantasy_name || client?.company || null,
+        country: null, // Client table doesn't have country
+        contract: sample.qc_client_contract_nr || null,
       },
       wolthersContract: sample.contract_number || null,
     },

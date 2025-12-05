@@ -115,7 +115,7 @@ export async function GET(
       contracts.push({ type: 'Wolthers', value: (sample as any).wolthers_contract_nr })
     }
     if ((sample as any).buyer_contract_nr) {
-      contracts.push({ type: 'Buyer', value: (sample as any).buyer_contract_nr })
+      contracts.push({ type: 'Importer', value: (sample as any).buyer_contract_nr })
     }
     if ((sample as any).exporter_contract_nr) {
       contracts.push({ type: 'Exporter', value: (sample as any).exporter_contract_nr })

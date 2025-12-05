@@ -24,20 +24,55 @@ export function BasicInfoStep({
   filteredClients,
   approvedPSSSamples,
   exporters = [],
-  importers = []
+  importers = [],
+  qcClients = []
 }: StepComponentProps) {
   const [isIOS, setIsIOS] = useState(false)
   const [showQRCode, setShowQRCode] = useState(false)
-  const [buyerQualities, setBuyerQualities] = useState<any[]>([])
+  const [importerQualities, setImporterQualities] = useState<any[]>([])
   const [loadingQualities, setLoadingQualities] = useState(false)
   const [showLinkTemplateDialog, setShowLinkTemplateDialog] = useState(false)
-  const [selectedBuyerClient, setSelectedBuyerClient] = useState<any>(null)
+  const [selectedImporterClient, setSelectedImporterClient] = useState<any>(null)
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
-  const [createClientType, setCreateClientType] = useState<'exporter' | 'buyer' | 'roaster'>('exporter')
+  const [createClientType, setCreateClientType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
   const [microOriginOpen, setMicroOriginOpen] = useState(false)
 
-  // Buyers from importers table
-  const buyers = useMemo(() => importers, [importers])
+  // Merged list of importers and QC clients for the importer dropdown when importer_is_qc_client is true
+  const mergedImporterOptions = useMemo(() => {
+    if (formData.importer_is_qc_client) {
+      // Merge: QC clients + importers with linked client_id
+      const clientOptions = qcClients.map(c => ({
+        id: c.id,
+        name: c.fantasy_name || c.company,
+        type: 'client' as const,
+        clientId: c.id
+      }))
+      const importerOptions = importers
+        .filter((imp: any) => imp.client_id) // Only importers linked to clients
+        .map((imp: any) => ({
+          id: imp.id,
+          name: imp.name,
+          type: 'importer' as const,
+          clientId: imp.client_id
+        }))
+      // Deduplicate by name
+      const seen = new Set<string>()
+      return [...clientOptions, ...importerOptions].filter(opt => {
+        const key = opt.name.toLowerCase()
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+    } else {
+      // Only show importers table
+      return importers.map((imp: any) => ({
+        id: imp.id,
+        name: imp.name,
+        type: 'importer' as const,
+        clientId: imp.client_id
+      }))
+    }
+  }, [formData.importer_is_qc_client, qcClients, importers])
 
   // Roasters from clients table (keep existing filter for roasters since no separate roasters table)
   const roasters = useMemo(() =>
@@ -124,61 +159,78 @@ export function BasicInfoStep({
     setIsIOS(/iphone|ipad|ipod/.test(userAgent))
   }, [])
 
-  // Load buyer's quality templates when buyer changes
+  // Load quality templates based on importer/QC client selection
   useEffect(() => {
-    const loadBuyerQualities = async () => {
-      if (!formData.buyer) {
-        setBuyerQualities([])
+    const loadImporterQualities = async () => {
+      // Determine which client ID to use for quality specs
+      let clientIdForQualities: string | null = null
+
+      if (formData.importer_is_qc_client) {
+        // Importer IS the QC client - find the client ID
+        if (formData.importer) {
+          const selectedOption = mergedImporterOptions.find(opt => opt.name === formData.importer)
+          if (selectedOption) {
+            clientIdForQualities = selectedOption.clientId
+            setSelectedImporterClient({ name: selectedOption.name, id: selectedOption.clientId })
+          } else {
+            setSelectedImporterClient(null)
+          }
+        } else {
+          setImporterQualities([])
+          setSelectedImporterClient(null)
+          return
+        }
+      } else {
+        // QC client is separate - use qc_client field
+        if (formData.qc_client) {
+          const qcClient = qcClients.find(c => (c.fantasy_name || c.company) === formData.qc_client)
+          if (qcClient) {
+            clientIdForQualities = qcClient.id
+            setSelectedImporterClient({ name: formData.qc_client, id: qcClient.id })
+          } else {
+            setSelectedImporterClient(null)
+          }
+        } else {
+          setImporterQualities([])
+          setSelectedImporterClient(null)
+          return
+        }
+      }
+
+      if (!clientIdForQualities) {
+        setImporterQualities([])
         return
       }
 
-      // Find the buyer (importer) by name - importers table uses 'name' field
-      const buyerImporter = buyers.find((imp: any) => imp.name === formData.buyer)
-
-      if (!buyerImporter) {
-        setBuyerQualities([])
-        setSelectedBuyerClient(null)
-        return
-      }
-
-      // Importers have client_id that links to the actual client with quality specs
-      const clientId = (buyerImporter as any).client_id
-      if (!clientId) {
-        setBuyerQualities([])
-        setSelectedBuyerClient(buyerImporter)
-        return
-      }
-
-      setSelectedBuyerClient({ ...buyerImporter, id: clientId })
       setLoadingQualities(true)
       try {
-        const response = await fetch(`/api/clients/${clientId}/quality-specifications`)
+        const response = await fetch(`/api/clients/${clientIdForQualities}/quality-specifications`)
         if (response.ok) {
           const data = await response.json()
-          setBuyerQualities(data.specifications || [])
+          setImporterQualities(data.specifications || [])
         }
       } catch (error) {
-        console.error('Error loading buyer qualities:', error)
+        console.error('Error loading quality specifications:', error)
       } finally {
         setLoadingQualities(false)
       }
     }
 
-    loadBuyerQualities()
-  }, [formData.buyer, buyers])
+    loadImporterQualities()
+  }, [formData.importer, formData.qc_client, formData.importer_is_qc_client, mergedImporterOptions, qcClients])
 
-  // Reload buyer qualities when link template dialog is closed successfully
+  // Reload quality specs when link template dialog is closed successfully
   const handleQualityTemplateLinked = async () => {
-    if (selectedBuyerClient) {
+    if (selectedImporterClient) {
       setLoadingQualities(true)
       try {
-        const response = await fetch(`/api/clients/${selectedBuyerClient.id}/quality-specifications`)
+        const response = await fetch(`/api/clients/${selectedImporterClient.id}/quality-specifications`)
         if (response.ok) {
           const data = await response.json()
-          setBuyerQualities(data.specifications || [])
+          setImporterQualities(data.specifications || [])
         }
       } catch (error) {
-        console.error('Error reloading buyer qualities:', error)
+        console.error('Error reloading quality specifications:', error)
       } finally {
         setLoadingQualities(false)
       }
@@ -531,62 +583,116 @@ export function BasicInfoStep({
           )}
         </div>
 
-        {/* Buyer and Roaster row */}
+        {/* Importer row with QC Client checkbox */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div className="space-y-2">
-            <Label htmlFor="buyer">
-              Buyer {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
-            </Label>
+            <div className="flex items-center gap-1.5">
+              <Label htmlFor="importer">
+                Importer {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
+              </Label>
+              <Checkbox
+                id="importer_is_qc_client"
+                checked={formData.importer_is_qc_client}
+                onCheckedChange={(checked) => {
+                  updateFormData('importer_is_qc_client', checked as boolean)
+                  if (checked) {
+                    updateFormData('qc_client', '')
+                  }
+                }}
+                className="ml-2"
+              />
+              <Label htmlFor="importer_is_qc_client" className="text-sm cursor-pointer text-muted-foreground">
+                QC Client
+              </Label>
+            </div>
             <Select
-              value={formData.buyer === '' ? 'custom' : buyers.find((imp: any) => imp.name === formData.buyer) ? formData.buyer : 'custom'}
+              value={formData.importer === '' ? 'custom' : mergedImporterOptions.find(opt => opt.name === formData.importer) ? formData.importer : 'custom'}
               onValueChange={(value) => {
                 if (value === 'new') {
-                  setCreateClientType('buyer')
+                  setCreateClientType('importer')
                   setShowCreateClientDialog(true)
                 } else if (value !== 'custom') {
-                  updateFormData('buyer', value)
+                  updateFormData('importer', value)
                 }
               }}
             >
               <SelectTrigger>
-                <SelectValue placeholder={(formData.sample_type === 'pss' || formData.sample_type === 'ss') ? 'Select buyer (required)' : 'Select existing or type new'} />
+                <SelectValue placeholder={(formData.sample_type === 'pss' || formData.sample_type === 'ss') ? 'Select importer (required)' : 'Select existing or type new'} />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="custom">Type custom name...</SelectItem>
-                <SelectItem value="new">+ Create New Buyer</SelectItem>
-                {buyers.length > 0 ? (
+                <SelectItem value="new">+ Create New Importer</SelectItem>
+                {mergedImporterOptions.length > 0 ? (
                   <>
                     <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                      Buyers & Importers
+                      {formData.importer_is_qc_client ? 'QC Clients & Importers' : 'Importers'}
                     </div>
-                    {buyers.map((importer: any) => (
-                      <SelectItem key={importer.id} value={importer.name}>
-                        {importer.name}
+                    {mergedImporterOptions.map((option) => (
+                      <SelectItem key={option.id} value={option.name}>
+                        {option.name}
                       </SelectItem>
                     ))}
                   </>
                 ) : (
                   <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    No buyers registered
+                    No importers registered
                   </div>
                 )}
               </SelectContent>
             </Select>
-            {(formData.buyer === '' || !buyers.find((imp: any) => imp.name === formData.buyer)) && (
+            {(formData.importer === '' || !mergedImporterOptions.find(opt => opt.name === formData.importer)) && (
               <Input
-                id="buyer"
-                value={formData.buyer}
-                onChange={(e) => updateFormData('buyer', e.target.value)}
-                placeholder="Enter buyer name"
+                id="importer"
+                value={formData.importer}
+                onChange={(e) => updateFormData('importer', e.target.value)}
+                placeholder="Enter importer name"
               />
             )}
             {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && (
               <p className="text-xs text-muted-foreground">
-                Required for PSS/SS samples to assign quality specifications
+                {formData.importer_is_qc_client
+                  ? 'Required - Importer is also the QC client'
+                  : 'Required for PSS/SS samples'}
               </p>
             )}
           </div>
 
+          {/* QC Client field - only show when importer_is_qc_client is false */}
+          {!formData.importer_is_qc_client && (
+            <div className="space-y-2">
+              <Label htmlFor="qc_client">
+                QC Client {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
+              </Label>
+              <Select
+                value={formData.qc_client || 'none'}
+                onValueChange={(value) => {
+                  if (value === 'none') {
+                    updateFormData('qc_client', '')
+                  } else {
+                    updateFormData('qc_client', value)
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select QC client" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select QC client...</SelectItem>
+                  {qcClients.map((client) => (
+                    <SelectItem key={client.id} value={client.fantasy_name || client.company}>
+                      {client.fantasy_name || client.company}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                The client who commissioned the quality control
+              </p>
+            </div>
+          )}
+
+          {/* Roaster field - show on same row when importer_is_qc_client is true */}
+          {formData.importer_is_qc_client && (
           <div className="space-y-2">
             <Label htmlFor="roaster">Roaster</Label>
             <Select
@@ -633,7 +739,60 @@ export function BasicInfoStep({
               />
             )}
           </div>
+          )}
         </div>
+
+        {/* Roaster row - show separately when QC client is separate from importer */}
+        {!formData.importer_is_qc_client && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="roaster">Roaster</Label>
+              <Select
+                value={formData.roaster === '' ? 'custom' : roasters.find(c => (c.fantasy_name || c.company) === formData.roaster) ? formData.roaster : 'custom'}
+                onValueChange={(value) => {
+                  if (value === 'new') {
+                    setCreateClientType('roaster')
+                    setShowCreateClientDialog(true)
+                  } else if (value !== 'custom') {
+                    updateFormData('roaster', value)
+                  }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select existing or type new" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="custom">Type custom name...</SelectItem>
+                  <SelectItem value="new">+ Create New Roaster</SelectItem>
+                  {roasters.length > 0 ? (
+                    <>
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                        Roasters
+                      </div>
+                      {roasters.map((client) => (
+                        <SelectItem key={client.id} value={client.fantasy_name || client.company}>
+                          {client.fantasy_name || client.company}
+                        </SelectItem>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      No roasters registered
+                    </div>
+                  )}
+                </SelectContent>
+              </Select>
+              {(formData.roaster === '' || !roasters.find(c => (c.fantasy_name || c.company) === formData.roaster)) && (
+                <Input
+                  id="roaster"
+                  value={formData.roaster}
+                  onChange={(e) => updateFormData('roaster', e.target.value)}
+                  placeholder="Enter roaster name"
+                />
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Supplier row */}
         <div className="space-y-2">
@@ -648,15 +807,15 @@ export function BasicInfoStep({
 
       {/* Quality fields row - 2 columns (removed Quality Name) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {/* Quality Specification - Show for PSS/SS with buyer selected (required) OR for type samples (optional) */}
-        {formData.buyer && selectedBuyerClient && (formData.sample_type === 'pss' || formData.sample_type === 'ss' || formData.sample_type === 'type') ? (
+        {/* Quality Specification - Show for PSS/SS with importer/QC client selected (required) OR for type samples (optional) */}
+        {((formData.importer_is_qc_client && formData.importer) || (!formData.importer_is_qc_client && formData.qc_client)) && selectedImporterClient && (formData.sample_type === 'pss' || formData.sample_type === 'ss' || formData.sample_type === 'type') ? (
           <div className="space-y-2">
           <Label htmlFor="quality_spec_id">
             Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
           </Label>
           {loadingQualities ? (
-            <div className="text-sm text-muted-foreground">Loading buyer qualities...</div>
-          ) : buyerQualities.length > 0 ? (
+            <div className="text-sm text-muted-foreground">Loading QC client qualities...</div>
+          ) : importerQualities.length > 0 ? (
             <Select
               value={formData.quality_spec_id || 'none'}
               onValueChange={(value) => {
@@ -665,12 +824,12 @@ export function BasicInfoStep({
                   updateFormData('quality_name', '')
                 } else {
                   updateFormData('quality_spec_id', value)
-                  const selectedQuality = buyerQualities.find(q => q.id === value)
+                  const selectedQuality = importerQualities.find(q => q.id === value)
                   if (selectedQuality?.custom_name) {
                     updateFormData('quality_name', selectedQuality.custom_name)
                   }
-                  if (selectedBuyerClient) {
-                    updateFormData('client_id', selectedBuyerClient.id)
+                  if (selectedImporterClient) {
+                    updateFormData('client_id', selectedImporterClient.id)
                   }
                 }
               }}
@@ -686,7 +845,7 @@ export function BasicInfoStep({
                 {formData.sample_type === 'type' && (
                   <SelectItem value="none">None - Use custom quality name</SelectItem>
                 )}
-                {buyerQualities.map((quality) => (
+                {importerQualities.map((quality) => (
                   <SelectItem key={quality.id} value={quality.id}>
                     {quality.custom_name || quality.quality_code || 'Unnamed Quality'}
                     {quality.origin && ` (${quality.origin})`}
@@ -698,10 +857,10 @@ export function BasicInfoStep({
             <div className="space-y-2">
               <div className="p-3 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
                 <p className="text-sm text-yellow-900 dark:text-yellow-100">
-                  No quality specifications found for this buyer.
+                  No quality specifications found for this QC client.
                 </p>
                 <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-1">
-                  You need to link a quality template to this buyer before proceeding.
+                  You need to link a quality template to this QC client before proceeding.
                 </p>
               </div>
               <Button
@@ -709,13 +868,13 @@ export function BasicInfoStep({
                 variant="outline"
                 size="sm"
                 onClick={() => setShowLinkTemplateDialog(true)}
-                disabled={!selectedBuyerClient}
+                disabled={!selectedImporterClient}
               >
-                + Link Quality Template to Buyer
+                + Link Quality Template to QC Client
               </Button>
             </div>
           ) : null}
-          {buyerQualities.length > 0 && (
+          {importerQualities.length > 0 && (
             <p className="text-xs text-muted-foreground">
               {formData.sample_type === 'type'
                 ? 'Optional: Select a quality template or leave blank to use custom quality name'
@@ -807,12 +966,12 @@ export function BasicInfoStep({
       )}
 
       {/* Link Quality Template Dialog */}
-      {selectedBuyerClient && (
+      {selectedImporterClient && (
         <LinkQualityTemplateDialog
           open={showLinkTemplateDialog}
           onOpenChange={setShowLinkTemplateDialog}
-          clientId={selectedBuyerClient.id}
-          clientName={selectedBuyerClient.name || selectedBuyerClient.fantasy_name || selectedBuyerClient.company}
+          clientId={selectedImporterClient.id}
+          clientName={selectedImporterClient.name || selectedImporterClient.fantasy_name || selectedImporterClient.company}
           onSuccess={handleQualityTemplateLinked}
         />
       )}
@@ -828,8 +987,8 @@ export function BasicInfoStep({
             // When creating from Seller field, update seller; from Shipper field, update shipper
             // For now, default to seller since that's the primary use case
             updateFormData('seller', clientName)
-          } else if (createClientType === 'buyer') {
-            updateFormData('buyer', clientName)
+          } else if (createClientType === 'importer') {
+            updateFormData('importer', clientName)
           } else if (createClientType === 'roaster') {
             updateFormData('roaster', clientName)
           }

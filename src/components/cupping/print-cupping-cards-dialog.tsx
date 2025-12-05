@@ -460,7 +460,7 @@ export function PrintCuppingCardsDialog({
                   htmlFor="show-buyer"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 >
-                  Show Buyer/Client
+                  Show Importer/Client
                 </label>
               </div>
               <div className="flex items-center space-x-2">

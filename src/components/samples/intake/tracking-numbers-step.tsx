@@ -8,6 +8,13 @@ export function TrackingNumbersStep({ formData, updateFormData }: StepComponentP
   // Check if sample type is PSS (Pre-Shipment Sample)
   const isPSS = formData.sample_type === 'pss'
 
+  // Dynamic visibility based on supply chain selections
+  const showSellerContract = !!formData.seller
+  const showShipperContract = !!formData.shipper && !formData.same_seller_shipper
+  const showImporterContract = !!formData.importer
+  const showRoasterContract = !!formData.roaster
+  const showQcClientContract = !formData.importer_is_qc_client && !!formData.qc_client
+
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">
@@ -15,6 +22,7 @@ export function TrackingNumbersStep({ formData, updateFormData }: StepComponentP
       </p>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Wolthers Contract - Always visible */}
         <div className="space-y-2">
           <Label htmlFor="wolthers_contract_nr">Wolthers Contract Number</Label>
           <Input
@@ -25,6 +33,33 @@ export function TrackingNumbersStep({ formData, updateFormData }: StepComponentP
           />
         </div>
 
+        {/* Seller Contract - Show if seller is filled */}
+        {showSellerContract && (
+          <div className="space-y-2">
+            <Label htmlFor="seller_contract_nr">Seller Contract Number</Label>
+            <Input
+              id="seller_contract_nr"
+              value={formData.seller_contract_nr}
+              onChange={(e) => updateFormData('seller_contract_nr', e.target.value)}
+              placeholder="e.g., SC-2024-001"
+            />
+          </div>
+        )}
+
+        {/* Shipper Contract - Show if shipper is filled AND different from seller */}
+        {showShipperContract && (
+          <div className="space-y-2">
+            <Label htmlFor="shipper_contract_nr">Shipper Contract Number</Label>
+            <Input
+              id="shipper_contract_nr"
+              value={formData.shipper_contract_nr}
+              onChange={(e) => updateFormData('shipper_contract_nr', e.target.value)}
+              placeholder="e.g., SH-2024-001"
+            />
+          </div>
+        )}
+
+        {/* Exporter Contract - Always visible for legacy support */}
         <div className="space-y-2">
           <Label htmlFor="exporter_contract_nr">Exporter Contract Number</Label>
           <Input
@@ -35,25 +70,44 @@ export function TrackingNumbersStep({ formData, updateFormData }: StepComponentP
           />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="buyer_contract_nr">Buyer Contract Number</Label>
-          <Input
-            id="buyer_contract_nr"
-            value={formData.buyer_contract_nr}
-            onChange={(e) => updateFormData('buyer_contract_nr', e.target.value)}
-            placeholder="e.g., BC-2024-001"
-          />
-        </div>
+        {/* Importer Contract - Show if importer is filled */}
+        {showImporterContract && (
+          <div className="space-y-2">
+            <Label htmlFor="importer_contract_nr">Importer Contract Number</Label>
+            <Input
+              id="importer_contract_nr"
+              value={formData.importer_contract_nr}
+              onChange={(e) => updateFormData('importer_contract_nr', e.target.value)}
+              placeholder="e.g., IM-2024-001"
+            />
+          </div>
+        )}
 
-        <div className="space-y-2">
-          <Label htmlFor="roaster_contract_nr">Roaster Contract Number</Label>
-          <Input
-            id="roaster_contract_nr"
-            value={formData.roaster_contract_nr}
-            onChange={(e) => updateFormData('roaster_contract_nr', e.target.value)}
-            placeholder="e.g., RC-2024-001"
-          />
-        </div>
+        {/* Roaster Contract - Show if roaster is filled */}
+        {showRoasterContract && (
+          <div className="space-y-2">
+            <Label htmlFor="roaster_contract_nr">Roaster Contract Number</Label>
+            <Input
+              id="roaster_contract_nr"
+              value={formData.roaster_contract_nr}
+              onChange={(e) => updateFormData('roaster_contract_nr', e.target.value)}
+              placeholder="e.g., RC-2024-001"
+            />
+          </div>
+        )}
+
+        {/* QC Client Contract - Show if QC client is separate from importer */}
+        {showQcClientContract && (
+          <div className="space-y-2">
+            <Label htmlFor="qc_client_contract_nr">QC Client Contract Number</Label>
+            <Input
+              id="qc_client_contract_nr"
+              value={formData.qc_client_contract_nr}
+              onChange={(e) => updateFormData('qc_client_contract_nr', e.target.value)}
+              placeholder="e.g., QC-2024-001"
+            />
+          </div>
+        )}
 
         {/* Only show ICO Number and Container Number for SS (Shipped Sample) */}
         {!isPSS && (
