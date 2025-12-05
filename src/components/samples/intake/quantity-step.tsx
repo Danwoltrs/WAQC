@@ -100,13 +100,10 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
       </div>
 
       {/* All bag fields in one row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         {/* Bag Type Selection */}
         <div className="space-y-2">
-          <Label htmlFor="bag_type" className="flex items-center gap-2">
-            Type of Bag *
-            <Badge variant="secondary" className="text-xs">Required</Badge>
-          </Label>
+          <Label htmlFor="bag_type">Type of Bag *</Label>
           <Select
             value={formData.bag_type}
             onValueChange={(value) => {
@@ -129,9 +126,8 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
 
         {/* Bag Count - Different behavior for Bulk */}
         <div className="space-y-2">
-          <Label htmlFor="bag_count" className="flex items-center gap-2">
-            {formData.bag_type === 'bulk' ? 'Equivalent 60kg Bags *' : 'Quantity of Bags *'}
-            <Badge variant="secondary" className="text-xs">Required</Badge>
+          <Label htmlFor="bag_count">
+            {formData.bag_type === 'bulk' ? 'Equiv. 60kg Bags *' : 'Qty of Bags *'}
           </Label>
           <Input
             id="bag_count"
@@ -165,10 +161,7 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
 
         {/* Bag Weight */}
         <div className="space-y-2">
-          <Label htmlFor="bag_weight_kg" className="flex items-center gap-2">
-            Bag Weight *
-            <Badge variant="secondary" className="text-xs">Required</Badge>
-          </Label>
+          <Label htmlFor="bag_weight_kg">Bag Weight *</Label>
 
           {!customWeight && formData.bag_type ? (
             <div className="space-y-2">
@@ -223,7 +216,21 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
           )}
 
           <p className="text-xs text-muted-foreground">
-            Weight per bag in kilograms
+            Weight per bag in kg
+          </p>
+        </div>
+
+        {/* Shipment Month */}
+        <div className="space-y-2">
+          <Label htmlFor="shipment_month">Shipment Month</Label>
+          <Input
+            id="shipment_month"
+            type="month"
+            value={formData.shipment_month}
+            onChange={(e) => updateFormData('shipment_month', e.target.value)}
+          />
+          <p className="text-xs text-muted-foreground">
+            Expected shipment
           </p>
         </div>
       </div>
@@ -273,20 +280,6 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
           </p>
         </div>
       )}
-
-      {/* Shipment Month */}
-      <div className="space-y-2">
-        <Label htmlFor="shipment_month">Shipment Month</Label>
-        <Input
-          id="shipment_month"
-          type="month"
-          value={formData.shipment_month}
-          onChange={(e) => updateFormData('shipment_month', e.target.value)}
-        />
-        <p className="text-xs text-muted-foreground">
-          Expected month of shipment (optional)
-        </p>
-      </div>
     </div>
   )
 }
