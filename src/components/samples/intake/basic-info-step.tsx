@@ -280,7 +280,7 @@ export function BasicInfoStep({
         <p className="text-sm font-semibold text-blue-900 dark:text-blue-100 mb-3">
           Step 1: Select Sample Type
         </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div className="space-y-2">
             <Label htmlFor="sample_type">Sample Type *</Label>
             <Select
@@ -338,6 +338,26 @@ export function BasicInfoStep({
               </p>
             )}
           </div>
+          <div className="space-y-2">
+            <Label htmlFor="processing_method">Processing Method</Label>
+            <Select
+              value={formData.processing_method}
+              onValueChange={(value) => updateFormData('processing_method', value)}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select method (optional)" />
+              </SelectTrigger>
+              <SelectContent>
+                {PROCESSING_METHODS.map((method) => (
+                  <SelectItem key={method} value={method}>
+                    {method}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <div className="space-y-2">
             <Label htmlFor="micro_origin">Micro-Origin</Label>
             {availableMicroOrigins.length > 0 ? (
@@ -830,25 +850,6 @@ export function BasicInfoStep({
           <div></div>
         )}
 
-        {/* Processing Method */}
-        <div className="space-y-2">
-          <Label htmlFor="processing_method">Processing Method</Label>
-          <Select
-            value={formData.processing_method}
-            onValueChange={(value) => updateFormData('processing_method', value)}
-          >
-            <SelectTrigger>
-              <SelectValue placeholder="Select method (optional)" />
-            </SelectTrigger>
-            <SelectContent>
-              {PROCESSING_METHODS.map((method) => (
-                <SelectItem key={method} value={method}>
-                  {method}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
       {formData.sample_type === 'ss' && (
