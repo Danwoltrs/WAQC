@@ -61,11 +61,11 @@ export function SupplyChainStep({
   )
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Seller Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3">
+      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1.5">
             <Label className="text-xs text-muted-foreground">Seller *</Label>
             <div className="flex items-center gap-1">
               <Checkbox
@@ -117,7 +117,7 @@ export function SupplyChainStep({
           )}
         </div>
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">Contract Ref.</Label>
+          <Label className="text-xs text-muted-foreground mb-1.5 block">Contract Ref.</Label>
           <Input
             value={formData.seller_contract_nr}
             onChange={(e) => updateFormData('seller_contract_nr', e.target.value)}
@@ -126,7 +126,7 @@ export function SupplyChainStep({
           />
         </div>
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">Sample Ref.</Label>
+          <Label className="text-xs text-muted-foreground mb-1.5 block">Sample Ref.</Label>
           <Input
             value={formData.exporter_sample_number}
             onChange={(e) => updateFormData('exporter_sample_number', e.target.value)}
@@ -138,9 +138,9 @@ export function SupplyChainStep({
 
       {/* Shipper Row (only if not same as seller) */}
       {!formData.same_seller_shipper && (
-        <div className="grid grid-cols-[180px_160px_140px] gap-3">
+        <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
           <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Shipper *</Label>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">Shipper *</Label>
             <Select
               value={formData.shipper === '' ? 'custom' : exporters.find((exp: any) => exp.name === formData.shipper) ? formData.shipper : 'custom'}
               onValueChange={(value) => {
@@ -173,7 +173,7 @@ export function SupplyChainStep({
             )}
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Contract Ref.</Label>
+            <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
             <Input
               value={formData.shipper_contract_nr}
               onChange={(e) => updateFormData('shipper_contract_nr', e.target.value)}
@@ -189,9 +189,9 @@ export function SupplyChainStep({
       <div className="border-t" />
 
       {/* Importer Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3">
+      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
         <div>
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1.5">
             <Label className="text-xs text-muted-foreground">Importer</Label>
             <div className="flex items-center gap-1">
               <Checkbox
@@ -237,7 +237,7 @@ export function SupplyChainStep({
           </Select>
         </div>
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">Contract Ref.</Label>
+          <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
           <Input
             value={formData.importer_contract_nr}
             onChange={(e) => updateFormData('importer_contract_nr', e.target.value)}
@@ -250,9 +250,9 @@ export function SupplyChainStep({
 
       {/* QC Client Row (only if not same as importer) */}
       {!formData.importer_is_qc_client && (
-        <div className="grid grid-cols-[180px_160px_140px] gap-3">
+        <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
           <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">QC Client</Label>
+            <Label className="text-xs text-muted-foreground mb-1.5 block">QC Client</Label>
             <Select
               value={formData.qc_client || 'none'}
               onValueChange={(value) => {
@@ -277,7 +277,7 @@ export function SupplyChainStep({
             </Select>
           </div>
           <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Contract Ref.</Label>
+            <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
             <Input
               value={formData.qc_client_contract_nr}
               onChange={(e) => updateFormData('qc_client_contract_nr', e.target.value)}
@@ -293,9 +293,9 @@ export function SupplyChainStep({
       <div className="border-t" />
 
       {/* Supplier Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3">
+      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">Supplier</Label>
+          <Label className="text-xs text-muted-foreground mb-1.5 block">Supplier</Label>
           <Input
             value={formData.supplier}
             onChange={(e) => updateFormData('supplier', e.target.value)}
@@ -304,7 +304,7 @@ export function SupplyChainStep({
           />
         </div>
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">Contract Ref.</Label>
+          <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
           <Input
             value={formData.supplier_contract_nr}
             onChange={(e) => updateFormData('supplier_contract_nr', e.target.value)}
@@ -316,9 +316,9 @@ export function SupplyChainStep({
       </div>
 
       {/* Roaster Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3">
+      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">Roaster</Label>
+          <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster</Label>
           <Select
             value={formData.roaster || 'none'}
             onValueChange={(value) => {
@@ -347,7 +347,7 @@ export function SupplyChainStep({
           </Select>
         </div>
         <div>
-          <Label className="text-xs text-muted-foreground mb-1 block">Contract Ref.</Label>
+          <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
           <Input
             value={formData.roaster_contract_nr}
             onChange={(e) => updateFormData('roaster_contract_nr', e.target.value)}
