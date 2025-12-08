@@ -324,7 +324,7 @@ export function SupplyChainStep({
               <SelectValue placeholder="Select roaster" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">No roaster</SelectItem>
+              <SelectItem value="none">Select...</SelectItem>
               <SelectItem value="new">+ Create New</SelectItem>
               {roasters.length > 0 && roasters.map((client) => (
                 <SelectItem key={client.id} value={client.fantasy_name || client.company}>
