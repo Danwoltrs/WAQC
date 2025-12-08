@@ -94,7 +94,7 @@ export function QualityCertificate({
   return (
     <Document>
       <Page size="A4" style={pageStyles.page}>
-        {/* 1. Header with logos, title, status, dates, certificate # */}
+        {/* 1. Header with logos, title, status, dates, certificate #, origin */}
         <CertificateHeader
           wolthersLogoBase64={wolthersLogoBase64}
           clientLogoBase64={clientLogoBase64}
@@ -102,6 +102,8 @@ export function QualityCertificate({
           status={sample.status}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
+          origin={sample.origin_display}
+          flagBase64={flagBase64}
         />
 
         {/* 2. Supply Chain Row - Gray background with conditional entities */}
@@ -112,9 +114,10 @@ export function QualityCertificate({
           importer={supplyChain.importer}
           roaster={supplyChain.roaster}
           qcClient={supplyChain.qcClient}
+          hasClientLogo={!!clientLogoBase64}
         />
 
-        {/* 3. Sample Details Row - Quantity, type, container#, origin */}
+        {/* 3. Sample Details Row - Quantity, type, container# */}
         <CertificateSampleDetails
           bagsQuantityMt={sample.bags_quantity_mt}
           bagType={sample.bag_type}
@@ -124,10 +127,7 @@ export function QualityCertificate({
           sampleType={sample.sample_type}
           containerNumber={sample.container_nr}
           icoNumber={sample.ico_number}
-          origin={sample.origin}
-          originDisplay={sample.origin_display}
           microOrigin={sample.micro_origin}
-          flagBase64={flagBase64}
         />
 
         {/* 4. Quality Description + Certifications */}

@@ -1,11 +1,12 @@
 /**
  * Certificate sample details row
  * Horizontal row with items separated by pipe |
- * Shows: Quantity | Sample Type | Container/ICO# | Origin | Micro-Origin
+ * Shows: Quantity | Sample Type | Container/ICO# | Micro-Origin
+ * Note: Origin moved to header section
  */
 
 import React from 'react'
-import { View, Text, Image, StyleSheet } from '@react-pdf/renderer'
+import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
 
 const detailStyles = StyleSheet.create({
@@ -42,16 +43,6 @@ const detailStyles = StyleSheet.create({
     color: COLORS.border,
     marginHorizontal: 8,
   },
-  flag: {
-    width: 18,
-    height: 12,
-    marginRight: 4,
-    objectFit: 'contain',
-  },
-  originGroup: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
 })
 
 export interface CertificateSampleDetailsProps {
@@ -65,11 +56,8 @@ export interface CertificateSampleDetailsProps {
   sampleType: string | null
   containerNumber?: string | null
   icoNumber: string | null
-  // Origin
-  origin: string | null
-  originDisplay?: string | null
+  // Region/micro-origin
   microOrigin?: string | null
-  flagBase64?: string
   // Shipment
   shipmentMonth?: string | null
 }
@@ -84,17 +72,43 @@ function formatQuantity(props: CertificateSampleDetailsProps): string {
   }
 
   // Add packaging detail
-  if (bagType && bagType.toLowerCase() !== 'bulk') {
-    if (bags && bagWeightKg) {
-      result += ` (${bags} x ${bagWeightKg}kg ${bagType})`
-    } else if (bags) {
-      result += ` (${bags} ${bagType})`
-    }
-  } else if (bagType?.toLowerCase() === 'bulk') {
+  const normalizedBagType = bagType?.toLowerCase() || ''
+
+  if (normalizedBagType === 'bulk') {
+    // Bulk format: "21.6 MT (in bulk, eq. 360 × 60 kg bags)"
     if (equivalent60kgBags) {
-      result += ` (in bulk, eq. ${equivalent60kgBags} x 60kg bags)`
+      result += ` (in bulk, eq. ${equivalent60kgBags} × 60 kg bags)`
     } else {
       result += ' (in bulk)'
+    }
+  } else if (normalizedBagType === 'big bags' || normalizedBagType === 'bigbags' || normalizedBagType === 'big bag') {
+    // Big bags format: "20 MT (in big bags, eq. 333 × 60 kg bags)"
+    if (equivalent60kgBags) {
+      result += ` (in big bags, eq. ${equivalent60kgBags} × 60 kg bags)`
+    } else {
+      result += ' (in big bags)'
+    }
+  } else if (bagType || bags) {
+    // Standard bags format: "19.2 MT (320 × 60 kg jute bags)"
+    // Only show equivalent if bag weight is NOT 60kg
+    const parts: string[] = []
+
+    // Show actual bags with weight and type
+    if (bags && bagWeightKg) {
+      const bagTypeLabel = bagType ? ` ${bagType}` : ''
+      parts.push(`${bags} × ${bagWeightKg} kg${bagTypeLabel} bags`)
+    } else if (bags) {
+      const bagTypeLabel = bagType ? ` ${bagType}` : ''
+      parts.push(`${bags}${bagTypeLabel} bags`)
+    }
+
+    // Add equivalent 60kg bags ONLY if bag weight is different from 60kg
+    if (equivalent60kgBags && bagWeightKg && bagWeightKg !== 60) {
+      parts.push(`eq. ${equivalent60kgBags} × 60 kg bags`)
+    }
+
+    if (parts.length > 0) {
+      result += ` (${parts.join(', ')})`
     }
   }
 
@@ -122,10 +136,7 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
     sampleType,
     containerNumber,
     icoNumber,
-    origin,
-    originDisplay,
     microOrigin,
-    flagBase64,
     shipmentMonth,
   } = props
 
@@ -137,7 +148,7 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
 
   // Quantity
   if (quantity !== 'N/A') {
-    items.push({ label: 'Qty', value: quantity })
+    items.push({ label: 'Quantity', value: quantity })
   }
 
   // Sample type
@@ -145,30 +156,17 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
     items.push({ label: 'Type', value: formattedType })
   }
 
-  // Container# or ICO#
+  // Container# and/or ICO#
   if (containerNumber) {
     items.push({ label: 'Container', value: containerNumber })
-  } else if (icoNumber) {
+  }
+  if (icoNumber) {
     items.push({ label: 'ICO', value: icoNumber })
   }
 
   // Shipment month
   if (shipmentMonth) {
     items.push({ label: 'Ship', value: shipmentMonth })
-  }
-
-  // Origin with flag
-  const displayOrigin = originDisplay || origin
-  if (displayOrigin) {
-    const originElement = (
-      <View style={detailStyles.originGroup}>
-        {flagBase64 && (
-          <Image src={flagBase64} style={detailStyles.flag} />
-        )}
-        <Text style={detailStyles.value}>{displayOrigin}</Text>
-      </View>
-    )
-    items.push({ label: 'Origin', value: originElement })
   }
 
   // Micro-origin

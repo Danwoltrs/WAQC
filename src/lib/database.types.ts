@@ -10250,6 +10250,7 @@ export type Database = {
         | "final_buyer"
         | "roaster_final_buyer"
         | "service_provider"
+        | "end_client"
       client_type_enum:
         | "roasters"
         | "dealers_importers"
@@ -10517,6 +10518,7 @@ export const Constants = {
         "final_buyer",
         "roaster_final_buyer",
         "service_provider",
+        "end_client",
       ],
       client_type_enum: [
         "roasters",

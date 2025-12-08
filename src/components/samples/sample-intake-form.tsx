@@ -107,7 +107,13 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     if (savedData) {
       try {
         const parsed = JSON.parse(savedData)
-        setFormData(prev => ({ ...prev, ...parsed, photo_file: null }))
+        // Always use today's date for arrival_date (don't restore old dates)
+        setFormData(prev => ({
+          ...prev,
+          ...parsed,
+          photo_file: null,
+          arrival_date: new Date().toISOString().split('T')[0]
+        }))
       } catch (e) {
         console.error('Failed to parse saved form data:', e)
       }
@@ -373,18 +379,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       // Look up seller UUID from seller name
       let seller_id: string | undefined
       if (formData.seller) {
-        const { data: sellerData, error: sellerError } = await supabase
+        const { data: sellerData } = await supabase
           .from('exporters')
           .select('id')
           .ilike('name', formData.seller)
           .limit(1)
-          .single()
+          .maybeSingle()
 
-        if (sellerError) {
-          console.error('Error looking up seller:', sellerError)
-          throw new Error('Failed to find seller. Please check the seller name.')
-        }
-
+        // Only set seller_id if we found a match (don't throw error if not found)
         seller_id = sellerData?.id
       }
 
@@ -395,18 +397,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       if (formData.same_seller_shipper) {
         exporter_id = seller_id // Shipper is same as seller
       } else if (formData.shipper) {
-        const { data: shipperData, error: shipperError } = await supabase
+        const { data: shipperData } = await supabase
           .from('exporters')
           .select('id')
           .ilike('name', formData.shipper)
           .limit(1)
-          .single()
+          .maybeSingle()
 
-        if (shipperError) {
-          console.error('Error looking up shipper:', shipperError)
-          throw new Error('Failed to find shipper. Please check the shipper name.')
-        }
-
+        // Only set exporter_id if we found a match (don't throw error if not found)
         exporter_id = shipperData?.id
       }
 

@@ -91,6 +91,13 @@ export interface CertificateSupplyChainRowProps {
   importer: SupplyChainEntity
   roaster: SupplyChainEntity
   qcClient?: SupplyChainEntity | null
+  hasClientLogo?: boolean  // If true, don't show QC Client name (logo identifies them)
+}
+
+// Helper to compare names case-insensitively
+function namesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
+  if (!a || !b) return false
+  return a.toLowerCase().trim() === b.toLowerCase().trim()
 }
 
 export function CertificateSupplyChainRow({
@@ -100,18 +107,22 @@ export function CertificateSupplyChainRow({
   importer,
   roaster,
   qcClient,
+  hasClientLogo,
 }: CertificateSupplyChainRowProps) {
   // Determine which entities to display
   const hasSupplier = Boolean(supplier?.name)
   const hasExporter = Boolean(exporter.name)
   // Show shipper only if it exists and is different from exporter
-  const hasShipper = Boolean(shipper?.name) && shipper?.name !== exporter.name
+  const hasShipper = Boolean(shipper?.name) && !namesMatch(shipper?.name, exporter.name)
   const hasImporter = Boolean(importer.name)
   const hasRoaster = Boolean(roaster.name)
-  // Show QC Client only if different from both importer and roaster
+  // Don't show QC Client if:
+  // 1. They have a logo displayed (logo identifies them), OR
+  // 2. Their name matches importer or roaster
   const hasQcClient = Boolean(qcClient?.name) &&
-    qcClient?.name !== importer.name &&
-    qcClient?.name !== roaster.name
+    !hasClientLogo &&
+    !namesMatch(qcClient?.name, importer.name) &&
+    !namesMatch(qcClient?.name, roaster.name)
 
   // Count visible entities to determine separators
   const entities = [

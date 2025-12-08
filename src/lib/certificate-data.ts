@@ -99,6 +99,7 @@ export interface CertificateData {
     logo_url: string | null
     certificate_validity_enabled: boolean | null
     certificate_validity_months: number | null
+    client_types: string[] | null
   } | null
   laboratory: {
     id: string
@@ -185,11 +186,14 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   if (sample.client_id) {
     const { data } = await supabase
       .from('clients')
-      .select('id, name, company, fantasy_name, logo_url, certificate_validity_enabled, certificate_validity_months')
+      .select('id, name, company, fantasy_name, logo_url, certificate_validity_enabled, certificate_validity_months, client_types')
       .eq('id', sample.client_id)
       .single()
     client = data
   }
+
+  // Check if client is an end_client (like Dunkin') - they shouldn't appear in supply chain
+  const isEndClient = client?.client_types?.includes('end_client') ?? false
 
   // Fetch laboratory
   let laboratory = null
@@ -238,28 +242,28 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     .single()
 
   // Fetch cupping scores - average across all cuppers
-  // First try to get scores from completed/finalized sessions, then fall back to any scores
+  // Try multiple approaches: completed sessions, finalized sessions, then any scores
   let cuppingScores = null
 
-  // Try completed sessions first
-  const { data: completedScores } = await supabase
+  // First try: completed or finalized sessions with inner join
+  const { data: finishedScores } = await supabase
     .from('cupping_scores')
     .select(`
       scores,
       notes,
-      session:cupping_sessions!inner(
+      session:cupping_sessions(
         status,
         session_type
       )
     `)
     .eq('sample_id', sampleId)
-    .eq('cupping_sessions.status', 'completed')
+    .in('session.status', ['completed', 'finalized'])
     .order('created_at', { ascending: false })
 
-  if (completedScores && completedScores.length > 0) {
-    cuppingScores = completedScores
+  if (finishedScores && finishedScores.length > 0) {
+    cuppingScores = finishedScores
   } else {
-    // Fall back to any cupping scores for this sample (for certified samples with orphaned sessions)
+    // Second try: any cupping scores for this sample (no session filter)
     const { data: allScores } = await supabase
       .from('cupping_scores')
       .select(`
@@ -269,7 +273,9 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       .eq('sample_id', sampleId)
       .order('created_at', { ascending: false })
 
-    cuppingScores = allScores
+    if (allScores && allScores.length > 0) {
+      cuppingScores = allScores
+    }
   }
 
   // Fetch certificate
@@ -366,23 +372,34 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
 
   // Process roast data
   // roast_aspect is stored in quality_assessments.roast_data JSONB
+  // quakers can be in roast_profiles, roast_data JSONB, or green_bean_data JSONB
   let roastAnalysis: RoastAnalysis | null = null
   const roastDataJson = qualityAssessment?.roast_data as Record<string, unknown> | null
+  const greenBeanJson = qualityAssessment?.green_bean_data as Record<string, unknown> | null
+
+  // Get quaker count from multiple possible sources
+  const quakerCount = roastProfile?.quaker_count ??
+    (roastDataJson?.quaker_count as number | undefined) ??
+    (roastDataJson?.quakers as number | undefined) ??
+    (greenBeanJson?.quakers as number | undefined) ??
+    (greenBeanJson?.quaker_count as number | undefined) ??
+    null
+
   if (roastProfile) {
     roastAnalysis = {
       agtron_score: roastProfile.agtron_score,
-      quaker_count: roastProfile.quaker_count,
+      quaker_count: quakerCount,
       roast_date: roastProfile.roast_date,
       roast_level: roastProfile.actual_roast_level,
       roast_aspect: (roastDataJson?.roast_aspect as string) || null,
     }
-  } else if (roastDataJson) {
+  } else if (roastDataJson || quakerCount !== null) {
     roastAnalysis = {
-      agtron_score: (roastDataJson.agtron_score as number) || null,
-      quaker_count: (roastDataJson.quaker_count as number) || null,
-      roast_date: (roastDataJson.roast_date as string) || null,
-      roast_level: (roastDataJson.roast_level as string) || null,
-      roast_aspect: (roastDataJson.roast_aspect as string) || null,
+      agtron_score: (roastDataJson?.agtron_score as number) || null,
+      quaker_count: quakerCount,
+      roast_date: (roastDataJson?.roast_date as string) || null,
+      roast_level: (roastDataJson?.roast_level as string) || null,
+      roast_aspect: (roastDataJson?.roast_aspect as string) || null,
     }
   }
 
@@ -479,9 +496,10 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         address: null, // Address not yet in roasters table
       },
       qcClient: {
-        name: client?.fantasy_name ?? client?.company ?? null,
+        // Don't show end_client type in supply chain (they don't import/roast coffee)
+        name: isEndClient ? null : (client?.fantasy_name ?? client?.company ?? null),
         country: null, // Client table doesn't have country
-        contract: sample.qc_client_contract_nr ?? null,
+        contract: isEndClient ? null : (sample.qc_client_contract_nr ?? null),
         address: null, // Address not yet in clients table
       },
       wolthersContract: sample.contract_number ?? null,

@@ -29,6 +29,28 @@ const headerStyles = StyleSheet.create({
     height: 40,
     objectFit: 'contain',
   },
+  originRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 6,
+    gap: 4,
+  },
+  originFlag: {
+    width: 18,
+    height: 12,
+    objectFit: 'contain',
+  },
+  originLabel: {
+    fontSize: 8,
+    fontWeight: 600,
+    color: COLORS.muted,
+    marginRight: 4,
+  },
+  originText: {
+    fontSize: 10,
+    fontWeight: 600,
+    color: COLORS.dark,
+  },
   centerContent: {
     flex: 1,
     alignItems: 'center',
@@ -84,6 +106,8 @@ interface CertificateHeaderProps {
   status: string | null
   issuedDate: string | null
   validUntil: string | null
+  origin?: string | null
+  flagBase64?: string
 }
 
 export function CertificateHeader({
@@ -93,6 +117,8 @@ export function CertificateHeader({
   status,
   issuedDate,
   validUntil,
+  origin,
+  flagBase64,
 }: CertificateHeaderProps) {
   const statusColor = getStatusColor(status)
   const statusText = getStatusText(status)
@@ -115,7 +141,7 @@ export function CertificateHeader({
   return (
     <View style={headerStyles.container}>
       <View style={headerStyles.topRow}>
-        {/* Wolthers logo (left) */}
+        {/* Wolthers logo (left) + Origin */}
         <View style={headerStyles.leftContent}>
           <View style={headerStyles.logoContainer}>
             {wolthersLogoBase64 ? (
@@ -126,6 +152,15 @@ export function CertificateHeader({
               </Text>
             )}
           </View>
+          {origin && (
+            <View style={headerStyles.originRow}>
+              <Text style={headerStyles.originLabel}>Origin:</Text>
+              {flagBase64 && (
+                <Image src={flagBase64} style={headerStyles.originFlag} />
+              )}
+              <Text style={headerStyles.originText}>{origin}</Text>
+            </View>
+          )}
         </View>
 
         {/* Center content - title, status, and certificate number */}

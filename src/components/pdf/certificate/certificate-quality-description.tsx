@@ -10,11 +10,15 @@ import { COLORS } from './certificate-styles'
 const descStyles = StyleSheet.create({
   container: {
     marginBottom: 8,
-    paddingVertical: 8,
-    paddingHorizontal: 10,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    borderRadius: 4,
+    paddingVertical: 4,
+  },
+  sectionLabel: {
+    fontSize: 8,
+    fontWeight: 600,
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+    marginBottom: 4,
   },
   descriptionText: {
     fontSize: 9,
@@ -24,10 +28,7 @@ const descStyles = StyleSheet.create({
   certificationsRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginTop: 8,
-    paddingTop: 6,
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.borderLight,
+    marginTop: 6,
     gap: 6,
     flexWrap: 'wrap',
   },
@@ -94,7 +95,10 @@ export function CertificateQualityDescription({
   return (
     <View style={descStyles.container}>
       {qualityDescription && (
-        <Text style={descStyles.descriptionText}>{qualityDescription}</Text>
+        <>
+          <Text style={descStyles.sectionLabel}>Quality:</Text>
+          <Text style={descStyles.descriptionText}>{qualityDescription}</Text>
+        </>
       )}
 
       {hasCertifications && (

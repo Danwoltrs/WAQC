@@ -1,125 +1,124 @@
 /**
  * Certificate screen distribution and defects section
- * Left: Screen size distribution (vertical list)
- * Right: Defects with auto-overflow (primary 1 col, secondary 2-3 cols if >8)
+ * Two separate sections: Screen | Defects
+ * Screen: sorted largest to smallest with pan always last
+ * Defects: summary row on top, two columns (Primary | Secondary) with dotted lines to counts
  */
 
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
 
-const screenStyles = StyleSheet.create({
+const styles = StyleSheet.create({
   container: {
-    marginBottom: 8,
     flexDirection: 'row',
+    marginBottom: 8,
+    gap: 10,
+  },
+  // Screen section styles
+  screenSection: {
+    width: 85,
     borderWidth: 0.5,
     borderColor: COLORS.border,
     borderRadius: 4,
-    overflow: 'hidden',
+    padding: 6,
   },
-  section: {
-    flex: 1,
-    padding: 8,
-  },
-  separator: {
-    width: 0.5,
-    backgroundColor: COLORS.border,
-  },
-  sectionTitle: {
-    fontSize: 8,
+  screenTitle: {
+    fontSize: 7,
     fontWeight: 600,
     color: COLORS.muted,
     textTransform: 'uppercase',
-    letterSpacing: 0.3,
-    marginBottom: 6,
-  },
-  screenList: {
-    flexDirection: 'column',
-    gap: 2,
+    letterSpacing: 0.2,
+    marginBottom: 4,
   },
   screenRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: 1,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.borderLight,
   },
   screenLabel: {
-    fontSize: 8,
+    fontSize: 7,
     color: COLORS.dark,
   },
   screenValue: {
-    fontSize: 8,
+    fontSize: 7,
     fontWeight: 600,
     color: COLORS.dark,
   },
-  defectsContainer: {
-    flexDirection: 'column',
-    gap: 6,
+  // Defects section styles
+  defectsSection: {
+    flex: 1,
+    borderWidth: 0.5,
+    borderColor: COLORS.border,
+    borderRadius: 4,
+    padding: 6,
   },
-  defectsGroup: {
-    marginBottom: 4,
+  summaryRow: {
+    flexDirection: 'row',
+    marginBottom: 6,
+    paddingBottom: 4,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.borderLight,
   },
-  defectsGroupTitle: {
+  summaryItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginRight: 16,
+  },
+  summaryLabel: {
     fontSize: 7,
     fontWeight: 600,
     color: COLORS.muted,
-    marginBottom: 3,
-    textTransform: 'uppercase',
+    marginRight: 4,
   },
-  defectsGrid: {
+  summaryValue: {
+    fontSize: 8,
+    fontWeight: 700,
+    color: COLORS.dark,
+  },
+  defectsColumnsContainer: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
   },
   defectColumn: {
-    width: '100%',
+    width: 130,
+    marginRight: 16,
   },
-  defectColumnHalf: {
-    width: '50%',
-  },
-  defectColumnThird: {
-    width: '33.33%',
+  defectColumnTitle: {
+    fontSize: 7,
+    fontWeight: 600,
+    color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+    marginBottom: 3,
   },
   defectRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingVertical: 1,
-    paddingRight: 8,
   },
   defectName: {
     fontSize: 7,
     color: COLORS.dark,
+  },
+  defectDots: {
     flex: 1,
+    borderBottomWidth: 0.5,
+    borderBottomColor: COLORS.borderLight,
+    borderBottomStyle: 'dotted',
+    marginHorizontal: 3,
+    marginBottom: 2,
   },
   defectCount: {
     fontSize: 7,
     fontWeight: 600,
     color: COLORS.dark,
-    minWidth: 20,
+    minWidth: 18,
     textAlign: 'right',
   },
   noData: {
-    fontSize: 8,
+    fontSize: 7,
     color: COLORS.muted,
     fontStyle: 'italic',
-  },
-  total: {
-    marginTop: 4,
-    paddingTop: 4,
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.border,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  totalLabel: {
-    fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.dark,
-  },
-  totalValue: {
-    fontSize: 8,
-    fontWeight: 700,
-    color: COLORS.dark,
   },
 })
 
@@ -135,82 +134,47 @@ interface Defect {
 }
 
 export interface CertificateScreenDefectsProps {
-  // Screen sizes
   screenSizes?: ScreenSize[] | null
-  // Defects
   defects?: Defect[] | null
   primaryDefectsCount?: number | null
   secondaryDefectsCount?: number | null
   totalDefectsWeight?: number | null
 }
 
-function ScreenSizeList({ screenSizes }: { screenSizes: ScreenSize[] }) {
-  if (screenSizes.length === 0) {
-    return <Text style={screenStyles.noData}>No screen data</Text>
-  }
+/**
+ * Sort screen sizes: numeric sizes descending (19, 18, 17...), with 'pan' always last
+ */
+function sortScreenSizes(sizes: ScreenSize[]): ScreenSize[] {
+  return [...sizes].sort((a, b) => {
+    const aStr = String(a.size).toLowerCase()
+    const bStr = String(b.size).toLowerCase()
 
-  return (
-    <View style={screenStyles.screenList}>
-      {screenSizes.map((screen, index) => (
-        <View key={index} style={screenStyles.screenRow}>
-          <Text style={screenStyles.screenLabel}>Screen {screen.size}</Text>
-          <Text style={screenStyles.screenValue}>
-            {screen.percentage !== null ? `${screen.percentage.toFixed(1)}%` : '-'}
-          </Text>
-        </View>
-      ))}
-    </View>
-  )
+    // Pan always goes last
+    if (aStr === 'pan' || aStr === 'fondo') return 1
+    if (bStr === 'pan' || bStr === 'fondo') return -1
+
+    // Parse numeric values for comparison
+    const aNum = parseInt(String(a.size), 10)
+    const bNum = parseInt(String(b.size), 10)
+
+    // If both are numbers, sort descending
+    if (!isNaN(aNum) && !isNaN(bNum)) {
+      return bNum - aNum
+    }
+
+    // Non-numeric strings go after numbers but before pan
+    if (isNaN(aNum)) return 1
+    if (isNaN(bNum)) return -1
+
+    return 0
+  })
 }
 
-function DefectsList({
-  defects,
-  groupTitle,
-  useMultiColumn,
-}: {
-  defects: Defect[]
-  groupTitle: string
-  useMultiColumn: boolean
-}) {
-  if (defects.length === 0) {
-    return null
-  }
-
-  // Determine column width based on count
-  const columnStyle = useMultiColumn
-    ? defects.length > 12
-      ? screenStyles.defectColumnThird
-      : screenStyles.defectColumnHalf
-    : screenStyles.defectColumn
-
-  // Split defects into columns if using multi-column
-  let columns: Defect[][] = [defects]
-  if (useMultiColumn && defects.length > 8) {
-    const colCount = defects.length > 12 ? 3 : 2
-    const itemsPerCol = Math.ceil(defects.length / colCount)
-    columns = []
-    for (let i = 0; i < colCount; i++) {
-      columns.push(defects.slice(i * itemsPerCol, (i + 1) * itemsPerCol))
-    }
-  }
-
-  return (
-    <View style={screenStyles.defectsGroup}>
-      <Text style={screenStyles.defectsGroupTitle}>{groupTitle}</Text>
-      <View style={screenStyles.defectsGrid}>
-        {columns.map((colDefects, colIndex) => (
-          <View key={colIndex} style={columnStyle}>
-            {colDefects.map((defect, index) => (
-              <View key={index} style={screenStyles.defectRow}>
-                <Text style={screenStyles.defectName}>{defect.name}</Text>
-                <Text style={screenStyles.defectCount}>{defect.count}</Text>
-              </View>
-            ))}
-          </View>
-        ))}
-      </View>
-    </View>
-  )
+/**
+ * Sort defects by count descending
+ */
+function sortDefects(defects: Defect[]): Defect[] {
+  return [...defects].sort((a, b) => b.count - a.count)
 }
 
 export function CertificateScreenDefects({
@@ -218,7 +182,6 @@ export function CertificateScreenDefects({
   defects,
   primaryDefectsCount,
   secondaryDefectsCount,
-  totalDefectsWeight,
 }: CertificateScreenDefectsProps) {
   const hasScreenData = screenSizes && screenSizes.length > 0
   const hasDefectData = defects && defects.length > 0
@@ -227,84 +190,98 @@ export function CertificateScreenDefects({
     return null
   }
 
-  // Separate defects by category
-  const primaryDefects = defects?.filter(d => d.category === 'primary') || []
-  const secondaryDefects = defects?.filter(d => d.category === 'secondary') || []
-  const uncategorizedDefects = defects?.filter(d => !d.category) || []
+  // Sort screen sizes: largest to smallest, pan last
+  const sortedScreenSizes = hasScreenData ? sortScreenSizes(screenSizes!) : []
 
-  // If no categories, treat all as uncategorized
-  const showPrimary = primaryDefects.length > 0
-  const showSecondary = secondaryDefects.length > 0
-  const showUncategorized = uncategorizedDefects.length > 0 && !showPrimary && !showSecondary
+  // Separate defects by category and sort by count
+  let primaryDefects: Defect[] = []
+  let secondaryDefects: Defect[] = []
+
+  if (defects) {
+    primaryDefects = sortDefects(defects.filter(d => d.category === 'primary'))
+    secondaryDefects = sortDefects(defects.filter(d => d.category === 'secondary'))
+
+    // If no categories assigned, all go to secondary by default
+    if (primaryDefects.length === 0 && secondaryDefects.length === 0) {
+      secondaryDefects = sortDefects([...defects])
+    }
+  }
+
+  // Calculate totals
+  const totalDefects = ((primaryDefectsCount ?? 0) + (secondaryDefectsCount ?? 0))
 
   return (
-    <View style={screenStyles.container}>
-      {/* Screen Sizes Section */}
-      <View style={screenStyles.section}>
-        <Text style={screenStyles.sectionTitle}>Screen Distribution</Text>
-        {hasScreenData ? (
-          <ScreenSizeList screenSizes={screenSizes!} />
-        ) : (
-          <Text style={screenStyles.noData}>No screen data</Text>
-        )}
-      </View>
-
-      <View style={screenStyles.separator} />
+    <View style={styles.container}>
+      {/* Screen Distribution Section */}
+      {hasScreenData && (
+        <View style={styles.screenSection}>
+          <Text style={styles.screenTitle}>Screen</Text>
+          {sortedScreenSizes.map((screen, index) => (
+            <View key={index} style={styles.screenRow}>
+              <Text style={styles.screenLabel}>{screen.size}</Text>
+              <Text style={styles.screenValue}>
+                {screen.percentage !== null ? `${screen.percentage.toFixed(1)}%` : '-'}
+              </Text>
+            </View>
+          ))}
+        </View>
+      )}
 
       {/* Defects Section */}
-      <View style={screenStyles.section}>
-        <Text style={screenStyles.sectionTitle}>Defects</Text>
-        <View style={screenStyles.defectsContainer}>
-          {showPrimary && (
-            <DefectsList
-              defects={primaryDefects}
-              groupTitle="Primary"
-              useMultiColumn={false}
-            />
-          )}
-          {showSecondary && (
-            <DefectsList
-              defects={secondaryDefects}
-              groupTitle="Secondary"
-              useMultiColumn={secondaryDefects.length > 8}
-            />
-          )}
-          {showUncategorized && (
-            <DefectsList
-              defects={uncategorizedDefects}
-              groupTitle="Defects"
-              useMultiColumn={uncategorizedDefects.length > 8}
-            />
-          )}
-          {!hasDefectData && (
-            <Text style={screenStyles.noData}>No defects found</Text>
-          )}
+      {hasDefectData && (
+        <View style={styles.defectsSection}>
+          {/* Summary row on top */}
+          <View style={styles.summaryRow}>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Primary:</Text>
+              <Text style={styles.summaryValue}>{primaryDefectsCount ?? 0}</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Secondary:</Text>
+              <Text style={styles.summaryValue}>{secondaryDefectsCount?.toFixed(2) ?? '0'}</Text>
+            </View>
+            <View style={styles.summaryItem}>
+              <Text style={styles.summaryLabel}>Total:</Text>
+              <Text style={styles.summaryValue}>{totalDefects.toFixed(2)}</Text>
+            </View>
+          </View>
 
-          {/* Totals */}
-          {(primaryDefectsCount != null || secondaryDefectsCount != null || totalDefectsWeight != null) && (
-            <View style={screenStyles.total}>
-              {primaryDefectsCount != null && (
-                <View style={{ flexDirection: 'row' }}>
-                  <Text style={screenStyles.totalLabel}>Primary: </Text>
-                  <Text style={screenStyles.totalValue}>{primaryDefectsCount}</Text>
-                </View>
-              )}
-              {secondaryDefectsCount != null && (
-                <View style={{ flexDirection: 'row', marginLeft: 12 }}>
-                  <Text style={screenStyles.totalLabel}>Secondary: </Text>
-                  <Text style={screenStyles.totalValue}>{secondaryDefectsCount}</Text>
-                </View>
-              )}
-              {totalDefectsWeight != null && (
-                <View style={{ flexDirection: 'row', marginLeft: 12 }}>
-                  <Text style={screenStyles.totalLabel}>Weight: </Text>
-                  <Text style={screenStyles.totalValue}>{totalDefectsWeight.toFixed(1)}</Text>
-                </View>
+          {/* Defect columns */}
+          <View style={styles.defectsColumnsContainer}>
+            {/* Primary Defects Column */}
+            <View style={styles.defectColumn}>
+              <Text style={styles.defectColumnTitle}>Primary</Text>
+              {primaryDefects.length > 0 ? (
+                primaryDefects.map((defect, index) => (
+                  <View key={index} style={styles.defectRow}>
+                    <Text style={styles.defectName}>{defect.name}</Text>
+                    <View style={styles.defectDots} />
+                    <Text style={styles.defectCount}>{defect.count}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.noData}>None</Text>
               )}
             </View>
-          )}
+
+            {/* Secondary Defects Column */}
+            <View style={styles.defectColumn}>
+              <Text style={styles.defectColumnTitle}>Secondary</Text>
+              {secondaryDefects.length > 0 ? (
+                secondaryDefects.map((defect, index) => (
+                  <View key={index} style={styles.defectRow}>
+                    <Text style={styles.defectName}>{defect.name}</Text>
+                    <View style={styles.defectDots} />
+                    <Text style={styles.defectCount}>{defect.count}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.noData}>None</Text>
+              )}
+            </View>
+          </View>
         </View>
-      </View>
+      )}
     </View>
   )
 }

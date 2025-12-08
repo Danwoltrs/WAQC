@@ -44,6 +44,7 @@ const CLIENT_TYPE_OPTIONS = [
   { value: 'roaster', label: 'Roaster' },
   { value: 'final_buyer', label: 'Final Importer' },
   { value: 'roaster_final_buyer', label: 'Roaster/Final Importer' },
+  { value: 'end_client', label: 'End Client' },
 ]
 
 const FEE_PAYER_OPTIONS = [

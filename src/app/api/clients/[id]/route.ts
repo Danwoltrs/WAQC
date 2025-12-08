@@ -177,6 +177,8 @@ export async function PATCH(
       'company_id',
       'legacy_client_id',
       'logo_url',
+      'certificate_validity_enabled',
+      'certificate_validity_months',
     ]
 
     for (const field of allowedFields) {
