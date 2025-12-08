@@ -12,12 +12,14 @@ import {
   AttributeScaleType,
   NumericScale,
   WordingScale,
+  BooleanScale,
   WordingScaleOption,
   ScaleTemplate,
   PREDEFINED_SCALE_TEMPLATES,
   validateScale,
   createNumericScale,
   createWordingScale,
+  createBooleanScale,
   cloneScaleTemplate
 } from '@/types/attribute-scales'
 
@@ -28,12 +30,14 @@ interface ScaleBuilderProps {
 }
 
 export function ScaleBuilder({ value, onChange, showTemplateSelector = true }: ScaleBuilderProps) {
-  const [scaleType, setScaleType] = useState<'numeric' | 'wording'>(value.type)
+  const [scaleType, setScaleType] = useState<'numeric' | 'wording' | 'boolean'>(value.type)
 
-  const handleScaleTypeChange = (type: 'numeric' | 'wording') => {
+  const handleScaleTypeChange = (type: 'numeric' | 'wording' | 'boolean') => {
     setScaleType(type)
     if (type === 'numeric') {
       onChange(createNumericScale(1, 10, 0.25))
+    } else if (type === 'boolean') {
+      onChange(createBooleanScale('Yes', 'No', 10, 0))
     } else {
       onChange(createWordingScale([
         { label: 'Excellent', value: 10 },
@@ -47,7 +51,7 @@ export function ScaleBuilder({ value, onChange, showTemplateSelector = true }: S
   const handleTemplateSelect = (templateId: string) => {
     const template = PREDEFINED_SCALE_TEMPLATES.find(t => t.id === templateId)
     if (template) {
-      setScaleType(template.scale.type)
+      setScaleType(template.scale.type as 'numeric' | 'wording' | 'boolean')
       onChange(template.scale)
     }
   }
@@ -66,7 +70,7 @@ export function ScaleBuilder({ value, onChange, showTemplateSelector = true }: S
             onClick={() => handleScaleTypeChange('numeric')}
             className="flex-1"
           >
-            Numeric Scale
+            Numeric
           </Button>
           <Button
             type="button"
@@ -74,7 +78,15 @@ export function ScaleBuilder({ value, onChange, showTemplateSelector = true }: S
             onClick={() => handleScaleTypeChange('wording')}
             className="flex-1"
           >
-            Wording Scale
+            Wording
+          </Button>
+          <Button
+            type="button"
+            variant={scaleType === 'boolean' ? 'default' : 'outline'}
+            onClick={() => handleScaleTypeChange('boolean')}
+            className="flex-1"
+          >
+            Yes/No
           </Button>
         </div>
       </div>
@@ -107,6 +119,11 @@ export function ScaleBuilder({ value, onChange, showTemplateSelector = true }: S
       {scaleType === 'numeric' ? (
         <NumericScaleBuilder
           scale={value as NumericScale}
+          onChange={onChange}
+        />
+      ) : scaleType === 'boolean' ? (
+        <BooleanScaleBuilder
+          scale={value as BooleanScale}
           onChange={onChange}
         />
       ) : (
@@ -189,6 +206,77 @@ function NumericScaleBuilder({ scale, onChange }: NumericScaleBuilderProps) {
           <p><strong>Preview:</strong> {scale.min} to {scale.max} by {scale.increment}</p>
           <p className="text-muted-foreground">
             Examples: {[scale.min, scale.min + scale.increment, scale.min + (scale.increment * 2)].join(', ')}, ..., {scale.max}
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+// ========================================
+// BOOLEAN SCALE BUILDER
+// ========================================
+
+interface BooleanScaleBuilderProps {
+  scale: BooleanScale
+  onChange: (scale: AttributeScaleType) => void
+}
+
+function BooleanScaleBuilder({ scale, onChange }: BooleanScaleBuilderProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Yes/No Scale Configuration</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Label for Yes</Label>
+            <Input
+              type="text"
+              value={scale.trueLabel ?? 'Yes'}
+              onChange={(e) => onChange({ ...scale, trueLabel: e.target.value })}
+              placeholder="Yes"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Label for No</Label>
+            <Input
+              type="text"
+              value={scale.falseLabel ?? 'No'}
+              onChange={(e) => onChange({ ...scale, falseLabel: e.target.value })}
+              placeholder="No"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <Label className="text-xs">Value for Yes</Label>
+            <Input
+              type="number"
+              step="1"
+              value={scale.trueValue ?? 10}
+              onChange={(e) => onChange({ ...scale, trueValue: parseFloat(e.target.value) || 10 })}
+              placeholder="10"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">Value for No</Label>
+            <Input
+              type="number"
+              step="1"
+              value={scale.falseValue ?? 0}
+              onChange={(e) => onChange({ ...scale, falseValue: parseFloat(e.target.value) || 0 })}
+              placeholder="0"
+            />
+          </div>
+        </div>
+
+        <div className="text-xs text-muted-foreground">
+          <p><strong>Preview:</strong> {scale.trueLabel ?? 'Yes'} = {scale.trueValue ?? 10}, {scale.falseLabel ?? 'No'} = {scale.falseValue ?? 0}</p>
+          <p className="text-muted-foreground mt-1">
+            Use this scale for pass/fail attributes like Clean Cup and Uniform Cup
           </p>
         </div>
       </CardContent>
@@ -495,11 +583,15 @@ export function AttributeScaleManager({ attributes, onChange }: AttributeScaleMa
                 <CardTitle className="text-sm font-medium pr-6">{attr.attribute}</CardTitle>
                 <div className="flex items-center gap-2">
                   <Badge variant="outline" className="text-xs">
-                    {attr.scale.type === 'numeric' ? 'Numeric' : 'Wording'}
+                    {attr.scale.type === 'numeric' ? 'Numeric' : attr.scale.type === 'boolean' ? 'Yes/No' : 'Wording'}
                   </Badge>
                   {attr.scale.type === 'numeric' ? (
                     <span className="text-xs text-muted-foreground">
                       {attr.scale.min}-{attr.scale.max}
+                    </span>
+                  ) : attr.scale.type === 'boolean' ? (
+                    <span className="text-xs text-muted-foreground">
+                      {attr.scale.trueLabel ?? 'Yes'}/{attr.scale.falseLabel ?? 'No'}
                     </span>
                   ) : (
                     <span className="text-xs text-muted-foreground">

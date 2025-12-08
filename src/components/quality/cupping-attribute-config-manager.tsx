@@ -144,11 +144,15 @@ function SortableAttributeCard({
         </div>
         <div className="flex items-center gap-2 mt-2">
           <Badge variant="outline" className="text-xs">
-            {attr.scale.type === 'numeric' ? 'Numeric' : 'Wording'}
+            {attr.scale.type === 'numeric' ? 'Numeric' : attr.scale.type === 'boolean' ? 'Yes/No' : 'Wording'}
           </Badge>
           {attr.scale.type === 'numeric' ? (
             <span className="text-xs text-muted-foreground">
               {attr.scale.min}-{attr.scale.max} (step {attr.scale.increment})
+            </span>
+          ) : attr.scale.type === 'boolean' ? (
+            <span className="text-xs text-muted-foreground">
+              {attr.scale.trueLabel ?? 'Yes'}/{attr.scale.falseLabel ?? 'No'}
             </span>
           ) : (
             <span className="text-xs text-muted-foreground">

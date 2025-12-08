@@ -11,6 +11,7 @@ export interface SupplyChainEntity {
   name: string | null
   country: string | null
   contract: string | null
+  address: string | null  // Company address (if available)
 }
 
 export interface DefectItem {
@@ -39,6 +40,7 @@ export interface RoastAnalysis {
   quaker_count: number | null
   roast_date: string | null
   roast_level: string | null
+  roast_aspect: string | null  // Visual description of roasted beans
 }
 
 export interface CuppingAttribute {
@@ -55,6 +57,8 @@ export interface CuppingData {
   isSpecialty: boolean
   taints: number | null
   faults: number | null
+  cleanCup: boolean | null     // Yes/No for clean cup
+  uniformCup: boolean | null   // Yes/No for uniform cup
 }
 
 export interface CertificateData {
@@ -76,9 +80,12 @@ export interface CertificateData {
     container_nr: string | null
     created_at: string | null
     status: 'approved' | 'rejected' | string | null
+    certifications: string[] | null  // RA, FT, Organic, EUDR, FLO
   }
   supplyChain: {
+    supplier: SupplyChainEntity    // Farm/coop (optional)
     exporter: SupplyChainEntity
+    shipper: SupplyChainEntity     // Shipping company (if different from exporter)
     importer: SupplyChainEntity
     roaster: SupplyChainEntity
     qcClient: SupplyChainEntity
@@ -160,7 +167,10 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       quality_spec_id,
       exporter_id,
       importer_id,
-      roaster_id
+      roaster_id,
+      seller_id,
+      supplier_type,
+      same_seller_shipper
     `)
     .eq('id', sampleId)
     .single()
@@ -193,7 +203,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   }
 
   // Fetch supply chain entities in parallel
-  const [exporterResult, importerResult, roasterResult] = await Promise.all([
+  // Seller (supplier/farm/coop) uses seller_id which references exporters table
+  const [exporterResult, importerResult, roasterResult, sellerResult] = await Promise.all([
     sample.exporter_id
       ? supabase.from('exporters').select('name, country').eq('id', sample.exporter_id).single()
       : Promise.resolve({ data: null }),
@@ -202,6 +213,9 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       : Promise.resolve({ data: null }),
     sample.roaster_id
       ? supabase.from('roasters').select('name, country').eq('id', sample.roaster_id).single()
+      : Promise.resolve({ data: null }),
+    sample.seller_id
+      ? supabase.from('exporters').select('name, country').eq('id', sample.seller_id).single()
       : Promise.resolve({ data: null }),
   ])
 
@@ -351,21 +365,24 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   }
 
   // Process roast data
+  // roast_aspect is stored in quality_assessments.roast_data JSONB
   let roastAnalysis: RoastAnalysis | null = null
+  const roastDataJson = qualityAssessment?.roast_data as Record<string, unknown> | null
   if (roastProfile) {
     roastAnalysis = {
       agtron_score: roastProfile.agtron_score,
       quaker_count: roastProfile.quaker_count,
       roast_date: roastProfile.roast_date,
       roast_level: roastProfile.actual_roast_level,
+      roast_aspect: (roastDataJson?.roast_aspect as string) || null,
     }
-  } else if (qualityAssessment?.roast_data) {
-    const rd = qualityAssessment.roast_data as Record<string, unknown>
+  } else if (roastDataJson) {
     roastAnalysis = {
-      agtron_score: (rd.agtron_score as number) || null,
-      quaker_count: (rd.quaker_count as number) || null,
-      roast_date: (rd.roast_date as string) || null,
-      roast_level: (rd.roast_level as string) || null,
+      agtron_score: (roastDataJson.agtron_score as number) || null,
+      quaker_count: (roastDataJson.quaker_count as number) || null,
+      roast_date: (roastDataJson.roast_date as string) || null,
+      roast_level: (roastDataJson.roast_level as string) || null,
+      roast_aspect: (roastDataJson.roast_aspect as string) || null,
     }
   }
 
@@ -391,6 +408,34 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     validUntil = validDate.toISOString().split('T')[0]
   }
 
+  // Build supplier entity (farm/coop from seller_id)
+  // supplier_type indicates "farm" or "coop"
+  const supplierEntity: SupplyChainEntity = {
+    name: sellerResult.data?.name ?? null,
+    country: sellerResult.data?.country ?? null,
+    contract: sample.seller_contract_nr ?? null,
+    address: null, // Address not yet in exporters table
+  }
+
+  // Build shipper entity
+  // If same_seller_shipper is true, shipper is the same as exporter
+  // Otherwise, shipper is a separate contract (uses exporter entity with shipper contract)
+  const shipperEntity: SupplyChainEntity = sample.same_seller_shipper
+    ? {
+        name: exporterResult.data?.name ?? null,
+        country: exporterResult.data?.country ?? null,
+        contract: sample.shipper_contract_nr || null,
+        address: null,
+      }
+    : {
+        // When shipper is different, we still use exporter entity but with shipper contract
+        // This could be enhanced later with a separate shippers table
+        name: sample.shipper_contract_nr ? (exporterResult.data?.name ?? null) : null,
+        country: sample.shipper_contract_nr ? (exporterResult.data?.country ?? null) : null,
+        contract: sample.shipper_contract_nr || null,
+        address: null,
+      }
+
   return {
     sample: {
       id: sample.id,
@@ -410,29 +455,36 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       container_nr: sample.container_nr,
       created_at: sample.created_at,
       status: sample.status,
+      certifications: null, // Certifications not yet stored on samples
     },
     supplyChain: {
+      supplier: supplierEntity,
       exporter: {
-        name: exporterResult.data?.name || null,
-        country: exporterResult.data?.country || null,
-        contract: sample.exporter_contract_nr || null,
+        name: exporterResult.data?.name ?? null,
+        country: exporterResult.data?.country ?? null,
+        contract: sample.exporter_contract_nr ?? null,
+        address: null, // Address not yet in exporters table
       },
+      shipper: shipperEntity,
       importer: {
-        name: importerResult.data?.name || null,
-        country: importerResult.data?.country || null,
-        contract: sample.buyer_contract_nr || null,
+        name: importerResult.data?.name ?? null,
+        country: importerResult.data?.country ?? null,
+        contract: sample.buyer_contract_nr ?? null,
+        address: null, // Address not yet in importers table
       },
       roaster: {
-        name: roasterResult.data?.name || null,
-        country: roasterResult.data?.country || null,
-        contract: sample.roaster_contract_nr || null,
+        name: roasterResult.data?.name ?? null,
+        country: roasterResult.data?.country ?? null,
+        contract: sample.roaster_contract_nr ?? null,
+        address: null, // Address not yet in roasters table
       },
       qcClient: {
-        name: client?.fantasy_name || client?.company || null,
+        name: client?.fantasy_name ?? client?.company ?? null,
         country: null, // Client table doesn't have country
-        contract: sample.qc_client_contract_nr || null,
+        contract: sample.qc_client_contract_nr ?? null,
+        address: null, // Address not yet in clients table
       },
-      wolthersContract: sample.contract_number || null,
+      wolthersContract: sample.contract_number ?? null,
     },
     client,
     laboratory,
@@ -655,6 +707,8 @@ function processCuppingScores(
   const allNotes: string[] = []
   const taintsCounts: number[] = []
   const faultsCounts: number[] = []
+  const cleanCupScores: number[] = []
+  const uniformCupScores: number[] = []
 
   for (const score of cuppingScores) {
     if (score.notes) {
@@ -665,11 +719,28 @@ function processCuppingScores(
       const scores = score.scores as Record<string, unknown>
       for (const [attr, value] of Object.entries(scores)) {
         if (typeof value === 'number') {
+          const attrLower = attr.toLowerCase()
           // Check if this is taints or faults count
-          if (attr.toLowerCase() === 'taints' || attr.toLowerCase() === 'taint') {
+          if (attrLower === 'taints' || attrLower === 'taint') {
             taintsCounts.push(value)
-          } else if (attr.toLowerCase() === 'faults' || attr.toLowerCase() === 'fault') {
+          } else if (attrLower === 'faults' || attrLower === 'fault') {
             faultsCounts.push(value)
+          } else if (attrLower === 'clean cup' || attrLower === 'cleancup' || attrLower === 'clean_cup') {
+            // Track Clean Cup separately for boolean conversion
+            cleanCupScores.push(value)
+            // Also add to attributes for chart display
+            if (!attributeScores[attr]) {
+              attributeScores[attr] = []
+            }
+            attributeScores[attr].push(value)
+          } else if (attrLower === 'uniformity' || attrLower === 'uniform cup' || attrLower === 'uniformcup' || attrLower === 'uniform_cup') {
+            // Track Uniform Cup separately for boolean conversion
+            uniformCupScores.push(value)
+            // Also add to attributes for chart display
+            if (!attributeScores[attr]) {
+              attributeScores[attr] = []
+            }
+            attributeScores[attr].push(value)
           } else {
             if (!attributeScores[attr]) {
               attributeScores[attr] = []
@@ -756,6 +827,21 @@ function processCuppingScores(
     ? Math.round(faultsCounts.reduce((a, b) => a + b, 0) / faultsCounts.length * 10) / 10
     : null
 
+  // Convert Clean Cup and Uniform Cup to boolean values
+  // In SCA cupping, score of 10 = all cups clean/uniform (true)
+  // Score < 10 = at least one cup had issues (false)
+  let cleanCup: boolean | null = null
+  if (cleanCupScores.length > 0) {
+    const avgCleanCup = cleanCupScores.reduce((a, b) => a + b, 0) / cleanCupScores.length
+    cleanCup = avgCleanCup >= 10
+  }
+
+  let uniformCup: boolean | null = null
+  if (uniformCupScores.length > 0) {
+    const avgUniformCup = uniformCupScores.reduce((a, b) => a + b, 0) / uniformCupScores.length
+    uniformCup = avgUniformCup >= 10
+  }
+
   return {
     attributes,
     overallScore,
@@ -763,5 +849,7 @@ function processCuppingScores(
     isSpecialty,
     taints,
     faults,
+    cleanCup,
+    uniformCup,
   }
 }

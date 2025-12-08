@@ -656,8 +656,8 @@ function CuppingPageContent() {
     if (!attr) return
 
     const currentValue = attr.value ?? (scale.type === 'numeric' ? scale.min : 0)
-    const increment = scale.type === 'numeric' ? scale.increment : 1
-    const maxValue = scale.type === 'numeric' ? scale.max : Math.max(...scale.options.map(o => o.value))
+    const increment = scale.type === 'numeric' ? scale.increment : (scale.type === 'boolean' ? (scale.trueValue ?? 10) : 1)
+    const maxValue = scale.type === 'numeric' ? scale.max : (scale.type === 'boolean' ? (scale.trueValue ?? 10) : Math.max(...scale.options.map(o => o.value)))
     const newValue = Math.min(currentValue + increment, maxValue)
 
     updateAttribute(sampleId, attribute, newValue)
@@ -671,8 +671,8 @@ function CuppingPageContent() {
     if (!attr) return
 
     const currentValue = attr.value ?? (scale.type === 'numeric' ? scale.min : 0)
-    const increment = scale.type === 'numeric' ? scale.increment : 1
-    const minValue = scale.type === 'numeric' ? scale.min : Math.min(...scale.options.map(o => o.value))
+    const increment = scale.type === 'numeric' ? scale.increment : (scale.type === 'boolean' ? (scale.trueValue ?? 10) : 1)
+    const minValue = scale.type === 'numeric' ? scale.min : (scale.type === 'boolean' ? (scale.falseValue ?? 0) : Math.min(...scale.options.map(o => o.value)))
     const newValue = Math.max(currentValue - increment, minValue)
 
     updateAttribute(sampleId, attribute, newValue)
@@ -1430,7 +1430,7 @@ function CuppingPageContent() {
                                 // Calculate max value across all attributes for consistent chart scale
                                 const maxScaleValue = Math.max(
                                   ...attributes.map(({ scale }) =>
-                                    scale.type === 'numeric' ? scale.max : Math.max(...scale.options.map(o => o.value))
+                                    scale.type === 'numeric' ? scale.max : (scale.type === 'boolean' ? (scale.trueValue ?? 10) : Math.max(...scale.options.map(o => o.value)))
                                   )
                                 )
 

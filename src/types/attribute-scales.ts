@@ -38,9 +38,21 @@ export interface WordingScale {
 }
 
 /**
- * Attribute scale - union type supporting both numeric and wording scales
+ * Boolean scale configuration
+ * Simple Yes/No toggle for attributes like Clean Cup and Uniform Cup
  */
-export type AttributeScaleType = NumericScale | WordingScale
+export interface BooleanScale {
+  type: 'boolean'
+  trueLabel?: string   // Label for true value (default: "Yes")
+  falseLabel?: string  // Label for false value (default: "No")
+  trueValue?: number   // Numeric value for true (default: 10 for SCA compatibility)
+  falseValue?: number  // Numeric value for false (default: 0)
+}
+
+/**
+ * Attribute scale - union type supporting numeric, wording, and boolean scales
+ */
+export type AttributeScaleType = NumericScale | WordingScale | BooleanScale
 
 // ========================================
 // ATTRIBUTE CONFIGURATION
@@ -230,6 +242,25 @@ export const NUMERIC_5_SCALE: ScaleTemplate = {
 }
 
 /**
+ * Boolean Yes/No scale
+ * For attributes like Clean Cup and Uniform Cup
+ */
+export const BOOLEAN_YES_NO_SCALE: ScaleTemplate = {
+  id: 'boolean-yes-no',
+  name: 'Yes/No',
+  description: 'Simple Yes/No toggle for pass/fail attributes like Clean Cup and Uniform Cup',
+  scale: {
+    type: 'boolean',
+    trueLabel: 'Yes',
+    falseLabel: 'No',
+    trueValue: 10,
+    falseValue: 0
+  },
+  category: 'standard',
+  is_system: true
+}
+
+/**
  * All predefined scale templates
  */
 export const PREDEFINED_SCALE_TEMPLATES: ScaleTemplate[] = [
@@ -239,7 +270,8 @@ export const PREDEFINED_SCALE_TEMPLATES: ScaleTemplate[] = [
   BRAZIL_FLAVOR_10_LEVEL,
   COE_NUMERIC_SCALE,
   NUMERIC_7_SCALE,
-  NUMERIC_5_SCALE
+  NUMERIC_5_SCALE,
+  BOOLEAN_YES_NO_SCALE
 ]
 
 // ========================================
@@ -253,6 +285,9 @@ export function getScaleMinValue(scale: AttributeScaleType): number {
   if (scale.type === 'numeric') {
     return scale.min
   }
+  if (scale.type === 'boolean') {
+    return scale.falseValue ?? 0
+  }
   // For wording scales, return the minimum value from options
   return Math.min(...scale.options.map(o => o.value))
 }
@@ -263,6 +298,9 @@ export function getScaleMinValue(scale: AttributeScaleType): number {
 export function getScaleMaxValue(scale: AttributeScaleType): number {
   if (scale.type === 'numeric') {
     return scale.max
+  }
+  if (scale.type === 'boolean') {
+    return scale.trueValue ?? 10
   }
   // For wording scales, return the maximum value from options
   return Math.max(...scale.options.map(o => o.value))
@@ -280,6 +318,9 @@ export function getScaleValidValues(scale: AttributeScaleType): number[] {
     }
     return values
   }
+  if (scale.type === 'boolean') {
+    return [scale.falseValue ?? 0, scale.trueValue ?? 10]
+  }
   // For wording scales, return all option values
   return scale.options.map(o => o.value).sort((a, b) => b - a)
 }
@@ -294,11 +335,22 @@ export function isValidScore(score: number, scale: AttributeScaleType): boolean 
 }
 
 /**
- * Get the label for a score in a wording scale
+ * Get the label for a score in a wording or boolean scale
  */
 export function getScoreLabel(score: number, scale: AttributeScaleType): string | null {
   if (scale.type === 'numeric') {
     return score.toString()
+  }
+  if (scale.type === 'boolean') {
+    const trueVal = scale.trueValue ?? 10
+    const falseVal = scale.falseValue ?? 0
+    if (Math.abs(score - trueVal) < 0.01) {
+      return scale.trueLabel ?? 'Yes'
+    }
+    if (Math.abs(score - falseVal) < 0.01) {
+      return scale.falseLabel ?? 'No'
+    }
+    return null
   }
   const option = scale.options.find(o => Math.abs(o.value - score) < 0.01)
   return option ? option.label : null
@@ -326,6 +378,11 @@ export function validateScale(scale: AttributeScaleType): { valid: boolean; erro
     if (scale.increment >= (scale.max - scale.min)) {
       return { valid: false, error: 'Increment must be less than the scale range' }
     }
+    return { valid: true }
+  }
+
+  if (scale.type === 'boolean') {
+    // Boolean scales are always valid
     return { valid: true }
   }
 
@@ -377,6 +434,24 @@ export function createWordingScale(options: Omit<WordingScaleOption, 'display_or
       ...option,
       display_order: index
     }))
+  }
+}
+
+/**
+ * Create a boolean scale
+ */
+export function createBooleanScale(
+  trueLabel: string = 'Yes',
+  falseLabel: string = 'No',
+  trueValue: number = 10,
+  falseValue: number = 0
+): BooleanScale {
+  return {
+    type: 'boolean',
+    trueLabel,
+    falseLabel,
+    trueValue,
+    falseValue
   }
 }
 

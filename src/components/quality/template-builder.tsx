@@ -1610,6 +1610,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                         <span className="text-muted-foreground">
                           {' '}- {attr.scale.type === 'numeric'
                             ? `${attr.scale.min}-${attr.scale.max}`
+                            : attr.scale.type === 'boolean'
+                            ? `${attr.scale.trueLabel ?? 'Yes'}/${attr.scale.falseLabel ?? 'No'}`
                             : `${attr.scale.options?.length || 0} options`}
                         </span>
                         {attr.validation_rule && (
@@ -1623,6 +1625,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                   <p className="text-[11px] text-muted-foreground pt-1 border-t">
                     Numeric: {cuppingAttributes.filter(a => a.scale.type === 'numeric').length} •
                     Wording: {cuppingAttributes.filter(a => a.scale.type === 'wording').length} •
+                    Yes/No: {cuppingAttributes.filter(a => a.scale.type === 'boolean').length} •
                     Max Total: {cuppingAttributes
                       .filter(a => a.scale.type === 'numeric')
                       .reduce((sum, a) => sum + (a.scale.type === 'numeric' ? a.scale.max : 0), 0)}
@@ -1830,6 +1833,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                                       <Badge variant="secondary" className="text-[10px] px-1 py-0">
                                         {taint.scale.type === 'numeric'
                                           ? `${taint.scale.min}-${taint.scale.max}`
+                                          : taint.scale.type === 'boolean'
+                                          ? `${taint.scale.trueLabel ?? 'Yes'}/${taint.scale.falseLabel ?? 'No'}`
                                           : `${taint.scale.options?.length || 0} levels`}
                                       </Badge>
                                     )}
@@ -1859,6 +1864,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                                       <Badge variant="secondary" className="text-[10px] px-1 py-0">
                                         {fault.scale.type === 'numeric'
                                           ? `${fault.scale.min}-${fault.scale.max}`
+                                          : fault.scale.type === 'boolean'
+                                          ? `${fault.scale.trueLabel ?? 'Yes'}/${fault.scale.falseLabel ?? 'No'}`
                                           : `${fault.scale.options?.length || 0} levels`}
                                       </Badge>
                                     )}
