@@ -151,7 +151,9 @@ export async function GET(request: NextRequest) {
     // Determine minimum cuppers required
     // Key rule: If only 1 cupper is assigned to the session, automatically allow single cupper validation
     // This handles emergency/holiday situations where a single cupper needs to complete the workflow
-    const assignedCupperCount = (session.cupper_ids as string[])?.length || 0
+    // Use Set to count unique cuppers (in case same cupper was added multiple times)
+    const uniqueCupperIds = new Set((session.cupper_ids as string[]) || [])
+    const assignedCupperCount = uniqueCupperIds.size
     const isSingleCupperSession = assignedCupperCount === 1
 
     const minCuppersRequired = (session.allow_single_cupper || isSingleCupperSession)
