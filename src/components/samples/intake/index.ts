@@ -1,7 +1,10 @@
 export * from './types'
 export * from './constants'
-export * from './basic-info-step'
-export * from './tracking-numbers-step'
+export * from './supply-chain-step'
+export * from './quality-step'
 export * from './quantity-step'
 export * from './sample-details-step'
 export * from './success-view'
+// Legacy exports (kept for backwards compatibility but not used)
+export * from './basic-info-step'
+export * from './tracking-numbers-step'

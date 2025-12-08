@@ -14,8 +14,8 @@ import {
   Importer,
   SampleInsert,
   STEPS,
-  BasicInfoStep,
-  TrackingNumbersStep,
+  SupplyChainStep,
+  QualityStep,
   QuantityStep,
   SampleDetailsStep,
   SuccessView
@@ -27,34 +27,43 @@ interface SampleIntakeFormProps {
 }
 
 const initialFormData: FormData = {
+  // Step 1: Supply Chain
+  seller: '',
+  seller_contract_nr: '',
+  exporter_sample_number: '', // Seller/exporter's sample reference (in Step 1)
+  same_seller_shipper: true,
+  shipper: '',
+  shipper_contract_nr: '',
+  importer: '',
+  importer_contract_nr: '',
+  importer_is_qc_client: true,
+  qc_client: '',
+  qc_client_contract_nr: '',
+  supplier: '',
+  supplier_contract_nr: '',
+  roaster: '',
+  roaster_contract_nr: '',
+
+  // Step 2: Quality
   client_id: '',
   laboratory_id: '',
-  exporter_sample_number: '',
-  seller: '', // The trading company that sold the coffee
-  shipper: '', // The actual exporter that shipped the coffee
-  same_seller_shipper: true, // Default: seller is same as shipper
-  importer: '', // Renamed from buyer
-  importer_is_qc_client: true, // Default: importer is also the QC client
-  qc_client: '', // Separate QC client name when importer_is_qc_client is false
-  roaster: '',
   origin: '',
   micro_origin: '',
-  supplier: '',
   processing_method: '',
   sample_type: '',
   linked_pss_sample_id: '',
   quality_spec_id: '',
   quality_name: '',
   hide_exporter_on_label: false,
+  certifications: [],
+
+  // Legacy contract fields
   wolthers_contract_nr: '',
-  seller_contract_nr: '',
-  shipper_contract_nr: '',
   exporter_contract_nr: '',
-  importer_contract_nr: '', // Renamed from buyer_contract_nr
-  roaster_contract_nr: '',
-  qc_client_contract_nr: '',
   ico_number: '',
   container_nr: '',
+
+  // Step 3: Weight
   bag_count: '',
   bag_weight_kg: '',
   bag_type: '',
@@ -62,6 +71,8 @@ const initialFormData: FormData = {
   equivalent_60kg_bags: '',
   bulk_container_count: '',
   shipment_month: '',
+
+  // Step 4: Review
   arrival_date: new Date().toISOString().split('T')[0],
   notes: '',
   photo_file: null
@@ -293,30 +304,31 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 1:
-        // Seller is required, shipper is required only if same_seller_shipper is false
+        // Step 1: Supply Chain - Seller is required, shipper required only if not same as seller
         const hasShipper = formData.same_seller_shipper || !!formData.shipper
-        const baseValidation = !!(
-          formData.laboratory_id &&
-          formData.seller &&
-          hasShipper &&
+        return !!(formData.seller && hasShipper)
+      case 2:
+        // Step 2: Quality - Sample type, origin, and laboratory required
+        // Quality spec required for PSS/SS samples
+        const baseQualityValidation = !!(
+          formData.sample_type &&
           formData.origin &&
-          formData.sample_type
+          formData.laboratory_id
         )
 
-        // For PSS and SS samples, importer (or qc_client if separate) and quality_spec_id are required
         if (formData.sample_type === 'pss' || formData.sample_type === 'ss') {
           const hasImporterOrQcClient = formData.importer_is_qc_client
             ? !!formData.importer
             : !!(formData.importer || formData.qc_client)
-          return baseValidation && hasImporterOrQcClient && !!formData.quality_spec_id
+          return baseQualityValidation && hasImporterOrQcClient && !!formData.quality_spec_id
         }
 
-        return baseValidation
-      case 2:
-        return true
+        return baseQualityValidation
       case 3:
+        // Step 3: Weight
         return !!(formData.bags_quantity_mt || formData.bag_count)
       case 4:
+        // Step 4: Review
         return !!formData.arrival_date
       default:
         return false
@@ -570,7 +582,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const ContentWrapper = asDialog ? 'div' : CardContent
 
   return (
-    <FormWrapper className={asDialog ? '' : 'w-full max-w-4xl mx-auto'}>
+    <FormWrapper className={asDialog ? '' : 'w-full max-w-5xl mx-auto'}>
       <HeaderWrapper className={asDialog ? 'mb-4' : ''}>
         {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
         <div className="flex gap-2 mt-4">
@@ -600,7 +612,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           )}
 
           {currentStep === 1 && (
-            <BasicInfoStep
+            <SupplyChainStep
               formData={formData}
               updateFormData={updateFormData}
               clients={clients}
@@ -614,13 +626,15 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           )}
 
           {currentStep === 2 && (
-            <TrackingNumbersStep
+            <QualityStep
               formData={formData}
               updateFormData={updateFormData}
               clients={clients}
               laboratories={laboratories}
               filteredClients={filteredClients}
               approvedPSSSamples={approvedPSSSamples}
+              importers={importers}
+              qcClients={qcClients}
             />
           )}
 
