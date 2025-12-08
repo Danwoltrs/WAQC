@@ -1593,12 +1593,20 @@ export default function GradingPage() {
                                       Humidity (%)
                                     </Label>
                                     <Input
-                                      type="number"
-                                      min="0"
-                                      max="100"
-                                      step="0.1"
-                                      value={gradingData?.moisture_percentage || 0}
-                                      onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={gradingData?.moisture_percentage || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value
+                                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                          const num = parseFloat(val)
+                                          if (!isNaN(num) && num >= 0 && num <= 100) {
+                                            handleFieldChange(sample.id, 'moisture_percentage', num)
+                                          } else if (val === '' || val === '0') {
+                                            handleFieldChange(sample.id, 'moisture_percentage', 0)
+                                          }
+                                        }
+                                      }}
                                       className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
                                     />
                                   </div>
@@ -1609,11 +1617,20 @@ export default function GradingPage() {
                                       Density (G/L)
                                     </Label>
                                     <Input
-                                      type="number"
-                                      min="0"
-                                      step="0.001"
-                                      value={gradingData?.density || ''}
-                                      onChange={(e) => handleFieldChange(sample.id, 'density', parseFloat(e.target.value) || 0)}
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={gradingData?.density ?? ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value
+                                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                          const num = parseFloat(val)
+                                          if (!isNaN(num) && num >= 0) {
+                                            handleFieldChange(sample.id, 'density', num)
+                                          } else if (val === '') {
+                                            handleFieldChange(sample.id, 'density', 0)
+                                          }
+                                        }
+                                      }}
                                       placeholder="0.700"
                                       className="h-8 text-sm w-20"
                                     />
@@ -1645,12 +1662,20 @@ export default function GradingPage() {
                                       Humidity (%)
                                     </Label>
                                     <Input
-                                      type="number"
-                                      min="0"
-                                      max="100"
-                                      step="0.1"
-                                      value={gradingData?.moisture_percentage || 0}
-                                      onChange={(e) => handleFieldChange(sample.id, 'moisture_percentage', parseFloat(e.target.value) || 0)}
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={gradingData?.moisture_percentage || ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value
+                                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                          const num = parseFloat(val)
+                                          if (!isNaN(num) && num >= 0 && num <= 100) {
+                                            handleFieldChange(sample.id, 'moisture_percentage', num)
+                                          } else if (val === '' || val === '0') {
+                                            handleFieldChange(sample.id, 'moisture_percentage', 0)
+                                          }
+                                        }
+                                      }}
                                       className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
                                     />
                                   </div>
@@ -1661,11 +1686,20 @@ export default function GradingPage() {
                                       Density (G/L)
                                     </Label>
                                     <Input
-                                      type="number"
-                                      min="0"
-                                      step="0.001"
-                                      value={gradingData?.density || ''}
-                                      onChange={(e) => handleFieldChange(sample.id, 'density', parseFloat(e.target.value) || 0)}
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={gradingData?.density ?? ''}
+                                      onChange={(e) => {
+                                        const val = e.target.value
+                                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                          const num = parseFloat(val)
+                                          if (!isNaN(num) && num >= 0) {
+                                            handleFieldChange(sample.id, 'density', num)
+                                          } else if (val === '') {
+                                            handleFieldChange(sample.id, 'density', 0)
+                                          }
+                                        }
+                                      }}
                                       placeholder="0.700"
                                       className="h-8 text-sm w-20"
                                     />

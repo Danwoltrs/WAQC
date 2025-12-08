@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera } from 'lucide-react'
+import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera, FileDown, Pencil } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType, validateScoreAgainstRule } from '@/types/attribute-scales'
@@ -26,6 +26,7 @@ import {
 import { CuppingReports } from '@/components/cupping/cupping-reports'
 import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
+import { CertificateEditDialog } from '@/components/cupping/certificate-edit-dialog'
 import { supabase } from '@/lib/supabase'
 
 // Dynamic import of Plotly to avoid SSR issues
@@ -147,6 +148,10 @@ function CuppingPageContent() {
   const [ocrValidationOpen, setOcrValidationOpen] = useState(false)
   const [extractedCards, setExtractedCards] = useState<any[]>([])
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0 })
+
+  // Certificate generation state
+  const [generatingCertificate, setGeneratingCertificate] = useState(false)
+  const [editCertificateOpen, setEditCertificateOpen] = useState(false)
 
   // Watch for theme changes
   useEffect(() => {
@@ -848,6 +853,75 @@ function CuppingPageContent() {
     setValidationModalOpen(true)
   }
 
+  const handleGenerateCertificate = async () => {
+    if (!activeSampleId) {
+      toast({
+        title: 'Error',
+        description: 'No sample selected',
+        variant: 'destructive'
+      })
+      return
+    }
+
+    try {
+      setGeneratingCertificate(true)
+
+      // First, ensure the certificate record exists (POST creates it if needed)
+      const createResponse = await fetch(`/api/samples/${activeSampleId}/certificate`, {
+        method: 'POST',
+      })
+
+      if (!createResponse.ok) {
+        const errorData = await createResponse.json()
+        throw new Error(errorData.details || errorData.error || 'Failed to create certificate')
+      }
+
+      // Then download the PDF (GET returns the PDF)
+      const pdfResponse = await fetch(`/api/samples/${activeSampleId}/certificate`)
+
+      if (!pdfResponse.ok) {
+        const errorData = await pdfResponse.json()
+        throw new Error(errorData.details || errorData.error || 'Failed to generate certificate PDF')
+      }
+
+      // Get the PDF blob and trigger download
+      const blob = await pdfResponse.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+
+      // Get filename from Content-Disposition header or use sample tracking number
+      const contentDisposition = pdfResponse.headers.get('Content-Disposition')
+      let filename = 'certificate.pdf'
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename="(.+)"/)
+        if (filenameMatch) {
+          filename = filenameMatch[1]
+        }
+      }
+
+      link.download = filename
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      toast({
+        title: 'Success',
+        description: 'Certificate downloaded successfully!',
+      })
+    } catch (error: any) {
+      console.error('Error generating certificate:', error)
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to generate certificate',
+        variant: 'destructive'
+      })
+    } finally {
+      setGeneratingCertificate(false)
+    }
+  }
+
   const handleFinalizeScores = async () => {
     // TODO: Implement score finalization logic
     // This could involve updating session status, triggering certificate generation, etc.
@@ -1111,6 +1185,24 @@ function CuppingPageContent() {
                   <Eye className="h-4 w-4 mr-2" />
                   Validate & Review
                 </Button>
+                <Button
+                  onClick={handleGenerateCertificate}
+                  disabled={generatingCertificate}
+                  variant="outline"
+                  size="sm"
+                >
+                  <FileDown className="h-4 w-4 mr-2" />
+                  {generatingCertificate ? 'Generating...' : 'Certificate'}
+                </Button>
+                <Button
+                  onClick={() => setEditCertificateOpen(true)}
+                  disabled={!activeSampleId}
+                  variant="outline"
+                  size="sm"
+                >
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
               </div>
             </TabsList>
           </div>
@@ -1351,17 +1443,32 @@ function CuppingPageContent() {
                                         <Minus className="h-3 w-3" />
                                       </Button>
                                       <input
-                                        type="number"
-                                        value={value ?? scale.min}
+                                        type="text"
+                                        inputMode="decimal"
+                                        value={value ?? ''}
                                         onChange={(e) => {
-                                          const v = parseFloat(e.target.value)
-                                          if (!isNaN(v) && v >= scale.min && v <= scale.max) {
-                                            updateAttribute(sample.id, attribute, v)
+                                          const inputVal = e.target.value
+                                          // Allow empty string for deletion
+                                          if (inputVal === '' || inputVal === '-') {
+                                            return
+                                          }
+                                          // Allow partial decimal input like "0." or "7."
+                                          if (/^\d*\.?\d*$/.test(inputVal)) {
+                                            const v = parseFloat(inputVal)
+                                            if (!isNaN(v) && v >= scale.min && v <= scale.max) {
+                                              updateAttribute(sample.id, attribute, v)
+                                            }
                                           }
                                         }}
-                                        step={scale.increment}
-                                        min={scale.min}
-                                        max={scale.max}
+                                        onBlur={(e) => {
+                                          // On blur, ensure we have a valid value or reset
+                                          const v = parseFloat(e.target.value)
+                                          if (isNaN(v) || v < scale.min) {
+                                            updateAttribute(sample.id, attribute, scale.min)
+                                          } else if (v > scale.max) {
+                                            updateAttribute(sample.id, attribute, scale.max)
+                                          }
+                                        }}
                                         className="w-16 px-2 py-1 text-center border rounded text-sm font-semibold"
                                       />
                                       <Button
@@ -1853,6 +1960,19 @@ function CuppingPageContent() {
         onOpenChange={setOcrValidationOpen}
         extractedCards={extractedCards}
         onSubmit={handleOCRSubmit}
+      />
+
+      {/* Certificate Edit Dialog */}
+      <CertificateEditDialog
+        open={editCertificateOpen}
+        onOpenChange={setEditCertificateOpen}
+        sampleId={activeSampleId}
+        onSaved={() => {
+          toast({
+            title: 'Certificate Updated',
+            description: 'Certificate data has been updated. Regenerate the certificate to see changes.'
+          })
+        }}
       />
 
       {/* Auto-open scan dialog from URL parameter */}
