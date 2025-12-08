@@ -118,7 +118,6 @@ const styles = StyleSheet.create({
   noData: {
     fontSize: 7,
     color: COLORS.muted,
-    fontStyle: 'italic',
   },
 })
 

@@ -67,7 +67,6 @@ const chartStyles = StyleSheet.create({
   },
   noScore: {
     color: COLORS.muted,
-    fontStyle: 'italic',
   },
   legend: {
     flexDirection: 'row',

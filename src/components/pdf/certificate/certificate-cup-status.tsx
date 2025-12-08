@@ -62,7 +62,6 @@ const statusStyles = StyleSheet.create({
   defectNone: {
     fontSize: 8,
     color: COLORS.muted,
-    fontStyle: 'italic',
   },
 })
 

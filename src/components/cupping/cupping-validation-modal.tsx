@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
-import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X, FileCheck, Check, XCircle } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X, FileCheck, Check, XCircle, Download } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface AttributeStats {
@@ -110,6 +110,32 @@ interface CuppingValidationModalProps {
   sampleTrackingNumber?: string
   onFinalize?: () => void
   onEditScore?: (cupperId: string) => void
+}
+
+// Helper function to download certificate PDF
+async function downloadCertificate(sampleId: string, trackingNumber: string): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/samples/${sampleId}/certificate`)
+
+    if (!response.ok) {
+      throw new Error('Failed to generate certificate')
+    }
+
+    const blob = await response.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `Certificate-${trackingNumber}.pdf`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    return true
+  } catch (error) {
+    console.error('Error downloading certificate:', error)
+    return false
+  }
 }
 
 export function CuppingValidationModal({
@@ -300,6 +326,25 @@ export function CuppingValidationModal({
             variant: 'destructive',
           })
         }, 500)
+      }
+
+      // Auto-download certificate if approved or rejected (not pending)
+      if (!isPending && sampleId) {
+        const trackingNumber = sampleTrackingNumber || aggregated?.sample_tracking_number || 'unknown'
+        const downloadSuccess = await downloadCertificate(sampleId, trackingNumber)
+
+        if (downloadSuccess) {
+          toast({
+            title: 'Certificate Downloaded',
+            description: `Certificate for ${trackingNumber} has been downloaded.`,
+          })
+        } else {
+          toast({
+            title: 'Download Failed',
+            description: 'Certificate was created but download failed. You can download it from the sample page.',
+            variant: 'destructive',
+          })
+        }
       }
 
       onFinalize?.()
