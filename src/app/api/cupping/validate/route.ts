@@ -175,11 +175,11 @@ export async function GET(request: NextRequest) {
       canValidate = hasEnoughCuppers
       reason = hasEnoughCuppers
         ? 'Global admin permission'
-        : `Waiting for more cuppers (${completedCupperCount}/${minCuppersRequired})`
+        : `Waiting for more cuppers (${completedCupperCount}/${assignedCupperCount})`
     } else if (!hasEnoughCuppers) {
       // Not enough cuppers have completed
       canValidate = false
-      reason = `Waiting for more cuppers (${completedCupperCount}/${minCuppersRequired})`
+      reason = `Waiting for more cuppers (${completedCupperCount}/${assignedCupperCount})`
     } else if (hasMasterCupperAssigned) {
       // If a master cupper is assigned, only master cuppers can validate
       if (isMasterCupper && (isAssigned || profile.laboratory_id === session.laboratory_id)) {

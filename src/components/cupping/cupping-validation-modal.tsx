@@ -91,6 +91,7 @@ interface ValidationPermissions {
   stats: {
     total_samples: number
     completed_cuppers: number
+    assigned_cuppers: number
     min_cuppers_required: number
     has_master_cupper_assigned: boolean
   }
@@ -765,7 +766,7 @@ export function CuppingValidationModal({
           {/* Cupper stats */}
           {permissions?.stats && (
             <div className="text-xs text-muted-foreground">
-              {permissions.stats.completed_cuppers}/{permissions.stats.min_cuppers_required} cuppers completed
+              {permissions.stats.completed_cuppers}/{permissions.stats.assigned_cuppers} cuppers completed
             </div>
           )}
 

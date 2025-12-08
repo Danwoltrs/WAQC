@@ -153,6 +153,9 @@ function CuppingPageContent() {
   const [generatingCertificate, setGeneratingCertificate] = useState(false)
   const [editCertificateOpen, setEditCertificateOpen] = useState(false)
 
+  // Track samples that have been validated in this session
+  const [finalizedSamples, setFinalizedSamples] = useState<Set<string>>(new Set())
+
   // Watch for theme changes
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -923,11 +926,13 @@ function CuppingPageContent() {
   }
 
   const handleFinalizeScores = async () => {
-    // TODO: Implement score finalization logic
-    // This could involve updating session status, triggering certificate generation, etc.
+    // Mark the current sample as finalized so the certificate button appears
+    if (activeSampleId) {
+      setFinalizedSamples(prev => new Set([...prev, activeSampleId]))
+    }
     toast({
       title: 'Scores Finalized',
-      description: 'Cupping scores have been finalized successfully',
+      description: 'Cupping scores have been finalized successfully. You can now generate the certificate.',
     })
   }
 
@@ -1185,15 +1190,17 @@ function CuppingPageContent() {
                   <Eye className="h-4 w-4 mr-2" />
                   Validate & Review
                 </Button>
-                <Button
-                  onClick={handleGenerateCertificate}
-                  disabled={generatingCertificate}
-                  variant="outline"
-                  size="sm"
-                >
-                  <FileDown className="h-4 w-4 mr-2" />
-                  {generatingCertificate ? 'Generating...' : 'Certificate'}
-                </Button>
+                {finalizedSamples.has(activeSampleId) && (
+                  <Button
+                    onClick={handleGenerateCertificate}
+                    disabled={generatingCertificate}
+                    variant="outline"
+                    size="sm"
+                  >
+                    <FileDown className="h-4 w-4 mr-2" />
+                    {generatingCertificate ? 'Generating...' : 'Generate Certificate'}
+                  </Button>
+                )}
                 <Button
                   onClick={() => setEditCertificateOpen(true)}
                   disabled={!activeSampleId}
