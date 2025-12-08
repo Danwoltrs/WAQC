@@ -22,7 +22,6 @@ export function SupplyChainStep({
   // Merged list of importers and QC clients for the importer dropdown when importer_is_qc_client is true
   const mergedImporterOptions = useMemo(() => {
     if (formData.importer_is_qc_client) {
-      // Merge: QC clients + importers with linked client_id
       const clientOptions = qcClients.map(c => ({
         id: c.id,
         name: c.fantasy_name || c.company,
@@ -30,14 +29,13 @@ export function SupplyChainStep({
         clientId: c.id
       }))
       const importerOptions = importers
-        .filter((imp: any) => imp.client_id) // Only importers linked to clients
+        .filter((imp: any) => imp.client_id)
         .map((imp: any) => ({
           id: imp.id,
           name: imp.name,
           type: 'importer' as const,
           clientId: imp.client_id
         }))
-      // Deduplicate by name
       const seen = new Set<string>()
       return [...clientOptions, ...importerOptions].filter(opt => {
         const key = opt.name.toLowerCase()
@@ -46,7 +44,6 @@ export function SupplyChainStep({
         return true
       })
     } else {
-      // Only show importers table
       return importers.map((imp: any) => ({
         id: imp.id,
         name: imp.name,
@@ -66,12 +63,12 @@ export function SupplyChainStep({
   )
 
   return (
-    <div className="space-y-6">
-      {/* Row 1: Seller with checkbox and contract ref */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Label className="text-sm font-medium">Seller *</Label>
-          <div className="flex items-center gap-1.5 ml-4">
+    <div className="space-y-4">
+      {/* Seller Row */}
+      <div className="flex items-start gap-4">
+        <div className="w-[140px] pt-2 flex items-center gap-2">
+          <Label className="text-sm font-medium whitespace-nowrap">Seller *</Label>
+          <div className="flex items-center gap-1">
             <Checkbox
               id="same_seller_shipper"
               checked={formData.same_seller_shipper}
@@ -82,14 +79,15 @@ export function SupplyChainStep({
                   updateFormData('shipper_contract_nr', '')
                 }
               }}
+              className="h-3.5 w-3.5"
             />
-            <Label htmlFor="same_seller_shipper" className="text-xs cursor-pointer text-muted-foreground">
-              Same as shipper
+            <Label htmlFor="same_seller_shipper" className="text-[10px] cursor-pointer text-muted-foreground whitespace-nowrap">
+              = Shipper
             </Label>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
+        <div className="flex gap-3">
+          <div className="w-[180px]">
             <Select
               value={formData.seller === '' ? 'custom' : exporters.find((exp: any) => exp.name === formData.seller) ? formData.seller : 'custom'}
               onValueChange={(value) => {
@@ -101,21 +99,17 @@ export function SupplyChainStep({
                 }
               }}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="h-9">
                 <SelectValue placeholder="Select seller" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="custom">Type custom name...</SelectItem>
-                <SelectItem value="new">+ Create New Seller</SelectItem>
+                <SelectItem value="custom">Type custom...</SelectItem>
+                <SelectItem value="new">+ Create New</SelectItem>
                 {exporters.length > 0 && (
                   <>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                      Sellers / Exporters
-                    </div>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Exporters</div>
                     {exporters.map((exporter: any) => (
-                      <SelectItem key={exporter.id} value={exporter.name}>
-                        {exporter.name}
-                      </SelectItem>
+                      <SelectItem key={exporter.id} value={exporter.name}>{exporter.name}</SelectItem>
                     ))}
                   </>
                 )}
@@ -125,38 +119,40 @@ export function SupplyChainStep({
               <Input
                 value={formData.seller}
                 onChange={(e) => updateFormData('seller', e.target.value)}
-                placeholder="Enter seller name"
-                className="w-[180px]"
+                placeholder="Seller name"
+                className="h-9 mt-1"
               />
             )}
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Contract Ref. Nr.</Label>
+          <div className="w-[160px]">
+            <Label className="text-[10px] text-muted-foreground">Contract Ref.</Label>
             <Input
               value={formData.seller_contract_nr}
               onChange={(e) => updateFormData('seller_contract_nr', e.target.value)}
-              placeholder="Seller contract ref."
-              className="w-[180px]"
+              placeholder="Contract ref."
+              className="h-9"
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Sample Ref. Nr.</Label>
+          <div className="w-[140px]">
+            <Label className="text-[10px] text-muted-foreground">Sample Ref.</Label>
             <Input
               value={formData.exporter_sample_number}
               onChange={(e) => updateFormData('exporter_sample_number', e.target.value)}
-              placeholder="Seller sample ref."
-              className="w-[180px]"
+              placeholder="Sample ref."
+              className="h-9"
             />
           </div>
         </div>
       </div>
 
-      {/* Row 2: Shipper (only if not same as seller) */}
+      {/* Shipper Row (only if not same as seller) */}
       {!formData.same_seller_shipper && (
-        <div className="space-y-3">
-          <Label className="text-sm font-medium">Shipper *</Label>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
+        <div className="flex items-start gap-4">
+          <div className="w-[140px] pt-2">
+            <Label className="text-sm font-medium">Shipper *</Label>
+          </div>
+          <div className="flex gap-3">
+            <div className="w-[180px]">
               <Select
                 value={formData.shipper === '' ? 'custom' : exporters.find((exp: any) => exp.name === formData.shipper) ? formData.shipper : 'custom'}
                 onValueChange={(value) => {
@@ -168,21 +164,17 @@ export function SupplyChainStep({
                   }
                 }}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="h-9">
                   <SelectValue placeholder="Select shipper" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="custom">Type custom name...</SelectItem>
-                  <SelectItem value="new">+ Create New Shipper</SelectItem>
+                  <SelectItem value="custom">Type custom...</SelectItem>
+                  <SelectItem value="new">+ Create New</SelectItem>
                   {exporters.length > 0 && (
                     <>
-                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                        Shippers / Exporters
-                      </div>
+                      <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Exporters</div>
                       {exporters.map((exporter: any) => (
-                        <SelectItem key={exporter.id} value={exporter.name}>
-                          {exporter.name}
-                        </SelectItem>
+                        <SelectItem key={exporter.id} value={exporter.name}>{exporter.name}</SelectItem>
                       ))}
                     </>
                   )}
@@ -192,33 +184,32 @@ export function SupplyChainStep({
                 <Input
                   value={formData.shipper}
                   onChange={(e) => updateFormData('shipper', e.target.value)}
-                  placeholder="Enter shipper name"
-                  className="w-[180px]"
+                  placeholder="Shipper name"
+                  className="h-9 mt-1"
                 />
               )}
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Contract Ref. Nr.</Label>
+            <div className="w-[160px]">
+              <Label className="text-[10px] text-muted-foreground">Contract Ref.</Label>
               <Input
                 value={formData.shipper_contract_nr}
                 onChange={(e) => updateFormData('shipper_contract_nr', e.target.value)}
-                placeholder="Shipper contract ref."
-                className="w-[180px]"
+                placeholder="Contract ref."
+                className="h-9"
               />
             </div>
-            <div></div>
           </div>
         </div>
       )}
 
       {/* Divider */}
-      <div className="border-t pt-4" />
+      <div className="border-t my-3" />
 
-      {/* Row 3: Importer with QC Client checkbox and contract ref */}
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
+      {/* Importer Row */}
+      <div className="flex items-start gap-4">
+        <div className="w-[140px] pt-2 flex items-center gap-2">
           <Label className="text-sm font-medium">Importer</Label>
-          <div className="flex items-center gap-1.5 ml-4">
+          <div className="flex items-center gap-1">
             <Checkbox
               id="importer_is_qc_client"
               checked={formData.importer_is_qc_client}
@@ -229,14 +220,15 @@ export function SupplyChainStep({
                   updateFormData('qc_client_contract_nr', '')
                 }
               }}
+              className="h-3.5 w-3.5"
             />
-            <Label htmlFor="importer_is_qc_client" className="text-xs cursor-pointer text-muted-foreground">
-              QC Client
+            <Label htmlFor="importer_is_qc_client" className="text-[10px] cursor-pointer text-muted-foreground whitespace-nowrap">
+              = QC Client
             </Label>
           </div>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
+        <div className="flex gap-3">
+          <div className="w-[180px]">
             <Select
               value={formData.importer === '' ? 'custom' : mergedImporterOptions.find(opt => opt.name === formData.importer) ? formData.importer : 'custom'}
               onValueChange={(value) => {
@@ -248,21 +240,19 @@ export function SupplyChainStep({
                 }
               }}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="h-9">
                 <SelectValue placeholder="Select importer" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="custom">Type custom name...</SelectItem>
-                <SelectItem value="new">+ Create New Importer</SelectItem>
+                <SelectItem value="custom">Type custom...</SelectItem>
+                <SelectItem value="new">+ Create New</SelectItem>
                 {mergedImporterOptions.length > 0 && (
                   <>
                     <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                      {formData.importer_is_qc_client ? 'QC Clients & Importers' : 'Importers'}
+                      {formData.importer_is_qc_client ? 'QC Clients' : 'Importers'}
                     </div>
                     {mergedImporterOptions.map((option) => (
-                      <SelectItem key={option.id} value={option.name}>
-                        {option.name}
-                      </SelectItem>
+                      <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
                     ))}
                   </>
                 )}
@@ -272,30 +262,31 @@ export function SupplyChainStep({
               <Input
                 value={formData.importer}
                 onChange={(e) => updateFormData('importer', e.target.value)}
-                placeholder="Enter importer name"
-                className="w-[180px]"
+                placeholder="Importer name"
+                className="h-9 mt-1"
               />
             )}
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Contract Ref. Nr.</Label>
+          <div className="w-[160px]">
+            <Label className="text-[10px] text-muted-foreground">Contract Ref.</Label>
             <Input
               value={formData.importer_contract_nr}
               onChange={(e) => updateFormData('importer_contract_nr', e.target.value)}
-              placeholder="Importer contract ref."
-              className="w-[180px]"
+              placeholder="Contract ref."
+              className="h-9"
             />
           </div>
-          <div></div>
         </div>
       </div>
 
-      {/* Row 4: QC Client (only if not same as importer) */}
+      {/* QC Client Row (only if not same as importer) */}
       {!formData.importer_is_qc_client && (
-        <div className="space-y-3">
-          <Label className="text-sm font-medium">QC Client</Label>
-          <div className="grid grid-cols-3 gap-3">
-            <div className="space-y-1">
+        <div className="flex items-start gap-4">
+          <div className="w-[140px] pt-2">
+            <Label className="text-sm font-medium">QC Client</Label>
+          </div>
+          <div className="flex gap-3">
+            <div className="w-[180px]">
               <Select
                 value={formData.qc_client || 'none'}
                 onValueChange={(value) => {
@@ -306,11 +297,11 @@ export function SupplyChainStep({
                   }
                 }}
               >
-                <SelectTrigger className="w-[180px]">
+                <SelectTrigger className="h-9">
                   <SelectValue placeholder="Select QC client" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Select QC client...</SelectItem>
+                  <SelectItem value="none">Select...</SelectItem>
                   {qcClients.map((client) => (
                     <SelectItem key={client.id} value={client.fantasy_name || client.company}>
                       {client.fantasy_name || client.company}
@@ -319,55 +310,57 @@ export function SupplyChainStep({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Contract Ref. Nr.</Label>
+            <div className="w-[160px]">
+              <Label className="text-[10px] text-muted-foreground">Contract Ref.</Label>
               <Input
                 value={formData.qc_client_contract_nr}
                 onChange={(e) => updateFormData('qc_client_contract_nr', e.target.value)}
-                placeholder="QC client contract ref."
-                className="w-[180px]"
+                placeholder="Contract ref."
+                className="h-9"
               />
             </div>
-            <div></div>
           </div>
         </div>
       )}
 
       {/* Divider */}
-      <div className="border-t pt-4" />
+      <div className="border-t my-3" />
 
-      {/* Row 5: Supplier Name (optional) */}
-      <div className="space-y-3">
-        <Label className="text-sm font-medium text-muted-foreground">Supplier Name (Optional)</Label>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
+      {/* Supplier Row */}
+      <div className="flex items-start gap-4">
+        <div className="w-[140px] pt-2">
+          <Label className="text-sm text-muted-foreground">Supplier</Label>
+        </div>
+        <div className="flex gap-3">
+          <div className="w-[180px]">
             <Input
               value={formData.supplier}
               onChange={(e) => updateFormData('supplier', e.target.value)}
-              placeholder="Farm or cooperative"
-              className="w-[180px]"
+              placeholder="Farm / cooperative"
+              className="h-9"
             />
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Contract Ref. Nr.</Label>
+          <div className="w-[160px]">
+            <Label className="text-[10px] text-muted-foreground">Contract Ref.</Label>
             <Input
               value={formData.supplier_contract_nr}
               onChange={(e) => updateFormData('supplier_contract_nr', e.target.value)}
-              placeholder="Supplier contract ref."
-              className="w-[180px]"
+              placeholder="Contract ref."
+              className="h-9"
             />
           </div>
-          <div></div>
         </div>
       </div>
 
-      {/* Row 6: Roaster (optional) */}
-      <div className="space-y-3">
-        <Label className="text-sm font-medium text-muted-foreground">Roaster (Optional)</Label>
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1">
+      {/* Roaster Row */}
+      <div className="flex items-start gap-4">
+        <div className="w-[140px] pt-2">
+          <Label className="text-sm text-muted-foreground">Roaster</Label>
+        </div>
+        <div className="flex gap-3">
+          <div className="w-[180px]">
             <Select
-              value={formData.roaster || ''}
+              value={formData.roaster || 'none'}
               onValueChange={(value) => {
                 if (value === 'new') {
                   setCreateClientType('roaster')
@@ -379,17 +372,15 @@ export function SupplyChainStep({
                 }
               }}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="h-9">
                 <SelectValue placeholder="Select roaster" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">No roaster</SelectItem>
-                <SelectItem value="new">+ Create New Roaster</SelectItem>
+                <SelectItem value="new">+ Create New</SelectItem>
                 {roasters.length > 0 && (
                   <>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                      Roasters
-                    </div>
+                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">Roasters</div>
                     {roasters.map((client) => (
                       <SelectItem key={client.id} value={client.fantasy_name || client.company}>
                         {client.fantasy_name || client.company}
@@ -400,16 +391,15 @@ export function SupplyChainStep({
               </SelectContent>
             </Select>
           </div>
-          <div className="space-y-1">
-            <Label className="text-xs text-muted-foreground">Contract Ref. Nr.</Label>
+          <div className="w-[160px]">
+            <Label className="text-[10px] text-muted-foreground">Contract Ref.</Label>
             <Input
               value={formData.roaster_contract_nr}
               onChange={(e) => updateFormData('roaster_contract_nr', e.target.value)}
-              placeholder="Roaster contract ref."
-              className="w-[180px]"
+              placeholder="Contract ref."
+              className="h-9"
             />
           </div>
-          <div></div>
         </div>
       </div>
 
