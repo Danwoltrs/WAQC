@@ -3,7 +3,7 @@ import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 export default function SampleIntakePage() {
   return (
     <div className="min-h-screen bg-background p-4 md:p-8">
-      <div className="max-w-6xl mx-auto">
+      <div className="w-full">
         <div className="mb-8">
           <h1 className="text-3xl font-semibold mb-2">Sample Intake</h1>
           <p className="text-muted-foreground">

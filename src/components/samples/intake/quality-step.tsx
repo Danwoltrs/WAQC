@@ -244,16 +244,16 @@ export function QualityStep({
   }
 
   return (
-    <div className="space-y-6">
-      {/* Row 1: Sample Type, Origin, Processing Method */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="space-y-2">
-          <Label>Sample Type *</Label>
+    <div className="space-y-4">
+      {/* Row 1: Sample Type, Origin, Micro-Origin */}
+      <div className="flex gap-3 items-end">
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Sample Type *</Label>
           <Select
             value={formData.sample_type}
             onValueChange={(value) => updateFormData('sample_type', value as any)}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[200px] h-9">
               <SelectValue placeholder="Select type" />
             </SelectTrigger>
             <SelectContent>
@@ -262,27 +262,15 @@ export function QualityStep({
               <SelectItem value="type">Type Sample</SelectItem>
             </SelectContent>
           </Select>
-          {formData.sample_type === 'type' && (
-            <div className="flex items-center space-x-2 pt-1">
-              <Checkbox
-                id="hide_exporter"
-                checked={formData.hide_exporter_on_label}
-                onCheckedChange={(checked) => updateFormData('hide_exporter_on_label', checked as boolean)}
-              />
-              <Label htmlFor="hide_exporter" className="text-xs cursor-pointer">
-                Hide exporter on labels
-              </Label>
-            </div>
-          )}
         </div>
-        <div className="space-y-2">
-          <Label>Origin *</Label>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Origin *</Label>
           <Select
             value={formData.origin}
             onValueChange={(value) => updateFormData('origin', value)}
             disabled={supportedOrigins.length <= 1}
           >
-            <SelectTrigger className="w-[180px]">
+            <SelectTrigger className="w-[120px] h-9">
               <SelectValue placeholder={supportedOrigins.length === 0 ? "Select lab first" : "Select origin"} />
             </SelectTrigger>
             <SelectContent>
@@ -294,88 +282,8 @@ export function QualityStep({
             </SelectContent>
           </Select>
         </div>
-        <div className="space-y-2">
-          <Label>Processing Method</Label>
-          <Select
-            value={formData.processing_method}
-            onValueChange={(value) => updateFormData('processing_method', value)}
-          >
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select method" />
-            </SelectTrigger>
-            <SelectContent>
-              {PROCESSING_METHODS.map((method) => (
-                <SelectItem key={method} value={method}>
-                  {method}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Row 2: Quality Specification, Micro-Origin, Exporter Sample Nr */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="space-y-2">
-          <Label>Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}</Label>
-          {loadingQualities ? (
-            <div className="text-sm text-muted-foreground py-2">Loading...</div>
-          ) : importerQualities.length > 0 ? (
-            <Select
-              value={formData.quality_spec_id || 'none'}
-              onValueChange={(value) => {
-                if (value === 'none') {
-                  updateFormData('quality_spec_id', '')
-                  updateFormData('quality_name', '')
-                } else {
-                  updateFormData('quality_spec_id', value)
-                  const selectedQuality = importerQualities.find(q => q.id === value)
-                  if (selectedQuality?.custom_name) {
-                    updateFormData('quality_name', selectedQuality.custom_name)
-                  }
-                  if (selectedImporterClient) {
-                    updateFormData('client_id', selectedImporterClient.id)
-                  }
-                }
-              }}
-            >
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select quality" />
-              </SelectTrigger>
-              <SelectContent>
-                {importerQualities.map((quality) => (
-                  <SelectItem key={quality.id} value={quality.id}>
-                    {quality.custom_name || quality.quality_code || 'Unnamed'}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : selectedImporterClient ? (
-            <div className="space-y-2">
-              <div className="p-2 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
-                No specs for this client
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setShowLinkTemplateDialog(true)}
-                className="w-full text-xs"
-              >
-                + Link Template
-              </Button>
-            </div>
-          ) : (
-            <Select disabled>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Select importer first" />
-              </SelectTrigger>
-              <SelectContent />
-            </Select>
-          )}
-        </div>
-        <div className="space-y-2">
-          <Label>Micro-Origin</Label>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Micro-Origin</Label>
           {availableMicroOrigins.length > 0 ? (
             <Popover open={microOriginOpen} onOpenChange={setMicroOriginOpen}>
               <PopoverTrigger asChild>
@@ -383,11 +291,11 @@ export function QualityStep({
                   variant="outline"
                   role="combobox"
                   aria-expanded={microOriginOpen}
-                  className="w-[180px] justify-between h-auto min-h-10 font-normal"
+                  className="w-[200px] justify-between h-9 font-normal"
                   disabled={!formData.origin}
                 >
                   {selectedMicroOrigins.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 max-w-[140px]">
+                    <div className="flex flex-wrap gap-1 max-w-[160px]">
                       {selectedMicroOrigins.slice(0, 2).map((region) => (
                         <Badge key={region} variant="secondary" className="text-xs">
                           {region}
@@ -405,7 +313,7 @@ export function QualityStep({
                   <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                 </Button>
               </PopoverTrigger>
-              <PopoverContent className="w-[200px] p-0" align="start">
+              <PopoverContent className="w-[220px] p-0" align="start">
                 <Command>
                   <CommandInput placeholder="Search..." />
                   <CommandList>
@@ -435,24 +343,42 @@ export function QualityStep({
               onChange={(e) => updateFormData('micro_origin', e.target.value)}
               placeholder={formData.origin ? "Enter micro-origin" : "Select origin first"}
               disabled={!formData.origin}
-              className="w-[180px]"
+              className="w-[200px] h-9"
             />
           )}
         </div>
-        <div></div>
       </div>
 
-      {/* Row 3: Certifications and Laboratory */}
-      <div className="grid grid-cols-3 gap-3">
-        <div className="space-y-2">
-          <Label>Certifications</Label>
+      {/* Row 2: Processing Method, Certifications, Quality Specification */}
+      <div className="flex gap-3 items-end">
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Processing Method</Label>
+          <Select
+            value={formData.processing_method || 'none'}
+            onValueChange={(value) => updateFormData('processing_method', value === 'none' ? '' : value)}
+          >
+            <SelectTrigger className="w-[140px] h-9">
+              <SelectValue placeholder="Select method" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Select...</SelectItem>
+              {PROCESSING_METHODS.map((method) => (
+                <SelectItem key={method} value={method}>
+                  {method}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Certifications</Label>
           <Popover open={certificationOpen} onOpenChange={setCertificationOpen}>
             <PopoverTrigger asChild>
               <Button
                 variant="outline"
                 role="combobox"
                 aria-expanded={certificationOpen}
-                className="w-[180px] justify-between h-auto min-h-10 font-normal"
+                className="w-[180px] justify-between h-9 font-normal"
               >
                 {(formData.certifications?.length || 0) > 0 ? (
                   <div className="flex flex-wrap gap-1 max-w-[140px]">
@@ -468,12 +394,12 @@ export function QualityStep({
                     )}
                   </div>
                 ) : (
-                  <span className="text-muted-foreground text-xs">Select certifications...</span>
+                  <span className="text-muted-foreground text-xs">Select...</span>
                 )}
                 <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
               </Button>
             </PopoverTrigger>
-            <PopoverContent className="w-[200px] p-0" align="start">
+            <PopoverContent className="w-[220px] p-0" align="start">
               <Command>
                 <CommandInput placeholder="Search..." />
                 <CommandList>
@@ -505,15 +431,73 @@ export function QualityStep({
             </PopoverContent>
           </Popover>
         </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}</Label>
+          {loadingQualities ? (
+            <div className="text-sm text-muted-foreground py-2">Loading...</div>
+          ) : importerQualities.length > 0 ? (
+            <Select
+              value={formData.quality_spec_id || 'none'}
+              onValueChange={(value) => {
+                if (value === 'none') {
+                  updateFormData('quality_spec_id', '')
+                  updateFormData('quality_name', '')
+                } else {
+                  updateFormData('quality_spec_id', value)
+                  const selectedQuality = importerQualities.find(q => q.id === value)
+                  if (selectedQuality?.custom_name) {
+                    updateFormData('quality_name', selectedQuality.custom_name)
+                  }
+                  if (selectedImporterClient) {
+                    updateFormData('client_id', selectedImporterClient.id)
+                  }
+                }
+              }}
+            >
+              <SelectTrigger className="w-[200px] h-9">
+                <SelectValue placeholder="Select quality" />
+              </SelectTrigger>
+              <SelectContent>
+                {importerQualities.map((quality) => (
+                  <SelectItem key={quality.id} value={quality.id}>
+                    {quality.custom_name || quality.quality_code || 'Unnamed'}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : selectedImporterClient ? (
+            <div className="flex gap-2 items-center">
+              <div className="p-2 bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded text-xs">
+                No specs for this client
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setShowLinkTemplateDialog(true)}
+                className="text-xs h-9"
+              >
+                + Link Template
+              </Button>
+            </div>
+          ) : (
+            <Select disabled>
+              <SelectTrigger className="w-[200px] h-9">
+                <SelectValue placeholder="Select importer first" />
+              </SelectTrigger>
+              <SelectContent />
+            </Select>
+          )}
+        </div>
         {/* Laboratory - only show if user has multiple labs */}
         {laboratories.length > 1 && (
-          <div className="space-y-2">
-            <Label>Laboratory *</Label>
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs text-muted-foreground">Laboratory *</Label>
             <Select
               value={formData.laboratory_id}
               onValueChange={(value) => updateFormData('laboratory_id', value)}
             >
-              <SelectTrigger className="w-[180px]">
+              <SelectTrigger className="w-[180px] h-9">
                 <SelectValue placeholder="Select lab" />
               </SelectTrigger>
               <SelectContent>
@@ -526,8 +510,22 @@ export function QualityStep({
             </Select>
           </div>
         )}
-        <div></div>
       </div>
+
+      {/* Hide exporter checkbox (only for type samples) */}
+      {formData.sample_type === 'type' && (
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="hide_exporter"
+            checked={formData.hide_exporter_on_label}
+            onCheckedChange={(checked) => updateFormData('hide_exporter_on_label', checked as boolean)}
+            className="h-3 w-3"
+          />
+          <Label htmlFor="hide_exporter" className="text-xs cursor-pointer text-muted-foreground">
+            Hide exporter on labels
+          </Label>
+        </div>
+      )}
 
       {/* SS Sample: Link to PSS */}
       {formData.sample_type === 'ss' && (

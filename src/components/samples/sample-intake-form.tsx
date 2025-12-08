@@ -582,7 +582,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const ContentWrapper = asDialog ? 'div' : CardContent
 
   return (
-    <FormWrapper className={asDialog ? '' : 'w-full max-w-5xl mx-auto'}>
+    <FormWrapper className={asDialog ? '' : 'w-fit'}>
       <HeaderWrapper className={asDialog ? 'mb-4' : ''}>
         {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
         <div className="flex gap-2 mt-4">

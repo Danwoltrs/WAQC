@@ -181,6 +181,12 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   const [hoverTimeoutId, setHoverTimeoutId] = useState<NodeJS.Timeout | null>(null)
   const [currentLanguage, setCurrentLanguage] = useState('EN')
   const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
+  const [mounted, setMounted] = useState(false)
+
+  // Prevent hydration mismatch by only rendering permission-filtered content after mount
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const navigation = getNavigation(openIntakeDialog)
 
@@ -321,6 +327,8 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   }, [profile, permissions])
 
   const filterNavByPermissions = (nav: NavItem[]) => {
+    // During SSR/before mount, show all items to prevent hydration mismatch
+    if (!mounted) return nav
     return nav.filter(item => !item.permission || hasPermission(permissions, item.permission))
   }
 
@@ -427,7 +435,9 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
               const submenuExpanded = itemWithBadge.href ? expandedMenus.has(itemWithBadge.href) : false
               const submenuActive = isSubmenuActive(itemWithBadge.submenu)
               const filteredSubmenu = hasSubmenu
-                ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
+                ? (mounted
+                    ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
+                    : itemWithBadge.submenu!)
                 : []
 
               return (
@@ -567,7 +577,9 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
                   const submenuExpanded = itemWithBadge.href ? expandedMenus.has(itemWithBadge.href) : false
                   const submenuActive = isSubmenuActive(itemWithBadge.submenu)
                   const filteredSubmenu = hasSubmenu
-                    ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
+                    ? (mounted
+                        ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
+                        : itemWithBadge.submenu!)
                     : []
 
                   return (
