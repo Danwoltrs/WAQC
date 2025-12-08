@@ -367,6 +367,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   }
 
   const handleSubmit = async () => {
+    console.log('[Sample Intake] handleSubmit called')
+
     if (!validateStep(4)) {
       setError('Please complete all required fields')
       return
@@ -376,18 +378,33 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     setError(null)
 
     try {
+      console.log('[Sample Intake] Starting entity lookups...')
+      console.log('[Sample Intake] Form data:', {
+        seller: formData.seller,
+        shipper: formData.shipper,
+        same_seller_shipper: formData.same_seller_shipper,
+        importer: formData.importer,
+        qc_client: formData.qc_client,
+        roaster: formData.roaster
+      })
+
       // Look up seller UUID from seller name
       let seller_id: string | undefined
       if (formData.seller) {
-        const { data: sellerData } = await supabase
+        console.log('[Sample Intake] Looking up seller:', formData.seller)
+        const { data: sellerData, error: sellerError } = await supabase
           .from('exporters')
           .select('id')
           .ilike('name', formData.seller)
           .limit(1)
           .maybeSingle()
 
+        if (sellerError) {
+          console.error('[Sample Intake] Seller lookup error:', sellerError)
+        }
         // Only set seller_id if we found a match (don't throw error if not found)
         seller_id = sellerData?.id
+        console.log('[Sample Intake] Found seller_id:', seller_id)
       }
 
       // Look up shipper (exporter) UUID
@@ -396,59 +413,104 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       let exporter_id: string | undefined
       if (formData.same_seller_shipper) {
         exporter_id = seller_id // Shipper is same as seller
+        console.log('[Sample Intake] Shipper same as seller, exporter_id:', exporter_id)
       } else if (formData.shipper) {
-        const { data: shipperData } = await supabase
+        console.log('[Sample Intake] Looking up shipper:', formData.shipper)
+        const { data: shipperData, error: shipperError } = await supabase
           .from('exporters')
           .select('id')
           .ilike('name', formData.shipper)
           .limit(1)
           .maybeSingle()
 
+        if (shipperError) {
+          console.error('[Sample Intake] Shipper lookup error:', shipperError)
+        }
         // Only set exporter_id if we found a match (don't throw error if not found)
         exporter_id = shipperData?.id
+        console.log('[Sample Intake] Found shipper/exporter_id:', exporter_id)
       }
 
       // Look up importer UUID from importer name (if provided)
       let importer_id: string | undefined
       if (formData.importer) {
+        console.log('[Sample Intake] Looking up importer:', formData.importer)
+
         // First check if it's from the clients table (when importer_is_qc_client is true and they selected a client)
-        const { data: clientAsImporter } = await supabase
+        // Try company name first
+        let { data: clientAsImporter, error: clientError } = await supabase
           .from('clients')
           .select('id')
-          .or(`company.ilike.${formData.importer},fantasy_name.ilike.${formData.importer}`)
+          .ilike('company', formData.importer)
           .eq('is_qc_client', true)
           .limit(1)
           .maybeSingle()
 
+        // If not found, try fantasy_name
+        if (!clientAsImporter && !clientError) {
+          const { data: clientByFantasy } = await supabase
+            .from('clients')
+            .select('id')
+            .ilike('fantasy_name', formData.importer)
+            .eq('is_qc_client', true)
+            .limit(1)
+            .maybeSingle()
+
+          clientAsImporter = clientByFantasy
+        }
+
         // If not found in clients, look in importers table
         if (!clientAsImporter) {
-          const { data: importerData } = await supabase
+          const { data: importerData, error: importerError } = await supabase
             .from('importers')
             .select('id')
             .ilike('name', formData.importer)
             .limit(1)
             .maybeSingle()
 
+          if (importerError) {
+            console.error('[Sample Intake] Error looking up importer:', importerError)
+          }
           importer_id = importerData?.id
+          console.log('[Sample Intake] Found importer_id:', importer_id)
         }
         // Note: if it's a client (not importer), importer_id stays undefined, which is OK
       }
 
       // Determine client_id based on importer_is_qc_client checkbox
       let qc_client_id: string | undefined = formData.client_id || undefined
+      console.log('[Sample Intake] Resolving QC client. importer_is_qc_client:', formData.importer_is_qc_client)
+
       if (formData.importer_is_qc_client) {
         // The importer IS the QC client - find the client by matching importer name
         if (formData.importer) {
-          const { data: clientData } = await supabase
+          console.log('[Sample Intake] Looking up QC client by importer name:', formData.importer)
+
+          // Try company name first
+          let { data: clientData } = await supabase
             .from('clients')
             .select('id')
-            .or(`company.ilike.${formData.importer},fantasy_name.ilike.${formData.importer}`)
+            .ilike('company', formData.importer)
             .eq('is_qc_client', true)
             .limit(1)
             .maybeSingle()
 
+          // If not found, try fantasy_name
+          if (!clientData) {
+            const { data: clientByFantasy } = await supabase
+              .from('clients')
+              .select('id')
+              .ilike('fantasy_name', formData.importer)
+              .eq('is_qc_client', true)
+              .limit(1)
+              .maybeSingle()
+
+            clientData = clientByFantasy
+          }
+
           if (clientData) {
             qc_client_id = clientData.id
+            console.log('[Sample Intake] Found QC client from importer:', qc_client_id)
           } else {
             // Check if the importer has a linked client_id
             const { data: importerWithClient } = await supabase
@@ -461,38 +523,72 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
             if (importerWithClient?.client_id) {
               qc_client_id = importerWithClient.client_id
+              console.log('[Sample Intake] Found QC client from importer link:', qc_client_id)
             }
           }
         }
       } else {
         // QC client is separate - look up by qc_client name
         if (formData.qc_client) {
-          const { data: separateClientData } = await supabase
+          console.log('[Sample Intake] Looking up separate QC client:', formData.qc_client)
+
+          // Try company name first
+          let { data: separateClientData } = await supabase
             .from('clients')
             .select('id')
-            .or(`company.ilike.${formData.qc_client},fantasy_name.ilike.${formData.qc_client}`)
+            .ilike('company', formData.qc_client)
             .eq('is_qc_client', true)
             .limit(1)
             .maybeSingle()
 
+          // If not found, try fantasy_name
+          if (!separateClientData) {
+            const { data: clientByFantasy } = await supabase
+              .from('clients')
+              .select('id')
+              .ilike('fantasy_name', formData.qc_client)
+              .eq('is_qc_client', true)
+              .limit(1)
+              .maybeSingle()
+
+            separateClientData = clientByFantasy
+          }
+
           if (separateClientData) {
             qc_client_id = separateClientData.id
+            console.log('[Sample Intake] Found separate QC client:', qc_client_id)
           }
         }
       }
 
+      console.log('[Sample Intake] Final qc_client_id:', qc_client_id)
+
       // Look up roaster UUID from roaster name (if provided)
       let roaster_id: string | undefined
       if (formData.roaster) {
-        const { data: roasterData } = await supabase
+        console.log('[Sample Intake] Looking up roaster:', formData.roaster)
+        const { data: roasterData, error: roasterError } = await supabase
           .from('roasters')
           .select('id')
           .ilike('name', formData.roaster)
           .limit(1)
           .maybeSingle()
 
+        if (roasterError) {
+          console.error('[Sample Intake] Roaster lookup error:', roasterError)
+        }
         roaster_id = roasterData?.id
+        console.log('[Sample Intake] Found roaster_id:', roaster_id)
       }
+
+      console.log('[Sample Intake] Entity lookups complete. Preparing sample data...')
+      console.log('[Sample Intake] Resolved IDs:', {
+        seller_id,
+        exporter_id,
+        importer_id,
+        qc_client_id,
+        roaster_id
+      })
 
       const sampleData: Partial<SampleInsert> = {
         client_id: qc_client_id, // Use the resolved QC client ID
@@ -527,7 +623,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         workflow_stage: 'received'
       }
 
-      console.log('Submitting sample with quality_name:', formData.quality_name, 'Processed:', sampleData.quality_name)
+      console.log('[Sample Intake] Submitting sample with quality_name:', formData.quality_name, 'Processed:', sampleData.quality_name)
+      console.log('[Sample Intake] Calling POST /api/samples...')
 
       const response = await fetch('/api/samples', {
         method: 'POST',
@@ -535,7 +632,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         body: JSON.stringify(sampleData)
       })
 
+      console.log('[Sample Intake] API response status:', response.status)
       const result = await response.json()
+      console.log('[Sample Intake] API response body:', result)
 
       if (!response.ok) {
         const errorMsg = result.details
@@ -544,6 +643,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         throw new Error(errorMsg)
       }
 
+      console.log('[Sample Intake] Sample created successfully:', result.sample.tracking_number)
       setGeneratedTrackingNumber(result.sample.tracking_number)
       setSuccess(true)
 
@@ -554,9 +654,10 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       localStorage.removeItem('sample-intake-form')
 
     } catch (err: any) {
-      console.error('Error creating sample:', err)
+      console.error('[Sample Intake] Error creating sample:', err)
       setError(err.message || 'Failed to create sample')
     } finally {
+      console.log('[Sample Intake] handleSubmit completed, setting loading to false')
       setLoading(false)
     }
   }
