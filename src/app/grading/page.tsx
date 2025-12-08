@@ -177,6 +177,9 @@ export default function GradingPage() {
   // Defect photos per sample
   const [defectPhotosMap, setDefectPhotosMap] = useState<Map<string, DefectPhoto[]>>(new Map())
 
+  // Raw decimal input strings (to allow typing "0." without it being parsed to "0")
+  const [rawInputsMap, setRawInputsMap] = useState<Map<string, { density?: string; moisture?: string }>>(new Map())
+
   // Watch for theme changes
   useEffect(() => {
     const observer = new MutationObserver(() => {
@@ -1619,16 +1622,34 @@ export default function GradingPage() {
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={gradingData?.density ?? ''}
+                                      value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density != null ? String(gradingData.density) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          const num = parseFloat(val)
-                                          if (!isNaN(num) && num >= 0) {
-                                            handleFieldChange(sample.id, 'density', num)
+                                          // Always update raw input for display
+                                          const newRaw = new Map(rawInputsMap)
+                                          newRaw.set(sample.id, { ...newRaw.get(sample.id), density: val })
+                                          setRawInputsMap(newRaw)
+                                          // Only update numeric state if value is complete (not ending with .)
+                                          if (!val.endsWith('.') && val !== '') {
+                                            const num = parseFloat(val)
+                                            if (!isNaN(num) && num >= 0) {
+                                              handleFieldChange(sample.id, 'density', num)
+                                            }
                                           } else if (val === '') {
                                             handleFieldChange(sample.id, 'density', 0)
                                           }
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        // Clear raw input on blur, numeric state is already set
+                                        const newRaw = new Map(rawInputsMap)
+                                        const current = newRaw.get(sample.id)
+                                        if (current) {
+                                          delete current.density
+                                          if (!current.moisture) newRaw.delete(sample.id)
+                                          else newRaw.set(sample.id, current)
+                                          setRawInputsMap(newRaw)
                                         }
                                       }}
                                       placeholder="0.700"
@@ -1688,16 +1709,34 @@ export default function GradingPage() {
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={gradingData?.density ?? ''}
+                                      value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density != null ? String(gradingData.density) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          const num = parseFloat(val)
-                                          if (!isNaN(num) && num >= 0) {
-                                            handleFieldChange(sample.id, 'density', num)
+                                          // Always update raw input for display
+                                          const newRaw = new Map(rawInputsMap)
+                                          newRaw.set(sample.id, { ...newRaw.get(sample.id), density: val })
+                                          setRawInputsMap(newRaw)
+                                          // Only update numeric state if value is complete (not ending with .)
+                                          if (!val.endsWith('.') && val !== '') {
+                                            const num = parseFloat(val)
+                                            if (!isNaN(num) && num >= 0) {
+                                              handleFieldChange(sample.id, 'density', num)
+                                            }
                                           } else if (val === '') {
                                             handleFieldChange(sample.id, 'density', 0)
                                           }
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        // Clear raw input on blur, numeric state is already set
+                                        const newRaw = new Map(rawInputsMap)
+                                        const current = newRaw.get(sample.id)
+                                        if (current) {
+                                          delete current.density
+                                          if (!current.moisture) newRaw.delete(sample.id)
+                                          else newRaw.set(sample.id, current)
+                                          setRawInputsMap(newRaw)
                                         }
                                       }}
                                       placeholder="0.700"
