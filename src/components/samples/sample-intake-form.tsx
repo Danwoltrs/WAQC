@@ -21,6 +21,29 @@ import {
   SuccessView
 } from './intake'
 
+// Timeout wrapper to prevent infinite hangs on Supabase queries
+async function withTimeout<T>(
+  fn: () => Promise<T>,
+  timeoutMs: number = 10000,
+  errorMessage: string = 'Request timeout'
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(errorMessage))
+    }, timeoutMs)
+
+    fn()
+      .then(result => {
+        clearTimeout(timer)
+        resolve(result)
+      })
+      .catch(err => {
+        clearTimeout(timer)
+        reject(err)
+      })
+  })
+}
+
 interface SampleIntakeFormProps {
   onSuccess?: (trackingNumber: string) => void
   asDialog?: boolean
@@ -392,19 +415,27 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       let seller_id: string | undefined
       if (formData.seller) {
         console.log('[Sample Intake] Looking up seller:', formData.seller)
-        const { data: sellerData, error: sellerError } = await supabase
-          .from('exporters')
-          .select('id')
-          .ilike('name', formData.seller)
-          .limit(1)
-          .maybeSingle()
+        try {
+          const result = await withTimeout(
+            async () => await supabase
+              .from('exporters')
+              .select('id')
+              .ilike('name', formData.seller)
+              .limit(1)
+              .maybeSingle(),
+            8000,
+            'Seller lookup timeout'
+          ) as { data: { id: string } | null; error: any }
 
-        if (sellerError) {
-          console.error('[Sample Intake] Seller lookup error:', sellerError)
+          if (result.error) {
+            console.error('[Sample Intake] Seller lookup error:', result.error)
+          }
+          // Only set seller_id if we found a match (don't throw error if not found)
+          seller_id = result.data?.id
+          console.log('[Sample Intake] Found seller_id:', seller_id)
+        } catch (err: any) {
+          console.warn('[Sample Intake] Seller lookup failed/timed out:', err.message)
         }
-        // Only set seller_id if we found a match (don't throw error if not found)
-        seller_id = sellerData?.id
-        console.log('[Sample Intake] Found seller_id:', seller_id)
       }
 
       // Look up shipper (exporter) UUID
@@ -416,19 +447,27 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         console.log('[Sample Intake] Shipper same as seller, exporter_id:', exporter_id)
       } else if (formData.shipper) {
         console.log('[Sample Intake] Looking up shipper:', formData.shipper)
-        const { data: shipperData, error: shipperError } = await supabase
-          .from('exporters')
-          .select('id')
-          .ilike('name', formData.shipper)
-          .limit(1)
-          .maybeSingle()
+        try {
+          const result = await withTimeout(
+            async () => await supabase
+              .from('exporters')
+              .select('id')
+              .ilike('name', formData.shipper)
+              .limit(1)
+              .maybeSingle(),
+            8000,
+            'Shipper lookup timeout'
+          ) as { data: { id: string } | null; error: any }
 
-        if (shipperError) {
-          console.error('[Sample Intake] Shipper lookup error:', shipperError)
+          if (result.error) {
+            console.error('[Sample Intake] Shipper lookup error:', result.error)
+          }
+          // Only set exporter_id if we found a match (don't throw error if not found)
+          exporter_id = result.data?.id
+          console.log('[Sample Intake] Found shipper/exporter_id:', exporter_id)
+        } catch (err: any) {
+          console.warn('[Sample Intake] Shipper lookup failed/timed out:', err.message)
         }
-        // Only set exporter_id if we found a match (don't throw error if not found)
-        exporter_id = shipperData?.id
-        console.log('[Sample Intake] Found shipper/exporter_id:', exporter_id)
       }
 
       // Look up importer UUID from importer name (if provided)
@@ -436,129 +475,176 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       if (formData.importer) {
         console.log('[Sample Intake] Looking up importer:', formData.importer)
 
-        // First check if it's from the clients table (when importer_is_qc_client is true and they selected a client)
-        // Try company name first
-        let { data: clientAsImporter, error: clientError } = await supabase
-          .from('clients')
-          .select('id')
-          .ilike('company', formData.importer)
-          .eq('is_qc_client', true)
-          .limit(1)
-          .maybeSingle()
+        try {
+          // First check if it's from the clients table (when importer_is_qc_client is true and they selected a client)
+          // Try company name first
+          let result = await withTimeout(
+            async () => await supabase
+              .from('clients')
+              .select('id')
+              .ilike('company', formData.importer)
+              .eq('is_qc_client', true)
+              .limit(1)
+              .maybeSingle(),
+            8000,
+            'Client (as importer) lookup timeout'
+          ) as { data: { id: string } | null; error: any }
 
-        // If not found, try fantasy_name
-        if (!clientAsImporter && !clientError) {
-          const { data: clientByFantasy } = await supabase
-            .from('clients')
-            .select('id')
-            .ilike('fantasy_name', formData.importer)
-            .eq('is_qc_client', true)
-            .limit(1)
-            .maybeSingle()
+          let clientAsImporter = result.data
+          let clientError = result.error
 
-          clientAsImporter = clientByFantasy
-        }
+          // If not found, try fantasy_name
+          if (!clientAsImporter && !clientError) {
+            const fantasyResult = await withTimeout(
+              async () => await supabase
+                .from('clients')
+                .select('id')
+                .ilike('fantasy_name', formData.importer)
+                .eq('is_qc_client', true)
+                .limit(1)
+                .maybeSingle(),
+              8000,
+              'Client fantasy_name lookup timeout'
+            ) as { data: { id: string } | null; error: any }
 
-        // If not found in clients, look in importers table
-        if (!clientAsImporter) {
-          const { data: importerData, error: importerError } = await supabase
-            .from('importers')
-            .select('id')
-            .ilike('name', formData.importer)
-            .limit(1)
-            .maybeSingle()
-
-          if (importerError) {
-            console.error('[Sample Intake] Error looking up importer:', importerError)
+            clientAsImporter = fantasyResult.data
           }
-          importer_id = importerData?.id
-          console.log('[Sample Intake] Found importer_id:', importer_id)
+
+          // If not found in clients, look in importers table
+          if (!clientAsImporter) {
+            const importerResult = await withTimeout(
+              async () => await supabase
+                .from('importers')
+                .select('id')
+                .ilike('name', formData.importer)
+                .limit(1)
+                .maybeSingle(),
+              8000,
+              'Importer lookup timeout'
+            ) as { data: { id: string } | null; error: any }
+
+            if (importerResult.error) {
+              console.error('[Sample Intake] Error looking up importer:', importerResult.error)
+            }
+            importer_id = importerResult.data?.id
+            console.log('[Sample Intake] Found importer_id:', importer_id)
+          }
+          // Note: if it's a client (not importer), importer_id stays undefined, which is OK
+        } catch (err: any) {
+          console.warn('[Sample Intake] Importer lookup failed/timed out:', err.message)
         }
-        // Note: if it's a client (not importer), importer_id stays undefined, which is OK
       }
 
       // Determine client_id based on importer_is_qc_client checkbox
       let qc_client_id: string | undefined = formData.client_id || undefined
       console.log('[Sample Intake] Resolving QC client. importer_is_qc_client:', formData.importer_is_qc_client)
 
-      if (formData.importer_is_qc_client) {
-        // The importer IS the QC client - find the client by matching importer name
-        if (formData.importer) {
-          console.log('[Sample Intake] Looking up QC client by importer name:', formData.importer)
+      try {
+        if (formData.importer_is_qc_client) {
+          // The importer IS the QC client - find the client by matching importer name
+          if (formData.importer) {
+            console.log('[Sample Intake] Looking up QC client by importer name:', formData.importer)
 
-          // Try company name first
-          let { data: clientData } = await supabase
-            .from('clients')
-            .select('id')
-            .ilike('company', formData.importer)
-            .eq('is_qc_client', true)
-            .limit(1)
-            .maybeSingle()
+            // Try company name first
+            let clientResult = await withTimeout(
+              async () => await supabase
+                .from('clients')
+                .select('id')
+                .ilike('company', formData.importer)
+                .eq('is_qc_client', true)
+                .limit(1)
+                .maybeSingle(),
+              8000,
+              'QC client company lookup timeout'
+            ) as { data: { id: string } | null; error: any }
 
-          // If not found, try fantasy_name
-          if (!clientData) {
-            const { data: clientByFantasy } = await supabase
-              .from('clients')
-              .select('id')
-              .ilike('fantasy_name', formData.importer)
-              .eq('is_qc_client', true)
-              .limit(1)
-              .maybeSingle()
+            let clientData = clientResult.data
 
-            clientData = clientByFantasy
+            // If not found, try fantasy_name
+            if (!clientData) {
+              const fantasyResult = await withTimeout(
+                async () => await supabase
+                  .from('clients')
+                  .select('id')
+                  .ilike('fantasy_name', formData.importer)
+                  .eq('is_qc_client', true)
+                  .limit(1)
+                  .maybeSingle(),
+                8000,
+                'QC client fantasy_name lookup timeout'
+              ) as { data: { id: string } | null; error: any }
+
+              clientData = fantasyResult.data
+            }
+
+            if (clientData) {
+              qc_client_id = clientData.id
+              console.log('[Sample Intake] Found QC client from importer:', qc_client_id)
+            } else {
+              // Check if the importer has a linked client_id
+              const importerResult = await withTimeout(
+                async () => await supabase
+                  .from('importers')
+                  .select('client_id')
+                  .ilike('name', formData.importer)
+                  .not('client_id', 'is', null)
+                  .limit(1)
+                  .maybeSingle(),
+                8000,
+                'Importer client_id lookup timeout'
+              ) as { data: { client_id: string } | null; error: any }
+
+              if (importerResult.data?.client_id) {
+                qc_client_id = importerResult.data.client_id
+                console.log('[Sample Intake] Found QC client from importer link:', qc_client_id)
+              }
+            }
           }
+        } else {
+          // QC client is separate - look up by qc_client name
+          if (formData.qc_client) {
+            console.log('[Sample Intake] Looking up separate QC client:', formData.qc_client)
 
-          if (clientData) {
-            qc_client_id = clientData.id
-            console.log('[Sample Intake] Found QC client from importer:', qc_client_id)
-          } else {
-            // Check if the importer has a linked client_id
-            const { data: importerWithClient } = await supabase
-              .from('importers')
-              .select('client_id')
-              .ilike('name', formData.importer)
-              .not('client_id', 'is', null)
-              .limit(1)
-              .maybeSingle()
+            // Try company name first
+            let separateResult = await withTimeout(
+              async () => await supabase
+                .from('clients')
+                .select('id')
+                .ilike('company', formData.qc_client)
+                .eq('is_qc_client', true)
+                .limit(1)
+                .maybeSingle(),
+              8000,
+              'Separate QC client company lookup timeout'
+            ) as { data: { id: string } | null; error: any }
 
-            if (importerWithClient?.client_id) {
-              qc_client_id = importerWithClient.client_id
-              console.log('[Sample Intake] Found QC client from importer link:', qc_client_id)
+            let separateClientData = separateResult.data
+
+            // If not found, try fantasy_name
+            if (!separateClientData) {
+              const fantasyResult = await withTimeout(
+                async () => await supabase
+                  .from('clients')
+                  .select('id')
+                  .ilike('fantasy_name', formData.qc_client)
+                  .eq('is_qc_client', true)
+                  .limit(1)
+                  .maybeSingle(),
+                8000,
+                'Separate QC client fantasy_name lookup timeout'
+              ) as { data: { id: string } | null; error: any }
+
+              separateClientData = fantasyResult.data
+            }
+
+            if (separateClientData) {
+              qc_client_id = separateClientData.id
+              console.log('[Sample Intake] Found separate QC client:', qc_client_id)
             }
           }
         }
-      } else {
-        // QC client is separate - look up by qc_client name
-        if (formData.qc_client) {
-          console.log('[Sample Intake] Looking up separate QC client:', formData.qc_client)
-
-          // Try company name first
-          let { data: separateClientData } = await supabase
-            .from('clients')
-            .select('id')
-            .ilike('company', formData.qc_client)
-            .eq('is_qc_client', true)
-            .limit(1)
-            .maybeSingle()
-
-          // If not found, try fantasy_name
-          if (!separateClientData) {
-            const { data: clientByFantasy } = await supabase
-              .from('clients')
-              .select('id')
-              .ilike('fantasy_name', formData.qc_client)
-              .eq('is_qc_client', true)
-              .limit(1)
-              .maybeSingle()
-
-            separateClientData = clientByFantasy
-          }
-
-          if (separateClientData) {
-            qc_client_id = separateClientData.id
-            console.log('[Sample Intake] Found separate QC client:', qc_client_id)
-          }
-        }
+      } catch (err: any) {
+        console.warn('[Sample Intake] QC client lookup failed/timed out:', err.message)
       }
 
       console.log('[Sample Intake] Final qc_client_id:', qc_client_id)
@@ -567,18 +653,26 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       let roaster_id: string | undefined
       if (formData.roaster) {
         console.log('[Sample Intake] Looking up roaster:', formData.roaster)
-        const { data: roasterData, error: roasterError } = await supabase
-          .from('roasters')
-          .select('id')
-          .ilike('name', formData.roaster)
-          .limit(1)
-          .maybeSingle()
+        try {
+          const result = await withTimeout(
+            async () => await supabase
+              .from('roasters')
+              .select('id')
+              .ilike('name', formData.roaster)
+              .limit(1)
+              .maybeSingle(),
+            8000,
+            'Roaster lookup timeout'
+          ) as { data: { id: string } | null; error: any }
 
-        if (roasterError) {
-          console.error('[Sample Intake] Roaster lookup error:', roasterError)
+          if (result.error) {
+            console.error('[Sample Intake] Roaster lookup error:', result.error)
+          }
+          roaster_id = result.data?.id
+          console.log('[Sample Intake] Found roaster_id:', roaster_id)
+        } catch (err: any) {
+          console.warn('[Sample Intake] Roaster lookup failed/timed out:', err.message)
         }
-        roaster_id = roasterData?.id
-        console.log('[Sample Intake] Found roaster_id:', roaster_id)
       }
 
       console.log('[Sample Intake] Entity lookups complete. Preparing sample data...')
@@ -626,11 +720,16 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       console.log('[Sample Intake] Submitting sample with quality_name:', formData.quality_name, 'Processed:', sampleData.quality_name)
       console.log('[Sample Intake] Calling POST /api/samples...')
 
-      const response = await fetch('/api/samples', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sampleData)
-      })
+      // Wrap API call with timeout to prevent infinite hangs
+      const response = await withTimeout(
+        () => fetch('/api/samples', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sampleData)
+        }),
+        30000, // 30 second timeout for API call
+        'Sample creation API timeout - please try again'
+      )
 
       console.log('[Sample Intake] API response status:', response.status)
       const result = await response.json()
