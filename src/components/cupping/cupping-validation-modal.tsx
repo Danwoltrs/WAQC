@@ -459,7 +459,7 @@ export function CuppingValidationModal({
             )}
           </DialogTitle>
           <DialogDescription>
-            Sample: {sampleTrackingNumber || aggregated.sample_tracking_number} • {aggregated.total_cuppers} Cuppers
+            Sample: {sampleTrackingNumber || aggregated.sample_tracking_number} • {aggregated.total_cuppers} {aggregated.total_cuppers === 1 ? 'Cupper' : 'Cuppers'}
           </DialogDescription>
         </DialogHeader>
 
@@ -766,7 +766,7 @@ export function CuppingValidationModal({
           {/* Cupper stats */}
           {permissions?.stats && (
             <div className="text-xs text-muted-foreground">
-              {permissions.stats.completed_cuppers}/{permissions.stats.assigned_cuppers} cuppers completed
+              {permissions.stats.completed_cuppers}/{permissions.stats.assigned_cuppers} {permissions.stats.assigned_cuppers === 1 ? 'cupper' : 'cuppers'} completed
             </div>
           )}
 

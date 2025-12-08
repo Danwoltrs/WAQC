@@ -152,15 +152,18 @@ export async function GET(request: NextRequest) {
     // Key rule: If only 1 cupper is assigned to the session, automatically allow single cupper validation
     // This handles emergency/holiday situations where a single cupper needs to complete the workflow
     // Use Set to count unique cuppers (in case same cupper was added multiple times)
-    const uniqueCupperIds = new Set((session.cupper_ids as string[]) || [])
+    const rawCupperIds = (session.cupper_ids as string[]) || []
+    const uniqueCupperIds = new Set(rawCupperIds)
     const assignedCupperCount = uniqueCupperIds.size
     const isSingleCupperSession = assignedCupperCount === 1
+
+    console.log(`[VALIDATE] Session ${session.id}: raw cupper_ids=${JSON.stringify(rawCupperIds)}, unique count=${assignedCupperCount}`)
 
     const minCuppersRequired = (session.allow_single_cupper || isSingleCupperSession)
       ? 1
       : (session.min_cuppers_required || 2)
 
-    console.log(`[VALIDATE] Completed cuppers: ${completedCupperCount}/${minCuppersRequired}, totalSamples: ${totalSamples}`)
+    console.log(`[VALIDATE] Completed cuppers: ${completedCupperCount}/${minCuppersRequired}, totalSamples: ${totalSamples}, isSingleCupperSession: ${isSingleCupperSession}`)
 
     const hasEnoughCuppers = completedCupperCount >= minCuppersRequired
 
@@ -177,11 +180,11 @@ export async function GET(request: NextRequest) {
       canValidate = hasEnoughCuppers
       reason = hasEnoughCuppers
         ? 'Global admin permission'
-        : `Waiting for more cuppers (${completedCupperCount}/${assignedCupperCount})`
+        : `Waiting for ${assignedCupperCount === 1 ? 'cupper' : 'more cuppers'} (${completedCupperCount}/${assignedCupperCount})`
     } else if (!hasEnoughCuppers) {
       // Not enough cuppers have completed
       canValidate = false
-      reason = `Waiting for more cuppers (${completedCupperCount}/${assignedCupperCount})`
+      reason = `Waiting for ${assignedCupperCount === 1 ? 'cupper' : 'more cuppers'} (${completedCupperCount}/${assignedCupperCount})`
     } else if (hasMasterCupperAssigned) {
       // If a master cupper is assigned, only master cuppers can validate
       if (isMasterCupper && (isAssigned || profile.laboratory_id === session.laboratory_id)) {
