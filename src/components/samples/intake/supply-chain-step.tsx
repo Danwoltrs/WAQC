@@ -86,12 +86,14 @@ export function SupplyChainStep({
             </div>
           </div>
           <Select
-            value={formData.seller === '' ? 'custom' : exporters.find((exp: any) => exp.name === formData.seller) ? formData.seller : 'custom'}
+            value={formData.seller || 'none'}
             onValueChange={(value) => {
               if (value === 'new') {
                 setCreateClientType('exporter')
                 setShowCreateClientDialog(true)
-              } else if (value !== 'custom') {
+              } else if (value === 'none') {
+                updateFormData('seller', '')
+              } else {
                 updateFormData('seller', value)
               }
             }}
@@ -100,21 +102,13 @@ export function SupplyChainStep({
               <SelectValue placeholder="Select seller" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="custom">Type custom...</SelectItem>
+              <SelectItem value="none">Select...</SelectItem>
               <SelectItem value="new">+ Create New</SelectItem>
               {exporters.length > 0 && exporters.map((exporter: any) => (
                 <SelectItem key={exporter.id} value={exporter.name}>{exporter.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
-          {(formData.seller === '' || !exporters.find((exp: any) => exp.name === formData.seller)) && (
-            <Input
-              value={formData.seller}
-              onChange={(e) => updateFormData('seller', e.target.value)}
-              placeholder="Seller name"
-              className="h-9 mt-1"
-            />
-          )}
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1.5 block">Contract Ref.</Label>
@@ -142,12 +136,14 @@ export function SupplyChainStep({
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">Shipper *</Label>
             <Select
-              value={formData.shipper === '' ? 'custom' : exporters.find((exp: any) => exp.name === formData.shipper) ? formData.shipper : 'custom'}
+              value={formData.shipper || 'none'}
               onValueChange={(value) => {
                 if (value === 'new') {
                   setCreateClientType('exporter')
                   setShowCreateClientDialog(true)
-                } else if (value !== 'custom') {
+                } else if (value === 'none') {
+                  updateFormData('shipper', '')
+                } else {
                   updateFormData('shipper', value)
                 }
               }}
@@ -156,21 +152,13 @@ export function SupplyChainStep({
                 <SelectValue placeholder="Select shipper" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="custom">Type custom...</SelectItem>
+                <SelectItem value="none">Select...</SelectItem>
                 <SelectItem value="new">+ Create New</SelectItem>
                 {exporters.length > 0 && exporters.map((exporter: any) => (
                   <SelectItem key={exporter.id} value={exporter.name}>{exporter.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {(formData.shipper === '' || !exporters.find((exp: any) => exp.name === formData.shipper)) && (
-              <Input
-                value={formData.shipper}
-                onChange={(e) => updateFormData('shipper', e.target.value)}
-                placeholder="Shipper name"
-                className="h-9 mt-1"
-              />
-            )}
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
