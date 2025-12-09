@@ -8,13 +8,8 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { CreateClientDialog } from './create-client-dialog'
 import { StepComponentProps } from './types'
 
-// Seller/Shipper entity types
-const SELLER_TYPES = [
-  { value: 'producer', label: 'Producer' },
-  { value: 'producer_exporter', label: 'Producer/Exporter' },
-  { value: 'cooperative', label: 'Cooperative' },
-  { value: 'exporter', label: 'Exporter' },
-]
+// Seller/Shipper entity types - clients with these types can be sellers
+const SELLER_CLIENT_TYPES = ['producer', 'producer_exporter', 'cooperative', 'exporter']
 
 export function SupplyChainStep({
   formData,
@@ -26,6 +21,20 @@ export function SupplyChainStep({
 }: StepComponentProps) {
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientType, setCreateClientType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
+
+  // Sellers: clients with producer, producer_exporter, cooperative, or exporter type
+  const sellerOptions = useMemo(() => {
+    return clients
+      .filter(c =>
+        c.fantasy_name &&
+        c.client_types?.some(type => SELLER_CLIENT_TYPES.includes(type))
+      )
+      .map(c => ({
+        id: c.id,
+        name: c.fantasy_name!
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [clients])
 
   // Importers: QC clients with fantasy_name only
   const mergedImporterOptions = useMemo(() => {
@@ -86,7 +95,10 @@ export function SupplyChainStep({
           <Select
             value={formData.seller || 'none'}
             onValueChange={(value) => {
-              if (value === 'none') {
+              if (value === 'new') {
+                setCreateClientType('exporter')
+                setShowCreateClientDialog(true)
+              } else if (value === 'none') {
                 updateFormData('seller', '')
               } else {
                 updateFormData('seller', value)
@@ -94,12 +106,13 @@ export function SupplyChainStep({
             }}
           >
             <SelectTrigger className="h-9">
-              <SelectValue placeholder="Select type" />
+              <SelectValue placeholder="Select seller" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">Select...</SelectItem>
-              {SELLER_TYPES.map((type) => (
-                <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+              <SelectItem value="new">+ Create New</SelectItem>
+              {sellerOptions.map((option) => (
+                <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -141,7 +154,10 @@ export function SupplyChainStep({
             <Select
               value={formData.shipper || 'none'}
               onValueChange={(value) => {
-                if (value === 'none') {
+                if (value === 'new') {
+                  setCreateClientType('exporter')
+                  setShowCreateClientDialog(true)
+                } else if (value === 'none') {
                   updateFormData('shipper', '')
                 } else {
                   updateFormData('shipper', value)
@@ -149,12 +165,13 @@ export function SupplyChainStep({
               }}
             >
               <SelectTrigger className="h-9">
-                <SelectValue placeholder="Select type" />
+                <SelectValue placeholder="Select shipper" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Select...</SelectItem>
-                {SELLER_TYPES.map((type) => (
-                  <SelectItem key={type.value} value={type.value}>{type.label}</SelectItem>
+                <SelectItem value="new">+ Create New</SelectItem>
+                {sellerOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -350,7 +367,9 @@ export function SupplyChainStep({
         onOpenChange={setShowCreateClientDialog}
         clientType={createClientType}
         onSuccess={(clientName) => {
-          if (createClientType === 'importer') {
+          if (createClientType === 'exporter') {
+            updateFormData('seller', clientName)
+          } else if (createClientType === 'importer') {
             updateFormData('importer', clientName)
           } else if (createClientType === 'roaster') {
             updateFormData('roaster', clientName)
