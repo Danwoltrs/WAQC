@@ -19,29 +19,30 @@ export function SupplyChainStep({
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientType, setCreateClientType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
 
+  // Sellers: All clients with fantasy_name (sorted alphabetically)
+  const sellerOptions = useMemo(() => {
+    return clients
+      .filter(c => c.fantasy_name) // Only clients with fantasy_name
+      .map(c => ({
+        id: c.id,
+        name: c.fantasy_name!
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [clients])
+
+  // Importers: QC clients with fantasy_name only
   const mergedImporterOptions = useMemo(() => {
     if (formData.importer_is_qc_client) {
-      const clientOptions = qcClients.map(c => ({
-        id: c.id,
-        name: c.fantasy_name || c.company,
-        type: 'client' as const,
-        clientId: c.id
-      }))
-      const importerOptions = importers
-        .filter((imp: any) => imp.client_id)
-        .map((imp: any) => ({
-          id: imp.id,
-          name: imp.name,
-          type: 'importer' as const,
-          clientId: imp.client_id
+      // Only QC clients with fantasy_name
+      return qcClients
+        .filter(c => c.fantasy_name)
+        .map(c => ({
+          id: c.id,
+          name: c.fantasy_name!,
+          type: 'client' as const,
+          clientId: c.id
         }))
-      const seen = new Set<string>()
-      return [...clientOptions, ...importerOptions].filter(opt => {
-        const key = opt.name.toLowerCase()
-        if (seen.has(key)) return false
-        seen.add(key)
-        return true
-      })
+        .sort((a, b) => a.name.localeCompare(b.name))
     } else {
       return importers.map((imp: any) => ({
         id: imp.id,
@@ -63,7 +64,7 @@ export function SupplyChainStep({
   return (
     <div className="space-y-4">
       {/* Seller Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
+      <div className="grid grid-cols-[180px_160px_140px_160px] gap-3 items-end">
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <Label className="text-xs text-muted-foreground">Seller *</Label>
@@ -104,8 +105,8 @@ export function SupplyChainStep({
             <SelectContent>
               <SelectItem value="none">Select...</SelectItem>
               <SelectItem value="new">+ Create New</SelectItem>
-              {exporters.length > 0 && exporters.map((exporter: any) => (
-                <SelectItem key={exporter.id} value={exporter.name}>{exporter.name}</SelectItem>
+              {sellerOptions.map((option) => (
+                <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
               ))}
             </SelectContent>
           </Select>
@@ -125,6 +126,15 @@ export function SupplyChainStep({
             value={formData.exporter_sample_number}
             onChange={(e) => updateFormData('exporter_sample_number', e.target.value)}
             placeholder="Sample ref."
+            className="h-9"
+          />
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1.5 block">Wolthers Contract</Label>
+          <Input
+            value={formData.wolthers_contract_nr}
+            onChange={(e) => updateFormData('wolthers_contract_nr', e.target.value)}
+            placeholder="Wolthers ref."
             className="h-9"
           />
         </div>
@@ -154,8 +164,8 @@ export function SupplyChainStep({
               <SelectContent>
                 <SelectItem value="none">Select...</SelectItem>
                 <SelectItem value="new">+ Create New</SelectItem>
-                {exporters.length > 0 && exporters.map((exporter: any) => (
-                  <SelectItem key={exporter.id} value={exporter.name}>{exporter.name}</SelectItem>
+                {sellerOptions.map((option) => (
+                  <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
                 ))}
               </SelectContent>
             </Select>
@@ -256,9 +266,9 @@ export function SupplyChainStep({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Select...</SelectItem>
-                {qcClients.map((client) => (
-                  <SelectItem key={client.id} value={client.fantasy_name || client.company}>
-                    {client.fantasy_name || client.company}
+                {qcClients.filter(c => c.fantasy_name).map((client) => (
+                  <SelectItem key={client.id} value={client.fantasy_name!}>
+                    {client.fantasy_name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -326,9 +336,9 @@ export function SupplyChainStep({
             <SelectContent>
               <SelectItem value="none">Select...</SelectItem>
               <SelectItem value="new">+ Create New</SelectItem>
-              {roasters.length > 0 && roasters.map((client) => (
-                <SelectItem key={client.id} value={client.fantasy_name || client.company}>
-                  {client.fantasy_name || client.company}
+              {roasters.filter(c => c.fantasy_name).map((client) => (
+                <SelectItem key={client.id} value={client.fantasy_name!}>
+                  {client.fantasy_name}
                 </SelectItem>
               ))}
             </SelectContent>
