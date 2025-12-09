@@ -1,12 +1,19 @@
 /**
  * Certificate cupping chart component
- * Box plot visualization with validation ranges and rhombus score markers
- * 3-column layout: Attribute name | Validation bar | Score value
+ * Redesigned visualization with:
+ * - "Attributes" title instead of "Cupping Scores"
+ * - Attribute (spec) score format on left
+ * - Proportional scale lines based on attribute ranges
+ * - Charcoal/black diamonds for in-spec, red for out-of-spec
+ * - Vertical tick marks showing scale range
  */
 
 import React from 'react'
-import { View, Text, Svg, Rect, Path, StyleSheet } from '@react-pdf/renderer'
+import { View, Text, Svg, Line, Path, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
+
+// Charcoal color for in-spec values and lines
+const CHARCOAL = '#333333'
 
 const chartStyles = StyleSheet.create({
   container: {
@@ -23,76 +30,71 @@ const chartStyles = StyleSheet.create({
     color: COLORS.muted,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   attributeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 6,
-    minHeight: 18,
+    marginBottom: 3,
+    minHeight: 14,
+  },
+  leftSection: {
+    width: 130,
+    flexDirection: 'row',
+    alignItems: 'baseline',
   },
   attributeName: {
-    width: 80,
     fontSize: 8,
+    fontWeight: 600,
     color: COLORS.dark,
   },
-  attributeNameAbbrev: {
+  specText: {
     fontSize: 7,
     color: COLORS.muted,
+    marginLeft: 2,
   },
-  barContainer: {
+  scoreValue: {
+    fontSize: 9,
+    fontWeight: 600,
+    marginLeft: 4,
+  },
+  chartSection: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    marginHorizontal: 8,
-  },
-  validationText: {
-    fontSize: 7,
-    color: COLORS.muted,
-    width: 35,
-    textAlign: 'right',
-    marginRight: 6,
-  },
-  scoreValue: {
-    width: 28,
-    fontSize: 9,
-    fontWeight: 600,
-    textAlign: 'right',
-  },
-  inSpec: {
-    color: COLORS.inSpec,
-  },
-  outOfSpec: {
-    color: COLORS.outOfSpec,
-  },
-  noScore: {
-    color: COLORS.muted,
-  },
-  legend: {
-    flexDirection: 'row',
-    alignItems: 'center',
     justifyContent: 'flex-end',
-    marginTop: 6,
-    paddingTop: 6,
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.borderLight,
-    gap: 12,
   },
-  legendItem: {
+  scaleLabel: {
+    fontSize: 6,
+    color: COLORS.muted,
+  },
+  totalRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.border,
+    paddingTop: 4,
+    marginTop: 2,
   },
-  legendText: {
-    fontSize: 7,
-    color: COLORS.muted,
+  totalLabel: {
+    fontSize: 8,
+    fontWeight: 600,
+    color: COLORS.dark,
+    width: 130,
+  },
+  totalValue: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: COLORS.dark,
   },
 })
 
 // Chart constants
-const BAR_HEIGHT = 10
-const BAR_WIDTH = 140
+const MAX_BAR_WIDTH = 160 // Maximum width for a 0-10 scale
+const BAR_HEIGHT = 12
 const RHOMBUS_SIZE = 4
+const TICK_HEIGHT = 6
+const SPEC_TICK_HEIGHT = 10
 
 interface ValidationRule {
   type: 'minimum' | 'range'
@@ -109,34 +111,41 @@ interface CuppingAttribute {
   scaleMax?: number
 }
 
-interface BarChartProps {
+interface ScaleChartProps {
   score: number | null
   validationRule?: ValidationRule | null
   scaleMin: number
   scaleMax: number
+  globalMaxScale: number
 }
 
-function BarChart({ score, validationRule, scaleMin, scaleMax }: BarChartProps) {
+function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale }: ScaleChartProps) {
   const range = scaleMax - scaleMin
   if (range <= 0) return null
 
-  // Calculate positions
-  const scorePos = score !== null ? ((score - scaleMin) / range) * BAR_WIDTH : null
+  // Calculate proportional width based on range relative to global max
+  const proportionalWidth = (range / globalMaxScale) * MAX_BAR_WIDTH
+  const barWidth = Math.max(proportionalWidth, 60) // Minimum width of 60
 
-  // Calculate validation range positions
-  let validMin = scaleMin
-  let validMax = scaleMax
+  // Calculate score position
+  const scorePos = score !== null ? ((score - scaleMin) / range) * barWidth : null
+
+  // Calculate spec range positions
+  let specMinValue = scaleMin
+  let specMaxValue = scaleMax
 
   if (validationRule) {
-    validMin = validationRule.min_value
+    specMinValue = validationRule.min_value
     if (validationRule.type === 'range' && validationRule.max_value !== undefined) {
-      validMax = validationRule.max_value
+      specMaxValue = validationRule.max_value
+    } else {
+      // For minimum type, the max is the scale max
+      specMaxValue = scaleMax
     }
   }
 
-  const validStartX = ((validMin - scaleMin) / range) * BAR_WIDTH
-  const validEndX = ((validMax - scaleMin) / range) * BAR_WIDTH
-  const validWidth = validEndX - validStartX
+  const specMinX = ((specMinValue - scaleMin) / range) * barWidth
+  const specMaxX = ((specMaxValue - scaleMin) / range) * barWidth
 
   // Check if score is in spec
   const isInSpec = score !== null && (
@@ -147,51 +156,120 @@ function BarChart({ score, validationRule, scaleMin, scaleMax }: BarChartProps) 
       : true
   )
 
+  // Calculate tick positions for start, middle, and end
+  const midValue = (scaleMin + scaleMax) / 2
+  const midX = ((midValue - scaleMin) / range) * barWidth
+
+  const svgHeight = 20
+  const centerY = svgHeight / 2
+
   return (
-    <Svg width={BAR_WIDTH} height={BAR_HEIGHT + 4}>
-      {/* Background track (full scale) */}
-      <Rect
-        x={0}
-        y={(BAR_HEIGHT + 4 - 4) / 2}
-        width={BAR_WIDTH}
-        height={4}
-        fill={COLORS.borderLight}
-        rx={2}
-      />
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      {/* Min scale label */}
+      <Text style={[chartStyles.scaleLabel, { marginRight: 2, width: 10, textAlign: 'right' }]}>
+        {scaleMin}
+      </Text>
 
-      {/* Validation range box (cream/tan color) */}
-      {validationRule && (
-        <Rect
-          x={validStartX}
-          y={(BAR_HEIGHT + 4 - 8) / 2}
-          width={Math.max(validWidth, 4)}
-          height={8}
-          fill={COLORS.cream}
-          rx={2}
+      <Svg width={barWidth} height={svgHeight}>
+        {/* Main horizontal line (charcoal) */}
+        <Line
+          x1={0}
+          y1={centerY}
+          x2={barWidth}
+          y2={centerY}
+          stroke={CHARCOAL}
+          strokeWidth={1}
         />
-      )}
 
-      {/* Score marker (rhombus) */}
-      {score !== null && scorePos !== null && (
-        <Path
-          d={`M ${scorePos} ${(BAR_HEIGHT + 4) / 2 - RHOMBUS_SIZE}
-              L ${scorePos + RHOMBUS_SIZE} ${(BAR_HEIGHT + 4) / 2}
-              L ${scorePos} ${(BAR_HEIGHT + 4) / 2 + RHOMBUS_SIZE}
-              L ${scorePos - RHOMBUS_SIZE} ${(BAR_HEIGHT + 4) / 2} Z`}
-          fill={isInSpec ? COLORS.inSpec : COLORS.outOfSpec}
+        {/* Start tick mark */}
+        <Line
+          x1={0}
+          y1={centerY - TICK_HEIGHT / 2}
+          x2={0}
+          y2={centerY + TICK_HEIGHT / 2}
+          stroke={CHARCOAL}
+          strokeWidth={1}
         />
-      )}
-    </Svg>
+
+        {/* Middle tick mark */}
+        <Line
+          x1={midX}
+          y1={centerY - TICK_HEIGHT / 2}
+          x2={midX}
+          y2={centerY + TICK_HEIGHT / 2}
+          stroke={CHARCOAL}
+          strokeWidth={0.5}
+        />
+
+        {/* End tick mark */}
+        <Line
+          x1={barWidth}
+          y1={centerY - TICK_HEIGHT / 2}
+          x2={barWidth}
+          y2={centerY + TICK_HEIGHT / 2}
+          stroke={CHARCOAL}
+          strokeWidth={1}
+        />
+
+        {/* Spec range min line (taller) */}
+        {validationRule && (
+          <Line
+            x1={specMinX}
+            y1={centerY - SPEC_TICK_HEIGHT / 2}
+            x2={specMinX}
+            y2={centerY + SPEC_TICK_HEIGHT / 2}
+            stroke={CHARCOAL}
+            strokeWidth={1}
+          />
+        )}
+
+        {/* Spec range max line (taller) - only for range type */}
+        {validationRule && validationRule.type === 'range' && validationRule.max_value !== undefined && (
+          <Line
+            x1={specMaxX}
+            y1={centerY - SPEC_TICK_HEIGHT / 2}
+            x2={specMaxX}
+            y2={centerY + SPEC_TICK_HEIGHT / 2}
+            stroke={CHARCOAL}
+            strokeWidth={1}
+          />
+        )}
+
+        {/* Score marker (rhombus/diamond) */}
+        {score !== null && scorePos !== null && (
+          <Path
+            d={`M ${scorePos} ${centerY - RHOMBUS_SIZE}
+                L ${scorePos + RHOMBUS_SIZE} ${centerY}
+                L ${scorePos} ${centerY + RHOMBUS_SIZE}
+                L ${scorePos - RHOMBUS_SIZE} ${centerY} Z`}
+            fill={isInSpec ? CHARCOAL : COLORS.outOfSpec}
+          />
+        )}
+      </Svg>
+
+      {/* Max scale label */}
+      <Text style={[chartStyles.scaleLabel, { marginLeft: 2, width: 12 }]}>
+        {scaleMax}
+      </Text>
+    </View>
   )
 }
 
-function formatValidationText(rule: ValidationRule | null | undefined): string {
+function formatSpecText(rule: ValidationRule | null | undefined): string {
   if (!rule) return ''
   if (rule.type === 'minimum') {
-    return `>=${rule.min_value}`
+    return `(>=${rule.min_value})`
   }
   if (rule.type === 'range' && rule.max_value !== undefined) {
-    return `${rule.min_value}-${rule.max_value}`
+    // Calculate center and tolerance for +/- format
+    const center = (rule.min_value + rule.max_value) / 2
+    const tolerance = (rule.max_value - rule.min_value) / 2
+    // Check if it's a clean +/- format
+    if (tolerance === Math.floor(tolerance)) {
+      return `(${center} +/-${tolerance})`
+    }
+    // Otherwise show as range
+    return `(${rule.min_value}-${rule.max_value})`
   }
   return ''
 }
@@ -209,21 +287,29 @@ export function CertificateCuppingChart({
   totalScore,
   scaleMin = 0,
   scaleMax = 10,
-  showLegend = true,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
     return null
   }
 
+  // Find the maximum scale range for proportional sizing
+  const globalMaxScale = Math.max(
+    ...attributes.map(attr => {
+      const attrMax = attr.scaleMax ?? scaleMax
+      const attrMin = attr.scaleMin ?? scaleMin
+      return attrMax - attrMin
+    })
+  )
+
   return (
     <View style={chartStyles.container}>
-      <Text style={chartStyles.title}>Cupping Scores</Text>
+      <Text style={chartStyles.title}>Attributes</Text>
 
       {attributes.map((attr, index) => {
         const attrScaleMin = attr.scaleMin ?? scaleMin
         const attrScaleMax = attr.scaleMax ?? scaleMax
 
-        // Check if score is in spec
+        // Check if score is in spec (only matters for color - red if out of spec)
         const isInSpec = attr.score !== null && (
           attr.validationRule
             ? (attr.validationRule.type === 'minimum'
@@ -232,86 +318,48 @@ export function CertificateCuppingChart({
             : true
         )
 
+        const displayName = attr.abbreviation || attr.attribute
+
         return (
           <View key={index} style={chartStyles.attributeRow}>
-            {/* Attribute name */}
-            <View style={chartStyles.attributeName}>
-              <Text>{attr.abbreviation || attr.attribute}</Text>
-              {attr.abbreviation && attr.abbreviation !== attr.attribute && (
-                <Text style={chartStyles.attributeNameAbbrev}>
-                  {attr.attribute.length > 15 ? attr.attribute.substring(0, 15) + '...' : ''}
-                </Text>
-              )}
+            {/* Left section: Attribute (spec) score */}
+            <View style={chartStyles.leftSection}>
+              <Text style={chartStyles.attributeName}>{displayName}</Text>
+              <Text style={chartStyles.specText}>
+                {formatSpecText(attr.validationRule)}
+              </Text>
+              <Text
+                style={[
+                  chartStyles.scoreValue,
+                  // Only red for out-of-spec, otherwise dark/black
+                  { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
+                ]}
+              >
+                {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
+              </Text>
             </View>
 
-            {/* Bar container with validation text */}
-            <View style={chartStyles.barContainer}>
-              <Text style={chartStyles.validationText}>
-                {formatValidationText(attr.validationRule)}
-              </Text>
-              <BarChart
+            {/* Right section: Scale chart */}
+            <View style={chartStyles.chartSection}>
+              <ScaleChart
                 score={attr.score}
                 validationRule={attr.validationRule}
                 scaleMin={attrScaleMin}
                 scaleMax={attrScaleMax}
+                globalMaxScale={globalMaxScale}
               />
             </View>
-
-            {/* Score value */}
-            <Text
-              style={[
-                chartStyles.scoreValue,
-                attr.score !== null
-                  ? isInSpec
-                    ? chartStyles.inSpec
-                    : chartStyles.outOfSpec
-                  : chartStyles.noScore,
-              ]}
-            >
-              {attr.score !== null ? attr.score.toFixed(1) : '-'}
-            </Text>
           </View>
         )
       })}
 
       {/* Total score row */}
       {totalScore != null && (
-        <View style={[chartStyles.attributeRow, { borderTopWidth: 0.5, borderTopColor: COLORS.border, paddingTop: 6, marginTop: 4 }]}>
-          <Text style={[chartStyles.attributeName, { fontWeight: 600 }]}>Total</Text>
-          <View style={chartStyles.barContainer} />
-          <Text style={[chartStyles.scoreValue, { fontWeight: 700, color: COLORS.dark }]}>
+        <View style={chartStyles.totalRow}>
+          <Text style={chartStyles.totalLabel}>Total</Text>
+          <Text style={chartStyles.totalValue}>
             {totalScore.toFixed(1)}
           </Text>
-        </View>
-      )}
-
-      {/* Legend */}
-      {showLegend && (
-        <View style={chartStyles.legend}>
-          <View style={chartStyles.legendItem}>
-            <Svg width={10} height={10}>
-              <Rect x={0} y={2} width={10} height={6} fill={COLORS.cream} rx={2} />
-            </Svg>
-            <Text style={chartStyles.legendText}>Spec range</Text>
-          </View>
-          <View style={chartStyles.legendItem}>
-            <Svg width={10} height={10}>
-              <Path
-                d="M 5 1 L 9 5 L 5 9 L 1 5 Z"
-                fill={COLORS.inSpec}
-              />
-            </Svg>
-            <Text style={chartStyles.legendText}>In spec</Text>
-          </View>
-          <View style={chartStyles.legendItem}>
-            <Svg width={10} height={10}>
-              <Path
-                d="M 5 1 L 9 5 L 5 9 L 1 5 Z"
-                fill={COLORS.outOfSpec}
-              />
-            </Svg>
-            <Text style={chartStyles.legendText}>Out of spec</Text>
-          </View>
         </View>
       )}
     </View>

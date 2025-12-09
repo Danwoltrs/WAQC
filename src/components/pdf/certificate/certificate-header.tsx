@@ -77,6 +77,8 @@ const headerStyles = StyleSheet.create({
   rightContent: {
     width: 100,
     alignItems: 'flex-end',
+    justifyContent: 'flex-end',
+    height: 50,
   },
   clientLogo: {
     width: 80,

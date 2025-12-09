@@ -160,43 +160,45 @@ export function CertificateSampleInfo({
     return n.toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
   }
 
-  // Format quantity display: "XX.XX MT (eq. XXXX x 60kg) in bulk/bags"
+  // Format quantity display based on bag type:
+  // - Bulk: "21.6 MT (in bulk, eq. 360 x 60 kg bags)"
+  // - Regular bags: "19.2 MT (320 x 60 kg bags)"
+  // - Big bags: "20 MT (in big bags)"
   const formatQuantity = (): string => {
     if (!bagsQuantityMt && !bags) return '-'
 
-    // Helper to get bag type label
-    const getBagTypeLabel = (type: string | null): string => {
-      switch (type) {
-        case 'bulk': return 'bulk'
-        case 'big_bag': return 'big bags'
-        case 'jute_bag': return 'jute bags'
-        case 'pp_bag': return 'PP bags'
-        default: return 'bags'
-      }
-    }
-
     if (bagsQuantityMt) {
-      // Show M/T + equivalent 60kg bags + bag type
       const mtStr = `${formatNumber(bagsQuantityMt)} MT`
-      const parts: string[] = [mtStr]
 
-      // Add equivalent 60kg bags if available
-      if (equivalent60kgBags) {
-        parts.push(`(eq. ${formatNumber(Math.round(equivalent60kgBags), 0)} x 60kg)`)
+      // Handle different bag types
+      if (bagType === 'bulk') {
+        // Bulk: "21.6 MT (in bulk, eq. 360 x 60 kg bags)"
+        if (equivalent60kgBags) {
+          return `${mtStr} (in bulk, eq. ${formatNumber(Math.round(equivalent60kgBags), 0)} x 60 kg bags)`
+        }
+        return `${mtStr} (in bulk)`
+      } else if (bagType === 'big_bag') {
+        // Big bags: "20 MT (in big bags)"
+        return `${mtStr} (in big bags)`
+      } else {
+        // Regular bags (jute, PP, etc.): "19.2 MT (320 x 60 kg bags)"
+        if (equivalent60kgBags) {
+          return `${mtStr} (${formatNumber(Math.round(equivalent60kgBags), 0)} x 60 kg bags)`
+        }
+        // If we have actual bag count and weight
+        if (bags && bagWeight) {
+          return `${mtStr} (${formatNumber(bags, 0)} x ${bagWeight} kg bags)`
+        }
+        return mtStr
       }
-
-      // Add bag type indicator
-      parts.push(`in ${getBagTypeLabel(bagType)}`)
-
-      return parts.join(' ')
     }
 
     // Fallback to just bags if no M/T
     const displayWeight = bagWeight || 60
     if (bags && displayWeight) {
-      return `${bags} x ${displayWeight}kg ${getBagTypeLabel(bagType)}`
+      return `${bags} x ${displayWeight} kg bags`
     }
-    return `${bags} ${getBagTypeLabel(bagType)}`
+    return `${bags} bags`
   }
 
   // Format shipment month (YYYY-MM to Month YYYY)
