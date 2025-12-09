@@ -421,24 +421,25 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       // Increased timeout to 15 seconds for slower networks
       const LOOKUP_TIMEOUT = 15000
 
-      // 1. Seller lookup from clients table by fantasy_name (also used as shipper if same_seller_shipper is true)
+      // 1. Seller lookup from exporters table by name (samples.seller_id references exporters.id)
       if (formData.seller) {
         lookupKeys.push('seller')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('clients').select('id').eq('fantasy_name', formData.seller).limit(1).maybeSingle(),
+            async () => supabase.from('exporters').select('id').eq('name', formData.seller).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Seller lookup timeout'
           ).catch(err => { console.error('[Seller lookup error]', err); return { data: null, error: err } })
         )
       }
 
-      // 2. Shipper lookup from clients table by fantasy_name (only if different from seller)
+      // 2. Shipper lookup from exporters table by name (only if different from seller)
+      // samples.exporter_id references exporters.id
       if (!formData.same_seller_shipper && formData.shipper) {
         lookupKeys.push('shipper')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('clients').select('id').eq('fantasy_name', formData.shipper).limit(1).maybeSingle(),
+            async () => supabase.from('exporters').select('id').eq('name', formData.shipper).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Shipper lookup timeout'
           ).catch(err => { console.error('[Shipper lookup error]', err); return { data: null, error: err } })

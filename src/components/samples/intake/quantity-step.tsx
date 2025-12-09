@@ -8,6 +8,34 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { StepComponentProps } from './types'
 import { Info } from 'lucide-react'
 
+// Month names for dropdown
+const MONTHS = [
+  { value: '01', label: 'Jan' },
+  { value: '02', label: 'Feb' },
+  { value: '03', label: 'Mar' },
+  { value: '04', label: 'Apr' },
+  { value: '05', label: 'May' },
+  { value: '06', label: 'Jun' },
+  { value: '07', label: 'Jul' },
+  { value: '08', label: 'Aug' },
+  { value: '09', label: 'Sep' },
+  { value: '10', label: 'Oct' },
+  { value: '11', label: 'Nov' },
+  { value: '12', label: 'Dec' },
+]
+
+// Generate years (current year and next 2 years)
+const generateYears = () => {
+  const currentYear = new Date().getFullYear()
+  return [
+    { value: currentYear.toString(), label: currentYear.toString() },
+    { value: (currentYear + 1).toString(), label: (currentYear + 1).toString() },
+    { value: (currentYear + 2).toString(), label: (currentYear + 2).toString() },
+  ]
+}
+
+const YEARS = generateYears()
+
 // Standard bag weights
 const BAG_WEIGHTS = {
   jute_bag: [
@@ -222,13 +250,47 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
 
         {/* Shipment Month */}
         <div className="space-y-2">
-          <Label htmlFor="shipment_month">Shipment Month</Label>
-          <Input
-            id="shipment_month"
-            type="month"
-            value={formData.shipment_month}
-            onChange={(e) => updateFormData('shipment_month', e.target.value)}
-          />
+          <Label>Shipment Month</Label>
+          <div className="flex">
+            {/* Month selector */}
+            <Select
+              value={formData.shipment_month?.split('-')[1] || String(new Date().getMonth() + 1).padStart(2, '0')}
+              onValueChange={(month) => {
+                const year = formData.shipment_month?.split('-')[0] || new Date().getFullYear().toString()
+                updateFormData('shipment_month', `${year}-${month}`)
+              }}
+            >
+              <SelectTrigger className="rounded-r-none border-r-0 w-[70px]">
+                <SelectValue placeholder="Mon" />
+              </SelectTrigger>
+              <SelectContent>
+                {MONTHS.map((month) => (
+                  <SelectItem key={month.value} value={month.value}>
+                    {month.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {/* Year selector */}
+            <Select
+              value={formData.shipment_month?.split('-')[0] || new Date().getFullYear().toString()}
+              onValueChange={(year) => {
+                const month = formData.shipment_month?.split('-')[1] || String(new Date().getMonth() + 1).padStart(2, '0')
+                updateFormData('shipment_month', `${year}-${month}`)
+              }}
+            >
+              <SelectTrigger className="rounded-l-none w-[80px]">
+                <SelectValue placeholder="Year" />
+              </SelectTrigger>
+              <SelectContent>
+                {YEARS.map((year) => (
+                  <SelectItem key={year.value} value={year.value}>
+                    {year.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <p className="text-xs text-muted-foreground">
             Expected shipment
           </p>
@@ -239,32 +301,32 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
       {formData.bag_count && formData.bag_weight_kg && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
           <div className="bg-primary/5 p-4 rounded-lg">
-            <p className="text-sm font-medium mb-1 flex items-center gap-2">
+            <div className="text-sm font-medium mb-1 flex items-center gap-2">
               Total M/T
               <Badge variant="outline" className="text-xs">Auto-calculated</Badge>
-            </p>
-            <p className="text-2xl font-semibold">
+            </div>
+            <div className="text-2xl font-semibold">
               {formData.bags_quantity_mt} M/T
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
               {parseFloat(formData.bags_quantity_mt) * 2204.62 > 0
                 ? `≈ ${(parseFloat(formData.bags_quantity_mt) * 2204.62).toFixed(0)} lbs`
                 : ''
               }
-            </p>
+            </div>
           </div>
 
           <div className="bg-primary/5 p-4 rounded-lg">
-            <p className="text-sm font-medium mb-1 flex items-center gap-2">
+            <div className="text-sm font-medium mb-1 flex items-center gap-2">
               Equivalent 60kg Bags
               <Badge variant="outline" className="text-xs">For reference</Badge>
-            </p>
-            <p className="text-2xl font-semibold">
+            </div>
+            <div className="text-2xl font-semibold">
               {formData.equivalent_60kg_bags} bags
-            </p>
-            <p className="text-xs text-muted-foreground mt-1">
+            </div>
+            <div className="text-xs text-muted-foreground mt-1">
               Standard 60kg bag equivalent
-            </p>
+            </div>
           </div>
         </div>
       )}

@@ -8,9 +8,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { CreateClientDialog } from './create-client-dialog'
 import { StepComponentProps } from './types'
 
-// Seller/Shipper entity types - clients with these types can be sellers
-const SELLER_CLIENT_TYPES = ['producer', 'producer_exporter', 'cooperative', 'exporter']
-
 export function SupplyChainStep({
   formData,
   updateFormData,
@@ -22,19 +19,21 @@ export function SupplyChainStep({
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientType, setCreateClientType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
 
-  // Sellers: clients with producer, producer_exporter, cooperative, or exporter type
+  // Sellers/Shippers: from exporters table (deduplicated by name)
   const sellerOptions = useMemo(() => {
-    return clients
-      .filter(c =>
-        c.fantasy_name &&
-        c.client_types?.some(type => SELLER_CLIENT_TYPES.includes(type))
-      )
-      .map(c => ({
-        id: c.id,
-        name: c.fantasy_name!
+    const seen = new Set<string>()
+    return exporters
+      .filter(e => {
+        if (!e.name || seen.has(e.name)) return false
+        seen.add(e.name)
+        return true
+      })
+      .map(e => ({
+        id: e.id,
+        name: e.name
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
-  }, [clients])
+  }, [exporters])
 
   // Importers: QC clients with fantasy_name only
   const mergedImporterOptions = useMemo(() => {
