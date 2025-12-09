@@ -19,11 +19,27 @@ const CHARCOAL = '#333333'
 const chartStyles = StyleSheet.create({
   container: {
     marginBottom: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  },
+  attributesSection: {
     paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    borderRadius: 4,
+  },
+  verticalSeparator: {
+    width: 0.5,
+    backgroundColor: COLORS.border,
+    marginVertical: 4,
+    marginLeft: 200, // Move separator 200px to the right
+    marginRight: 10,
+    alignSelf: 'stretch',
+  },
+  defectsSection: {
+    flexDirection: 'row',
+    paddingTop: 18, // Push down to align with graph rows (skip past title)
+    gap: 16,
+  },
+  defectColumn: {
+    alignItems: 'flex-start',
   },
   title: {
     fontSize: 8,
@@ -68,23 +84,8 @@ const chartStyles = StyleSheet.create({
     fontSize: 5,
     color: COLORS.muted,
   },
-  totalRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderTopWidth: 0.5,
-    borderTopColor: COLORS.border,
-    paddingTop: 3,
-    marginTop: 1,
-  },
-  totalLabel: {
+  defectValue: {
     fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.dark,
-    width: 115,
-  },
-  totalValue: {
-    fontSize: 10,
-    fontWeight: 700,
     color: COLORS.dark,
   },
 })
@@ -157,10 +158,6 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
       : true
   )
 
-  // Calculate tick positions for start, middle, and end
-  const midValue = (scaleMin + scaleMax) / 2
-  const midX = ((midValue - scaleMin) / range) * barWidth
-
   // Adjust SVG height based on whether we show numbers above/below
   const svgHeight = 12
   const lineY = 6 // Center the line vertically
@@ -173,7 +170,7 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
           <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: -2 }]}>
             {scaleMin}
           </Text>
-          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 8 }]}>
+          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 6 }]}>
             {scaleMax}
           </Text>
         </View>
@@ -198,16 +195,6 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
           y2={lineY + TICK_HEIGHT / 2}
           stroke={CHARCOAL}
           strokeWidth={1}
-        />
-
-        {/* Middle tick mark */}
-        <Line
-          x1={midX}
-          y1={lineY - TICK_HEIGHT / 2}
-          x2={midX}
-          y2={lineY + TICK_HEIGHT / 2}
-          stroke={CHARCOAL}
-          strokeWidth={0.5}
         />
 
         {/* End tick mark */}
@@ -262,7 +249,7 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
           <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: -2 }]}>
             {scaleMin}
           </Text>
-          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 8 }]}>
+          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 6 }]}>
             {scaleMax}
           </Text>
         </View>
@@ -296,13 +283,16 @@ export interface CertificateCuppingChartProps {
   scaleMin?: number
   scaleMax?: number
   showLegend?: boolean
+  faults?: number | null
+  taints?: number | null
 }
 
 export function CertificateCuppingChart({
   attributes,
-  totalScore,
   scaleMin = 0,
   scaleMax = 10,
+  faults,
+  taints,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
     return null
@@ -317,60 +307,81 @@ export function CertificateCuppingChart({
     })
   )
 
+  // Format faults and taints for display (numbers, 0 means none)
+  const faultsDisplay = faults != null && faults > 0 ? String(faults) : 'None'
+  const taintsDisplay = taints != null && taints > 0 ? String(taints) : 'None'
+
   return (
     <View style={chartStyles.container}>
-      <Text style={chartStyles.title}>Attributes</Text>
+      {/* Attributes section (left) */}
+      <View style={chartStyles.attributesSection}>
+        <Text style={chartStyles.title}>Attributes</Text>
 
-      {attributes.map((attr, index) => {
-        const attrScaleMin = attr.scaleMin ?? scaleMin
-        const attrScaleMax = attr.scaleMax ?? scaleMax
+        {attributes.map((attr, index) => {
+          const attrScaleMin = attr.scaleMin ?? scaleMin
+          const attrScaleMax = attr.scaleMax ?? scaleMax
 
-        // Check if score is in spec (only matters for color - red if out of spec)
-        const isInSpec = attr.score !== null && (
-          attr.validationRule
-            ? (attr.validationRule.type === 'minimum'
-              ? attr.score >= attr.validationRule.min_value
-              : attr.score >= attr.validationRule.min_value && (!attr.validationRule.max_value || attr.score <= attr.validationRule.max_value))
-            : true
-        )
+          // Check if score is in spec (only matters for color - red if out of spec)
+          const isInSpec = attr.score !== null && (
+            attr.validationRule
+              ? (attr.validationRule.type === 'minimum'
+                ? attr.score >= attr.validationRule.min_value
+                : attr.score >= attr.validationRule.min_value && (!attr.validationRule.max_value || attr.score <= attr.validationRule.max_value))
+              : true
+          )
 
-        const displayName = attr.abbreviation || attr.attribute
+          const displayName = attr.abbreviation || attr.attribute
 
-        return (
-          <View key={index} style={chartStyles.attributeRow}>
-            {/* Left section: Attribute (spec) score */}
-            <View style={chartStyles.leftSection}>
-              <Text style={chartStyles.attributeName}>{displayName}</Text>
-              <Text style={chartStyles.specText}>
-                {formatSpecText(attr.validationRule)}
-              </Text>
-              <Text
-                style={[
-                  chartStyles.scoreValue,
-                  // Only red for out-of-spec, otherwise dark/black
-                  { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
-                ]}
-              >
-                {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
-              </Text>
+          return (
+            <View key={index} style={chartStyles.attributeRow}>
+              {/* Left section: Attribute (spec) score */}
+              <View style={chartStyles.leftSection}>
+                <Text style={chartStyles.attributeName}>{displayName}</Text>
+                <Text style={chartStyles.specText}>
+                  {formatSpecText(attr.validationRule)}
+                </Text>
+                <Text
+                  style={[
+                    chartStyles.scoreValue,
+                    // Only red for out-of-spec, otherwise dark/black
+                    { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
+                  ]}
+                >
+                  {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
+                </Text>
+              </View>
+
+              {/* Right section: Scale chart */}
+              <View style={chartStyles.chartSection}>
+                <ScaleChart
+                  score={attr.score}
+                  validationRule={attr.validationRule}
+                  scaleMin={attrScaleMin}
+                  scaleMax={attrScaleMax}
+                  globalMaxScale={globalMaxScale}
+                  isFirst={index === 0}
+                  isLast={index === attributes.length - 1}
+                />
+              </View>
             </View>
+          )
+        })}
+      </View>
 
-            {/* Right section: Scale chart */}
-            <View style={chartStyles.chartSection}>
-              <ScaleChart
-                score={attr.score}
-                validationRule={attr.validationRule}
-                scaleMin={attrScaleMin}
-                scaleMax={attrScaleMax}
-                globalMaxScale={globalMaxScale}
-                isFirst={index === 0}
-                isLast={index === attributes.length - 1}
-              />
-            </View>
-          </View>
-        )
-      })}
+      {/* Vertical separator */}
+      <View style={chartStyles.verticalSeparator} />
 
+      {/* Defects section (right) - two columns */}
+      <View style={chartStyles.defectsSection}>
+        <View style={chartStyles.defectColumn}>
+          <Text style={chartStyles.title}>Faults</Text>
+          <Text style={chartStyles.defectValue}>{faultsDisplay}</Text>
+        </View>
+        <View style={chartStyles.defectColumn}>
+          <Text style={chartStyles.title}>Taints</Text>
+          <Text style={chartStyles.defectValue}>{taintsDisplay}</Text>
+        </View>
+      </View>
     </View>
   )
 }

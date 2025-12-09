@@ -153,13 +153,15 @@ export function QualityCertificate({
           secondaryDefectsCount={greenBeanAnalysis?.defects?.total_secondary ?? null}
         />
 
-        {/* 7. Cupping Box Plot Chart */}
+        {/* 7. Cupping Box Plot Chart with Faults/Taints */}
         <CertificateCuppingChart
           attributes={cuppingAttributes}
           totalScore={cuppingData?.overallScore}
           scaleMin={0}
           scaleMax={10}
           showLegend={true}
+          faults={cuppingData?.faults}
+          taints={cuppingData?.taints}
         />
 
         {/* 8. Cup Status Row - Clean/Uniform Cup + Taints/Faults */}

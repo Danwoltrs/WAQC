@@ -34,9 +34,14 @@ const detailStyles = StyleSheet.create({
     marginRight: 3,
   },
   value: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.dark,
+  },
+  valueLight: {
+    fontSize: 7,
+    fontWeight: 400,
+    color: COLORS.muted,
   },
   separator: {
     fontSize: 9,
@@ -62,57 +67,67 @@ export interface CertificateSampleDetailsProps {
   shipmentMonth?: string | null
 }
 
-function formatQuantity(props: CertificateSampleDetailsProps): string {
+interface QuantityResult {
+  mainValue: string
+  packagingInfo: string | null
+}
+
+function formatQuantity(props: CertificateSampleDetailsProps): QuantityResult {
   const { bagsQuantityMt, bags, bagType, bagWeightKg, equivalent60kgBags } = props
 
   // Primary format: "21.6 MT"
-  let result = ''
+  let mainValue = ''
+  let packagingInfo: string | null = null
+
   if (bagsQuantityMt !== null && bagsQuantityMt > 0) {
-    result = `${bagsQuantityMt.toFixed(1)} MT`
+    mainValue = `${bagsQuantityMt.toFixed(1)} MT`
   }
 
   // Add packaging detail
   const normalizedBagType = bagType?.toLowerCase() || ''
 
   if (normalizedBagType === 'bulk') {
-    // Bulk format: "21.6 MT (in bulk, eq. 360 × 60 kg bags)"
+    // Bulk format: "(in bulk, eq. 360 × 60 kg bags)"
     if (equivalent60kgBags) {
-      result += ` (in bulk, eq. ${equivalent60kgBags} × 60 kg bags)`
+      packagingInfo = `(in bulk, eq. ${equivalent60kgBags} × 60 kg bags)`
     } else {
-      result += ' (in bulk)'
+      packagingInfo = '(in bulk)'
     }
   } else if (normalizedBagType === 'big bags' || normalizedBagType === 'bigbags' || normalizedBagType === 'big bag') {
-    // Big bags format: "20 MT (in big bags, eq. 333 × 60 kg bags)"
+    // Big bags format: "(in big bags, eq. 333 × 60 kg bags)"
     if (equivalent60kgBags) {
-      result += ` (in big bags, eq. ${equivalent60kgBags} × 60 kg bags)`
+      packagingInfo = `(in big bags, eq. ${equivalent60kgBags} × 60 kg bags)`
     } else {
-      result += ' (in big bags)'
+      packagingInfo = '(in big bags)'
     }
-  } else if (bagType || bags) {
-    // Standard bags format: "19.2 MT (320 × 60 kg jute bags)"
-    // Only show equivalent if bag weight is NOT 60kg
+  } else if (bagType || bags || equivalent60kgBags) {
+    // Standard bags format: "(320 × 60 kg jute bags)"
     const parts: string[] = []
 
-    // Show actual bags with weight and type
-    if (bags && bagWeightKg) {
-      const bagTypeLabel = bagType ? ` ${bagType}` : ''
-      parts.push(`${bags} × ${bagWeightKg} kg${bagTypeLabel} bags`)
-    } else if (bags) {
-      const bagTypeLabel = bagType ? ` ${bagType}` : ''
-      parts.push(`${bags}${bagTypeLabel} bags`)
-    }
+    // Replace underscores with spaces in bag type for display
+    const cleanBagType = bagType?.replace(/_/g, ' ') || ''
+    // Check if bag type already contains "bag" to avoid "jute bag bags"
+    const hasBagInType = cleanBagType.toLowerCase().includes('bag')
+    const bagSuffix = hasBagInType ? 's' : ' bags'
 
-    // Add equivalent 60kg bags ONLY if bag weight is different from 60kg
-    if (equivalent60kgBags && bagWeightKg && bagWeightKg !== 60) {
-      parts.push(`eq. ${equivalent60kgBags} × 60 kg bags`)
+    if (bags && bags > 0 && bagWeightKg) {
+      const bagTypeLabel = cleanBagType ? ` ${cleanBagType}` : ''
+      parts.push(`${bags} × ${bagWeightKg} kg${bagTypeLabel}${bagSuffix}`)
+    } else if (bags && bags > 0) {
+      const bagTypeLabel = cleanBagType ? ` ${cleanBagType}` : ''
+      parts.push(`${bags}${bagTypeLabel}${bagSuffix}`)
+    } else if (equivalent60kgBags && equivalent60kgBags > 0) {
+      // Use equivalent 60kg bags when actual bag count is 0 or missing
+      const bagTypeLabel = cleanBagType ? ` ${cleanBagType}` : ''
+      parts.push(`${equivalent60kgBags} × 60 kg${bagTypeLabel}${bagSuffix}`)
     }
 
     if (parts.length > 0) {
-      result += ` (${parts.join(', ')})`
+      packagingInfo = `(${parts.join(', ')})`
     }
   }
 
-  return result || 'N/A'
+  return { mainValue: mainValue || 'N/A', packagingInfo }
 }
 
 function formatSampleType(sampleType: string | null): string {
@@ -146,9 +161,19 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
   // Build items array - only include items with values
   const items: { label: string; value: string | React.ReactNode }[] = []
 
-  // Quantity
-  if (quantity !== 'N/A') {
-    items.push({ label: 'Quantity', value: quantity })
+  // Quantity - render with separate styles for main value and packaging info
+  if (quantity.mainValue !== 'N/A') {
+    items.push({
+      label: 'Quantity',
+      value: (
+        <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+          <Text style={detailStyles.value}>{quantity.mainValue}</Text>
+          {quantity.packagingInfo && (
+            <Text style={[detailStyles.valueLight, { marginLeft: 3 }]}>{quantity.packagingInfo}</Text>
+          )}
+        </View>
+      )
+    })
   }
 
   // Sample type

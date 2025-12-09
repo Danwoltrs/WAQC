@@ -77,14 +77,16 @@ const headerStyles = StyleSheet.create({
   rightContent: {
     width: 100,
     alignItems: 'flex-end',
-    justifyContent: 'flex-end',
-    height: 50,
   },
   clientLogo: {
     width: 80,
     height: 35,
     objectFit: 'contain',
     marginBottom: 4,
+  },
+  dateRow: {
+    alignItems: 'flex-end',
+    marginTop: 4,
   },
   dateColumn: {
     alignItems: 'flex-end',
@@ -97,7 +99,7 @@ const headerStyles = StyleSheet.create({
   divider: {
     height: 0.5,
     backgroundColor: COLORS.border,
-    marginTop: 10,
+    marginTop: 4,
   },
 })
 
@@ -178,22 +180,25 @@ export function CertificateHeader({
           )}
         </View>
 
-        {/* Right content: Client logo + dates */}
+        {/* Right content: Client logo */}
         <View style={headerStyles.rightContent}>
           {clientLogoBase64 && (
             <Image src={clientLogoBase64} style={headerStyles.clientLogo} />
           )}
+        </View>
+      </View>
 
-          <View style={headerStyles.dateColumn}>
+      {/* Date row - just above divider */}
+      <View style={headerStyles.dateRow}>
+        <View style={headerStyles.dateColumn}>
+          <Text style={headerStyles.dateText}>
+            Issue: {formatDate(issuedDate)}
+          </Text>
+          {validUntil && (
             <Text style={headerStyles.dateText}>
-              Issue: {formatDate(issuedDate)}
+              Valid: {formatDate(validUntil)}
             </Text>
-            {validUntil && (
-              <Text style={headerStyles.dateText}>
-                Valid: {formatDate(validUntil)}
-              </Text>
-            )}
-          </View>
+          )}
         </View>
       </View>
 

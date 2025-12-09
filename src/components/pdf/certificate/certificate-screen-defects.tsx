@@ -18,10 +18,13 @@ const styles = StyleSheet.create({
   // Screen section styles
   screenSection: {
     width: 85,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    borderRadius: 4,
     padding: 6,
+  },
+  screenDefectsSeparator: {
+    width: 0.5,
+    backgroundColor: COLORS.border,
+    marginHorizontal: 6,
+    alignSelf: 'stretch',
   },
   screenTitle: {
     fontSize: 7,
@@ -48,10 +51,7 @@ const styles = StyleSheet.create({
   // Defects section styles
   defectsSection: {
     flex: 1,
-    borderWidth: 0.5,
-    borderColor: COLORS.border,
-    borderRadius: 4,
-    padding: 6,
+    paddingVertical: 6,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -78,10 +78,17 @@ const styles = StyleSheet.create({
   },
   defectsColumnsContainer: {
     flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   defectColumn: {
-    width: 130,
-    marginRight: 16,
+    width: 110,
+  },
+  columnSeparator: {
+    width: 0.5,
+    backgroundColor: COLORS.border,
+    marginHorizontal: 8,
+    alignSelf: 'stretch',
+    minHeight: 20,
   },
   defectColumnTitle: {
     fontSize: 7,
@@ -226,6 +233,11 @@ export function CertificateScreenDefects({
         </View>
       )}
 
+      {/* Separator between Screen and Defects */}
+      {hasScreenData && hasDefectData && (
+        <View style={styles.screenDefectsSeparator} />
+      )}
+
       {/* Defects Section */}
       {hasDefectData && (
         <View style={styles.defectsSection}>
@@ -262,6 +274,9 @@ export function CertificateScreenDefects({
                 <Text style={styles.noData}>None</Text>
               )}
             </View>
+
+            {/* Vertical separator */}
+            <View style={styles.columnSeparator} />
 
             {/* Secondary Defects Column */}
             <View style={styles.defectColumn}>
