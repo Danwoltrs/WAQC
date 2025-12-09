@@ -36,8 +36,8 @@ const chartStyles = StyleSheet.create({
   attributeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 1,
-    minHeight: 16,
+    marginBottom: 0,
+    minHeight: 14,
   },
   leftSection: {
     width: 115,
@@ -116,9 +116,11 @@ interface ScaleChartProps {
   scaleMin: number
   scaleMax: number
   globalMaxScale: number
+  isFirst?: boolean
+  isLast?: boolean
 }
 
-function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale }: ScaleChartProps) {
+function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale, isFirst, isLast }: ScaleChartProps) {
   const range = scaleMax - scaleMin
   if (range <= 0) return null
 
@@ -159,23 +161,23 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale 
   const midValue = (scaleMin + scaleMax) / 2
   const midX = ((midValue - scaleMin) / range) * barWidth
 
-  const svgHeight = 14
-  const lineY = 10 // Line positioned lower to leave room for numbers above
+  // Adjust SVG height based on whether we show numbers above/below
+  const svgHeight = 12
+  const lineY = 6 // Center the line vertically
 
   return (
     <View style={{ flexDirection: 'column' }}>
-      {/* Scale numbers above */}
-      <View style={{ flexDirection: 'row', width: barWidth, marginBottom: 1 }}>
-        <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: 0 }]}>
-          {scaleMin}
-        </Text>
-        <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: midX - 3 }]}>
-          {midValue}
-        </Text>
-        <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 6 }]}>
-          {scaleMax}
-        </Text>
-      </View>
+      {/* Scale numbers above - only on first row */}
+      {isFirst && (
+        <View style={{ flexDirection: 'row', width: barWidth, marginBottom: 1, height: 6 }}>
+          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: -2 }]}>
+            {scaleMin}
+          </Text>
+          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 8 }]}>
+            {scaleMax}
+          </Text>
+        </View>
+      )}
 
       <Svg width={barWidth} height={svgHeight}>
         {/* Main horizontal line (charcoal) */}
@@ -253,6 +255,18 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale 
           />
         )}
       </Svg>
+
+      {/* Scale numbers below - only on last row */}
+      {isLast && (
+        <View style={{ flexDirection: 'row', width: barWidth, marginTop: 1, height: 6 }}>
+          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: -2 }]}>
+            {scaleMin}
+          </Text>
+          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 8 }]}>
+            {scaleMax}
+          </Text>
+        </View>
+      )}
     </View>
   )
 }
@@ -349,21 +363,14 @@ export function CertificateCuppingChart({
                 scaleMin={attrScaleMin}
                 scaleMax={attrScaleMax}
                 globalMaxScale={globalMaxScale}
+                isFirst={index === 0}
+                isLast={index === attributes.length - 1}
               />
             </View>
           </View>
         )
       })}
 
-      {/* Total score row */}
-      {totalScore != null && (
-        <View style={chartStyles.totalRow}>
-          <Text style={chartStyles.totalLabel}>Total</Text>
-          <Text style={chartStyles.totalValue}>
-            {totalScore.toFixed(1)}
-          </Text>
-        </View>
-      )}
     </View>
   )
 }
