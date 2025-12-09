@@ -6,6 +6,7 @@
  * - Proportional scale lines based on attribute ranges
  * - Charcoal/black diamonds for in-spec, red for out-of-spec
  * - Vertical tick marks showing scale range
+ * - Scale numbers above the chart
  */
 
 import React from 'react'
@@ -18,7 +19,7 @@ const CHARCOAL = '#333333'
 const chartStyles = StyleSheet.create({
   container: {
     marginBottom: 8,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderWidth: 0.5,
     borderColor: COLORS.border,
@@ -30,16 +31,16 @@ const chartStyles = StyleSheet.create({
     color: COLORS.muted,
     textTransform: 'uppercase',
     letterSpacing: 0.3,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   attributeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 3,
-    minHeight: 14,
+    marginBottom: 1,
+    minHeight: 16,
   },
   leftSection: {
-    width: 130,
+    width: 115,
     flexDirection: 'row',
     alignItems: 'baseline',
   },
@@ -62,10 +63,9 @@ const chartStyles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-end',
   },
   scaleLabel: {
-    fontSize: 6,
+    fontSize: 5,
     color: COLORS.muted,
   },
   totalRow: {
@@ -73,14 +73,14 @@ const chartStyles = StyleSheet.create({
     alignItems: 'center',
     borderTopWidth: 0.5,
     borderTopColor: COLORS.border,
-    paddingTop: 4,
-    marginTop: 2,
+    paddingTop: 3,
+    marginTop: 1,
   },
   totalLabel: {
     fontSize: 8,
     fontWeight: 600,
     color: COLORS.dark,
-    width: 130,
+    width: 115,
   },
   totalValue: {
     fontSize: 10,
@@ -91,10 +91,9 @@ const chartStyles = StyleSheet.create({
 
 // Chart constants
 const MAX_BAR_WIDTH = 160 // Maximum width for a 0-10 scale
-const BAR_HEIGHT = 12
 const RHOMBUS_SIZE = 4
-const TICK_HEIGHT = 6
-const SPEC_TICK_HEIGHT = 10
+const TICK_HEIGHT = 5
+const SPEC_TICK_HEIGHT = 9
 
 interface ValidationRule {
   type: 'minimum' | 'range'
@@ -160,23 +159,31 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale 
   const midValue = (scaleMin + scaleMax) / 2
   const midX = ((midValue - scaleMin) / range) * barWidth
 
-  const svgHeight = 20
-  const centerY = svgHeight / 2
+  const svgHeight = 14
+  const lineY = 10 // Line positioned lower to leave room for numbers above
 
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-      {/* Min scale label */}
-      <Text style={[chartStyles.scaleLabel, { marginRight: 2, width: 10, textAlign: 'right' }]}>
-        {scaleMin}
-      </Text>
+    <View style={{ flexDirection: 'column' }}>
+      {/* Scale numbers above */}
+      <View style={{ flexDirection: 'row', width: barWidth, marginBottom: 1 }}>
+        <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: 0 }]}>
+          {scaleMin}
+        </Text>
+        <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: midX - 3 }]}>
+          {midValue}
+        </Text>
+        <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 6 }]}>
+          {scaleMax}
+        </Text>
+      </View>
 
       <Svg width={barWidth} height={svgHeight}>
         {/* Main horizontal line (charcoal) */}
         <Line
           x1={0}
-          y1={centerY}
+          y1={lineY}
           x2={barWidth}
-          y2={centerY}
+          y2={lineY}
           stroke={CHARCOAL}
           strokeWidth={1}
         />
@@ -184,9 +191,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale 
         {/* Start tick mark */}
         <Line
           x1={0}
-          y1={centerY - TICK_HEIGHT / 2}
+          y1={lineY - TICK_HEIGHT / 2}
           x2={0}
-          y2={centerY + TICK_HEIGHT / 2}
+          y2={lineY + TICK_HEIGHT / 2}
           stroke={CHARCOAL}
           strokeWidth={1}
         />
@@ -194,9 +201,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale 
         {/* Middle tick mark */}
         <Line
           x1={midX}
-          y1={centerY - TICK_HEIGHT / 2}
+          y1={lineY - TICK_HEIGHT / 2}
           x2={midX}
-          y2={centerY + TICK_HEIGHT / 2}
+          y2={lineY + TICK_HEIGHT / 2}
           stroke={CHARCOAL}
           strokeWidth={0.5}
         />
@@ -204,9 +211,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale 
         {/* End tick mark */}
         <Line
           x1={barWidth}
-          y1={centerY - TICK_HEIGHT / 2}
+          y1={lineY - TICK_HEIGHT / 2}
           x2={barWidth}
-          y2={centerY + TICK_HEIGHT / 2}
+          y2={lineY + TICK_HEIGHT / 2}
           stroke={CHARCOAL}
           strokeWidth={1}
         />
@@ -215,21 +222,21 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale 
         {validationRule && (
           <Line
             x1={specMinX}
-            y1={centerY - SPEC_TICK_HEIGHT / 2}
+            y1={lineY - SPEC_TICK_HEIGHT / 2}
             x2={specMinX}
-            y2={centerY + SPEC_TICK_HEIGHT / 2}
+            y2={lineY + SPEC_TICK_HEIGHT / 2}
             stroke={CHARCOAL}
             strokeWidth={1}
           />
         )}
 
-        {/* Spec range max line (taller) - only for range type */}
-        {validationRule && validationRule.type === 'range' && validationRule.max_value !== undefined && (
+        {/* Spec range max line (taller) - for both range AND minimum types */}
+        {validationRule && (
           <Line
             x1={specMaxX}
-            y1={centerY - SPEC_TICK_HEIGHT / 2}
+            y1={lineY - SPEC_TICK_HEIGHT / 2}
             x2={specMaxX}
-            y2={centerY + SPEC_TICK_HEIGHT / 2}
+            y2={lineY + SPEC_TICK_HEIGHT / 2}
             stroke={CHARCOAL}
             strokeWidth={1}
           />
@@ -238,19 +245,14 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale 
         {/* Score marker (rhombus/diamond) */}
         {score !== null && scorePos !== null && (
           <Path
-            d={`M ${scorePos} ${centerY - RHOMBUS_SIZE}
-                L ${scorePos + RHOMBUS_SIZE} ${centerY}
-                L ${scorePos} ${centerY + RHOMBUS_SIZE}
-                L ${scorePos - RHOMBUS_SIZE} ${centerY} Z`}
+            d={`M ${scorePos} ${lineY - RHOMBUS_SIZE}
+                L ${scorePos + RHOMBUS_SIZE} ${lineY}
+                L ${scorePos} ${lineY + RHOMBUS_SIZE}
+                L ${scorePos - RHOMBUS_SIZE} ${lineY} Z`}
             fill={isInSpec ? CHARCOAL : COLORS.outOfSpec}
           />
         )}
       </Svg>
-
-      {/* Max scale label */}
-      <Text style={[chartStyles.scaleLabel, { marginLeft: 2, width: 12 }]}>
-        {scaleMax}
-      </Text>
     </View>
   )
 }
