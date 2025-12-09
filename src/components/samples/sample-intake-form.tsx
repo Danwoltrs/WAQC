@@ -154,6 +154,21 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     localStorage.setItem('sample-intake-form', JSON.stringify(dataToSave))
   }, [formData, success])
 
+  // Validate seller from localStorage exists in exporters list, clear if stale
+  useEffect(() => {
+    if (exporters.length === 0 || !formData.seller) return
+
+    // Check if seller exists in exporters list (case-insensitive)
+    const sellerExists = exporters.some(
+      exp => exp.name.toLowerCase() === formData.seller.toLowerCase()
+    )
+
+    if (!sellerExists) {
+      console.warn('[Sample Intake] Cached seller not found in exporters list, clearing:', formData.seller)
+      setFormData(prev => ({ ...prev, seller: '' }))
+    }
+  }, [exporters, formData.seller])
+
   // Client auto-detection based on importer/seller names
   // For PSS/SS samples: importer or qc_client is the client (they own quality specs)
   // For type samples: either can be used
@@ -422,11 +437,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       const LOOKUP_TIMEOUT = 15000
 
       // 1. Seller lookup from exporters table by name (samples.seller_id references exporters.id)
+      // Use case-insensitive matching to handle variations in casing
       if (formData.seller) {
         lookupKeys.push('seller')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('exporters').select('id').eq('name', formData.seller).limit(1).maybeSingle(),
+            async () => supabase.from('exporters').select('id, name').ilike('name', formData.seller).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Seller lookup timeout'
           ).catch(err => { console.error('[Seller lookup error]', err); return { data: null, error: err } })
@@ -435,11 +451,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
       // 2. Shipper lookup from exporters table by name (only if different from seller)
       // samples.exporter_id references exporters.id
+      // Use case-insensitive matching to handle variations in casing
       if (!formData.same_seller_shipper && formData.shipper) {
         lookupKeys.push('shipper')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('exporters').select('id').eq('name', formData.shipper).limit(1).maybeSingle(),
+            async () => supabase.from('exporters').select('id, name').ilike('name', formData.shipper).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Shipper lookup timeout'
           ).catch(err => { console.error('[Shipper lookup error]', err); return { data: null, error: err } })
