@@ -108,6 +108,8 @@ export function QualityCertificate({
 
         {/* 2. Supply Chain Row - Gray background with conditional entities */}
         <CertificateSupplyChainRow
+          trackingNumber={sample.tracking_number}
+          wolthersContract={supplyChain.wolthersContract}
           supplier={supplyChain.supplier}
           exporter={supplyChain.exporter}
           shipper={supplyChain.shipper}

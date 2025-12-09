@@ -490,7 +490,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       shipper: shipperEntity,
       importer: {
         // Use importer from DB, or fall back to client if they're an importer type
-        name: importerResult.data?.name ?? (isImporterClient ? (client?.fantasy_name ?? client?.company) : null),
+        name: importerResult.data?.name ?? (isImporterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: importerResult.data?.country ?? null,
         contract: sample.buyer_contract_nr ?? null,
         address: null, // Address not yet in importers table

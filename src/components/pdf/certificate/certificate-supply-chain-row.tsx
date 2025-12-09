@@ -62,9 +62,10 @@ interface EntityColumnProps {
   label: string
   entity: SupplyChainEntity
   showSeparator?: boolean
+  trackingNumber?: string | null  // For Wolthers entity
 }
 
-function EntityColumn({ label, entity, showSeparator }: EntityColumnProps) {
+function EntityColumn({ label, entity, showSeparator, trackingNumber }: EntityColumnProps) {
   if (!entity.name) return null
 
   return (
@@ -72,6 +73,9 @@ function EntityColumn({ label, entity, showSeparator }: EntityColumnProps) {
       <View style={rowStyles.entityColumn}>
         <Text style={rowStyles.label}>{label}</Text>
         <Text style={rowStyles.name}>{entity.name}</Text>
+        {trackingNumber && (
+          <Text style={rowStyles.contract}>Sample: {trackingNumber}</Text>
+        )}
         {entity.contract && (
           <Text style={rowStyles.contract}>Ref: {entity.contract}</Text>
         )}
@@ -85,6 +89,8 @@ function EntityColumn({ label, entity, showSeparator }: EntityColumnProps) {
 }
 
 export interface CertificateSupplyChainRowProps {
+  trackingNumber?: string | null    // Sample tracking number
+  wolthersContract?: string | null  // Wolthers contract reference
   supplier?: SupplyChainEntity | null
   exporter: SupplyChainEntity
   shipper?: SupplyChainEntity | null
@@ -101,6 +107,8 @@ function namesMatch(a: string | null | undefined, b: string | null | undefined):
 }
 
 export function CertificateSupplyChainRow({
+  trackingNumber,
+  wolthersContract,
   supplier,
   exporter,
   shipper,
@@ -124,8 +132,19 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
+  // Build Wolthers entity (shown first on the left)
+  const wolthersEntity: SupplyChainEntity = {
+    name: 'Wolthers',
+    country: null,
+    contract: wolthersContract ?? null,
+    address: null,
+  }
+  // Show Wolthers if we have a contract or tracking number
+  const hasWolthers = Boolean(wolthersContract) || Boolean(trackingNumber)
+
   // Count visible entities to determine separators
   const entities = [
+    { show: hasWolthers, label: 'Wolthers', entity: { ...wolthersEntity, contract: wolthersContract ?? null }, trackingNumber },
     { show: hasSupplier, label: 'Supplier', entity: supplier },
     { show: hasExporter, label: 'Exporter', entity: exporter },
     { show: hasShipper, label: 'Shipper', entity: shipper },
@@ -148,6 +167,7 @@ export function CertificateSupplyChainRow({
             label={e.label}
             entity={e.entity!}
             showSeparator={index < entities.length - 1}
+            trackingNumber={'trackingNumber' in e ? (e as { trackingNumber?: string | null }).trackingNumber : undefined}
           />
         ))}
       </View>
