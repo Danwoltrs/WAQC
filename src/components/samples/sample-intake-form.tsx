@@ -103,6 +103,16 @@ const initialFormData: FormData = {
 
 export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFormProps = {}) {
   const { profile } = useAuth()
+
+  // Check if user is a global admin or global cupper admin (can access all labs)
+  const isGlobalUser = profile?.is_global_admin ||
+    profile?.qc_role === 'global_admin' ||
+    profile?.qc_role === 'global_cupper_admin' ||
+    profile?.qc_role === 'global_quality_admin'
+
+  // Debug: log profile and isGlobalUser
+  console.log('[Sample Intake] Profile:', profile?.email, 'is_global_admin:', profile?.is_global_admin, 'qc_role:', profile?.qc_role, 'isGlobalUser:', isGlobalUser)
+
   const [currentStep, setCurrentStep] = useState(1)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -702,6 +712,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               approvedPSSSamples={approvedPSSSamples}
               importers={importers}
               qcClients={qcClients}
+              isGlobalUser={isGlobalUser}
             />
           )}
 

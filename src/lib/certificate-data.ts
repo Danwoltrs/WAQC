@@ -147,6 +147,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       sample_type,
       processing_method,
       bags,
+      bag_count,
       bag_type,
       bag_weight_kg,
       bags_quantity_mt,
@@ -156,7 +157,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       container_nr,
       created_at,
       status,
-      contract_number,
+      wolthers_contract_nr,
       exporter_contract_nr,
       roaster_contract_nr,
       buyer_contract_nr,
@@ -256,6 +257,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     .select(`
       scores,
       notes,
+      defects,
       session:cupping_sessions(
         status,
         session_type
@@ -273,7 +275,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       .from('cupping_scores')
       .select(`
         scores,
-        notes
+        notes,
+        defects
       `)
       .eq('sample_id', sampleId)
       .order('created_at', { ascending: false })
@@ -458,6 +461,9 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         address: null,
       }
 
+  // Generate current date for issued_date fallback (used when no certificate record exists yet)
+  const currentDate = new Date().toISOString()
+
   return {
     sample: {
       id: sample.id,
@@ -467,7 +473,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       micro_origin: sample.micro_origin,
       sample_type: sample.sample_type,
       processing_method: sample.processing_method,
-      bags: sample.bags,
+      bags: sample.bag_count || sample.bags, // Prefer bag_count, fall back to bags for legacy
       bag_type: sample.bag_type,
       bag_weight_kg: sample.bag_weight_kg,
       bags_quantity_mt: sample.bags_quantity_mt,
@@ -510,22 +516,31 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         contract: (isEndClient || (isImporterClient && !importerResult.data?.name)) ? null : (sample.qc_client_contract_nr ?? null),
         address: null, // Address not yet in clients table
       },
-      wolthersContract: sample.contract_number ?? null,
+      wolthersContract: sample.wolthers_contract_nr ?? null,
     },
     client,
     laboratory,
     greenBeanAnalysis,
     roastAnalysis,
     cuppingData,
+    // Certificate data: use DB record if exists, otherwise create a placeholder with current date
+    // This ensures the PDF always shows an issue date even on first generation
     certificate: certificate
       ? {
           id: certificate.id,
           certificate_number: certificate.certificate_number,
-          issued_date: certificate.created_at || new Date().toISOString(),
+          issued_date: certificate.created_at || currentDate,
           valid_until: validUntil,
           status: certificate.status,
         }
-      : null,
+      : {
+          // Placeholder when no certificate record exists yet (first generation)
+          id: '',
+          certificate_number: sample.tracking_number,
+          issued_date: currentDate,
+          valid_until: validUntil,
+          status: null,
+        },
     qualitySpec,
   }
 }
@@ -724,7 +739,7 @@ type CuppingAttributeValidations = Record<string, { min?: number; max?: number }
  * Process cupping scores from multiple cuppers into averaged data
  */
 function processCuppingScores(
-  cuppingScores: Array<{ scores: unknown; notes: string | null }>,
+  cuppingScores: Array<{ scores: unknown; notes: string | null; defects?: unknown }>,
   isSpecialty: boolean,
   attributeValidations?: CuppingAttributeValidations
 ): CuppingData {
@@ -741,16 +756,26 @@ function processCuppingScores(
       allNotes.push(score.notes)
     }
 
+    // Extract taints and faults from defects JSONB
+    // Format: { taints: [{name, intensity, cups_affected}], faults: [...] }
+    if (score.defects && typeof score.defects === 'object') {
+      const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
+      if (Array.isArray(defects.taints)) {
+        taintsCounts.push(defects.taints.length)
+      }
+      if (Array.isArray(defects.faults)) {
+        faultsCounts.push(defects.faults.length)
+      }
+    }
+
     if (score.scores && typeof score.scores === 'object') {
       const scores = score.scores as Record<string, unknown>
       for (const [attr, value] of Object.entries(scores)) {
         if (typeof value === 'number') {
           const attrLower = attr.toLowerCase()
-          // Check if this is taints or faults count
-          if (attrLower === 'taints' || attrLower === 'taint') {
-            taintsCounts.push(value)
-          } else if (attrLower === 'faults' || attrLower === 'fault') {
-            faultsCounts.push(value)
+          // Skip taints/faults as numeric attributes - we get them from defects JSONB
+          if (attrLower === 'taints' || attrLower === 'taint' || attrLower === 'faults' || attrLower === 'fault') {
+            continue
           } else if (attrLower === 'clean cup' || attrLower === 'cleancup' || attrLower === 'clean_cup') {
             // Track Clean Cup separately for boolean conversion
             cleanCupScores.push(value)

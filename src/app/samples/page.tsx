@@ -50,6 +50,8 @@ interface Sample {
   importer_country?: string
   roaster_name?: string
   roaster_country?: string
+  end_client_name?: string
+  end_client_country?: string
   buyer?: string
   quality_name?: string
   sample_type?: 'pss' | 'ss' | 'type'
@@ -182,6 +184,7 @@ export default function SamplesPage() {
             s.origin?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.importer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.roaster_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.end_client_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.buyer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.wolthers_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.exporter_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -898,6 +901,7 @@ export default function SamplesPage() {
                       <th className="text-left py-3 px-4 text-sm font-semibold">Exporter</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Importer</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Roaster</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">End Client</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Stage</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Storage</th>
@@ -945,6 +949,7 @@ export default function SamplesPage() {
                         <td className="py-3 px-4 text-sm">{sample.exporter_name || sample.supplier || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.importer_name || sample.buyer || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.roaster_name || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.end_client_name || '-'}</td>
                         <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
                         <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
                         <td className="py-3 px-4 text-sm">

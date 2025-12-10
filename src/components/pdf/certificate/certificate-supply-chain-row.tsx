@@ -1,7 +1,7 @@
 /**
  * Certificate supply chain row component
  * Redesigned with gray background and conditional columns
- * Shows: Supplier | Exporter | Shipper | Importer | Roaster | QC Client
+ * Shows: Tracking/Contract | Supplier | Exporter | Shipper | Importer | Roaster | QC Client
  * Each entity shows name, contract, and address (if available)
  */
 
@@ -26,6 +26,10 @@ const rowStyles = StyleSheet.create({
   entityColumn: {
     minWidth: 80,
     maxWidth: 140,
+  },
+  referenceColumn: {
+    minWidth: 100,
+    maxWidth: 150,
   },
   label: {
     fontSize: 7,
@@ -62,10 +66,9 @@ interface EntityColumnProps {
   label: string
   entity: SupplyChainEntity
   showSeparator?: boolean
-  trackingNumber?: string | null  // For Wolthers entity
 }
 
-function EntityColumn({ label, entity, showSeparator, trackingNumber }: EntityColumnProps) {
+function EntityColumn({ label, entity, showSeparator }: EntityColumnProps) {
   if (!entity.name) return null
 
   return (
@@ -73,14 +76,37 @@ function EntityColumn({ label, entity, showSeparator, trackingNumber }: EntityCo
       <View style={rowStyles.entityColumn}>
         <Text style={rowStyles.label}>{label}</Text>
         <Text style={rowStyles.name}>{entity.name}</Text>
-        {trackingNumber && (
-          <Text style={rowStyles.contract}>Sample: {trackingNumber}</Text>
-        )}
         {entity.contract && (
           <Text style={rowStyles.contract}>Ref: {entity.contract}</Text>
         )}
         {entity.address && (
           <Text style={rowStyles.address}>{entity.address}</Text>
+        )}
+      </View>
+      {showSeparator && <View style={rowStyles.separator} />}
+    </>
+  )
+}
+
+// Reference column for tracking number and Wolthers contract
+interface ReferenceColumnProps {
+  trackingNumber?: string | null
+  wolthersContract?: string | null
+  showSeparator?: boolean
+}
+
+function ReferenceColumn({ trackingNumber, wolthersContract, showSeparator }: ReferenceColumnProps) {
+  if (!trackingNumber && !wolthersContract) return null
+
+  return (
+    <>
+      <View style={rowStyles.referenceColumn}>
+        <Text style={rowStyles.label}>Reference</Text>
+        {trackingNumber && (
+          <Text style={rowStyles.name}>{trackingNumber}</Text>
+        )}
+        {wolthersContract && (
+          <Text style={rowStyles.contract}>Wolthers: {wolthersContract}</Text>
         )}
       </View>
       {showSeparator && <View style={rowStyles.separator} />}
@@ -132,20 +158,13 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
-  // Build Wolthers entity (shown first on the left)
-  const wolthersEntity: SupplyChainEntity = {
-    name: 'Wolthers',
-    country: null,
-    contract: wolthersContract ?? null,
-    address: null,
-  }
-  // Show Wolthers if we have a contract or tracking number
-  const hasWolthers = Boolean(wolthersContract) || Boolean(trackingNumber)
+  // Show reference column if we have tracking number or Wolthers contract
+  const hasReference = Boolean(trackingNumber) || Boolean(wolthersContract)
 
   // Count visible entities to determine separators
+  // Note: "Supplier" is called "Seller" in the UI (farm/coop/producer selling the coffee)
   const entities = [
-    { show: hasWolthers, label: 'Wolthers', entity: { ...wolthersEntity, contract: wolthersContract ?? null }, trackingNumber },
-    { show: hasSupplier, label: 'Supplier', entity: supplier },
+    { show: hasSupplier, label: 'Seller', entity: supplier },
     { show: hasExporter, label: 'Exporter', entity: exporter },
     { show: hasShipper, label: 'Shipper', entity: shipper },
     { show: hasImporter, label: 'Importer', entity: importer },
@@ -153,21 +172,27 @@ export function CertificateSupplyChainRow({
     { show: hasQcClient, label: 'QC Client', entity: qcClient },
   ].filter(e => e.show)
 
-  // If no supply chain data, don't render
-  if (entities.length === 0) {
+  // If no supply chain data and no reference, don't render
+  if (entities.length === 0 && !hasReference) {
     return null
   }
 
   return (
     <View style={rowStyles.container}>
       <View style={rowStyles.row}>
+        {/* Reference column first (tracking number + Wolthers contract) */}
+        <ReferenceColumn
+          trackingNumber={trackingNumber}
+          wolthersContract={wolthersContract}
+          showSeparator={entities.length > 0}
+        />
+        {/* Supply chain entities */}
         {entities.map((e, index) => (
           <EntityColumn
             key={e.label}
             label={e.label}
             entity={e.entity!}
             showSeparator={index < entities.length - 1}
-            trackingNumber={'trackingNumber' in e ? (e as { trackingNumber?: string | null }).trackingNumber : undefined}
           />
         ))}
       </View>

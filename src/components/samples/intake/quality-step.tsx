@@ -28,7 +28,8 @@ export function QualityStep({
   laboratories,
   approvedPSSSamples,
   importers = [],
-  qcClients = []
+  qcClients = [],
+  isGlobalUser = false
 }: StepComponentProps) {
   const [importerQualities, setImporterQualities] = useState<any[]>([])
   const [loadingQualities, setLoadingQualities] = useState(false)
@@ -245,8 +246,8 @@ export function QualityStep({
 
   return (
     <div className="space-y-4">
-      {/* Row 1: Sample Type, Origin, Micro-Origin */}
-      <div className="flex gap-3 items-end">
+      {/* Row 1: Sample Type, Laboratory (for global users), Origin, Micro-Origin */}
+      <div className="flex gap-3 items-end flex-wrap">
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs text-muted-foreground">Sample Type *</Label>
           <Select
@@ -263,12 +264,33 @@ export function QualityStep({
             </SelectContent>
           </Select>
         </div>
+        {/* Laboratory - show for global users or users with access to multiple labs */}
+        {(isGlobalUser || laboratories.length > 1) && (
+          <div className="flex flex-col gap-1.5">
+            <Label className="text-xs text-muted-foreground">Laboratory *</Label>
+            <Select
+              value={formData.laboratory_id}
+              onValueChange={(value) => updateFormData('laboratory_id', value)}
+            >
+              <SelectTrigger className="w-[180px] h-9">
+                <SelectValue placeholder="Select lab" />
+              </SelectTrigger>
+              <SelectContent>
+                {laboratories.map((lab) => (
+                  <SelectItem key={lab.id} value={lab.id}>
+                    {lab.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        )}
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs text-muted-foreground">Origin *</Label>
           <Select
             value={formData.origin}
             onValueChange={(value) => updateFormData('origin', value)}
-            disabled={supportedOrigins.length <= 1}
+            disabled={supportedOrigins.length === 0 || (supportedOrigins.length === 1 && formData.origin === supportedOrigins[0])}
           >
             <SelectTrigger className="w-[120px] h-9">
               <SelectValue placeholder={supportedOrigins.length === 0 ? "Select lab first" : "Select origin"} />
@@ -489,27 +511,6 @@ export function QualityStep({
             </Select>
           )}
         </div>
-        {/* Laboratory - only show if user has multiple labs */}
-        {laboratories.length > 1 && (
-          <div className="flex flex-col gap-1.5">
-            <Label className="text-xs text-muted-foreground">Laboratory *</Label>
-            <Select
-              value={formData.laboratory_id}
-              onValueChange={(value) => updateFormData('laboratory_id', value)}
-            >
-              <SelectTrigger className="w-[180px] h-9">
-                <SelectValue placeholder="Select lab" />
-              </SelectTrigger>
-              <SelectContent>
-                {laboratories.map((lab) => (
-                  <SelectItem key={lab.id} value={lab.id}>
-                    {lab.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
       </div>
 
       {/* Hide exporter checkbox (only for type samples) */}

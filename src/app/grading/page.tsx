@@ -1598,16 +1598,34 @@ export default function GradingPage() {
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={gradingData?.moisture_percentage || ''}
+                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage != null && gradingData.moisture_percentage !== 0 ? String(gradingData.moisture_percentage) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          const num = parseFloat(val)
-                                          if (!isNaN(num) && num >= 0 && num <= 100) {
-                                            handleFieldChange(sample.id, 'moisture_percentage', num)
-                                          } else if (val === '' || val === '0') {
+                                          // Always update raw input for display
+                                          const newRaw = new Map(rawInputsMap)
+                                          newRaw.set(sample.id, { ...newRaw.get(sample.id), moisture: val })
+                                          setRawInputsMap(newRaw)
+                                          // Only update numeric state if value is complete (not ending with .)
+                                          if (!val.endsWith('.') && val !== '') {
+                                            const num = parseFloat(val)
+                                            if (!isNaN(num) && num >= 0 && num <= 100) {
+                                              handleFieldChange(sample.id, 'moisture_percentage', num)
+                                            }
+                                          } else if (val === '') {
                                             handleFieldChange(sample.id, 'moisture_percentage', 0)
                                           }
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        // Clear raw input on blur, numeric state is already set
+                                        const newRaw = new Map(rawInputsMap)
+                                        const current = newRaw.get(sample.id)
+                                        if (current) {
+                                          delete current.moisture
+                                          if (!current.density) newRaw.delete(sample.id)
+                                          else newRaw.set(sample.id, current)
+                                          setRawInputsMap(newRaw)
                                         }
                                       }}
                                       className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
@@ -1685,16 +1703,34 @@ export default function GradingPage() {
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={gradingData?.moisture_percentage || ''}
+                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage != null && gradingData.moisture_percentage !== 0 ? String(gradingData.moisture_percentage) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          const num = parseFloat(val)
-                                          if (!isNaN(num) && num >= 0 && num <= 100) {
-                                            handleFieldChange(sample.id, 'moisture_percentage', num)
-                                          } else if (val === '' || val === '0') {
+                                          // Always update raw input for display
+                                          const newRaw = new Map(rawInputsMap)
+                                          newRaw.set(sample.id, { ...newRaw.get(sample.id), moisture: val })
+                                          setRawInputsMap(newRaw)
+                                          // Only update numeric state if value is complete (not ending with .)
+                                          if (!val.endsWith('.') && val !== '') {
+                                            const num = parseFloat(val)
+                                            if (!isNaN(num) && num >= 0 && num <= 100) {
+                                              handleFieldChange(sample.id, 'moisture_percentage', num)
+                                            }
+                                          } else if (val === '') {
                                             handleFieldChange(sample.id, 'moisture_percentage', 0)
                                           }
+                                        }
+                                      }}
+                                      onBlur={() => {
+                                        // Clear raw input on blur, numeric state is already set
+                                        const newRaw = new Map(rawInputsMap)
+                                        const current = newRaw.get(sample.id)
+                                        if (current) {
+                                          delete current.moisture
+                                          if (!current.density) newRaw.delete(sample.id)
+                                          else newRaw.set(sample.id, current)
+                                          setRawInputsMap(newRaw)
                                         }
                                       }}
                                       className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}

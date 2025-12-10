@@ -75,4 +75,5 @@ export interface StepComponentProps {
   importers?: Importer[]
   qcClients?: Client[] // Clients where is_qc_client = true
   error?: string | null
+  isGlobalUser?: boolean // True if user is global_admin or global_cupper_admin
 }

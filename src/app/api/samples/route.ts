@@ -43,7 +43,8 @@ export async function GET(request: NextRequest) {
         quality_spec:client_qualities(custom_name, quality_code),
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
-        roaster:roasters(id, name, country)
+        roaster:roasters(id, name, country),
+        end_client:end_clients(id, name, country)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -94,11 +95,14 @@ export async function GET(request: NextRequest) {
       importer_country: sample.importer?.country || null,
       roaster_name: sample.roaster?.name || null,
       roaster_country: sample.roaster?.country || null,
+      end_client_name: sample.end_client?.name || null,
+      end_client_country: sample.end_client?.country || null,
       // Remove nested objects to keep response clean
       quality_spec: undefined,
       exporter: undefined,
       importer: undefined,
-      roaster: undefined
+      roaster: undefined,
+      end_client: undefined
     }))
 
     return NextResponse.json({
@@ -190,9 +194,10 @@ export async function POST(request: NextRequest) {
 
     console.log('Generated tracking number:', trackingNumber, 'for client:', clientId)
 
-    // Calculate bag weight if both quantity and count are provided
-    let bagWeightKg: number | null = null
-    if (body.bags_quantity_mt && body.bag_count) {
+    // Use provided bag weight, only calculate if not provided and we have quantity + count
+    let bagWeightKg: number | null = body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null
+    if (!bagWeightKg && body.bags_quantity_mt && body.bag_count && body.bag_type !== 'bulk') {
+      // Only calculate for non-bulk types where bag weight wasn't provided
       // Convert MT to kg (multiply by 1000) and divide by bag count
       bagWeightKg = (parseFloat(body.bags_quantity_mt) * 1000) / parseInt(body.bag_count)
       bagWeightKg = Math.round(bagWeightKg * 100) / 100 // Round to 2 decimal places
@@ -227,6 +232,7 @@ export async function POST(request: NextRequest) {
       bags_quantity_mt: body.bags_quantity_mt ? parseFloat(body.bags_quantity_mt) : null,
       bag_count: body.bag_count ? parseInt(body.bag_count) : null,
       bag_weight_kg: body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null,
+      equivalent_60kg_bags: body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null,
       bag_type: body.bag_type || null,
       processing_method: body.processing_method || null,
       workflow_stage: body.workflow_stage || 'received',
