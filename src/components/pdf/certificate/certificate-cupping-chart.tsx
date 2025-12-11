@@ -161,8 +161,16 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
       : true
   )
 
-  // Grid line positions (0, 2.5, 5, 7.5, 10)
-  const gridValues = [0, 2.5, 5, 7.5, 10]
+  // Generate grid values dynamically based on actual scale range
+  // Create 5 evenly spaced values from scaleMin to scaleMax
+  const gridCount = 5
+  const gridStep = range / (gridCount - 1)
+  const gridValues: number[] = []
+  for (let i = 0; i < gridCount; i++) {
+    const val = scaleMin + (i * gridStep)
+    // Round to avoid floating point issues (e.g., 2.5 instead of 2.4999999)
+    gridValues.push(Math.round(val * 10) / 10)
+  }
   const gridPositions = gridValues.map(v => ((v - scaleMin) / range) * barWidth)
 
   // SVG height - taller to accommodate grid lines extending through all rows
@@ -174,20 +182,26 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
       {/* Scale numbers above - only on first row, aligned with grid lines */}
       {isFirst && (
         <View style={{ flexDirection: 'row', width: barWidth, marginBottom: 2, height: 8 }}>
-          {gridValues.map((val, idx) => (
-            <Text
-              key={val}
-              style={[
-                chartStyles.scaleLabel,
-                {
-                  position: 'absolute',
-                  left: gridPositions[idx] - (val === 10 ? 6 : val === 0 ? 0 : 4),
-                }
-              ]}
-            >
-              {val}
-            </Text>
-          ))}
+          {gridValues.map((val, idx) => {
+            // Offset based on position: first value left-aligned, last value right-aligned, middle centered
+            const isFirst = idx === 0
+            const isLast = idx === gridValues.length - 1
+            const offset = isFirst ? 0 : isLast ? 8 : 4
+            return (
+              <Text
+                key={idx}
+                style={[
+                  chartStyles.scaleLabel,
+                  {
+                    position: 'absolute',
+                    left: gridPositions[idx] - offset,
+                  }
+                ]}
+              >
+                {val}
+              </Text>
+            )
+          })}
         </View>
       )}
 
@@ -254,20 +268,26 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
       {/* Scale numbers below - only on last row, aligned with grid lines */}
       {isLast && (
         <View style={{ flexDirection: 'row', width: barWidth, marginTop: 2, height: 8 }}>
-          {gridValues.map((val, idx) => (
-            <Text
-              key={val}
-              style={[
-                chartStyles.scaleLabel,
-                {
-                  position: 'absolute',
-                  left: gridPositions[idx] - (val === 10 ? 6 : val === 0 ? 0 : 4),
-                }
-              ]}
-            >
-              {val}
-            </Text>
-          ))}
+          {gridValues.map((val, idx) => {
+            // Offset based on position: first value left-aligned, last value right-aligned, middle centered
+            const isFirstVal = idx === 0
+            const isLastVal = idx === gridValues.length - 1
+            const offset = isFirstVal ? 0 : isLastVal ? 8 : 4
+            return (
+              <Text
+                key={idx}
+                style={[
+                  chartStyles.scaleLabel,
+                  {
+                    position: 'absolute',
+                    left: gridPositions[idx] - offset,
+                  }
+                ]}
+              >
+                {val}
+              </Text>
+            )
+          })}
         </View>
       )}
     </View>
