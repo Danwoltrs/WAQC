@@ -52,8 +52,7 @@ const chartStyles = StyleSheet.create({
   attributeRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 0,
-    minHeight: 14,
+    height: 16,
   },
   leftSection: {
     width: 115,
@@ -117,14 +116,13 @@ interface ScaleChartProps {
   scaleMin: number
   scaleMax: number
   globalMaxScale: number
-  isFirst?: boolean
   isLast?: boolean
 }
 
 // Light grid line color
 const GRID_LINE_COLOR = '#E0E0E0'
 
-function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale, isFirst, isLast }: ScaleChartProps) {
+function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale, isLast }: ScaleChartProps) {
   const range = scaleMax - scaleMin
   if (range <= 0) return null
 
@@ -173,38 +171,12 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
   }
   const gridPositions = gridValues.map(v => ((v - scaleMin) / range) * barWidth)
 
-  // SVG height - taller to accommodate grid lines extending through all rows
-  const svgHeight = 14
-  const lineY = 7 // Center the line vertically
+  // SVG height - fixed to match row height
+  const svgHeight = 16
+  const lineY = 8 // Center the line vertically
 
   return (
-    <View style={{ flexDirection: 'column' }}>
-      {/* Scale numbers above - only on first row, aligned with grid lines */}
-      {isFirst && (
-        <View style={{ flexDirection: 'row', width: barWidth, marginBottom: 2, height: 8 }}>
-          {gridValues.map((val, idx) => {
-            // Offset based on position: first value left-aligned, last value right-aligned, middle centered
-            const isFirst = idx === 0
-            const isLast = idx === gridValues.length - 1
-            const offset = isFirst ? 0 : isLast ? 8 : 4
-            return (
-              <Text
-                key={idx}
-                style={[
-                  chartStyles.scaleLabel,
-                  {
-                    position: 'absolute',
-                    left: gridPositions[idx] - offset,
-                  }
-                ]}
-              >
-                {val}
-              </Text>
-            )
-          })}
-        </View>
-      )}
-
+    <View style={{ flexDirection: 'column', height: 16, justifyContent: 'center' }}>
       <Svg width={barWidth} height={svgHeight}>
         {/* Light vertical grid lines */}
         {gridPositions.map((pos, idx) => (
@@ -269,10 +241,10 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
       {isLast && (
         <View style={{ flexDirection: 'row', width: barWidth, marginTop: 2, height: 8 }}>
           {gridValues.map((val, idx) => {
-            // Offset based on position: first value left-aligned, last value right-aligned, middle centered
-            const isFirstVal = idx === 0
-            const isLastVal = idx === gridValues.length - 1
-            const offset = isFirstVal ? 0 : isLastVal ? 8 : 4
+            // Calculate text width estimate for centering
+            const textWidth = String(val).length * 3
+            // Center each label on its grid line
+            const offset = textWidth / 2
             return (
               <Text
                 key={idx}
@@ -361,11 +333,56 @@ export function CertificateCuppingChart({
   const faultsDisplay = faults != null && faults > 0 ? String(faults) : 'None'
   const taintsDisplay = taints != null && taints > 0 ? String(taints) : 'None'
 
+  // Calculate bar width for scale header (use first attribute's scale)
+  const firstAttr = attributes[0]
+  const firstScaleMin = firstAttr?.scaleMin ?? scaleMin
+  const firstScaleMax = firstAttr?.scaleMax ?? scaleMax
+  const firstRange = firstScaleMax - firstScaleMin
+  const headerBarWidth = Math.max((firstRange / globalMaxScale) * MAX_BAR_WIDTH, 60)
+
+  // Generate grid values for header
+  const gridCount = 5
+  const gridStep = firstRange / (gridCount - 1)
+  const headerGridValues: number[] = []
+  for (let i = 0; i < gridCount; i++) {
+    const val = firstScaleMin + (i * gridStep)
+    headerGridValues.push(Math.round(val * 10) / 10)
+  }
+  const headerGridPositions = headerGridValues.map(v => ((v - firstScaleMin) / firstRange) * headerBarWidth)
+
   return (
     <View style={chartStyles.container}>
       {/* Attributes section (left) */}
       <View style={chartStyles.attributesSection}>
         <Text style={chartStyles.title}>Attributes</Text>
+
+        {/* Scale header row */}
+        <View style={[chartStyles.attributeRow, { height: 12 }]}>
+          <View style={chartStyles.leftSection} />
+          <View style={chartStyles.chartSection}>
+            <View style={{ flexDirection: 'row', width: headerBarWidth, height: 10 }}>
+              {headerGridValues.map((val, idx) => {
+                // Calculate text width estimate for centering
+                const textWidth = String(val).length * 3
+                const offset = textWidth / 2
+                return (
+                  <Text
+                    key={idx}
+                    style={[
+                      chartStyles.scaleLabel,
+                      {
+                        position: 'absolute',
+                        left: headerGridPositions[idx] - offset,
+                      }
+                    ]}
+                  >
+                    {val}
+                  </Text>
+                )
+              })}
+            </View>
+          </View>
+        </View>
 
         {attributes.map((attr, index) => {
           const attrScaleMin = attr.scaleMin ?? scaleMin
@@ -409,7 +426,6 @@ export function CertificateCuppingChart({
                   scaleMin={attrScaleMin}
                   scaleMax={attrScaleMax}
                   globalMaxScale={globalMaxScale}
-                  isFirst={index === 0}
                   isLast={index === attributes.length - 1}
                 />
               </View>
