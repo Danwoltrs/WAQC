@@ -107,6 +107,10 @@ const styles = StyleSheet.create({
     fontSize: 7,
     color: COLORS.dark,
   },
+  defectWeight: {
+    fontSize: 6,
+    color: COLORS.muted,
+  },
   defectDots: {
     flex: 1,
     borderBottomWidth: 0.5,
@@ -271,16 +275,20 @@ export function CertificateScreenDefects({
             <View style={styles.defectColumn}>
               <Text style={styles.defectColumnTitle}>Primary</Text>
               {primaryDefects.length > 0 ? (
-                primaryDefects.map((defect, index) => (
-                  <View key={index} style={styles.defectRow}>
-                    <Text style={styles.defectName}>{defect.name}</Text>
-                    <View style={styles.defectDots} />
-                    <Text style={styles.defectCount}>{defect.count}</Text>
-                    {defect.weightedCount !== undefined && defect.weightedCount !== defect.count && (
-                      <Text style={styles.defectWeighted}>={defect.weightedCount}</Text>
-                    )}
-                  </View>
-                ))
+                primaryDefects.map((defect, index) => {
+                  const weight = defect.weight ?? 1
+                  const weighted = Math.round((defect.count * weight) * 100) / 100
+                  const showWeight = weight !== 1
+                  return (
+                    <View key={index} style={styles.defectRow}>
+                      <Text style={styles.defectName}>{defect.name}</Text>
+                      {showWeight && <Text style={styles.defectWeight}> ({weight})</Text>}
+                      <View style={styles.defectDots} />
+                      <Text style={styles.defectCount}>{defect.count}</Text>
+                      {showWeight && <Text style={styles.defectWeighted}>={weighted}</Text>}
+                    </View>
+                  )
+                })
               ) : (
                 <Text style={styles.noData}>None</Text>
               )}
@@ -293,16 +301,20 @@ export function CertificateScreenDefects({
             <View style={styles.defectColumn}>
               <Text style={styles.defectColumnTitle}>Secondary</Text>
               {secondaryDefects.length > 0 ? (
-                secondaryDefects.map((defect, index) => (
-                  <View key={index} style={styles.defectRow}>
-                    <Text style={styles.defectName}>{defect.name}</Text>
-                    <View style={styles.defectDots} />
-                    <Text style={styles.defectCount}>{defect.count}</Text>
-                    {defect.weightedCount !== undefined && defect.weightedCount !== defect.count && (
-                      <Text style={styles.defectWeighted}>={defect.weightedCount}</Text>
-                    )}
-                  </View>
-                ))
+                secondaryDefects.map((defect, index) => {
+                  const weight = defect.weight ?? 1
+                  const weighted = Math.round((defect.count * weight) * 100) / 100
+                  const showWeight = weight !== 1
+                  return (
+                    <View key={index} style={styles.defectRow}>
+                      <Text style={styles.defectName}>{defect.name}</Text>
+                      {showWeight && <Text style={styles.defectWeight}> ({weight})</Text>}
+                      <View style={styles.defectDots} />
+                      <Text style={styles.defectCount}>{defect.count}</Text>
+                      {showWeight && <Text style={styles.defectWeighted}>={weighted}</Text>}
+                    </View>
+                  )
+                })
               ) : (
                 <Text style={styles.noData}>None</Text>
               )}
