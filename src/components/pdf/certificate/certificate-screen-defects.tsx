@@ -122,6 +122,12 @@ const styles = StyleSheet.create({
     minWidth: 18,
     textAlign: 'right',
   },
+  defectWeighted: {
+    fontSize: 6,
+    color: COLORS.muted,
+    minWidth: 24,
+    textAlign: 'right',
+  },
   noData: {
     fontSize: 7,
     color: COLORS.muted,
@@ -136,6 +142,8 @@ interface ScreenSize {
 interface Defect {
   name: string
   count: number
+  weight?: number
+  weightedCount?: number
   category?: 'primary' | 'secondary'
 }
 
@@ -268,6 +276,9 @@ export function CertificateScreenDefects({
                     <Text style={styles.defectName}>{defect.name}</Text>
                     <View style={styles.defectDots} />
                     <Text style={styles.defectCount}>{defect.count}</Text>
+                    {defect.weightedCount !== undefined && defect.weightedCount !== defect.count && (
+                      <Text style={styles.defectWeighted}>={defect.weightedCount}</Text>
+                    )}
                   </View>
                 ))
               ) : (
@@ -287,6 +298,9 @@ export function CertificateScreenDefects({
                     <Text style={styles.defectName}>{defect.name}</Text>
                     <View style={styles.defectDots} />
                     <Text style={styles.defectCount}>{defect.count}</Text>
+                    {defect.weightedCount !== undefined && defect.weightedCount !== defect.count && (
+                      <Text style={styles.defectWeighted}>={defect.weightedCount}</Text>
+                    )}
                   </View>
                 ))
               ) : (

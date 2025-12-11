@@ -66,11 +66,15 @@ export function QualityCertificate({
         ...(greenBeanAnalysis.defects.primary || []).map(d => ({
           name: d.name,
           count: d.rawCount,
+          weight: d.weight,
+          weightedCount: d.weightedCount,
           category: 'primary' as const,
         })),
         ...(greenBeanAnalysis.defects.secondary || []).map(d => ({
           name: d.name,
           count: d.rawCount,
+          weight: d.weight,
+          weightedCount: d.weightedCount,
           category: 'secondary' as const,
         })),
       ]
