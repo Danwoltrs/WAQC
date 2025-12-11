@@ -155,7 +155,7 @@ export function QualityCertificate({
           secondaryDefectsCount={greenBeanAnalysis?.defects?.total_secondary ?? null}
         />
 
-        {/* 7. Cupping Box Plot Chart with Faults/Taints */}
+        {/* 7. Cupping Box Plot Chart with Faults/Taints and Clean/Uniform Cup */}
         <CertificateCuppingChart
           attributes={cuppingAttributes}
           totalScore={cuppingData?.overallScore}
@@ -164,15 +164,14 @@ export function QualityCertificate({
           showLegend={true}
           faults={cuppingData?.faults}
           taints={cuppingData?.taints}
+          faultDetails={cuppingData?.faultDetails}
+          taintDetails={cuppingData?.taintDetails}
+          cleanCup={cuppingData?.cleanCup}
+          uniformCup={cuppingData?.uniformCup}
         />
 
-        {/* 8. Cup Status Row - Clean/Uniform Cup + Taints/Faults */}
-        <CertificateCupStatus
-          cleanCup={cuppingData?.cleanCup ?? null}
-          uniformCup={cuppingData?.uniformCup ?? null}
-          taints={cuppingData?.taints}
-          faults={cuppingData?.faults}
-        />
+        {/* 8. Cup Status Row - Removed as now integrated into cupping chart */}
+        {/* Clean/Uniform Cup and Taints/Faults are now shown in the cupping chart */}
 
         {/* 9. Notes section */}
         <CertificateComments

@@ -88,7 +88,7 @@ function EntityColumn({ label, entity, showSeparator }: EntityColumnProps) {
   )
 }
 
-// Reference column for tracking number and Wolthers contract
+// Reference columns for tracking number and Wolthers contract
 interface ReferenceColumnProps {
   trackingNumber?: string | null
   wolthersContract?: string | null
@@ -100,15 +100,19 @@ function ReferenceColumn({ trackingNumber, wolthersContract, showSeparator }: Re
 
   return (
     <>
-      <View style={rowStyles.referenceColumn}>
-        <Text style={rowStyles.label}>Reference</Text>
-        {trackingNumber && (
+      {/* Tracking number column */}
+      {trackingNumber && (
+        <View style={rowStyles.entityColumn}>
           <Text style={rowStyles.name}>{trackingNumber}</Text>
-        )}
-        {wolthersContract && (
-          <Text style={rowStyles.contract}>Wolthers: {wolthersContract}</Text>
-        )}
-      </View>
+        </View>
+      )}
+      {/* Wolthers contract column - separate from tracking number */}
+      {wolthersContract && (
+        <View style={rowStyles.entityColumn}>
+          <Text style={rowStyles.label}>Wolthers</Text>
+          <Text style={rowStyles.name}>{wolthersContract}</Text>
+        </View>
+      )}
       {showSeparator && <View style={rowStyles.separator} />}
     </>
   )

@@ -79,21 +79,29 @@ function formatQuantity(props: CertificateSampleDetailsProps): QuantityResult {
   let mainValue = ''
   let packagingInfo: string | null = null
 
-  if (bagsQuantityMt !== null && bagsQuantityMt > 0) {
-    mainValue = `${bagsQuantityMt.toFixed(1)} MT`
-  }
-
   // Add packaging detail
   const normalizedBagType = bagType?.toLowerCase() || ''
 
+  // For bulk, "bags" (from bag_count) represents the equivalent 60kg bags the user entered
+  // MT = equivalent_60kg_bags × 60 / 1000
+  // Note: Some records have incorrect equivalent_60kg_bags, so we use bags as source of truth
   if (normalizedBagType === 'bulk') {
-    // Bulk format: "(in bulk, eq. 360 × 60 kg bags)"
-    if (equivalent60kgBags) {
-      packagingInfo = `(in bulk, eq. ${equivalent60kgBags} × 60 kg bags)`
-    } else {
+    // Use bags (bag_count) as the equivalent 60kg bags for bulk
+    const eq60kgBags = bags && bags > 0 ? bags : equivalent60kgBags
+    if (eq60kgBags && eq60kgBags > 0) {
+      // Calculate correct MT from equivalent 60kg bags
+      const correctedMt = (eq60kgBags * 60) / 1000
+      mainValue = `${correctedMt.toFixed(1)} MT`
+      packagingInfo = `(in bulk, eq. ${Math.round(eq60kgBags).toLocaleString('en-US')} × 60 kg bags)`
+    } else if (bagsQuantityMt !== null && bagsQuantityMt > 0) {
+      mainValue = `${bagsQuantityMt.toFixed(1)} MT`
       packagingInfo = '(in bulk)'
     }
-  } else if (normalizedBagType === 'big bags' || normalizedBagType === 'bigbags' || normalizedBagType === 'big bag') {
+  } else if (bagsQuantityMt !== null && bagsQuantityMt > 0) {
+    mainValue = `${bagsQuantityMt.toFixed(1)} MT`
+  }
+
+  if (normalizedBagType === 'big bags' || normalizedBagType === 'bigbags' || normalizedBagType === 'big bag') {
     // Big bags format: "(in big bags, eq. 333 × 60 kg bags)"
     if (equivalent60kgBags) {
       packagingInfo = `(in big bags, eq. ${equivalent60kgBags} × 60 kg bags)`

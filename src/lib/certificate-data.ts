@@ -50,6 +50,12 @@ export interface CuppingAttribute {
   allowedMax: number | null
 }
 
+export interface CuppingDefect {
+  name: string
+  intensity: number | null
+  cups_affected?: number | null
+}
+
 export interface CuppingData {
   attributes: CuppingAttribute[]
   overallScore: number | null
@@ -57,6 +63,8 @@ export interface CuppingData {
   isSpecialty: boolean
   taints: number | null
   faults: number | null
+  taintDetails: CuppingDefect[]  // Detailed taint info for certificate display
+  faultDetails: CuppingDefect[]  // Detailed fault info for certificate display
   cleanCup: boolean | null     // Yes/No for clean cup
   uniformCup: boolean | null   // Yes/No for uniform cup
 }
@@ -750,6 +758,9 @@ function processCuppingScores(
   const faultsCounts: number[] = []
   const cleanCupScores: number[] = []
   const uniformCupScores: number[] = []
+  // Collect all taints and faults with details
+  const allTaints: CuppingDefect[] = []
+  const allFaults: CuppingDefect[] = []
 
   for (const score of cuppingScores) {
     if (score.notes) {
@@ -762,9 +773,35 @@ function processCuppingScores(
       const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
       if (Array.isArray(defects.taints)) {
         taintsCounts.push(defects.taints.length)
+        // Extract detailed taint info
+        for (const t of defects.taints) {
+          if (t && typeof t === 'object') {
+            const taint = t as { name?: string; intensity?: number; cups_affected?: number }
+            if (taint.name) {
+              allTaints.push({
+                name: taint.name,
+                intensity: taint.intensity ?? null,
+                cups_affected: taint.cups_affected ?? null,
+              })
+            }
+          }
+        }
       }
       if (Array.isArray(defects.faults)) {
         faultsCounts.push(defects.faults.length)
+        // Extract detailed fault info
+        for (const f of defects.faults) {
+          if (f && typeof f === 'object') {
+            const fault = f as { name?: string; intensity?: number; cups_affected?: number }
+            if (fault.name) {
+              allFaults.push({
+                name: fault.name,
+                intensity: fault.intensity ?? null,
+                cups_affected: fault.cups_affected ?? null,
+              })
+            }
+          }
+        }
       }
     }
 
@@ -900,6 +937,8 @@ function processCuppingScores(
     isSpecialty,
     taints,
     faults,
+    taintDetails: allTaints,
+    faultDetails: allFaults,
     cleanCup,
     uniformCup,
   }

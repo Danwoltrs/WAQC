@@ -277,6 +277,12 @@ function formatSpecText(rule: ValidationRule | null | undefined): string {
   return ''
 }
 
+interface DefectDetail {
+  name: string
+  intensity: number | null
+  cups_affected?: number | null
+}
+
 export interface CertificateCuppingChartProps {
   attributes: CuppingAttribute[]
   totalScore?: number | null
@@ -285,6 +291,10 @@ export interface CertificateCuppingChartProps {
   showLegend?: boolean
   faults?: number | null
   taints?: number | null
+  faultDetails?: DefectDetail[]
+  taintDetails?: DefectDetail[]
+  cleanCup?: boolean | null
+  uniformCup?: boolean | null
 }
 
 export function CertificateCuppingChart({
@@ -293,6 +303,10 @@ export function CertificateCuppingChart({
   scaleMax = 10,
   faults,
   taints,
+  faultDetails,
+  taintDetails,
+  cleanCup,
+  uniformCup,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
     return null
@@ -371,15 +385,100 @@ export function CertificateCuppingChart({
       {/* Vertical separator */}
       <View style={chartStyles.verticalSeparator} />
 
-      {/* Defects section (right) - two columns */}
+      {/* Right section: Clean/Uniform Cup + Faults + Taints */}
       <View style={chartStyles.defectsSection}>
+        {/* Clean Cup and Uniform Cup */}
+        <View style={chartStyles.defectColumn}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+            <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
+              {cleanCup === true ? (
+                <Path
+                  d="M 2 7 L 5.5 10.5 L 12 4"
+                  stroke="#22c55e"
+                  strokeWidth={2.5}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : cleanCup === false ? (
+                <Path
+                  d="M 3 3 L 11 11 M 11 3 L 3 11"
+                  stroke="#ef4444"
+                  strokeWidth={2.5}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : (
+                <Path
+                  d="M 7 1 C 3.69 1 1 3.69 1 7 C 1 10.31 3.69 13 7 13 C 10.31 13 13 10.31 13 7 C 13 3.69 10.31 1 7 1"
+                  stroke={COLORS.muted}
+                  strokeWidth={1.5}
+                  fill="none"
+                />
+              )}
+            </Svg>
+            <Text style={{ fontSize: 7, color: COLORS.dark }}>Clean Cup</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
+              {uniformCup === true ? (
+                <Path
+                  d="M 2 7 L 5.5 10.5 L 12 4"
+                  stroke="#22c55e"
+                  strokeWidth={2.5}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : uniformCup === false ? (
+                <Path
+                  d="M 3 3 L 11 11 M 11 3 L 3 11"
+                  stroke="#ef4444"
+                  strokeWidth={2.5}
+                  fill="none"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                />
+              ) : (
+                <Path
+                  d="M 7 1 C 3.69 1 1 3.69 1 7 C 1 10.31 3.69 13 7 13 C 10.31 13 13 10.31 13 7 C 13 3.69 10.31 1 7 1"
+                  stroke={COLORS.muted}
+                  strokeWidth={1.5}
+                  fill="none"
+                />
+              )}
+            </Svg>
+            <Text style={{ fontSize: 7, color: COLORS.dark }}>Uniform Cup</Text>
+          </View>
+        </View>
+
+        {/* Faults column */}
         <View style={chartStyles.defectColumn}>
           <Text style={chartStyles.title}>Faults</Text>
-          <Text style={chartStyles.defectValue}>{faultsDisplay}</Text>
+          {faultDetails && faultDetails.length > 0 ? (
+            faultDetails.map((fault, idx) => (
+              <Text key={idx} style={chartStyles.defectValue}>
+                {fault.name}{fault.intensity ? ` (${fault.intensity})` : ''}
+              </Text>
+            ))
+          ) : (
+            <Text style={chartStyles.defectValue}>{faultsDisplay}</Text>
+          )}
         </View>
+
+        {/* Taints column */}
         <View style={chartStyles.defectColumn}>
           <Text style={chartStyles.title}>Taints</Text>
-          <Text style={chartStyles.defectValue}>{taintsDisplay}</Text>
+          {taintDetails && taintDetails.length > 0 ? (
+            taintDetails.map((taint, idx) => (
+              <Text key={idx} style={chartStyles.defectValue}>
+                {taint.name}{taint.intensity ? ` (${taint.intensity})` : ''}
+              </Text>
+            ))
+          ) : (
+            <Text style={chartStyles.defectValue}>{taintsDisplay}</Text>
+          )}
         </View>
       </View>
     </View>
