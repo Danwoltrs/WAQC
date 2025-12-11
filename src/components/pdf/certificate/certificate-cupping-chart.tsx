@@ -121,6 +121,9 @@ interface ScaleChartProps {
   isLast?: boolean
 }
 
+// Light grid line color
+const GRID_LINE_COLOR = '#E0E0E0'
+
 function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale, isFirst, isLast }: ScaleChartProps) {
   const range = scaleMax - scaleMin
   if (range <= 0) return null
@@ -158,51 +161,56 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
       : true
   )
 
-  // Adjust SVG height based on whether we show numbers above/below
-  const svgHeight = 12
-  const lineY = 6 // Center the line vertically
+  // Grid line positions (0, 2.5, 5, 7.5, 10)
+  const gridValues = [0, 2.5, 5, 7.5, 10]
+  const gridPositions = gridValues.map(v => ((v - scaleMin) / range) * barWidth)
+
+  // SVG height - taller to accommodate grid lines extending through all rows
+  const svgHeight = 14
+  const lineY = 7 // Center the line vertically
 
   return (
     <View style={{ flexDirection: 'column' }}>
-      {/* Scale numbers above - only on first row */}
+      {/* Scale numbers above - only on first row, aligned with grid lines */}
       {isFirst && (
-        <View style={{ flexDirection: 'row', width: barWidth, marginBottom: 1, height: 6 }}>
-          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: -2 }]}>
-            {scaleMin}
-          </Text>
-          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 6 }]}>
-            {scaleMax}
-          </Text>
+        <View style={{ flexDirection: 'row', width: barWidth, marginBottom: 2, height: 8 }}>
+          {gridValues.map((val, idx) => (
+            <Text
+              key={val}
+              style={[
+                chartStyles.scaleLabel,
+                {
+                  position: 'absolute',
+                  left: gridPositions[idx] - (val === 10 ? 6 : val === 0 ? 0 : 4),
+                }
+              ]}
+            >
+              {val}
+            </Text>
+          ))}
         </View>
       )}
 
       <Svg width={barWidth} height={svgHeight}>
+        {/* Light vertical grid lines */}
+        {gridPositions.map((pos, idx) => (
+          <Line
+            key={idx}
+            x1={pos}
+            y1={0}
+            x2={pos}
+            y2={svgHeight}
+            stroke={GRID_LINE_COLOR}
+            strokeWidth={0.5}
+          />
+        ))}
+
         {/* Main horizontal line (charcoal) */}
         <Line
           x1={0}
           y1={lineY}
           x2={barWidth}
           y2={lineY}
-          stroke={CHARCOAL}
-          strokeWidth={1}
-        />
-
-        {/* Start tick mark */}
-        <Line
-          x1={0}
-          y1={lineY - TICK_HEIGHT / 2}
-          x2={0}
-          y2={lineY + TICK_HEIGHT / 2}
-          stroke={CHARCOAL}
-          strokeWidth={1}
-        />
-
-        {/* End tick mark */}
-        <Line
-          x1={barWidth}
-          y1={lineY - TICK_HEIGHT / 2}
-          x2={barWidth}
-          y2={lineY + TICK_HEIGHT / 2}
           stroke={CHARCOAL}
           strokeWidth={1}
         />
@@ -243,15 +251,23 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
         )}
       </Svg>
 
-      {/* Scale numbers below - only on last row */}
+      {/* Scale numbers below - only on last row, aligned with grid lines */}
       {isLast && (
-        <View style={{ flexDirection: 'row', width: barWidth, marginTop: 1, height: 6 }}>
-          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: -2 }]}>
-            {scaleMin}
-          </Text>
-          <Text style={[chartStyles.scaleLabel, { position: 'absolute', left: barWidth - 6 }]}>
-            {scaleMax}
-          </Text>
+        <View style={{ flexDirection: 'row', width: barWidth, marginTop: 2, height: 8 }}>
+          {gridValues.map((val, idx) => (
+            <Text
+              key={val}
+              style={[
+                chartStyles.scaleLabel,
+                {
+                  position: 'absolute',
+                  left: gridPositions[idx] - (val === 10 ? 6 : val === 0 ? 0 : 4),
+                }
+              ]}
+            >
+              {val}
+            </Text>
+          ))}
         </View>
       )}
     </View>

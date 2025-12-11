@@ -88,31 +88,23 @@ function EntityColumn({ label, entity, showSeparator }: EntityColumnProps) {
   )
 }
 
-// Reference columns for tracking number and Wolthers contract
+// Wolthers contract column (tracking number removed - already shown in header)
 interface ReferenceColumnProps {
   trackingNumber?: string | null
   wolthersContract?: string | null
   showSeparator?: boolean
 }
 
-function ReferenceColumn({ trackingNumber, wolthersContract, showSeparator }: ReferenceColumnProps) {
-  if (!trackingNumber && !wolthersContract) return null
+function ReferenceColumn({ wolthersContract, showSeparator }: ReferenceColumnProps) {
+  if (!wolthersContract) return null
 
   return (
     <>
-      {/* Tracking number column */}
-      {trackingNumber && (
-        <View style={rowStyles.entityColumn}>
-          <Text style={rowStyles.name}>{trackingNumber}</Text>
-        </View>
-      )}
-      {/* Wolthers contract column - separate from tracking number */}
-      {wolthersContract && (
-        <View style={rowStyles.entityColumn}>
-          <Text style={rowStyles.label}>Wolthers</Text>
-          <Text style={rowStyles.name}>{wolthersContract}</Text>
-        </View>
-      )}
+      {/* Wolthers contract column only */}
+      <View style={rowStyles.entityColumn}>
+        <Text style={rowStyles.label}>Wolthers</Text>
+        <Text style={rowStyles.name}>{wolthersContract}</Text>
+      </View>
       {showSeparator && <View style={rowStyles.separator} />}
     </>
   )
@@ -162,8 +154,8 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
-  // Show reference column if we have tracking number or Wolthers contract
-  const hasReference = Boolean(trackingNumber) || Boolean(wolthersContract)
+  // Show Wolthers column if we have a Wolthers contract (tracking number shown in header)
+  const hasReference = Boolean(wolthersContract)
 
   // Count visible entities to determine separators
   // Note: "Supplier" is called "Seller" in the UI (farm/coop/producer selling the coffee)
