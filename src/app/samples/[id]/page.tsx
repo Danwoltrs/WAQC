@@ -668,10 +668,10 @@ export default function SampleDetailPage() {
                     <Separator />
 
                     <div>
-                      <div className="text-sm text-muted-foreground mb-1">Roaster / Importer</div>
+                      <div className="text-sm text-muted-foreground mb-1">Roaster / Buyer</div>
                       <div className="text-sm font-medium flex items-center gap-2">
                         <Building2 className="h-4 w-4" />
-                        {sample.roaster_name || sample.importer_name || '-'}
+                        {sample.roaster_name || '-'}
                       </div>
                     </div>
                   </div>

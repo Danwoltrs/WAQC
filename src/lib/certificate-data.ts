@@ -209,6 +209,11 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     t.includes('importer')
   ) ?? false
 
+  // Check if client is a roaster type (roaster_final_buyer, roaster, etc.)
+  const isRoasterClient = client?.client_types?.some(t =>
+    t.includes('roaster')
+  ) ?? false
+
   // Fetch laboratory
   let laboratory = null
   if (sample.laboratory_id) {
@@ -510,7 +515,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         address: null, // Address not yet in importers table
       },
       roaster: {
-        name: roasterResult.data?.name ?? null,
+        // Use roaster from DB, or fall back to client if they're a roaster type
+        name: roasterResult.data?.name ?? (isRoasterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: roasterResult.data?.country ?? null,
         contract: sample.roaster_contract_nr ?? null,
         address: null, // Address not yet in roasters table
@@ -519,9 +525,10 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         // Don't show in supply chain if:
         // - end_client type (they don't import/roast coffee)
         // - importer type with no explicit importer_id (already shown as importer)
-        name: (isEndClient || (isImporterClient && !importerResult.data?.name)) ? null : (client?.fantasy_name ?? client?.company ?? null),
+        // - roaster type with no explicit roaster_id (already shown as roaster)
+        name: (isEndClient || (isImporterClient && !importerResult.data?.name) || (isRoasterClient && !roasterResult.data?.name)) ? null : (client?.fantasy_name ?? client?.company ?? null),
         country: null, // Client table doesn't have country
-        contract: (isEndClient || (isImporterClient && !importerResult.data?.name)) ? null : (sample.qc_client_contract_nr ?? null),
+        contract: (isEndClient || (isImporterClient && !importerResult.data?.name) || (isRoasterClient && !roasterResult.data?.name)) ? null : (sample.qc_client_contract_nr ?? null),
         address: null, // Address not yet in clients table
       },
       wolthersContract: sample.wolthers_contract_nr ?? null,

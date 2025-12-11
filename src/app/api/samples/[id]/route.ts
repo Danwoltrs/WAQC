@@ -39,7 +39,8 @@ export async function GET(
         quality_spec:client_qualities(custom_name, quality_code),
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
-        roaster:roasters(id, name, country)
+        roaster:roasters(id, name, country),
+        client:clients(id, company, fantasy_name, client_types)
       `)
 
     // Query by UUID or tracking number
@@ -59,6 +60,13 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch sample' }, { status: 500 })
     }
 
+    // Check if client is a roaster type (roaster_final_buyer, roaster, etc.)
+    const clientTypes = (sample.client as { client_types?: string[] } | null)?.client_types || []
+    const isRoasterClient = clientTypes.some((t: string) => t.includes('roaster'))
+    const isImporterClient = clientTypes.some((t: string) => t.includes('importer'))
+    const clientName = (sample.client as { fantasy_name?: string; company?: string } | null)?.fantasy_name ||
+      (sample.client as { fantasy_name?: string; company?: string } | null)?.company || null
+
     // Transform sample to include flattened entity names (matching list API format)
     const transformedSample = {
       ...sample,
@@ -66,15 +74,18 @@ export async function GET(
       quality_code: sample.quality_spec?.quality_code || null,
       exporter_name: sample.exporter?.name || null,
       exporter_country: sample.exporter?.country || null,
-      importer_name: sample.importer?.name || null,
+      // Use importer from DB, or fall back to client if they're an importer type
+      importer_name: sample.importer?.name || (isImporterClient ? clientName : null),
       importer_country: sample.importer?.country || null,
-      roaster_name: sample.roaster?.name || null,
+      // Use roaster from DB, or fall back to client if they're a roaster type
+      roaster_name: sample.roaster?.name || (isRoasterClient ? clientName : null),
       roaster_country: sample.roaster?.country || null,
       // Remove nested objects to keep response clean
       quality_spec: undefined,
       exporter: undefined,
       importer: undefined,
-      roaster: undefined
+      roaster: undefined,
+      client: undefined
     }
 
     return NextResponse.json({ sample: transformedSample })
