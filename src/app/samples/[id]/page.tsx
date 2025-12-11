@@ -47,8 +47,10 @@ interface Sample {
   storage_position?: string
   bags_quantity_mt?: number
   bag_count?: number
+  bags?: number
   bag_weight_kg?: number
   bag_type?: string
+  equivalent_60kg_bags?: number
   wolthers_contract_nr?: string
   exporter_contract_nr?: string
   buyer_contract_nr?: string
@@ -614,28 +616,54 @@ export default function SampleDetailPage() {
                     <div className="text-sm text-muted-foreground">Processing:</div>
                     <div className="text-sm font-medium">{sample.processing_method || '-'}</div>
 
-                    <div className="text-sm text-muted-foreground">Quantity (bags):</div>
-                    <div className="text-sm font-medium">{sample.bag_count || '-'}</div>
+                    {/* For bulk: bag_count is the equivalent 60kg bags, calculate MT from that */}
+                    {sample.bag_type?.toLowerCase() === 'bulk' ? (
+                      <>
+                        <div className="text-sm text-muted-foreground">Bag Type:</div>
+                        <div className="text-sm font-medium">Bulk</div>
 
-                    <div className="text-sm text-muted-foreground">Bag Type:</div>
-                    <div className="text-sm font-medium">{sample.bag_type || '-'}</div>
+                        <div className="text-sm text-muted-foreground">Total:</div>
+                        <div className="text-sm font-medium">
+                          {sample.bag_count
+                            ? `${((sample.bag_count * 60) / 1000).toFixed(1)} MT`
+                            : '-'}
+                        </div>
 
-                    <div className="text-sm text-muted-foreground">Per-bag Weight:</div>
-                    <div className="text-sm font-medium">
-                      {sample.bag_weight_kg ? `${sample.bag_weight_kg.toLocaleString()} kg` : '-'}
-                    </div>
+                        <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
+                        <div className="text-sm font-medium">
+                          {sample.bag_count
+                            ? `${sample.bag_count.toLocaleString()} bags`
+                            : '-'}
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="text-sm text-muted-foreground">Quantity (bags):</div>
+                        <div className="text-sm font-medium">{sample.bag_count || sample.bags || '-'}</div>
 
-                    <div className="text-sm text-muted-foreground">Total:</div>
-                    <div className="text-sm font-medium">
-                      {sample.bags_quantity_mt ? `${sample.bags_quantity_mt} MT` : '-'}
-                    </div>
+                        <div className="text-sm text-muted-foreground">Bag Type:</div>
+                        <div className="text-sm font-medium">{sample.bag_type || '-'}</div>
 
-                    <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
-                    <div className="text-sm font-medium">
-                      {sample.bags_quantity_mt
-                        ? `${Math.round((sample.bags_quantity_mt * 1000) / 60)} bags`
-                        : '-'}
-                    </div>
+                        <div className="text-sm text-muted-foreground">Per-bag Weight:</div>
+                        <div className="text-sm font-medium">
+                          {sample.bag_weight_kg ? `${sample.bag_weight_kg.toLocaleString()} kg` : '-'}
+                        </div>
+
+                        <div className="text-sm text-muted-foreground">Total:</div>
+                        <div className="text-sm font-medium">
+                          {sample.bags_quantity_mt ? `${sample.bags_quantity_mt} MT` : '-'}
+                        </div>
+
+                        <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
+                        <div className="text-sm font-medium">
+                          {sample.equivalent_60kg_bags
+                            ? `${Math.round(sample.equivalent_60kg_bags).toLocaleString()} bags`
+                            : sample.bags_quantity_mt
+                              ? `${Math.round((sample.bags_quantity_mt * 1000) / 60).toLocaleString()} bags`
+                              : '-'}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </CardContent>
               </Card>
