@@ -93,6 +93,13 @@ export function QualityStep({
     return ORIGINS.filter(origin => labOrigins.includes(origin))
   }, [formData.laboratory_id, laboratories])
 
+  // Auto-select laboratory if there's only one available
+  useEffect(() => {
+    if (laboratories.length === 1 && !formData.laboratory_id) {
+      updateFormData('laboratory_id', laboratories[0].id)
+    }
+  }, [laboratories, formData.laboratory_id, updateFormData])
+
   // Auto-select origin if there's only one supported origin
   useEffect(() => {
     if (supportedOrigins.length === 1 && formData.origin !== supportedOrigins[0]) {

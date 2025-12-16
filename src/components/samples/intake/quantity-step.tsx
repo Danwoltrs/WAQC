@@ -342,6 +342,36 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
           </p>
         </div>
       )}
+
+      {/* ICO Number and Container Nr - shown for SS (Shipment Samples) */}
+      {formData.sample_type === 'ss' && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+          <div className="space-y-2">
+            <Label htmlFor="ico_number">ICO Number</Label>
+            <Input
+              id="ico_number"
+              value={formData.ico_number}
+              onChange={(e) => updateFormData('ico_number', e.target.value)}
+              placeholder="e.g., 0-XXX-12345"
+            />
+            <p className="text-xs text-muted-foreground">
+              International Coffee Organization number
+            </p>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="container_nr">Container Number</Label>
+            <Input
+              id="container_nr"
+              value={formData.container_nr}
+              onChange={(e) => updateFormData('container_nr', e.target.value)}
+              placeholder="e.g., ABCD1234567"
+            />
+            <p className="text-xs text-muted-foreground">
+              Shipping container reference
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
