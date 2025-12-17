@@ -142,10 +142,13 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    // Validate required fields
-    if (!body.laboratory_id || !body.origin || !body.exporter_id) {
+    // Validate required fields (exporter_id is optional since it's from a soft name lookup)
+    if (!body.laboratory_id || !body.origin) {
+      const missing = []
+      if (!body.laboratory_id) missing.push('laboratory_id')
+      if (!body.origin) missing.push('origin')
       return NextResponse.json({
-        error: 'Missing required fields: laboratory_id, origin, exporter_id'
+        error: `Missing required fields: ${missing.join(', ')}`
       }, { status: 400 })
     }
 
@@ -215,20 +218,28 @@ export async function POST(request: NextRequest) {
       quality_name: body.quality_name || null,
       hide_exporter_on_label: body.hide_exporter_on_label || false,
       origin: body.origin,
-      exporter_id: body.exporter_id,
+      micro_origin: body.micro_origin || null,
+      // Supply chain entity IDs
+      seller_id: body.seller_id || null,
+      exporter_id: body.exporter_id || null,
+      same_seller_shipper: body.same_seller_shipper ?? true,
       exporter_sample_number: body.exporter_sample_number || null,
       importer_id: body.importer_id || null,
       roaster_id: body.roaster_id || null,
       status: body.status || 'received',
       storage_position: body.storage_position || null,
-      // Phase 2 fields
+      // Contract reference fields
       wolthers_contract_nr: body.wolthers_contract_nr || null,
+      seller_contract_nr: body.seller_contract_nr || null,
+      shipper_contract_nr: body.shipper_contract_nr || null,
       exporter_contract_nr: body.exporter_contract_nr || null,
       buyer_contract_nr: body.buyer_contract_nr || null,
       roaster_contract_nr: body.roaster_contract_nr || null,
+      qc_client_contract_nr: body.qc_client_contract_nr || null,
       ico_number: body.ico_number || null,
       container_nr: body.container_nr || null,
       sample_type: body.sample_type || null,
+      shipment_month: body.shipment_month || null,
       bags_quantity_mt: body.bags_quantity_mt ? parseFloat(body.bags_quantity_mt) : null,
       bag_count: body.bag_count ? parseInt(body.bag_count) : null,
       bag_weight_kg: body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null,
