@@ -548,7 +548,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       const seller_id = lookupResults['seller']
       // When same_seller_shipper is true, use seller_id as exporter_id
       const exporter_id = formData.same_seller_shipper ? seller_id : lookupResults['shipper']
-      const importer_id = lookupResults['importer']
+      // Only use importer_id when it's NOT the QC client (otherwise the ID is from clients table, not importers)
+      const importer_id = formData.importer_is_qc_client ? undefined : lookupResults['importer']
       const roaster_id = lookupResults['roaster']
 
       // QC Client: use fantasy_name lookup, fallback to form's client_id
