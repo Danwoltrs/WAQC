@@ -246,17 +246,11 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   useEffect(() => {
     const fetchPendingSamples = async () => {
       if (!profile?.id || !hasPermission(permissions, 'conduct_assessments')) {
-        console.log('[Sidebar] Skipping cupping count fetch:', {
-          hasProfileId: !!profile?.id,
-          hasPermission: hasPermission(permissions, 'conduct_assessments'),
-          permissions
-        })
         return
       }
 
       try {
         const result = await getPendingSamplesForCupper(supabase, profile.id)
-        console.log('[Sidebar] Cupping pending count:', result.pending_count)
         setPendingSamplesCount(result.pending_count)
       } catch (error) {
         console.error('Error fetching pending samples count:', error)
@@ -297,16 +291,11 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   useEffect(() => {
     const fetchPendingGradingSamples = async () => {
       if (!profile?.laboratory_id || !hasPermission(permissions, 'conduct_assessments')) {
-        console.log('[Sidebar] Skipping grading count fetch:', {
-          hasLabId: !!profile?.laboratory_id,
-          hasPermission: hasPermission(permissions, 'conduct_assessments')
-        })
         return
       }
 
       try {
         const count = await getPendingSamplesForGrading(supabase, profile.laboratory_id)
-        console.log('[Sidebar] Grading pending count:', count)
         setPendingGradingSamplesCount(count)
       } catch (error) {
         console.error('Error fetching pending grading samples count:', error)
