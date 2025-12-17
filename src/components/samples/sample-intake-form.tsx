@@ -12,6 +12,7 @@ import {
   Laboratory,
   Exporter,
   Importer,
+  Roaster,
   SampleInsert,
   STEPS,
   SupplyChainStep,
@@ -121,18 +122,20 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const [laboratories, setLaboratories] = useState<Laboratory[]>([])
   const [exporters, setExporters] = useState<Exporter[]>([])
   const [importers, setImporters] = useState<Importer[]>([])
+  const [roasters, setRoasters] = useState<Roaster[]>([])
   const [qcClients, setQcClients] = useState<Client[]>([]) // Clients where is_qc_client = true
   const [filteredClients, setFilteredClients] = useState<Client[]>([])
   const [approvedPSSSamples, setApprovedPSSSamples] = useState<any[]>([])
   const [generatedTrackingNumber, setGeneratedTrackingNumber] = useState<string>('')
   const [formData, setFormData] = useState<FormData>(initialFormData)
 
-  // Load clients, laboratories, exporters, and importers
+  // Load clients, laboratories, exporters, importers, and roasters
   useEffect(() => {
     loadClients()
     loadLaboratories()
     loadExporters()
     loadImporters()
+    loadRoasters()
     loadQcClients()
 
     // Load saved form data from localStorage
@@ -335,6 +338,29 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     }
   }
 
+  const loadRoasters = async () => {
+    try {
+      const response = await fetch('/api/roasters')
+      if (response.ok) {
+        const data = await response.json()
+        const roastersList = data.roasters || []
+        // Deduplicate by name (case-insensitive)
+        const seen = new Set<string>()
+        const unique = roastersList.filter((r: any) => {
+          const key = r.name.toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        setRoasters(unique as unknown as Roaster[])
+      } else {
+        console.error('Failed to load roasters:', response.status)
+      }
+    } catch (error) {
+      console.error('Error loading roasters:', error)
+    }
+  }
+
   const loadQcClients = async () => {
     try {
       const response = await fetch('/api/clients?limit=500')
@@ -512,12 +538,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )
       }
 
-      // 5. Roaster lookup from clients table by fantasy_name (clients with roaster client_types)
+      // 5. Roaster lookup from roasters table by name
       if (formData.roaster) {
         lookupKeys.push('roaster')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('clients').select('id').eq('fantasy_name', formData.roaster).limit(1).maybeSingle(),
+            async () => supabase.from('roasters').select('id').ilike('name', formData.roaster).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Roaster lookup timeout'
           ).catch(err => { console.error('[Roaster lookup error]', err); return { data: null, error: err } })
@@ -699,6 +725,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               approvedPSSSamples={approvedPSSSamples}
               exporters={exporters}
               importers={importers}
+              roasters={roasters}
               qcClients={qcClients}
             />
           )}

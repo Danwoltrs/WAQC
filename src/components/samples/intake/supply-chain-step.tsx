@@ -14,6 +14,7 @@ export function SupplyChainStep({
   clients,
   exporters = [],
   importers = [],
+  roasters = [],
   qcClients = []
 }: StepComponentProps) {
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
@@ -58,13 +59,21 @@ export function SupplyChainStep({
     }
   }, [formData.importer_is_qc_client, qcClients, importers])
 
-  const roasters = useMemo(() =>
-    clients.filter(c =>
-      c.client_types?.some(type =>
-        type === 'roaster' || type === 'roaster_final_buyer'
-      )
-    ), [clients]
-  )
+  // Roaster options from roasters table (deduplicated by name)
+  const roasterOptions = useMemo(() => {
+    const seen = new Set<string>()
+    return roasters
+      .filter(r => {
+        if (!r.name || seen.has(r.name)) return false
+        seen.add(r.name)
+        return true
+      })
+      .map(r => ({
+        id: r.id,
+        name: r.name
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [roasters])
 
   return (
     <div className="space-y-4">
@@ -341,9 +350,9 @@ export function SupplyChainStep({
             <SelectContent>
               <SelectItem value="none">Select...</SelectItem>
               <SelectItem value="new">+ Create New</SelectItem>
-              {roasters.filter(c => c.fantasy_name).map((client) => (
-                <SelectItem key={client.id} value={client.fantasy_name!}>
-                  {client.fantasy_name}
+              {roasterOptions.map((roaster) => (
+                <SelectItem key={roaster.id} value={roaster.name}>
+                  {roaster.name}
                 </SelectItem>
               ))}
             </SelectContent>

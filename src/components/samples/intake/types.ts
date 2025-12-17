@@ -5,6 +5,7 @@ export type Client = Database['public']['Tables']['clients']['Row']
 export type Laboratory = Database['public']['Tables']['laboratories']['Row']
 export type Exporter = Database['public']['Tables']['exporters']['Row']
 export type Importer = Database['public']['Tables']['importers']['Row']
+export type Roaster = Database['public']['Tables']['roasters']['Row']
 
 export interface FormData {
   // Step 1: Supply Chain (Buyer/Seller)
@@ -73,6 +74,7 @@ export interface StepComponentProps {
   approvedPSSSamples: any[]
   exporters?: Exporter[]
   importers?: Importer[]
+  roasters?: Roaster[] // Roasters from the roasters table
   qcClients?: Client[] // Clients where is_qc_client = true
   error?: string | null
   isGlobalUser?: boolean // True if user is global_admin or global_cupper_admin
