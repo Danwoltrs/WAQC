@@ -193,12 +193,20 @@ export async function PATCH(request: NextRequest) {
       )
     }
 
-    // Update notifications
+    // Get user profile for laboratory_id
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('laboratory_id')
+      .eq('id', user.id)
+      .single()
+
+    // Update notifications - handle both user-specific and lab-wide notifications
+    // Notifications can be user_id=current_user OR (user_id=null AND laboratory_id=user's lab)
     const { data: notifications, error } = await supabase
       .from('notifications' as any)
       .update({ read: read !== undefined ? read : true })
       .in('id', notification_ids)
-      .eq('user_id', user.id)
+      .or(`user_id.eq.${user.id},and(user_id.is.null,laboratory_id.eq.${profile?.laboratory_id || '00000000-0000-0000-0000-000000000000'})`)
       .select()
 
     if (error) {
