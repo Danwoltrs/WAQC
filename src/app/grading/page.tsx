@@ -1567,7 +1567,7 @@ export default function GradingPage() {
                         const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
                         const hasAspects = sampleGreenOptions.length > 0 || sampleRoastOptions.length > 0
                         const shouldSplit = screens.length > 10
-                        const showQuakers = sample.quality_spec?.template?.parameters?.require_quaker_count === true || sample.sample_type === 'type'
+                        const showQuakers = sample.quality_spec?.template?.parameters?.require_quaker_count === true || sample.quality_spec?.template?.parameters?.max_quakers != null || sample.sample_type === 'type'
                         const humidityComp = getHumidityCompliance(sample.id)
 
                         return (
