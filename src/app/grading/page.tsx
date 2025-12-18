@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Save, Eye, EyeOff, Camera } from 'lucide-react'
+import { Save, Eye, EyeOff, Camera, Plus, Minus } from 'lucide-react'
 import { DefectPhotoUpload } from '@/components/grading/defect-photo-upload'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
@@ -1576,25 +1576,52 @@ export default function GradingPage() {
                             {shouldSplit && showQuakers ? (
                               <div className="flex gap-4">
                                 {/* Quakers */}
-                                <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
-                                  <Label className="text-sm">Quakers</Label>
+                                <div className="flex items-center gap-2">
+                                  <Label className="text-sm w-16">Quakers</Label>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => handleFieldChange(sample.id, 'quakers_count', Math.max(0, (gradingData?.quakers_count || 0) - 1))}
+                                  >
+                                    <Minus className="h-3 w-3" />
+                                  </Button>
                                   <Input
                                     type="number"
                                     min="0"
                                     value={gradingData?.quakers_count || 0}
                                     onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                                    className="h-8 text-sm w-20"
+                                    className="h-8 text-sm w-16 text-center"
                                   />
-                                  <div className="text-xs text-muted-foreground"></div>
+                                  <Button
+                                    variant="outline"
+                                    size="icon"
+                                    className="h-8 w-8"
+                                    onClick={() => handleFieldChange(sample.id, 'quakers_count', (gradingData?.quakers_count || 0) + 1)}
+                                  >
+                                    <Plus className="h-3 w-3" />
+                                  </Button>
                                 </div>
 
                                 {/* Humidity and Density side by side */}
                                 <div className="flex gap-4">
                                   {/* Humidity */}
-                                  <div className="grid grid-cols-[90px_70px] gap-2 items-center">
-                                    <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                  <div className="flex items-center gap-1">
+                                    <Label className={`text-sm whitespace-nowrap w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                       Humidity (%)
                                     </Label>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        const current = gradingData?.moisture_percentage || 0
+                                        const newVal = Math.max(0, Math.round((current - 0.1) * 10) / 10)
+                                        handleFieldChange(sample.id, 'moisture_percentage', newVal)
+                                      }}
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
@@ -1602,11 +1629,9 @@ export default function GradingPage() {
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          // Always update raw input for display
                                           const newRaw = new Map(rawInputsMap)
                                           newRaw.set(sample.id, { ...newRaw.get(sample.id), moisture: val })
                                           setRawInputsMap(newRaw)
-                                          // Only update numeric state if value is complete (not ending with .)
                                           if (!val.endsWith('.') && val !== '') {
                                             const num = parseFloat(val)
                                             if (!isNaN(num) && num >= 0 && num <= 100) {
@@ -1618,7 +1643,6 @@ export default function GradingPage() {
                                         }
                                       }}
                                       onBlur={() => {
-                                        // Clear raw input on blur, numeric state is already set
                                         const newRaw = new Map(rawInputsMap)
                                         const current = newRaw.get(sample.id)
                                         if (current) {
@@ -1628,15 +1652,39 @@ export default function GradingPage() {
                                           setRawInputsMap(newRaw)
                                         }
                                       }}
-                                      className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                      className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
                                     />
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        const current = gradingData?.moisture_percentage || 0
+                                        const newVal = Math.min(100, Math.round((current + 0.1) * 10) / 10)
+                                        handleFieldChange(sample.id, 'moisture_percentage', newVal)
+                                      }}
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
                                   </div>
 
                                   {/* Density */}
-                                  <div className="grid grid-cols-[90px_70px] gap-2 items-center">
-                                    <Label className="text-sm whitespace-nowrap">
+                                  <div className="flex items-center gap-1">
+                                    <Label className="text-sm whitespace-nowrap w-20">
                                       Density (G/L)
                                     </Label>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        const current = gradingData?.density || 0
+                                        const newVal = Math.max(0, Math.round((current - 0.001) * 1000) / 1000)
+                                        handleFieldChange(sample.id, 'density', newVal)
+                                      }}
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
@@ -1644,11 +1692,9 @@ export default function GradingPage() {
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          // Always update raw input for display
                                           const newRaw = new Map(rawInputsMap)
                                           newRaw.set(sample.id, { ...newRaw.get(sample.id), density: val })
                                           setRawInputsMap(newRaw)
-                                          // Only update numeric state if value is complete (not ending with .)
                                           if (!val.endsWith('.') && val !== '') {
                                             const num = parseFloat(val)
                                             if (!isNaN(num) && num >= 0) {
@@ -1660,7 +1706,6 @@ export default function GradingPage() {
                                         }
                                       }}
                                       onBlur={() => {
-                                        // Clear raw input on blur, numeric state is already set
                                         const newRaw = new Map(rawInputsMap)
                                         const current = newRaw.get(sample.id)
                                         if (current) {
@@ -1671,8 +1716,20 @@ export default function GradingPage() {
                                         }
                                       }}
                                       placeholder="0.700"
-                                      className="h-8 text-sm w-20"
+                                      className="h-8 text-sm w-16 text-center"
                                     />
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        const current = gradingData?.density || 0
+                                        const newVal = Math.round((current + 0.001) * 1000) / 1000
+                                        handleFieldChange(sample.id, 'density', newVal)
+                                      }}
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
                                   </div>
                                 </div>
                               </div>
@@ -1680,26 +1737,53 @@ export default function GradingPage() {
                               <>
                                 {/* When 1 column or no quakers: show stacked */}
                                 {showQuakers && (
-                                  <div className="grid grid-cols-[80px_70px_50px] gap-2 items-center">
-                                    <Label className="text-sm">Quakers</Label>
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-sm w-16">Quakers</Label>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => handleFieldChange(sample.id, 'quakers_count', Math.max(0, (gradingData?.quakers_count || 0) - 1))}
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
                                     <Input
                                       type="number"
                                       min="0"
                                       value={gradingData?.quakers_count || 0}
                                       onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                                      className="h-8 text-sm w-20"
+                                      className="h-8 text-sm w-16 text-center"
                                     />
-                                    <div className="text-xs text-muted-foreground"></div>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => handleFieldChange(sample.id, 'quakers_count', (gradingData?.quakers_count || 0) + 1)}
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
                                   </div>
                                 )}
 
                                 {/* Humidity and Density side by side */}
                                 <div className="flex gap-4">
                                   {/* Humidity */}
-                                  <div className="grid grid-cols-[90px_70px] gap-2 items-center">
-                                    <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                  <div className="flex items-center gap-1">
+                                    <Label className={`text-sm whitespace-nowrap w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                       Humidity (%)
                                     </Label>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        const current = gradingData?.moisture_percentage || 0
+                                        const newVal = Math.max(0, Math.round((current - 0.1) * 10) / 10)
+                                        handleFieldChange(sample.id, 'moisture_percentage', newVal)
+                                      }}
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
@@ -1707,11 +1791,9 @@ export default function GradingPage() {
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          // Always update raw input for display
                                           const newRaw = new Map(rawInputsMap)
                                           newRaw.set(sample.id, { ...newRaw.get(sample.id), moisture: val })
                                           setRawInputsMap(newRaw)
-                                          // Only update numeric state if value is complete (not ending with .)
                                           if (!val.endsWith('.') && val !== '') {
                                             const num = parseFloat(val)
                                             if (!isNaN(num) && num >= 0 && num <= 100) {
@@ -1723,7 +1805,6 @@ export default function GradingPage() {
                                         }
                                       }}
                                       onBlur={() => {
-                                        // Clear raw input on blur, numeric state is already set
                                         const newRaw = new Map(rawInputsMap)
                                         const current = newRaw.get(sample.id)
                                         if (current) {
@@ -1733,15 +1814,39 @@ export default function GradingPage() {
                                           setRawInputsMap(newRaw)
                                         }
                                       }}
-                                      className={`h-8 text-sm w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                      className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
                                     />
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        const current = gradingData?.moisture_percentage || 0
+                                        const newVal = Math.min(100, Math.round((current + 0.1) * 10) / 10)
+                                        handleFieldChange(sample.id, 'moisture_percentage', newVal)
+                                      }}
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
                                   </div>
 
                                   {/* Density */}
-                                  <div className="grid grid-cols-[90px_70px] gap-2 items-center">
-                                    <Label className="text-sm whitespace-nowrap">
+                                  <div className="flex items-center gap-1">
+                                    <Label className="text-sm whitespace-nowrap w-20">
                                       Density (G/L)
                                     </Label>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        const current = gradingData?.density || 0
+                                        const newVal = Math.max(0, Math.round((current - 0.001) * 1000) / 1000)
+                                        handleFieldChange(sample.id, 'density', newVal)
+                                      }}
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
@@ -1749,11 +1854,9 @@ export default function GradingPage() {
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          // Always update raw input for display
                                           const newRaw = new Map(rawInputsMap)
                                           newRaw.set(sample.id, { ...newRaw.get(sample.id), density: val })
                                           setRawInputsMap(newRaw)
-                                          // Only update numeric state if value is complete (not ending with .)
                                           if (!val.endsWith('.') && val !== '') {
                                             const num = parseFloat(val)
                                             if (!isNaN(num) && num >= 0) {
@@ -1765,7 +1868,6 @@ export default function GradingPage() {
                                         }
                                       }}
                                       onBlur={() => {
-                                        // Clear raw input on blur, numeric state is already set
                                         const newRaw = new Map(rawInputsMap)
                                         const current = newRaw.get(sample.id)
                                         if (current) {
@@ -1776,8 +1878,20 @@ export default function GradingPage() {
                                         }
                                       }}
                                       placeholder="0.700"
-                                      className="h-8 text-sm w-20"
+                                      className="h-8 text-sm w-16 text-center"
                                     />
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => {
+                                        const current = gradingData?.density || 0
+                                        const newVal = Math.round((current + 0.001) * 1000) / 1000
+                                        handleFieldChange(sample.id, 'density', newVal)
+                                      }}
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
                                   </div>
                                 </div>
                               </>
@@ -1939,19 +2053,35 @@ export default function GradingPage() {
                               <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Primary</h4>
                               <div className="space-y-1.5">
                                 {primaries.map((defect, index) => (
-                                  <div key={defect.name} className="grid grid-cols-[140px_64px_auto] gap-1.5 items-center">
-                                    <Label className="text-sm">
+                                  <div key={defect.name} className="flex items-center gap-1.5">
+                                    <Label className="text-sm w-[140px]">
                                       {defect.name}
                                       <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
                                     </Label>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => handleDefectCountChange(sample.id, defect.name, Math.max(0, (gradingData?.defect_counts[defect.name] || 0) - 1))}
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
                                     <Input
                                       type="number"
                                       min="0"
                                       value={gradingData?.defect_counts[defect.name] || 0}
                                       onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
-                                      className="h-8 text-sm"
+                                      className="h-8 text-sm w-14 text-center"
                                       placeholder="0"
                                     />
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => handleDefectCountChange(sample.id, defect.name, (gradingData?.defect_counts[defect.name] || 0) + 1)}
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
                                     <div className="text-xs text-muted-foreground">
                                       = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
                                     </div>
@@ -1972,19 +2102,35 @@ export default function GradingPage() {
                               <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Secondary</h4>
                               <div className="space-y-1.5">
                                 {secondaries.map((defect, index) => (
-                                  <div key={defect.name} className="grid grid-cols-[160px_64px_auto] gap-1.5 items-center">
-                                    <Label className="text-sm" title={defect.name}>
+                                  <div key={defect.name} className="flex items-center gap-1.5">
+                                    <Label className="text-sm w-[160px]" title={defect.name}>
                                       {defect.name}
                                       <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
                                     </Label>
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => handleDefectCountChange(sample.id, defect.name, Math.max(0, (gradingData?.defect_counts[defect.name] || 0) - 1))}
+                                    >
+                                      <Minus className="h-3 w-3" />
+                                    </Button>
                                     <Input
                                       type="number"
                                       min="0"
                                       value={gradingData?.defect_counts[defect.name] || 0}
                                       onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
-                                      className="h-8 text-sm"
+                                      className="h-8 text-sm w-14 text-center"
                                       placeholder="0"
                                     />
+                                    <Button
+                                      variant="outline"
+                                      size="icon"
+                                      className="h-8 w-8"
+                                      onClick={() => handleDefectCountChange(sample.id, defect.name, (gradingData?.defect_counts[defect.name] || 0) + 1)}
+                                    >
+                                      <Plus className="h-3 w-3" />
+                                    </Button>
                                     <div className="text-xs text-muted-foreground">
                                       = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
                                     </div>
