@@ -51,7 +51,7 @@ interface AggregatedScores {
 
 interface IndividualScore {
   score_id?: string
-  cupper_id: string
+  cupper_id: string | null
   cupper_name: string
   scores: Record<string, number>
   defects: {
@@ -59,6 +59,7 @@ interface IndividualScore {
     faults?: string[]
   }
   created_at: string
+  is_own_score?: boolean
 }
 
 interface EditingState {
@@ -85,6 +86,9 @@ interface ValidationPermissions {
     is_q_grader: boolean
     is_master_cupper: boolean
     is_global_admin: boolean
+    is_lab_admin?: boolean
+    has_admin_permissions?: boolean
+    qc_role?: string
     is_assigned: boolean
     has_completed: boolean
   }
@@ -165,6 +169,8 @@ export function CuppingValidationModal({
     if (user_profile.is_global_admin) return true
     // Master cuppers can edit
     if (user_profile.is_master_cupper) return true
+    // Lab admins can edit
+    if (user_profile.is_lab_admin || user_profile.has_admin_permissions) return true
     // If no master cupper assigned, any assigned cupper can edit
     if (!stats.has_master_cupper_assigned && user_profile.is_assigned) return true
     // Q-graders can edit
@@ -249,7 +255,7 @@ export function CuppingValidationModal({
     }
   }
 
-  const handleFinalize = async (manualDecision?: 'approved' | 'rejected') => {
+  const handleFinalize = async (manualDecision?: 'approved' | 'rejected', overrideDiscrepancies?: boolean) => {
     // Check permission first
     if (!permissions?.can_validate) {
       toast({
@@ -260,7 +266,8 @@ export function CuppingValidationModal({
       return
     }
 
-    if (aggregated?.hasDiscrepancies) {
+    // Block if discrepancies exist unless override is requested by master cupper
+    if (aggregated?.hasDiscrepancies && !overrideDiscrepancies) {
       toast({
         title: 'Cannot Finalize',
         description: 'Please resolve all discrepancies before finalizing scores',
@@ -287,6 +294,7 @@ export function CuppingValidationModal({
           session_id: permissions.session.id,
           sample_id: sampleId,
           manual_decision: manualDecision,
+          override_discrepancies: overrideDiscrepancies,
         }),
       })
 
@@ -375,7 +383,19 @@ export function CuppingValidationModal({
     return 'Finalize Scores'
   }
 
-  const startEditing = (cupperId: string, attribute: string, currentValue: number) => {
+  const startEditing = (cupperId: string | null, attribute: string, currentValue: number, isOwnScore?: boolean) => {
+    // Users can always edit their own scores
+    if (isOwnScore) {
+      setEditing({
+        cupperId: cupperId || '',
+        attribute,
+        originalValue: currentValue,
+        newValue: currentValue,
+      })
+      return
+    }
+
+    // For others' scores, need admin/master cupper permission
     if (!canEditScores()) {
       toast({
         title: 'Permission Denied',
@@ -385,7 +405,7 @@ export function CuppingValidationModal({
       return
     }
     setEditing({
-      cupperId,
+      cupperId: cupperId || '',
       attribute,
       originalValue: currentValue,
       newValue: currentValue,
@@ -399,7 +419,11 @@ export function CuppingValidationModal({
   const handleSaveEdit = async () => {
     if (!editing) return
 
-    const score = individualScores.find(s => s.cupper_id === editing.cupperId)
+    // Find score by cupper_id or score_id (handles anonymized scores)
+    const score = individualScores.find(s =>
+      s.cupper_id === editing.cupperId ||
+      s.score_id === editing.cupperId
+    )
     if (!score?.score_id) {
       toast({
         title: 'Error',
@@ -604,8 +628,11 @@ export function CuppingValidationModal({
                       <tr className="border-b">
                         <th className="text-left p-2 font-semibold">Attribute</th>
                         {individualScores.map((score) => (
-                          <th key={score.cupper_id} className="text-center p-2 font-semibold">
-                            <span>{score.cupper_name}</span>
+                          <th key={score.cupper_id || score.score_id} className="text-center p-2 font-semibold">
+                            <span>
+                              {score.cupper_name}
+                              {score.is_own_score && <span className="text-xs text-muted-foreground ml-1">(You)</span>}
+                            </span>
                           </th>
                         ))}
                         <th className="text-center p-2 font-semibold">Final</th>
@@ -616,20 +643,22 @@ export function CuppingValidationModal({
                         <tr key={attribute} className="border-b">
                           <td className="p-2 font-medium">{attribute}</td>
                           {individualScores.map((score) => {
-                            const isEditing = editing?.cupperId === score.cupper_id && editing?.attribute === attribute
+                            const scoreKey = score.cupper_id || score.score_id || ''
+                            const isEditing = editing?.cupperId === scoreKey && editing?.attribute === attribute
                             const cellValue = score.scores[attribute]
+                            const canEdit = score.is_own_score || canEditScores()
 
                             return (
                               <td
-                                key={`${attribute}-${score.cupper_id}`}
+                                key={`${attribute}-${scoreKey}`}
                                 className={`text-center p-2 ${
                                   stats.hasDiscrepancy
                                     ? 'bg-red-50 dark:bg-red-950'
                                     : ''
-                                } ${canEditScores() && !isEditing ? 'cursor-pointer hover:bg-accent' : ''}`}
+                                } ${canEdit && !isEditing ? 'cursor-pointer hover:bg-accent' : ''}`}
                                 onClick={() => {
-                                  if (!isEditing && cellValue !== undefined) {
-                                    startEditing(score.cupper_id, attribute, cellValue)
+                                  if (!isEditing && cellValue !== undefined && canEdit) {
+                                    startEditing(scoreKey, attribute, cellValue, score.is_own_score)
                                   }
                                 }}
                               >
@@ -862,6 +891,51 @@ export function CuppingValidationModal({
                     <FileCheck className="h-4 w-4 mr-2" />
                   )}
                   Validate & Certify
+                </Button>
+              )
+            ) : aggregated?.hasDiscrepancies && permissions?.can_validate ? (
+              // Has discrepancies but master cupper can override
+              qualitySpecInfo && !qualitySpecInfo.has_validation_rules ? (
+                // No validation rules - show manual Approve/Reject with override
+                <>
+                  <Button
+                    onClick={() => handleFinalize('rejected', true)}
+                    disabled={finalizing}
+                    variant="destructive"
+                  >
+                    {finalizing ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <XCircle className="h-4 w-4 mr-2" />
+                    )}
+                    Override & Reject
+                  </Button>
+                  <Button
+                    onClick={() => handleFinalize('approved', true)}
+                    disabled={finalizing}
+                    className="bg-amber-600 hover:bg-amber-700"
+                  >
+                    {finalizing ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 mr-2" />
+                    )}
+                    Override & Approve
+                  </Button>
+                </>
+              ) : (
+                // Has validation rules - use auto-determined decision with override
+                <Button
+                  onClick={() => handleFinalize(undefined, true)}
+                  disabled={finalizing}
+                  className="bg-amber-600 hover:bg-amber-700"
+                >
+                  {finalizing ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 mr-2" />
+                  )}
+                  Override Discrepancies & Finalize
                 </Button>
               )
             ) : (
