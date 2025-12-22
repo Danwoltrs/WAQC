@@ -14,7 +14,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera, FileDown, Pencil } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType, validateScoreAgainstRule } from '@/types/attribute-scales'
@@ -1529,6 +1530,37 @@ function CuppingPageContent() {
                                           ))}
                                       </SelectContent>
                                     </Select>
+                                  </div>
+                                )
+                              }
+
+                              // Boolean scale with checkbox (Clean Cup, Uniformity)
+                              if (scale.type === 'boolean') {
+                                const trueValue = scale.trueValue ?? 10
+                                const falseValue = scale.falseValue ?? 0
+                                const isChecked = value === trueValue
+                                const trueLabel = scale.trueLabel ?? 'Yes'
+                                const falseLabel = scale.falseLabel ?? 'No'
+
+                                return (
+                                  <div key={attribute} className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`${sample.id}-${attribute}`}
+                                      checked={isChecked}
+                                      onCheckedChange={(checked) => {
+                                        updateAttribute(sample.id, attribute, checked ? trueValue : falseValue)
+                                      }}
+                                      className="h-5 w-5"
+                                    />
+                                    <label
+                                      htmlFor={`${sample.id}-${attribute}`}
+                                      className={`text-sm font-medium cursor-pointer ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}
+                                    >
+                                      {attribute}
+                                      <span className={`ml-1.5 text-xs ${isChecked ? 'text-green-600' : 'text-muted-foreground'}`}>
+                                        ({isChecked ? trueLabel : falseLabel})
+                                      </span>
+                                    </label>
                                   </div>
                                 )
                               }

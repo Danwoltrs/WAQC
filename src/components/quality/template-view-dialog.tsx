@@ -286,6 +286,8 @@ export function TemplateViewDialog({
                                 <div className="text-muted-foreground ml-2">
                                   {attr.scale.type === 'numeric'
                                     ? `${attr.scale.min}-${attr.scale.max} (step ${attr.scale.increment})`
+                                    : attr.scale.type === 'boolean'
+                                    ? `Yes/No`
                                     : `${attr.scale.options?.length || 0} wording levels`}
                                   {attr.validation_rule && (
                                     <span className="ml-1">

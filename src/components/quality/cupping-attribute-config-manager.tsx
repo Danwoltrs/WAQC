@@ -598,29 +598,39 @@ export function CuppingAttributeConfigManager({
                 <CardTitle className="text-sm">Configuration Summary</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
                   <div>
                     <Label className="text-xs text-muted-foreground">Total Attributes</Label>
                     <p className="text-lg font-semibold">{attributes.length}</p>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Numeric Scales</Label>
+                    <Label className="text-xs text-muted-foreground">Numeric</Label>
                     <p className="text-lg font-semibold">
                       {attributes.filter(a => a.scale.type === 'numeric').length}
                     </p>
                   </div>
                   <div>
-                    <Label className="text-xs text-muted-foreground">Wording Scales</Label>
+                    <Label className="text-xs text-muted-foreground">Wording</Label>
                     <p className="text-lg font-semibold">
                       {attributes.filter(a => a.scale.type === 'wording').length}
+                    </p>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground">Yes/No</Label>
+                    <p className="text-lg font-semibold">
+                      {attributes.filter(a => a.scale.type === 'boolean').length}
                     </p>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Max Total Score</Label>
                     <p className="text-lg font-semibold">
                       {attributes
-                        .filter(a => a.scale.type === 'numeric')
-                        .reduce((sum, a) => sum + (a.scale.type === 'numeric' ? a.scale.max : 0), 0)}
+                        .reduce((sum, a) => {
+                          if (a.scale.type === 'numeric') return sum + a.scale.max
+                          if (a.scale.type === 'boolean') return sum + (a.scale.trueValue ?? 10)
+                          if (a.scale.type === 'wording') return sum + Math.max(...a.scale.options.map(o => o.value))
+                          return sum
+                        }, 0)}
                     </p>
                   </div>
                 </div>
