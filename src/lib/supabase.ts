@@ -8,13 +8,10 @@ const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 // This ensures cross-browser compatibility (Chrome, Safari, Edge, Firefox)
 export const supabase = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
   auth: {
-    // Use local storage for persistent sessions across browser restarts
-    storage: typeof window !== 'undefined' ? window.localStorage : undefined,
-    // Automatically refresh session when user becomes active
+    // Let @supabase/ssr handle storage via cookies (don't override with localStorage)
+    // This ensures consistency between server-side auth callback and client-side session
     autoRefreshToken: true,
-    // Persist session even if user closes browser
     persistSession: true,
-    // Detect when user becomes active to refresh session
     detectSessionInUrl: true,
   },
   cookies: {
