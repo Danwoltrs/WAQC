@@ -63,6 +63,11 @@ interface Sample {
   assigned_to?: string
   created_at: string
   updated_at?: string
+  // Certificate info (flattened from API)
+  certificate_id?: string | null
+  certificate_number?: string | null
+  certificate_status?: string | null
+  certificate_created_at?: string | null
 }
 
 interface QualityAssessment {
@@ -145,12 +150,25 @@ export default function SampleDetailPage() {
     try {
       setLoading(true)
 
-      // Load sample data
+      // Load sample data (includes certificate info)
       const sampleRes = await fetch(`/api/samples/${params.id}`)
       const sampleData = await sampleRes.json()
 
       if (sampleRes.ok && sampleData.sample) {
         setSample(sampleData.sample)
+
+        // Set certificates array based on sample's certificate info
+        if (sampleData.sample.certificate_id) {
+          setCertificates([{
+            id: sampleData.sample.certificate_id,
+            sample_id: params.id as string,
+            certificate_number: sampleData.sample.certificate_number || 'Available',
+            status: sampleData.sample.certificate_status || 'issued',
+            created_at: sampleData.sample.certificate_created_at || new Date().toISOString()
+          }])
+        } else {
+          setCertificates([])
+        }
       } else {
         console.error('Failed to load sample:', sampleData.error)
       }
@@ -160,19 +178,6 @@ export default function SampleDetailPage() {
       const assessmentsData = await assessmentsRes.json()
       if (assessmentsRes.ok && assessmentsData.assessments) {
         setAssessments(assessmentsData.assessments)
-      }
-
-      // Load certificates
-      const certsRes = await fetch(`/api/samples/${params.id}/certificate`)
-      if (certsRes.status === 200) {
-        // PDF response means certificate exists
-        setCertificates([{
-          id: 'current',
-          sample_id: params.id as string,
-          certificate_number: 'Available',
-          status: 'issued',
-          created_at: new Date().toISOString()
-        }])
       }
 
       // TODO: Load activity log when endpoint is available
@@ -496,9 +501,10 @@ export default function SampleDetailPage() {
               <QrCode className="h-4 w-4 mr-2" />
               QR Code
             </Button>
-            {/* Show certificate button if sample is certified/rejected/review OR has existing certificate */}
-            {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review' || certificates.length > 0) && (
-              certificates.length > 0 ? (
+            {/* Certificate buttons based on certificate existence */}
+            {sample.certificate_id ? (
+              // Sample HAS certificate - show View and Download buttons, hide Generate
+              <>
                 <Button
                   variant="default"
                   size="sm"
@@ -512,7 +518,23 @@ export default function SampleDetailPage() {
                   )}
                   View Certificate
                 </Button>
-              ) : (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadCertificate}
+                  disabled={downloadingCertificate}
+                >
+                  {downloadingCertificate ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Download className="h-4 w-4 mr-2" />
+                  )}
+                  Download
+                </Button>
+              </>
+            ) : (
+              // Sample has NO certificate - show Generate button if eligible
+              (sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review') && (
                 <Button
                   variant="default"
                   size="sm"
@@ -594,7 +616,7 @@ export default function SampleDetailPage() {
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="assessments">Assessments ({assessments.length})</TabsTrigger>
-            <TabsTrigger value="certificates">Certificates ({certificates.length})</TabsTrigger>
+            <TabsTrigger value="certificates">Certificates ({sample.certificate_id ? 1 : 0})</TabsTrigger>
             <TabsTrigger value="activity">Activity</TabsTrigger>
           </TabsList>
 
@@ -829,10 +851,12 @@ export default function SampleDetailPage() {
                   <div>
                     <CardTitle>Quality Certificate</CardTitle>
                     <CardDescription>
-                      Generate and download the official quality certificate for this sample
+                      {sample.certificate_id
+                        ? 'View and download the official quality certificate for this sample'
+                        : 'Generate and download the official quality certificate for this sample'}
                     </CardDescription>
                   </div>
-                  {certificates.length > 0 && (
+                  {sample.certificate_id && (
                     <Badge variant="default" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                       <CheckCircle className="h-3 w-3 mr-1" />
                       Available
@@ -844,7 +868,7 @@ export default function SampleDetailPage() {
                 <div className="flex flex-col items-center py-6 space-y-4">
                   <Award className="h-16 w-16 text-muted-foreground" />
 
-                  {certificates.length === 0 ? (
+                  {!sample.certificate_id ? (
                     <>
                       {sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review' ? (
                         <>

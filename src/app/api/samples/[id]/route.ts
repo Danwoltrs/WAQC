@@ -40,7 +40,8 @@ export async function GET(
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        client:clients(id, company, fantasy_name, client_types)
+        client:clients(id, company, fantasy_name, client_types),
+        certificate:certificates(id, certificate_number, status, created_at)
       `)
 
     // Query by UUID or tracking number
@@ -67,6 +68,12 @@ export async function GET(
     const clientName = (sample.client as { fantasy_name?: string; company?: string } | null)?.fantasy_name ||
       (sample.client as { fantasy_name?: string; company?: string } | null)?.company || null
 
+    // Handle certificate array - Supabase returns array for one-to-many relations
+    // A sample can have at most one certificate, so we take the first one
+    const certificate = Array.isArray(sample.certificate)
+      ? sample.certificate[0] || null
+      : sample.certificate || null
+
     // Transform sample to include flattened entity names (matching list API format)
     const transformedSample = {
       ...sample,
@@ -80,12 +87,18 @@ export async function GET(
       // Use roaster from DB, or fall back to client if they're a roaster type
       roaster_name: sample.roaster?.name || (isRoasterClient ? clientName : null),
       roaster_country: sample.roaster?.country || null,
+      // Certificate info (flattened)
+      certificate_id: certificate?.id || null,
+      certificate_number: certificate?.certificate_number || null,
+      certificate_status: certificate?.status || null,
+      certificate_created_at: certificate?.created_at || null,
       // Remove nested objects to keep response clean
       quality_spec: undefined,
       exporter: undefined,
       importer: undefined,
       roaster: undefined,
-      client: undefined
+      client: undefined,
+      certificate: undefined
     }
 
     return NextResponse.json({ sample: transformedSample })
