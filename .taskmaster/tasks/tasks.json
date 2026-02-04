@@ -1638,6 +1638,17 @@
         "dependencies": [],
         "priority": "medium",
         "subtasks": []
+      },
+      {
+        "id": 46,
+        "title": "Fix Infinite Dashboard Loading Spinner After Login",
+        "description": "Resolve infinite loading spinner issue where dashboard content area would spin forever after successful authentication. The auth loading state resolved correctly (header appeared), but DashboardContent internal loading state could hang indefinitely if the supabase samples query never resolved.",
+        "details": "## Changes Made\n\n### 1. src/components/providers/auth-provider.tsx\n- Added logging for profile fetch timing: `[Auth] Profile fetch started` and `[Auth] Profile fetch ended (Xms)`\n\n### 2. src/app/page.tsx\n- Added `loadError` state to track content loading failures\n- Added 10-second timeout to `fetchSamples` that forces loading=false and sets error state\n- Added error state UI with \"Failed to load dashboard\" message and \"Try Again\" button\n- Added logging for UI state transitions:\n  - `[UI] Dashboard content fetch started`\n  - `[UI] Dashboard content ready`\n  - `[UI] Home: loading state / showing login / showing dashboard`\n\n### 3. notes/auth-debug.md\n- Updated documentation with Iteration 2 fix details\n\n## Root Cause\nThe DashboardContent component had its own internal loading state that could hang if the supabase query never resolved (no error, no response). The timeout ensures loading=false within 10 seconds regardless of query outcome.\n\n## Acceptance Criteria Met\n- Central loading spinner disappears within 10-12 seconds (timeout at 10s)\n- Shows clear error state instead of infinite spinner if loading fails\n- Minimal logging added for debugging state transitions",
+        "testStrategy": "Manual testing: Login via MS OAuth and email/password, verify dashboard content loads within 10s or shows error state. Check console for logging messages at key state transitions.",
+        "status": "done",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": []
       }
     ],
     "metadata": {
@@ -1650,7 +1661,7 @@
       ],
       "created": "2025-11-26T13:11:34.127Z",
       "description": "Tasks for master context",
-      "updated": "2025-12-02T12:59:49.685Z"
+      "updated": "2026-02-04T14:18:51.421Z"
     }
   }
 }

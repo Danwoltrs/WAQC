@@ -7,6 +7,8 @@
  * - Charcoal/black diamonds for in-spec, red for out-of-spec
  * - Vertical tick marks showing scale range
  * - Scale numbers above the chart
+ * - Dotted line connecting attribute name to score
+ * - Clean Cup and Uniform Cup above Faults/Taints
  */
 
 import React from 'react'
@@ -29,13 +31,22 @@ const chartStyles = StyleSheet.create({
     width: 0.5,
     backgroundColor: COLORS.border,
     marginVertical: 4,
-    marginLeft: 200, // Move separator 200px to the right
+    marginLeft: 235, // Move separator further right (was 200)
     marginRight: 10,
     alignSelf: 'stretch',
   },
   defectsSection: {
+    flexDirection: 'column',
+    paddingTop: 4,
+    gap: 8,
+  },
+  cupStatusRow: {
     flexDirection: 'row',
-    paddingTop: 18, // Push down to align with graph rows (skip past title)
+    gap: 16,
+    marginBottom: 4,
+  },
+  faultsTaintsRow: {
+    flexDirection: 'row',
     gap: 16,
   },
   defectColumn: {
@@ -55,7 +66,7 @@ const chartStyles = StyleSheet.create({
     height: 16,
   },
   leftSection: {
-    width: 115,
+    width: 85,
     flexDirection: 'row',
     alignItems: 'baseline',
   },
@@ -65,17 +76,25 @@ const chartStyles = StyleSheet.create({
     color: COLORS.dark,
   },
   specText: {
-    fontSize: 7,
+    fontSize: 6,
     color: COLORS.muted,
-    marginLeft: 2,
+    marginLeft: 1,
+  },
+  dottedLine: {
+    flex: 1,
+    minWidth: 10,
+    maxWidth: 40,
+    height: 1,
+    marginHorizontal: 3,
   },
   scoreValue: {
     fontSize: 9,
     fontWeight: 600,
-    marginLeft: 4,
+    width: 28,
+    textAlign: 'right',
+    marginRight: 6,
   },
   chartSection: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -401,24 +420,39 @@ export function CertificateCuppingChart({
 
           return (
             <View key={index} style={chartStyles.attributeRow}>
-              {/* Left section: Attribute (spec) score */}
+              {/* Left section: Attribute name + spec */}
               <View style={chartStyles.leftSection}>
                 <Text style={chartStyles.attributeName}>{displayName}</Text>
                 <Text style={chartStyles.specText}>
                   {formatSpecText(attr.validationRule)}
                 </Text>
-                <Text
-                  style={[
-                    chartStyles.scoreValue,
-                    // Only red for out-of-spec, otherwise dark/black
-                    { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
-                  ]}
-                >
-                  {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
-                </Text>
               </View>
 
-              {/* Right section: Scale chart */}
+              {/* Dotted line connecting name to score */}
+              <Svg style={chartStyles.dottedLine} height={1}>
+                <Line
+                  x1={0}
+                  y1={0.5}
+                  x2={40}
+                  y2={0.5}
+                  stroke={COLORS.muted}
+                  strokeWidth={0.5}
+                  strokeDasharray="1,2"
+                />
+              </Svg>
+
+              {/* Score value - close to graph */}
+              <Text
+                style={[
+                  chartStyles.scoreValue,
+                  // Only red for out-of-spec, otherwise dark/black
+                  { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
+                ]}
+              >
+                {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
+              </Text>
+
+              {/* Scale chart */}
               <View style={chartStyles.chartSection}>
                 <ScaleChart
                   score={attr.score}
@@ -437,11 +471,12 @@ export function CertificateCuppingChart({
       {/* Vertical separator */}
       <View style={chartStyles.verticalSeparator} />
 
-      {/* Right section: Clean/Uniform Cup + Faults + Taints */}
+      {/* Right section: Clean/Uniform Cup (side by side, above) + Faults/Taints (below) */}
       <View style={chartStyles.defectsSection}>
-        {/* Clean Cup and Uniform Cup */}
-        <View style={chartStyles.defectColumn}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+        {/* Row 1: Clean Cup and Uniform Cup side by side */}
+        <View style={chartStyles.cupStatusRow}>
+          {/* Clean Cup */}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
               {cleanCup === true ? (
                 <Path
@@ -472,6 +507,8 @@ export function CertificateCuppingChart({
             </Svg>
             <Text style={{ fontSize: 7, color: COLORS.dark }}>Clean Cup</Text>
           </View>
+
+          {/* Uniform Cup */}
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
               {uniformCup === true ? (
@@ -505,32 +542,35 @@ export function CertificateCuppingChart({
           </View>
         </View>
 
-        {/* Faults column */}
-        <View style={chartStyles.defectColumn}>
-          <Text style={chartStyles.title}>Faults</Text>
-          {faultDetails && faultDetails.length > 0 ? (
-            faultDetails.map((fault, idx) => (
-              <Text key={idx} style={chartStyles.defectValue}>
-                {fault.name}{fault.intensity ? ` (${fault.intensity})` : ''}
-              </Text>
-            ))
-          ) : (
-            <Text style={chartStyles.defectValue}>{faultsDisplay}</Text>
-          )}
-        </View>
+        {/* Row 2: Faults and Taints side by side */}
+        <View style={chartStyles.faultsTaintsRow}>
+          {/* Faults column */}
+          <View style={chartStyles.defectColumn}>
+            <Text style={chartStyles.title}>Faults</Text>
+            {faultDetails && faultDetails.length > 0 ? (
+              faultDetails.map((fault, idx) => (
+                <Text key={idx} style={chartStyles.defectValue}>
+                  {fault.name}{fault.intensity ? ` (${fault.intensity})` : ''}
+                </Text>
+              ))
+            ) : (
+              <Text style={chartStyles.defectValue}>{faultsDisplay}</Text>
+            )}
+          </View>
 
-        {/* Taints column */}
-        <View style={chartStyles.defectColumn}>
-          <Text style={chartStyles.title}>Taints</Text>
-          {taintDetails && taintDetails.length > 0 ? (
-            taintDetails.map((taint, idx) => (
-              <Text key={idx} style={chartStyles.defectValue}>
-                {taint.name}{taint.intensity ? ` (${taint.intensity})` : ''}
-              </Text>
-            ))
-          ) : (
-            <Text style={chartStyles.defectValue}>{taintsDisplay}</Text>
-          )}
+          {/* Taints column */}
+          <View style={chartStyles.defectColumn}>
+            <Text style={chartStyles.title}>Taints</Text>
+            {taintDetails && taintDetails.length > 0 ? (
+              taintDetails.map((taint, idx) => (
+                <Text key={idx} style={chartStyles.defectValue}>
+                  {taint.name}{taint.intensity ? ` (${taint.intensity})` : ''}
+                </Text>
+              ))
+            ) : (
+              <Text style={chartStyles.defectValue}>{taintsDisplay}</Text>
+            )}
+          </View>
         </View>
       </View>
     </View>

@@ -36,28 +36,30 @@ export function SupplyChainStep({
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [exporters])
 
-  // Importers: QC clients with fantasy_name only
-  const mergedImporterOptions = useMemo(() => {
-    if (formData.importer_is_qc_client) {
-      // Only QC clients with fantasy_name
-      return qcClients
-        .filter(c => c.fantasy_name)
-        .map(c => ({
-          id: c.id,
-          name: c.fantasy_name!,
-          type: 'client' as const,
-          clientId: c.id
-        }))
-        .sort((a, b) => a.name.localeCompare(b.name))
-    } else {
-      return importers.map((imp: any) => ({
+  // Importers: Always show all importers from importers table (deduplicated by name)
+  const importerOptions = useMemo(() => {
+    const seen = new Set<string>()
+    return importers
+      .filter((imp: any) => {
+        if (!imp.name || seen.has(imp.name)) return false
+        seen.add(imp.name)
+        return true
+      })
+      .map((imp: any) => ({
         id: imp.id,
         name: imp.name,
         type: 'importer' as const,
         clientId: imp.client_id
       }))
-    }
-  }, [formData.importer_is_qc_client, qcClients, importers])
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [importers])
+
+  // QC Client options: exclude the selected importer if they're also a QC client
+  const qcClientOptions = useMemo(() => {
+    return qcClients
+      .filter(c => c.fantasy_name && c.fantasy_name !== formData.importer)
+      .sort((a, b) => (a.fantasy_name || '').localeCompare(b.fantasy_name || ''))
+  }, [qcClients, formData.importer])
 
   // Roaster options from roasters table (deduplicated by name)
   const roasterOptions = useMemo(() => {
@@ -242,7 +244,7 @@ export function SupplyChainStep({
             <SelectContent>
               <SelectItem value="none">Select...</SelectItem>
               <SelectItem value="new">+ Create New</SelectItem>
-              {mergedImporterOptions.length > 0 && mergedImporterOptions.map((option) => (
+              {importerOptions.map((option) => (
                 <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
               ))}
             </SelectContent>
@@ -280,7 +282,7 @@ export function SupplyChainStep({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="none">Select...</SelectItem>
-                {qcClients.filter(c => c.fantasy_name).map((client) => (
+                {qcClientOptions.map((client) => (
                   <SelectItem key={client.id} value={client.fantasy_name!}>
                     {client.fantasy_name}
                   </SelectItem>

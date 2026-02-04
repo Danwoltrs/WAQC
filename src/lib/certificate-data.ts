@@ -48,6 +48,8 @@ export interface CuppingAttribute {
   score: number
   allowedMin: number | null
   allowedMax: number | null
+  scaleMin?: number  // Min of the rating scale (e.g., 1 for 1-7 scale)
+  scaleMax?: number  // Max of the rating scale (e.g., 7 for 1-7 scale)
 }
 
 export interface CuppingDefect {
@@ -312,6 +314,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   let qualitySpec = null
   let isSpecialty = false
   let cuppingAttributeValidations: Record<string, { min?: number; max?: number }> | undefined
+  // Store scale info for each attribute (from template)
+  let cuppingAttributeScales: Record<string, { min: number; max: number }> | undefined
   if (sample.quality_spec_id) {
     const { data: spec } = await supabase
       .from('client_qualities')
@@ -320,7 +324,9 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         template:quality_templates(
           name,
           description,
-          parameters
+          parameters,
+          cupping_scale_min,
+          cupping_scale_max
         )
       `)
       .eq('id', sample.quality_spec_id)
@@ -330,6 +336,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       // Template parameters structure from DB:
       // cupping_attributes is an ARRAY of attribute configs
       // Each attribute may have a validation_rule with min_value/max_value
+      // and a scale with min/max
       interface CuppingAttributeConfig {
         attribute: string
         validation_rule?: {
@@ -337,16 +344,34 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
           min_value?: number
           max_value?: number
         }
+        scale?: {
+          min?: number
+          max?: number
+          type?: string
+        }
       }
-      const templateParams = (spec.template as { name?: string; parameters?: unknown })?.parameters as {
+      const templateData = spec.template as {
+        name?: string
+        parameters?: unknown
+        cupping_scale_min?: number
+        cupping_scale_max?: number
+      }
+      const templateParams = templateData?.parameters as {
         cupping_attributes?: CuppingAttributeConfig[]
       } | undefined
 
+      // Get default scale from template level (fallback)
+      const defaultScaleMin = templateData?.cupping_scale_min ?? 0
+      const defaultScaleMax = templateData?.cupping_scale_max ?? 10
+
       // Convert array-based cupping_attributes with validation_rule to our Record format
+      // Also extract scale info for each attribute
       if (templateParams?.cupping_attributes && Array.isArray(templateParams.cupping_attributes)) {
         cuppingAttributeValidations = {}
+        cuppingAttributeScales = {}
         let hasAnyValidation = false
         for (const attr of templateParams.cupping_attributes) {
+          // Extract validation rules
           if (attr.validation_rule) {
             const min = attr.validation_rule.min_value
             const max = attr.validation_rule.max_value
@@ -355,10 +380,22 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
               hasAnyValidation = true
             }
           }
+          // Extract scale info (use attribute-level scale if available, otherwise template default)
+          // Only for numeric scales (not boolean)
+          if (attr.scale?.type !== 'boolean') {
+            cuppingAttributeScales[attr.attribute] = {
+              min: attr.scale?.min ?? defaultScaleMin,
+              max: attr.scale?.max ?? defaultScaleMax,
+            }
+          }
         }
         // If no attributes have validation rules, clear the object
         if (!hasAnyValidation) {
           cuppingAttributeValidations = undefined
+        }
+        // If no scale info was found, clear it
+        if (Object.keys(cuppingAttributeScales).length === 0) {
+          cuppingAttributeScales = undefined
         }
       }
 
@@ -427,14 +464,19 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   // Process cupping scores
   let cuppingData: CuppingData | null = null
   if (cuppingScores && cuppingScores.length > 0) {
-    cuppingData = processCuppingScores(cuppingScores, isSpecialty, cuppingAttributeValidations)
+    cuppingData = processCuppingScores(cuppingScores, isSpecialty, cuppingAttributeValidations, cuppingAttributeScales)
   }
+
+  // Generate current date for issued_date (used when no certificate record exists yet or as fallback)
+  const currentDate = new Date().toISOString()
 
   // Calculate valid_until only if client has certificate validity enabled
   // Validity starts from the first day of the month following the issue date
+  // Use certificate.created_at if available, otherwise use current date
   let validUntil: string | null = null
-  if (certificate?.created_at && client?.certificate_validity_enabled) {
-    const issueDate = new Date(certificate.created_at)
+  if (client?.certificate_validity_enabled) {
+    const issueDateStr = certificate?.created_at || currentDate
+    const issueDate = new Date(issueDateStr)
     // Start from first day of next month
     const startDate = new Date(issueDate.getFullYear(), issueDate.getMonth() + 1, 1)
     // Add the configured months (default 6)
@@ -473,9 +515,6 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         contract: sample.shipper_contract_nr || null,
         address: null,
       }
-
-  // Generate current date for issued_date fallback (used when no certificate record exists yet)
-  const currentDate = new Date().toISOString()
 
   return {
     sample: {
@@ -749,6 +788,8 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
 
 // Type for cupping attribute validation ranges from quality template
 type CuppingAttributeValidations = Record<string, { min?: number; max?: number }>
+// Type for cupping attribute scale ranges from quality template
+type CuppingAttributeScales = Record<string, { min: number; max: number }>
 
 /**
  * Process cupping scores from multiple cuppers into averaged data
@@ -756,7 +797,8 @@ type CuppingAttributeValidations = Record<string, { min?: number; max?: number }
 function processCuppingScores(
   cuppingScores: Array<{ scores: unknown; notes: string | null; defects?: unknown }>,
   isSpecialty: boolean,
-  attributeValidations?: CuppingAttributeValidations
+  attributeValidations?: CuppingAttributeValidations,
+  attributeScales?: CuppingAttributeScales
 ): CuppingData {
   // Collect all scores by attribute
   const attributeScores: Record<string, number[]> = {}
@@ -899,11 +941,29 @@ function processCuppingScores(
       }
     }
 
+    // Look up scale for this attribute (case-insensitive match)
+    let scaleMin: number | undefined
+    let scaleMax: number | undefined
+
+    if (attributeScales) {
+      const scale = attributeScales[attr] ||
+        Object.entries(attributeScales).find(
+          ([key]) => key.toLowerCase() === attr.toLowerCase()
+        )?.[1]
+
+      if (scale) {
+        scaleMin = scale.min
+        scaleMax = scale.max
+      }
+    }
+
     attributes.push({
       name: attr,
       score: Math.round(avg * 100) / 100,
       allowedMin,
       allowedMax,
+      scaleMin,
+      scaleMax,
     })
 
     totalScore += avg

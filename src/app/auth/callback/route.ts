@@ -8,8 +8,14 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get('code')
   const next = requestUrl.searchParams.get('next') || '/'
+  const invitationToken = requestUrl.searchParams.get('invitation_token')
   const error = requestUrl.searchParams.get('error')
   const errorDescription = requestUrl.searchParams.get('error_description')
+
+  // Log invitation token presence for debugging
+  if (invitationToken) {
+    console.log('[OAuth Invitation] Callback received with invitation token:', invitationToken.substring(0, 8) + '...')
+  }
 
   // Handle OAuth errors
   if (error) {
@@ -77,7 +83,7 @@ export async function GET(request: NextRequest) {
     if (user) {
       try {
         // Add 10s timeout to prevent hanging
-        const profilePromise = ensureUserProfile(user)
+        const profilePromise = ensureUserProfile(user, invitationToken)
         const timeoutPromise = new Promise<void>((_, reject) =>
           setTimeout(() => reject(new Error('Profile creation timeout')), 10000)
         )
@@ -112,8 +118,10 @@ export async function GET(request: NextRequest) {
 /**
  * Ensures a user has a profile. Creates one if missing.
  * Uses service role to bypass RLS.
+ * @param user - The authenticated user
+ * @param invitationToken - Optional invitation token for reliable matching (prioritized over email)
  */
-async function ensureUserProfile(user: { id: string; email?: string; user_metadata?: any }) {
+async function ensureUserProfile(user: { id: string; email?: string; user_metadata?: any }, invitationToken?: string | null) {
   try {
     // Create admin client to bypass RLS
     const supabaseAdmin = createClient<Database>(
@@ -130,22 +138,61 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
       .single()
 
     if (existingProfile) {
-      console.log('Profile already exists for user:', user.id)
+      console.log('[OAuth Invitation] Profile already exists for user:', user.id)
+
+      // Even if profile exists, mark invitation as accepted if token provided
+      if (invitationToken) {
+        await supabaseAdmin
+          .from('user_invitations')
+          .update({ status: 'accepted', accepted_at: new Date().toISOString() })
+          .eq('invitation_token', invitationToken)
+          .eq('status', 'pending')
+        console.log('[OAuth Invitation] Marked invitation as accepted for existing user')
+      }
       return
     }
 
-    console.log('No profile found, creating one for user:', user.id)
+    console.log('[OAuth Invitation] No profile found, creating one for user:', user.id)
 
-    // Check for pending invitation (cast to any since DB has columns not in types)
-    const { data: invitationData } = await supabaseAdmin
-      .from('user_invitations')
-      .select('*')
-      .ilike('email', user.email || '')
-      .eq('status', 'pending')
-      .gt('expires_at', new Date().toISOString())
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .single()
+    let invitationData = null
+
+    // Priority 1: Match by invitation token if provided (most reliable)
+    if (invitationToken) {
+      console.log('[OAuth Invitation] Looking up invitation by token...')
+      const { data: tokenMatch, error: tokenError } = await supabaseAdmin
+        .from('user_invitations')
+        .select('*')
+        .eq('invitation_token', invitationToken)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .single()
+
+      if (tokenMatch && !tokenError) {
+        console.log('[OAuth Invitation] Found invitation by token for email:', tokenMatch.email)
+        invitationData = tokenMatch
+      } else {
+        console.log('[OAuth Invitation] Token lookup failed:', tokenError?.message || 'Not found')
+      }
+    }
+
+    // Priority 2: Fallback to email matching if no token match
+    if (!invitationData && user.email) {
+      console.log('[OAuth Invitation] Falling back to email matching...')
+      const { data: emailMatch } = await supabaseAdmin
+        .from('user_invitations')
+        .select('*')
+        .ilike('email', user.email)
+        .eq('status', 'pending')
+        .gt('expires_at', new Date().toISOString())
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (emailMatch) {
+        console.log('[OAuth Invitation] Found invitation by email:', user.email)
+        invitationData = emailMatch
+      }
+    }
 
     // Cast to any to access columns that exist in DB but not in generated types
     const invitation = invitationData as any
@@ -162,7 +209,7 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
 
     if (invitation) {
       // Create profile from invitation data
-      console.log('Creating profile from invitation:', invitation.id)
+      console.log('[OAuth Invitation] Creating profile from invitation:', invitation.id)
 
       const { error: insertError } = await supabaseAdmin
         .from('profiles')
@@ -185,7 +232,7 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
 
       if (insertError && insertError.code !== '23505') {
         // Only log non-duplicate errors
-        console.error('Error creating profile from invitation:', insertError)
+        console.error('[OAuth Invitation] Error creating profile from invitation:', insertError)
         return
       }
 
@@ -195,10 +242,10 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
         .update({ status: 'accepted', accepted_at: new Date().toISOString() })
         .eq('id', invitation.id)
 
-      console.log('Profile created/updated and invitation accepted')
+      console.log('[OAuth Invitation] Profile created and invitation accepted for:', user.email)
     } else {
       // Create basic profile from user metadata
-      console.log('Creating basic profile from user metadata')
+      console.log('[OAuth Invitation] No invitation found, creating basic profile from user metadata')
 
       const fullName = user.user_metadata?.full_name || user.user_metadata?.name || user.email?.split('@')[0] || 'User'
       const nameParts = fullName.split(' ')

@@ -13,6 +13,7 @@ function AcceptInviteContent() {
   const searchParams = useSearchParams()
   const router = useRouter()
   const token = searchParams.get('token')
+  const errorParam = searchParams.get('error')
 
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -21,6 +22,13 @@ function AcceptInviteContent() {
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [success, setSuccess] = useState(false)
+
+  // Handle error from OAuth redirect
+  useEffect(() => {
+    if (errorParam) {
+      setError(decodeURIComponent(errorParam))
+    }
+  }, [errorParam])
 
   useEffect(() => {
     if (!token) {
@@ -139,11 +147,11 @@ function AcceptInviteContent() {
 
     try {
       // Sign in with Microsoft OAuth
-      // The database trigger will automatically create the profile and accept the invitation
+      // Preserve invitation token through OAuth redirect for reliable matching
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'azure',
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=/`,
+          redirectTo: `${window.location.origin}/auth/callback?next=/&invitation_token=${encodeURIComponent(token)}`,
           scopes: 'email profile openid',
         },
       })

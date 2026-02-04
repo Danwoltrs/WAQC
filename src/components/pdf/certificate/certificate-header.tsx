@@ -69,8 +69,8 @@ const headerStyles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   certificateNumber: {
-    fontSize: 8,
-    fontWeight: 600,
+    fontSize: 11,
+    fontWeight: 700,
     color: COLORS.dark,
     marginTop: 4,
   },

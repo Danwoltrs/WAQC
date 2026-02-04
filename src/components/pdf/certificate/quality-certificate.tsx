@@ -81,6 +81,7 @@ export function QualityCertificate({
     : null
 
   // Prepare cupping attributes for cupping chart
+  // Use scale info from template if available (e.g., Dunkin uses 1-7 scale)
   const cuppingAttributes = cuppingData?.attributes?.map(attr => ({
     attribute: attr.name,
     score: attr.score,
@@ -91,8 +92,9 @@ export function QualityCertificate({
           max_value: attr.allowedMax ?? undefined,
         }
       : null,
-    scaleMin: 0,
-    scaleMax: 10,
+    // Use attribute-specific scale if available, otherwise default to 0-10
+    scaleMin: attr.scaleMin ?? 0,
+    scaleMax: attr.scaleMax ?? 10,
   })) || []
 
   return (

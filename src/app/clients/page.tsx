@@ -15,7 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
-  Plus, Search, Edit, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye, Upload
+  Plus, Search, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye, Upload
 } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
@@ -378,7 +378,9 @@ export default function ClientsPage() {
                               )}
                               <div className="flex flex-col gap-1">
                                 <div className="flex items-center gap-2">
-                                  <span className="font-semibold">{client.fantasy_name || client.name}</span>
+                                  <Link href={`/clients/${client.slug || client.id}`} className="font-semibold hover:underline cursor-pointer">
+                                    {client.fantasy_name || client.name}
+                                  </Link>
                                   {client.has_origin_pricing && (
                                     <Badge variant="secondary" className="text-xs">
                                       <Layers className="h-3 w-3 mr-1" />
@@ -504,11 +506,6 @@ export default function ClientsPage() {
                               <Link href={`/clients/${client.slug || client.id}`}>
                                 <Button variant="ghost" size="sm" title="View details">
                                   <Eye className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              <Link href={`/clients/${client.slug || client.id}/edit`}>
-                                <Button variant="ghost" size="sm" title="Edit client">
-                                  <Edit className="h-4 w-4" />
                                 </Button>
                               </Link>
                               <Button

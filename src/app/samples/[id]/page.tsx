@@ -8,10 +8,14 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   ArrowLeft, CheckCircle, XCircle, Clock, AlertCircle, MapPin,
   Calendar, Package, FileText, Activity, Download, Printer,
-  QrCode, Edit, Trash2, User, Building2, Award, Loader2, Eye, Mail
+  QrCode, Edit, Trash2, User, Building2, Award, Loader2, Eye, Mail,
+  Save, X, Lock, Coffee, Beaker
 } from 'lucide-react'
 import {
   Dialog,
@@ -24,6 +28,49 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import Link from 'next/link'
 import { useAuth } from '@/components/providers/auth-provider'
+
+interface EditPermission {
+  canEdit: boolean
+  reason: 'not_locked' | 'within_7_days' | 'locked_after_scan' | 'locked_after_7_days'
+  lockExpiresAt: string | null
+  message: string
+}
+
+interface CuppingScores {
+  fragrance_aroma?: number
+  flavor?: number
+  aftertaste?: number
+  acidity?: number
+  body?: number
+  balance?: number
+  uniformity?: number
+  clean_cup?: number
+  sweetness?: number
+  overall?: number
+  total?: number
+}
+
+interface GradingData {
+  green_bean_data?: {
+    moisture?: number
+    density?: number
+    aspect?: string
+    screen_analysis?: Record<string, number>
+    defects?: Array<{ name: string; count: number }>
+  }
+  roast_data?: {
+    quakers?: number
+    roast_color?: string
+    notes?: string
+  }
+}
+
+interface EditHistory {
+  edited_at: string
+  edited_by: string
+  reason: string
+  changes: Record<string, { old: any; new: any }>
+}
 
 interface Sample {
   id: string
@@ -127,6 +174,21 @@ export default function SampleDetailPage() {
   const [generatingCertificate, setGeneratingCertificate] = useState(false)
   const [downloadingCertificate, setDownloadingCertificate] = useState(false)
 
+  // Edit mode states
+  const [isEditMode, setIsEditMode] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [editPermission, setEditPermission] = useState<EditPermission | null>(null)
+  const [formData, setFormData] = useState<Partial<Sample>>({})
+
+  // Cupping/Grading data states
+  const [cuppingScores, setCuppingScores] = useState<CuppingScores | null>(null)
+  const [gradingData, setGradingData] = useState<GradingData | null>(null)
+  const [editHistory, setEditHistory] = useState<EditHistory[]>([])
+  const [isEditingCuppingGrading, setIsEditingCuppingGrading] = useState(false)
+  const [cuppingGradingFormData, setCuppingGradingFormData] = useState<{ cupping?: CuppingScores; grading?: GradingData }>({})
+  const [editReason, setEditReason] = useState('')
+  const [savingCuppingGrading, setSavingCuppingGrading] = useState(false)
+
   // Certificate preview modal states
   const [showCertificateModal, setShowCertificateModal] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -142,9 +204,153 @@ export default function SampleDetailPage() {
   useEffect(() => {
     if (params.id) {
       loadSampleDetails()
+      loadEditPermission()
+      loadCuppingGradingData()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id])
+
+  const loadEditPermission = async () => {
+    try {
+      const res = await fetch(`/api/cupping/check-edit-permission?sampleId=${params.id}`)
+      if (res.ok) {
+        const data = await res.json()
+        setEditPermission(data)
+      }
+    } catch (error) {
+      console.error('Error loading edit permission:', error)
+    }
+  }
+
+  const loadCuppingGradingData = async () => {
+    try {
+      // Load aggregated cupping scores
+      const cuppingRes = await fetch(`/api/cupping/scores/aggregate?sample_id=${params.id}`)
+      if (cuppingRes.ok) {
+        const cuppingData = await cuppingRes.json()
+        if (cuppingData.aggregated?.attributes) {
+          // Convert aggregated attributes to simple scores
+          const scores: CuppingScores = {}
+          Object.entries(cuppingData.aggregated.attributes).forEach(([key, value]: [string, any]) => {
+            scores[key as keyof CuppingScores] = value.finalScore
+          })
+          setCuppingScores(scores)
+        }
+      }
+
+      // Load grading data (quality assessment)
+      const gradingRes = await fetch(`/api/samples/${params.id}/quality-assessment`)
+      if (gradingRes.ok) {
+        const gradingDataRes = await gradingRes.json()
+        if (gradingDataRes.assessment) {
+          setGradingData({
+            green_bean_data: gradingDataRes.assessment.green_bean_data,
+            roast_data: gradingDataRes.assessment.roast_data
+          })
+          // Load edit history if available
+          if (gradingDataRes.assessment.edit_history) {
+            setEditHistory(gradingDataRes.assessment.edit_history)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error loading cupping/grading data:', error)
+    }
+  }
+
+  // Check if cupping/grading can be edited (within 7 days of certificate)
+  const canEditCuppingGrading = editPermission?.canEdit &&
+    (editPermission.reason === 'not_locked' || editPermission.reason === 'within_7_days')
+
+  // Enter cupping/grading edit mode
+  const handleEnterCuppingGradingEdit = () => {
+    if (!canEditCuppingGrading) return
+    setCuppingGradingFormData({
+      cupping: cuppingScores || {},
+      grading: gradingData || {}
+    })
+    setEditReason('')
+    setIsEditingCuppingGrading(true)
+  }
+
+  // Cancel cupping/grading edit
+  const handleCancelCuppingGradingEdit = () => {
+    setIsEditingCuppingGrading(false)
+    setCuppingGradingFormData({})
+    setEditReason('')
+  }
+
+  // Save cupping/grading changes with audit trail
+  const handleSaveCuppingGrading = async () => {
+    if (!sample || !editReason.trim()) {
+      alert('Please provide a reason for the edit')
+      return
+    }
+
+    try {
+      setSavingCuppingGrading(true)
+
+      // Build changes object for audit trail
+      const changes: Record<string, { old: any; new: any }> = {}
+
+      // Compare cupping changes
+      if (cuppingGradingFormData.cupping && cuppingScores) {
+        Object.keys(cuppingGradingFormData.cupping).forEach(key => {
+          const oldVal = cuppingScores[key as keyof CuppingScores]
+          const newVal = cuppingGradingFormData.cupping![key as keyof CuppingScores]
+          if (oldVal !== newVal) {
+            changes[`cupping_${key}`] = { old: oldVal, new: newVal }
+          }
+        })
+      }
+
+      // Compare grading changes
+      if (cuppingGradingFormData.grading && gradingData) {
+        // Compare green_bean_data
+        if (JSON.stringify(cuppingGradingFormData.grading.green_bean_data) !== JSON.stringify(gradingData.green_bean_data)) {
+          changes.green_bean_data = { old: gradingData.green_bean_data, new: cuppingGradingFormData.grading.green_bean_data }
+        }
+        // Compare roast_data
+        if (JSON.stringify(cuppingGradingFormData.grading.roast_data) !== JSON.stringify(gradingData.roast_data)) {
+          changes.roast_data = { old: gradingData.roast_data, new: cuppingGradingFormData.grading.roast_data }
+        }
+      }
+
+      // Save grading data with edit history
+      const editEntry: EditHistory = {
+        edited_at: new Date().toISOString(),
+        edited_by: profile?.email || profile?.full_name || 'Unknown',
+        reason: editReason.trim(),
+        changes
+      }
+
+      const response = await fetch(`/api/samples/${sample.id}/quality-assessment`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          green_bean_data: cuppingGradingFormData.grading?.green_bean_data,
+          roast_data: cuppingGradingFormData.grading?.roast_data,
+          edit_history: [...editHistory, editEntry]
+        })
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to save changes')
+      }
+
+      // Reload data
+      await loadCuppingGradingData()
+      setIsEditingCuppingGrading(false)
+      setCuppingGradingFormData({})
+      setEditReason('')
+    } catch (error) {
+      console.error('Error saving cupping/grading:', error)
+      alert(error instanceof Error ? error.message : 'Failed to save changes')
+    } finally {
+      setSavingCuppingGrading(false)
+    }
+  }
 
   const loadSampleDetails = async () => {
     try {
@@ -188,6 +394,183 @@ export default function SampleDetailPage() {
     } finally {
       setLoading(false)
     }
+  }
+
+  // Enter edit mode - initialize form with current sample data
+  const handleEnterEditMode = () => {
+    if (!sample) return
+    setFormData({
+      bag_count: sample.bag_count,
+      bag_type: sample.bag_type,
+      bag_weight_kg: sample.bag_weight_kg,
+      bags_quantity_mt: sample.bags_quantity_mt,
+      wolthers_contract_nr: sample.wolthers_contract_nr,
+      exporter_contract_nr: sample.exporter_contract_nr,
+      buyer_contract_nr: sample.buyer_contract_nr,
+      roaster_contract_nr: sample.roaster_contract_nr,
+      ico_number: sample.ico_number,
+      container_nr: sample.container_nr,
+      processing_method: sample.processing_method,
+      storage_position: sample.storage_position,
+    })
+    setIsEditMode(true)
+  }
+
+  // Cancel edit mode - discard changes
+  const handleCancelEdit = () => {
+    setIsEditMode(false)
+    setFormData({})
+  }
+
+  // Save changes
+  const handleSaveChanges = async () => {
+    if (!sample) return
+
+    try {
+      setSaving(true)
+      const response = await fetch(`/api/samples/${sample.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to save changes')
+      }
+
+      // Reload sample data
+      await loadSampleDetails()
+      setIsEditMode(false)
+      setFormData({})
+    } catch (error) {
+      console.error('Error saving changes:', error)
+      alert(error instanceof Error ? error.message : 'Failed to save changes')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  // Update form field
+  const handleFormChange = (field: keyof Sample, value: string | number | null) => {
+    setFormData(prev => ({ ...prev, [field]: value }))
+  }
+
+  // QR Code modal state
+  const [showQrModal, setShowQrModal] = useState(false)
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null)
+  const [generatingQr, setGeneratingQr] = useState(false)
+
+  const handleShowQrCode = async () => {
+    if (!sample) return
+    setShowQrModal(true)
+    setGeneratingQr(true)
+    try {
+      // Generate QR code with sample tracking URL
+      const QRCode = await import('qrcode')
+      const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
+      const url = `${baseUrl}/samples/${parseTrackingNumber(sample.tracking_number)}`
+      const dataUrl = await QRCode.toDataURL(url, { width: 256, margin: 2 })
+      setQrCodeDataUrl(dataUrl)
+    } catch (error) {
+      console.error('Error generating QR code:', error)
+    } finally {
+      setGeneratingQr(false)
+    }
+  }
+
+  const handleDownloadQrCode = () => {
+    if (!qrCodeDataUrl || !sample) return
+    const a = document.createElement('a')
+    a.href = qrCodeDataUrl
+    a.download = `${parseTrackingNumber(sample.tracking_number)}-qr.png`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
+  // Print label for this sample (uses bulk API with single sample)
+  const [printingLabel, setPrintingLabel] = useState(false)
+  const handlePrintLabel = async () => {
+    if (!sample) return
+
+    try {
+      setPrintingLabel(true)
+      const response = await fetch('/api/samples/bulk/print-labels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sample_ids: [sample.id] })
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to generate label')
+      }
+
+      // Get the PDF blob and open in print window
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const printWindow = window.open(url)
+      if (printWindow) {
+        printWindow.onload = () => {
+          printWindow.print()
+        }
+      }
+      // Clean up after a delay
+      setTimeout(() => window.URL.revokeObjectURL(url), 60000)
+    } catch (error) {
+      console.error('Error printing label:', error)
+      alert(error instanceof Error ? error.message : 'Failed to print label')
+    } finally {
+      setPrintingLabel(false)
+    }
+  }
+
+  // Export sample data as JSON
+  const handleExport = () => {
+    if (!sample) return
+
+    const exportData = {
+      tracking_number: parseTrackingNumber(sample.tracking_number),
+      origin: sample.origin,
+      quality: sample.quality_name,
+      processing_method: sample.processing_method,
+      sample_type: sample.sample_type,
+      status: sample.status,
+      workflow_stage: sample.workflow_stage,
+      // Quantity
+      bag_count: sample.bag_count,
+      bag_type: sample.bag_type,
+      bag_weight_kg: sample.bag_weight_kg,
+      bags_quantity_mt: sample.bags_quantity_mt,
+      equivalent_60kg_bags: sample.equivalent_60kg_bags,
+      // Supply chain
+      exporter: sample.exporter_name,
+      importer: sample.importer_name,
+      roaster: sample.roaster_name,
+      // Contracts
+      wolthers_contract_nr: sample.wolthers_contract_nr,
+      exporter_contract_nr: sample.exporter_contract_nr,
+      buyer_contract_nr: sample.buyer_contract_nr,
+      roaster_contract_nr: sample.roaster_contract_nr,
+      ico_number: sample.ico_number,
+      container_nr: sample.container_nr,
+      // Metadata
+      storage_position: sample.storage_position,
+      created_at: sample.created_at,
+      updated_at: sample.updated_at,
+      certificate_number: sample.certificate_number,
+    }
+
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${parseTrackingNumber(sample.tracking_number)}.json`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
   }
 
   const handleDelete = async () => {
@@ -489,81 +872,125 @@ export default function SampleDetailPage() {
             </div>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm">
-              <Download className="h-4 w-4 mr-2" />
-              Export
-            </Button>
-            <Button variant="outline" size="sm">
-              <Printer className="h-4 w-4 mr-2" />
-              Print Label
-            </Button>
-            <Button variant="outline" size="sm">
-              <QrCode className="h-4 w-4 mr-2" />
-              QR Code
-            </Button>
-            {/* Certificate buttons based on certificate existence */}
-            {sample.certificate_id ? (
-              // Sample HAS certificate - show View and Download buttons, hide Generate
+            {isEditMode ? (
+              // Edit mode: Show Save and Cancel buttons
               <>
                 <Button
                   variant="default"
                   size="sm"
-                  onClick={handleViewCertificate}
-                  disabled={previewLoading}
+                  onClick={handleSaveChanges}
+                  disabled={saving}
                 >
-                  {previewLoading ? (
+                  {saving ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
-                    <Eye className="h-4 w-4 mr-2" />
+                    <Save className="h-4 w-4 mr-2" />
                   )}
-                  View Certificate
+                  {saving ? 'Saving...' : 'Save Changes'}
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={handleDownloadCertificate}
-                  disabled={downloadingCertificate}
+                  onClick={handleCancelEdit}
+                  disabled={saving}
                 >
-                  {downloadingCertificate ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <Download className="h-4 w-4 mr-2" />
-                  )}
-                  Download
+                  <X className="h-4 w-4 mr-2" />
+                  Cancel
                 </Button>
               </>
             ) : (
-              // Sample has NO certificate - show Generate button if eligible
-              (sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review') && (
+              // View mode: Show all action buttons
+              <>
+                <Button variant="outline" size="sm" onClick={handleExport}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
                 <Button
-                  variant="default"
+                  variant="outline"
                   size="sm"
-                  onClick={handleGenerateCertificate}
-                  disabled={generatingCertificate}
+                  onClick={handlePrintLabel}
+                  disabled={printingLabel}
                 >
-                  {generatingCertificate ? (
+                  {printingLabel ? (
                     <Loader2 className="h-4 w-4 mr-2 animate-spin" />
                   ) : (
-                    <Award className="h-4 w-4 mr-2" />
+                    <Printer className="h-4 w-4 mr-2" />
                   )}
-                  Generate Certificate
+                  Print Label
                 </Button>
-              )
-            )}
-            <Button variant="outline" size="sm">
-              <Edit className="h-4 w-4 mr-2" />
-              Edit
-            </Button>
-            {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
-              <Button
-                variant="destructive"
-                size="sm"
-                onClick={handleDelete}
-                disabled={deleting}
-              >
-                <Trash2 className="h-4 w-4 mr-2" />
-                {deleting ? 'Deleting...' : 'Delete'}
-              </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleShowQrCode}
+                >
+                  <QrCode className="h-4 w-4 mr-2" />
+                  QR Code
+                </Button>
+                {/* Certificate buttons based on certificate existence */}
+                {sample.certificate_id ? (
+                  // Sample HAS certificate - show View and Download buttons, hide Generate
+                  <>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleViewCertificate}
+                      disabled={previewLoading}
+                    >
+                      {previewLoading ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Eye className="h-4 w-4 mr-2" />
+                      )}
+                      View Certificate
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={handleDownloadCertificate}
+                      disabled={downloadingCertificate}
+                    >
+                      {downloadingCertificate ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Download className="h-4 w-4 mr-2" />
+                      )}
+                      Download
+                    </Button>
+                  </>
+                ) : (
+                  // Sample has NO certificate - show Generate button if eligible
+                  (sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review') && (
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleGenerateCertificate}
+                      disabled={generatingCertificate}
+                    >
+                      {generatingCertificate ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <Award className="h-4 w-4 mr-2" />
+                      )}
+                      Generate Certificate
+                    </Button>
+                  )
+                )}
+                <Button variant="outline" size="sm" onClick={handleEnterEditMode}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
+                  <Button
+                    variant="destructive"
+                    size="sm"
+                    onClick={handleDelete}
+                    disabled={deleting}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    {deleting ? 'Deleting...' : 'Delete'}
+                  </Button>
+                )}
+              </>
             )}
           </div>
         </div>
@@ -591,10 +1018,19 @@ export default function SampleDetailPage() {
               <CardDescription>Storage Position</CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex items-center gap-1 text-sm font-medium">
-                <MapPin className="h-4 w-4" />
-                {sample.storage_position || 'Not assigned'}
-              </div>
+              {isEditMode ? (
+                <Input
+                  value={formData.storage_position || ''}
+                  onChange={(e) => handleFormChange('storage_position', e.target.value)}
+                  className="h-7 text-sm"
+                  placeholder="e.g., A1-B2"
+                />
+              ) : (
+                <div className="flex items-center gap-1 text-sm font-medium">
+                  <MapPin className="h-4 w-4" />
+                  {sample.storage_position || 'Not assigned'}
+                </div>
+              )}
             </CardContent>
           </Card>
           <Card>
@@ -614,6 +1050,7 @@ export default function SampleDetailPage() {
         <Tabs defaultValue="details" className="space-y-4">
           <TabsList>
             <TabsTrigger value="details">Details</TabsTrigger>
+            <TabsTrigger value="cupping-grading">Cupping & Grading</TabsTrigger>
             <TabsTrigger value="timeline">Timeline</TabsTrigger>
             <TabsTrigger value="assessments">Assessments ({assessments.length})</TabsTrigger>
             <TabsTrigger value="certificates">Certificates ({sample.certificate_id ? 1 : 0})</TabsTrigger>
@@ -625,7 +1062,7 @@ export default function SampleDetailPage() {
               {/* Sample Information */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Sample Information</CardTitle>
+                  <CardTitle>Sample Information {isEditMode && <Badge variant="outline" className="ml-2">Editing</Badge>}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="grid grid-cols-2 gap-2">
@@ -636,44 +1073,119 @@ export default function SampleDetailPage() {
                     <div className="text-sm font-medium">{sample.quality_name || '-'}</div>
 
                     <div className="text-sm text-muted-foreground">Processing:</div>
-                    <div className="text-sm font-medium">{sample.processing_method || '-'}</div>
+                    {isEditMode ? (
+                      <Input
+                        value={formData.processing_method || ''}
+                        onChange={(e) => handleFormChange('processing_method', e.target.value)}
+                        className="h-7 text-sm"
+                        placeholder="e.g., Washed, Natural"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium">{sample.processing_method || '-'}</div>
+                    )}
 
                     {/* For bulk: bag_count is the equivalent 60kg bags, calculate MT from that */}
-                    {sample.bag_type?.toLowerCase() === 'bulk' ? (
+                    {(isEditMode ? formData.bag_type?.toLowerCase() : sample.bag_type?.toLowerCase()) === 'bulk' ? (
                       <>
                         <div className="text-sm text-muted-foreground">Bag Type:</div>
-                        <div className="text-sm font-medium">Bulk</div>
+                        {isEditMode ? (
+                          <Select
+                            value={formData.bag_type || 'bulk'}
+                            onValueChange={(v) => handleFormChange('bag_type', v)}
+                          >
+                            <SelectTrigger className="h-7 text-sm">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="bulk">Bulk</SelectItem>
+                              <SelectItem value="jute">Jute</SelectItem>
+                              <SelectItem value="grainpro">GrainPro</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="text-sm font-medium">Bulk</div>
+                        )}
+
+                        <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
+                        {isEditMode ? (
+                          <Input
+                            type="number"
+                            value={formData.bag_count || ''}
+                            onChange={(e) => handleFormChange('bag_count', e.target.value ? parseInt(e.target.value) : null)}
+                            className="h-7 text-sm"
+                            placeholder="Bags"
+                          />
+                        ) : (
+                          <div className="text-sm font-medium">
+                            {sample.bag_count
+                              ? `${sample.bag_count.toLocaleString()} bags`
+                              : '-'}
+                          </div>
+                        )}
 
                         <div className="text-sm text-muted-foreground">Total:</div>
                         <div className="text-sm font-medium">
-                          {sample.bag_count
-                            ? `${((sample.bag_count * 60) / 1000).toFixed(1)} MT`
-                            : '-'}
-                        </div>
-
-                        <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
-                        <div className="text-sm font-medium">
-                          {sample.bag_count
-                            ? `${sample.bag_count.toLocaleString()} bags`
+                          {(isEditMode ? formData.bag_count : sample.bag_count)
+                            ? `${(((isEditMode ? formData.bag_count : sample.bag_count) as number * 60) / 1000).toFixed(1)} MT`
                             : '-'}
                         </div>
                       </>
                     ) : (
                       <>
                         <div className="text-sm text-muted-foreground">Quantity (bags):</div>
-                        <div className="text-sm font-medium">{sample.bag_count || sample.bags || '-'}</div>
+                        {isEditMode ? (
+                          <Input
+                            type="number"
+                            value={formData.bag_count || ''}
+                            onChange={(e) => handleFormChange('bag_count', e.target.value ? parseInt(e.target.value) : null)}
+                            className="h-7 text-sm"
+                            placeholder="Number of bags"
+                          />
+                        ) : (
+                          <div className="text-sm font-medium">{sample.bag_count || sample.bags || '-'}</div>
+                        )}
 
                         <div className="text-sm text-muted-foreground">Bag Type:</div>
-                        <div className="text-sm font-medium">{sample.bag_type || '-'}</div>
+                        {isEditMode ? (
+                          <Select
+                            value={formData.bag_type || ''}
+                            onValueChange={(v) => handleFormChange('bag_type', v)}
+                          >
+                            <SelectTrigger className="h-7 text-sm">
+                              <SelectValue placeholder="Select..." />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="jute">Jute</SelectItem>
+                              <SelectItem value="grainpro">GrainPro</SelectItem>
+                              <SelectItem value="bulk">Bulk</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <div className="text-sm font-medium">{sample.bag_type || '-'}</div>
+                        )}
 
                         <div className="text-sm text-muted-foreground">Per-bag Weight:</div>
-                        <div className="text-sm font-medium">
-                          {sample.bag_weight_kg ? `${sample.bag_weight_kg.toLocaleString()} kg` : '-'}
-                        </div>
+                        {isEditMode ? (
+                          <Input
+                            type="number"
+                            value={formData.bag_weight_kg || ''}
+                            onChange={(e) => handleFormChange('bag_weight_kg', e.target.value ? parseFloat(e.target.value) : null)}
+                            className="h-7 text-sm"
+                            placeholder="kg"
+                          />
+                        ) : (
+                          <div className="text-sm font-medium">
+                            {sample.bag_weight_kg ? `${sample.bag_weight_kg.toLocaleString()} kg` : '-'}
+                          </div>
+                        )}
 
                         <div className="text-sm text-muted-foreground">Total:</div>
                         <div className="text-sm font-medium">
-                          {sample.bags_quantity_mt ? `${sample.bags_quantity_mt} MT` : '-'}
+                          {(isEditMode ? formData.bags_quantity_mt : sample.bags_quantity_mt)
+                            ? `${isEditMode ? formData.bags_quantity_mt : sample.bags_quantity_mt} MT`
+                            : '-'}
                         </div>
 
                         <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
@@ -731,30 +1243,84 @@ export default function SampleDetailPage() {
               {/* Contract Numbers */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Contract Numbers</CardTitle>
+                  <CardTitle>Contract Numbers {isEditMode && <Badge variant="outline" className="ml-2">Editing</Badge>}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="text-sm text-muted-foreground">Wolthers Contract:</div>
-                    <div className="text-sm font-medium font-mono">{sample.wolthers_contract_nr || '-'}</div>
+                    {isEditMode ? (
+                      <Input
+                        value={formData.wolthers_contract_nr || ''}
+                        onChange={(e) => handleFormChange('wolthers_contract_nr', e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="Contract #"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium font-mono">{sample.wolthers_contract_nr || '-'}</div>
+                    )}
 
                     <div className="text-sm text-muted-foreground">Exporter Contract:</div>
-                    <div className="text-sm font-medium font-mono">{sample.exporter_contract_nr || '-'}</div>
+                    {isEditMode ? (
+                      <Input
+                        value={formData.exporter_contract_nr || ''}
+                        onChange={(e) => handleFormChange('exporter_contract_nr', e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="Contract #"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium font-mono">{sample.exporter_contract_nr || '-'}</div>
+                    )}
 
                     <div className="text-sm text-muted-foreground">Importer Contract:</div>
-                    <div className="text-sm font-medium font-mono">{sample.buyer_contract_nr || '-'}</div>
+                    {isEditMode ? (
+                      <Input
+                        value={formData.buyer_contract_nr || ''}
+                        onChange={(e) => handleFormChange('buyer_contract_nr', e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="Contract #"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium font-mono">{sample.buyer_contract_nr || '-'}</div>
+                    )}
 
                     <div className="text-sm text-muted-foreground">Roaster Contract:</div>
-                    <div className="text-sm font-medium font-mono">{sample.roaster_contract_nr || '-'}</div>
+                    {isEditMode ? (
+                      <Input
+                        value={formData.roaster_contract_nr || ''}
+                        onChange={(e) => handleFormChange('roaster_contract_nr', e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="Contract #"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium font-mono">{sample.roaster_contract_nr || '-'}</div>
+                    )}
 
                     <div className="text-sm text-muted-foreground">ICO Number:</div>
-                    <div className="text-sm font-medium font-mono">{sample.ico_number || '-'}</div>
+                    {isEditMode ? (
+                      <Input
+                        value={formData.ico_number || ''}
+                        onChange={(e) => handleFormChange('ico_number', e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="ICO #"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium font-mono">{sample.ico_number || '-'}</div>
+                    )}
 
                     <div className="text-sm text-muted-foreground">ICO Marks:</div>
                     <div className="text-sm font-medium font-mono">{sample.ico_marks || '-'}</div>
 
                     <div className="text-sm text-muted-foreground">Container Nr:</div>
-                    <div className="text-sm font-medium font-mono">{sample.container_nr || '-'}</div>
+                    {isEditMode ? (
+                      <Input
+                        value={formData.container_nr || ''}
+                        onChange={(e) => handleFormChange('container_nr', e.target.value)}
+                        className="h-7 text-sm font-mono"
+                        placeholder="Container #"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium font-mono">{sample.container_nr || '-'}</div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -762,12 +1328,24 @@ export default function SampleDetailPage() {
               {/* Additional Info */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Additional Information</CardTitle>
+                  <CardTitle>Additional Information {isEditMode && <Badge variant="outline" className="ml-2">Editing</Badge>}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
                   <div className="grid grid-cols-2 gap-2">
                     <div className="text-sm text-muted-foreground">Workflow Stage:</div>
                     <div className="text-sm font-medium">{sample.workflow_stage || '-'}</div>
+
+                    <div className="text-sm text-muted-foreground">Storage Position:</div>
+                    {isEditMode ? (
+                      <Input
+                        value={formData.storage_position || ''}
+                        onChange={(e) => handleFormChange('storage_position', e.target.value)}
+                        className="h-7 text-sm"
+                        placeholder="e.g., A1-B2"
+                      />
+                    ) : (
+                      <div className="text-sm font-medium">{sample.storage_position || '-'}</div>
+                    )}
 
                     <div className="text-sm text-muted-foreground">Assigned To:</div>
                     <div className="text-sm font-medium">
@@ -787,6 +1365,260 @@ export default function SampleDetailPage() {
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          {/* Cupping & Grading Tab */}
+          <TabsContent value="cupping-grading" className="space-y-4">
+            {/* Lock Status Banner */}
+            {editPermission && !canEditCuppingGrading && sample.certificate_id && (
+              <div className="bg-muted/50 border rounded-lg p-4 flex items-center gap-3">
+                <Lock className="h-5 w-5 text-muted-foreground" />
+                <div>
+                  <p className="text-sm font-medium">Editing Locked</p>
+                  <p className="text-xs text-muted-foreground">{editPermission.message}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Edit Controls */}
+            {canEditCuppingGrading && !isEditingCuppingGrading && (
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" onClick={handleEnterCuppingGradingEdit}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit Cupping & Grading
+                </Button>
+              </div>
+            )}
+
+            {isEditingCuppingGrading && (
+              <Card className="border-primary">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Edit className="h-4 w-4" />
+                    Edit Mode - Audit Trail Required
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="text-sm font-medium">Reason for Edit *</label>
+                    <Textarea
+                      value={editReason}
+                      onChange={(e) => setEditReason(e.target.value)}
+                      placeholder="Please provide a reason for this edit (required)"
+                      className="mt-1"
+                      maxLength={500}
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">{editReason.length}/500 characters</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium">Edited by</label>
+                    <Input
+                      value={profile?.email || profile?.full_name || 'Unknown'}
+                      disabled
+                      className="mt-1 bg-muted"
+                    />
+                  </div>
+                  <div className="flex gap-2 justify-end">
+                    <Button variant="outline" size="sm" onClick={handleCancelCuppingGradingEdit} disabled={savingCuppingGrading}>
+                      <X className="h-4 w-4 mr-2" />
+                      Cancel
+                    </Button>
+                    <Button
+                      variant="default"
+                      size="sm"
+                      onClick={handleSaveCuppingGrading}
+                      disabled={savingCuppingGrading || !editReason.trim()}
+                    >
+                      {savingCuppingGrading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                      Save Changes
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Cupping Scores Card */}
+              <Card className={!canEditCuppingGrading && sample.certificate_id ? 'opacity-75' : ''}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Coffee className="h-5 w-5" />
+                    Cupping Scores
+                    {!canEditCuppingGrading && sample.certificate_id && (
+                      <Lock className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    {canEditCuppingGrading
+                      ? 'Aggregated cupping scores from all cuppers'
+                      : 'Locked 7 days after certification'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  {cuppingScores ? (
+                    <div className="grid grid-cols-2 gap-3">
+                      {[
+                        ['fragrance_aroma', 'Fragrance/Aroma'],
+                        ['flavor', 'Flavor'],
+                        ['aftertaste', 'Aftertaste'],
+                        ['acidity', 'Acidity'],
+                        ['body', 'Body'],
+                        ['balance', 'Balance'],
+                        ['uniformity', 'Uniformity'],
+                        ['clean_cup', 'Clean Cup'],
+                        ['sweetness', 'Sweetness'],
+                        ['overall', 'Overall']
+                      ].map(([key, label]) => (
+                        <div key={key} className="flex justify-between items-center py-1 border-b border-border/50">
+                          <span className="text-sm text-muted-foreground">{label}</span>
+                          {isEditingCuppingGrading ? (
+                            <Input
+                              type="number"
+                              step="0.25"
+                              min="0"
+                              max="10"
+                              value={cuppingGradingFormData.cupping?.[key as keyof CuppingScores] || ''}
+                              onChange={(e) => setCuppingGradingFormData(prev => ({
+                                ...prev,
+                                cupping: { ...prev.cupping, [key]: parseFloat(e.target.value) || 0 }
+                              }))}
+                              className="w-20 h-7 text-sm text-right"
+                            />
+                          ) : (
+                            <span className="text-sm font-medium">
+                              {cuppingScores[key as keyof CuppingScores]?.toFixed(2) || '-'}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">No cupping scores available</p>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Grading Data Card */}
+              <Card className={!canEditCuppingGrading && sample.certificate_id ? 'opacity-75' : ''}>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Beaker className="h-5 w-5" />
+                    Grading Data
+                    {!canEditCuppingGrading && sample.certificate_id && (
+                      <Lock className="h-4 w-4 text-muted-foreground" />
+                    )}
+                  </CardTitle>
+                  <CardDescription>
+                    {canEditCuppingGrading
+                      ? 'Green bean and roast analysis data'
+                      : 'Locked 7 days after certification'}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {gradingData?.green_bean_data ? (
+                    <>
+                      <div>
+                        <h4 className="text-sm font-medium mb-2">Green Bean Analysis</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div className="flex justify-between items-center py-1 border-b border-border/50">
+                            <span className="text-sm text-muted-foreground">Moisture</span>
+                            {isEditingCuppingGrading ? (
+                              <Input
+                                type="number"
+                                step="0.1"
+                                value={cuppingGradingFormData.grading?.green_bean_data?.moisture || ''}
+                                onChange={(e) => setCuppingGradingFormData(prev => ({
+                                  ...prev,
+                                  grading: {
+                                    ...prev.grading,
+                                    green_bean_data: {
+                                      ...prev.grading?.green_bean_data,
+                                      moisture: parseFloat(e.target.value) || 0
+                                    }
+                                  }
+                                }))}
+                                className="w-20 h-7 text-sm text-right"
+                              />
+                            ) : (
+                              <span className="text-sm font-medium">
+                                {gradingData.green_bean_data.moisture ? `${gradingData.green_bean_data.moisture}%` : '-'}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex justify-between items-center py-1 border-b border-border/50">
+                            <span className="text-sm text-muted-foreground">Density</span>
+                            {isEditingCuppingGrading ? (
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={cuppingGradingFormData.grading?.green_bean_data?.density || ''}
+                                onChange={(e) => setCuppingGradingFormData(prev => ({
+                                  ...prev,
+                                  grading: {
+                                    ...prev.grading,
+                                    green_bean_data: {
+                                      ...prev.grading?.green_bean_data,
+                                      density: parseFloat(e.target.value) || 0
+                                    }
+                                  }
+                                }))}
+                                className="w-20 h-7 text-sm text-right"
+                              />
+                            ) : (
+                              <span className="text-sm font-medium">
+                                {gradingData.green_bean_data.density || '-'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                      {gradingData.green_bean_data.defects && gradingData.green_bean_data.defects.length > 0 && (
+                        <div>
+                          <h4 className="text-sm font-medium mb-2">Defects</h4>
+                          <div className="space-y-1">
+                            {gradingData.green_bean_data.defects.map((defect, i) => (
+                              <div key={i} className="flex justify-between text-sm">
+                                <span className="text-muted-foreground">{defect.name}</span>
+                                <span className="font-medium">{defect.count}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">No grading data available</p>
+                  )}
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Edit History */}
+            {editHistory.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Edit History</CardTitle>
+                  <CardDescription>Audit trail of changes to cupping and grading data</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {editHistory.map((entry, i) => (
+                      <div key={i} className="border-l-2 border-border pl-4 py-2">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <p className="text-sm font-medium">{entry.edited_by}</p>
+                            <p className="text-xs text-muted-foreground">{entry.reason}</p>
+                          </div>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(entry.edited_at).toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           <TabsContent value="timeline" className="space-y-4">
@@ -1110,6 +1942,52 @@ export default function SampleDetailPage() {
                   <Mail className="h-4 w-4 mr-2" />
                 )}
                 Send Email
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* QR Code Modal */}
+        <Dialog open={showQrModal} onOpenChange={setShowQrModal}>
+          <DialogContent className="sm:max-w-[400px]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <QrCode className="h-5 w-5" />
+                Sample QR Code
+              </DialogTitle>
+              <DialogDescription>
+                {parseTrackingNumber(sample?.tracking_number || '')}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex flex-col items-center py-6 space-y-4">
+              {generatingQr ? (
+                <div className="flex items-center justify-center h-64 w-64">
+                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                </div>
+              ) : qrCodeDataUrl ? (
+                <img
+                  src={qrCodeDataUrl}
+                  alt="Sample QR Code"
+                  className="w-64 h-64 border rounded-lg"
+                />
+              ) : (
+                <div className="flex items-center justify-center h-64 w-64 text-muted-foreground">
+                  Failed to generate QR code
+                </div>
+              )}
+              <p className="text-xs text-muted-foreground text-center">
+                Scan this QR code to view sample details
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button variant="outline" onClick={handleDownloadQrCode} disabled={!qrCodeDataUrl}>
+                <Download className="h-4 w-4 mr-2" />
+                Download
+              </Button>
+              <Button variant="default" onClick={() => setShowQrModal(false)}>
+                Close
               </Button>
             </DialogFooter>
           </DialogContent>

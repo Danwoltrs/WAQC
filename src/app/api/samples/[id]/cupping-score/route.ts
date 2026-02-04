@@ -141,6 +141,8 @@ export async function POST(
 /**
  * GET /api/samples/[id]/cupping-score
  * Get cupping scores for a sample
+ * PRIVACY: Only returns the current user's own score to prevent cuppers seeing each other's scores
+ * Use /api/cupping/scores/aggregate for aggregated view (validation/review only)
  */
 export async function GET(
   request: NextRequest,
@@ -157,7 +159,8 @@ export async function GET(
 
     const { id: sampleId } = await params
 
-    // Fetch all cupping scores for this sample (using admin client for consistency)
+    // PRIVACY FIX: Only fetch the current user's cupping score, not all cuppers' scores
+    // This prevents cuppers from seeing each other's scores during cupping
     const { data: scores, error } = await supabaseAdmin
       .from('cupping_scores')
       .select(`
@@ -165,6 +168,7 @@ export async function GET(
         cupper:cupper_id(id, full_name, email)
       `)
       .eq('sample_id', sampleId)
+      .eq('cupper_id', user.id) // Only return current user's score
 
     if (error) {
       console.error('Error fetching cupping scores:', error)

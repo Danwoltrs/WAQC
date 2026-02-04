@@ -386,6 +386,21 @@ export async function POST(request: NextRequest) {
   }
 }
 
+// Type for cupping attribute config (array format from templates)
+interface CuppingAttributeConfig {
+  attribute: string
+  validation_rule?: {
+    type?: string
+    min_value?: number
+    max_value?: number
+  }
+  scale?: {
+    min?: number
+    max?: number
+    type?: string
+  }
+}
+
 /**
  * Evaluate quality compliance against quality specifications
  * A sample is REJECTED if ANY of these fail:
@@ -452,6 +467,7 @@ async function evaluateQualityCompliance(
     .single()
 
   // 1. Check cupping attributes against thresholds
+  // Handle both array format (new) and object format (legacy) for cupping_attributes
   if (cuppingScores && cuppingScores.length > 0 && parameters.cupping_attributes) {
     // Calculate average scores across all cuppers
     const avgScores: Record<string, number> = {}
@@ -468,10 +484,45 @@ async function evaluateQualityCompliance(
       }
     }
 
+    // Build a lookup map for validation rules
+    // Handle both array format (new templates) and object format (legacy)
+    const validationMap: Record<string, { min?: number; max?: number }> = {}
+
+    if (Array.isArray(parameters.cupping_attributes)) {
+      // New array format: [{attribute: "Acidity", validation_rule: {min_value: 3, max_value: 5}}, ...]
+      for (const attrConfig of parameters.cupping_attributes as CuppingAttributeConfig[]) {
+        if (attrConfig.attribute && attrConfig.validation_rule) {
+          validationMap[attrConfig.attribute] = {
+            min: attrConfig.validation_rule.min_value,
+            max: attrConfig.validation_rule.max_value,
+          }
+        }
+      }
+    } else {
+      // Legacy object format: {Acidity: {min: 3, max: 5}, ...}
+      for (const [attr, limits] of Object.entries(parameters.cupping_attributes)) {
+        if (limits && typeof limits === 'object') {
+          const l = limits as { min?: number; max?: number }
+          validationMap[attr] = { min: l.min, max: l.max }
+        }
+      }
+    }
+
     // Calculate averages and check against thresholds
     for (const [attr, total] of Object.entries(avgScores)) {
       const avg = total / (scoreCounts[attr] || 1)
-      const limits = parameters.cupping_attributes[attr]
+
+      // Try exact match first, then case-insensitive match
+      let limits = validationMap[attr]
+      if (!limits) {
+        const lowerAttr = attr.toLowerCase()
+        for (const [key, val] of Object.entries(validationMap)) {
+          if (key.toLowerCase() === lowerAttr) {
+            limits = val
+            break
+          }
+        }
+      }
 
       if (limits) {
         if (limits.min !== undefined && avg < limits.min) {
