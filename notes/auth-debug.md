@@ -140,19 +140,63 @@ No more `[Auth] ⚠ Profile fetch timed out on attempt X` warnings in normal ope
 
 ---
 
+## Iteration 2: Fixing Infinite Dashboard Loading Spinner
+
+### Issue
+
+After the previous fixes, the auth `loading` state was properly resolved, but the dashboard content (inside `MainLayout`) was stuck on an infinite loading spinner. The header appeared, but the central content never loaded.
+
+### Root Cause Analysis
+
+The `DashboardContent` component in `src/app/page.tsx` has its own internal `loading` state that:
+1. Starts as `true`
+2. Should become `false` after `fetchSamples()` completes
+3. But if the supabase query hangs forever (no error, no response), the spinner persists indefinitely
+
+### Fix Applied
+
+1. **Added timeout to `fetchSamples`** - If the query doesn't complete in 10 seconds, force loading=false and show an error state.
+
+2. **Added error state to DashboardContent** - If content fails to load, show a clear error message with a "Try Again" button instead of an infinite spinner.
+
+3. **Added minimal logging** as required by acceptance criteria:
+   - `[Auth] Profile fetch started` / `[Auth] Profile fetch ended (Xms)` in auth-provider.tsx
+   - `[UI] Dashboard content fetch started` / `[UI] Dashboard content ready` in page.tsx
+   - `[UI] Home: loading state` / `[UI] Home: showing login` / `[UI] Home: showing dashboard` for state transitions
+
+### Files Modified
+
+1. `src/components/providers/auth-provider.tsx`:
+   - Added logging for profile fetch start/end with timing
+
+2. `src/app/page.tsx`:
+   - Added `loadError` state
+   - Added 10-second timeout to `fetchSamples` that sets error state on timeout
+   - Added error state UI with retry button
+   - Added logging for dashboard content fetch and state transitions
+
+### Acceptance Criteria Met
+
+1. **Central loading spinner disappears within 10-12 seconds** - Timeout forces loading=false after 10s
+2. **Shows error state instead of infinite spinner** - New error UI with "Try Again" button
+3. **Minimal logging around state transitions** - Added console logs for key state changes
+
+---
+
 ## Final Status: COMPLETE
 
-All requirements have been met:
+All requirements from auth-prompt.md have been met:
 
 1. **Authentication** - Both MS OAuth and email/password work correctly
 2. **Profile loading** - Single attempt with immediate fallback, no excessive retries
-3. **Automatic, fluid UI boot** - Cached profile prevents loading flash, clean loading state
-4. **Code quality** - Simplified, consistent, minimal logging
-5. **Documentation** - Created `docs/auth-flow.md` with complete flow documentation
+3. **Content loading** - 10-second timeout prevents infinite spinner
+4. **Error handling** - Clear error state with retry button when loading fails
+5. **Logging** - Minimal logging for profile fetch, content fetch, and UI state transitions
+6. **Documentation** - Updated debug notes and auth-flow.md
 
 ### Verification Results
 
 - Build: PASSES
-- Lint: PASSES (only pre-existing warnings in other files)
-- Console noise: ELIMINATED (no more timeout warnings in happy path)
-- Code: SIMPLIFIED (from ~250 lines to ~185 lines in fetchProfile/getSession)
+- Lint: PASSES (only pre-existing warnings)
+- Infinite spinner: FIXED (10s timeout + error state)
+- Logging: MINIMAL (only key state transitions)

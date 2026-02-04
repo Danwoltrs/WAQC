@@ -449,6 +449,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return existingFetch
     }
 
+    console.log('[Auth] Profile fetch started')
+    const fetchStartTime = Date.now()
+
     // Create a new fetch promise
     const fetchPromise = (async () => {
       try {
@@ -611,6 +614,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setNetworkError(true)
         }
       } finally {
+        const elapsed = Date.now() - fetchStartTime
+        console.log(`[Auth] Profile fetch ended (${elapsed}ms)`)
         setLoading(false)
       }
     })()

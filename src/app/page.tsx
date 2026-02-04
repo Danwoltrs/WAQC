@@ -30,6 +30,14 @@ function DashboardContent() {
   const { profile } = useAuth()
   const [samples, setSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Log when content loading state changes
+  useEffect(() => {
+    if (!loading) {
+      console.log('[UI] Dashboard content ready')
+    }
+  }, [loading])
   const [approvedFilter, setApprovedFilter] = useState('week')
   const [rejectedFilter, setRejectedFilter] = useState('week')
   const [totalUsers, setTotalUsers] = useState(0)
@@ -39,6 +47,7 @@ function DashboardContent() {
   const [hasCardsPrinted, setHasCardsPrinted] = useState(false)
 
   useEffect(() => {
+    console.log('[UI] Dashboard content fetch started')
     fetchSamples()
     fetchUserCount()
     checkCardsPrinted()
@@ -104,6 +113,13 @@ function DashboardContent() {
   }
 
   const fetchSamples = async () => {
+    // Timeout to prevent infinite loading - max 10 seconds for content fetch
+    const timeoutId = setTimeout(() => {
+      console.error('[UI] Dashboard content fetch timeout - forcing ready state')
+      setLoadError('Content load timed out. Please refresh.')
+      setLoading(false)
+    }, 10000)
+
     try {
       const { data, error } = await supabase
         .from('samples')
@@ -129,9 +145,12 @@ function DashboardContent() {
       }))
 
       setSamples(transformedSamples)
-    } catch (error) {
+      setLoadError(null) // Clear any previous error
+    } catch (error: any) {
       console.error('Error fetching samples:', error)
+      setLoadError(error?.message || 'Failed to load samples')
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
     }
   }
@@ -318,6 +337,27 @@ function DashboardContent() {
     return (
       <div className="p-6 flex items-center justify-center min-h-screen">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-screen gap-4">
+        <div className="text-center space-y-2">
+          <p className="text-lg font-semibold text-destructive">Failed to load dashboard</p>
+          <p className="text-sm text-muted-foreground">{loadError}</p>
+        </div>
+        <button
+          onClick={() => {
+            setLoadError(null)
+            setLoading(true)
+            fetchSamples()
+          }}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+        >
+          Try Again
+        </button>
       </div>
     )
   }
@@ -921,6 +961,19 @@ function QCAccessMessage() {
 
 export default function Home() {
   const { user, profile, loading } = useAuth()
+
+  // Log UI state transitions
+  useEffect(() => {
+    if (loading) {
+      console.log('[UI] Home: loading state')
+    } else if (!user) {
+      console.log('[UI] Home: showing login')
+    } else if (profile && !profile.qc_enabled) {
+      console.log('[UI] Home: showing QC access message')
+    } else {
+      console.log('[UI] Home: showing dashboard')
+    }
+  }, [loading, user, profile])
 
   if (loading) {
     return (
