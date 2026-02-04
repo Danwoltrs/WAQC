@@ -7,13 +7,13 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+// Tabs removed - using clean vertical layout
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   ArrowLeft, CheckCircle, XCircle, Clock, AlertCircle, MapPin,
-  Calendar, Package, FileText, Activity, Download, Printer,
+  Calendar, FileText, Download, Printer,
   QrCode, Edit, Trash2, User, Building2, Award, Loader2, Eye, Mail,
   Save, X, Lock, Coffee, Beaker
 } from 'lucide-react'
@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Checkbox } from '@/components/ui/checkbox'
-import Link from 'next/link'
+// Link removed - not used
 import { useAuth } from '@/components/providers/auth-provider'
 
 interface EditPermission {
@@ -117,32 +117,13 @@ interface Sample {
   certificate_created_at?: string | null
 }
 
-interface QualityAssessment {
-  id: string
-  sample_id: string
-  assessment_type: string
-  status: string
-  total_score?: number
-  notes?: string
-  created_at: string
-  updated_at?: string
-}
-
+// Interfaces for Certificate (still used for setting state)
 interface Certificate {
   id: string
   sample_id: string
   certificate_number: string
   status: string
   issued_date?: string
-  created_at: string
-}
-
-interface ActivityLog {
-  id: string
-  sample_id: string
-  activity_type: string
-  description: string
-  user_name?: string
   created_at: string
 }
 
@@ -166,9 +147,7 @@ export default function SampleDetailPage() {
   const router = useRouter()
   const { profile } = useAuth()
   const [sample, setSample] = useState<Sample | null>(null)
-  const [assessments, setAssessments] = useState<QualityAssessment[]>([])
   const [certificates, setCertificates] = useState<Certificate[]>([])
-  const [activityLog, setActivityLog] = useState<ActivityLog[]>([])
   const [loading, setLoading] = useState(true)
   const [deleting, setDeleting] = useState(false)
   const [generatingCertificate, setGeneratingCertificate] = useState(false)
@@ -378,16 +357,6 @@ export default function SampleDetailPage() {
       } else {
         console.error('Failed to load sample:', sampleData.error)
       }
-
-      // Load quality assessments
-      const assessmentsRes = await fetch(`/api/quality-assessments?sample_id=${params.id}`)
-      const assessmentsData = await assessmentsRes.json()
-      if (assessmentsRes.ok && assessmentsData.assessments) {
-        setAssessments(assessmentsData.assessments)
-      }
-
-      // TODO: Load activity log when endpoint is available
-      // const activityRes = await fetch(`/api/activity-log?sample_id=${params.id}`)
 
     } catch (error) {
       console.error('Error loading sample details:', error)
@@ -779,50 +748,6 @@ export default function SampleDetailPage() {
     )
   }
 
-  const getWorkflowTimeline = () => {
-    const stages = [
-      { key: 'received', label: 'Received', icon: CheckCircle },
-      { key: 'analysis', label: 'Analysis', icon: Package },
-      { key: 'review', label: 'Review', icon: Activity },
-      { key: 'certified', label: 'Certified', icon: FileText },
-      { key: 'rejected', label: 'Rejected', icon: XCircle }
-    ]
-
-    const currentStageIndex = stages.findIndex(s => s.key === sample?.workflow_stage)
-
-    return (
-      <div className="space-y-4">
-        {stages.map((stage, index) => {
-          const Icon = stage.icon
-          const isCompleted = index < currentStageIndex
-          const isCurrent = index === currentStageIndex
-          const isPending = index > currentStageIndex
-
-          return (
-            <div key={stage.key} className="flex items-center gap-4">
-              <div className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                isCompleted ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' :
-                isCurrent ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' :
-                'bg-gray-100 text-gray-400 dark:bg-gray-800 dark:text-gray-600'
-              }`}>
-                <Icon className="h-5 w-5" />
-              </div>
-              <div className="flex-1">
-                <div className="font-medium">{stage.label}</div>
-                {isCurrent && (
-                  <div className="text-xs text-muted-foreground">In progress</div>
-                )}
-                {isCompleted && (
-                  <div className="text-xs text-green-600 dark:text-green-400">Completed</div>
-                )}
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    )
-  }
-
   if (loading) {
     return (
       <MainLayout>
@@ -857,548 +782,400 @@ export default function SampleDetailPage() {
   return (
     <MainLayout>
       <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" size="sm" onClick={() => router.push('/samples')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold tracking-tight">{parseTrackingNumber(sample.tracking_number)}</h1>
-              <p className="text-muted-foreground">
-                {sample.origin} {sample.quality_name && `• ${sample.quality_name}`}
-              </p>
+        {/* Header - Clean and Simple */}
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="sm" onClick={() => router.push('/samples')}>
+            <ArrowLeft className="h-4 w-4 mr-2" />
+            Back
+          </Button>
+          <div className="flex-1">
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl font-bold tracking-tight">{parseTrackingNumber(sample.tracking_number)}</h1>
+              {getStatusBadge(sample.status)}
             </div>
+            <p className="text-sm text-muted-foreground">
+              {sample.origin} {sample.quality_name && `• ${sample.quality_name}`} • Created {new Date(sample.created_at).toLocaleDateString()}
+            </p>
           </div>
-          <div className="flex gap-2">
-            {isEditMode ? (
-              // Edit mode: Show Save and Cancel buttons
-              <>
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={handleSaveChanges}
-                  disabled={saving}
-                >
-                  {saving ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+        </div>
+
+        {/* Main Content - Clean Vertical Layout */}
+        <div className="space-y-6 max-w-4xl">
+
+          {/* 1. STORAGE POSITION - Always editable */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Storage Position</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center gap-3">
+                <MapPin className="h-4 w-4 text-muted-foreground" />
+                <Input
+                  value={isEditMode ? (formData.storage_position || '') : (sample.storage_position || '')}
+                  onChange={(e) => handleFormChange('storage_position', e.target.value)}
+                  className="max-w-xs h-9"
+                  placeholder="e.g., A1-B2"
+                  disabled={!isEditMode}
+                />
+                {!isEditMode && !sample.storage_position && (
+                  <span className="text-sm text-muted-foreground">Not assigned</span>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 2. SAMPLE INFO */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                Sample Info
+                {isEditMode && <Badge variant="outline" className="text-xs">Editing</Badge>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {/* Basic sample info */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm text-muted-foreground">Origin</label>
+                  <div className="text-sm font-medium mt-1">{sample.origin}</div>
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Quality</label>
+                  <div className="text-sm font-medium mt-1">{sample.quality_name || '-'}</div>
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Processing</label>
+                  {isEditMode ? (
+                    <Input
+                      value={formData.processing_method || ''}
+                      onChange={(e) => handleFormChange('processing_method', e.target.value)}
+                      className="h-8 text-sm mt-1"
+                      placeholder="e.g., Washed, Natural"
+                    />
                   ) : (
-                    <Save className="h-4 w-4 mr-2" />
+                    <div className="text-sm font-medium mt-1">{sample.processing_method || '-'}</div>
                   )}
-                  {saving ? 'Saving...' : 'Save Changes'}
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleCancelEdit}
-                  disabled={saving}
-                >
-                  <X className="h-4 w-4 mr-2" />
-                  Cancel
-                </Button>
-              </>
-            ) : (
-              // View mode: Show all action buttons
-              <>
-                <Button variant="outline" size="sm" onClick={handleExport}>
-                  <Download className="h-4 w-4 mr-2" />
-                  Export
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handlePrintLabel}
-                  disabled={printingLabel}
-                >
-                  {printingLabel ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">Bag Type</label>
+                  {isEditMode ? (
+                    <Select
+                      value={formData.bag_type || sample.bag_type || ''}
+                      onValueChange={(v) => handleFormChange('bag_type', v)}
+                    >
+                      <SelectTrigger className="h-8 text-sm mt-1">
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="jute">Jute</SelectItem>
+                        <SelectItem value="grainpro">GrainPro</SelectItem>
+                        <SelectItem value="bulk">Bulk</SelectItem>
+                        <SelectItem value="other">Other</SelectItem>
+                      </SelectContent>
+                    </Select>
                   ) : (
-                    <Printer className="h-4 w-4 mr-2" />
+                    <div className="text-sm font-medium mt-1">{sample.bag_type || '-'}</div>
                   )}
-                  Print Label
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={handleShowQrCode}
-                >
-                  <QrCode className="h-4 w-4 mr-2" />
-                  QR Code
-                </Button>
-                {/* Certificate buttons based on certificate existence */}
+                </div>
+              </div>
+
+              {/* Bags quantity row */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-sm text-muted-foreground">Bags:</span>
+                {isEditMode ? (
+                  <Input
+                    type="number"
+                    value={formData.bag_count || ''}
+                    onChange={(e) => handleFormChange('bag_count', e.target.value ? parseInt(e.target.value) : null)}
+                    className="h-8 w-24 text-sm"
+                    placeholder="Count"
+                  />
+                ) : (
+                  <span className="text-sm font-medium">{sample.bag_count || sample.bags || '-'}</span>
+                )}
+                <span className="text-sm text-muted-foreground">x</span>
+                {isEditMode ? (
+                  <Input
+                    type="number"
+                    value={formData.bag_weight_kg || ''}
+                    onChange={(e) => handleFormChange('bag_weight_kg', e.target.value ? parseFloat(e.target.value) : null)}
+                    className="h-8 w-24 text-sm"
+                    placeholder="kg"
+                  />
+                ) : (
+                  <span className="text-sm font-medium">{sample.bag_weight_kg || 60}</span>
+                )}
+                <span className="text-sm text-muted-foreground">kg</span>
+                {(sample.bags_quantity_mt || sample.equivalent_60kg_bags) && (
+                  <span className="text-sm text-muted-foreground ml-2">
+                    ({sample.bags_quantity_mt ? `${sample.bags_quantity_mt} MT` : `${Math.round(sample.equivalent_60kg_bags || 0)} x 60kg`})
+                  </span>
+                )}
+              </div>
+
+              <Separator />
+
+              {/* Container / ICO info below the line */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="text-sm text-muted-foreground">Container</label>
+                  {isEditMode ? (
+                    <Input
+                      value={formData.container_nr || ''}
+                      onChange={(e) => handleFormChange('container_nr', e.target.value)}
+                      className="h-8 text-sm font-mono mt-1"
+                      placeholder="Container #"
+                    />
+                  ) : (
+                    <div className="text-sm font-medium font-mono mt-1">{sample.container_nr || '-'}</div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">ICO #</label>
+                  {isEditMode ? (
+                    <Input
+                      value={formData.ico_number || ''}
+                      onChange={(e) => handleFormChange('ico_number', e.target.value)}
+                      className="h-8 text-sm font-mono mt-1"
+                      placeholder="ICO #"
+                    />
+                  ) : (
+                    <div className="text-sm font-medium font-mono mt-1">{sample.ico_number || '-'}</div>
+                  )}
+                </div>
+                <div>
+                  <label className="text-sm text-muted-foreground">ICO Marks</label>
+                  <div className="text-sm font-medium font-mono mt-1">{sample.ico_marks || '-'}</div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* 3. SUPPLY CHAIN + CERTIFICATE STATUS (side by side on larger screens) */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Supply Chain Table - spans 2 cols */}
+            <Card className="lg:col-span-2">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  Supply Chain
+                  {isEditMode && <Badge variant="outline" className="text-xs">Editing</Badge>}
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-muted/50">
+                        <th className="text-left py-2 px-3 font-medium">Party</th>
+                        <th className="text-left py-2 px-3 font-medium">Contract #</th>
+                        <th className="text-left py-2 px-3 font-medium">Ref</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Wolthers */}
+                      <tr className="border-b">
+                        <td className="py-2 px-3 text-muted-foreground">Wolthers</td>
+                        <td className="py-2 px-3">
+                          {isEditMode ? (
+                            <Input
+                              value={formData.wolthers_contract_nr || ''}
+                              onChange={(e) => handleFormChange('wolthers_contract_nr', e.target.value)}
+                              className="h-7 text-sm font-mono"
+                              placeholder="Contract #"
+                            />
+                          ) : (
+                            <span className="font-mono">{sample.wolthers_contract_nr || '-'}</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 font-mono text-muted-foreground">-</td>
+                      </tr>
+                      {/* Exporter */}
+                      <tr className="border-b">
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span>{sample.exporter_name || sample.supplier || 'Exporter'}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3">
+                          {isEditMode ? (
+                            <Input
+                              value={formData.exporter_contract_nr || ''}
+                              onChange={(e) => handleFormChange('exporter_contract_nr', e.target.value)}
+                              className="h-7 text-sm font-mono"
+                              placeholder="Contract #"
+                            />
+                          ) : (
+                            <span className="font-mono">{sample.exporter_contract_nr || '-'}</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 font-mono text-muted-foreground">-</td>
+                      </tr>
+                      {/* Importer */}
+                      <tr className="border-b">
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span>{sample.importer_name || sample.buyer || 'Importer'}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3">
+                          {isEditMode ? (
+                            <Input
+                              value={formData.buyer_contract_nr || ''}
+                              onChange={(e) => handleFormChange('buyer_contract_nr', e.target.value)}
+                              className="h-7 text-sm font-mono"
+                              placeholder="Contract #"
+                            />
+                          ) : (
+                            <span className="font-mono">{sample.buyer_contract_nr || '-'}</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 font-mono text-muted-foreground">-</td>
+                      </tr>
+                      {/* Roaster */}
+                      <tr>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span>{sample.roaster_name || 'Roaster'}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3">
+                          {isEditMode ? (
+                            <Input
+                              value={formData.roaster_contract_nr || ''}
+                              onChange={(e) => handleFormChange('roaster_contract_nr', e.target.value)}
+                              className="h-7 text-sm font-mono"
+                              placeholder="Contract #"
+                            />
+                          ) : (
+                            <span className="font-mono">{sample.roaster_contract_nr || '-'}</span>
+                          )}
+                        </td>
+                        <td className="py-2 px-3 font-mono text-muted-foreground">-</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Certificate Status - 1 col */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base">Certificate Status</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
                 {sample.certificate_id ? (
-                  // Sample HAS certificate - show View and Download buttons, hide Generate
                   <>
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={handleViewCertificate}
-                      disabled={previewLoading}
-                    >
-                      {previewLoading ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Eye className="h-4 w-4 mr-2" />
-                      )}
-                      View Certificate
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={handleDownloadCertificate}
-                      disabled={downloadingCertificate}
-                    >
-                      {downloadingCertificate ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Download className="h-4 w-4 mr-2" />
-                      )}
-                      Download
-                    </Button>
+                    <Badge variant="default" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                      <CheckCircle className="h-3 w-3 mr-1" />
+                      Certified
+                    </Badge>
+                    <div className="space-y-2">
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="w-full"
+                        onClick={handleViewCertificate}
+                        disabled={previewLoading}
+                      >
+                        {previewLoading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Eye className="h-4 w-4 mr-2" />
+                        )}
+                        View Certificate
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={handleDownloadCertificate}
+                        disabled={downloadingCertificate}
+                      >
+                        {downloadingCertificate ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4 mr-2" />
+                        )}
+                        Download PDF
+                      </Button>
+                    </div>
+                    {sample.certificate_created_at && (
+                      <p className="text-xs text-muted-foreground">
+                        Certified: {new Date(sample.certificate_created_at).toLocaleDateString()}
+                      </p>
+                    )}
                   </>
                 ) : (
-                  // Sample has NO certificate - show Generate button if eligible
-                  (sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review') && (
-                    <Button
-                      variant="default"
-                      size="sm"
-                      onClick={handleGenerateCertificate}
-                      disabled={generatingCertificate}
-                    >
-                      {generatingCertificate ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Award className="h-4 w-4 mr-2" />
-                      )}
-                      Generate Certificate
-                    </Button>
-                  )
+                  <>
+                    <Badge variant="secondary">
+                      <Clock className="h-3 w-3 mr-1" />
+                      Pending
+                    </Badge>
+                    {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review') && (
+                      <Button
+                        variant="default"
+                        size="sm"
+                        className="w-full"
+                        onClick={handleGenerateCertificate}
+                        disabled={generatingCertificate}
+                      >
+                        {generatingCertificate ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Award className="h-4 w-4 mr-2" />
+                        )}
+                        Generate
+                      </Button>
+                    )}
+                    <p className="text-xs text-muted-foreground">
+                      Stage: {sample.workflow_stage || 'received'}
+                    </p>
+                  </>
                 )}
-                <Button variant="outline" size="sm" onClick={handleEnterEditMode}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
-                {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={handleDelete}
-                    disabled={deleting}
-                  >
-                    <Trash2 className="h-4 w-4 mr-2" />
-                    {deleting ? 'Deleting...' : 'Delete'}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 4. CUPPING & GRADING (with 7-day edit lock) */}
+          <Card className={!canEditCuppingGrading && sample.certificate_id ? 'border-muted' : ''}>
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Coffee className="h-4 w-4" />
+                  Cupping & Grading
+                  {!canEditCuppingGrading && sample.certificate_id && (
+                    <Lock className="h-4 w-4 text-muted-foreground" />
+                  )}
+                  {editPermission?.reason === 'within_7_days' && (
+                    <Badge variant="outline" className="text-xs">7-day edit window</Badge>
+                  )}
+                </CardTitle>
+                {canEditCuppingGrading && !isEditingCuppingGrading && (
+                  <Button variant="outline" size="sm" onClick={handleEnterCuppingGradingEdit}>
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
                   </Button>
                 )}
-              </>
-            )}
-          </div>
-        </div>
-
-        {/* Status and Key Info */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <Card>
-            <CardHeader className="pb-3">
-              <CardDescription>Status</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {getStatusBadge(sample.status)}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardDescription>Sample Type</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="text-sm font-medium uppercase">{sample.sample_type || '-'}</div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardDescription>Storage Position</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isEditMode ? (
-                <Input
-                  value={formData.storage_position || ''}
-                  onChange={(e) => handleFormChange('storage_position', e.target.value)}
-                  className="h-7 text-sm"
-                  placeholder="e.g., A1-B2"
-                />
-              ) : (
-                <div className="flex items-center gap-1 text-sm font-medium">
-                  <MapPin className="h-4 w-4" />
-                  {sample.storage_position || 'Not assigned'}
-                </div>
+              </div>
+              {!canEditCuppingGrading && sample.certificate_id && (
+                <CardDescription className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+                  <Lock className="h-3 w-3" />
+                  {editPermission?.message || 'Locked after 7 days from certification'}
+                </CardDescription>
               )}
-            </CardContent>
-          </Card>
-          <Card>
-            <CardHeader className="pb-3">
-              <CardDescription>Created</CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="flex items-center gap-1 text-sm font-medium">
-                <Calendar className="h-4 w-4" />
-                {new Date(sample.created_at).toLocaleDateString()}
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Main Content */}
-        <Tabs defaultValue="details" className="space-y-4">
-          <TabsList>
-            <TabsTrigger value="details">Details</TabsTrigger>
-            <TabsTrigger value="cupping-grading">Cupping & Grading</TabsTrigger>
-            <TabsTrigger value="timeline">Timeline</TabsTrigger>
-            <TabsTrigger value="assessments">Assessments ({assessments.length})</TabsTrigger>
-            <TabsTrigger value="certificates">Certificates ({sample.certificate_id ? 1 : 0})</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="details" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Sample Information */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Sample Information {isEditMode && <Badge variant="outline" className="ml-2">Editing</Badge>}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="text-sm text-muted-foreground">Origin:</div>
-                    <div className="text-sm font-medium">{sample.origin}</div>
-
-                    <div className="text-sm text-muted-foreground">Quality:</div>
-                    <div className="text-sm font-medium">{sample.quality_name || '-'}</div>
-
-                    <div className="text-sm text-muted-foreground">Processing:</div>
-                    {isEditMode ? (
-                      <Input
-                        value={formData.processing_method || ''}
-                        onChange={(e) => handleFormChange('processing_method', e.target.value)}
-                        className="h-7 text-sm"
-                        placeholder="e.g., Washed, Natural"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium">{sample.processing_method || '-'}</div>
-                    )}
-
-                    {/* For bulk: bag_count is the equivalent 60kg bags, calculate MT from that */}
-                    {(isEditMode ? formData.bag_type?.toLowerCase() : sample.bag_type?.toLowerCase()) === 'bulk' ? (
-                      <>
-                        <div className="text-sm text-muted-foreground">Bag Type:</div>
-                        {isEditMode ? (
-                          <Select
-                            value={formData.bag_type || 'bulk'}
-                            onValueChange={(v) => handleFormChange('bag_type', v)}
-                          >
-                            <SelectTrigger className="h-7 text-sm">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="bulk">Bulk</SelectItem>
-                              <SelectItem value="jute">Jute</SelectItem>
-                              <SelectItem value="grainpro">GrainPro</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <div className="text-sm font-medium">Bulk</div>
-                        )}
-
-                        <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
-                        {isEditMode ? (
-                          <Input
-                            type="number"
-                            value={formData.bag_count || ''}
-                            onChange={(e) => handleFormChange('bag_count', e.target.value ? parseInt(e.target.value) : null)}
-                            className="h-7 text-sm"
-                            placeholder="Bags"
-                          />
-                        ) : (
-                          <div className="text-sm font-medium">
-                            {sample.bag_count
-                              ? `${sample.bag_count.toLocaleString()} bags`
-                              : '-'}
-                          </div>
-                        )}
-
-                        <div className="text-sm text-muted-foreground">Total:</div>
-                        <div className="text-sm font-medium">
-                          {(isEditMode ? formData.bag_count : sample.bag_count)
-                            ? `${(((isEditMode ? formData.bag_count : sample.bag_count) as number * 60) / 1000).toFixed(1)} MT`
-                            : '-'}
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="text-sm text-muted-foreground">Quantity (bags):</div>
-                        {isEditMode ? (
-                          <Input
-                            type="number"
-                            value={formData.bag_count || ''}
-                            onChange={(e) => handleFormChange('bag_count', e.target.value ? parseInt(e.target.value) : null)}
-                            className="h-7 text-sm"
-                            placeholder="Number of bags"
-                          />
-                        ) : (
-                          <div className="text-sm font-medium">{sample.bag_count || sample.bags || '-'}</div>
-                        )}
-
-                        <div className="text-sm text-muted-foreground">Bag Type:</div>
-                        {isEditMode ? (
-                          <Select
-                            value={formData.bag_type || ''}
-                            onValueChange={(v) => handleFormChange('bag_type', v)}
-                          >
-                            <SelectTrigger className="h-7 text-sm">
-                              <SelectValue placeholder="Select..." />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="jute">Jute</SelectItem>
-                              <SelectItem value="grainpro">GrainPro</SelectItem>
-                              <SelectItem value="bulk">Bulk</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <div className="text-sm font-medium">{sample.bag_type || '-'}</div>
-                        )}
-
-                        <div className="text-sm text-muted-foreground">Per-bag Weight:</div>
-                        {isEditMode ? (
-                          <Input
-                            type="number"
-                            value={formData.bag_weight_kg || ''}
-                            onChange={(e) => handleFormChange('bag_weight_kg', e.target.value ? parseFloat(e.target.value) : null)}
-                            className="h-7 text-sm"
-                            placeholder="kg"
-                          />
-                        ) : (
-                          <div className="text-sm font-medium">
-                            {sample.bag_weight_kg ? `${sample.bag_weight_kg.toLocaleString()} kg` : '-'}
-                          </div>
-                        )}
-
-                        <div className="text-sm text-muted-foreground">Total:</div>
-                        <div className="text-sm font-medium">
-                          {(isEditMode ? formData.bags_quantity_mt : sample.bags_quantity_mt)
-                            ? `${isEditMode ? formData.bags_quantity_mt : sample.bags_quantity_mt} MT`
-                            : '-'}
-                        </div>
-
-                        <div className="text-sm text-muted-foreground">60kg Equivalent:</div>
-                        <div className="text-sm font-medium">
-                          {sample.equivalent_60kg_bags
-                            ? `${Math.round(sample.equivalent_60kg_bags).toLocaleString()} bags`
-                            : sample.bags_quantity_mt
-                              ? `${Math.round((sample.bags_quantity_mt * 1000) / 60).toLocaleString()} bags`
-                              : '-'}
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Supply Chain */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Supply Chain</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-3">
-                    <div>
-                      <div className="text-sm text-muted-foreground mb-1">Exporter / Supplier</div>
-                      <div className="text-sm font-medium flex items-center gap-2">
-                        <Building2 className="h-4 w-4" />
-                        {sample.exporter_name || sample.supplier || '-'}
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div>
-                      <div className="text-sm text-muted-foreground mb-1">Importer</div>
-                      <div className="text-sm font-medium flex items-center gap-2">
-                        <Building2 className="h-4 w-4" />
-                        {sample.importer_name || sample.buyer || '-'}
-                      </div>
-                    </div>
-
-                    <Separator />
-
-                    <div>
-                      <div className="text-sm text-muted-foreground mb-1">Roaster / Buyer</div>
-                      <div className="text-sm font-medium flex items-center gap-2">
-                        <Building2 className="h-4 w-4" />
-                        {sample.roaster_name || '-'}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Contract Numbers */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Contract Numbers {isEditMode && <Badge variant="outline" className="ml-2">Editing</Badge>}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="text-sm text-muted-foreground">Wolthers Contract:</div>
-                    {isEditMode ? (
-                      <Input
-                        value={formData.wolthers_contract_nr || ''}
-                        onChange={(e) => handleFormChange('wolthers_contract_nr', e.target.value)}
-                        className="h-7 text-sm font-mono"
-                        placeholder="Contract #"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium font-mono">{sample.wolthers_contract_nr || '-'}</div>
-                    )}
-
-                    <div className="text-sm text-muted-foreground">Exporter Contract:</div>
-                    {isEditMode ? (
-                      <Input
-                        value={formData.exporter_contract_nr || ''}
-                        onChange={(e) => handleFormChange('exporter_contract_nr', e.target.value)}
-                        className="h-7 text-sm font-mono"
-                        placeholder="Contract #"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium font-mono">{sample.exporter_contract_nr || '-'}</div>
-                    )}
-
-                    <div className="text-sm text-muted-foreground">Importer Contract:</div>
-                    {isEditMode ? (
-                      <Input
-                        value={formData.buyer_contract_nr || ''}
-                        onChange={(e) => handleFormChange('buyer_contract_nr', e.target.value)}
-                        className="h-7 text-sm font-mono"
-                        placeholder="Contract #"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium font-mono">{sample.buyer_contract_nr || '-'}</div>
-                    )}
-
-                    <div className="text-sm text-muted-foreground">Roaster Contract:</div>
-                    {isEditMode ? (
-                      <Input
-                        value={formData.roaster_contract_nr || ''}
-                        onChange={(e) => handleFormChange('roaster_contract_nr', e.target.value)}
-                        className="h-7 text-sm font-mono"
-                        placeholder="Contract #"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium font-mono">{sample.roaster_contract_nr || '-'}</div>
-                    )}
-
-                    <div className="text-sm text-muted-foreground">ICO Number:</div>
-                    {isEditMode ? (
-                      <Input
-                        value={formData.ico_number || ''}
-                        onChange={(e) => handleFormChange('ico_number', e.target.value)}
-                        className="h-7 text-sm font-mono"
-                        placeholder="ICO #"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium font-mono">{sample.ico_number || '-'}</div>
-                    )}
-
-                    <div className="text-sm text-muted-foreground">ICO Marks:</div>
-                    <div className="text-sm font-medium font-mono">{sample.ico_marks || '-'}</div>
-
-                    <div className="text-sm text-muted-foreground">Container Nr:</div>
-                    {isEditMode ? (
-                      <Input
-                        value={formData.container_nr || ''}
-                        onChange={(e) => handleFormChange('container_nr', e.target.value)}
-                        className="h-7 text-sm font-mono"
-                        placeholder="Container #"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium font-mono">{sample.container_nr || '-'}</div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Additional Info */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Additional Information {isEditMode && <Badge variant="outline" className="ml-2">Editing</Badge>}</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="grid grid-cols-2 gap-2">
-                    <div className="text-sm text-muted-foreground">Workflow Stage:</div>
-                    <div className="text-sm font-medium">{sample.workflow_stage || '-'}</div>
-
-                    <div className="text-sm text-muted-foreground">Storage Position:</div>
-                    {isEditMode ? (
-                      <Input
-                        value={formData.storage_position || ''}
-                        onChange={(e) => handleFormChange('storage_position', e.target.value)}
-                        className="h-7 text-sm"
-                        placeholder="e.g., A1-B2"
-                      />
-                    ) : (
-                      <div className="text-sm font-medium">{sample.storage_position || '-'}</div>
-                    )}
-
-                    <div className="text-sm text-muted-foreground">Assigned To:</div>
-                    <div className="text-sm font-medium">
-                      {sample.assigned_to ? (
-                        <div className="flex items-center gap-1">
-                          <User className="h-3 w-3" />
-                          {sample.assigned_to}
-                        </div>
-                      ) : '-'}
-                    </div>
-
-                    <div className="text-sm text-muted-foreground">Last Updated:</div>
-                    <div className="text-sm font-medium">
-                      {sample.updated_at ? new Date(sample.updated_at).toLocaleString() : '-'}
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          {/* Cupping & Grading Tab */}
-          <TabsContent value="cupping-grading" className="space-y-4">
-            {/* Lock Status Banner */}
-            {editPermission && !canEditCuppingGrading && sample.certificate_id && (
-              <div className="bg-muted/50 border rounded-lg p-4 flex items-center gap-3">
-                <Lock className="h-5 w-5 text-muted-foreground" />
-                <div>
-                  <p className="text-sm font-medium">Editing Locked</p>
-                  <p className="text-xs text-muted-foreground">{editPermission.message}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Edit Controls */}
-            {canEditCuppingGrading && !isEditingCuppingGrading && (
-              <div className="flex justify-end">
-                <Button variant="outline" size="sm" onClick={handleEnterCuppingGradingEdit}>
-                  <Edit className="h-4 w-4 mr-2" />
-                  Edit Cupping & Grading
-                </Button>
-              </div>
-            )}
-
-            {isEditingCuppingGrading && (
-              <Card className="border-primary">
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
+            <CardContent className="space-y-6">
+              {/* Edit Mode Audit Fields */}
+              {isEditingCuppingGrading && (
+                <div className="bg-muted/50 border rounded-lg p-4 space-y-3">
+                  <div className="flex items-center gap-2 text-sm font-medium">
                     <Edit className="h-4 w-4" />
-                    Edit Mode - Audit Trail Required
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
+                    Audit Trail Required
+                  </div>
                   <div>
                     <label className="text-sm font-medium">Reason for Edit *</label>
                     <Textarea
@@ -1411,14 +1188,10 @@ export default function SampleDetailPage() {
                     <p className="text-xs text-muted-foreground mt-1">{editReason.length}/500 characters</p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium">Edited by</label>
-                    <Input
-                      value={profile?.email || profile?.full_name || 'Unknown'}
-                      disabled
-                      className="mt-1 bg-muted"
-                    />
+                    <label className="text-sm text-muted-foreground">Edited by:</label>
+                    <span className="text-sm ml-2">{profile?.email || profile?.full_name || 'Unknown'}</span>
                   </div>
-                  <div className="flex gap-2 justify-end">
+                  <div className="flex gap-2 justify-end pt-2">
                     <Button variant="outline" size="sm" onClick={handleCancelCuppingGradingEdit} disabled={savingCuppingGrading}>
                       <X className="h-4 w-4 mr-2" />
                       Cancel
@@ -1433,378 +1206,237 @@ export default function SampleDetailPage() {
                       Save Changes
                     </Button>
                   </div>
-                </CardContent>
-              </Card>
-            )}
+                </div>
+              )}
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Cupping Scores Card */}
-              <Card className={!canEditCuppingGrading && sample.certificate_id ? 'opacity-75' : ''}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Coffee className="h-5 w-5" />
-                    Cupping Scores
-                    {!canEditCuppingGrading && sample.certificate_id && (
-                      <Lock className="h-4 w-4 text-muted-foreground" />
+              {/* Cupping Scores Grid */}
+              {cuppingScores ? (
+                <div>
+                  <h4 className="text-sm font-medium mb-3">Cupping Scores</h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                    {[
+                      ['fragrance_aroma', 'Fragrance'],
+                      ['flavor', 'Flavor'],
+                      ['aftertaste', 'Aftertaste'],
+                      ['acidity', 'Acidity'],
+                      ['body', 'Body'],
+                      ['balance', 'Balance'],
+                      ['uniformity', 'Uniformity'],
+                      ['clean_cup', 'Clean Cup'],
+                      ['sweetness', 'Sweetness'],
+                      ['overall', 'Overall']
+                    ].map(([key, label]) => (
+                      <div key={key} className="text-center p-2 bg-muted/30 rounded-lg">
+                        <div className="text-xs text-muted-foreground mb-1">{label}</div>
+                        {isEditingCuppingGrading ? (
+                          <Input
+                            type="number"
+                            step="0.25"
+                            min="0"
+                            max="10"
+                            value={cuppingGradingFormData.cupping?.[key as keyof CuppingScores] || ''}
+                            onChange={(e) => setCuppingGradingFormData(prev => ({
+                              ...prev,
+                              cupping: { ...prev.cupping, [key]: parseFloat(e.target.value) || 0 }
+                            }))}
+                            className="h-7 text-sm text-center"
+                          />
+                        ) : (
+                          <div className={`text-lg font-semibold ${!canEditCuppingGrading && sample.certificate_id ? 'text-muted-foreground' : ''}`}>
+                            {cuppingScores[key as keyof CuppingScores]?.toFixed(1) || '-'}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">No cupping scores available</p>
+              )}
+
+              {/* Grading Data */}
+              {gradingData?.green_bean_data && (
+                <>
+                  <Separator />
+                  <div>
+                    <h4 className="text-sm font-medium mb-3 flex items-center gap-2">
+                      <Beaker className="h-4 w-4" />
+                      Grading Data
+                    </h4>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      <div>
+                        <div className="text-xs text-muted-foreground">Moisture</div>
+                        {isEditingCuppingGrading ? (
+                          <Input
+                            type="number"
+                            step="0.1"
+                            value={cuppingGradingFormData.grading?.green_bean_data?.moisture || ''}
+                            onChange={(e) => setCuppingGradingFormData(prev => ({
+                              ...prev,
+                              grading: {
+                                ...prev.grading,
+                                green_bean_data: {
+                                  ...prev.grading?.green_bean_data,
+                                  moisture: parseFloat(e.target.value) || 0
+                                }
+                              }
+                            }))}
+                            className="h-7 text-sm mt-1"
+                          />
+                        ) : (
+                          <div className={`text-sm font-medium ${!canEditCuppingGrading && sample.certificate_id ? 'text-muted-foreground' : ''}`}>
+                            {gradingData.green_bean_data.moisture ? `${gradingData.green_bean_data.moisture}%` : '-'}
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <div className="text-xs text-muted-foreground">Density</div>
+                        {isEditingCuppingGrading ? (
+                          <Input
+                            type="number"
+                            step="0.01"
+                            value={cuppingGradingFormData.grading?.green_bean_data?.density || ''}
+                            onChange={(e) => setCuppingGradingFormData(prev => ({
+                              ...prev,
+                              grading: {
+                                ...prev.grading,
+                                green_bean_data: {
+                                  ...prev.grading?.green_bean_data,
+                                  density: parseFloat(e.target.value) || 0
+                                }
+                              }
+                            }))}
+                            className="h-7 text-sm mt-1"
+                          />
+                        ) : (
+                          <div className={`text-sm font-medium ${!canEditCuppingGrading && sample.certificate_id ? 'text-muted-foreground' : ''}`}>
+                            {gradingData.green_bean_data.density || '-'}
+                          </div>
+                        )}
+                      </div>
+                      {gradingData.green_bean_data.aspect && (
+                        <div>
+                          <div className="text-xs text-muted-foreground">Aspect</div>
+                          <div className="text-sm font-medium">{gradingData.green_bean_data.aspect}</div>
+                        </div>
+                      )}
+                    </div>
+                    {gradingData.green_bean_data.defects && gradingData.green_bean_data.defects.length > 0 && (
+                      <div className="mt-3">
+                        <div className="text-xs text-muted-foreground mb-2">Defects</div>
+                        <div className="flex flex-wrap gap-2">
+                          {gradingData.green_bean_data.defects.map((defect, i) => (
+                            <Badge key={i} variant="outline" className="text-xs">
+                              {defect.name}: {defect.count}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
                     )}
-                  </CardTitle>
-                  <CardDescription>
-                    {canEditCuppingGrading
-                      ? 'Aggregated cupping scores from all cuppers'
-                      : 'Locked 7 days after certification'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {cuppingScores ? (
-                    <div className="grid grid-cols-2 gap-3">
-                      {[
-                        ['fragrance_aroma', 'Fragrance/Aroma'],
-                        ['flavor', 'Flavor'],
-                        ['aftertaste', 'Aftertaste'],
-                        ['acidity', 'Acidity'],
-                        ['body', 'Body'],
-                        ['balance', 'Balance'],
-                        ['uniformity', 'Uniformity'],
-                        ['clean_cup', 'Clean Cup'],
-                        ['sweetness', 'Sweetness'],
-                        ['overall', 'Overall']
-                      ].map(([key, label]) => (
-                        <div key={key} className="flex justify-between items-center py-1 border-b border-border/50">
-                          <span className="text-sm text-muted-foreground">{label}</span>
-                          {isEditingCuppingGrading ? (
-                            <Input
-                              type="number"
-                              step="0.25"
-                              min="0"
-                              max="10"
-                              value={cuppingGradingFormData.cupping?.[key as keyof CuppingScores] || ''}
-                              onChange={(e) => setCuppingGradingFormData(prev => ({
-                                ...prev,
-                                cupping: { ...prev.cupping, [key]: parseFloat(e.target.value) || 0 }
-                              }))}
-                              className="w-20 h-7 text-sm text-right"
-                            />
-                          ) : (
-                            <span className="text-sm font-medium">
-                              {cuppingScores[key as keyof CuppingScores]?.toFixed(2) || '-'}
-                            </span>
-                          )}
+                  </div>
+                </>
+              )}
+
+              {/* Edit History */}
+              {editHistory.length > 0 && (
+                <>
+                  <Separator />
+                  <div>
+                    <h4 className="text-sm font-medium mb-3">Edit History</h4>
+                    <div className="space-y-2">
+                      {editHistory.map((entry, i) => (
+                        <div key={i} className="text-xs border-l-2 border-border pl-3 py-1">
+                          <div className="flex justify-between">
+                            <span className="font-medium">{entry.edited_by}</span>
+                            <span className="text-muted-foreground">{new Date(entry.edited_at).toLocaleString()}</span>
+                          </div>
+                          <p className="text-muted-foreground">{entry.reason}</p>
                         </div>
                       ))}
                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">No cupping scores available</p>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Grading Data Card */}
-              <Card className={!canEditCuppingGrading && sample.certificate_id ? 'opacity-75' : ''}>
-                <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
-                    <Beaker className="h-5 w-5" />
-                    Grading Data
-                    {!canEditCuppingGrading && sample.certificate_id && (
-                      <Lock className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </CardTitle>
-                  <CardDescription>
-                    {canEditCuppingGrading
-                      ? 'Green bean and roast analysis data'
-                      : 'Locked 7 days after certification'}
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  {gradingData?.green_bean_data ? (
-                    <>
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Green Bean Analysis</h4>
-                        <div className="grid grid-cols-2 gap-2">
-                          <div className="flex justify-between items-center py-1 border-b border-border/50">
-                            <span className="text-sm text-muted-foreground">Moisture</span>
-                            {isEditingCuppingGrading ? (
-                              <Input
-                                type="number"
-                                step="0.1"
-                                value={cuppingGradingFormData.grading?.green_bean_data?.moisture || ''}
-                                onChange={(e) => setCuppingGradingFormData(prev => ({
-                                  ...prev,
-                                  grading: {
-                                    ...prev.grading,
-                                    green_bean_data: {
-                                      ...prev.grading?.green_bean_data,
-                                      moisture: parseFloat(e.target.value) || 0
-                                    }
-                                  }
-                                }))}
-                                className="w-20 h-7 text-sm text-right"
-                              />
-                            ) : (
-                              <span className="text-sm font-medium">
-                                {gradingData.green_bean_data.moisture ? `${gradingData.green_bean_data.moisture}%` : '-'}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex justify-between items-center py-1 border-b border-border/50">
-                            <span className="text-sm text-muted-foreground">Density</span>
-                            {isEditingCuppingGrading ? (
-                              <Input
-                                type="number"
-                                step="0.01"
-                                value={cuppingGradingFormData.grading?.green_bean_data?.density || ''}
-                                onChange={(e) => setCuppingGradingFormData(prev => ({
-                                  ...prev,
-                                  grading: {
-                                    ...prev.grading,
-                                    green_bean_data: {
-                                      ...prev.grading?.green_bean_data,
-                                      density: parseFloat(e.target.value) || 0
-                                    }
-                                  }
-                                }))}
-                                className="w-20 h-7 text-sm text-right"
-                              />
-                            ) : (
-                              <span className="text-sm font-medium">
-                                {gradingData.green_bean_data.density || '-'}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                      {gradingData.green_bean_data.defects && gradingData.green_bean_data.defects.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-medium mb-2">Defects</h4>
-                          <div className="space-y-1">
-                            {gradingData.green_bean_data.defects.map((defect, i) => (
-                              <div key={i} className="flex justify-between text-sm">
-                                <span className="text-muted-foreground">{defect.name}</span>
-                                <span className="font-medium">{defect.count}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <p className="text-sm text-muted-foreground text-center py-4">No grading data available</p>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-
-            {/* Edit History */}
-            {editHistory.length > 0 && (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base">Edit History</CardTitle>
-                  <CardDescription>Audit trail of changes to cupping and grading data</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-3">
-                    {editHistory.map((entry, i) => (
-                      <div key={i} className="border-l-2 border-border pl-4 py-2">
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-sm font-medium">{entry.edited_by}</p>
-                            <p className="text-xs text-muted-foreground">{entry.reason}</p>
-                          </div>
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(entry.edited_at).toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
-                    ))}
                   </div>
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
+                </>
+              )}
+            </CardContent>
+          </Card>
 
-          <TabsContent value="timeline" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Workflow Timeline</CardTitle>
-                <CardDescription>Track the progress of this sample through the quality control process</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {getWorkflowTimeline()}
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="assessments" className="space-y-4">
-            {assessments.length === 0 ? (
-              <Card>
-                <CardContent className="py-12 text-center">
-                  <Package className="h-12 w-12 mx-auto mb-4 text-muted-foreground" />
-                  <h3 className="text-lg font-semibold mb-2">No assessments yet</h3>
-                  <p className="text-muted-foreground">
-                    Quality assessments will appear here once they are completed
-                  </p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4">
-                {assessments.map((assessment) => (
-                  <Card key={assessment.id}>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <CardTitle className="text-lg">{assessment.assessment_type}</CardTitle>
-                        <Badge>{assessment.status}</Badge>
-                      </div>
-                      <CardDescription>
-                        {new Date(assessment.created_at).toLocaleString()}
-                      </CardDescription>
-                    </CardHeader>
-                    <CardContent>
-                      {assessment.total_score && (
-                        <div className="text-sm">
-                          <span className="text-muted-foreground">Score: </span>
-                          <span className="font-medium">{assessment.total_score}</span>
-                        </div>
-                      )}
-                      {assessment.notes && (
-                        <div className="mt-2 text-sm text-muted-foreground">
-                          {assessment.notes}
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
+          {/* 5. ADDITIONAL INFO (Notes, etc.) */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Additional Info</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <div className="text-xs text-muted-foreground">Workflow Stage</div>
+                  <div className="text-sm font-medium mt-1">{sample.workflow_stage || 'received'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Sample Type</div>
+                  <div className="text-sm font-medium mt-1 uppercase">{sample.sample_type || '-'}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Assigned To</div>
+                  <div className="text-sm font-medium mt-1">
+                    {sample.assigned_to ? (
+                      <span className="flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {sample.assigned_to}
+                      </span>
+                    ) : '-'}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Last Updated</div>
+                  <div className="text-sm font-medium mt-1">
+                    {sample.updated_at ? new Date(sample.updated_at).toLocaleDateString() : '-'}
+                  </div>
+                </div>
               </div>
-            )}
-          </TabsContent>
+            </CardContent>
+          </Card>
 
-          <TabsContent value="certificates" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle>Quality Certificate</CardTitle>
-                    <CardDescription>
-                      {sample.certificate_id
-                        ? 'View and download the official quality certificate for this sample'
-                        : 'Generate and download the official quality certificate for this sample'}
-                    </CardDescription>
-                  </div>
-                  {sample.certificate_id && (
-                    <Badge variant="default" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                      <CheckCircle className="h-3 w-3 mr-1" />
-                      Available
-                    </Badge>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-col items-center py-6 space-y-4">
-                  <Award className="h-16 w-16 text-muted-foreground" />
-
-                  {!sample.certificate_id ? (
-                    <>
-                      {sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review' ? (
-                        <>
-                          <p className="text-muted-foreground text-center max-w-md">
-                            Generate an official quality certificate containing all analysis data,
-                            cupping scores, and supply chain information for this sample.
-                          </p>
-                          {sample.workflow_stage === 'review' && (
-                            <p className="text-sm text-amber-600 dark:text-amber-400">
-                              Note: Both cupping and grading must be complete. The system will verify this before generating.
-                            </p>
-                          )}
-                          <Button
-                            onClick={handleGenerateCertificate}
-                            disabled={generatingCertificate}
-                          >
-                            {generatingCertificate ? (
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                              <Award className="h-4 w-4 mr-2" />
-                            )}
-                            {generatingCertificate ? 'Generating...' : 'Generate Certificate'}
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-muted-foreground text-center max-w-md">
-                            Certificate generation is available after both cupping and grading are complete.
-                          </p>
-                          <p className="text-sm text-muted-foreground">
-                            Current workflow stage: <span className="font-medium">{sample.workflow_stage || 'received'}</span>
-                          </p>
-                        </>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-muted-foreground text-center max-w-md">
-                        The quality certificate for this sample is ready for download.
-                        It includes all analysis results, cupping scores, and traceability information.
-                      </p>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="default"
-                          onClick={handleViewCertificate}
-                          disabled={previewLoading}
-                        >
-                          {previewLoading ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Eye className="h-4 w-4 mr-2" />
-                          )}
-                          View Certificate
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={handleDownloadCertificate}
-                          disabled={downloadingCertificate}
-                        >
-                          {downloadingCertificate ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <Download className="h-4 w-4 mr-2" />
-                          )}
-                          Download PDF
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          <TabsContent value="activity" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>Activity Log</CardTitle>
-                <CardDescription>Complete history of actions performed on this sample</CardDescription>
-              </CardHeader>
-              <CardContent>
-                {activityLog.length === 0 ? (
-                  <div className="text-center py-8 text-muted-foreground">
-                    No activity recorded yet
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    {activityLog.map((log) => (
-                      <div key={log.id} className="flex gap-4 border-l-2 border-border pl-4 py-2">
-                        <div className="flex-1">
-                          <div className="font-medium">{log.activity_type}</div>
-                          <div className="text-sm text-muted-foreground">{log.description}</div>
-                          <div className="text-xs text-muted-foreground mt-1">
-                            {log.user_name} • {new Date(log.created_at).toLocaleString()}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+          {/* Action Buttons Row */}
+          <div className="flex flex-wrap gap-2 pt-2">
+            {!isEditMode ? (
+              <>
+                <Button variant="outline" size="sm" onClick={handleEnterEditMode}>
+                  <Edit className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleShowQrCode}>
+                  <QrCode className="h-4 w-4 mr-2" />
+                  QR Code
+                </Button>
+                <Button variant="outline" size="sm" onClick={handlePrintLabel} disabled={printingLabel}>
+                  {printingLabel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Printer className="h-4 w-4 mr-2" />}
+                  Print Label
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleExport}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Export
+                </Button>
+                {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
+                  <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    {deleting ? 'Deleting...' : 'Delete'}
+                  </Button>
                 )}
-              </CardContent>
-            </Card>
-          </TabsContent>
-        </Tabs>
+              </>
+            ) : (
+              <>
+                <Button variant="default" size="sm" onClick={handleSaveChanges} disabled={saving}>
+                  {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                  {saving ? 'Saving...' : 'Save Changes'}
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleCancelEdit} disabled={saving}>
+                  <X className="h-4 w-4 mr-2" />
+                  Cancel
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
 
         {/* Certificate Preview Modal */}
         <Dialog open={showCertificateModal} onOpenChange={(open) => !open && handleClosePreview()}>
