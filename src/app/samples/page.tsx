@@ -31,7 +31,8 @@ import {
 import {
   Plus, Search, Filter, Eye, MapPin, Calendar,
   CheckCircle, XCircle, Clock, AlertCircle, FileText,
-  Download, Printer, QrCode, MoreVertical, Users, Trash2
+  Download, Printer, QrCode, MoreVertical, Users, Trash2,
+  Loader2, Award, Mail
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -68,6 +69,11 @@ interface Sample {
   laboratory_id?: string
   created_at: string
   quality_spec_id?: string
+  // Certificate info (flattened from API)
+  certificate_id?: string | null
+  certificate_number?: string | null
+  certificate_status?: string | null
+  certificate_created_at?: string | null
   // Relations that might be loaded for print dialog
   client?: {
     id: string
@@ -139,6 +145,12 @@ export default function SamplesPage() {
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+
+  // Certificate preview modal states
+  const [previewSample, setPreviewSample] = useState<Sample | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  const [downloadingSampleId, setDownloadingSampleId] = useState<string | null>(null)
 
   // Track assigned cuppers for selected samples
   const [assignedCuppers, setAssignedCuppers] = useState<Array<{
@@ -561,6 +573,60 @@ export default function SamplesPage() {
     }
   }
 
+  // Certificate handlers
+  const handleViewCertificate = async (sample: Sample) => {
+    setPreviewSample(sample)
+    setPreviewLoading(true)
+    setPreviewPdfUrl(null)
+
+    try {
+      const response = await fetch(`/api/samples/${sample.id}/certificate`)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        setPreviewPdfUrl(url)
+      }
+    } catch (error) {
+      console.error('Error loading certificate preview:', error)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const handleClosePreview = () => {
+    if (previewPdfUrl) {
+      window.URL.revokeObjectURL(previewPdfUrl)
+    }
+    setPreviewSample(null)
+    setPreviewPdfUrl(null)
+    setPreviewLoading(false)
+  }
+
+  const handleDownloadCertificate = async (sample: Sample) => {
+    try {
+      setDownloadingSampleId(sample.id)
+      const response = await fetch(`/api/samples/${sample.id}/certificate`)
+
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${sample.certificate_number || parseTrackingNumber(sample.tracking_number)}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+      } else {
+        console.error('Failed to download certificate')
+      }
+    } catch (error) {
+      console.error('Error downloading certificate:', error)
+    } finally {
+      setDownloadingSampleId(null)
+    }
+  }
+
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: any; icon: any; label: string; className?: string }> = {
       received: { variant: 'secondary', icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -969,13 +1035,39 @@ export default function SamplesPage() {
                           </div>
                         </td>
                         <td className="py-3 px-4">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-1">
                             <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
                               <Button variant="outline" size="sm">
                                 <Eye className="h-3 w-3 mr-1" />
                                 View
                               </Button>
                             </Link>
+                            {/* Certificate buttons for samples with certificates */}
+                            {sample.certificate_id && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleViewCertificate(sample)}
+                                  title="View Certificate"
+                                >
+                                  <Award className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDownloadCertificate(sample)}
+                                  disabled={downloadingSampleId === sample.id}
+                                  title="Download Certificate"
+                                >
+                                  {downloadingSampleId === sample.id ? (
+                                    <Loader2 className="h-3 w-3 animate-spin" />
+                                  ) : (
+                                    <Download className="h-3 w-3" />
+                                  )}
+                                </Button>
+                              </>
+                            )}
                             {isGlobalAdmin && (
                               <Button
                                 variant="ghost"
@@ -1044,6 +1136,56 @@ export default function SamplesPage() {
         sampleCount={selectedSamples.size}
         onAssign={handleCuppersAssigned}
       />
+
+      {/* Certificate Preview Modal */}
+      <Dialog open={!!previewSample} onOpenChange={(open) => !open && handleClosePreview()}>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <FileText className="h-5 w-5" />
+              Certificate {previewSample?.certificate_number || parseTrackingNumber(previewSample?.tracking_number || '')}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 min-h-[500px] bg-muted rounded-lg overflow-hidden">
+            {previewLoading ? (
+              <div className="flex items-center justify-center h-[500px]">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : previewPdfUrl ? (
+              <iframe
+                src={previewPdfUrl}
+                className="w-full h-[500px] border-0"
+                title="Certificate Preview"
+              />
+            ) : (
+              <div className="flex items-center justify-center h-[500px] text-muted-foreground">
+                Unable to load certificate preview
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 pt-4">
+            {previewSample && (
+              <Button
+                variant="outline"
+                onClick={() => handleDownloadCertificate(previewSample)}
+                disabled={downloadingSampleId === previewSample.id}
+              >
+                {downloadingSampleId === previewSample.id ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Download className="h-4 w-4 mr-2" />
+                )}
+                Download
+              </Button>
+            )}
+            <Button variant="default" onClick={handleClosePreview}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }

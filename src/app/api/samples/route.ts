@@ -36,6 +36,7 @@ export async function GET(request: NextRequest) {
     // Build query with filters and join with related tables
     // Note: Use explicit relationship names due to multiple FKs to exporters table
     // Filter out soft-deleted samples (deleted_at is set on soft delete)
+    // Include certificate info for samples that have certificates
     let query = (supabase as any)
       .from('samples')
       .select(`
@@ -44,7 +45,8 @@ export async function GET(request: NextRequest) {
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        end_client:end_clients(id, name, country)
+        end_client:end_clients(id, name, country),
+        certificate:certificates(id, certificate_number, status, created_at)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -83,27 +85,41 @@ export async function GET(request: NextRequest) {
     const { count } = await countQuery
 
     // Transform samples to include flattened entity names
-    const transformedSamples = (samples || []).map((sample: any) => ({
-      ...sample,
-      // Prioritize sample's own quality_name (for type samples or custom entries),
-      // fall back to quality_spec's custom_name
-      quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
-      quality_code: sample.quality_spec?.quality_code || null,
-      exporter_name: sample.exporter?.name || null,
-      exporter_country: sample.exporter?.country || null,
-      importer_name: sample.importer?.name || null,
-      importer_country: sample.importer?.country || null,
-      roaster_name: sample.roaster?.name || null,
-      roaster_country: sample.roaster?.country || null,
-      end_client_name: sample.end_client?.name || null,
-      end_client_country: sample.end_client?.country || null,
-      // Remove nested objects to keep response clean
-      quality_spec: undefined,
-      exporter: undefined,
-      importer: undefined,
-      roaster: undefined,
-      end_client: undefined
-    }))
+    const transformedSamples = (samples || []).map((sample: any) => {
+      // Handle certificate array - Supabase returns array for one-to-many relations
+      // A sample can have at most one certificate, so we take the first one
+      const certificate = Array.isArray(sample.certificate)
+        ? sample.certificate[0] || null
+        : sample.certificate || null
+
+      return {
+        ...sample,
+        // Prioritize sample's own quality_name (for type samples or custom entries),
+        // fall back to quality_spec's custom_name
+        quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
+        quality_code: sample.quality_spec?.quality_code || null,
+        exporter_name: sample.exporter?.name || null,
+        exporter_country: sample.exporter?.country || null,
+        importer_name: sample.importer?.name || null,
+        importer_country: sample.importer?.country || null,
+        roaster_name: sample.roaster?.name || null,
+        roaster_country: sample.roaster?.country || null,
+        end_client_name: sample.end_client?.name || null,
+        end_client_country: sample.end_client?.country || null,
+        // Certificate info (flattened)
+        certificate_id: certificate?.id || null,
+        certificate_number: certificate?.certificate_number || null,
+        certificate_status: certificate?.status || null,
+        certificate_created_at: certificate?.created_at || null,
+        // Remove nested objects to keep response clean
+        quality_spec: undefined,
+        exporter: undefined,
+        importer: undefined,
+        roaster: undefined,
+        end_client: undefined,
+        certificate: undefined
+      }
+    })
 
     return NextResponse.json({
       samples: transformedSamples,

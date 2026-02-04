@@ -889,6 +889,18 @@ export default function SampleDetailPage() {
                       <div className="flex gap-2">
                         <Button
                           variant="default"
+                          onClick={handleViewCertificate}
+                          disabled={previewLoading}
+                        >
+                          {previewLoading ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <Eye className="h-4 w-4 mr-2" />
+                          )}
+                          View Certificate
+                        </Button>
+                        <Button
+                          variant="outline"
                           onClick={handleDownloadCertificate}
                           disabled={downloadingCertificate}
                         >
@@ -897,19 +909,7 @@ export default function SampleDetailPage() {
                           ) : (
                             <Download className="h-4 w-4 mr-2" />
                           )}
-                          {downloadingCertificate ? 'Downloading...' : 'Download PDF'}
-                        </Button>
-                        <Button
-                          variant="outline"
-                          onClick={handleGenerateCertificate}
-                          disabled={generatingCertificate}
-                        >
-                          {generatingCertificate ? (
-                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                          ) : (
-                            <FileText className="h-4 w-4 mr-2" />
-                          )}
-                          Regenerate
+                          Download PDF
                         </Button>
                       </div>
                     </>
