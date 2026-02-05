@@ -4,6 +4,8 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { CheckCircle2 } from 'lucide-react'
+import Link from 'next/link'
+import { trackingNumberToSlug } from '@/lib/utils'
 
 interface SuccessViewProps {
   trackingNumber: string
@@ -14,6 +16,7 @@ interface SuccessViewProps {
 export function SuccessView({ trackingNumber, onReset, asDialog = false }: SuccessViewProps) {
   const Wrapper = asDialog ? 'div' : Card
   const Content = asDialog ? 'div' : CardContent
+  const slug = trackingNumberToSlug(trackingNumber)
 
   return (
     <Wrapper className={asDialog ? '' : 'w-full max-w-4xl mx-auto'}>
@@ -23,13 +26,22 @@ export function SuccessView({ trackingNumber, onReset, asDialog = false }: Succe
           <h2 className="text-2xl font-semibold">Sample Created Successfully</h2>
           <div className="space-y-2">
             <p className="text-muted-foreground">Tracking Number:</p>
-            <Badge variant="outline" className="text-lg px-4 py-2 font-mono">
-              {trackingNumber}
-            </Badge>
+            <Link href={`/samples/${slug}`}>
+              <Badge variant="outline" className="text-lg px-4 py-2 font-mono cursor-pointer hover:bg-accent transition-colors">
+                {trackingNumber}
+              </Badge>
+            </Link>
           </div>
-          <Button onClick={onReset} size="lg" className="mt-4">
-            Create Another Sample
-          </Button>
+          <div className="flex items-center justify-center gap-3 mt-4">
+            <Link href={`/samples/${slug}`}>
+              <Button variant="outline" size="lg">
+                View Sample
+              </Button>
+            </Link>
+            <Button onClick={onReset} size="lg">
+              Create Another Sample
+            </Button>
+          </div>
         </div>
       </Content>
     </Wrapper>

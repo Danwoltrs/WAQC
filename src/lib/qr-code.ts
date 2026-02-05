@@ -1,4 +1,5 @@
 import QRCode from 'qrcode'
+import { trackingNumberToSlug } from '@/lib/utils'
 
 /**
  * Generate a QR code as a data URL
@@ -79,7 +80,7 @@ export function getCuppingSessionUrl(sessionId: string, sampleId: string): strin
  */
 export function getSampleTrackingUrl(trackingNumber: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
-  return `${baseUrl}/samples/${trackingNumber}`
+  return `${baseUrl}/samples/${trackingNumberToSlug(trackingNumber)}`
 }
 
 /**

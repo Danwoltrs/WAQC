@@ -28,6 +28,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 // Link removed - not used
 import { useAuth } from '@/components/providers/auth-provider'
+import { trackingNumberToSlug } from '@/lib/utils'
 
 interface EditPermission {
   canEdit: boolean
@@ -446,7 +447,7 @@ export default function SampleDetailPage() {
       // Generate QR code with sample tracking URL
       const QRCode = await import('qrcode')
       const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-      const url = `${baseUrl}/samples/${parseTrackingNumber(sample.tracking_number)}`
+      const url = `${baseUrl}/samples/${trackingNumberToSlug(sample.tracking_number)}`
       const dataUrl = await QRCode.toDataURL(url, { width: 256, margin: 2 })
       setQrCodeDataUrl(dataUrl)
     } catch (error) {
