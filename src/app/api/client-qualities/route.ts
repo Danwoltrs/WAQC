@@ -47,7 +47,12 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching client qualities:', error)
-      return NextResponse.json({ error: 'Failed to fetch client qualities' }, { status: 500 })
+      return NextResponse.json({
+        error: 'Failed to fetch client qualities',
+        details: error.message,
+        code: error.code,
+        hint: error.hint
+      }, { status: 500 })
     }
 
     return NextResponse.json({ client_qualities: clientQualities })
