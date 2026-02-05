@@ -86,6 +86,8 @@ interface Sample {
   importer_country?: string
   roaster_name?: string
   roaster_country?: string
+  end_client_name?: string
+  end_client_country?: string
   buyer?: string
   quality_name?: string
   quality_code?: string
@@ -1040,7 +1042,7 @@ export default function SampleDetailPage() {
                         </td>
                       </tr>
                       {/* Roaster */}
-                      <tr>
+                      <tr className="border-b">
                         <td className="py-2 px-3 text-muted-foreground">Roaster</td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
@@ -1060,6 +1062,17 @@ export default function SampleDetailPage() {
                             <span className="font-mono">{sample.roaster_contract_nr || '-'}</span>
                           )}
                         </td>
+                      </tr>
+                      {/* End Client */}
+                      <tr>
+                        <td className="py-2 px-3 text-muted-foreground">End Client</td>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span>{sample.end_client_name || '-'}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3">-</td>
                       </tr>
                     </tbody>
                   </table>

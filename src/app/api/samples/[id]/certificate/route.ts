@@ -160,6 +160,7 @@ export async function POST(
         id,
         tracking_number,
         client_id,
+        origin,
         workflow_stage,
         status,
         quality_spec_id,
@@ -248,11 +249,32 @@ export async function POST(
       })
     }
 
-    // Generate certificate number from tracking_number
+    // Generate certificate number using client pattern via DB function
+    // Falls back to tracking_number if no client pattern configured
+    let certificateNumber: string
+
+    if (sample.client_id) {
+      const { data: certNumData, error: certNumError } = await supabase
+        .rpc('generate_certificate_number', {
+          p_client_id: sample.client_id,
+          p_origin: sample.origin || null,
+          p_quality_spec_id: sample.quality_spec_id || null
+        } as any)
+
+      if (certNumError || !certNumData) {
+        console.warn('Certificate number generation failed, falling back to tracking number:', certNumError?.message)
+        certificateNumber = sample.tracking_number
+      } else {
+        certificateNumber = String(certNumData)
+      }
+    } else {
+      certificateNumber = sample.tracking_number
+    }
+
     // For rejected samples, prefix with 'R-'
-    const certificateNumber = isRejected
-      ? `R-${sample.tracking_number}`
-      : sample.tracking_number
+    if (isRejected) {
+      certificateNumber = `R-${certificateNumber}`
+    }
 
     // Get client name for issued_to (required field)
     const clientData = sample.client as { name?: string; company?: string } | null

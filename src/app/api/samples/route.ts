@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        end_client:end_clients(id, name, country),
+        end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at)
       `)
       .is('deleted_at', null)
@@ -109,7 +109,7 @@ export async function GET(request: NextRequest) {
         importer_country: sample.importer?.country || null,
         roaster_name: sample.roaster?.name || null,
         roaster_country: sample.roaster?.country || null,
-        end_client_name: sample.end_client?.name || null,
+        end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
         end_client_country: sample.end_client?.country || null,
         // Certificate info (flattened)
         certificate_id: certificate?.id || null,
@@ -177,113 +177,26 @@ export async function POST(request: NextRequest) {
     // Client ID is optional - if not provided, use null for tracking number generation
     const clientId = body.client_id || null
 
-    // Generate tracking number using helper function
-    // Note: Function signature updated in migration 061 to support lab-specific type sample prefixes
-    // TypeScript types will be regenerated in next deployment
-    const { data: trackingNumberData, error: trackingError } = await supabase
-      .rpc('generate_tracking_number', {
-        p_client_id: clientId,
-        p_laboratory_id: body.laboratory_id,
-        p_origin: body.origin,
-        p_quality_template_id: body.quality_spec_id || null,
-        p_is_rejected: false,
-        p_sample_type: body.sample_type || 'pss'
-      } as any)
-
-    if (trackingError) {
-      console.error('Error generating tracking number:', trackingError)
-      return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
-    }
-
-    // Extract the tracking number string from the RPC response
-    // CRITICAL: Validate that we got a real tracking number, not null
-    // The RPC call returns the string directly, not wrapped in an object
-    if (trackingNumberData === null || trackingNumberData === undefined) {
-      console.error('Tracking number generation returned null for client:', clientId, 'origin:', body.origin)
-      return NextResponse.json({
-        error: 'Failed to generate tracking number - client configuration may be invalid',
-        details: 'The tracking number format for this client is not properly configured. Please contact an administrator.'
-      }, { status: 500 })
-    }
-
-    const trackingNumber = String(trackingNumberData)
-
-    // Additional validation - ensure we don't have the literal string "null"
-    if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
-      console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
-      return NextResponse.json({
-        error: 'Failed to generate valid tracking number',
-        details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
-      }, { status: 500 })
-    }
-
-    console.log('Generated tracking number:', trackingNumber, 'for client:', clientId)
-
     // Use provided bag weight, only calculate if not provided and we have quantity + count
     let bagWeightKg: number | null = body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null
     if (!bagWeightKg && body.bags_quantity_mt && body.bag_count && body.bag_type !== 'bulk') {
-      // Only calculate for non-bulk types where bag weight wasn't provided
-      // Convert MT to kg (multiply by 1000) and divide by bag count
       bagWeightKg = (parseFloat(body.bags_quantity_mt) * 1000) / parseInt(body.bag_count)
-      bagWeightKg = Math.round(bagWeightKg * 100) / 100 // Round to 2 decimal places
+      bagWeightKg = Math.round(bagWeightKg * 100) / 100
     }
 
-    // Log quality_name for debugging
-    console.log('API received quality_name:', body.quality_name, 'Type:', typeof body.quality_name)
-
-    // Prepare sample data with foreign key IDs
-    const sampleData: SampleInsert = {
-      tracking_number: trackingNumber,
-      client_id: clientId,
-      laboratory_id: body.laboratory_id,
-      quality_spec_id: body.quality_spec_id || null,
-      quality_name: body.quality_name || null,
-      hide_exporter_on_label: body.hide_exporter_on_label || false,
-      origin: body.origin,
-      micro_origin: body.micro_origin || null,
-      // Supply chain entity IDs
-      seller_id: body.seller_id || null,
-      exporter_id: body.exporter_id || null,
-      same_seller_shipper: body.same_seller_shipper ?? true,
-      exporter_sample_number: body.exporter_sample_number || null,
-      importer_id: body.importer_id || null,
-      roaster_id: body.roaster_id || null,
-      status: body.status || 'received',
-      storage_position: body.storage_position || null,
-      // Contract reference fields
-      wolthers_contract_nr: body.wolthers_contract_nr || null,
-      seller_contract_nr: body.seller_contract_nr || null,
-      shipper_contract_nr: body.shipper_contract_nr || null,
-      exporter_contract_nr: body.exporter_contract_nr || null,
-      buyer_contract_nr: body.buyer_contract_nr || null,
-      roaster_contract_nr: body.roaster_contract_nr || null,
-      qc_client_contract_nr: body.qc_client_contract_nr || null,
-      ico_number: body.ico_number || null,
-      container_nr: body.container_nr || null,
-      sample_type: body.sample_type || null,
-      shipment_month: body.shipment_month || null,
-      bags_quantity_mt: body.bags_quantity_mt ? parseFloat(body.bags_quantity_mt) : null,
-      bag_count: body.bag_count ? parseInt(body.bag_count) : null,
-      bag_weight_kg: body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null,
-      equivalent_60kg_bags: body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null,
-      bag_type: body.bag_type || null,
-      processing_method: body.processing_method || null,
-      workflow_stage: body.workflow_stage || 'received',
-      assigned_to: body.assigned_to || null
-    }
-
-    console.log('Inserting sample with quality_name:', sampleData.quality_name)
-
-    // Validate bag quantities if provided
-    if (sampleData.bags_quantity_mt && sampleData.bags_quantity_mt <= 0) {
+    // Validate bag quantities
+    const bagsQuantityMt = body.bags_quantity_mt ? parseFloat(body.bags_quantity_mt) : null
+    const bagCount = body.bag_count ? parseInt(body.bag_count) : null
+    if (bagsQuantityMt && bagsQuantityMt <= 0) {
       return NextResponse.json({ error: 'bags_quantity_mt must be positive' }, { status: 400 })
     }
-    if (sampleData.bag_count && sampleData.bag_count <= 0) {
+    if (bagCount && bagCount <= 0) {
       return NextResponse.json({ error: 'bag_count must be positive' }, { status: 400 })
     }
 
     // Auto-detect quality specification if not provided
-    if (!sampleData.quality_spec_id && body.auto_detect_quality !== false) {
+    let qualitySpecId = body.quality_spec_id || null
+    if (!qualitySpecId && body.auto_detect_quality !== false && body.client_id) {
       const { data: qualitySpecs } = await supabase
         .from('client_qualities')
         .select('id')
@@ -293,20 +206,118 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (qualitySpecs) {
-        sampleData.quality_spec_id = (qualitySpecs as any).id
+        qualitySpecId = (qualitySpecs as any).id
       }
     }
 
-    // Insert sample
-    const { data: sample, error: insertError } = await supabase
-      .from('samples')
-      .insert(sampleData)
-      .select()
-      .single()
+    // Generate tracking number + insert with retry on duplicate key conflict
+    // The generate_tracking_number() function uses MAX()+1 which can race under concurrent inserts
+    const MAX_RETRIES = 3
+    let sample: any = null
 
-    if (insertError) {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      const { data: trackingNumberData, error: trackingError } = await supabase
+        .rpc('generate_tracking_number', {
+          p_client_id: clientId,
+          p_laboratory_id: body.laboratory_id,
+          p_origin: body.origin,
+          p_quality_template_id: qualitySpecId,
+          p_is_rejected: false,
+          p_sample_type: body.sample_type || 'pss'
+        } as any)
+
+      if (trackingError) {
+        console.error('Error generating tracking number:', trackingError)
+        return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
+      }
+
+      if (trackingNumberData === null || trackingNumberData === undefined) {
+        console.error('Tracking number generation returned null for client:', clientId, 'origin:', body.origin)
+        return NextResponse.json({
+          error: 'Failed to generate tracking number - client configuration may be invalid',
+          details: 'The tracking number format for this client is not properly configured. Please contact an administrator.'
+        }, { status: 500 })
+      }
+
+      const trackingNumber = String(trackingNumberData)
+
+      if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
+        console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
+        return NextResponse.json({
+          error: 'Failed to generate valid tracking number',
+          details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
+        }, { status: 500 })
+      }
+
+      console.log(`Generated tracking number: ${trackingNumber} (attempt ${attempt})`)
+
+      // Cast to any to support end_client_id which is pending migration
+      const sampleData: Record<string, any> = {
+        tracking_number: trackingNumber,
+        client_id: clientId,
+        laboratory_id: body.laboratory_id,
+        quality_spec_id: qualitySpecId,
+        quality_name: body.quality_name || null,
+        hide_exporter_on_label: body.hide_exporter_on_label || false,
+        origin: body.origin,
+        micro_origin: body.micro_origin || null,
+        seller_id: body.seller_id || null,
+        exporter_id: body.exporter_id || null,
+        same_seller_shipper: body.same_seller_shipper ?? true,
+        exporter_sample_number: body.exporter_sample_number || null,
+        importer_id: body.importer_id || null,
+        roaster_id: body.roaster_id || null,
+        end_client_id: body.end_client_id || null,
+        status: body.status || 'received',
+        storage_position: body.storage_position || null,
+        wolthers_contract_nr: body.wolthers_contract_nr || null,
+        seller_contract_nr: body.seller_contract_nr || null,
+        shipper_contract_nr: body.shipper_contract_nr || null,
+        exporter_contract_nr: body.exporter_contract_nr || null,
+        buyer_contract_nr: body.buyer_contract_nr || null,
+        roaster_contract_nr: body.roaster_contract_nr || null,
+        qc_client_contract_nr: body.qc_client_contract_nr || null,
+        ico_number: body.ico_number || null,
+        container_nr: body.container_nr || null,
+        sample_type: body.sample_type || null,
+        shipment_month: body.shipment_month || null,
+        bags_quantity_mt: bagsQuantityMt,
+        bag_count: bagCount,
+        bag_weight_kg: body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null,
+        equivalent_60kg_bags: body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null,
+        bag_type: body.bag_type || null,
+        processing_method: body.processing_method || null,
+        workflow_stage: body.workflow_stage || 'received',
+        assigned_to: body.assigned_to || null
+      }
+
+      const { data: insertedSample, error: insertError } = await (supabase as any)
+        .from('samples')
+        .insert(sampleData)
+        .select()
+        .single()
+
+      if (!insertError) {
+        sample = insertedSample
+        break
+      }
+
+      // Check for duplicate key error - retry with new tracking number
+      const isDuplicate = insertError.message?.includes('duplicate key') ||
+        insertError.message?.includes('unique constraint') ||
+        insertError.code === '23505'
+
+      if (isDuplicate && attempt < MAX_RETRIES) {
+        console.warn(`Duplicate tracking number ${trackingNumber}, retrying (attempt ${attempt + 1})...`)
+        continue
+      }
+
       console.error('Error creating sample:', insertError)
       return NextResponse.json({ error: 'Failed to create sample', details: insertError.message }, { status: 500 })
+    }
+
+    if (!sample) {
+      return NextResponse.json({ error: 'Failed to create sample after retries' }, { status: 500 })
     }
 
     // Get client name for activity logging (only if client_id is provided)
@@ -323,8 +334,8 @@ export async function POST(request: NextRequest) {
 
     // Log activity
     await activities.sampleRegistered(
-      (sample as any).id,
-      trackingNumber,
+      sample.id,
+      sample.tracking_number,
       clientName,
       body.laboratory_id
     )

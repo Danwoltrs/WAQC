@@ -118,6 +118,7 @@ export interface CertificateSupplyChainRowProps {
   shipper?: SupplyChainEntity | null
   importer: SupplyChainEntity
   roaster: SupplyChainEntity
+  endClient?: SupplyChainEntity | null
   qcClient?: SupplyChainEntity | null
   hasClientLogo?: boolean  // If true, don't show QC Client name (logo identifies them)
 }
@@ -136,6 +137,7 @@ export function CertificateSupplyChainRow({
   shipper,
   importer,
   roaster,
+  endClient,
   qcClient,
   hasClientLogo,
 }: CertificateSupplyChainRowProps) {
@@ -146,6 +148,7 @@ export function CertificateSupplyChainRow({
   const hasShipper = Boolean(shipper?.name) && !namesMatch(shipper?.name, exporter.name)
   const hasImporter = Boolean(importer.name)
   const hasRoaster = Boolean(roaster.name)
+  const hasEndClient = Boolean(endClient?.name)
   // Don't show QC Client if:
   // 1. They have a logo displayed (logo identifies them), OR
   // 2. Their name matches importer or roaster
@@ -165,6 +168,7 @@ export function CertificateSupplyChainRow({
     { show: hasShipper, label: 'Shipper', entity: shipper },
     { show: hasImporter, label: 'Importer', entity: importer },
     { show: hasRoaster, label: 'Roaster', entity: roaster },
+    { show: hasEndClient, label: 'End Client', entity: endClient },
     { show: hasQcClient, label: 'QC Client', entity: qcClient },
   ].filter(e => e.show)
 

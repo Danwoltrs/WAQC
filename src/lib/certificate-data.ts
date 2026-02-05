@@ -98,6 +98,7 @@ export interface CertificateData {
     shipper: SupplyChainEntity     // Shipping company (if different from exporter)
     importer: SupplyChainEntity
     roaster: SupplyChainEntity
+    endClient: SupplyChainEntity
     qcClient: SupplyChainEntity
     wolthersContract: string | null
   }
@@ -229,7 +230,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
 
   // Fetch supply chain entities in parallel
   // Seller (supplier/farm/coop) uses seller_id which references exporters table
-  const [exporterResult, importerResult, roasterResult, sellerResult] = await Promise.all([
+  const [exporterResult, importerResult, roasterResult, sellerResult, endClientResult] = await Promise.all([
     sample.exporter_id
       ? supabase.from('exporters').select('name, country').eq('id', sample.exporter_id).single()
       : Promise.resolve({ data: null }),
@@ -241,6 +242,9 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       : Promise.resolve({ data: null }),
     sample.seller_id
       ? supabase.from('exporters').select('name, country').eq('id', sample.seller_id).single()
+      : Promise.resolve({ data: null }),
+    (sample as any).end_client_id
+      ? supabase.from('clients').select('company, fantasy_name, country').eq('id', (sample as any).end_client_id).single()
       : Promise.resolve({ data: null }),
   ])
 
@@ -559,6 +563,12 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         country: roasterResult.data?.country ?? null,
         contract: sample.roaster_contract_nr ?? null,
         address: null, // Address not yet in roasters table
+      },
+      endClient: {
+        name: endClientResult.data?.fantasy_name ?? endClientResult.data?.company ?? null,
+        country: endClientResult.data?.country ?? null,
+        contract: null,
+        address: null,
       },
       qcClient: {
         // Don't show in supply chain if:

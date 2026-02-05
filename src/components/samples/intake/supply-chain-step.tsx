@@ -372,6 +372,21 @@ export function SupplyChainStep({
         <div></div>
       </div>
 
+      {/* End Client Row */}
+      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1.5 block">End Client</Label>
+          <Input
+            value={formData.end_client}
+            onChange={(e) => updateFormData('end_client', e.target.value)}
+            placeholder="Final buyer (e.g., Dunkin')"
+            className="h-9"
+          />
+        </div>
+        <div></div>
+        <div></div>
+      </div>
+
       <CreateClientDialog
         open={showCreateClientDialog}
         onOpenChange={setShowCreateClientDialog}

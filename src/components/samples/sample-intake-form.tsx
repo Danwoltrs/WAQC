@@ -67,6 +67,7 @@ const initialFormData: FormData = {
   supplier_contract_nr: '',
   roaster: '',
   roaster_contract_nr: '',
+  end_client: '',
 
   // Step 2: Quality
   client_id: '',
@@ -550,6 +551,29 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )
       }
 
+      // 6. End Client lookup from clients table by fantasy_name (end_client type)
+      if (formData.end_client) {
+        lookupKeys.push('end_client')
+        lookupPromises.push(
+          withTimeout(
+            async () => {
+              // Look up existing end client from clients table (must be end_client type)
+              const { data: existing, error } = await (supabase as any)
+                .from('clients')
+                .select('id')
+                .ilike('fantasy_name', formData.end_client.trim())
+                .contains('client_types', ['end_client'])
+                .limit(1)
+                .maybeSingle()
+              // Return the result - do NOT auto-create clients
+              return { data: existing, error }
+            },
+            LOOKUP_TIMEOUT,
+            'End client lookup timeout'
+          ).catch(err => { console.error('[End client lookup error]', err); return { data: null, error: err } })
+        )
+      }
+
       // Execute all lookups in parallel
       console.log('[Sample Intake] Running', lookupPromises.length, 'lookups in parallel for:', {
         seller: formData.seller,
@@ -577,6 +601,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       // Only use importer_id when it's NOT the QC client (otherwise the ID is from clients table, not importers)
       const importer_id = formData.importer_is_qc_client ? undefined : lookupResults['importer']
       const roaster_id = lookupResults['roaster']
+      const end_client_id = lookupResults['end_client']
 
       // QC Client: use fantasy_name lookup, fallback to form's client_id
       let qc_client_id = lookupResults['qc_client_fantasy'] || formData.client_id || undefined
@@ -587,10 +612,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         importer_id,
         qc_client_id,
         roaster_id,
+        end_client_id,
         same_seller_shipper: formData.same_seller_shipper
       })
 
-      const sampleData: Partial<SampleInsert> = {
+      const sampleData: Record<string, any> = {
         client_id: qc_client_id, // Use the resolved QC client ID
         laboratory_id: formData.laboratory_id,
         origin: formData.origin,
@@ -601,6 +627,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         exporter_sample_number: formData.exporter_sample_number || undefined,
         importer_id: importer_id,
         roaster_id: roaster_id,
+        end_client_id: end_client_id,
         processing_method: formData.processing_method,
         sample_type: formData.sample_type || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,

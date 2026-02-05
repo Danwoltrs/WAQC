@@ -121,6 +121,7 @@ export function QualityCertificate({
           shipper={supplyChain.shipper}
           importer={supplyChain.importer}
           roaster={supplyChain.roaster}
+          endClient={supplyChain.endClient}
           qcClient={supplyChain.qcClient}
           hasClientLogo={!!clientLogoBase64}
         />

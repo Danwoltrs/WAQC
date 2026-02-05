@@ -44,6 +44,7 @@ export async function GET(
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
         client:clients(id, company, fantasy_name, client_types),
+        end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at)
       `)
 
@@ -96,6 +97,9 @@ export async function GET(
       // Use roaster from DB, or fall back to client if they're a roaster type
       roaster_name: sample.roaster?.name || (isRoasterClient ? clientName : null),
       roaster_country: sample.roaster?.country || null,
+      // End client (final buyer)
+      end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
+      end_client_country: sample.end_client?.country || null,
       // Certificate info (flattened)
       certificate_id: certificate?.id || null,
       certificate_number: certificate?.certificate_number || null,
@@ -107,6 +111,7 @@ export async function GET(
       exporter: undefined,
       importer: undefined,
       roaster: undefined,
+      end_client: undefined,
       client: undefined,
       certificate: undefined
     }
@@ -197,7 +202,8 @@ export async function PATCH(
       'roaster_id',
       'seller_id',
       'supplier_type',
-      'same_seller_shipper'
+      'same_seller_shipper',
+      'end_client_id'
     ]
 
     for (const field of allowedFields) {

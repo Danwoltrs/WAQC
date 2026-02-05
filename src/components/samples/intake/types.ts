@@ -24,6 +24,7 @@ export interface FormData {
   supplier_contract_nr: string // Supplier's contract reference number
   roaster: string // Optional roaster
   roaster_contract_nr: string // Roaster's contract reference number
+  end_client: string // Optional end client (final buyer, e.g., Dunkin')
 
   // Step 2: Quality
   client_id: string // The QC client (resolved from importer or qc_client)
