@@ -241,7 +241,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="specs" className="space-y-4">
-          <ClientQualityManager clientId={clientId} clientName={client.name} />
+          <ClientQualityManager clientId={client.id} clientName={client.fantasy_name || client.company} />
         </TabsContent>
 
         <TabsContent value="metrics" className="space-y-4">
@@ -249,7 +249,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
-          <ClientAnalyticsDashboard clientId={clientId} clientName={client.name} />
+          <ClientAnalyticsDashboard clientId={client.id} clientName={client.fantasy_name || client.company} />
         </TabsContent>
       </Tabs>
     </div>
