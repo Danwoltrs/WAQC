@@ -32,11 +32,14 @@ export async function GET(
     const lookupByUUID = isUUID(id)
     const trackingNumber = lookupByUUID ? null : slugToTrackingNumber(id)
 
-    let query = supabase
+    // Cast to any because TypeScript types don't recognize the seller FK
+    // (two FKs to exporters table: exporter_id and seller_id)
+    let query = (supabase as any)
       .from('samples')
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
+        seller:exporters!samples_seller_id_fkey(id, name, country),
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
@@ -77,8 +80,14 @@ export async function GET(
     // Transform sample to include flattened entity names (matching list API format)
     const transformedSample = {
       ...sample,
-      quality_name: sample.quality_spec?.custom_name || null,
+      // Prefer sample's own quality_name (for type samples or custom entries),
+      // fall back to quality_spec's custom_name
+      quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
       quality_code: sample.quality_spec?.quality_code || null,
+      // Seller (farm/producer) from seller_id
+      seller_name: sample.seller?.name || null,
+      seller_country: sample.seller?.country || null,
+      // Exporter/Shipper from exporter_id
       exporter_name: sample.exporter?.name || null,
       exporter_country: sample.exporter?.country || null,
       // Use importer from DB, or fall back to client if they're an importer type
@@ -94,6 +103,7 @@ export async function GET(
       certificate_created_at: certificate?.created_at || null,
       // Remove nested objects to keep response clean
       quality_spec: undefined,
+      seller: undefined,
       exporter: undefined,
       importer: undefined,
       roaster: undefined,

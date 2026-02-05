@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
+        seller:exporters!samples_seller_id_fkey(id, name, country),
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
@@ -98,6 +99,10 @@ export async function GET(request: NextRequest) {
         // fall back to quality_spec's custom_name
         quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
         quality_code: sample.quality_spec?.quality_code || null,
+        // Seller (farm/producer) from seller_id
+        seller_name: sample.seller?.name || null,
+        seller_country: sample.seller?.country || null,
+        // Exporter/Shipper from exporter_id
         exporter_name: sample.exporter?.name || null,
         exporter_country: sample.exporter?.country || null,
         importer_name: sample.importer?.name || null,
@@ -113,6 +118,7 @@ export async function GET(request: NextRequest) {
         certificate_created_at: certificate?.created_at || null,
         // Remove nested objects to keep response clean
         quality_spec: undefined,
+        seller: undefined,
         exporter: undefined,
         importer: undefined,
         roaster: undefined,

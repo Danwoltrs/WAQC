@@ -77,6 +77,8 @@ interface Sample {
   tracking_number: string
   client_id?: string
   supplier?: string
+  seller_name?: string
+  seller_country?: string
   exporter_name?: string
   exporter_country?: string
   origin: string
@@ -99,15 +101,19 @@ interface Sample {
   bag_type?: string
   equivalent_60kg_bags?: number
   wolthers_contract_nr?: string
+  seller_contract_nr?: string
+  shipper_contract_nr?: string
   exporter_contract_nr?: string
   buyer_contract_nr?: string
   roaster_contract_nr?: string
+  qc_client_contract_nr?: string
   ico_number?: string
   ico_marks?: string
   container_nr?: string
   processing_method?: string
   laboratory_id?: string
   assigned_to?: string
+  same_seller_shipper?: boolean
   created_at: string
   updated_at?: string
   // Certificate info (flattened from API)
@@ -967,14 +973,15 @@ export default function SampleDetailPage() {
                     <thead>
                       <tr className="border-b bg-muted/50">
                         <th className="text-left py-2 px-3 font-medium">Party</th>
-                        <th className="text-left py-2 px-3 font-medium">Contract #</th>
-                        <th className="text-left py-2 px-3 font-medium">Ref</th>
+                        <th className="text-left py-2 px-3 font-medium">Name</th>
+                        <th className="text-left py-2 px-3 font-medium">Contract Ref</th>
                       </tr>
                     </thead>
                     <tbody>
                       {/* Wolthers */}
                       <tr className="border-b">
                         <td className="py-2 px-3 text-muted-foreground">Wolthers</td>
+                        <td className="py-2 px-3 text-muted-foreground">-</td>
                         <td className="py-2 px-3">
                           {isEditMode ? (
                             <Input
@@ -987,14 +994,14 @@ export default function SampleDetailPage() {
                             <span className="font-mono">{sample.wolthers_contract_nr || '-'}</span>
                           )}
                         </td>
-                        <td className="py-2 px-3 font-mono text-muted-foreground">-</td>
                       </tr>
-                      {/* Exporter */}
+                      {/* Exporter (Seller) */}
                       <tr className="border-b">
+                        <td className="py-2 px-3 text-muted-foreground">Exporter</td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.exporter_name || sample.supplier || 'Exporter'}</span>
+                            <span>{sample.seller_name || sample.exporter_name || sample.supplier || '-'}</span>
                           </div>
                         </td>
                         <td className="py-2 px-3">
@@ -1006,17 +1013,17 @@ export default function SampleDetailPage() {
                               placeholder="Contract #"
                             />
                           ) : (
-                            <span className="font-mono">{sample.exporter_contract_nr || '-'}</span>
+                            <span className="font-mono">{sample.seller_contract_nr || sample.exporter_contract_nr || '-'}</span>
                           )}
                         </td>
-                        <td className="py-2 px-3 font-mono text-muted-foreground">-</td>
                       </tr>
                       {/* Importer */}
                       <tr className="border-b">
+                        <td className="py-2 px-3 text-muted-foreground">Importer</td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.importer_name || sample.buyer || 'Importer'}</span>
+                            <span>{sample.importer_name || sample.buyer || '-'}</span>
                           </div>
                         </td>
                         <td className="py-2 px-3">
@@ -1031,14 +1038,14 @@ export default function SampleDetailPage() {
                             <span className="font-mono">{sample.buyer_contract_nr || '-'}</span>
                           )}
                         </td>
-                        <td className="py-2 px-3 font-mono text-muted-foreground">-</td>
                       </tr>
                       {/* Roaster */}
                       <tr>
+                        <td className="py-2 px-3 text-muted-foreground">Roaster</td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.roaster_name || 'Roaster'}</span>
+                            <span>{sample.roaster_name || '-'}</span>
                           </div>
                         </td>
                         <td className="py-2 px-3">
@@ -1053,7 +1060,6 @@ export default function SampleDetailPage() {
                             <span className="font-mono">{sample.roaster_contract_nr || '-'}</span>
                           )}
                         </td>
-                        <td className="py-2 px-3 font-mono text-muted-foreground">-</td>
                       </tr>
                     </tbody>
                   </table>

@@ -44,6 +44,8 @@ interface Sample {
   tracking_number: string
   client_id?: string
   supplier?: string
+  seller_name?: string
+  seller_country?: string
   exporter_name?: string
   exporter_country?: string
   origin?: string
@@ -61,6 +63,7 @@ interface Sample {
   storage_position?: string
   bags_quantity_mt?: number
   wolthers_contract_nr?: string
+  seller_contract_nr?: string
   exporter_contract_nr?: string
   buyer_contract_nr?: string
   roaster_contract_nr?: string
@@ -192,6 +195,7 @@ export default function SamplesPage() {
           filtered = filtered.filter((s: Sample) =>
             s.tracking_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.supplier?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.seller_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.exporter_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.origin?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.importer_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -199,6 +203,7 @@ export default function SamplesPage() {
             s.end_client_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.buyer?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.wolthers_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.seller_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.exporter_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.buyer_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.roaster_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -965,6 +970,7 @@ export default function SamplesPage() {
                       <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Quality</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Exporter</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Wolthers</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Importer</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Roaster</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">End Client</th>
@@ -1012,7 +1018,8 @@ export default function SamplesPage() {
                           </Badge>
                         </td>
                         <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.exporter_name || sample.supplier || '-'}</td>
+                        <td className="py-3 px-4 text-sm">{sample.seller_name || sample.exporter_name || sample.supplier || '-'}</td>
+                        <td className="py-3 px-4 text-sm font-mono text-xs">{sample.wolthers_contract_nr || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.importer_name || sample.buyer || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.roaster_name || '-'}</td>
                         <td className="py-3 px-4 text-sm">{sample.end_client_name || '-'}</td>

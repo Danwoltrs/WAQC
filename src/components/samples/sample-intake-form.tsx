@@ -598,6 +598,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         seller_id: seller_id,
         exporter_id: exporter_id, // This is the shipper
         same_seller_shipper: formData.same_seller_shipper,
+        exporter_sample_number: formData.exporter_sample_number || undefined,
         importer_id: importer_id,
         roaster_id: roaster_id,
         processing_method: formData.processing_method,
