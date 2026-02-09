@@ -272,7 +272,7 @@ export function ClientAutoDetection({
         client_id,
         origin,
         created_at,
-        supplier:suppliers(name)
+        seller:exporters!samples_seller_id_fkey(name)
       `)
       .not('client_id', 'is', null)
 
@@ -309,7 +309,7 @@ export function ClientAutoDetection({
           history.originCounts[sample.origin] = (history.originCounts[sample.origin] || 0) + 1
         }
 
-        const supplierName = (sample as any).supplier?.name
+        const supplierName = (sample as any).seller?.name
         if (supplierName) {
           history.supplierCounts[supplierName] = (history.supplierCounts[supplierName] || 0) + 1
         }

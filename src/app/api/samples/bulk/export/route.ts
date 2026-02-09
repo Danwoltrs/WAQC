@@ -30,11 +30,10 @@ export async function POST(request: NextRequest) {
         *,
         clients!samples_client_id_fkey(company, name),
         laboratories!samples_laboratory_id_fkey(name, location),
-        supplier:suppliers(name),
+        seller:exporters!samples_seller_id_fkey(name),
         exporter:exporters!samples_exporter_id_fkey(name),
-        buyer:buyers(name),
-        roaster:roasters(name),
-        importer:buyers!samples_importer_id_fkey(name)
+        importer:importers(name),
+        roaster:roasters(name)
       `)
       .in('id', sample_ids)
       .order('created_at', { ascending: false })
@@ -49,10 +48,9 @@ export async function POST(request: NextRequest) {
       'Tracking Number': sample.tracking_number,
       'Origin': sample.origin,
       'Quality': sample.quality_name || '',
-      'Supplier': sample.supplier?.name || '',
+      'Supplier': sample.seller?.name || '',
       'Exporter': sample.exporter?.name || '',
       'Importer': sample.importer?.name || '',
-      'Buyer': sample.buyer?.name || '',
       'Roaster': sample.roaster?.name || '',
       'Status': sample.status,
       'Workflow Stage': sample.workflow_stage || '',

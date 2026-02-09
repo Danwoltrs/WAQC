@@ -67,16 +67,16 @@ export default function SupplierReviewPage() {
           sample_type,
           status,
           created_at,
-          supplier:suppliers(id, name)
+          seller:exporters!samples_seller_id_fkey(id, name)
         `)
-        .not('supplier_id', 'is', null)
+        .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', startDate)
         .lt('created_at', endDate)
 
       // Apply stakeholder filters (using IDs now)
       if (filters.supplier) {
-        query = query.eq('supplier_id', filters.supplier)
+        query = query.eq('seller_id', filters.supplier)
       }
       if (filters.importer) {
         query = query.eq('importer_id', filters.importer)
@@ -113,7 +113,7 @@ export default function SupplierReviewPage() {
       }
 
       // Calculate insights
-      const suppliers = new Set(samples.map((s: any) => s.supplier?.name).filter(Boolean))
+      const suppliers = new Set(samples.map((s: any) => s.seller?.name).filter(Boolean))
 
       const pssSamples = samples.filter((s: any) => s.sample_type === 'pss')
       const ssSamples = samples.filter((s: any) => s.sample_type === 'ss')
@@ -133,7 +133,7 @@ export default function SupplierReviewPage() {
       const supplierMap = new Map<string, { approved: number; total: number }>()
 
       samples.forEach((sample: any) => {
-        const supplierName = sample.supplier?.name
+        const supplierName = sample.seller?.name
         if (!supplierName) return
 
         const existing = supplierMap.get(supplierName)

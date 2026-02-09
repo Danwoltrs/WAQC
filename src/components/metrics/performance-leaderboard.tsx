@@ -71,16 +71,16 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
           sample_type,
           status,
           created_at,
-          supplier:suppliers(name)
+          seller:exporters!samples_seller_id_fkey(name)
         `)
-        .not('supplier_id', 'is', null)
+        .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', startDate)
         .lt('created_at', endDate)
 
       // Apply stakeholder filters (using IDs now)
       if (filters?.supplier) {
-        query = query.eq('supplier_id', filters.supplier)
+        query = query.eq('seller_id', filters.supplier)
       }
       if (filters?.importer) {
         query = query.eq('importer_id', filters.importer)
@@ -117,7 +117,7 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
       }>()
 
       samples?.forEach((sample: any) => {
-        const supplierName = sample.supplier?.name
+        const supplierName = sample.seller?.name
         if (!supplierName) return
 
         const existing = supplierMap.get(supplierName)
