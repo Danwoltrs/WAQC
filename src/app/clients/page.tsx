@@ -15,7 +15,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import {
-  Plus, Search, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye, Upload
+  Plus, Search, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye, Upload, Pencil
 } from 'lucide-react'
 import Link from 'next/link'
 import { Switch } from '@/components/ui/switch'
@@ -506,6 +506,11 @@ export default function ClientsPage() {
                               <Link href={`/clients/${client.slug || client.id}`}>
                                 <Button variant="ghost" size="sm" title="View details">
                                   <Eye className="h-4 w-4" />
+                                </Button>
+                              </Link>
+                              <Link href={`/clients/${client.id}/edit`}>
+                                <Button variant="ghost" size="sm" title="Edit client">
+                                  <Pencil className="h-4 w-4" />
                                 </Button>
                               </Link>
                               <Button

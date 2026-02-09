@@ -55,7 +55,34 @@ export async function GET(
       query = query.eq('tracking_number', trackingNumber!)
     }
 
-    const { data: sample, error } = await query.single()
+    let { data: sample, error } = await query.single()
+
+    // If slug lookup returned no rows, try case-insensitive fallback
+    if (!lookupByUUID && error?.code === 'PGRST116') {
+      const fallbackQuery = (supabase as any)
+        .from('samples')
+        .select(`
+          *,
+          quality_spec:client_qualities(custom_name, quality_code),
+          seller:exporters!samples_seller_id_fkey(id, name, country),
+          exporter:exporters!samples_exporter_id_fkey(id, name, country),
+          importer:importers(id, name, country),
+          roaster:roasters(id, name, country),
+          client:clients(id, company, fantasy_name, client_types),
+          end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
+          certificate:certificates(id, certificate_number, status, created_at)
+        `)
+        .ilike('tracking_number', trackingNumber!)
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle()
+
+      const fallbackResult = await fallbackQuery
+      if (fallbackResult.data) {
+        sample = fallbackResult.data
+        error = null
+      }
+    }
 
     if (error) {
       if (error.code === 'PGRST116') {

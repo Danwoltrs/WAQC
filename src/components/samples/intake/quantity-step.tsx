@@ -106,7 +106,7 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
       }
 
       updateFormData('bags_quantity_mt', totalMT.toFixed(3))
-      updateFormData('equivalent_60kg_bags', equivalent.toFixed(2))
+      updateFormData('equivalent_60kg_bags', Math.round(equivalent).toString())
     } else {
       updateFormData('bags_quantity_mt', '')
       updateFormData('equivalent_60kg_bags', '')

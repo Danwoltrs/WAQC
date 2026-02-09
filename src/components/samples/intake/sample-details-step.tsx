@@ -98,7 +98,7 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
                 ? `${formData.bag_count} bags`
                 : 'N/A'}
             {formData.equivalent_60kg_bags && formData.origin?.toLowerCase() === 'brazil' &&
-              ` (${formData.equivalent_60kg_bags} x 60kg)`
+              ` (${Math.round(parseFloat(formData.equivalent_60kg_bags))} x 60kg)`
             }
           </div>
         </div>

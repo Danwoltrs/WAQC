@@ -158,6 +158,7 @@ export default function SampleDetailPage() {
   const [sample, setSample] = useState<Sample | null>(null)
   const [certificates, setCertificates] = useState<Certificate[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
   const [generatingCertificate, setGeneratingCertificate] = useState(false)
   const [downloadingCertificate, setDownloadingCertificate] = useState(false)
@@ -343,6 +344,7 @@ export default function SampleDetailPage() {
   const loadSampleDetails = async () => {
     try {
       setLoading(true)
+      setLoadError(null)
 
       // Load sample data (includes certificate info)
       const sampleRes = await fetch(`/api/samples/${params.id}`)
@@ -363,12 +365,16 @@ export default function SampleDetailPage() {
         } else {
           setCertificates([])
         }
+      } else if (sampleRes.status === 401) {
+        setLoadError('unauthorized')
       } else {
+        setLoadError('not_found')
         console.error('Failed to load sample:', sampleData.error)
       }
 
     } catch (error) {
       console.error('Error loading sample details:', error)
+      setLoadError('network')
     } finally {
       setLoading(false)
     }
@@ -774,14 +780,44 @@ export default function SampleDetailPage() {
       <MainLayout>
         <div className="p-6">
           <div className="text-center py-12">
-            <h3 className="text-lg font-semibold mb-2">Sample not found</h3>
-            <p className="text-muted-foreground mb-4">
-              The sample you&apos;re looking for doesn&apos;t exist or has been removed.
-            </p>
-            <Button onClick={() => router.push('/samples')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Samples
-            </Button>
+            {loadError === 'unauthorized' ? (
+              <>
+                <h3 className="text-lg font-semibold mb-2">Session expired</h3>
+                <p className="text-muted-foreground mb-4">
+                  Your session has expired. Please log in again.
+                </p>
+                <Button onClick={() => router.push('/login')}>
+                  Log in
+                </Button>
+              </>
+            ) : loadError === 'network' ? (
+              <>
+                <h3 className="text-lg font-semibold mb-2">Connection error</h3>
+                <p className="text-muted-foreground mb-4">
+                  Could not reach the server. Please check your connection and try again.
+                </p>
+                <div className="flex gap-2 justify-center">
+                  <Button variant="outline" onClick={() => loadSampleDetails()}>
+                    Retry
+                  </Button>
+                  <Button onClick={() => router.push('/samples')}>
+                    <ArrowLeft className="h-4 w-4 mr-2" />
+                    Back to Samples
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h3 className="text-lg font-semibold mb-2">Sample not found</h3>
+                <p className="text-muted-foreground mb-4">
+                  The sample you&apos;re looking for doesn&apos;t exist or has been removed.
+                </p>
+                <Button onClick={() => router.push('/samples')}>
+                  <ArrowLeft className="h-4 w-4 mr-2" />
+                  Back to Samples
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </MainLayout>

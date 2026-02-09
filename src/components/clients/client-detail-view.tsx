@@ -17,8 +17,11 @@ import {
   XCircle,
   Clock,
   Package,
+  Pencil,
 } from 'lucide-react'
 import { format } from 'date-fns'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import { ClientQualityManager } from './client-quality-manager'
 import { ClientAnalyticsDashboard } from './client-analytics-dashboard'
@@ -126,7 +129,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
                 <CardDescription className="text-base mt-1">{client.name}</CardDescription>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               {client.is_qc_client && (
                 <Badge variant="default">QC Client</Badge>
               )}
@@ -139,6 +142,12 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
                   Inactive
                 </Badge>
               )}
+              <Link href={`/clients/${client.id}/edit`}>
+                <Button variant="outline" size="sm">
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+              </Link>
             </div>
           </div>
         </CardHeader>

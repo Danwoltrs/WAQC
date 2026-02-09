@@ -120,8 +120,8 @@ export function QualityAssignmentDialog({
   const fetchAvailableClients = async () => {
     setSearchLoading(true)
     try {
-      // Fetch active buyers and roasters only (not exporters)
-      const response = await fetch('/api/clients?is_active=true&client_types=importer_buyer,roaster,final_buyer,roaster_final_buyer')
+      // Fetch all active QC clients
+      const response = await fetch('/api/clients?is_active=true&is_qc_client=true')
       if (!response.ok) throw new Error('Failed to fetch clients')
 
       const data = await response.json()
@@ -259,7 +259,8 @@ export function QualityAssignmentDialog({
 
   const filteredClients = clients.filter(client =>
     client.name.toLowerCase().includes(clientSearch.toLowerCase()) ||
-    client.company.toLowerCase().includes(clientSearch.toLowerCase())
+    client.company.toLowerCase().includes(clientSearch.toLowerCase()) ||
+    (client.fantasy_name || '').toLowerCase().includes(clientSearch.toLowerCase())
   )
 
   const filteredTemplates = templates.filter(template =>

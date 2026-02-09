@@ -36,7 +36,7 @@ export function SupplyChainStep({
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [exporters])
 
-  // Importers: Always show all importers from importers table (deduplicated by name)
+  // Importers: deduplicated by name
   const importerOptions = useMemo(() => {
     const seen = new Set<string>()
     return importers
@@ -53,6 +53,31 @@ export function SupplyChainStep({
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [importers])
+
+  // Merged importer options: when importer_is_qc_client is checked, show QC clients + linked importers
+  const mergedImporterOptions = useMemo(() => {
+    if (formData.importer_is_qc_client) {
+      const clientOptions = qcClients.map(c => ({
+        id: c.id,
+        name: c.fantasy_name || c.company,
+        type: 'client' as const,
+        clientId: c.id
+      }))
+      const linkedImporterOptions = importerOptions
+        .filter(imp => imp.clientId)
+      // Deduplicate by name (QC clients first)
+      const seen = new Set<string>()
+      return [...clientOptions, ...linkedImporterOptions]
+        .filter(opt => {
+          const key = opt.name.toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
+    return importerOptions
+  }, [formData.importer_is_qc_client, qcClients, importerOptions])
 
   // QC Client options: exclude the selected importer if they're also a QC client
   const qcClientOptions = useMemo(() => {
@@ -244,7 +269,7 @@ export function SupplyChainStep({
             <SelectContent>
               <SelectItem value="none">Select...</SelectItem>
               <SelectItem value="new">+ Create New</SelectItem>
-              {importerOptions.map((option) => (
+              {mergedImporterOptions.map((option) => (
                 <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
               ))}
             </SelectContent>

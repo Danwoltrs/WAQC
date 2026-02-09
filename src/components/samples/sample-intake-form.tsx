@@ -364,12 +364,10 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
   const loadQcClients = async () => {
     try {
-      const response = await fetch('/api/clients?limit=500')
+      const response = await fetch('/api/clients?is_qc_client=true&is_active=true&limit=500')
       if (response.ok) {
         const data = await response.json()
-        // Filter for is_qc_client = true
-        const qcClientsList = (data.clients || []).filter((c: any) => c.is_qc_client)
-        setQcClients(qcClientsList as Client[])
+        setQcClients((data.clients || []) as Client[])
       } else {
         console.error('Failed to load QC clients:', response.status)
       }
