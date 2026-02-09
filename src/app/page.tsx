@@ -130,7 +130,7 @@ function DashboardContent() {
           quality_name,
           status,
           created_at,
-          client:clients(name, company)
+          client:clients!samples_client_id_fkey(name, company)
         `)
         .is('deleted_at', null) // Exclude soft-deleted samples
         .order('created_at', { ascending: false })

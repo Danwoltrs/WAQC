@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
           exporter_id,
           importer_id,
           roaster_id,
-          client:clients(
+          client:clients!samples_client_id_fkey(
             id,
             name,
             company,

@@ -164,7 +164,7 @@ export async function POST(
         workflow_stage,
         status,
         quality_spec_id,
-        client:clients(id, name, company)
+        client:clients!samples_client_id_fkey(id, name, company)
       `)
       .eq('id', id)
       .single()

@@ -43,7 +43,7 @@ export async function GET(
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        client:clients(id, company, fantasy_name, country, client_types),
+        client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at)
       `)
@@ -68,7 +68,7 @@ export async function GET(
           exporter:exporters!samples_exporter_id_fkey(id, name, country),
           importer:importers(id, name, country),
           roaster:roasters(id, name, country),
-          client:clients(id, company, fantasy_name, country, client_types),
+          client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
           end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
           certificate:certificates(id, certificate_number, status, created_at)
         `)
