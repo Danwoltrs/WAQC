@@ -91,6 +91,7 @@ interface Sample {
   end_client_country?: string
   qc_client_name?: string
   qc_client_country?: string
+  importer_is_qc_client?: boolean
   end_client_contract_nr?: string
   supplier_contract_nr?: string
   buyer?: string
@@ -1095,7 +1096,7 @@ export default function SampleDetailPage() {
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.importer_name || '-'}</span>
+                            <span>{sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || '-'}</span>
                           </div>
                         </td>
                         <td className="py-2 px-3">

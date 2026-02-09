@@ -113,35 +113,31 @@ function DashboardContent() {
   }
 
   const fetchSamples = async () => {
-    // Timeout to prevent infinite loading - max 10 seconds for content fetch
+    // Timeout to prevent infinite loading - max 15 seconds for content fetch
     const timeoutId = setTimeout(() => {
       console.error('[UI] Dashboard content fetch timeout - forcing ready state')
       setLoadError('Content load timed out. Please refresh.')
       setLoading(false)
-    }, 10000)
+    }, 15000)
 
     try {
-      const { data, error } = await supabase
-        .from('samples')
-        .select(`
-          id,
-          tracking_number,
-          origin,
-          quality_name,
-          status,
-          created_at,
-          client:clients!samples_client_id_fkey(name, company)
-        `)
-        .is('deleted_at', null) // Exclude soft-deleted samples
-        .order('created_at', { ascending: false })
+      // Use the API route which already handles FK disambiguation
+      const response = await fetch('/api/samples?limit=200')
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || `HTTP ${response.status}`)
+      }
+      const result = await response.json()
 
-      if (error) throw error
-
-      // Transform to flatten client name
-      const transformedSamples = (data || []).map((sample: any) => ({
-        ...sample,
-        buyer_name: sample.client?.company || sample.client?.name || null,
-        client: undefined
+      // Transform to dashboard format
+      const transformedSamples = (result.samples || []).map((sample: any) => ({
+        id: sample.id,
+        tracking_number: sample.tracking_number,
+        origin: sample.origin,
+        quality_name: sample.quality_name,
+        status: sample.status,
+        created_at: sample.created_at,
+        buyer_name: sample.qc_client_name || null,
       }))
 
       setSamples(transformedSamples)

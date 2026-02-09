@@ -57,6 +57,7 @@ interface Sample {
   end_client_country?: string
   qc_client_name?: string
   qc_client_country?: string
+  importer_is_qc_client?: boolean
   buyer?: string
   quality_name?: string
   sample_type?: 'pss' | 'ss' | 'type'
@@ -1039,7 +1040,7 @@ export default function SamplesPage() {
                         </td>
                         <td className="py-3 px-4 text-sm font-mono text-xs">{sample.wolthers_contract_nr || '-'}</td>
                         <td className="py-3 px-4 text-sm">
-                          <div>{sample.importer_name || '-'}</div>
+                          <div>{sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || '-'}</div>
                           {sample.buyer_contract_nr && (
                             <div className="text-xs text-muted-foreground">{sample.buyer_contract_nr}</div>
                           )}
@@ -1052,8 +1053,8 @@ export default function SamplesPage() {
                         </td>
                         <td className="py-3 px-4 text-sm">
                           <div>{sample.end_client_name || sample.qc_client_name || '-'}</div>
-                          {sample.end_client_contract_nr && (
-                            <div className="text-xs text-muted-foreground">{sample.end_client_contract_nr}</div>
+                          {(sample.end_client_contract_nr || sample.qc_client_contract_nr) && (
+                            <div className="text-xs text-muted-foreground">{sample.end_client_contract_nr || sample.qc_client_contract_nr}</div>
                           )}
                         </td>
                         <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
