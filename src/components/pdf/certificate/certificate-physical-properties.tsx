@@ -2,6 +2,7 @@
  * Certificate physical properties section
  * Left: Green Bean (Moisture, Density, Aspect)
  * Right: Roast (Quakers, Roast Aspect)
+ * Supports out-of-spec highlighting (red+bold) with limit notes
  */
 
 import React from 'react'
@@ -51,6 +52,11 @@ const propStyles = StyleSheet.create({
     fontWeight: 600,
     color: COLORS.dark,
   },
+  valueOutOfSpec: {
+    fontSize: 10,
+    fontWeight: 700,
+    color: COLORS.outOfSpec,
+  },
   valueSmall: {
     fontSize: 9,
     fontWeight: 600,
@@ -60,6 +66,10 @@ const propStyles = StyleSheet.create({
     fontSize: 7,
     color: COLORS.muted,
   },
+  specNote: {
+    fontSize: 6,
+    color: COLORS.outOfSpec,
+  },
 })
 
 interface PropertyItemProps {
@@ -67,20 +77,23 @@ interface PropertyItemProps {
   value: string | number | null
   unit?: string
   small?: boolean
+  outOfSpec?: boolean
+  specNote?: string
 }
 
-function PropertyItem({ label, value, unit, small }: PropertyItemProps) {
+function PropertyItem({ label, value, unit, small, outOfSpec, specNote }: PropertyItemProps) {
   if (value === null || value === undefined || value === '') return null
 
   return (
     <View style={propStyles.propertyItem}>
       <Text style={propStyles.label}>{label}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-        <Text style={small ? propStyles.valueSmall : propStyles.value}>
+        <Text style={outOfSpec ? propStyles.valueOutOfSpec : (small ? propStyles.valueSmall : propStyles.value)}>
           {typeof value === 'number' ? value.toFixed(1) : value}
         </Text>
         {unit && <Text style={propStyles.unit}> {unit}</Text>}
       </View>
+      {specNote && <Text style={propStyles.specNote}>{specNote}</Text>}
     </View>
   )
 }
@@ -93,6 +106,11 @@ export interface CertificatePhysicalPropertiesProps {
   // Roast properties
   quakers: number | null
   roastAspect?: string | null
+  // Spec limits
+  moistureMin?: number
+  moistureMax?: number
+  maxQuakers?: number
+  showQuakers?: boolean
 }
 
 export function CertificatePhysicalProperties({
@@ -101,13 +119,40 @@ export function CertificatePhysicalProperties({
   greenAspect,
   quakers,
   roastAspect,
+  moistureMin,
+  moistureMax,
+  maxQuakers,
+  showQuakers,
 }: CertificatePhysicalPropertiesProps) {
   // Check if we have any data to display
   const hasGreenData = moisture !== null || density !== null || greenAspect
-  const hasRoastData = quakers !== null || roastAspect
+  // Show quakers if: explicitly showQuakers=true, or showQuakers is undefined and we have quaker data
+  const shouldShowQuakers = showQuakers !== false && (quakers !== null || maxQuakers !== undefined)
+  const hasRoastData = shouldShowQuakers || roastAspect
 
   if (!hasGreenData && !hasRoastData) {
     return null
+  }
+
+  // Moisture out-of-spec check
+  let moistureOutOfSpec = false
+  let moistureNote = ''
+  if (moisture !== null) {
+    if (moistureMin !== undefined && moisture < moistureMin) {
+      moistureOutOfSpec = true
+      moistureNote = `(min ${moistureMin}%)`
+    } else if (moistureMax !== undefined && moisture > moistureMax) {
+      moistureOutOfSpec = true
+      moistureNote = `(max ${moistureMax}%)`
+    }
+  }
+
+  // Quakers out-of-spec check
+  let quakersOutOfSpec = false
+  let quakersNote = ''
+  if (quakers !== null && maxQuakers !== undefined && quakers > maxQuakers) {
+    quakersOutOfSpec = true
+    quakersNote = `(max ${maxQuakers})`
   }
 
   return (
@@ -116,7 +161,13 @@ export function CertificatePhysicalProperties({
       <View style={propStyles.section}>
         <Text style={propStyles.sectionTitle}>Green Bean</Text>
         <View style={propStyles.propertiesRow}>
-          <PropertyItem label="Moisture" value={moisture} unit="%" />
+          <PropertyItem
+            label="Moisture"
+            value={moisture}
+            unit="%"
+            outOfSpec={moistureOutOfSpec}
+            specNote={moistureNote}
+          />
           <PropertyItem label="Density" value={density} unit="g/L" />
           {greenAspect && (
             <PropertyItem label="Aspect" value={greenAspect} small />
@@ -130,7 +181,14 @@ export function CertificatePhysicalProperties({
       <View style={propStyles.section}>
         <Text style={propStyles.sectionTitle}>Roast Analysis</Text>
         <View style={propStyles.propertiesRow}>
-          <PropertyItem label="Quakers" value={quakers} />
+          {shouldShowQuakers && (
+            <PropertyItem
+              label="Quakers"
+              value={quakers}
+              outOfSpec={quakersOutOfSpec}
+              specNote={quakersNote}
+            />
+          )}
           {roastAspect && (
             <PropertyItem label="Roast Aspect" value={roastAspect} small />
           )}

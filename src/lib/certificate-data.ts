@@ -71,6 +71,27 @@ export interface CuppingData {
   uniformCup: boolean | null   // Yes/No for uniform cup
 }
 
+export interface ScreenSizeLimit {
+  screen_size: string
+  constraint_type: 'minimum' | 'maximum' | 'range' | 'exact'
+  min_value?: number
+  max_value?: number
+}
+
+export interface QualitySpecLimits {
+  moisture_min?: number
+  moisture_max?: number
+  max_quakers?: number
+  defect_thresholds_primary?: number
+  defect_thresholds_secondary?: number
+  defect_thresholds_total?: number
+  max_taints?: number
+  max_faults?: number
+  max_combined_defects?: number
+  zero_tolerance_defects?: boolean
+  screen_size_constraints?: ScreenSizeLimit[]
+}
+
 export interface CertificateData {
   sample: {
     id: string
@@ -125,6 +146,7 @@ export interface CertificateData {
   greenBeanAnalysis: GreenBeanAnalysis | null
   roastAnalysis: RoastAnalysis | null
   cuppingData: CuppingData | null
+  gradingComments: string | null
   certificate: {
     id: string
     certificate_number: string
@@ -139,6 +161,7 @@ export interface CertificateData {
     is_specialty: boolean
     has_validation: boolean
   } | null
+  specLimits: QualitySpecLimits | null
 }
 
 /**
@@ -252,10 +275,10 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       : Promise.resolve({ data: null }),
   ])
 
-  // Fetch quality assessment (green bean and roast data)
+  // Fetch quality assessment (green bean, roast data, and cup status)
   const { data: qualityAssessment } = await supabase
     .from('quality_assessments')
-    .select('green_bean_data, roast_data')
+    .select('green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -334,7 +357,12 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
           description,
           parameters,
           cupping_scale_min,
-          cupping_scale_max
+          cupping_scale_max,
+          defect_thresholds_primary,
+          defect_thresholds_secondary,
+          max_taints_allowed,
+          max_faults_allowed,
+          screen_size_requirements
         )
       `)
       .eq('id', sample.quality_spec_id)
@@ -363,10 +391,36 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         parameters?: unknown
         cupping_scale_min?: number
         cupping_scale_max?: number
+        defect_thresholds_primary?: number | null
+        defect_thresholds_secondary?: number | null
+        max_taints_allowed?: number | null
+        max_faults_allowed?: number | null
+        screen_size_requirements?: Record<string, { min_percent?: number; max_percent?: number }> | null
       }
-      const templateParams = templateData?.parameters as {
+      interface CertTemplateParameters {
         cupping_attributes?: CuppingAttributeConfig[]
-      } | undefined
+        moisture_min?: number
+        moisture_max?: number
+        max_quakers?: number
+        defect_thresholds_total?: number
+        taint_fault_configuration?: {
+          rules?: {
+            max_taints?: number
+            max_faults?: number
+            max_combined?: number
+            zero_tolerance?: boolean
+          }
+        }
+        screen_size_requirements?: {
+          constraints?: Array<{
+            screen_size: string
+            constraint_type: 'minimum' | 'maximum' | 'range' | 'exact'
+            min_value?: number
+            max_value?: number
+          }>
+        }
+      }
+      const templateParams = templateData?.parameters as CertTemplateParameters | undefined
 
       // Get default scale from template level (fallback)
       const defaultScaleMin = templateData?.cupping_scale_min ?? 0
@@ -422,6 +476,80 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     }
   }
 
+  // Build specLimits from template data
+  let specLimits: QualitySpecLimits | null = null
+  if (sample.quality_spec_id) {
+    // Re-use the template data already fetched above via qualitySpec query
+    // We need to re-fetch if spec wasn't found above, but normally it was
+    const { data: specForLimits } = await supabase
+      .from('client_qualities')
+      .select(`
+        template:quality_templates(
+          parameters,
+          defect_thresholds_primary,
+          defect_thresholds_secondary,
+          max_taints_allowed,
+          max_faults_allowed,
+          screen_size_requirements
+        )
+      `)
+      .eq('id', sample.quality_spec_id)
+      .single()
+
+    if (specForLimits?.template) {
+      const tmpl = specForLimits.template as {
+        parameters?: Record<string, unknown>
+        defect_thresholds_primary?: number | null
+        defect_thresholds_secondary?: number | null
+        max_taints_allowed?: number | null
+        max_faults_allowed?: number | null
+        screen_size_requirements?: Record<string, unknown> | null
+      }
+      const params = tmpl.parameters || {}
+
+      // Build screen size constraints from both legacy and new format
+      let screenConstraints: ScreenSizeLimit[] | undefined
+      // New format: parameters.screen_size_requirements.constraints
+      const paramScreenReqs = params.screen_size_requirements as { constraints?: ScreenSizeLimit[] } | undefined
+      if (paramScreenReqs?.constraints && Array.isArray(paramScreenReqs.constraints)) {
+        screenConstraints = paramScreenReqs.constraints
+      }
+      // Legacy format: template.screen_size_requirements as {size: {min_percent, max_percent}}
+      if (!screenConstraints && tmpl.screen_size_requirements && typeof tmpl.screen_size_requirements === 'object') {
+        const legacy = tmpl.screen_size_requirements as Record<string, { min_percent?: number; max_percent?: number }>
+        screenConstraints = Object.entries(legacy).map(([size, req]) => ({
+          screen_size: size,
+          constraint_type: (req.min_percent !== undefined && req.max_percent !== undefined ? 'range' : req.min_percent !== undefined ? 'minimum' : 'maximum') as ScreenSizeLimit['constraint_type'],
+          min_value: req.min_percent,
+          max_value: req.max_percent,
+        }))
+      }
+
+      // Get taint/fault limits from both template columns and parameters
+      const tfRules = (params.taint_fault_configuration as { rules?: { max_taints?: number; max_faults?: number; max_combined?: number; zero_tolerance?: boolean } })?.rules
+
+      specLimits = {
+        moisture_min: params.moisture_min as number | undefined,
+        moisture_max: params.moisture_max as number | undefined,
+        max_quakers: params.max_quakers as number | undefined,
+        defect_thresholds_primary: tmpl.defect_thresholds_primary ?? undefined,
+        defect_thresholds_secondary: tmpl.defect_thresholds_secondary ?? undefined,
+        defect_thresholds_total: params.defect_thresholds_total as number | undefined,
+        max_taints: tfRules?.max_taints ?? (tmpl.max_taints_allowed ?? undefined),
+        max_faults: tfRules?.max_faults ?? (tmpl.max_faults_allowed ?? undefined),
+        max_combined_defects: tfRules?.max_combined,
+        zero_tolerance_defects: tfRules?.zero_tolerance,
+        screen_size_constraints: screenConstraints,
+      }
+
+      // If all fields are undefined, set to null (no limits configured)
+      const hasAnyLimit = Object.values(specLimits).some(v => v !== undefined)
+      if (!hasAnyLimit) {
+        specLimits = null
+      }
+    }
+  }
+
   // Process green bean data
   let greenBeanAnalysis: GreenBeanAnalysis | null = null
   if (qualityAssessment?.green_bean_data) {
@@ -472,7 +600,14 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   // Process cupping scores
   let cuppingData: CuppingData | null = null
   if (cuppingScores && cuppingScores.length > 0) {
-    cuppingData = processCuppingScores(cuppingScores, isSpecialty, cuppingAttributeValidations, cuppingAttributeScales)
+    cuppingData = processCuppingScores(
+      cuppingScores,
+      isSpecialty,
+      cuppingAttributeValidations,
+      cuppingAttributeScales,
+      qualityAssessment?.clean_cup ?? null,
+      qualityAssessment?.uniform_cup ?? null
+    )
   }
 
   // Generate current date for issued_date (used when no certificate record exists yet or as fallback)
@@ -590,6 +725,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     greenBeanAnalysis,
     roastAnalysis,
     cuppingData,
+    gradingComments: qualityAssessment?.grading_comments || null,
     // Certificate data: use DB record if exists, otherwise create a placeholder with current date
     // This ensures the PDF always shows an issue date even on first generation
     certificate: certificate
@@ -609,6 +745,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
           status: null,
         },
     qualitySpec,
+    specLimits,
   }
 }
 
@@ -811,7 +948,9 @@ function processCuppingScores(
   cuppingScores: Array<{ scores: unknown; notes: string | null; defects?: unknown }>,
   isSpecialty: boolean,
   attributeValidations?: CuppingAttributeValidations,
-  attributeScales?: CuppingAttributeScales
+  attributeScales?: CuppingAttributeScales,
+  persistedCleanCup?: boolean | null,
+  persistedUniformCup?: boolean | null
 ): CuppingData {
   // Collect all scores by attribute
   const attributeScores: Record<string, number[]> = {}
@@ -876,21 +1015,15 @@ function processCuppingScores(
           if (attrLower === 'taints' || attrLower === 'taint' || attrLower === 'faults' || attrLower === 'fault') {
             continue
           } else if (attrLower === 'clean cup' || attrLower === 'cleancup' || attrLower === 'clean_cup') {
-            // Track Clean Cup separately for boolean conversion
+            // Track Clean Cup separately for backward-compat boolean conversion
+            // (only used if quality_assessments.clean_cup is null)
             cleanCupScores.push(value)
-            // Also add to attributes for chart display
-            if (!attributeScores[attr]) {
-              attributeScores[attr] = []
-            }
-            attributeScores[attr].push(value)
+            // Do NOT add to attributeScores - no longer displayed in chart
           } else if (attrLower === 'uniformity' || attrLower === 'uniform cup' || attrLower === 'uniformcup' || attrLower === 'uniform_cup') {
-            // Track Uniform Cup separately for boolean conversion
+            // Track Uniform Cup separately for backward-compat boolean conversion
+            // (only used if quality_assessments.uniform_cup is null)
             uniformCupScores.push(value)
-            // Also add to attributes for chart display
-            if (!attributeScores[attr]) {
-              attributeScores[attr] = []
-            }
-            attributeScores[attr].push(value)
+            // Do NOT add to attributeScores - no longer displayed in chart
           } else {
             if (!attributeScores[attr]) {
               attributeScores[attr] = []
@@ -908,6 +1041,7 @@ function processCuppingScores(
   let scoreCount = 0
 
   // Standard SCA cupping attributes in order
+  // (Uniformity and Clean Cup removed - now derived from defects, not scored)
   const standardOrder = [
     'Fragrance/Aroma',
     'Fragrance',
@@ -917,8 +1051,6 @@ function processCuppingScores(
     'Acidity',
     'Body',
     'Balance',
-    'Uniformity',
-    'Clean Cup',
     'Sweetness',
     'Overall',
   ]
@@ -995,17 +1127,18 @@ function processCuppingScores(
     ? Math.round(faultsCounts.reduce((a, b) => a + b, 0) / faultsCounts.length * 10) / 10
     : null
 
-  // Convert Clean Cup and Uniform Cup to boolean values
-  // In SCA cupping, score of 10 = all cups clean/uniform (true)
-  // Score < 10 = at least one cup had issues (false)
-  let cleanCup: boolean | null = null
-  if (cleanCupScores.length > 0) {
+  // Clean Cup and Uniform Cup: prefer persisted values from quality_assessments
+  // Fall back to legacy numeric score conversion for backward compat
+  let cleanCup: boolean | null = persistedCleanCup ?? null
+  if (cleanCup === null && cleanCupScores.length > 0) {
+    // Backward compat: old numeric scores (10 = clean, <10 = not clean)
     const avgCleanCup = cleanCupScores.reduce((a, b) => a + b, 0) / cleanCupScores.length
     cleanCup = avgCleanCup >= 10
   }
 
-  let uniformCup: boolean | null = null
-  if (uniformCupScores.length > 0) {
+  let uniformCup: boolean | null = persistedUniformCup ?? null
+  if (uniformCup === null && uniformCupScores.length > 0) {
+    // Backward compat: old numeric scores
     const avgUniformCup = uniformCupScores.reduce((a, b) => a + b, 0) / uniformCupScores.length
     uniformCup = avgUniformCup >= 10
   }

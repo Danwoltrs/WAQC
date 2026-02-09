@@ -322,6 +322,9 @@ export interface CertificateCuppingChartProps {
   taintDetails?: DefectDetail[]
   cleanCup?: boolean | null
   uniformCup?: boolean | null
+  // Spec limits
+  maxTaints?: number
+  maxFaults?: number
 }
 
 export function CertificateCuppingChart({
@@ -334,6 +337,8 @@ export function CertificateCuppingChart({
   taintDetails,
   cleanCup,
   uniformCup,
+  maxTaints,
+  maxFaults,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
     return null
@@ -351,6 +356,10 @@ export function CertificateCuppingChart({
   // Format faults and taints for display (numbers, 0 means none)
   const faultsDisplay = faults != null && faults > 0 ? String(faults) : 'None'
   const taintsDisplay = taints != null && taints > 0 ? String(taints) : 'None'
+
+  // Taints/faults out-of-spec checks
+  const taintsOutOfSpec = maxTaints !== undefined && taints != null && taints > maxTaints
+  const faultsOutOfSpec = maxFaults !== undefined && faults != null && faults > maxFaults
 
   // Calculate bar width for scale header (use first attribute's scale)
   const firstAttr = attributes[0]
@@ -549,12 +558,17 @@ export function CertificateCuppingChart({
             <Text style={chartStyles.title}>Faults</Text>
             {faultDetails && faultDetails.length > 0 ? (
               faultDetails.map((fault, idx) => (
-                <Text key={idx} style={chartStyles.defectValue}>
+                <Text key={idx} style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
                   {fault.name}{fault.intensity ? ` (${fault.intensity})` : ''}
                 </Text>
               ))
             ) : (
-              <Text style={chartStyles.defectValue}>{faultsDisplay}</Text>
+              <Text style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+                {faultsDisplay}
+              </Text>
+            )}
+            {faultsOutOfSpec && (
+              <Text style={{ fontSize: 6, color: COLORS.outOfSpec }}>(max {maxFaults})</Text>
             )}
           </View>
 
@@ -563,12 +577,17 @@ export function CertificateCuppingChart({
             <Text style={chartStyles.title}>Taints</Text>
             {taintDetails && taintDetails.length > 0 ? (
               taintDetails.map((taint, idx) => (
-                <Text key={idx} style={chartStyles.defectValue}>
+                <Text key={idx} style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
                   {taint.name}{taint.intensity ? ` (${taint.intensity})` : ''}
                 </Text>
               ))
             ) : (
-              <Text style={chartStyles.defectValue}>{taintsDisplay}</Text>
+              <Text style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+                {taintsDisplay}
+              </Text>
+            )}
+            {taintsOutOfSpec && (
+              <Text style={{ fontSize: 6, color: COLORS.outOfSpec }}>(max {maxTaints})</Text>
             )}
           </View>
         </View>

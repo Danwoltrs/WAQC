@@ -48,8 +48,10 @@ export function QualityCertificate({
     greenBeanAnalysis,
     roastAnalysis,
     cuppingData,
+    gradingComments,
     certificate,
     qualitySpec,
+    specLimits,
   } = data
 
   // Prepare screen sizes for screen defects component
@@ -152,6 +154,10 @@ export function QualityCertificate({
           greenAspect={greenBeanAnalysis?.green_aspect}
           quakers={roastAnalysis?.quaker_count ?? null}
           roastAspect={roastAnalysis?.roast_aspect}
+          moistureMin={specLimits?.moisture_min}
+          moistureMax={specLimits?.moisture_max}
+          maxQuakers={specLimits?.max_quakers}
+          showQuakers={specLimits?.max_quakers !== undefined ? true : undefined}
         />
 
         {/* 6. Screen Distribution + Defects */}
@@ -160,6 +166,10 @@ export function QualityCertificate({
           defects={defects}
           primaryDefectsCount={greenBeanAnalysis?.defects?.total_primary ?? null}
           secondaryDefectsCount={greenBeanAnalysis?.defects?.total_secondary ?? null}
+          screenConstraints={specLimits?.screen_size_constraints}
+          maxPrimaryDefects={specLimits?.defect_thresholds_primary}
+          maxSecondaryDefects={specLimits?.defect_thresholds_secondary}
+          maxTotalDefects={specLimits?.defect_thresholds_total}
         />
 
         {/* 7. Cupping Box Plot Chart with Faults/Taints and Clean/Uniform Cup */}
@@ -175,6 +185,8 @@ export function QualityCertificate({
           taintDetails={cuppingData?.taintDetails}
           cleanCup={cuppingData?.cleanCup}
           uniformCup={cuppingData?.uniformCup}
+          maxTaints={specLimits?.max_taints}
+          maxFaults={specLimits?.max_faults}
         />
 
         {/* 8. Cup Status Row - Removed as now integrated into cupping chart */}
@@ -183,6 +195,7 @@ export function QualityCertificate({
         {/* 9. Notes section */}
         <CertificateComments
           cuppingNotes={cuppingData?.comments || null}
+          additionalNotes={gradingComments}
         />
 
         {/* 10. Footer with lab info */}
