@@ -46,7 +46,7 @@ export async function GET(request: NextRequest) {
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country),
+        qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at)
       `)
@@ -94,6 +94,12 @@ export async function GET(request: NextRequest) {
         ? sample.certificate[0] || null
         : sample.certificate || null
 
+      // Check QC client types for importer/roaster fallback (same logic as detail API)
+      const clientTypes: string[] = sample.qc_client?.client_types || []
+      const isImporterClient = clientTypes.some((t: string) => t.includes('importer'))
+      const isRoasterClient = clientTypes.some((t: string) => t.includes('roaster'))
+      const qcClientName = sample.qc_client?.fantasy_name || sample.qc_client?.company || null
+
       return {
         ...sample,
         // Prioritize sample's own quality_name (for type samples or custom entries),
@@ -106,12 +112,14 @@ export async function GET(request: NextRequest) {
         // Exporter/Shipper from exporter_id
         exporter_name: sample.exporter?.name || null,
         exporter_country: sample.exporter?.country || null,
-        importer_name: sample.importer?.name || (sample.importer_is_qc_client ? (sample.qc_client?.fantasy_name || sample.qc_client?.company) : null),
-        importer_country: sample.importer?.country || (sample.importer_is_qc_client ? sample.qc_client?.country : null),
-        roaster_name: sample.roaster?.name || null,
-        roaster_country: sample.roaster?.country || null,
+        // Importer: from DB, or importer_is_qc_client flag, or QC client with importer type
+        importer_name: sample.importer?.name || (sample.importer_is_qc_client ? qcClientName : null) || (isImporterClient ? qcClientName : null),
+        importer_country: sample.importer?.country || (isImporterClient ? sample.qc_client?.country : null),
+        // Roaster: from DB, or QC client with roaster type
+        roaster_name: sample.roaster?.name || (isRoasterClient ? qcClientName : null),
+        roaster_country: sample.roaster?.country || (isRoasterClient ? sample.qc_client?.country : null),
         // QC Client (who hired Wolthers) from client_id
-        qc_client_name: sample.qc_client?.fantasy_name || sample.qc_client?.company || null,
+        qc_client_name: qcClientName,
         qc_client_country: sample.qc_client?.country || null,
         // End client (final buyer) - when NULL, QC client IS the end client
         end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
