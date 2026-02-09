@@ -20,7 +20,7 @@ interface CreateClientDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   clientType: 'exporter' | 'importer' | 'roaster'
-  onSuccess: (clientName: string) => void
+  onSuccess: (clientName: string, entityId?: string) => void
 }
 
 const CLIENT_TYPE_LABELS = {
@@ -95,12 +95,12 @@ export function CreateClientDialog({
         throw new Error(data.error || `Failed to create ${clientType}`)
       }
 
-      // Reset form and notify parent with the created entity's name
+      // Reset form and notify parent with the created entity's name and ID
       resetForm()
       const entityKey = clientType === 'exporter' ? 'exporter' :
                        clientType === 'importer' ? 'importer' :
                        'roaster'
-      onSuccess(data[entityKey]?.name || company)
+      onSuccess(data[entityKey]?.name || company, data[entityKey]?.id)
       onOpenChange(false)
     } catch (err: any) {
       console.error(`Error creating ${clientType}:`, err)

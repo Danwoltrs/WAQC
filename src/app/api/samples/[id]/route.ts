@@ -233,6 +233,7 @@ export async function PATCH(
       'seller_id',
       'supplier_type',
       'same_seller_shipper',
+      'importer_is_qc_client',
       'end_client_id',
       'end_client_contract_nr',
       'supplier_contract_nr'

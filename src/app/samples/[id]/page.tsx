@@ -14,7 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   ArrowLeft, CheckCircle, XCircle, Clock, AlertCircle, MapPin,
   Calendar, FileText, Download, Printer,
-  QrCode, Edit, Trash2, User, Building2, Award, Loader2, Eye, Mail,
+  QrCode, Edit, Trash2, User, Award, Loader2, Eye, Mail,
   Save, X, Lock, Coffee, Beaker
 } from 'lucide-react'
 import {
@@ -29,6 +29,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 // Link removed - not used
 import { useAuth } from '@/components/providers/auth-provider'
 import { trackingNumberToSlug } from '@/lib/utils'
+import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 
 interface EditPermission {
   canEdit: boolean
@@ -77,6 +78,11 @@ interface Sample {
   id: string
   tracking_number: string
   client_id?: string
+  seller_id?: string | null
+  exporter_id?: string | null
+  importer_id?: string | null
+  roaster_id?: string | null
+  end_client_id?: string | null
   supplier?: string
   seller_name?: string
   seller_country?: string
@@ -406,6 +412,13 @@ export default function SampleDetailPage() {
       container_nr: sample.container_nr,
       processing_method: sample.processing_method,
       storage_position: sample.storage_position,
+      // Entity IDs for dropdown editing
+      seller_id: sample.seller_id,
+      exporter_id: sample.exporter_id,
+      importer_id: sample.importer_id,
+      roaster_id: sample.roaster_id,
+      end_client_id: sample.end_client_id,
+      client_id: sample.client_id,
     })
     setIsEditMode(true)
   }
@@ -1017,170 +1030,12 @@ export default function SampleDetailPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="border rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-muted/50">
-                        <th className="text-left py-2 px-3 font-medium">Party</th>
-                        <th className="text-left py-2 px-3 font-medium">Name</th>
-                        <th className="text-left py-2 px-3 font-medium">Contract Ref</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Wolthers */}
-                      <tr className="border-b">
-                        <td className="py-2 px-3 text-muted-foreground">Wolthers</td>
-                        <td className="py-2 px-3 text-muted-foreground">-</td>
-                        <td className="py-2 px-3">
-                          {isEditMode ? (
-                            <Input
-                              value={formData.wolthers_contract_nr || ''}
-                              onChange={(e) => handleFormChange('wolthers_contract_nr', e.target.value)}
-                              className="h-7 text-sm font-mono"
-                              placeholder="Contract #"
-                            />
-                          ) : (
-                            <span className="font-mono">{sample.wolthers_contract_nr || '-'}</span>
-                          )}
-                        </td>
-                      </tr>
-                      {/* Seller */}
-                      <tr className="border-b">
-                        <td className="py-2 px-3 text-muted-foreground">Seller</td>
-                        <td className="py-2 px-3">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.seller_name || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="py-2 px-3">
-                          {isEditMode ? (
-                            <Input
-                              value={formData.seller_contract_nr || ''}
-                              onChange={(e) => handleFormChange('seller_contract_nr', e.target.value)}
-                              className="h-7 text-sm font-mono"
-                              placeholder="Contract #"
-                            />
-                          ) : (
-                            <span className="font-mono">{sample.seller_contract_nr || '-'}</span>
-                          )}
-                        </td>
-                      </tr>
-                      {/* Shipper */}
-                      {!sample.same_seller_shipper && (
-                        <tr className="border-b">
-                          <td className="py-2 px-3 text-muted-foreground">Shipper</td>
-                          <td className="py-2 px-3">
-                            <div className="flex items-center gap-2">
-                              <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                              <span>{sample.exporter_name || '-'}</span>
-                            </div>
-                          </td>
-                          <td className="py-2 px-3">
-                            {isEditMode ? (
-                              <Input
-                                value={formData.shipper_contract_nr || ''}
-                                onChange={(e) => handleFormChange('shipper_contract_nr', e.target.value)}
-                                className="h-7 text-sm font-mono"
-                                placeholder="Contract #"
-                              />
-                            ) : (
-                              <span className="font-mono">{sample.shipper_contract_nr || '-'}</span>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                      {/* Importer */}
-                      <tr className="border-b">
-                        <td className="py-2 px-3 text-muted-foreground">Importer</td>
-                        <td className="py-2 px-3">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="py-2 px-3">
-                          {isEditMode ? (
-                            <Input
-                              value={formData.buyer_contract_nr || ''}
-                              onChange={(e) => handleFormChange('buyer_contract_nr', e.target.value)}
-                              className="h-7 text-sm font-mono"
-                              placeholder="Contract #"
-                            />
-                          ) : (
-                            <span className="font-mono">{sample.buyer_contract_nr || '-'}</span>
-                          )}
-                        </td>
-                      </tr>
-                      {/* Roaster */}
-                      <tr className="border-b">
-                        <td className="py-2 px-3 text-muted-foreground">Roaster</td>
-                        <td className="py-2 px-3">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.roaster_name || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="py-2 px-3">
-                          {isEditMode ? (
-                            <Input
-                              value={formData.roaster_contract_nr || ''}
-                              onChange={(e) => handleFormChange('roaster_contract_nr', e.target.value)}
-                              className="h-7 text-sm font-mono"
-                              placeholder="Contract #"
-                            />
-                          ) : (
-                            <span className="font-mono">{sample.roaster_contract_nr || '-'}</span>
-                          )}
-                        </td>
-                      </tr>
-                      {/* End Client */}
-                      <tr className="border-b">
-                        <td className="py-2 px-3 text-muted-foreground">End Client</td>
-                        <td className="py-2 px-3">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.end_client_name || sample.qc_client_name || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="py-2 px-3">
-                          {isEditMode ? (
-                            <Input
-                              value={formData.end_client_contract_nr || ''}
-                              onChange={(e) => handleFormChange('end_client_contract_nr', e.target.value)}
-                              className="h-7 text-sm font-mono"
-                              placeholder="Contract #"
-                            />
-                          ) : (
-                            <span className="font-mono">{sample.end_client_contract_nr || '-'}</span>
-                          )}
-                        </td>
-                      </tr>
-                      {/* QC Client */}
-                      <tr>
-                        <td className="py-2 px-3 text-muted-foreground">QC Client</td>
-                        <td className="py-2 px-3">
-                          <div className="flex items-center gap-2">
-                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.qc_client_name || '-'}</span>
-                          </div>
-                        </td>
-                        <td className="py-2 px-3">
-                          {isEditMode ? (
-                            <Input
-                              value={formData.qc_client_contract_nr || ''}
-                              onChange={(e) => handleFormChange('qc_client_contract_nr', e.target.value)}
-                              className="h-7 text-sm font-mono"
-                              placeholder="Contract #"
-                            />
-                          ) : (
-                            <span className="font-mono">{sample.qc_client_contract_nr || '-'}</span>
-                          )}
-                        </td>
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
+                <SupplyChainEditTable
+                  sample={sample}
+                  isEditMode={isEditMode}
+                  formData={formData}
+                  onFormChange={(field, value) => handleFormChange(field as keyof Sample, value)}
+                />
               </CardContent>
             </Card>
 

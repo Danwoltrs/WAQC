@@ -106,8 +106,8 @@ export async function GET(request: NextRequest) {
         // Exporter/Shipper from exporter_id
         exporter_name: sample.exporter?.name || null,
         exporter_country: sample.exporter?.country || null,
-        importer_name: sample.importer?.name || null,
-        importer_country: sample.importer?.country || null,
+        importer_name: sample.importer?.name || (sample.importer_is_qc_client ? (sample.qc_client?.fantasy_name || sample.qc_client?.company) : null),
+        importer_country: sample.importer?.country || (sample.importer_is_qc_client ? sample.qc_client?.country : null),
         roaster_name: sample.roaster?.name || null,
         roaster_country: sample.roaster?.country || null,
         // QC Client (who hired Wolthers) from client_id
