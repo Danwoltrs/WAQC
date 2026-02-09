@@ -89,6 +89,10 @@ interface Sample {
   roaster_country?: string
   end_client_name?: string
   end_client_country?: string
+  qc_client_name?: string
+  qc_client_country?: string
+  end_client_contract_nr?: string
+  supplier_contract_nr?: string
   buyer?: string
   quality_name?: string
   quality_code?: string
@@ -389,9 +393,14 @@ export default function SampleDetailPage() {
       bag_weight_kg: sample.bag_weight_kg,
       bags_quantity_mt: sample.bags_quantity_mt,
       wolthers_contract_nr: sample.wolthers_contract_nr,
+      seller_contract_nr: sample.seller_contract_nr,
+      shipper_contract_nr: sample.shipper_contract_nr,
       exporter_contract_nr: sample.exporter_contract_nr,
       buyer_contract_nr: sample.buyer_contract_nr,
       roaster_contract_nr: sample.roaster_contract_nr,
+      qc_client_contract_nr: sample.qc_client_contract_nr,
+      end_client_contract_nr: sample.end_client_contract_nr,
+      supplier_contract_nr: sample.supplier_contract_nr,
       ico_number: sample.ico_number,
       container_nr: sample.container_nr,
       processing_method: sample.processing_method,
@@ -1034,35 +1043,59 @@ export default function SampleDetailPage() {
                           )}
                         </td>
                       </tr>
-                      {/* Exporter (Seller) */}
+                      {/* Seller */}
                       <tr className="border-b">
-                        <td className="py-2 px-3 text-muted-foreground">Exporter</td>
+                        <td className="py-2 px-3 text-muted-foreground">Seller</td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.seller_name || sample.exporter_name || sample.supplier || '-'}</span>
+                            <span>{sample.seller_name || '-'}</span>
                           </div>
                         </td>
                         <td className="py-2 px-3">
                           {isEditMode ? (
                             <Input
-                              value={formData.exporter_contract_nr || ''}
-                              onChange={(e) => handleFormChange('exporter_contract_nr', e.target.value)}
+                              value={formData.seller_contract_nr || ''}
+                              onChange={(e) => handleFormChange('seller_contract_nr', e.target.value)}
                               className="h-7 text-sm font-mono"
                               placeholder="Contract #"
                             />
                           ) : (
-                            <span className="font-mono">{sample.seller_contract_nr || sample.exporter_contract_nr || '-'}</span>
+                            <span className="font-mono">{sample.seller_contract_nr || '-'}</span>
                           )}
                         </td>
                       </tr>
+                      {/* Shipper */}
+                      {!sample.same_seller_shipper && (
+                        <tr className="border-b">
+                          <td className="py-2 px-3 text-muted-foreground">Shipper</td>
+                          <td className="py-2 px-3">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                              <span>{sample.exporter_name || '-'}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-3">
+                            {isEditMode ? (
+                              <Input
+                                value={formData.shipper_contract_nr || ''}
+                                onChange={(e) => handleFormChange('shipper_contract_nr', e.target.value)}
+                                className="h-7 text-sm font-mono"
+                                placeholder="Contract #"
+                              />
+                            ) : (
+                              <span className="font-mono">{sample.shipper_contract_nr || '-'}</span>
+                            )}
+                          </td>
+                        </tr>
+                      )}
                       {/* Importer */}
                       <tr className="border-b">
                         <td className="py-2 px-3 text-muted-foreground">Importer</td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.importer_name || sample.buyer || '-'}</span>
+                            <span>{sample.importer_name || '-'}</span>
                           </div>
                         </td>
                         <td className="py-2 px-3">
@@ -1101,15 +1134,48 @@ export default function SampleDetailPage() {
                         </td>
                       </tr>
                       {/* End Client */}
-                      <tr>
+                      <tr className="border-b">
                         <td className="py-2 px-3 text-muted-foreground">End Client</td>
                         <td className="py-2 px-3">
                           <div className="flex items-center gap-2">
                             <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
-                            <span>{sample.end_client_name || '-'}</span>
+                            <span>{sample.end_client_name || sample.qc_client_name || '-'}</span>
                           </div>
                         </td>
-                        <td className="py-2 px-3">-</td>
+                        <td className="py-2 px-3">
+                          {isEditMode ? (
+                            <Input
+                              value={formData.end_client_contract_nr || ''}
+                              onChange={(e) => handleFormChange('end_client_contract_nr', e.target.value)}
+                              className="h-7 text-sm font-mono"
+                              placeholder="Contract #"
+                            />
+                          ) : (
+                            <span className="font-mono">{sample.end_client_contract_nr || '-'}</span>
+                          )}
+                        </td>
+                      </tr>
+                      {/* QC Client */}
+                      <tr>
+                        <td className="py-2 px-3 text-muted-foreground">QC Client</td>
+                        <td className="py-2 px-3">
+                          <div className="flex items-center gap-2">
+                            <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
+                            <span>{sample.qc_client_name || '-'}</span>
+                          </div>
+                        </td>
+                        <td className="py-2 px-3">
+                          {isEditMode ? (
+                            <Input
+                              value={formData.qc_client_contract_nr || ''}
+                              onChange={(e) => handleFormChange('qc_client_contract_nr', e.target.value)}
+                              className="h-7 text-sm font-mono"
+                              placeholder="Contract #"
+                            />
+                          ) : (
+                            <span className="font-mono">{sample.qc_client_contract_nr || '-'}</span>
+                          )}
+                        </td>
                       </tr>
                     </tbody>
                   </table>

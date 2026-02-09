@@ -43,7 +43,7 @@ export async function GET(
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        client:clients(id, company, fantasy_name, client_types),
+        client:clients(id, company, fantasy_name, country, client_types),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at)
       `)
@@ -68,7 +68,7 @@ export async function GET(
           exporter:exporters!samples_exporter_id_fkey(id, name, country),
           importer:importers(id, name, country),
           roaster:roasters(id, name, country),
-          client:clients(id, company, fantasy_name, client_types),
+          client:clients(id, company, fantasy_name, country, client_types),
           end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
           certificate:certificates(id, certificate_number, status, created_at)
         `)
@@ -93,11 +93,11 @@ export async function GET(
     }
 
     // Check if client is a roaster type (roaster_final_buyer, roaster, etc.)
-    const clientTypes = (sample.client as { client_types?: string[] } | null)?.client_types || []
+    const clientObj = sample.client as { fantasy_name?: string; company?: string; country?: string; client_types?: string[] } | null
+    const clientTypes = clientObj?.client_types || []
     const isRoasterClient = clientTypes.some((t: string) => t.includes('roaster'))
     const isImporterClient = clientTypes.some((t: string) => t.includes('importer'))
-    const clientName = (sample.client as { fantasy_name?: string; company?: string } | null)?.fantasy_name ||
-      (sample.client as { fantasy_name?: string; company?: string } | null)?.company || null
+    const clientName = clientObj?.fantasy_name || clientObj?.company || null
 
     // Handle certificate array - Supabase returns array for one-to-many relations
     // A sample can have at most one certificate, so we take the first one
@@ -124,7 +124,10 @@ export async function GET(
       // Use roaster from DB, or fall back to client if they're a roaster type
       roaster_name: sample.roaster?.name || (isRoasterClient ? clientName : null),
       roaster_country: sample.roaster?.country || null,
-      // End client (final buyer)
+      // QC Client (who hired Wolthers) from client_id
+      qc_client_name: clientName,
+      qc_client_country: clientObj?.country || null,
+      // End client (final buyer) - when NULL, QC client IS the end client
       end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
       end_client_country: sample.end_client?.country || null,
       // Certificate info (flattened)
@@ -230,7 +233,9 @@ export async function PATCH(
       'seller_id',
       'supplier_type',
       'same_seller_shipper',
-      'end_client_id'
+      'end_client_id',
+      'end_client_contract_nr',
+      'supplier_contract_nr'
     ]
 
     for (const field of allowedFields) {

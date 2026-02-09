@@ -109,11 +109,11 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
           status,
           created_at,
           client_id,
-          supplier:suppliers(name),
-          importer:buyers!samples_importer_id_fkey(name),
+          seller:exporters!samples_seller_id_fkey(name),
+          importer:importers(name),
           roaster:roasters(name)
         `)
-        .not('supplier_id', 'is', null)
+        .not('seller_id', 'is', null)
         .not('importer_id', 'is', null)
         .not('roaster_id', 'is', null)
         .in('status', ['approved', 'rejected'])
@@ -121,7 +121,7 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
 
       // Apply stakeholder filters (using IDs now)
       if (filters?.supplier) {
-        query = query.eq('supplier_id', filters.supplier)
+        query = query.eq('seller_id', filters.supplier)
       }
       if (filters?.importer) {
         query = query.eq('importer_id', filters.importer)
@@ -181,7 +181,7 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
       }>()
 
       samples?.forEach((sample: any) => {
-        const supplierName = sample.supplier?.name
+        const supplierName = sample.seller?.name
         const importerName = sample.importer?.name
         const roasterName = sample.roaster?.name
 
@@ -407,7 +407,7 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
 
         <div className="mt-4 flex justify-center gap-8 text-sm">
           <div className="text-center">
-            <p className="font-semibold">Exporters</p>
+            <p className="font-semibold">Sellers</p>
             <p className="text-muted-foreground">{data.nodes.filter(n => n.type === 'exporter').length}</p>
           </div>
           <div className="text-center">

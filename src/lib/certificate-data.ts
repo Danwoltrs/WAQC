@@ -182,8 +182,12 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       importer_id,
       roaster_id,
       seller_id,
+      end_client_id,
       supplier_type,
-      same_seller_shipper
+      same_seller_shipper,
+      end_client_contract_nr,
+      supplier_contract_nr,
+      supplier
     `)
     .eq('id', sampleId)
     .single()
@@ -243,8 +247,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     sample.seller_id
       ? supabase.from('exporters').select('name, country').eq('id', sample.seller_id).single()
       : Promise.resolve({ data: null }),
-    (sample as any).end_client_id
-      ? supabase.from('clients').select('company, fantasy_name, country').eq('id', (sample as any).end_client_id).single()
+    sample.end_client_id
+      ? supabase.from('clients').select('company, fantasy_name, country').eq('id', sample.end_client_id).single()
       : Promise.resolve({ data: null }),
   ])
 
@@ -512,10 +516,9 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         address: null,
       }
     : {
-        // When shipper is different, we still use exporter entity but with shipper contract
-        // This could be enhanced later with a separate shippers table
-        name: sample.shipper_contract_nr ? (exporterResult.data?.name ?? null) : null,
-        country: sample.shipper_contract_nr ? (exporterResult.data?.country ?? null) : null,
+        // When shipper is different, show exporter entity as shipper
+        name: exporterResult.data?.name ?? null,
+        country: exporterResult.data?.country ?? null,
         contract: sample.shipper_contract_nr || null,
         address: null,
       }
@@ -567,7 +570,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       endClient: {
         name: endClientResult.data?.fantasy_name ?? endClientResult.data?.company ?? null,
         country: endClientResult.data?.country ?? null,
-        contract: null,
+        contract: sample.end_client_contract_nr ?? null,
         address: null,
       },
       qcClient: {

@@ -157,16 +157,25 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
+  // Seller=Importer deduplication (OFI scenario):
+  // When seller name matches importer name, merge into "Seller / Importer"
+  const sellerMatchesImporter = namesMatch(supplier?.name, importer.name)
+
   // Show Wolthers column if we have a Wolthers contract (tracking number shown in header)
   const hasReference = Boolean(wolthersContract)
 
+  // Build the merged seller label and entity when seller=importer
+  const sellerLabel = sellerMatchesImporter ? 'Seller / Importer' : 'Seller'
+  const sellerEntity = sellerMatchesImporter && supplier?.name
+    ? { ...supplier, contract: [supplier?.contract, importer.contract].filter(Boolean).join(' / ') || null }
+    : supplier
+
   // Count visible entities to determine separators
-  // Note: "Supplier" is called "Seller" in the UI (farm/coop/producer selling the coffee)
   const entities = [
-    { show: hasSupplier, label: 'Seller', entity: supplier },
+    { show: hasSupplier, label: sellerLabel, entity: sellerEntity },
     { show: hasExporter, label: 'Exporter', entity: exporter },
     { show: hasShipper, label: 'Shipper', entity: shipper },
-    { show: hasImporter, label: 'Importer', entity: importer },
+    { show: hasImporter && !sellerMatchesImporter, label: 'Importer', entity: importer },
     { show: hasRoaster, label: 'Roaster', entity: roaster },
     { show: hasEndClient, label: 'End Client', entity: endClient },
     { show: hasQcClient, label: 'QC Client', entity: qcClient },

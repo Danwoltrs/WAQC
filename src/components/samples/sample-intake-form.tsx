@@ -68,6 +68,7 @@ const initialFormData: FormData = {
   roaster: '',
   roaster_contract_nr: '',
   end_client: '',
+  end_client_contract_nr: '',
 
   // Step 2: Quality
   client_id: '',
@@ -498,29 +499,18 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )
       }
 
-      // 3. Importer lookup from clients table by fantasy_name (when importer_is_qc_client is true)
-      // or from importers table (when importer_is_qc_client is false)
+      // 3. Importer lookup - always look up from importers table for importer_id
+      // When importer_is_qc_client is true, ALSO look up from clients (handled by qc_client lookup below)
       if (formData.importer) {
         lookupKeys.push('importer')
-        if (formData.importer_is_qc_client) {
-          // Importer IS the QC Client - lookup from clients table
-          lookupPromises.push(
-            withTimeout(
-              async () => supabase.from('clients').select('id').eq('fantasy_name', formData.importer).eq('is_qc_client', true).limit(1).maybeSingle(),
-              LOOKUP_TIMEOUT,
-              'Importer lookup timeout'
-            ).catch(err => { console.error('[Importer lookup error]', err); return { data: null, error: err } })
-          )
-        } else {
-          // Separate importer - lookup from importers table
-          lookupPromises.push(
-            withTimeout(
-              async () => supabase.from('importers').select('id').ilike('name', toPattern(formData.importer)).limit(1).maybeSingle(),
-              LOOKUP_TIMEOUT,
-              'Importer lookup timeout'
-            ).catch(err => { console.error('[Importer lookup error]', err); return { data: null, error: err } })
-          )
-        }
+        // Always try importers table first (for importer_id FK)
+        lookupPromises.push(
+          withTimeout(
+            async () => supabase.from('importers').select('id').ilike('name', toPattern(formData.importer)).limit(1).maybeSingle(),
+            LOOKUP_TIMEOUT,
+            'Importer lookup timeout'
+          ).catch(err => { console.error('[Importer lookup error]', err); return { data: null, error: err } })
+        )
       }
 
       // 4. QC Client lookup - determine which name to search (only if not same as importer)
@@ -549,23 +539,18 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )
       }
 
-      // 6. End Client lookup from clients table by fantasy_name (end_client type)
+      // 6. End Client lookup from clients table by fantasy_name
+      // No client_types filter - any client can be an end client
       if (formData.end_client) {
         lookupKeys.push('end_client')
         lookupPromises.push(
           withTimeout(
-            async () => {
-              // Look up existing end client from clients table (must be end_client type)
-              const { data: existing, error } = await (supabase as any)
-                .from('clients')
-                .select('id')
-                .ilike('fantasy_name', formData.end_client.trim())
-                .contains('client_types', ['end_client'])
-                .limit(1)
-                .maybeSingle()
-              // Return the result - do NOT auto-create clients
-              return { data: existing, error }
-            },
+            async () => supabase
+              .from('clients')
+              .select('id')
+              .ilike('fantasy_name', formData.end_client.trim())
+              .limit(1)
+              .maybeSingle(),
             LOOKUP_TIMEOUT,
             'End client lookup timeout'
           ).catch(err => { console.error('[End client lookup error]', err); return { data: null, error: err } })
@@ -596,8 +581,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       const seller_id = lookupResults['seller']
       // When same_seller_shipper is true, use seller_id as exporter_id
       const exporter_id = formData.same_seller_shipper ? seller_id : lookupResults['shipper']
-      // Only use importer_id when it's NOT the QC client (otherwise the ID is from clients table, not importers)
-      const importer_id = formData.importer_is_qc_client ? undefined : lookupResults['importer']
+      // Always use importer_id from importers table lookup (even when importer=QC client)
+      const importer_id = lookupResults['importer']
       const roaster_id = lookupResults['roaster']
       const end_client_id = lookupResults['end_client']
 
@@ -626,6 +611,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         importer_id: importer_id,
         roaster_id: roaster_id,
         end_client_id: end_client_id,
+        end_client_contract_nr: formData.end_client_contract_nr || undefined,
+        supplier: formData.supplier || undefined,
+        supplier_contract_nr: formData.supplier_contract_nr || undefined,
         processing_method: formData.processing_method,
         sample_type: formData.sample_type || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,

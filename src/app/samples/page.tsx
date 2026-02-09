@@ -55,6 +55,8 @@ interface Sample {
   roaster_country?: string
   end_client_name?: string
   end_client_country?: string
+  qc_client_name?: string
+  qc_client_country?: string
   buyer?: string
   quality_name?: string
   sample_type?: 'pss' | 'ss' | 'type'
@@ -67,6 +69,10 @@ interface Sample {
   exporter_contract_nr?: string
   buyer_contract_nr?: string
   roaster_contract_nr?: string
+  shipper_contract_nr?: string
+  qc_client_contract_nr?: string
+  end_client_contract_nr?: string
+  supplier_contract_nr?: string
   ico_number?: string
   container_nr?: string
   laboratory_id?: string
@@ -969,7 +975,8 @@ export default function SamplesPage() {
                       <th className="text-left py-3 px-4 text-sm font-semibold">Origin</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Quality</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Exporter</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Seller</th>
+                      <th className="text-left py-3 px-4 text-sm font-semibold">Shipper</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Wolthers</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Importer</th>
                       <th className="text-left py-3 px-4 text-sm font-semibold">Roaster</th>
@@ -1018,11 +1025,37 @@ export default function SamplesPage() {
                           </Badge>
                         </td>
                         <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.seller_name || sample.exporter_name || sample.supplier || '-'}</td>
+                        <td className="py-3 px-4 text-sm">
+                          <div>{sample.seller_name || '-'}</div>
+                          {sample.seller_contract_nr && (
+                            <div className="text-xs text-muted-foreground">{sample.seller_contract_nr}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-sm">
+                          <div>{sample.exporter_name || '-'}</div>
+                          {sample.shipper_contract_nr && (
+                            <div className="text-xs text-muted-foreground">{sample.shipper_contract_nr}</div>
+                          )}
+                        </td>
                         <td className="py-3 px-4 text-sm font-mono text-xs">{sample.wolthers_contract_nr || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.importer_name || sample.buyer || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.roaster_name || '-'}</td>
-                        <td className="py-3 px-4 text-sm">{sample.end_client_name || '-'}</td>
+                        <td className="py-3 px-4 text-sm">
+                          <div>{sample.importer_name || '-'}</div>
+                          {sample.buyer_contract_nr && (
+                            <div className="text-xs text-muted-foreground">{sample.buyer_contract_nr}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-sm">
+                          <div>{sample.roaster_name || '-'}</div>
+                          {sample.roaster_contract_nr && (
+                            <div className="text-xs text-muted-foreground">{sample.roaster_contract_nr}</div>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-sm">
+                          <div>{sample.end_client_name || sample.qc_client_name || '-'}</div>
+                          {sample.end_client_contract_nr && (
+                            <div className="text-xs text-muted-foreground">{sample.end_client_contract_nr}</div>
+                          )}
+                        </td>
                         <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
                         <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
                         <td className="py-3 px-4 text-sm">

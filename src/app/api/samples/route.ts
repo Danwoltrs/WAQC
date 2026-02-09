@@ -46,6 +46,7 @@ export async function GET(request: NextRequest) {
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
+        qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at)
       `)
@@ -109,6 +110,10 @@ export async function GET(request: NextRequest) {
         importer_country: sample.importer?.country || null,
         roaster_name: sample.roaster?.name || null,
         roaster_country: sample.roaster?.country || null,
+        // QC Client (who hired Wolthers) from client_id
+        qc_client_name: sample.qc_client?.fantasy_name || sample.qc_client?.company || null,
+        qc_client_country: sample.qc_client?.country || null,
+        // End client (final buyer) - when NULL, QC client IS the end client
         end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
         end_client_country: sample.end_client?.country || null,
         // Certificate info (flattened)
@@ -122,6 +127,7 @@ export async function GET(request: NextRequest) {
         exporter: undefined,
         importer: undefined,
         roaster: undefined,
+        qc_client: undefined,
         end_client: undefined,
         certificate: undefined
       }
@@ -251,7 +257,6 @@ export async function POST(request: NextRequest) {
 
       console.log(`Generated tracking number: ${trackingNumber} (attempt ${attempt})`)
 
-      // Cast to any to support end_client_id which is pending migration
       const sampleData: Record<string, any> = {
         tracking_number: trackingNumber,
         client_id: clientId,
@@ -268,6 +273,9 @@ export async function POST(request: NextRequest) {
         importer_id: body.importer_id || null,
         roaster_id: body.roaster_id || null,
         end_client_id: body.end_client_id || null,
+        end_client_contract_nr: body.end_client_contract_nr || null,
+        supplier: body.supplier || null,
+        supplier_contract_nr: body.supplier_contract_nr || null,
         status: body.status || 'received',
         storage_position: body.storage_position || null,
         wolthers_contract_nr: body.wolthers_contract_nr || null,

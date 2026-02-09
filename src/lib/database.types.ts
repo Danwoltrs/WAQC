@@ -781,6 +781,93 @@ export type Database = {
           },
         ]
       }
+      certificate_revisions: {
+        Row: {
+          certificate_id: string
+          changes_made: Json
+          created_at: string
+          id: string
+          new_data: Json
+          previous_data: Json
+          revised_at: string
+          revised_by: string
+          revision_number: number
+          revision_reason: string
+        }
+        Insert: {
+          certificate_id: string
+          changes_made: Json
+          created_at?: string
+          id?: string
+          new_data: Json
+          previous_data: Json
+          revised_at?: string
+          revised_by: string
+          revision_number: number
+          revision_reason: string
+        }
+        Update: {
+          certificate_id?: string
+          changes_made?: Json
+          created_at?: string
+          id?: string
+          new_data?: Json
+          previous_data?: Json
+          revised_at?: string
+          revised_by?: string
+          revision_number?: number
+          revision_reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "certificate_revisions_certificate_id_fkey"
+            columns: ["certificate_id"]
+            isOneToOne: false
+            referencedRelation: "certificates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      certificate_sequences: {
+        Row: {
+          client_id: string
+          last_sequence: number
+          year: number
+        }
+        Insert: {
+          client_id: string
+          last_sequence?: number
+          year: number
+        }
+        Update: {
+          client_id?: string
+          last_sequence?: number
+          year?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "certificate_sequences_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "certificate_sequences_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "certificate_sequences_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       certificate_signatures: {
         Row: {
           certificate_id: string | null
@@ -870,37 +957,67 @@ export type Database = {
       }
       certificates: {
         Row: {
+          approved: boolean
+          certificate_data: Json
           certificate_number: string
+          compliance_violations: Json | null
           created_at: string | null
           id: string
+          is_latest: boolean | null
+          is_rejected: boolean | null
+          issued_at: string
           issued_by: string | null
           issued_to: string
           pdf_url: string | null
+          revision_number: number | null
           sample_id: string | null
           status: Database["public"]["Enums"]["certificate_status"] | null
+          superseded_by: string | null
           updated_at: string | null
+          valid_from: string
+          valid_until: string
         }
         Insert: {
+          approved?: boolean
+          certificate_data?: Json
           certificate_number: string
+          compliance_violations?: Json | null
           created_at?: string | null
           id?: string
+          is_latest?: boolean | null
+          is_rejected?: boolean | null
+          issued_at?: string
           issued_by?: string | null
           issued_to: string
           pdf_url?: string | null
+          revision_number?: number | null
           sample_id?: string | null
           status?: Database["public"]["Enums"]["certificate_status"] | null
+          superseded_by?: string | null
           updated_at?: string | null
+          valid_from: string
+          valid_until: string
         }
         Update: {
+          approved?: boolean
+          certificate_data?: Json
           certificate_number?: string
+          compliance_violations?: Json | null
           created_at?: string | null
           id?: string
+          is_latest?: boolean | null
+          is_rejected?: boolean | null
+          issued_at?: string
           issued_by?: string | null
           issued_to?: string
           pdf_url?: string | null
+          revision_number?: number | null
           sample_id?: string | null
           status?: Database["public"]["Enums"]["certificate_status"] | null
+          superseded_by?: string | null
           updated_at?: string | null
+          valid_from?: string
+          valid_until?: string
         }
         Relationships: [
           {
@@ -914,7 +1031,21 @@ export type Database = {
             foreignKeyName: "certificates_sample_id_fkey"
             columns: ["sample_id"]
             isOneToOne: false
+            referencedRelation: "sample_cupping_history"
+            referencedColumns: ["sample_id"]
+          },
+          {
+            foreignKeyName: "certificates_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
             referencedRelation: "samples"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "certificates_superseded_by_fkey"
+            columns: ["superseded_by"]
+            isOneToOne: false
+            referencedRelation: "certificates"
             referencedColumns: ["id"]
           },
         ]
@@ -970,6 +1101,79 @@ export type Database = {
             columns: ["client_id"]
             isOneToOne: true
             referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      client_laboratory_config: {
+        Row: {
+          client_id: string
+          created_at: string | null
+          id: string
+          laboratory_id: string
+          notes: string | null
+          starting_sequence: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          client_id: string
+          created_at?: string | null
+          id?: string
+          laboratory_id: string
+          notes?: string | null
+          starting_sequence?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          client_id?: string
+          created_at?: string | null
+          id?: string
+          laboratory_id?: string
+          notes?: string | null
+          starting_sequence?: number | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "client_laboratory_config_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_laboratory_config_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "client_laboratory_config_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "client_laboratory_config_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "client_laboratory_config_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "client_laboratory_config_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
             referencedColumns: ["id"]
           },
         ]
@@ -1322,6 +1526,7 @@ export type Database = {
           pricing_model: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled: boolean | null
           report_branding_preference: string | null
+          slug: string | null
           state: string | null
           tracking_number_format: Json | null
           updated_at: string | null
@@ -1363,6 +1568,7 @@ export type Database = {
           pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled?: boolean | null
           report_branding_preference?: string | null
+          slug?: string | null
           state?: string | null
           tracking_number_format?: Json | null
           updated_at?: string | null
@@ -1404,6 +1610,7 @@ export type Database = {
           pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
           qc_enabled?: boolean | null
           report_branding_preference?: string | null
+          slug?: string | null
           state?: string | null
           tracking_number_format?: Json | null
           updated_at?: string | null
@@ -1452,12 +1659,16 @@ export type Database = {
           logo_url: string | null
           longitude: number | null
           name: string
+          neighbourhood: string | null
           phone: string | null
           region: string | null
           staff_count: number | null
           state: string | null
+          street: string | null
+          street_number: string | null
           subcategories: string[] | null
           updated_at: string
+          zip_code: string | null
         }
         Insert: {
           address?: string | null
@@ -1476,12 +1687,16 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           name: string
+          neighbourhood?: string | null
           phone?: string | null
           region?: string | null
           staff_count?: number | null
           state?: string | null
+          street?: string | null
+          street_number?: string | null
           subcategories?: string[] | null
           updated_at?: string
+          zip_code?: string | null
         }
         Update: {
           address?: string | null
@@ -1500,12 +1715,16 @@ export type Database = {
           logo_url?: string | null
           longitude?: number | null
           name?: string
+          neighbourhood?: string | null
           phone?: string | null
           region?: string | null
           staff_count?: number | null
           state?: string | null
+          street?: string | null
+          street_number?: string | null
           subcategories?: string[] | null
           updated_at?: string
+          zip_code?: string | null
         }
         Relationships: [
           {
@@ -2353,6 +2572,96 @@ export type Database = {
           },
         ]
       }
+      cupping_audit_log: {
+        Row: {
+          action: string
+          details: Json | null
+          id: string
+          laboratory_id: string | null
+          performed_at: string | null
+          performed_by: string | null
+          sample_id: string | null
+          session_id: string | null
+        }
+        Insert: {
+          action: string
+          details?: Json | null
+          id?: string
+          laboratory_id?: string | null
+          performed_at?: string | null
+          performed_by?: string | null
+          sample_id?: string | null
+          session_id?: string | null
+        }
+        Update: {
+          action?: string
+          details?: Json | null
+          id?: string
+          laboratory_id?: string | null
+          performed_at?: string | null
+          performed_by?: string | null
+          sample_id?: string | null
+          session_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cupping_audit_log_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_audit_log_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_audit_log_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_audit_log_performed_by_fkey"
+            columns: ["performed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_audit_log_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "sample_cupping_history"
+            referencedColumns: ["sample_id"]
+          },
+          {
+            foreignKeyName: "cupping_audit_log_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "samples"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_audit_log_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "cupping_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_audit_log_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "session_summary_stats"
+            referencedColumns: ["session_id"]
+          },
+        ]
+      }
       cupping_descriptors: {
         Row: {
           category: string | null
@@ -2451,6 +2760,7 @@ export type Database = {
           cup_defects: Json | null
           cupper_id: string | null
           defects: Json | null
+          entry_method: string | null
           id: string
           notes: string | null
           sample_id: string | null
@@ -2463,6 +2773,7 @@ export type Database = {
           cup_defects?: Json | null
           cupper_id?: string | null
           defects?: Json | null
+          entry_method?: string | null
           id?: string
           notes?: string | null
           sample_id?: string | null
@@ -2475,6 +2786,7 @@ export type Database = {
           cup_defects?: Json | null
           cupper_id?: string | null
           defects?: Json | null
+          entry_method?: string | null
           id?: string
           notes?: string | null
           sample_id?: string | null
@@ -2494,6 +2806,13 @@ export type Database = {
             foreignKeyName: "cupping_scores_sample_id_fkey"
             columns: ["sample_id"]
             isOneToOne: false
+            referencedRelation: "sample_cupping_history"
+            referencedColumns: ["sample_id"]
+          },
+          {
+            foreignKeyName: "cupping_scores_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
             referencedRelation: "samples"
             referencedColumns: ["id"]
           },
@@ -2504,23 +2823,32 @@ export type Database = {
             referencedRelation: "cupping_sessions"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "cupping_scores_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "session_summary_stats"
+            referencedColumns: ["session_id"]
+          },
         ]
       }
       cupping_sessions: {
         Row: {
+          allow_single_cupper: boolean | null
           auto_averaged: boolean | null
           created_at: string | null
           created_by: string | null
           cup_count: number | null
           cup_pattern: string | null
-          cupper_completion: Json
-          cupper_ids: Json
+          cupper_completion: Json | null
+          cupper_ids: Json | null
           discrepancy_detected: boolean | null
           discrepancy_notes: string | null
           finalized_at: string | null
           finalized_by: string | null
           id: string
           laboratory_id: string | null
+          min_cuppers_required: number | null
           participants: string[]
           review_required: boolean | null
           sample_ids: string[]
@@ -2528,21 +2856,26 @@ export type Database = {
           session_type: Database["public"]["Enums"]["session_type"] | null
           status: Database["public"]["Enums"]["session_status"] | null
           updated_at: string | null
+          validated_at: string | null
+          validated_by: string | null
+          validation_notes: string | null
         }
         Insert: {
+          allow_single_cupper?: boolean | null
           auto_averaged?: boolean | null
           created_at?: string | null
           created_by?: string | null
           cup_count?: number | null
           cup_pattern?: string | null
-          cupper_completion?: Json
-          cupper_ids?: Json
+          cupper_completion?: Json | null
+          cupper_ids?: Json | null
           discrepancy_detected?: boolean | null
           discrepancy_notes?: string | null
           finalized_at?: string | null
           finalized_by?: string | null
           id?: string
           laboratory_id?: string | null
+          min_cuppers_required?: number | null
           participants: string[]
           review_required?: boolean | null
           sample_ids: string[]
@@ -2550,21 +2883,26 @@ export type Database = {
           session_type?: Database["public"]["Enums"]["session_type"] | null
           status?: Database["public"]["Enums"]["session_status"] | null
           updated_at?: string | null
+          validated_at?: string | null
+          validated_by?: string | null
+          validation_notes?: string | null
         }
         Update: {
+          allow_single_cupper?: boolean | null
           auto_averaged?: boolean | null
           created_at?: string | null
           created_by?: string | null
           cup_count?: number | null
           cup_pattern?: string | null
-          cupper_completion?: Json
-          cupper_ids?: Json
+          cupper_completion?: Json | null
+          cupper_ids?: Json | null
           discrepancy_detected?: boolean | null
           discrepancy_notes?: string | null
           finalized_at?: string | null
           finalized_by?: string | null
           id?: string
           laboratory_id?: string | null
+          min_cuppers_required?: number | null
           participants?: string[]
           review_required?: boolean | null
           sample_ids?: string[]
@@ -2572,11 +2910,49 @@ export type Database = {
           session_type?: Database["public"]["Enums"]["session_type"] | null
           status?: Database["public"]["Enums"]["session_status"] | null
           updated_at?: string | null
+          validated_at?: string | null
+          validated_by?: string | null
+          validation_notes?: string | null
         }
         Relationships: [
           {
             foreignKeyName: "cupping_sessions_created_by_fkey"
             columns: ["created_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_finalized_by_fkey"
+            columns: ["finalized_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_validated_by_fkey"
+            columns: ["validated_by"]
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
@@ -4308,10 +4684,12 @@ export type Database = {
           storage_capacity: number | null
           storage_layout: Json | null
           supported_origins: string[] | null
+          tax_id: string | null
           tax_region: string | null
           timezone: string | null
           type: string | null
           type_sample_prefix: string | null
+          type_sample_sequence_start: number | null
           updated_at: string | null
           vat_number: string | null
           zip_code: string | null
@@ -4340,10 +4718,12 @@ export type Database = {
           storage_capacity?: number | null
           storage_layout?: Json | null
           supported_origins?: string[] | null
+          tax_id?: string | null
           tax_region?: string | null
           timezone?: string | null
           type?: string | null
           type_sample_prefix?: string | null
+          type_sample_sequence_start?: number | null
           updated_at?: string | null
           vat_number?: string | null
           zip_code?: string | null
@@ -4372,10 +4752,12 @@ export type Database = {
           storage_capacity?: number | null
           storage_layout?: Json | null
           supported_origins?: string[] | null
+          tax_id?: string | null
           tax_region?: string | null
           timezone?: string | null
           type?: string | null
           type_sample_prefix?: string | null
+          type_sample_sequence_start?: number | null
           updated_at?: string | null
           vat_number?: string | null
           zip_code?: string | null
@@ -5798,10 +6180,16 @@ export type Database = {
           client_id: string | null
           created_at: string | null
           email: string
+          first_name: string | null
           full_name: string
           id: string
+          is_cupper: boolean | null
           is_global_admin: boolean | null
+          is_master_cupper: boolean | null
+          is_q_grader: boolean | null
           laboratory_id: string | null
+          last_login_at: string | null
+          last_name: string | null
           qc_enabled: boolean | null
           qc_permissions: Json | null
           qc_role: string | null
@@ -5811,10 +6199,16 @@ export type Database = {
           client_id?: string | null
           created_at?: string | null
           email: string
+          first_name?: string | null
           full_name: string
           id: string
+          is_cupper?: boolean | null
           is_global_admin?: boolean | null
+          is_master_cupper?: boolean | null
+          is_q_grader?: boolean | null
           laboratory_id?: string | null
+          last_login_at?: string | null
+          last_name?: string | null
           qc_enabled?: boolean | null
           qc_permissions?: Json | null
           qc_role?: string | null
@@ -5824,10 +6218,16 @@ export type Database = {
           client_id?: string | null
           created_at?: string | null
           email?: string
+          first_name?: string | null
           full_name?: string
           id?: string
+          is_cupper?: boolean | null
           is_global_admin?: boolean | null
+          is_master_cupper?: boolean | null
+          is_q_grader?: boolean | null
           laboratory_id?: string | null
+          last_login_at?: string | null
+          last_name?: string | null
           qc_enabled?: boolean | null
           qc_permissions?: Json | null
           qc_role?: string | null
@@ -5950,7 +6350,9 @@ export type Database = {
             | Database["public"]["Enums"]["compliance_status"]
             | null
           created_at: string | null
+          cupping_complete: boolean | null
           defect_photos: string[] | null
+          grading_complete: boolean | null
           green_bean_data: Json | null
           id: string
           moisture_standard:
@@ -5967,7 +6369,9 @@ export type Database = {
             | Database["public"]["Enums"]["compliance_status"]
             | null
           created_at?: string | null
+          cupping_complete?: boolean | null
           defect_photos?: string[] | null
+          grading_complete?: boolean | null
           green_bean_data?: Json | null
           id?: string
           moisture_standard?:
@@ -5984,7 +6388,9 @@ export type Database = {
             | Database["public"]["Enums"]["compliance_status"]
             | null
           created_at?: string | null
+          cupping_complete?: boolean | null
           defect_photos?: string[] | null
+          grading_complete?: boolean | null
           green_bean_data?: Json | null
           id?: string
           moisture_standard?:
@@ -6002,6 +6408,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quality_assessments_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "sample_cupping_history"
+            referencedColumns: ["sample_id"]
           },
           {
             foreignKeyName: "quality_assessments_sample_id_fkey"
@@ -6050,6 +6463,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quality_overrides_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "sample_cupping_history"
+            referencedColumns: ["sample_id"]
           },
           {
             foreignKeyName: "quality_overrides_sample_id_fkey"
@@ -6365,6 +6785,13 @@ export type Database = {
             foreignKeyName: "roast_profiles_sample_id_fkey"
             columns: ["sample_id"]
             isOneToOne: true
+            referencedRelation: "sample_cupping_history"
+            referencedColumns: ["sample_id"]
+          },
+          {
+            foreignKeyName: "roast_profiles_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: true
             referencedRelation: "samples"
             referencedColumns: ["id"]
           },
@@ -6523,6 +6950,13 @@ export type Database = {
             foreignKeyName: "sample_transfers_sample_id_fkey"
             columns: ["sample_id"]
             isOneToOne: false
+            referencedRelation: "sample_cupping_history"
+            referencedColumns: ["sample_id"]
+          },
+          {
+            foreignKeyName: "sample_transfers_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
             referencedRelation: "samples"
             referencedColumns: ["id"]
           },
@@ -6558,11 +6992,10 @@ export type Database = {
           bags: number | null
           bags_quantity_mt: number | null
           buyer_contract_nr: string | null
-          qc_client_contract_nr: string | null
-          seller_contract_nr: string | null
-          shipper_contract_nr: string | null
           calculated_client_fee: number | null
           calculated_lab_fee: number | null
+          cards_printed_at: string | null
+          certificate_generated_at: string | null
           client_id: string | null
           container: string | null
           container_nr: string | null
@@ -6571,6 +7004,8 @@ export type Database = {
           deleted_at: string | null
           deleted_by: string | null
           destination: string | null
+          end_client_contract_nr: string | null
+          end_client_id: string | null
           equivalent_60kg_bags: number | null
           exporter_contract_nr: string | null
           exporter_id: string | null
@@ -6583,9 +7018,11 @@ export type Database = {
           importer_id: string | null
           importer_legacy: string | null
           laboratory_id: string | null
+          locked: boolean | null
           micro_origin: string | null
           origin: string
           processing_method: string | null
+          qc_client_contract_nr: string | null
           quality_name: string | null
           quality_spec_id: string | null
           roaster_contract_nr: string | null
@@ -6593,10 +7030,15 @@ export type Database = {
           roaster_legacy: string | null
           same_seller_shipper: boolean | null
           sample_type: Database["public"]["Enums"]["sample_type_enum"] | null
+          scanned_at: string | null
+          seller_contract_nr: string | null
           seller_id: string | null
           shipment_month: string | null
+          shipper_contract_nr: string | null
           status: Database["public"]["Enums"]["sample_status"] | null
           storage_position: string | null
+          supplier: string | null
+          supplier_contract_nr: string | null
           supplier_type: string | null
           tracking_number: string
           updated_at: string | null
@@ -6611,11 +7053,10 @@ export type Database = {
           bags?: number | null
           bags_quantity_mt?: number | null
           buyer_contract_nr?: string | null
-          qc_client_contract_nr?: string | null
-          seller_contract_nr?: string | null
-          shipper_contract_nr?: string | null
           calculated_client_fee?: number | null
           calculated_lab_fee?: number | null
+          cards_printed_at?: string | null
+          certificate_generated_at?: string | null
           client_id?: string | null
           container?: string | null
           container_nr?: string | null
@@ -6624,6 +7065,8 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           destination?: string | null
+          end_client_contract_nr?: string | null
+          end_client_id?: string | null
           equivalent_60kg_bags?: number | null
           exporter_contract_nr?: string | null
           exporter_id?: string | null
@@ -6636,9 +7079,11 @@ export type Database = {
           importer_id?: string | null
           importer_legacy?: string | null
           laboratory_id?: string | null
+          locked?: boolean | null
           micro_origin?: string | null
           origin: string
           processing_method?: string | null
+          qc_client_contract_nr?: string | null
           quality_name?: string | null
           quality_spec_id?: string | null
           roaster_contract_nr?: string | null
@@ -6646,10 +7091,15 @@ export type Database = {
           roaster_legacy?: string | null
           same_seller_shipper?: boolean | null
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
+          scanned_at?: string | null
+          seller_contract_nr?: string | null
           seller_id?: string | null
           shipment_month?: string | null
+          shipper_contract_nr?: string | null
           status?: Database["public"]["Enums"]["sample_status"] | null
           storage_position?: string | null
+          supplier?: string | null
+          supplier_contract_nr?: string | null
           supplier_type?: string | null
           tracking_number: string
           updated_at?: string | null
@@ -6664,11 +7114,10 @@ export type Database = {
           bags?: number | null
           bags_quantity_mt?: number | null
           buyer_contract_nr?: string | null
-          qc_client_contract_nr?: string | null
-          seller_contract_nr?: string | null
-          shipper_contract_nr?: string | null
           calculated_client_fee?: number | null
           calculated_lab_fee?: number | null
+          cards_printed_at?: string | null
+          certificate_generated_at?: string | null
           client_id?: string | null
           container?: string | null
           container_nr?: string | null
@@ -6677,6 +7126,8 @@ export type Database = {
           deleted_at?: string | null
           deleted_by?: string | null
           destination?: string | null
+          end_client_contract_nr?: string | null
+          end_client_id?: string | null
           equivalent_60kg_bags?: number | null
           exporter_contract_nr?: string | null
           exporter_id?: string | null
@@ -6689,9 +7140,11 @@ export type Database = {
           importer_id?: string | null
           importer_legacy?: string | null
           laboratory_id?: string | null
+          locked?: boolean | null
           micro_origin?: string | null
           origin?: string
           processing_method?: string | null
+          qc_client_contract_nr?: string | null
           quality_name?: string | null
           quality_spec_id?: string | null
           roaster_contract_nr?: string | null
@@ -6699,10 +7152,15 @@ export type Database = {
           roaster_legacy?: string | null
           same_seller_shipper?: boolean | null
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
+          scanned_at?: string | null
+          seller_contract_nr?: string | null
           seller_id?: string | null
           shipment_month?: string | null
+          shipper_contract_nr?: string | null
           status?: Database["public"]["Enums"]["sample_status"] | null
           storage_position?: string | null
+          supplier?: string | null
+          supplier_contract_nr?: string | null
           supplier_type?: string | null
           tracking_number?: string
           updated_at?: string | null
@@ -6734,6 +7192,27 @@ export type Database = {
           {
             foreignKeyName: "samples_client_id_fkey"
             columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "samples_end_client_id_fkey"
+            columns: ["end_client_id"]
             isOneToOne: false
             referencedRelation: "clients"
             referencedColumns: ["id"]
@@ -6787,6 +7266,13 @@ export type Database = {
             referencedRelation: "roasters"
             referencedColumns: ["id"]
           },
+          {
+            foreignKeyName: "samples_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "exporters"
+            referencedColumns: ["id"]
+          },
         ]
       }
       storage_history: {
@@ -6831,6 +7317,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "storage_positions"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "storage_history_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "sample_cupping_history"
+            referencedColumns: ["sample_id"]
           },
           {
             foreignKeyName: "storage_history_sample_id_fkey"
@@ -8481,44 +8974,68 @@ export type Database = {
       }
       user_invitations: {
         Row: {
-          company_id: string
+          accepted_at: string | null
+          company_id: string | null
           created_at: string | null
           email: string
           expires_at: string | null
+          first_name: string
           id: string
           invitation_token: string | null
-          invited_by: string
+          invited_by: string | null
           invited_name: string | null
           invited_whatsapp: string | null
-          role: string
+          is_cupper: boolean | null
+          is_q_grader: boolean | null
+          laboratory_id: string | null
+          last_name: string
+          qc_enabled: boolean | null
+          qc_role: string
+          role: string | null
           status: string
           updated_at: string | null
         }
         Insert: {
-          company_id: string
+          accepted_at?: string | null
+          company_id?: string | null
           created_at?: string | null
           email: string
           expires_at?: string | null
+          first_name: string
           id?: string
           invitation_token?: string | null
-          invited_by: string
+          invited_by?: string | null
           invited_name?: string | null
           invited_whatsapp?: string | null
-          role?: string
+          is_cupper?: boolean | null
+          is_q_grader?: boolean | null
+          laboratory_id?: string | null
+          last_name: string
+          qc_enabled?: boolean | null
+          qc_role: string
+          role?: string | null
           status?: string
           updated_at?: string | null
         }
         Update: {
-          company_id?: string
+          accepted_at?: string | null
+          company_id?: string | null
           created_at?: string | null
           email?: string
           expires_at?: string | null
+          first_name?: string
           id?: string
           invitation_token?: string | null
-          invited_by?: string
+          invited_by?: string | null
           invited_name?: string | null
           invited_whatsapp?: string | null
-          role?: string
+          is_cupper?: boolean | null
+          is_q_grader?: boolean | null
+          laboratory_id?: string | null
+          last_name?: string
+          qc_enabled?: boolean | null
+          qc_role?: string
+          role?: string | null
           status?: string
           updated_at?: string | null
         }
@@ -8548,7 +9065,28 @@ export type Database = {
             foreignKeyName: "user_invitations_invited_by_fkey"
             columns: ["invited_by"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_invitations_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "user_invitations_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "user_invitations_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
             referencedColumns: ["id"]
           },
         ]
@@ -9472,6 +10010,64 @@ export type Database = {
         }
         Relationships: []
       }
+      cupper_performance_stats: {
+        Row: {
+          avg_total_score: number | null
+          cupper_id: string | null
+          cupper_name: string | null
+          laboratory_id: string | null
+          samples_scored: number | null
+          samples_with_defects: number | null
+          score_stddev: number | null
+          session_date: string | null
+          session_id: string | null
+          session_status: Database["public"]["Enums"]["session_status"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cupping_scores_cupper_id_fkey"
+            columns: ["cupper_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_scores_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "cupping_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_scores_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "session_summary_stats"
+            referencedColumns: ["session_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       file_sharing_summary: {
         Row: {
           active_shares: number | null
@@ -9602,6 +10198,167 @@ export type Database = {
           type: string | null
         }
         Relationships: []
+      }
+      origin_performance_analysis: {
+        Row: {
+          avg_score: number | null
+          high_quality_samples: number | null
+          lab_name: string | null
+          laboratory_id: string | null
+          max_score: number | null
+          min_score: number | null
+          origin: string | null
+          sample_count: number | null
+          samples_with_defects: number | null
+          score_stddev: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "samples_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "samples_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "samples_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sample_cupping_history: {
+        Row: {
+          client_id: string | null
+          client_name: string | null
+          cupper_id: string | null
+          cupper_name: string | null
+          defects: Json | null
+          laboratory_id: string | null
+          notes: string | null
+          origin: string | null
+          sample_id: string | null
+          scored_at: string | null
+          scores: Json | null
+          session_date: string | null
+          session_id: string | null
+          tracking_number: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cupping_scores_cupper_id_fkey"
+            columns: ["cupper_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_scores_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "cupping_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cupping_scores_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "session_summary_stats"
+            referencedColumns: ["session_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_billing_summary"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "client_origin_pricing_summary"
+            referencedColumns: ["client_id"]
+          },
+          {
+            foreignKeyName: "samples_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      session_summary_stats: {
+        Row: {
+          auto_averaged: boolean | null
+          avg_session_score: number | null
+          created_at: string | null
+          cupper_count: number | null
+          discrepancy_detected: boolean | null
+          finalized_at: string | null
+          lab_name: string | null
+          laboratory_id: string | null
+          sample_count: number | null
+          session_date: string | null
+          session_id: string | null
+          session_score_stddev: number | null
+          session_type: Database["public"]["Enums"]["session_type"] | null
+          status: Database["public"]["Enums"]["session_status"] | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_payment_summary"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "lab_sample_breakdown"
+            referencedColumns: ["laboratory_id"]
+          },
+          {
+            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
+            columns: ["laboratory_id"]
+            isOneToOne: false
+            referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       trip_card_data: {
         Row: {
@@ -9791,6 +10548,13 @@ export type Database = {
       }
     }
     Functions: {
+      calculate_certificate_validity: {
+        Args: { issue_date: string }
+        Returns: {
+          valid_from: string
+          valid_until: string
+        }[]
+      }
       calculate_client_fee: {
         Args: { client_id_param: string; sample_id_param: string }
         Returns: number
@@ -9822,11 +10586,32 @@ export type Database = {
         }
         Returns: number
       }
+      calculate_score_discrepancy: {
+        Args: { p_sample_id: string; p_session_id: string }
+        Returns: number
+      }
       can_access_file: {
         Args: { p_file_id: string; p_user_id: string }
         Returns: boolean
       }
       can_create_laboratories: { Args: { user_id: string }; Returns: boolean }
+      can_update_profile: {
+        Args: {
+          profile_user_id: string
+          target_lab_id: string
+          target_role: string
+        }
+        Returns: boolean
+      }
+      can_validate_cupping_session: {
+        Args: { p_session_id: string; p_user_id: string }
+        Returns: boolean
+      }
+      can_view_profile: { Args: { profile_user_id: string }; Returns: boolean }
+      check_session_completion: {
+        Args: { p_session_id: string }
+        Returns: boolean
+      }
       check_staff_availability: {
         Args: {
           exclude_trip_id?: string
@@ -9845,6 +10630,7 @@ export type Database = {
         }
         Returns: boolean
       }
+      cleanup_old_defect_photos: { Args: never; Returns: Json }
       cleanup_old_drafts: { Args: never; Returns: number }
       clone_quality_template: {
         Args: {
@@ -9857,6 +10643,10 @@ export type Database = {
           p_source_template_id: string
         }
         Returns: string
+      }
+      convert_legacy_tracking_format: {
+        Args: { p_client_id: string }
+        Returns: Json
       }
       evaluate_sample_taints_faults: {
         Args: {
@@ -9883,6 +10673,7 @@ export type Database = {
         }
         Returns: string
       }
+      generate_client_slug: { Args: { input_text: string }; Returns: string }
       generate_lab_invoice_number: {
         Args: { lab_id: string; period_end_date: string }
         Returns: string
@@ -10007,6 +10798,15 @@ export type Database = {
           total_trips: number
         }[]
       }
+      get_cupper_assigned_samples: {
+        Args: { p_cupper_id: string }
+        Returns: {
+          has_submitted_score: boolean
+          sample_id: string
+          session_id: string
+          session_status: string
+        }[]
+      }
       get_cupping_attribute_name: {
         Args: { p_attribute_id: string; p_language?: string }
         Returns: string
@@ -10091,23 +10891,40 @@ export type Database = {
           title: string
         }[]
       }
+      get_user_auth_context: {
+        Args: { target_user_id: string }
+        Returns: {
+          is_global_admin: boolean
+          is_lab_manager: boolean
+          user_lab_id: string
+          user_role: string
+        }[]
+      }
       get_user_company_id: { Args: { user_id: string }; Returns: string }
+      get_user_lab_id: { Args: { user_id: string }; Returns: string }
       get_user_laboratory: { Args: never; Returns: string }
       get_user_qc_laboratory: { Args: { user_id: string }; Returns: string }
       get_user_qc_role: {
         Args: { user_id: string }
         Returns: Database["public"]["Enums"]["user_role"]
       }
+      get_user_role: { Args: { user_id: string }; Returns: string }
       has_global_qc_access: { Args: { user_id: string }; Returns: boolean }
       has_user_type: {
         Args: { user_id: string; user_types: string[] }
         Returns: boolean
       }
       is_admin: { Args: never; Returns: boolean }
+      is_certificate_valid: { Args: { cert_id: string }; Returns: boolean }
       is_global_admin:
-        | { Args: { user_id: string }; Returns: boolean }
         | { Args: never; Returns: boolean }
+        | { Args: { user_id: string }; Returns: boolean }
+      is_global_admin_user: { Args: { user_id: string }; Returns: boolean }
       is_lab_manager: { Args: never; Returns: boolean }
+      is_lab_quality_manager_user: {
+        Args: { user_id: string }
+        Returns: boolean
+      }
       is_trip_creator: {
         Args: { trip_id: string; user_id: string }
         Returns: boolean
@@ -10116,6 +10933,17 @@ export type Database = {
         Args: { trip_id: string; user_id: string }
         Returns: boolean
       }
+      log_cupping_action: {
+        Args: {
+          p_action: string
+          p_details?: Json
+          p_performed_by: string
+          p_sample_id: string
+          p_session_id: string
+        }
+        Returns: string
+      }
+      mark_expired_invitations: { Args: never; Returns: undefined }
       save_trip_draft: {
         Args: {
           p_creator_id: string
@@ -10325,9 +11153,15 @@ export type Database = {
         | "under_review"
         | "approved"
         | "rejected"
-      sample_type_enum: "pss" | "ss" | "type"
+      sample_type_enum: "pss" | "ss" | "type" | "specialty"
       session_status: "setup" | "active" | "completed" | "review"
-      session_type: "digital" | "handwritten" | "q_grading" | "regular" | "calibration" | "type_sample"
+      session_type:
+        | "digital"
+        | "handwritten"
+        | "q_grading"
+        | "regular"
+        | "calibration"
+        | "type_sample"
       share_method: "client_portal" | "email_link" | "direct_share"
       share_permission: "view_only" | "download" | "comment" | "full_access"
       taint_fault_type: "taint" | "fault"
@@ -10603,9 +11437,16 @@ export const Constants = {
         "approved",
         "rejected",
       ],
-      sample_type_enum: ["pss", "ss", "type"],
+      sample_type_enum: ["pss", "ss", "type", "specialty"],
       session_status: ["setup", "active", "completed", "review"],
-      session_type: ["digital", "handwritten", "q_grading", "regular", "calibration", "type_sample"],
+      session_type: [
+        "digital",
+        "handwritten",
+        "q_grading",
+        "regular",
+        "calibration",
+        "type_sample",
+      ],
       share_method: ["client_portal", "email_link", "direct_share"],
       share_permission: ["view_only", "download", "comment", "full_access"],
       taint_fault_type: ["taint", "fault"],

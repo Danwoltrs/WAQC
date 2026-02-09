@@ -401,14 +401,38 @@ export function SupplyChainStep({
       <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
         <div>
           <Label className="text-xs text-muted-foreground mb-1.5 block">End Client</Label>
+          <Select
+            value={formData.end_client || 'none'}
+            onValueChange={(value) => {
+              if (value === 'none') {
+                updateFormData('end_client', '')
+              } else {
+                updateFormData('end_client', value)
+              }
+            }}
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Select end client" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Select...</SelectItem>
+              {qcClients.map((client) => (
+                <SelectItem key={client.id} value={client.fantasy_name || client.company}>
+                  {client.fantasy_name || client.company}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
           <Input
-            value={formData.end_client}
-            onChange={(e) => updateFormData('end_client', e.target.value)}
-            placeholder="Final buyer (e.g., Dunkin')"
+            value={formData.end_client_contract_nr}
+            onChange={(e) => updateFormData('end_client_contract_nr', e.target.value)}
+            placeholder="Contract ref."
             className="h-9"
           />
         </div>
-        <div></div>
         <div></div>
       </div>
 
