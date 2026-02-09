@@ -22,6 +22,7 @@ import {
 import { Checkbox } from "@/components/ui/checkbox"
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
@@ -32,7 +33,7 @@ import {
   Plus, Search, Filter, Eye, MapPin, Calendar,
   CheckCircle, XCircle, Clock, AlertCircle, FileText,
   Download, Printer, QrCode, MoreVertical, Users, Trash2,
-  Loader2, Award, Mail
+  Loader2, Award, Mail, Settings2
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
@@ -76,6 +77,7 @@ interface Sample {
   supplier_contract_nr?: string
   ico_number?: string
   container_nr?: string
+  exporter_sample_number?: string | null
   laboratory_id?: string
   created_at: string
   quality_spec_id?: string
@@ -173,6 +175,58 @@ export default function SamplesPage() {
   // Unique values for filters
   const [origins, setOrigins] = useState<string[]>([])
   const [qualities, setQualities] = useState<string[]>([])
+
+  // Column visibility
+  const defaultColumnVisibility: Record<string, boolean> = {
+    certNr: true,
+    origin: false,
+    type: true,
+    quality: true,
+    seller: false,
+    shipper: true,
+    wolthers: true,
+    importer: true,
+    roaster: false,
+    endClient: true,
+    status: true,
+    stage: true,
+    storage: false,
+    created: true,
+  }
+  const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('samplesTableColumns')
+        if (stored) return JSON.parse(stored)
+      } catch {}
+    }
+    return defaultColumnVisibility
+  })
+
+  const toggleColumn = (col: string) => {
+    setColumnVisibility(prev => {
+      const next = { ...prev, [col]: !prev[col] }
+      localStorage.setItem('samplesTableColumns', JSON.stringify(next))
+      return next
+    })
+  }
+
+  const columnLabels: Record<string, string> = {
+    certNr: 'Cert. Nr',
+    origin: 'Origin',
+    type: 'Type',
+    quality: 'Quality',
+    seller: 'Seller',
+    shipper: 'Shipper',
+    wolthers: 'Wolthers',
+    importer: 'Importer',
+    roaster: 'Roaster',
+    endClient: 'End Client',
+    status: 'Status',
+    stage: 'Stage',
+    storage: 'Storage',
+    created: 'Created',
+  }
 
   // Check if user is global admin
   const isGlobalAdmin = profile?.is_global_admin || profile?.qc_role === 'global_admin'
@@ -920,6 +974,29 @@ export default function SamplesPage() {
                 >
                   Clear All
                 </Button>
+                <div className="ml-auto">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <Settings2 className="h-4 w-4 mr-2" />
+                        Columns
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-48">
+                      <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {Object.entries(columnLabels).map(([key, label]) => (
+                        <DropdownMenuCheckboxItem
+                          key={key}
+                          checked={columnVisibility[key]}
+                          onCheckedChange={() => toggleColumn(key)}
+                        >
+                          {label}
+                        </DropdownMenuCheckboxItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
               </div>
             </div>
           </CardContent>
@@ -972,20 +1049,20 @@ export default function SamplesPage() {
                           </div>
                         </th>
                       )}
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Sample Nr</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Origin</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Quality</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Seller</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Shipper</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Wolthers</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Importer</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Roaster</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">End Client</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Stage</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Storage</th>
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Created</th>
+                      {columnVisibility.certNr && <th className="text-left py-3 px-4 text-sm font-semibold">Cert. Nr</th>}
+                      {columnVisibility.origin && <th className="text-left py-3 px-4 text-sm font-semibold">Origin</th>}
+                      {columnVisibility.type && <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>}
+                      {columnVisibility.quality && <th className="text-left py-3 px-4 text-sm font-semibold">Quality</th>}
+                      {columnVisibility.seller && <th className="text-left py-3 px-4 text-sm font-semibold">Seller</th>}
+                      {columnVisibility.shipper && <th className="text-left py-3 px-4 text-sm font-semibold">Shipper</th>}
+                      {columnVisibility.wolthers && <th className="text-left py-3 px-4 text-sm font-semibold">Wolthers</th>}
+                      {columnVisibility.importer && <th className="text-left py-3 px-4 text-sm font-semibold">Importer</th>}
+                      {columnVisibility.roaster && <th className="text-left py-3 px-4 text-sm font-semibold">Roaster</th>}
+                      {columnVisibility.endClient && <th className="text-left py-3 px-4 text-sm font-semibold">End Client</th>}
+                      {columnVisibility.status && <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>}
+                      {columnVisibility.stage && <th className="text-left py-3 px-4 text-sm font-semibold">Stage</th>}
+                      {columnVisibility.storage && <th className="text-left py-3 px-4 text-sm font-semibold">Storage</th>}
+                      {columnVisibility.created && <th className="text-left py-3 px-4 text-sm font-semibold">Created</th>}
                       <th className="text-left py-3 px-4 text-sm font-semibold">Actions</th>
                     </tr>
                   </thead>
@@ -1011,70 +1088,103 @@ export default function SamplesPage() {
                             )}
                           </td>
                         )}
-                        <td className="py-3 px-4">
-                          <div className="font-medium">{parseTrackingNumber(sample.tracking_number)}</div>
-                          {sample.sample_type === 'ss' && sample.container_nr && (
-                            <div className="text-xs text-muted-foreground mt-0.5">
-                              {sample.container_nr}
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
-                        <td className="py-3 px-4 text-sm">
-                          <Badge variant="outline" className="text-xs">
-                            {formatSampleType(sample.sample_type)}
-                          </Badge>
-                        </td>
-                        <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
-                        <td className="py-3 px-4 text-sm">
-                          <div>{sample.seller_name || '-'}</div>
-                          {sample.seller_contract_nr && (
-                            <div className="text-xs text-muted-foreground">{sample.seller_contract_nr}</div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm">
-                          <div>{sample.exporter_name || '-'}</div>
-                          {sample.shipper_contract_nr && (
-                            <div className="text-xs text-muted-foreground">{sample.shipper_contract_nr}</div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm font-mono text-xs">{sample.wolthers_contract_nr || '-'}</td>
-                        <td className="py-3 px-4 text-sm">
-                          <div>{sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || '-'}</div>
-                          {sample.buyer_contract_nr && (
-                            <div className="text-xs text-muted-foreground">{sample.buyer_contract_nr}</div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm">
-                          <div>{sample.roaster_name || '-'}</div>
-                          {sample.roaster_contract_nr && (
-                            <div className="text-xs text-muted-foreground">{sample.roaster_contract_nr}</div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm">
-                          <div>{sample.end_client_name || sample.qc_client_name || '-'}</div>
-                          {(sample.end_client_contract_nr || sample.qc_client_contract_nr) && (
-                            <div className="text-xs text-muted-foreground">{sample.end_client_contract_nr || sample.qc_client_contract_nr}</div>
-                          )}
-                        </td>
-                        <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
-                        <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
-                        <td className="py-3 px-4 text-sm">
-                          {sample.storage_position ? (
+                        {columnVisibility.certNr && (
+                          <td className="py-3 px-4">
+                            <div className="font-medium">{parseTrackingNumber(sample.tracking_number)}</div>
+                            {sample.exporter_sample_number && (
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {sample.exporter_sample_number}
+                              </div>
+                            )}
+                            {sample.sample_type === 'ss' && sample.container_nr && (
+                              <div className="text-xs text-muted-foreground mt-0.5">
+                                {sample.container_nr}
+                              </div>
+                            )}
+                          </td>
+                        )}
+                        {columnVisibility.origin && (
+                          <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
+                        )}
+                        {columnVisibility.type && (
+                          <td className="py-3 px-4 text-sm">
+                            <Badge variant="outline" className="text-xs">
+                              {formatSampleType(sample.sample_type)}
+                            </Badge>
+                          </td>
+                        )}
+                        {columnVisibility.quality && (
+                          <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
+                        )}
+                        {columnVisibility.seller && (
+                          <td className="py-3 px-4 text-sm">
+                            <div>{sample.seller_name || '-'}</div>
+                            {sample.seller_contract_nr && (
+                              <div className="text-xs text-muted-foreground">{sample.seller_contract_nr}</div>
+                            )}
+                          </td>
+                        )}
+                        {columnVisibility.shipper && (
+                          <td className="py-3 px-4 text-sm">
+                            <div>{sample.exporter_name || '-'}</div>
+                            {sample.shipper_contract_nr && (
+                              <div className="text-xs text-muted-foreground">{sample.shipper_contract_nr}</div>
+                            )}
+                          </td>
+                        )}
+                        {columnVisibility.wolthers && (
+                          <td className="py-3 px-4 text-sm font-mono text-xs">{sample.wolthers_contract_nr || '-'}</td>
+                        )}
+                        {columnVisibility.importer && (
+                          <td className="py-3 px-4 text-sm">
+                            <div>{sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || '-'}</div>
+                            {sample.buyer_contract_nr && (
+                              <div className="text-xs text-muted-foreground">{sample.buyer_contract_nr}</div>
+                            )}
+                          </td>
+                        )}
+                        {columnVisibility.roaster && (
+                          <td className="py-3 px-4 text-sm">
+                            <div>{sample.roaster_name || '-'}</div>
+                            {sample.roaster_contract_nr && (
+                              <div className="text-xs text-muted-foreground">{sample.roaster_contract_nr}</div>
+                            )}
+                          </td>
+                        )}
+                        {columnVisibility.endClient && (
+                          <td className="py-3 px-4 text-sm">
+                            <div>{sample.end_client_name || sample.qc_client_name || '-'}</div>
+                            {(sample.end_client_contract_nr || sample.qc_client_contract_nr) && (
+                              <div className="text-xs text-muted-foreground">{sample.end_client_contract_nr || sample.qc_client_contract_nr}</div>
+                            )}
+                          </td>
+                        )}
+                        {columnVisibility.status && (
+                          <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
+                        )}
+                        {columnVisibility.stage && (
+                          <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
+                        )}
+                        {columnVisibility.storage && (
+                          <td className="py-3 px-4 text-sm">
+                            {sample.storage_position ? (
+                              <div className="flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {sample.storage_position}
+                              </div>
+                            ) : (
+                              '-'
+                            )}
+                          </td>
+                        )}
+                        {columnVisibility.created && (
+                          <td className="py-3 px-4 text-sm">
                             <div className="flex items-center gap-1">
-                              <MapPin className="h-3 w-3" />
-                              {sample.storage_position}
+                              <Calendar className="h-3 w-3" />
+                              {new Date(sample.created_at).toLocaleDateString()}
                             </div>
-                          ) : (
-                            '-'
-                          )}
-                        </td>
-                        <td className="py-3 px-4 text-sm">
-                          <div className="flex items-center gap-1">
-                            <Calendar className="h-3 w-3" />
-                            {new Date(sample.created_at).toLocaleDateString()}
-                          </div>
-                        </td>
+                          </td>
+                        )}
                         <td className="py-3 px-4">
                           <div className="flex items-center gap-1">
                             <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
