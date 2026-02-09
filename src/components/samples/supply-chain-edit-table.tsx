@@ -55,6 +55,8 @@ interface SupplyChainEditTableProps {
   onFormChange: (field: string, value: any) => void
 }
 
+const KEEP_CURRENT = '__keep_current__'
+
 export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChange }: SupplyChainEditTableProps) {
   const [exporters, setExporters] = useState<Entity[]>([])
   const [importers, setImporters] = useState<Entity[]>([])
@@ -78,8 +80,6 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
   const loadEntities = async () => {
     setLoadingEntities(true)
     try {
-      // Load exporters and roasters from API, importers from actual importers table
-      // (the /api/importers endpoint reads from clients table, but importer_id FK references importers table)
       const [exportersRes, importersDbRes, roastersRes, clientsRes, qcClientsRes] = await Promise.all([
         fetch('/api/exporters').then(r => r.json()),
         supabase.from('importers').select('id, name, country').order('name'),
@@ -114,9 +114,8 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
     return Array.from(seen.values()).sort((a, b) => a.name.localeCompare(b.name))
   }
 
-  const handleEntitySelect = (value: string, idField: string, entityList: (Entity | ClientEntity)[]) => {
+  const handleEntitySelect = (value: string, idField: string) => {
     if (value === '__create_new__') {
-      // Determine the correct dialog type
       if (idField === 'seller_id' || idField === 'exporter_id') {
         setCreateDialogType('exporter')
       } else if (idField === 'importer_id') {
@@ -126,6 +125,11 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
       }
       setPendingEntityField(idField)
       setShowCreateDialog(true)
+      return
+    }
+    if (value === KEEP_CURRENT) {
+      // User re-selected the current derived value — don't send any change
+      onFormChange(idField, (sample as any)[idField] ?? null)
       return
     }
     if (value === '__none__') {
@@ -139,14 +143,23 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
     if (entityId && pendingEntityField) {
       onFormChange(pendingEntityField, entityId)
     }
-    // Reload entities to include the new one
     loadEntities()
   }
 
-  const getCurrentValue = (idField: string): string => {
-    if (formData[idField] !== undefined) return formData[idField] || '__none__'
-    const sampleVal = (sample as any)[idField]
-    return sampleVal || '__none__'
+  // Determine the current Select value, accounting for fallback display names
+  const getSelectValue = (idField: string, displayName?: string | null): string => {
+    // If user already made a selection in this edit session, use it
+    if (formData[idField] !== undefined && formData[idField] !== null) {
+      return formData[idField]
+    }
+    // Check sample's actual ID
+    const sampleId = (sample as any)[idField]
+    if (sampleId) return sampleId
+    // If explicitly set to null by user, show none
+    if (formData[idField] === null) return '__none__'
+    // No ID but there IS a display name (derived from QC client fallback)
+    if (displayName) return KEEP_CURRENT
+    return '__none__'
   }
 
   const renderEntityCell = (
@@ -157,7 +170,10 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
     contractField: string,
     contractValue: string | null | undefined,
   ) => {
-    const currentId = getCurrentValue(idField)
+    const selectValue = getSelectValue(idField, displayName)
+    // Check if no real ID exists for this entity (derived/fallback name)
+    const hasNoRealId = !(sample as any)[idField]
+    const showCurrentOption = hasNoRealId && !!displayName
 
     return (
       <tr className="border-b">
@@ -170,11 +186,16 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
                 Loading...
               </div>
             ) : (
-              <Select value={currentId} onValueChange={(v) => handleEntitySelect(v, idField, entityList)}>
+              <Select value={selectValue} onValueChange={(v) => handleEntitySelect(v, idField)}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue placeholder={`Select ${label}...`} />
                 </SelectTrigger>
                 <SelectContent>
+                  {showCurrentOption && (
+                    <SelectItem value={KEEP_CURRENT}>
+                      {displayName} (current)
+                    </SelectItem>
+                  )}
                   <SelectItem value="__none__">- None -</SelectItem>
                   {entityList.map((entity) => (
                     <SelectItem key={entity.id} value={entity.id}>
@@ -210,7 +231,6 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
     )
   }
 
-  // For end client and QC client, use client-specific dropdown
   const renderClientEntityCell = (
     label: string,
     displayName: string | null | undefined,
@@ -220,7 +240,9 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
     contractValue: string | null | undefined,
     isLast?: boolean,
   ) => {
-    const currentId = getCurrentValue(idField)
+    const selectValue = getSelectValue(idField, displayName)
+    const hasNoRealId = !(sample as any)[idField]
+    const showCurrentOption = hasNoRealId && !!displayName
 
     return (
       <tr className={isLast ? '' : 'border-b'}>
@@ -233,17 +255,16 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
                 Loading...
               </div>
             ) : (
-              <Select value={currentId} onValueChange={(v) => {
-                if (v === '__none__') {
-                  onFormChange(idField, null)
-                } else {
-                  onFormChange(idField, v)
-                }
-              }}>
+              <Select value={selectValue} onValueChange={(v) => handleEntitySelect(v, idField)}>
                 <SelectTrigger className="h-8 text-sm">
                   <SelectValue placeholder={`Select ${label}...`} />
                 </SelectTrigger>
                 <SelectContent>
+                  {showCurrentOption && (
+                    <SelectItem value={KEEP_CURRENT}>
+                      {displayName} (current)
+                    </SelectItem>
+                  )}
                   <SelectItem value="__none__">- None -</SelectItem>
                   {clientList.map((client) => (
                     <SelectItem key={client.id} value={client.id}>

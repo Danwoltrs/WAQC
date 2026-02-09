@@ -412,13 +412,14 @@ export default function SampleDetailPage() {
       container_nr: sample.container_nr,
       processing_method: sample.processing_method,
       storage_position: sample.storage_position,
-      // Entity IDs for dropdown editing
-      seller_id: sample.seller_id,
-      exporter_id: sample.exporter_id,
-      importer_id: sample.importer_id,
-      roaster_id: sample.roaster_id,
-      end_client_id: sample.end_client_id,
-      client_id: sample.client_id,
+      // Entity IDs for dropdown editing — only include non-null IDs so the
+      // SupplyChainEditTable can distinguish "was always null" from "user cleared it"
+      ...(sample.seller_id ? { seller_id: sample.seller_id } : {}),
+      ...(sample.exporter_id ? { exporter_id: sample.exporter_id } : {}),
+      ...(sample.importer_id ? { importer_id: sample.importer_id } : {}),
+      ...(sample.roaster_id ? { roaster_id: sample.roaster_id } : {}),
+      ...(sample.end_client_id ? { end_client_id: sample.end_client_id } : {}),
+      ...(sample.client_id ? { client_id: sample.client_id } : {}),
     })
     setIsEditMode(true)
   }
