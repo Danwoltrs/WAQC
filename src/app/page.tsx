@@ -413,7 +413,7 @@ function DashboardContent() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-[1600px] mx-auto">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-[1400px] mx-auto">
       {/* Mobile: Quick Actions FIRST */}
       <div className="sm:hidden space-y-3">
         <h2 className="text-lg font-bold">Quick Actions</h2>
