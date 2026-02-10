@@ -67,6 +67,30 @@ const PROFILE_CACHE_TTL = 24 * 60 * 60 * 1000 // 24 hours - profile changes rare
 const LAST_ACTIVITY_KEY = 'waqc_last_activity'
 const ACTIVITY_EVENTS = ['mousedown', 'keydown', 'scroll', 'touchstart']
 
+// Check for Supabase auth tokens in both localStorage AND cookies
+// The client uses @supabase/ssr which stores tokens in cookies, not localStorage
+function hasSupabaseAuthTokens(): boolean {
+  if (typeof window === 'undefined') return false
+
+  // Check localStorage (legacy or non-SSR clients)
+  for (let i = 0; i < localStorage.length; i++) {
+    const key = localStorage.key(i)
+    if (key && key.startsWith('sb-') && key.includes('auth-token')) {
+      return true
+    }
+  }
+
+  // Check cookies (used by @supabase/ssr createBrowserClient)
+  if (typeof document !== 'undefined') {
+    const cookies = document.cookie
+    if (cookies.includes('sb-') && cookies.includes('auth-token')) {
+      return true
+    }
+  }
+
+  return false
+}
+
 // Global utility function for manual session cleanup (accessible from browser console)
 // Users can call: window.clearWAQCSession() if they encounter auth issues
 if (typeof window !== 'undefined') {
@@ -180,15 +204,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const cachedProfile = getCachedProfile()
     if (!cachedProfile) return true
 
-    // Check if auth tokens exist
-    if (typeof window !== 'undefined') {
-      for (let i = 0; i < localStorage.length; i++) {
-        const key = localStorage.key(i)
-        if (key && key.startsWith('sb-') && key.includes('auth-token')) {
-          console.log('[Auth] Found cached profile + auth tokens, skipping initial loading screen')
-          return false // Have both profile and tokens, skip loading
-        }
-      }
+    // Check if auth tokens exist (in localStorage OR cookies)
+    if (hasSupabaseAuthTokens()) {
+      console.log('[Auth] Found cached profile + auth tokens, skipping initial loading screen')
+      return false // Have both profile and tokens, skip loading
     }
     return true // No tokens, need to load
   })
@@ -242,23 +261,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     // Get initial session with retry logic
     const getSession = async (retries = 2) => {
-      // Quick check: if there's NO Supabase auth data at all in localStorage, skip directly to login
-      if (typeof window !== 'undefined') {
-        let hasAnySupabaseAuth = false
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i)
-          if (key && key.startsWith('sb-') && key.includes('auth-token')) {
-            hasAnySupabaseAuth = true
-            break
-          }
-        }
-
-        if (!hasAnySupabaseAuth) {
-          setLoading(false)
-          clearTimeout(absoluteMaxTimeout)
-          isInitialLoad = false
-          return
-        }
+      // Quick check: if there's NO Supabase auth data in localStorage OR cookies, skip directly to login
+      if (!hasSupabaseAuthTokens()) {
+        setLoading(false)
+        clearTimeout(absoluteMaxTimeout)
+        isInitialLoad = false
+        return
       }
 
       for (let attempt = 0; attempt < retries; attempt++) {

@@ -36,10 +36,13 @@ export function LoginForm() {
 
       if (error) {
         setError(error.message)
+        setLoading(false)
+      } else {
+        // Force page reload to re-initialize auth state from cookies
+        window.location.href = '/'
       }
     } catch (err) {
       setError('An unexpected error occurred')
-    } finally {
       setLoading(false)
     }
   }
