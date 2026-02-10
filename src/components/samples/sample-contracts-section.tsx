@@ -211,7 +211,7 @@ export function SampleContractsSection({ sampleId, isEditMode }: SampleContracts
         <CardContent>
           {contracts.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-4">
-              No sub-contracts. Click "+ Contract" to add one.
+              No sub-contracts. Click &quot;+ Contract&quot; to add one.
             </p>
           ) : (
             <div className="space-y-3">

@@ -1593,10 +1593,15 @@ function CuppingPageContent() {
                           <div className="hidden md:block w-[420px] flex-shrink-0">
                             {cuppingData && cuppingData.attributes.some(a => a.value !== null) ? (
                               (() => {
-                                // Calculate max value across all attributes for consistent chart scale
+                                // Filter out boolean attributes (Clean Cup, Uniformity) from the spider chart
+                                const chartAttributes = attributes.filter(a => a.scale.type !== 'boolean')
+
+                                if (chartAttributes.length === 0) return null
+
+                                // Calculate max value across all chart attributes for consistent chart scale
                                 const maxScaleValue = Math.max(
-                                  ...attributes.map(({ scale }) =>
-                                    scale.type === 'numeric' ? scale.max : (scale.type === 'boolean' ? (scale.trueValue ?? 10) : Math.max(...scale.options.map(o => o.value)))
+                                  ...chartAttributes.map(({ scale }) =>
+                                    scale.type === 'numeric' ? scale.max : (scale.type === 'wording' ? Math.max(...scale.options.map(o => o.value)) : 10)
                                   )
                                 )
 
@@ -1606,13 +1611,13 @@ function CuppingPageContent() {
                                 const tickVals = Array.from({ length: numTicks }, (_, i) => i * tickInterval)
 
                                 // Prepare data for Plotly first (needed for labels)
-                                const values = attributes.map(({ attribute }) => {
+                                const values = chartAttributes.map(({ attribute }) => {
                                   const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
                                   return attrScore?.value ?? 0
                                 })
 
                                 // Format attribute labels with scores and threshold ranges
-                                const formattedLabels = attributes.map(({ attribute, validation_rule }, idx) => {
+                                const formattedLabels = chartAttributes.map(({ attribute, validation_rule }, idx) => {
                                   const score = values[idx]
                                   const scoreDisplay = score > 0 ? ` ${score}` : ''
 
@@ -1642,9 +1647,9 @@ function CuppingPageContent() {
                                 const closedValues = [...values, values[0]]
                                 const closedLabels = [...formattedLabels, formattedLabels[0]]
 
-                                // Check if all scores are within spec
+                                // Check if all chart scores are within spec
                                 const allWithinSpec = cuppingData.attributes.every(a => {
-                                  const attr = attributes.find(attr => attr.attribute === a.attribute)
+                                  const attr = chartAttributes.find(attr => attr.attribute === a.attribute)
                                   if (!a.value || !attr?.validation_rule) return true
                                   return validateScoreAgainstRule(a.value, attr.validation_rule).valid
                                 })
