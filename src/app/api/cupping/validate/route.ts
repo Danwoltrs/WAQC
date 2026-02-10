@@ -102,8 +102,11 @@ export async function GET(request: NextRequest) {
 
     const hasMasterCupperAssigned = (assignedProfiles as any[])?.some(p => p.is_master_cupper === true) || false
 
-    // Count completed cuppers (those who have submitted scores for ALL samples)
+    // Count completed cuppers
+    // When validating a specific sample (sampleId provided), check if cuppers scored THAT sample
+    // When validating the whole session, check if cuppers scored ALL samples
     const sampleIds = session.sample_ids || []
+    const isPerSampleValidation = !!sampleId
 
     // First try to get scores by session_id
     let { data: scores, error: scoresError } = await supabase
@@ -119,30 +122,38 @@ export async function GET(request: NextRequest) {
     // This handles legacy scores saved without session_id
     if (!scores || scores.length === 0) {
       console.log('[VALIDATE] No scores found by session_id, trying sample_ids fallback')
-      const { data: sampleScores, error: sampleScoresError } = await supabase
-        .from('cupping_scores')
-        .select('cupper_id, sample_id')
-        .in('sample_id', sampleIds)
+      // When validating a specific sample, only query for that sample's scores
+      const queryIds = isPerSampleValidation ? [sampleId!] : sampleIds
+      if (queryIds.length > 0) {
+        const { data: sampleScores, error: sampleScoresError } = await supabase
+          .from('cupping_scores')
+          .select('cupper_id, sample_id')
+          .in('sample_id', queryIds)
 
-      if (sampleScoresError) {
-        console.error('Error fetching scores by sample_ids:', sampleScoresError)
-      } else {
-        scores = sampleScores
+        if (sampleScoresError) {
+          console.error('Error fetching scores by sample_ids:', sampleScoresError)
+        } else {
+          scores = sampleScores
+        }
       }
     }
 
-    console.log(`[VALIDATE] Found ${scores?.length || 0} scores for session ${session.id}`)
+    console.log(`[VALIDATE] Found ${scores?.length || 0} scores for session ${session.id}, perSample=${isPerSampleValidation}`)
 
     // Count how many samples each cupper has scored
+    // When doing per-sample validation, only count scores for the target sample
     const cupperSampleCounts = new Map<string, number>()
     for (const score of scores || []) {
       if (!score.cupper_id) continue
+      // For per-sample validation, only count scores matching the specific sample
+      if (isPerSampleValidation && score.sample_id !== sampleId) continue
       const count = cupperSampleCounts.get(score.cupper_id) || 0
       cupperSampleCounts.set(score.cupper_id, count + 1)
     }
 
-    // Count cuppers who have scored ALL samples
-    const totalSamples = sampleIds.length || 1
+    // For per-sample validation: cupper needs to have scored just this 1 sample
+    // For session validation: cupper needs to have scored ALL samples
+    const totalSamples = isPerSampleValidation ? 1 : (sampleIds.length || 1)
     let completedCupperCount = 0
     for (const [cupperId, count] of cupperSampleCounts) {
       if (count >= totalSamples) {
