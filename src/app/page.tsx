@@ -33,6 +33,9 @@ interface Sample {
   micro_origin: string | null
   sample_type: string | null
   certificate_status: string | null
+  container_nr: string | null
+  ico_number: string | null
+  exporter_sample_number: string | null
 }
 
 function DashboardContent() {
@@ -157,6 +160,9 @@ function DashboardContent() {
         micro_origin: sample.micro_origin || null,
         sample_type: sample.sample_type || null,
         certificate_status: sample.certificate_status || null,
+        container_nr: sample.container_nr || null,
+        ico_number: sample.ico_number || null,
+        exporter_sample_number: sample.exporter_sample_number || null,
       }))
 
       setSamples(transformedSamples)
@@ -185,6 +191,9 @@ function DashboardContent() {
     sampleType: s.sample_type,
     certificateStatus: s.certificate_status,
     createdAt: s.created_at,
+    containerNr: s.container_nr,
+    icoNumber: s.ico_number,
+    exporterSampleNumber: s.exporter_sample_number,
   })
   const samplesByStatus = {
     inProgress: samples.filter(s => s.status === 'in_progress').map(mapSample),
@@ -194,6 +203,15 @@ function DashboardContent() {
   }
 
   type DashboardSample = ReturnType<typeof mapSample>
+
+  const getSampleSecondaryId = (sample: DashboardSample) =>
+    sample.exporterSampleNumber || sample.containerNr || sample.icoNumber || null
+
+  const formatCardDate = (dateStr: string | null) => {
+    if (!dateStr) return null
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+  }
 
   // Calculate stats from real data
   const totalSamples = samples.length
@@ -516,9 +534,15 @@ function DashboardContent() {
                 className="cursor-pointer hover:shadow-md transition-all p-3"
                 onClick={() => setPreviewSample(sample)}
               >
-                <p className="font-bold text-blue-600 dark:text-blue-400 mb-1 text-sm truncate">{sample.trackingNumber}</p>
-                <p className="text-xs font-medium truncate">{sample.client || 'No client'}</p>
+                <p className="font-bold text-blue-600 dark:text-blue-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                {getSampleSecondaryId(sample) && (
+                  <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample)}</p>
+                )}
+                <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
                 <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                {sample.createdAt && (
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{formatCardDate(sample.createdAt)}</p>
+                )}
               </Card>
             ))}
           </div>
@@ -542,9 +566,15 @@ function DashboardContent() {
                 className="cursor-pointer hover:shadow-md transition-all p-3"
                 onClick={() => setPreviewSample(sample)}
               >
-                <p className="font-bold text-amber-600 dark:text-amber-400 mb-1 text-sm truncate">{sample.trackingNumber}</p>
-                <p className="text-xs font-medium truncate">{sample.client || 'No client'}</p>
+                <p className="font-bold text-amber-600 dark:text-amber-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                {getSampleSecondaryId(sample) && (
+                  <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample)}</p>
+                )}
+                <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
                 <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                {sample.createdAt && (
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{formatCardDate(sample.createdAt)}</p>
+                )}
               </Card>
             ))}
           </div>
@@ -568,9 +598,15 @@ function DashboardContent() {
                 className="cursor-pointer hover:shadow-md transition-all p-3"
                 onClick={() => setPreviewSample(sample)}
               >
-                <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1 text-sm truncate">{sample.trackingNumber}</p>
-                <p className="text-xs font-medium truncate">{sample.client || 'No client'}</p>
+                <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                {getSampleSecondaryId(sample) && (
+                  <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample)}</p>
+                )}
+                <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
                 <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                {sample.createdAt && (
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{formatCardDate(sample.createdAt)}</p>
+                )}
               </Card>
             ))}
           </div>
@@ -594,9 +630,15 @@ function DashboardContent() {
                 className="cursor-pointer hover:shadow-md transition-all p-3"
                 onClick={() => setPreviewSample(sample)}
               >
-                <p className="font-bold text-red-600 dark:text-red-400 mb-1 text-sm truncate">{sample.trackingNumber}</p>
-                <p className="text-xs font-medium truncate">{sample.client || 'No client'}</p>
+                <p className="font-bold text-red-600 dark:text-red-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                {getSampleSecondaryId(sample) && (
+                  <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample)}</p>
+                )}
+                <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
                 <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                {sample.createdAt && (
+                  <p className="text-[10px] text-muted-foreground/60 mt-1">{formatCardDate(sample.createdAt)}</p>
+                )}
               </Card>
             ))}
           </div>
@@ -623,9 +665,15 @@ function DashboardContent() {
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
                       onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-1">{sample.trackingNumber}</p>
-                      <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
+                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-0.5">{sample.trackingNumber}</p>
+                      {getSampleSecondaryId(sample) && (
+                        <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample)}</p>
+                      )}
+                      <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                      {sample.createdAt && (
+                        <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatCardDate(sample.createdAt)}</p>
+                      )}
                     </div>
                     {index < samplesByStatus.inProgress.length - 1 && (
                       <div className="h-16 w-px bg-border mx-2" />
@@ -655,9 +703,15 @@ function DashboardContent() {
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
                       onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-1">{sample.trackingNumber}</p>
-                      <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
+                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-0.5">{sample.trackingNumber}</p>
+                      {getSampleSecondaryId(sample) && (
+                        <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample)}</p>
+                      )}
+                      <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                      {sample.createdAt && (
+                        <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatCardDate(sample.createdAt)}</p>
+                      )}
                     </div>
                     {index < samplesByStatus.underReview.length - 1 && (
                       <div className="h-16 w-px bg-border mx-2" />
@@ -696,9 +750,15 @@ function DashboardContent() {
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
                       onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1">{sample.trackingNumber}</p>
-                      <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">{sample.trackingNumber}</p>
+                      {getSampleSecondaryId(sample) && (
+                        <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample)}</p>
+                      )}
+                      <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                      {sample.createdAt && (
+                        <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatCardDate(sample.createdAt)}</p>
+                      )}
                     </div>
                     {index < samplesByStatus.approved.length - 1 && (
                       <div className="h-16 w-px bg-border mx-2" />
@@ -737,9 +797,15 @@ function DashboardContent() {
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
                       onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-red-600 dark:text-red-400 mb-1">{sample.trackingNumber}</p>
-                      <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
+                      <p className="font-bold text-red-600 dark:text-red-400 mb-0.5">{sample.trackingNumber}</p>
+                      {getSampleSecondaryId(sample) && (
+                        <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample)}</p>
+                      )}
+                      <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                      {sample.createdAt && (
+                        <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatCardDate(sample.createdAt)}</p>
+                      )}
                     </div>
                     {index < samplesByStatus.rejected.length - 1 && (
                       <div className="h-16 w-px bg-border mx-2" />
