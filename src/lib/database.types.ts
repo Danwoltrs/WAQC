@@ -6346,12 +6346,16 @@ export type Database = {
       quality_assessments: {
         Row: {
           assessor_id: string | null
+          clean_cup: boolean | null
+          clean_cup_auto: boolean | null
           compliance_status:
             | Database["public"]["Enums"]["compliance_status"]
             | null
           created_at: string | null
+          cupping_comments: string | null
           cupping_complete: boolean | null
           defect_photos: string[] | null
+          grading_comments: string | null
           grading_complete: boolean | null
           green_bean_data: Json | null
           id: string
@@ -6361,16 +6365,22 @@ export type Database = {
           roast_data: Json | null
           sample_id: string | null
           sample_size_grams: number | null
+          uniform_cup: boolean | null
+          uniform_cup_auto: boolean | null
           updated_at: string | null
         }
         Insert: {
           assessor_id?: string | null
+          clean_cup?: boolean | null
+          clean_cup_auto?: boolean | null
           compliance_status?:
             | Database["public"]["Enums"]["compliance_status"]
             | null
           created_at?: string | null
+          cupping_comments?: string | null
           cupping_complete?: boolean | null
           defect_photos?: string[] | null
+          grading_comments?: string | null
           grading_complete?: boolean | null
           green_bean_data?: Json | null
           id?: string
@@ -6380,16 +6390,22 @@ export type Database = {
           roast_data?: Json | null
           sample_id?: string | null
           sample_size_grams?: number | null
+          uniform_cup?: boolean | null
+          uniform_cup_auto?: boolean | null
           updated_at?: string | null
         }
         Update: {
           assessor_id?: string | null
+          clean_cup?: boolean | null
+          clean_cup_auto?: boolean | null
           compliance_status?:
             | Database["public"]["Enums"]["compliance_status"]
             | null
           created_at?: string | null
+          cupping_comments?: string | null
           cupping_complete?: boolean | null
           defect_photos?: string[] | null
+          grading_comments?: string | null
           grading_complete?: boolean | null
           green_bean_data?: Json | null
           id?: string
@@ -6399,6 +6415,8 @@ export type Database = {
           roast_data?: Json | null
           sample_id?: string | null
           sample_size_grams?: number | null
+          uniform_cup?: boolean | null
+          uniform_cup_auto?: boolean | null
           updated_at?: string | null
         }
         Relationships: [
