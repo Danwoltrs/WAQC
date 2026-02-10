@@ -40,6 +40,8 @@ export interface TaintFaultDefect {
   fault_range: { min: number; max: number }
   /** Maximum intensity value (typically 5 or 10) */
   max_intensity: number
+  /** Scoring increment step (e.g., 0.25, 0.5, 1). Defaults to 0.5 */
+  increment: number
   /** Whether this defect is actively used in QC */
   active: boolean
   /** Display order */
@@ -146,6 +148,7 @@ export function createTaintFaultDefect(
     maxIntensity?: number
     taintRange?: { min: number; max: number } | null
     faultRange?: { min: number; max: number }
+    increment?: number
   }
 ): TaintFaultDefect {
   const maxIntensity = options?.maxIntensity ?? 5
@@ -163,6 +166,7 @@ export function createTaintFaultDefect(
     taint_range: taintRange,
     fault_range: faultRange,
     max_intensity: maxIntensity,
+    increment: options?.increment ?? 0.5,
     active: true,
     display_order: displayOrder
   }
@@ -637,7 +641,8 @@ export function cloneTaintFaultDefect(
     id: `defect_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     name: `${defect.name} (copy)`,
     taint_range: defect.taint_range ? { ...defect.taint_range } : null,
-    fault_range: { ...defect.fault_range }
+    fault_range: { ...defect.fault_range },
+    increment: defect.increment ?? 0.5
   }
 }
 

@@ -25,6 +25,7 @@ import {
   getVisibilitySettings,
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
+import { TaintFaultDefect } from '@/types/taint-fault-configuration'
 import { CuppingReports } from '@/components/cupping/cupping-reports'
 import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
@@ -178,6 +179,7 @@ function CuppingPageContent() {
   // Template attributes and defects per sample
   const [attributesMap, setAttributesMap] = useState<Map<string, AttributeWithScale[]>>(new Map())
   const [availableDefectsMap, setAvailableDefectsMap] = useState<Map<string, string[]>>(new Map())
+  const [defectConfigsMap, setDefectConfigsMap] = useState<Map<string, Map<string, TaintFaultDefect>>>(new Map())
   const [cupsPerSampleMap, setCupsPerSampleMap] = useState<Map<string, number>>(new Map())
 
   // Cupping comments per sample
@@ -437,6 +439,7 @@ function CuppingPageContent() {
             const newCupsPerSampleMap = new Map<string, number>()
             const newClientQualityMap = new Map<string, ClientQuality>()
             const newCommentsMap = new Map<string, string>()
+            const newDefectConfigsMap = new Map<string, Map<string, TaintFaultDefect>>()
 
             for (const sample of detailsData.samples) {
               await loadSampleCuppingConfig(
@@ -445,7 +448,8 @@ function CuppingPageContent() {
                 newAttributesMap,
                 newAvailableDefectsMap,
                 newCupsPerSampleMap,
-                newClientQualityMap
+                newClientQualityMap,
+                newDefectConfigsMap
               )
 
               // Load existing cupping comments from quality assessment
@@ -468,6 +472,7 @@ function CuppingPageContent() {
             setCupsPerSampleMap(newCupsPerSampleMap)
             setClientQualityMap(newClientQualityMap)
             setCuppingCommentsMap(newCommentsMap)
+            setDefectConfigsMap(newDefectConfigsMap)
           }
         } else {
           // No samples assigned - this is normal if user isn't assigned to any sessions
@@ -488,7 +493,8 @@ function CuppingPageContent() {
     attributesMap: Map<string, AttributeWithScale[]>,
     availableDefectsMap: Map<string, string[]>,
     cupsMap: Map<string, number>,
-    clientQualityMap: Map<string, ClientQuality>
+    clientQualityMap: Map<string, ClientQuality>,
+    defectConfigsMap: Map<string, Map<string, TaintFaultDefect>>
   ) => {
     try {
       // Initialize empty cupping data
@@ -551,18 +557,28 @@ function CuppingPageContent() {
           if (cuppingDefects && Array.isArray(cuppingDefects)) {
             // Extract defect names - handle both string arrays and object arrays
             // Filter out inactive defects (where active === false)
-            const defectNames = cuppingDefects
+            const activeDefects = cuppingDefects
               .filter((d: any) => {
                 // If it's a string, include it
                 if (typeof d === 'string') return true
                 // If it's an object, only include if active is true or undefined
                 return d.active !== false
               })
-              .map((d: any) =>
-                typeof d === 'string' ? d : d.name
-              )
+            const defectNames = activeDefects.map((d: any) =>
+              typeof d === 'string' ? d : d.name
+            )
             console.log('Filtered defect names:', defectNames)
             availableDefectsMap.set(sample.id, defectNames)
+
+            // Store full defect config objects for increment lookup
+            const configMap = new Map<string, TaintFaultDefect>()
+            activeDefects.forEach((d: any) => {
+              if (typeof d === 'object' && d.name) {
+                configMap.set(d.name, d as TaintFaultDefect)
+              }
+            })
+            defectConfigsMap.set(sample.id, configMap)
+
             defectsSet = true
           }
         }
@@ -723,12 +739,18 @@ function CuppingPageContent() {
   }
 
   const handleAddDefectClick = (defectName: string) => {
+    // Use the defect's configured increment as the initial intensity value
+    const sampleId = activeSampleId
+    const dConfig = defectConfigsMap.get(sampleId)?.get(defectName)
+    const initialIntensity = dConfig?.increment ?? 0.5
     setDefectModalOpen(defectName)
-    setModalCupIntensities([1])
+    setModalCupIntensities([initialIntensity])
   }
 
   const addCupToModal = () => {
-    setModalCupIntensities([...modalCupIntensities, 1])
+    const dConfig = defectModalOpen ? defectConfigsMap.get(activeSampleId)?.get(defectModalOpen) : null
+    const initialIntensity = dConfig?.increment ?? 0.5
+    setModalCupIntensities([...modalCupIntensities, initialIntensity])
   }
 
   const removeCupFromModal = (index: number) => {
@@ -1747,15 +1769,22 @@ function CuppingPageContent() {
                                   </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-80 p-4" align="start">
+                                  {(() => {
+                                    const dConfig = defectConfigsMap.get(sample.id)?.get(defectName)
+                                    const step = dConfig?.increment ?? 0.5
+                                    const maxInt = dConfig?.max_intensity ?? 10
+                                    const taintMax = dConfig?.taint_range?.max ?? 3
+
+                                    return (
                                   <div className="space-y-3">
                                     {/* Defect Name Header */}
                                     <div className="flex items-center justify-between pb-2 border-b">
                                       <span className="text-sm font-medium">{defectName}</span>
                                       <Badge
-                                        variant={Math.max(...modalCupIntensities) <= 3 ? 'secondary' : 'destructive'}
+                                        variant={Math.max(...modalCupIntensities) <= taintMax ? 'secondary' : 'destructive'}
                                         className="text-[10px] px-2 py-0.5"
                                       >
-                                        {Math.max(...modalCupIntensities) <= 3 ? 'Taint' : 'Fault'}
+                                        {Math.max(...modalCupIntensities) <= taintMax ? 'Taint' : 'Fault'}
                                       </Badge>
                                     </div>
 
@@ -1771,33 +1800,40 @@ function CuppingPageContent() {
                                                 variant="outline"
                                                 size="icon"
                                                 className="h-6 w-6 cursor-pointer"
-                                                onClick={() => updateCupIntensity(index, Math.max(1, intensity - 1))}
+                                                onClick={() => {
+                                                  const newVal = Math.round((intensity - step) * 100) / 100
+                                                  updateCupIntensity(index, Math.max(step, newVal))
+                                                }}
                                               >
                                                 <Minus className="h-3 w-3" />
                                               </Button>
                                               <Input
                                                 type="number"
+                                                step={step}
                                                 value={intensity}
                                                 onChange={(e) => {
-                                                  const v = parseInt(e.target.value)
-                                                  if (!isNaN(v) && v >= 1 && v <= 7) {
+                                                  const v = parseFloat(e.target.value)
+                                                  if (!isNaN(v) && v >= step && v <= maxInt) {
                                                     updateCupIntensity(index, v)
                                                   }
                                                 }}
-                                                className="w-12 h-6 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                min={1}
-                                                max={7}
+                                                className="w-14 h-6 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                min={step}
+                                                max={maxInt}
                                               />
                                               <Button
                                                 variant="outline"
                                                 size="icon"
                                                 className="h-6 w-6 cursor-pointer"
-                                                onClick={() => updateCupIntensity(index, Math.min(7, intensity + 1))}
+                                                onClick={() => {
+                                                  const newVal = Math.round((intensity + step) * 100) / 100
+                                                  updateCupIntensity(index, Math.min(maxInt, newVal))
+                                                }}
                                               >
                                                 <Plus className="h-3 w-3" />
                                               </Button>
                                               <span className="text-xs text-muted-foreground ml-1">
-                                                {intensity <= 3 ? 'Taint' : 'Fault'}
+                                                {intensity <= taintMax ? 'Taint' : 'Fault'}
                                               </span>
                                             </div>
                                             {modalCupIntensities.length > 1 && (
@@ -1849,6 +1885,8 @@ function CuppingPageContent() {
                                       </Button>
                                     </div>
                                   </div>
+                                    )
+                                  })()}
                                 </PopoverContent>
                               </Popover>
                             ))}

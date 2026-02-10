@@ -46,7 +46,7 @@ export function TaintFaultConfigManager({
 }: TaintFaultConfigManagerProps) {
   // Ensure backward compatibility with old templates
   const normalizedValue: TaintFaultConfiguration = {
-    defects: value.defects || [],
+    defects: (value.defects || []).map(d => ({ ...d, increment: d.increment ?? 0.5 })),
     deduction_formula: value.deduction_formula || {
       taint_multiplier: 0.5,
       fault_multiplier: 2.0
@@ -66,7 +66,7 @@ export function TaintFaultConfigManager({
   // Update config when value prop changes (e.g., when editing existing template)
   useEffect(() => {
     const normalized: TaintFaultConfiguration = {
-      defects: value.defects || [],
+      defects: (value.defects || []).map(d => ({ ...d, increment: d.increment ?? 0.5 })),
       deduction_formula: value.deduction_formula || {
         taint_multiplier: 0.5,
         fault_multiplier: 2.0
@@ -236,6 +236,7 @@ export function TaintFaultConfigManager({
                         <th className="text-center p-3 font-medium text-sm">Taint Range</th>
                         <th className="text-center p-3 font-medium text-sm">Fault Range</th>
                         <th className="text-center p-3 font-medium text-sm">Max Intensity</th>
+                        <th className="text-center p-3 font-medium text-sm">Increment</th>
                         <th className="text-center p-3 font-medium text-sm">Active</th>
                         <th className="w-10"></th>
                       </tr>
@@ -352,6 +353,30 @@ export function TaintFaultConfigManager({
                                 className="text-sm hover:underline"
                               >
                                 {defect.max_intensity}
+                              </button>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            {editingDefectId === defect.id ? (
+                              <Input
+                                type="number"
+                                step="0.05"
+                                min="0.05"
+                                value={defect.increment ?? 0.5}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value)
+                                  if (!isNaN(val) && val > 0) {
+                                    handleUpdateDefect(defect.id, { increment: val })
+                                  }
+                                }}
+                                className="h-7 w-16 text-xs text-center mx-auto"
+                              />
+                            ) : (
+                              <button
+                                onClick={() => setEditingDefectId(defect.id)}
+                                className="text-sm hover:underline"
+                              >
+                                {defect.increment ?? 0.5}
                               </button>
                             )}
                           </td>
