@@ -37,10 +37,8 @@ export function LoginForm() {
       if (error) {
         setError(error.message)
         setLoading(false)
-      } else {
-        // Force page reload to re-initialize auth state from cookies
-        window.location.href = '/'
       }
+      // If no error, onAuthStateChange will fire SIGNED_IN and update the UI
     } catch (err) {
       setError('An unexpected error occurred')
       setLoading(false)

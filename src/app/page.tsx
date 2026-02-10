@@ -615,22 +615,25 @@ function DashboardContent() {
                 {samplesByStatus.inProgress.length} {samplesByStatus.inProgress.length === 1 ? 'sample' : 'samples'}
               </span>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {samplesByStatus.inProgress.map((sample) => (
-                <Card
-                  key={sample.sampleId}
-                  className="cursor-pointer hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all p-4"
-                  onClick={() => setPreviewSample(sample)}
-                >
-                  <p className="font-bold text-blue-600 dark:text-blue-400 text-sm mb-1.5 truncate">{sample.trackingNumber}</p>
-                  <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
-                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
-                  {sample.origin && (
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{sample.origin}</p>
-                  )}
-                </Card>
-              ))}
-            </div>
+            <Card className="p-4 sm:p-6">
+              <div className="flex flex-wrap gap-4">
+                {samplesByStatus.inProgress.map((sample, index) => (
+                  <div key={sample.sampleId} className="flex items-center">
+                    <div
+                      className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => setPreviewSample(sample)}
+                    >
+                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-1">{sample.trackingNumber}</p>
+                      <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                    </div>
+                    {index < samplesByStatus.inProgress.length - 1 && (
+                      <div className="h-16 w-px bg-border mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         )}
 
@@ -644,22 +647,25 @@ function DashboardContent() {
                 {samplesByStatus.underReview.length} {samplesByStatus.underReview.length === 1 ? 'sample' : 'samples'}
               </span>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {samplesByStatus.underReview.map((sample) => (
-                <Card
-                  key={sample.sampleId}
-                  className="cursor-pointer hover:shadow-md hover:border-amber-300 dark:hover:border-amber-700 transition-all p-4"
-                  onClick={() => setPreviewSample(sample)}
-                >
-                  <p className="font-bold text-amber-600 dark:text-amber-400 text-sm mb-1.5 truncate">{sample.trackingNumber}</p>
-                  <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
-                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
-                  {sample.origin && (
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{sample.origin}</p>
-                  )}
-                </Card>
-              ))}
-            </div>
+            <Card className="p-4 sm:p-6">
+              <div className="flex flex-wrap gap-4">
+                {samplesByStatus.underReview.map((sample, index) => (
+                  <div key={sample.sampleId} className="flex items-center">
+                    <div
+                      className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => setPreviewSample(sample)}
+                    >
+                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-1">{sample.trackingNumber}</p>
+                      <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                    </div>
+                    {index < samplesByStatus.underReview.length - 1 && (
+                      <div className="h-16 w-px bg-border mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         )}
 
@@ -682,22 +688,25 @@ function DashboardContent() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {samplesByStatus.approved.map((sample) => (
-                <Card
-                  key={sample.sampleId}
-                  className="cursor-pointer hover:shadow-md hover:border-emerald-300 dark:hover:border-emerald-700 transition-all p-4"
-                  onClick={() => setPreviewSample(sample)}
-                >
-                  <p className="font-bold text-emerald-600 dark:text-emerald-400 text-sm mb-1.5 truncate">{sample.trackingNumber}</p>
-                  <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
-                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
-                  {sample.origin && (
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{sample.origin}</p>
-                  )}
-                </Card>
-              ))}
-            </div>
+            <Card className="p-4 sm:p-6">
+              <div className="flex flex-wrap gap-4">
+                {samplesByStatus.approved.map((sample, index) => (
+                  <div key={sample.sampleId} className="flex items-center">
+                    <div
+                      className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => setPreviewSample(sample)}
+                    >
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1">{sample.trackingNumber}</p>
+                      <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                    </div>
+                    {index < samplesByStatus.approved.length - 1 && (
+                      <div className="h-16 w-px bg-border mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         )}
 
@@ -720,22 +729,25 @@ function DashboardContent() {
                 </select>
               </div>
             </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3">
-              {samplesByStatus.rejected.map((sample) => (
-                <Card
-                  key={sample.sampleId}
-                  className="cursor-pointer hover:shadow-md hover:border-red-300 dark:hover:border-red-700 transition-all p-4"
-                  onClick={() => setPreviewSample(sample)}
-                >
-                  <p className="font-bold text-red-600 dark:text-red-400 text-sm mb-1.5 truncate">{sample.trackingNumber}</p>
-                  <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
-                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
-                  {sample.origin && (
-                    <p className="text-xs text-muted-foreground mt-1 truncate">{sample.origin}</p>
-                  )}
-                </Card>
-              ))}
-            </div>
+            <Card className="p-4 sm:p-6">
+              <div className="flex flex-wrap gap-4">
+                {samplesByStatus.rejected.map((sample, index) => (
+                  <div key={sample.sampleId} className="flex items-center">
+                    <div
+                      className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
+                      onClick={() => setPreviewSample(sample)}
+                    >
+                      <p className="font-bold text-red-600 dark:text-red-400 mb-1">{sample.trackingNumber}</p>
+                      <p className="text-sm font-medium truncate">{sample.client || 'No client'}</p>
+                      <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                    </div>
+                    {index < samplesByStatus.rejected.length - 1 && (
+                      <div className="h-16 w-px bg-border mx-2" />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
           </div>
         )}
       </div>
