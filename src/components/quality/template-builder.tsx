@@ -1691,6 +1691,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         onChange={handleAttributesChange}
       />
 
+      {/* Taints and Faults + Clean/Uniform Cups side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {/* Taints and Faults (New Flexible System) */}
       <Card>
         <CardHeader className="pb-3 cursor-pointer" onClick={() => setTaintFaultExpanded(!taintFaultExpanded)}>
@@ -1902,21 +1904,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
       </Card>
 
 
-      {/* Taint/Fault Configuration Dialog */}
-      <TaintFaultConfigManager
-        open={taintFaultDialogOpen}
-        onOpenChange={setTaintFaultDialogOpen}
-        value={taintFaultConfiguration}
-        onChange={setTaintFaultConfiguration}
-      />
-
-      {/* Cup Status Rules (Clean Cup / Uniform Cup) */}
+      {/* Clean/Uniform Cups */}
       <Card>
         <CardHeader className="pb-3 cursor-pointer" onClick={() => setCupStatusRulesExpanded(!cupStatusRulesExpanded)}>
           <div className="flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 min-w-0 flex-1">
               {cupStatusRulesExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
-              <CardTitle className="text-sm font-semibold flex-shrink-0">Cup Status Rules</CardTitle>
+              <CardTitle className="text-sm font-semibold flex-shrink-0">Clean/Uniform Cups</CardTitle>
               {!cupStatusRulesExpanded && cupStatusRules && (
                 <span className="text-[11px] text-muted-foreground truncate">
                   - Clean Cup: T{'\u2264'}{cupStatusRules.clean_cup.max_taints} F{'\u2264'}{cupStatusRules.clean_cup.max_faults} | Uniform Cup: T{'\u2264'}{cupStatusRules.uniform_cup.max_taints} F{'\u2264'}{cupStatusRules.uniform_cup.max_faults}
@@ -2045,6 +2039,15 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         </CardContent>
         )}
       </Card>
+      </div>
+
+      {/* Taint/Fault Configuration Dialog */}
+      <TaintFaultConfigManager
+        open={taintFaultDialogOpen}
+        onOpenChange={setTaintFaultDialogOpen}
+        value={taintFaultConfiguration}
+        onChange={setTaintFaultConfiguration}
+      />
 
       {/* Micro-Region Configuration Dialog */}
       <MicroRegionConfigManager
