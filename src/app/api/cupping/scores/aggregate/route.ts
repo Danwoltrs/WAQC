@@ -1,5 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+
+// Admin client to bypass RLS for session lookups
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  }
+)
 
 interface CupperScore {
   id: string
@@ -98,6 +111,25 @@ export async function GET(request: NextRequest) {
       )
     }
 
+    // Find the active cupping session to know which cuppers are currently assigned
+    // This prevents old scores from removed cuppers from causing false discrepancies
+    let activeSessionCupperIds: string[] | null = null
+
+    if (sampleId) {
+      const { data: activeSession } = await supabaseAdmin
+        .from('cupping_sessions')
+        .select('id, cupper_ids')
+        .contains('sample_ids', [sampleId])
+        .in('status', ['active', 'review'])
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (activeSession?.cupper_ids) {
+        activeSessionCupperIds = activeSession.cupper_ids as string[]
+      }
+    }
+
     // Build query
     let query = supabase
       .from('cupping_scores')
@@ -123,7 +155,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('session_id', sessionId)
     }
 
-    const { data: scores, error: scoresError } = await query
+    const { data: allScores, error: scoresError } = await query
 
     if (scoresError) {
       console.error('Error fetching cupping scores:', scoresError)
@@ -133,14 +165,30 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    if (!scores || scores.length === 0) {
+    if (!allScores || allScores.length === 0) {
       return NextResponse.json(
         { error: 'No cupping scores found for this sample' },
         { status: 404 }
       )
     }
 
-    console.log(`Aggregating ${scores.length} cupping scores for sample ${sampleId || sessionId}`)
+    // Filter scores to only include currently assigned cuppers
+    // This prevents old scores from removed cuppers from causing false discrepancies
+    // Keep scores with null cupper_id (OCR scores) as they are always relevant
+    const scores = activeSessionCupperIds
+      ? allScores.filter((s: any) =>
+          s.cupper_id === null || activeSessionCupperIds!.includes(s.cupper_id)
+        )
+      : allScores
+
+    if (scores.length === 0) {
+      return NextResponse.json(
+        { error: 'No cupping scores found for currently assigned cuppers' },
+        { status: 404 }
+      )
+    }
+
+    console.log(`Aggregating ${scores.length} cupping scores for sample ${sampleId || sessionId} (filtered from ${allScores.length} total)`)
 
     // Extract all unique attributes across all cuppers
     const allAttributes = new Set<string>()
@@ -444,8 +492,10 @@ export async function GET(request: NextRequest) {
       discrepancy_flags: discrepancyFlags,
     }
 
-    // Check for minimum cupper requirement (at least 2 cuppers)
-    if (scores.length < 2) {
+    // Only warn about single cupper if the session was intended for multiple cuppers
+    // When only 1 cupper is assigned, this is intentional and should not show a warning
+    const isSingleCupperSession = activeSessionCupperIds !== null && activeSessionCupperIds.length === 1
+    if (scores.length < 2 && !isSingleCupperSession) {
       aggregated.discrepancy_flags.push(
         'Warning: Only 1 cupper scored this sample. Minimum 2 cuppers recommended.'
       )

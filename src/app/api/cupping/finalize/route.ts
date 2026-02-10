@@ -147,6 +147,10 @@ export async function POST(request: NextRequest) {
 
     const hasGradingData = !gradingError && gradingData && gradingData.green_bean_data
 
+    // Get the currently assigned cupper IDs from the session
+    // This ensures compliance evaluation only uses scores from assigned cuppers
+    const sessionCupperIds = (session.cupper_ids as string[]) || []
+
     // Auto-determine approval/rejection based on quality specifications
     // Only evaluate compliance if grading data exists
     let complianceResult: QualityComplianceResult = { approved: true, violations: [] }
@@ -158,7 +162,8 @@ export async function POST(request: NextRequest) {
       // Both cupping and grading are complete - evaluate compliance
       complianceResult = await evaluateQualityCompliance(
         sample_id,
-        sample.quality_spec_id
+        sample.quality_spec_id,
+        sessionCupperIds
       )
 
       // Check if manual decision is provided and there's no quality template (auto-approve scenario)
@@ -194,11 +199,17 @@ export async function POST(request: NextRequest) {
 
     // Auto-calculate Clean Cup and Uniform Cup from defect counts
     try {
-      // Count total taints and faults from all cupping_scores for the sample
-      const { data: allCuppingScores } = await supabaseAdmin
+      // Count total taints and faults from assigned cuppers' scores only
+      let cupScoreQuery = supabaseAdmin
         .from('cupping_scores')
         .select('defects')
         .eq('sample_id', sample_id)
+
+      if (sessionCupperIds.length > 0) {
+        cupScoreQuery = cupScoreQuery.in('cupper_id', sessionCupperIds)
+      }
+
+      const { data: allCuppingScores } = await cupScoreQuery
 
       let totalTaints = 0
       let totalFaults = 0
@@ -589,7 +600,8 @@ interface CuppingAttributeConfig {
  */
 async function evaluateQualityCompliance(
   sampleId: string,
-  qualitySpecId: string | null
+  qualitySpecId: string | null,
+  assignedCupperIds?: string[]
 ): Promise<QualityComplianceResult> {
   const violations: string[] = []
 
@@ -627,11 +639,18 @@ async function evaluateQualityCompliance(
   const template = qualitySpec.template as any
   const parameters = template.parameters as QualityTemplateParameters || {}
 
-  // Fetch aggregated cupping scores for this sample
-  const { data: cuppingScores } = await supabaseAdmin
+  // Fetch cupping scores for this sample, filtered to currently assigned cuppers only
+  // This prevents old scores from removed cuppers from affecting compliance evaluation
+  let scoreQuery = supabaseAdmin
     .from('cupping_scores')
-    .select('scores, defects')
+    .select('scores, defects, cupper_id')
     .eq('sample_id', sampleId)
+
+  if (assignedCupperIds && assignedCupperIds.length > 0) {
+    scoreQuery = scoreQuery.in('cupper_id', assignedCupperIds)
+  }
+
+  const { data: cuppingScores } = await scoreQuery
 
   // Fetch grading data (green bean analysis)
   const { data: qualityAssessment } = await supabaseAdmin

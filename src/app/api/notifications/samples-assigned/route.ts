@@ -162,7 +162,10 @@ export async function POST(request: NextRequest) {
           .from('cupping_sessions')
           .update({
             cupper_ids: mergedCupperIds,
+            participants: mergedCupperIds,
             sample_ids: mergedSampleIds,
+            min_cuppers_required: Math.min(mergedCupperIds.length, 2),
+            allow_single_cupper: mergedCupperIds.length === 1,
           })
           .eq('id', session_id)
 
