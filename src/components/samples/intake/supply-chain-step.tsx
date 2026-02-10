@@ -5,11 +5,9 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Button } from '@/components/ui/button'
-import { Plus } from 'lucide-react'
 import { CreateClientDialog } from './create-client-dialog'
-import { SubContractCard } from './sub-contract-card'
-import { StepComponentProps, SubContractFormData } from './types'
+import { SubContractsSection } from './sub-contract-card'
+import { StepComponentProps } from './types'
 
 export function SupplyChainStep({
   formData,
@@ -440,63 +438,17 @@ export function SupplyChainStep({
       </div>
 
       {/* Sub-Contracts Section */}
-      <div className="mt-4 pt-4 border-t">
-        <div className="flex items-center justify-between mb-3">
-          <Label className="text-xs font-medium text-muted-foreground">Sub-Contracts</Label>
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            className="h-7 text-xs gap-1"
-            onClick={() => {
-              const newContract: SubContractFormData = {
-                importer: '',
-                importer_is_qc_client: true,
-                roaster: '',
-                end_client: '',
-                qc_client: '',
-                wolthers_contract_nr: '',
-                buyer_contract_nr: '',
-                roaster_contract_nr: '',
-                qc_client_contract_nr: '',
-                end_client_contract_nr: '',
-                supplier_contract_nr: '',
-                ico_number: '',
-                container_nr: '',
-              }
-              updateFormData('contracts', [...formData.contracts, newContract])
-            }}
-          >
-            <Plus className="h-3 w-3" />
-            Contract
-          </Button>
-        </div>
-
-        {formData.contracts.length > 0 && (
-          <div className="space-y-3">
-            {formData.contracts.map((contract, idx) => (
-              <SubContractCard
-                key={idx}
-                index={idx}
-                data={contract}
-                onChange={(i, field, value) => {
-                  const updated = [...formData.contracts]
-                  updated[i] = { ...updated[i], [field]: value }
-                  updateFormData('contracts', updated)
-                }}
-                onRemove={(i) => {
-                  const updated = formData.contracts.filter((_, j) => j !== i)
-                  updateFormData('contracts', updated)
-                }}
-                importers={importers}
-                roasters={roasters}
-                qcClients={qcClients}
-                mergedImporterOptions={mergedImporterOptions}
-              />
-            ))}
-          </div>
-        )}
-      </div>
+      <SubContractsSection
+        contracts={formData.contracts}
+        onChange={(contracts) => updateFormData('contracts', contracts)}
+        motherImporter={formData.importer}
+        motherImporterIsQcClient={formData.importer_is_qc_client}
+        motherRoaster={formData.roaster}
+        importers={importers}
+        roasters={roasters}
+        qcClients={qcClients}
+        mergedImporterOptions={mergedImporterOptions}
+      />
 
       <CreateClientDialog
         open={showCreateClientDialog}
