@@ -195,11 +195,31 @@ function DashboardContent() {
     icoNumber: s.ico_number,
     exporterSampleNumber: s.exporter_sample_number,
   })
+  const getFilterDate = (filter: string) => {
+    const now = new Date()
+    if (filter === 'day') {
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    }
+    if (filter === 'week') {
+      const dayOfWeek = now.getDay()
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday)
+      return monday
+    }
+    // month
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  }
+
+  const filterByDate = (s: Sample, filter: string) => {
+    if (!s.created_at) return false
+    return new Date(s.created_at) >= getFilterDate(filter)
+  }
+
   const samplesByStatus = {
     inProgress: samples.filter(s => s.status === 'in_progress').map(mapSample),
     underReview: samples.filter(s => s.status === 'under_review').map(mapSample),
-    approved: samples.filter(s => s.status === 'approved').map(mapSample),
-    rejected: samples.filter(s => s.status === 'rejected').map(mapSample),
+    approved: samples.filter(s => s.status === 'approved' && filterByDate(s, approvedFilter)).map(mapSample),
+    rejected: samples.filter(s => s.status === 'rejected' && filterByDate(s, rejectedFilter)).map(mapSample),
   }
 
   type DashboardSample = ReturnType<typeof mapSample>
@@ -393,7 +413,7 @@ function DashboardContent() {
   }
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-[1600px] mx-auto">
       {/* Mobile: Quick Actions FIRST */}
       <div className="sm:hidden space-y-3">
         <h2 className="text-lg font-bold">Quick Actions</h2>
