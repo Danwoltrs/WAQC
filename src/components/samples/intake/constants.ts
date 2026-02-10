@@ -4,7 +4,8 @@ export const STEPS: Step[] = [
   { id: 1, name: 'Supply Chain', description: 'Seller, Shipper, Importer and related parties' },
   { id: 2, name: 'Quality', description: 'Origin, processing and quality specifications' },
   { id: 3, name: 'Weight', description: 'Bag quantities and specifications' },
-  { id: 4, name: 'Review', description: 'Final review and submission' }
+  { id: 4, name: 'Review', description: 'Final review and submission' },
+  { id: 5, name: 'Contracts', description: 'Additional contracts and sub-shipments' }
 ]
 
 // Certifications available for selection

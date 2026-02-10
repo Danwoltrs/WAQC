@@ -6,7 +6,6 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { CreateClientDialog } from './create-client-dialog'
-import { SubContractsSection } from './sub-contract-card'
 import { StepComponentProps } from './types'
 
 export function SupplyChainStep({
@@ -436,19 +435,6 @@ export function SupplyChainStep({
         </div>
         <div></div>
       </div>
-
-      {/* Sub-Contracts Section */}
-      <SubContractsSection
-        contracts={formData.contracts}
-        onChange={(contracts) => updateFormData('contracts', contracts)}
-        motherImporter={formData.importer}
-        motherImporterIsQcClient={formData.importer_is_qc_client}
-        motherRoaster={formData.roaster}
-        importers={importers}
-        roasters={roasters}
-        qcClients={qcClients}
-        mergedImporterOptions={mergedImporterOptions}
-      />
 
       <CreateClientDialog
         open={showCreateClientDialog}

@@ -146,6 +146,13 @@ export async function POST(
       roaster_id: body.roaster_id || null,
       end_client_id: body.end_client_id || null,
       client_id: body.client_id || null,
+      bag_count: body.bag_count || null,
+      bag_weight_kg: body.bag_weight_kg || null,
+      bag_type: body.bag_type || null,
+      bags_quantity_mt: body.bags_quantity_mt || null,
+      equivalent_60kg_bags: body.equivalent_60kg_bags || null,
+      exporter_sample_number: body.exporter_sample_number || null,
+      shipment_month: body.shipment_month || null,
       sort_order: nextSortOrder,
       created_by: user.id,
     }
@@ -196,7 +203,9 @@ export async function PATCH(
       'wolthers_contract_nr', 'seller_contract_nr', 'shipper_contract_nr',
       'buyer_contract_nr', 'roaster_contract_nr', 'qc_client_contract_nr',
       'end_client_contract_nr', 'supplier_contract_nr', 'ico_number', 'container_nr',
-      'importer_id', 'importer_is_qc_client', 'roaster_id', 'end_client_id', 'client_id'
+      'importer_id', 'importer_is_qc_client', 'roaster_id', 'end_client_id', 'client_id',
+      'bag_count', 'bag_weight_kg', 'bag_type', 'bags_quantity_mt',
+      'equivalent_60kg_bags', 'exporter_sample_number', 'shipment_month'
     ]
 
     const updateData: Record<string, any> = { updated_at: new Date().toISOString() }

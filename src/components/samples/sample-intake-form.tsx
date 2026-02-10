@@ -19,6 +19,8 @@ import {
   QualityStep,
   QuantityStep,
   SampleDetailsStep,
+  ContractsStep,
+  createEmptyContract,
   SuccessView
 } from './intake'
 
@@ -133,6 +135,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const [approvedPSSSamples, setApprovedPSSSamples] = useState<any[]>([])
   const [generatedTrackingNumber, setGeneratedTrackingNumber] = useState<string>('')
   const [formData, setFormData] = useState<FormData>(initialFormData)
+  const [activeContractIndex, setActiveContractIndex] = useState(0)
 
   // Load clients, laboratories, exporters, importers, and roasters
   useEffect(() => {
@@ -413,6 +416,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       case 4:
         // Step 4: Review
         return !!formData.arrival_date
+      case 5:
+        // Step 5: Contracts - always valid (contracts are optional)
+        return true
       default:
         return false
     }
@@ -421,7 +427,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setError(null)
-      setCurrentStep(prev => Math.min(prev + 1, 4))
+      setCurrentStep(prev => Math.min(prev + 1, 5))
     } else {
       setError('Please fill in all required fields')
     }
@@ -440,6 +446,34 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         return
       }
       updateFormData('photo_file', file)
+    }
+  }
+
+  const handleAddContract = () => {
+    const newContract = createEmptyContract(formData)
+    const updated = [...formData.contracts, newContract]
+    setFormData(prev => ({ ...prev, contracts: updated }))
+    setActiveContractIndex(updated.length - 1)
+  }
+
+  const handleRemoveContract = (index: number) => {
+    const updated = formData.contracts.filter((_, i) => i !== index)
+    setFormData(prev => ({ ...prev, contracts: updated }))
+    setActiveContractIndex(Math.max(0, Math.min(index, updated.length - 1)))
+  }
+
+  const handleGoToContracts = () => {
+    if (validateStep(4)) {
+      setError(null)
+      // Add a first contract if none exist
+      if (formData.contracts.length === 0) {
+        const newContract = createEmptyContract(formData)
+        setFormData(prev => ({ ...prev, contracts: [newContract] }))
+        setActiveContractIndex(0)
+      }
+      setCurrentStep(5)
+    } else {
+      setError('Please fill in all required fields')
     }
   }
 
@@ -735,6 +769,13 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               supplier_contract_nr: sc.supplier_contract_nr || null,
               ico_number: sc.ico_number || null,
               container_nr: sc.container_nr || null,
+              bag_count: parseInt(sc.bag_count) || null,
+              bag_weight_kg: parseFloat(sc.bag_weight_kg) || null,
+              bag_type: sc.bag_type || null,
+              bags_quantity_mt: parseFloat(sc.bags_quantity_mt) || null,
+              equivalent_60kg_bags: parseInt(sc.equivalent_60kg_bags) || null,
+              exporter_sample_number: sc.exporter_sample_number || null,
+              shipment_month: sc.shipment_month || null,
             }
 
             const scResponse = await fetch(`/api/samples/${createdSampleId}/contracts`, {
@@ -873,6 +914,24 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               onPhotoUpload={handlePhotoUpload}
             />
           )}
+
+          {currentStep === 5 && (
+            <ContractsStep
+              formData={formData}
+              updateFormData={updateFormData}
+              clients={clients}
+              laboratories={laboratories}
+              filteredClients={filteredClients}
+              approvedPSSSamples={approvedPSSSamples}
+              importers={importers}
+              roasters={roasters}
+              qcClients={qcClients}
+              activeContractIndex={activeContractIndex}
+              onActiveContractIndexChange={setActiveContractIndex}
+              onAddContract={handleAddContract}
+              onRemoveContract={handleRemoveContract}
+            />
+          )}
         </div>
 
         {/* Fixed footer */}
@@ -887,24 +946,58 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             Previous
           </Button>
 
-          {currentStep < 4 ? (
-            <Button
-              type="button"
-              onClick={handleNext}
-              disabled={!validateStep(currentStep)}
-            >
-              Next
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleSubmit}
-              disabled={loading || !validateStep(4)}
-            >
-              {loading ? 'Creating Sample...' : 'Create Sample'}
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {currentStep < 4 && (
+              <Button
+                type="button"
+                onClick={handleNext}
+                disabled={!validateStep(currentStep)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
+
+            {currentStep === 4 && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleGoToContracts}
+                  disabled={!validateStep(4)}
+                >
+                  Next: Add Contracts
+                  <ChevronRight className="h-4 w-4 ml-1" />
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={loading || !validateStep(4)}
+                >
+                  {loading ? 'Creating Sample...' : 'Create Sample'}
+                </Button>
+              </>
+            )}
+
+            {currentStep === 5 && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleAddContract}
+                >
+                  + Add Another
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? 'Creating...' : 'Submit All'}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </ContentWrapper>
     </FormWrapper>

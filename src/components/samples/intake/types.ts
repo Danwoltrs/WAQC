@@ -80,6 +80,14 @@ export interface SubContractFormData {
   supplier_contract_nr: string
   ico_number: string
   container_nr: string
+  // Quantity fields (per sub-contract)
+  bag_count: string
+  bag_weight_kg: string
+  bag_type: 'jute_bag' | 'pp_bag' | 'big_bag' | 'bulk' | ''
+  bags_quantity_mt: string
+  equivalent_60kg_bags: string
+  shipment_month: string
+  exporter_sample_number: string
 }
 
 export interface Step {

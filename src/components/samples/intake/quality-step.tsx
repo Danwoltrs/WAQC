@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronsUpDown, X, Plus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
 import { StepComponentProps } from './types'
@@ -315,33 +316,35 @@ export function QualityStep({
           <Label className="text-xs text-muted-foreground">Micro-Origin</Label>
           {availableMicroOrigins.length > 0 ? (
             <Popover open={microOriginOpen} onOpenChange={setMicroOriginOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={microOriginOpen}
-                  className="w-[200px] justify-between h-9 font-normal"
-                  disabled={!formData.origin}
-                >
-                  {selectedMicroOrigins.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 max-w-[160px]">
-                      {selectedMicroOrigins.slice(0, 2).map((region) => (
-                        <Badge key={region} variant="secondary" className="text-xs">
-                          {region}
-                        </Badge>
-                      ))}
-                      {selectedMicroOrigins.length > 2 && (
-                        <Badge variant="secondary" className="text-xs">
-                          +{selectedMicroOrigins.length - 2}
-                        </Badge>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">Select regions...</span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={microOriginOpen}
+                        className="w-[200px] justify-between h-9 font-normal"
+                        disabled={!formData.origin}
+                      >
+                        {selectedMicroOrigins.length > 0 ? (
+                          <span className="truncate text-xs">
+                            {selectedMicroOrigins.join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">Select regions...</span>
+                        )}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                  </TooltipTrigger>
+                  {selectedMicroOrigins.length > 0 && (
+                    <TooltipContent side="top" className="max-w-[300px]">
+                      <p className="text-xs">{selectedMicroOrigins.join(', ')}</p>
+                    </TooltipContent>
                   )}
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
+                </Tooltip>
+              </TooltipProvider>
               <PopoverContent className="w-[220px] p-0" align="start">
                 <Command>
                   <CommandInput placeholder="Search..." />

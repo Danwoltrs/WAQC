@@ -1,0 +1,644 @@
+'use client'
+
+import { useState, useEffect, useMemo } from 'react'
+import { Label } from '@/components/ui/label'
+import { Input } from '@/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { ChevronLeft, ChevronRight, Plus, Trash2, Info } from 'lucide-react'
+import { SubContractFormData, StepComponentProps } from './types'
+import type { Client, Importer, Roaster } from './types'
+
+// Month names for dropdown
+const MONTHS = [
+  { value: '01', label: 'Jan' }, { value: '02', label: 'Feb' },
+  { value: '03', label: 'Mar' }, { value: '04', label: 'Apr' },
+  { value: '05', label: 'May' }, { value: '06', label: 'Jun' },
+  { value: '07', label: 'Jul' }, { value: '08', label: 'Aug' },
+  { value: '09', label: 'Sep' }, { value: '10', label: 'Oct' },
+  { value: '11', label: 'Nov' }, { value: '12', label: 'Dec' },
+]
+
+const generateYears = () => {
+  const currentYear = new Date().getFullYear()
+  return [
+    { value: currentYear.toString(), label: currentYear.toString() },
+    { value: (currentYear + 1).toString(), label: (currentYear + 1).toString() },
+    { value: (currentYear + 2).toString(), label: (currentYear + 2).toString() },
+  ]
+}
+
+const YEARS = generateYears()
+
+const BAG_WEIGHTS = {
+  jute_bag: [
+    { value: '30', label: '30 kg' }, { value: '59', label: '59 kg' },
+    { value: '60', label: '60 kg' }, { value: '70', label: '70 kg' },
+  ],
+  pp_bag: [
+    { value: '30', label: '30 kg' }, { value: '59', label: '59 kg' },
+    { value: '60', label: '60 kg' }, { value: '70', label: '70 kg' },
+  ],
+  big_bag: [{ value: '1000', label: '1 M/T (1000 kg)' }],
+  bulk: [{ value: '21600', label: '21.6 M/T (Bulk Container)' }],
+}
+
+function createEmptyContract(formData: StepComponentProps['formData']): SubContractFormData {
+  return {
+    importer: formData.importer,
+    importer_is_qc_client: formData.importer_is_qc_client,
+    roaster: formData.roaster,
+    end_client: formData.end_client,
+    qc_client: formData.qc_client,
+    wolthers_contract_nr: '',
+    buyer_contract_nr: '',
+    roaster_contract_nr: '',
+    qc_client_contract_nr: '',
+    end_client_contract_nr: '',
+    supplier_contract_nr: '',
+    ico_number: '',
+    container_nr: '',
+    bag_count: formData.bag_count,
+    bag_weight_kg: formData.bag_weight_kg,
+    bag_type: formData.bag_type,
+    bags_quantity_mt: formData.bags_quantity_mt,
+    equivalent_60kg_bags: formData.equivalent_60kg_bags,
+    shipment_month: formData.shipment_month,
+    exporter_sample_number: '',
+  }
+}
+
+interface ContractsStepProps extends StepComponentProps {
+  activeContractIndex: number
+  onActiveContractIndexChange: (index: number) => void
+  onAddContract: () => void
+  onRemoveContract: (index: number) => void
+}
+
+export function ContractsStep({
+  formData,
+  updateFormData,
+  importers = [],
+  roasters = [],
+  qcClients = [],
+  activeContractIndex,
+  onActiveContractIndexChange,
+  onAddContract,
+  onRemoveContract,
+}: ContractsStepProps) {
+  const contracts = formData.contracts
+  const contract = contracts[activeContractIndex]
+
+  // Helper to update a field on the active contract
+  const updateContract = (field: keyof SubContractFormData, value: string | boolean) => {
+    const updated = [...contracts]
+    updated[activeContractIndex] = { ...updated[activeContractIndex], [field]: value }
+    updateFormData('contracts', updated)
+  }
+
+  // Auto-calculate quantity when bag_count or bag_weight changes
+  useEffect(() => {
+    if (!contract) return
+    const bagCount = parseInt(contract.bag_count) || 0
+    const bagWeight = parseFloat(contract.bag_weight_kg) || 0
+
+    if (bagCount > 0 && bagWeight > 0) {
+      let totalMT: number
+      let equivalent: number
+
+      if (contract.bag_type === 'bulk') {
+        totalMT = (bagCount * 60) / 1000
+        equivalent = bagCount
+      } else {
+        totalMT = (bagCount * bagWeight) / 1000
+        equivalent = (bagCount * bagWeight) / 60
+      }
+
+      const updated = [...contracts]
+      updated[activeContractIndex] = {
+        ...updated[activeContractIndex],
+        bags_quantity_mt: totalMT.toFixed(3),
+        equivalent_60kg_bags: Math.round(equivalent).toString(),
+      }
+      updateFormData('contracts', updated)
+    }
+  }, [contract?.bag_count, contract?.bag_weight_kg, contract?.bag_type])
+
+  // Auto-select bag weight when bag type changes
+  useEffect(() => {
+    if (!contract || !contract.bag_type) return
+
+    if (contract.bag_type === 'big_bag') {
+      updateContract('bag_weight_kg', '1000')
+    } else if (contract.bag_type === 'bulk') {
+      updateContract('bag_weight_kg', '21600')
+    } else if (contract.bag_type === 'jute_bag' || contract.bag_type === 'pp_bag') {
+      const isBrazil = formData.origin?.toLowerCase() === 'brazil'
+      updateContract('bag_weight_kg', isBrazil ? '60' : '70')
+    }
+  }, [contract?.bag_type])
+
+  // Deduplicated importer options
+  const importerOptions = useMemo(() => {
+    const seen = new Set<string>()
+    return importers
+      .filter((i: any) => {
+        if (!i.name || seen.has(i.name)) return false
+        seen.add(i.name)
+        return true
+      })
+      .map((i: any) => ({ name: i.name }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [importers])
+
+  // Merged importer options (QC clients + linked importers)
+  const mergedImporterOptions = useMemo(() => {
+    if (contract?.importer_is_qc_client) {
+      const clientOptions = qcClients.map(c => ({
+        name: c.fantasy_name || c.company,
+      }))
+      const linkedImporters = importerOptions.filter((imp: any) => imp.clientId)
+      const seen = new Set<string>()
+      return [...clientOptions, ...linkedImporters]
+        .filter(opt => {
+          const key = opt.name.toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        .sort((a, b) => a.name.localeCompare(b.name))
+    }
+    return importerOptions
+  }, [contract?.importer_is_qc_client, qcClients, importerOptions])
+
+  // Deduplicated roaster options
+  const roasterOptions = useMemo(() => {
+    const seen = new Set<string>()
+    return roasters
+      .filter(r => {
+        if (!r.name || seen.has(r.name)) return false
+        seen.add(r.name)
+        return true
+      })
+      .map(r => ({ name: r.name! }))
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [roasters])
+
+  const availableWeights = contract?.bag_type ? BAG_WEIGHTS[contract.bag_type as keyof typeof BAG_WEIGHTS] || [] : []
+
+  if (!contract) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 text-center">
+        <p className="text-sm text-muted-foreground mb-4">No sub-contracts yet.</p>
+        <Button type="button" variant="outline" onClick={onAddContract}>
+          <Plus className="h-4 w-4 mr-2" />
+          Add Contract
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Contract tabs / navigation */}
+      <div className="flex items-center gap-2">
+        <div className="flex gap-1.5 flex-1 overflow-x-auto">
+          {contracts.map((_, idx) => (
+            <button
+              key={idx}
+              type="button"
+              onClick={() => onActiveContractIndexChange(idx)}
+              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
+                idx === activeContractIndex
+                  ? 'bg-primary text-primary-foreground'
+                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              }`}
+            >
+              Contract #{idx + 2}
+            </button>
+          ))}
+        </div>
+        {contracts.length > 0 && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs text-muted-foreground hover:text-destructive shrink-0"
+            onClick={() => onRemoveContract(activeContractIndex)}
+          >
+            <Trash2 className="h-3 w-3 mr-1" />
+            Remove
+          </Button>
+        )}
+      </div>
+
+      {/* Sliding container */}
+      <div className="overflow-hidden">
+        <div
+          className="transition-transform duration-300 ease-in-out"
+          style={{ transform: `translateX(-${activeContractIndex * 100}%)` }}
+        >
+          <div className="flex" style={{ width: `${contracts.length * 100}%` }}>
+            {contracts.map((c, idx) => (
+              <div key={idx} className="w-full px-0.5" style={{ flex: `0 0 ${100 / contracts.length}%` }}>
+                {idx === activeContractIndex && (
+                  <ContractPanel
+                    contract={c}
+                    updateContract={(field, value) => {
+                      const updated = [...contracts]
+                      updated[idx] = { ...updated[idx], [field]: value }
+                      updateFormData('contracts', updated)
+                    }}
+                    mergedImporterOptions={mergedImporterOptions}
+                    importerOptions={importerOptions}
+                    roasterOptions={roasterOptions}
+                    qcClients={qcClients}
+                    availableWeights={availableWeights}
+                    origin={formData.origin}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Individual contract editing panel
+function ContractPanel({
+  contract,
+  updateContract,
+  mergedImporterOptions,
+  importerOptions,
+  roasterOptions,
+  qcClients,
+  availableWeights,
+  origin,
+}: {
+  contract: SubContractFormData
+  updateContract: (field: keyof SubContractFormData, value: string | boolean) => void
+  mergedImporterOptions: { name: string }[]
+  importerOptions: { name: string }[]
+  roasterOptions: { name: string }[]
+  qcClients: Client[]
+  availableWeights: { value: string; label: string }[]
+  origin: string
+}) {
+  const [customWeight, setCustomWeight] = useState(false)
+
+  const dropdownOptions = contract.importer_is_qc_client ? mergedImporterOptions : importerOptions
+
+  return (
+    <div className="space-y-4">
+      {/* Supply Chain Section */}
+      <div>
+        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Supply Chain</Label>
+        <div className="space-y-3">
+          {/* Importer */}
+          <div className="grid grid-cols-[180px_160px] gap-3 items-end">
+            <div>
+              <div className="flex items-center gap-2 mb-1.5">
+                <Label className="text-xs text-muted-foreground">Importer</Label>
+                <div className="flex items-center gap-1">
+                  <Checkbox
+                    checked={contract.importer_is_qc_client}
+                    onCheckedChange={(checked) => updateContract('importer_is_qc_client', checked as boolean)}
+                    className="h-3 w-3"
+                  />
+                  <Label className="text-[10px] cursor-pointer text-muted-foreground">=QC Client</Label>
+                </div>
+              </div>
+              <Select
+                value={contract.importer || 'none'}
+                onValueChange={(value) => updateContract('importer', value === 'none' ? '' : value)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select importer" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select...</SelectItem>
+                  {dropdownOptions.map((opt) => (
+                    <SelectItem key={opt.name} value={opt.name}>{opt.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Buyer Contract</Label>
+              <Input
+                value={contract.buyer_contract_nr}
+                onChange={(e) => updateContract('buyer_contract_nr', e.target.value)}
+                placeholder="Contract ref."
+                className="h-9"
+              />
+            </div>
+          </div>
+
+          {/* QC Client (when not same as importer) */}
+          {!contract.importer_is_qc_client && (
+            <div className="grid grid-cols-[180px_160px] gap-3 items-end">
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block">QC Client</Label>
+                <Select
+                  value={contract.qc_client || 'none'}
+                  onValueChange={(value) => updateContract('qc_client', value === 'none' ? '' : value)}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select QC client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select...</SelectItem>
+                    {qcClients.map((c) => (
+                      <SelectItem key={c.id} value={c.fantasy_name || c.company}>
+                        {c.fantasy_name || c.company}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block">QC Client Contract</Label>
+                <Input
+                  value={contract.qc_client_contract_nr}
+                  onChange={(e) => updateContract('qc_client_contract_nr', e.target.value)}
+                  placeholder="Contract ref."
+                  className="h-9"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Roaster */}
+          <div className="grid grid-cols-[180px_160px] gap-3 items-end">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster</Label>
+              <Select
+                value={contract.roaster || 'none'}
+                onValueChange={(value) => updateContract('roaster', value === 'none' ? '' : value)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select roaster" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select...</SelectItem>
+                  {roasterOptions.map((opt) => (
+                    <SelectItem key={opt.name} value={opt.name}>{opt.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster Contract</Label>
+              <Input
+                value={contract.roaster_contract_nr}
+                onChange={(e) => updateContract('roaster_contract_nr', e.target.value)}
+                placeholder="Contract ref."
+                className="h-9"
+              />
+            </div>
+          </div>
+
+          {/* End Client */}
+          <div className="grid grid-cols-[180px_160px] gap-3 items-end">
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">End Client</Label>
+              <Select
+                value={contract.end_client || 'none'}
+                onValueChange={(value) => updateContract('end_client', value === 'none' ? '' : value)}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select end client" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select...</SelectItem>
+                  {qcClients.map((c) => (
+                    <SelectItem key={c.id} value={c.fantasy_name || c.company}>
+                      {c.fantasy_name || c.company}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">End Client Contract</Label>
+              <Input
+                value={contract.end_client_contract_nr}
+                onChange={(e) => updateContract('end_client_contract_nr', e.target.value)}
+                placeholder="Contract ref."
+                className="h-9"
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Contract References */}
+      <div className="border-t pt-3">
+        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Contract References</Label>
+        <div className="grid grid-cols-4 gap-3">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Wolthers</Label>
+            <Input
+              value={contract.wolthers_contract_nr}
+              onChange={(e) => updateContract('wolthers_contract_nr', e.target.value)}
+              placeholder="Wolthers ref."
+              className="h-9"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Supplier</Label>
+            <Input
+              value={contract.supplier_contract_nr}
+              onChange={(e) => updateContract('supplier_contract_nr', e.target.value)}
+              placeholder="Supplier ref."
+              className="h-9"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
+            <Input
+              value={contract.ico_number}
+              onChange={(e) => updateContract('ico_number', e.target.value)}
+              placeholder="ICO number"
+              className="h-9"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
+            <Input
+              value={contract.container_nr}
+              onChange={(e) => updateContract('container_nr', e.target.value)}
+              placeholder="Container nr."
+              className="h-9"
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Quantity Section */}
+      <div className="border-t pt-3">
+        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Quantity</Label>
+        <div className="grid grid-cols-4 gap-3">
+          {/* Bag Type */}
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Bag Type</Label>
+            <Select
+              value={contract.bag_type || 'none'}
+              onValueChange={(value) => {
+                updateContract('bag_type', value === 'none' ? '' : value)
+                updateContract('bag_weight_kg', '')
+                setCustomWeight(false)
+              }}
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Select type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select...</SelectItem>
+                <SelectItem value="jute_bag">Jute Bag</SelectItem>
+                <SelectItem value="pp_bag">PP Bag</SelectItem>
+                <SelectItem value="big_bag">Big Bag (1 M/T)</SelectItem>
+                <SelectItem value="bulk">Bulk (21.6 M/T)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Bag Count */}
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">
+              {contract.bag_type === 'bulk' ? 'Equiv. 60kg Bags' : 'Qty of Bags'}
+            </Label>
+            <Input
+              type="number"
+              min="1"
+              value={contract.bag_count}
+              onChange={(e) => updateContract('bag_count', e.target.value)}
+              placeholder={contract.bag_type === 'bulk' ? 'e.g., 360' : 'e.g., 300'}
+              className="h-9"
+            />
+          </div>
+
+          {/* Bag Weight */}
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Bag Weight</Label>
+            {!customWeight && contract.bag_type ? (
+              <Select
+                value={contract.bag_weight_kg || 'none'}
+                onValueChange={(value) => {
+                  if (value === 'custom') {
+                    setCustomWeight(true)
+                    updateContract('bag_weight_kg', '')
+                  } else if (value === 'none') {
+                    updateContract('bag_weight_kg', '')
+                  } else {
+                    updateContract('bag_weight_kg', value)
+                  }
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select weight" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select...</SelectItem>
+                  {availableWeights.map((w) => (
+                    <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                  ))}
+                  <SelectItem value="custom">Custom...</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                type="number"
+                step="0.01"
+                min="0"
+                value={contract.bag_weight_kg}
+                onChange={(e) => updateContract('bag_weight_kg', e.target.value)}
+                placeholder="e.g., 60"
+                className="h-9"
+              />
+            )}
+          </div>
+
+          {/* Shipment Month */}
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Shipment Month</Label>
+            <div className="flex">
+              <Select
+                value={contract.shipment_month?.split('-')[1] || String(new Date().getMonth() + 1).padStart(2, '0')}
+                onValueChange={(month) => {
+                  const year = contract.shipment_month?.split('-')[0] || new Date().getFullYear().toString()
+                  updateContract('shipment_month', `${year}-${month}`)
+                }}
+              >
+                <SelectTrigger className="rounded-r-none border-r-0 w-[70px] h-9">
+                  <SelectValue placeholder="Mon" />
+                </SelectTrigger>
+                <SelectContent>
+                  {MONTHS.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={contract.shipment_month?.split('-')[0] || new Date().getFullYear().toString()}
+                onValueChange={(year) => {
+                  const month = contract.shipment_month?.split('-')[1] || String(new Date().getMonth() + 1).padStart(2, '0')
+                  updateContract('shipment_month', `${year}-${month}`)
+                }}
+              >
+                <SelectTrigger className="rounded-l-none w-[80px] h-9">
+                  <SelectValue placeholder="Year" />
+                </SelectTrigger>
+                <SelectContent>
+                  {YEARS.map((y) => (
+                    <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </div>
+
+        {/* Calculated totals */}
+        {contract.bag_count && contract.bag_weight_kg && (
+          <div className="grid grid-cols-2 gap-3 mt-3">
+            <div className="bg-primary/5 p-3 rounded-lg">
+              <div className="text-xs font-medium mb-0.5 flex items-center gap-1">
+                Total M/T
+                <Badge variant="outline" className="text-[10px]">Auto</Badge>
+              </div>
+              <div className="text-lg font-semibold">{contract.bags_quantity_mt} M/T</div>
+            </div>
+            <div className="bg-primary/5 p-3 rounded-lg">
+              <div className="text-xs font-medium mb-0.5 flex items-center gap-1">
+                Equiv. 60kg Bags
+                <Badge variant="outline" className="text-[10px]">Auto</Badge>
+              </div>
+              <div className="text-lg font-semibold">{contract.equivalent_60kg_bags} bags</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sample Reference */}
+      <div className="border-t pt-3">
+        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Sample Reference</Label>
+        <div className="w-[300px]">
+          <Label className="text-xs text-muted-foreground mb-1 block">Exporter Sample Number</Label>
+          <Input
+            value={contract.exporter_sample_number}
+            onChange={(e) => updateContract('exporter_sample_number', e.target.value)}
+            placeholder="Sample ref. for this contract"
+            className="h-9"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export { createEmptyContract }

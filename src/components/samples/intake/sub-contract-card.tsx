@@ -319,6 +319,13 @@ export function SubContractsSection({
       supplier_contract_nr: '',
       ico_number: '',
       container_nr: '',
+      bag_count: '',
+      bag_weight_kg: '',
+      bag_type: '',
+      bags_quantity_mt: '',
+      equivalent_60kg_bags: '',
+      shipment_month: '',
+      exporter_sample_number: '',
     })
     setEditIndex(null)
     setDialogOpen(true)
