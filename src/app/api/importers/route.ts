@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase-server'
 
 /**
  * GET /api/importers
- * List all importers - clients with client_types containing 'importer_buyer'
+ * List all importers from the importers table
+ * (samples.importer_id FK references this table)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -19,38 +20,27 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const country = searchParams.get('country')
 
-    // Fetch clients with importer_buyer in their client_types array
-    let query = (supabase as any)
-      .from('clients')
-      .select('id, company, fantasy_name, country, is_qc_client, client_types')
-      .contains('client_types', ['importer_buyer'])
-      .order('company')
+    let query = supabase
+      .from('importers')
+      .select('id, name, country, contact_email, contact_phone, notes')
+      .order('name')
 
     if (search) {
-      query = query.or(`company.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
+      query = query.ilike('name', `%${search}%`)
     }
 
     if (country) {
       query = query.eq('country', country)
     }
 
-    const { data: clients, error } = await query
+    const { data: importers, error } = await query
 
     if (error) {
       console.error('Error fetching importers:', error)
       return NextResponse.json({ error: 'Failed to fetch importers' }, { status: 500 })
     }
 
-    // Transform to importer format for compatibility
-    const importers = (clients || []).map((client: any) => ({
-      id: client.id,
-      name: client.fantasy_name || client.company,
-      country: client.country,
-      client_id: client.id,
-      is_qc_client: client.is_qc_client
-    }))
-
-    return NextResponse.json({ importers })
+    return NextResponse.json({ importers: importers || [] })
   } catch (error) {
     console.error('Error in GET /api/importers:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

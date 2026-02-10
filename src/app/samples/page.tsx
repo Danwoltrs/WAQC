@@ -106,6 +106,8 @@ interface Sample {
       parameters?: any
     }
   }
+  contract_count?: number
+  sub_contract_tracking_numbers?: string[]
 }
 
 // Helper function to extract clean tracking number from potential JSON
@@ -1090,7 +1092,21 @@ export default function SamplesPage() {
                         )}
                         {columnVisibility.certNr && (
                           <td className="py-3 px-4">
-                            <div className="font-medium">{parseTrackingNumber(sample.tracking_number)}</div>
+                            <div className="font-medium flex items-center gap-1.5">
+                              {parseTrackingNumber(sample.tracking_number)}
+                              {(sample.contract_count ?? 0) > 0 && (
+                                <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground rounded-full">
+                                  +{sample.contract_count}
+                                </span>
+                              )}
+                            </div>
+                            {(sample.sub_contract_tracking_numbers?.length ?? 0) > 0 && (
+                              <div className="mt-0.5 space-y-0.5">
+                                {sample.sub_contract_tracking_numbers!.map((tn) => (
+                                  <div key={tn} className="text-[10px] text-muted-foreground">{tn}</div>
+                                ))}
+                              </div>
+                            )}
                             {sample.exporter_sample_number && (
                               <div className="text-xs text-muted-foreground mt-0.5">
                                 {sample.exporter_sample_number}

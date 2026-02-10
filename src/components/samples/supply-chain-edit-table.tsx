@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { supabase } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Building2, Loader2 } from 'lucide-react'
@@ -80,15 +79,15 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
   const loadEntities = async () => {
     setLoadingEntities(true)
     try {
-      const [exportersRes, importersDbRes, roastersRes, clientsRes, qcClientsRes] = await Promise.all([
+      const [exportersRes, importersRes, roastersRes, clientsRes, qcClientsRes] = await Promise.all([
         fetch('/api/exporters').then(r => r.json()),
-        supabase.from('importers').select('id, name, country').order('name'),
+        fetch('/api/importers').then(r => r.json()),
         fetch('/api/roasters').then(r => r.json()),
         fetch('/api/clients?limit=200').then(r => r.json()),
         fetch('/api/clients?is_qc_client=true&limit=200').then(r => r.json()),
       ])
       setExporters(dedup(exportersRes.exporters || []))
-      setImporters(dedup((importersDbRes.data || []) as Entity[]))
+      setImporters(dedup(importersRes.importers || []))
       setRoasters(dedup(roastersRes.roasters || []))
       setClients((clientsRes.clients || []).map((c: any) => ({
         id: c.id, name: c.fantasy_name || c.company, company: c.company,

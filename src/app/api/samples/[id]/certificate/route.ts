@@ -38,8 +38,11 @@ export async function GET(
     }
     console.log('[Certificate] Generating PDF for sample:', id)
 
+    // Check for sub-contract certificate request
+    const contractId = request.nextUrl.searchParams.get('contract_id')
+
     // Get certificate data
-    const certificateData = await getCertificateData(id)
+    const certificateData = await getCertificateData(id, contractId || undefined)
     if (!certificateData) {
       console.error('[Certificate] No certificate data found for sample:', id)
       return NextResponse.json({ error: 'Sample not found or no data available' }, { status: 404 })

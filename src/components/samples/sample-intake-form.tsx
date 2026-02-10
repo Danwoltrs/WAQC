@@ -101,7 +101,10 @@ const initialFormData: FormData = {
   // Step 4: Review
   arrival_date: new Date().toISOString().split('T')[0],
   notes: '',
-  photo_file: null
+  photo_file: null,
+
+  // Sub-contracts
+  contracts: []
 }
 
 export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFormProps = {}) {
@@ -607,6 +610,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         seller_id: seller_id,
         exporter_id: exporter_id, // This is the shipper
         same_seller_shipper: formData.same_seller_shipper,
+        importer_is_qc_client: formData.importer_is_qc_client,
         exporter_sample_number: formData.exporter_sample_number || undefined,
         importer_id: importer_id,
         roaster_id: roaster_id,
@@ -663,6 +667,95 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       }
 
       console.log('[Sample Intake] Sample created successfully:', result.sample.tracking_number)
+
+      // Create sub-contracts sequentially (to avoid tracking number race conditions)
+      const createdSampleId = result.sample.id
+      const subContractTrackingNumbers: string[] = []
+
+      if (formData.contracts.length > 0) {
+        console.log('[Sample Intake] Creating', formData.contracts.length, 'sub-contracts...')
+        for (let i = 0; i < formData.contracts.length; i++) {
+          const sc = formData.contracts[i]
+          try {
+            // Resolve entity IDs for this sub-contract
+            const scLookups: Promise<any>[] = []
+            const scKeys: string[] = []
+
+            if (sc.importer) {
+              if (sc.importer_is_qc_client) {
+                scKeys.push('sc_client')
+                scLookups.push(
+                  Promise.resolve(supabase.from('clients').select('id').eq('fantasy_name', sc.importer).eq('is_qc_client', true).limit(1).maybeSingle())
+                    .catch(() => ({ data: null, error: null }))
+                )
+              }
+              scKeys.push('sc_importer')
+              scLookups.push(
+                Promise.resolve(supabase.from('importers').select('id').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
+                  .catch(() => ({ data: null, error: null }))
+              )
+            }
+            if (sc.roaster) {
+              scKeys.push('sc_roaster')
+              scLookups.push(
+                Promise.resolve(supabase.from('roasters').select('id').ilike('name', sc.roaster).limit(1).maybeSingle())
+                  .catch(() => ({ data: null, error: null }))
+              )
+            }
+            if (sc.end_client) {
+              scKeys.push('sc_end_client')
+              scLookups.push(
+                Promise.resolve(supabase.from('clients').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle())
+                  .catch(() => ({ data: null, error: null }))
+              )
+            }
+            if (!sc.importer_is_qc_client && sc.qc_client) {
+              scKeys.push('sc_qc_client')
+              scLookups.push(
+                Promise.resolve(supabase.from('clients').select('id').eq('fantasy_name', sc.qc_client).eq('is_qc_client', true).limit(1).maybeSingle())
+                  .catch(() => ({ data: null, error: null }))
+              )
+            }
+
+            const scResults = await Promise.all(scLookups)
+            const scResolved: Record<string, string | undefined> = {}
+            scResults.forEach((r, idx) => { scResolved[scKeys[idx]] = r?.data?.id })
+
+            const contractBody: Record<string, any> = {
+              importer_id: scResolved['sc_importer'] || null,
+              importer_is_qc_client: sc.importer_is_qc_client,
+              roaster_id: scResolved['sc_roaster'] || null,
+              end_client_id: scResolved['sc_end_client'] || null,
+              client_id: scResolved['sc_client'] || scResolved['sc_qc_client'] || null,
+              wolthers_contract_nr: sc.wolthers_contract_nr || null,
+              buyer_contract_nr: sc.buyer_contract_nr || null,
+              roaster_contract_nr: sc.roaster_contract_nr || null,
+              qc_client_contract_nr: sc.qc_client_contract_nr || null,
+              end_client_contract_nr: sc.end_client_contract_nr || null,
+              supplier_contract_nr: sc.supplier_contract_nr || null,
+              ico_number: sc.ico_number || null,
+              container_nr: sc.container_nr || null,
+            }
+
+            const scResponse = await fetch(`/api/samples/${createdSampleId}/contracts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(contractBody)
+            })
+
+            if (scResponse.ok) {
+              const scResult = await scResponse.json()
+              subContractTrackingNumbers.push(scResult.contract.tracking_number)
+              console.log(`[Sample Intake] Sub-contract ${i + 1} created:`, scResult.contract.tracking_number)
+            } else {
+              console.error(`[Sample Intake] Failed to create sub-contract ${i + 1}`)
+            }
+          } catch (scErr) {
+            console.error(`[Sample Intake] Error creating sub-contract ${i + 1}:`, scErr)
+          }
+        }
+      }
+
       setGeneratedTrackingNumber(result.sample.tracking_number)
       setSuccess(true)
 

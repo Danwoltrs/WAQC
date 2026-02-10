@@ -59,6 +59,27 @@ export interface FormData {
   arrival_date: string
   notes: string
   photo_file: File | null
+
+  // Sub-contracts
+  contracts: SubContractFormData[]
+}
+
+export interface SubContractFormData {
+  // Entity overrides (NULL = inherit from mother)
+  importer: string
+  importer_is_qc_client: boolean
+  roaster: string
+  end_client: string
+  qc_client: string
+  // Contract references
+  wolthers_contract_nr: string
+  buyer_contract_nr: string
+  roaster_contract_nr: string
+  qc_client_contract_nr: string
+  end_client_contract_nr: string
+  supplier_contract_nr: string
+  ico_number: string
+  container_nr: string
 }
 
 export interface Step {

@@ -167,7 +167,7 @@ export interface CertificateData {
 /**
  * Fetch all data needed for certificate generation
  */
-export async function getCertificateData(sampleId: string): Promise<CertificateData | null> {
+export async function getCertificateData(sampleId: string, contractId?: string): Promise<CertificateData | null> {
   const supabase = await createClient()
 
   // Fetch sample with related data
@@ -658,10 +658,99 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         address: null,
       }
 
+  // If a sub-contract is specified, fetch it and override supply chain + tracking number
+  let contractOverride: {
+    tracking_number: string
+    importerEntity: SupplyChainEntity
+    roasterEntity: SupplyChainEntity
+    endClientEntity: SupplyChainEntity
+    qcClientEntity: SupplyChainEntity
+    wolthersContract: string | null
+    ico_number: string | null
+    container_nr: string | null
+    certificateData: CertificateData['certificate']
+  } | null = null
+
+  if (contractId) {
+    const { data: contract } = await (supabase as any)
+      .from('sample_contracts')
+      .select(`
+        *,
+        importer:importers(name, country),
+        roaster:roasters(name, country),
+        end_client:clients!sample_contracts_end_client_id_fkey(fantasy_name, company, country),
+        qc_client:clients!sample_contracts_client_id_fkey(fantasy_name, company, country, client_types)
+      `)
+      .eq('id', contractId)
+      .single()
+
+    if (contract) {
+      const scQcClient = contract.qc_client || client
+      const scQcClientName = scQcClient?.fantasy_name ?? scQcClient?.company ?? null
+      const scIsImporterClient = scQcClient?.client_types?.some((t: string) => t.includes('importer')) ?? false
+      const scIsRoasterClient = scQcClient?.client_types?.some((t: string) => t.includes('roaster')) ?? false
+
+      // Fetch sub-contract's certificate
+      const { data: scCert } = await supabase
+        .from('certificates')
+        .select('id, certificate_number, created_at, status')
+        .eq('sample_contract_id', contractId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      contractOverride = {
+        tracking_number: contract.tracking_number,
+        importerEntity: {
+          name: contract.importer?.name ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
+          country: contract.importer?.country ?? null,
+          contract: contract.buyer_contract_nr ?? null,
+          address: null,
+        },
+        roasterEntity: {
+          name: contract.roaster?.name ?? (scIsRoasterClient ? scQcClientName : null),
+          country: contract.roaster?.country ?? null,
+          contract: contract.roaster_contract_nr ?? null,
+          address: null,
+        },
+        endClientEntity: {
+          name: contract.end_client?.fantasy_name ?? contract.end_client?.company ?? null,
+          country: contract.end_client?.country ?? null,
+          contract: contract.end_client_contract_nr ?? null,
+          address: null,
+        },
+        qcClientEntity: {
+          name: scQcClientName,
+          country: scQcClient?.country ?? null,
+          contract: contract.qc_client_contract_nr ?? null,
+          address: null,
+        },
+        wolthersContract: contract.wolthers_contract_nr ?? null,
+        ico_number: contract.ico_number ?? sample.ico_number,
+        container_nr: contract.container_nr ?? sample.container_nr,
+        certificateData: scCert
+          ? {
+              id: scCert.id,
+              certificate_number: scCert.certificate_number,
+              issued_date: scCert.created_at || currentDate,
+              valid_until: validUntil,
+              status: scCert.status,
+            }
+          : {
+              id: '',
+              certificate_number: contract.tracking_number,
+              issued_date: currentDate,
+              valid_until: validUntil,
+              status: null,
+            },
+      }
+    }
+  }
+
   return {
     sample: {
       id: sample.id,
-      tracking_number: sample.tracking_number,
+      tracking_number: contractOverride?.tracking_number ?? sample.tracking_number,
       origin: sample.origin,
       origin_display: getCountryName(sample.origin),
       micro_origin: sample.micro_origin,
@@ -673,8 +762,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       bags_quantity_mt: sample.bags_quantity_mt,
       equivalent_60kg_bags: sample.equivalent_60kg_bags,
       shipment_month: sample.shipment_month,
-      ico_number: sample.ico_number,
-      container_nr: sample.container_nr,
+      ico_number: contractOverride?.ico_number ?? sample.ico_number,
+      container_nr: contractOverride?.container_nr ?? sample.container_nr,
       created_at: sample.created_at,
       status: sample.status,
       certifications: null, // Certifications not yet stored on samples
@@ -688,27 +777,27 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         address: null, // Address not yet in exporters table
       },
       shipper: shipperEntity,
-      importer: {
+      importer: contractOverride?.importerEntity ?? {
         // Use importer from DB, or fall back to client if they're an importer type
         name: importerResult.data?.name ?? (isImporterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: importerResult.data?.country ?? null,
         contract: sample.buyer_contract_nr ?? null,
         address: null, // Address not yet in importers table
       },
-      roaster: {
+      roaster: contractOverride?.roasterEntity ?? {
         // Use roaster from DB, or fall back to client if they're a roaster type
         name: roasterResult.data?.name ?? (isRoasterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: roasterResult.data?.country ?? null,
         contract: sample.roaster_contract_nr ?? null,
         address: null, // Address not yet in roasters table
       },
-      endClient: {
+      endClient: contractOverride?.endClientEntity ?? {
         name: endClientResult.data?.fantasy_name ?? endClientResult.data?.company ?? null,
         country: endClientResult.data?.country ?? null,
         contract: sample.end_client_contract_nr ?? null,
         address: null,
       },
-      qcClient: {
+      qcClient: contractOverride?.qcClientEntity ?? {
         // Don't show in supply chain if:
         // - end_client type (they don't import/roast coffee)
         // - importer type with no explicit importer_id (already shown as importer)
@@ -718,7 +807,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         contract: (isEndClient || (isImporterClient && !importerResult.data?.name) || (isRoasterClient && !roasterResult.data?.name)) ? null : (sample.qc_client_contract_nr ?? null),
         address: null, // Address not yet in clients table
       },
-      wolthersContract: sample.wolthers_contract_nr ?? null,
+      wolthersContract: contractOverride?.wolthersContract ?? sample.wolthers_contract_nr ?? null,
     },
     client,
     laboratory,
@@ -726,9 +815,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     roastAnalysis,
     cuppingData,
     gradingComments: qualityAssessment?.grading_comments || null,
-    // Certificate data: use DB record if exists, otherwise create a placeholder with current date
-    // This ensures the PDF always shows an issue date even on first generation
-    certificate: certificate
+    // Certificate data: use sub-contract certificate if available, otherwise mother certificate
+    certificate: contractOverride?.certificateData ?? (certificate
       ? {
           id: certificate.id,
           certificate_number: certificate.certificate_number,
@@ -743,7 +831,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
           issued_date: currentDate,
           valid_until: validUntil,
           status: null,
-        },
+        }),
     qualitySpec,
     specLimits,
   }

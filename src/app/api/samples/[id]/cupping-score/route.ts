@@ -34,7 +34,7 @@ export async function POST(
     const { id: sampleId } = await params
     const body = await request.json()
 
-    const { attributes, defects } = body
+    const { attributes, defects, cupping_comments } = body
 
     if (!attributes || !Array.isArray(attributes)) {
       return NextResponse.json({ error: 'Invalid attributes data' }, { status: 400 })
@@ -119,6 +119,24 @@ export async function POST(
       }
 
       result = data
+    }
+
+    // Save cupping_comments to quality_assessments if provided
+    if (cupping_comments !== undefined) {
+      const { data: existingQA } = await supabaseAdmin
+        .from('quality_assessments')
+        .select('id')
+        .eq('sample_id', sampleId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (existingQA) {
+        await supabaseAdmin
+          .from('quality_assessments')
+          .update({ cupping_comments: cupping_comments || null })
+          .eq('id', existingQA.id)
+      }
     }
 
     return NextResponse.json({

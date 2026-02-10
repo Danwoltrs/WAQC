@@ -7,6 +7,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -178,6 +179,9 @@ function CuppingPageContent() {
   const [attributesMap, setAttributesMap] = useState<Map<string, AttributeWithScale[]>>(new Map())
   const [availableDefectsMap, setAvailableDefectsMap] = useState<Map<string, string[]>>(new Map())
   const [cupsPerSampleMap, setCupsPerSampleMap] = useState<Map<string, number>>(new Map())
+
+  // Cupping comments per sample
+  const [cuppingCommentsMap, setCuppingCommentsMap] = useState<Map<string, string>>(new Map())
 
   // Client quality per sample
   const [clientQualityMap, setClientQualityMap] = useState<Map<string, ClientQuality>>(new Map())
@@ -432,6 +436,7 @@ function CuppingPageContent() {
             const newAvailableDefectsMap = new Map<string, string[]>()
             const newCupsPerSampleMap = new Map<string, number>()
             const newClientQualityMap = new Map<string, ClientQuality>()
+            const newCommentsMap = new Map<string, string>()
 
             for (const sample of detailsData.samples) {
               await loadSampleCuppingConfig(
@@ -442,6 +447,19 @@ function CuppingPageContent() {
                 newCupsPerSampleMap,
                 newClientQualityMap
               )
+
+              // Load existing cupping comments from quality assessment
+              try {
+                const qaRes = await fetch(`/api/samples/${sample.id}/quality-assessment`)
+                if (qaRes.ok) {
+                  const qaData = await qaRes.json()
+                  if (qaData.assessment?.cupping_comments) {
+                    newCommentsMap.set(sample.id, qaData.assessment.cupping_comments)
+                  }
+                }
+              } catch {
+                // Non-fatal: comments are optional
+              }
             }
 
             setCuppingDataMap(newCuppingMap)
@@ -449,6 +467,7 @@ function CuppingPageContent() {
             setAvailableDefectsMap(newAvailableDefectsMap)
             setCupsPerSampleMap(newCupsPerSampleMap)
             setClientQualityMap(newClientQualityMap)
+            setCuppingCommentsMap(newCommentsMap)
           }
         } else {
           // No samples assigned - this is normal if user isn't assigned to any sessions
@@ -825,7 +844,8 @@ function CuppingPageContent() {
           defects: {
             taints: cuppingData.defects.filter(d => d.is_taint),
             faults: cuppingData.defects.filter(d => !d.is_taint)
-          }
+          },
+          cupping_comments: cuppingCommentsMap.get(activeSampleId) || null
         })
       })
 
@@ -1898,6 +1918,21 @@ function CuppingPageContent() {
                       </Card>
                     </div>
                   )}
+
+                  {/* Cupping Comments */}
+                  <div className="mt-3">
+                    <Label className="text-xs font-medium mb-1 block">Comments</Label>
+                    <Textarea
+                      placeholder="Cupping notes for this sample..."
+                      value={cuppingCommentsMap.get(sample.id) || ''}
+                      onChange={(e) => {
+                        const newMap = new Map(cuppingCommentsMap)
+                        newMap.set(sample.id, e.target.value)
+                        setCuppingCommentsMap(newMap)
+                      }}
+                      className="text-xs min-h-[60px] resize-none"
+                    />
+                  </div>
                 </div>
               </TabsContent>
             )

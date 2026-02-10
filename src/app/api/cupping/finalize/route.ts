@@ -23,6 +23,29 @@ interface QualityTemplateParameters {
   cupping_attributes?: Record<string, { min?: number; max?: number }>
   defect_limits?: Record<string, { max_level?: number }>
   screen_sizes?: Record<string, { min_percent?: number; max_percent?: number }>
+  taint_fault_configuration?: {
+    rules?: {
+      max_taints?: number
+      max_faults?: number
+      max_combined?: number
+      zero_tolerance?: boolean
+    }
+  }
+  cup_status_rules?: {
+    clean_cup: { max_taints: number; max_faults: number }
+    uniform_cup: { max_taints: number; max_faults: number }
+  }
+  screen_size_requirements?: {
+    constraints?: Array<{
+      screen_size: string
+      constraint_type: 'minimum' | 'maximum' | 'range' | 'exact'
+      min_value?: number
+      max_value?: number
+    }>
+  }
+  moisture_min?: number
+  moisture_max?: number
+  max_quakers?: number
 }
 
 /**
@@ -169,6 +192,92 @@ export async function POST(request: NextRequest) {
       newWorkflowStage = 'review'
     }
 
+    // Auto-calculate Clean Cup and Uniform Cup from defect counts
+    try {
+      // Count total taints and faults from all cupping_scores for the sample
+      const { data: allCuppingScores } = await supabaseAdmin
+        .from('cupping_scores')
+        .select('defects')
+        .eq('sample_id', sample_id)
+
+      let totalTaints = 0
+      let totalFaults = 0
+
+      if (allCuppingScores) {
+        for (const score of allCuppingScores) {
+          if (score.defects && typeof score.defects === 'object') {
+            const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
+            if (Array.isArray(defects.taints)) {
+              totalTaints += defects.taints.length
+            }
+            if (Array.isArray(defects.faults)) {
+              totalFaults += defects.faults.length
+            }
+          }
+        }
+      }
+
+      // Fetch quality template's cup_status_rules from parameters
+      let cupStatusRules: { clean_cup: { max_taints: number; max_faults: number }; uniform_cup: { max_taints: number; max_faults: number } } | null = null
+
+      if (sample.quality_spec_id) {
+        const { data: specData } = await supabaseAdmin
+          .from('client_qualities')
+          .select('template:quality_templates(parameters)')
+          .eq('id', sample.quality_spec_id)
+          .single()
+
+        if (specData?.template) {
+          const params = (specData.template as any).parameters
+          if (params?.cup_status_rules) {
+            cupStatusRules = params.cup_status_rules
+          }
+        }
+      }
+
+      // Default rules: zero tolerance (SCA standard)
+      const rules = cupStatusRules || {
+        clean_cup: { max_taints: 0, max_faults: 0 },
+        uniform_cup: { max_taints: 0, max_faults: 0 },
+      }
+
+      const cleanCupAuto = totalTaints <= rules.clean_cup.max_taints && totalFaults <= rules.clean_cup.max_faults
+      const uniformCupAuto = totalTaints <= rules.uniform_cup.max_taints && totalFaults <= rules.uniform_cup.max_faults
+
+      // Write to quality_assessments (only set clean_cup/uniform_cup if not already overridden)
+      const { data: existingQA } = await supabaseAdmin
+        .from('quality_assessments')
+        .select('id, clean_cup, uniform_cup')
+        .eq('sample_id', sample_id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      if (existingQA) {
+        // Preserve manual overrides: only update clean_cup/uniform_cup if they haven't been manually set
+        // (i.e., if clean_cup_auto differs from clean_cup, user has overridden)
+        const updateData: Record<string, unknown> = {
+          clean_cup_auto: cleanCupAuto,
+          uniform_cup_auto: uniformCupAuto,
+        }
+        // On first finalization, always set clean_cup/uniform_cup to auto values
+        if (existingQA.clean_cup === null) {
+          updateData.clean_cup = cleanCupAuto
+        }
+        if (existingQA.uniform_cup === null) {
+          updateData.uniform_cup = uniformCupAuto
+        }
+
+        await supabaseAdmin
+          .from('quality_assessments')
+          .update(updateData)
+          .eq('id', existingQA.id)
+      }
+    } catch (cupStatusError) {
+      console.error('Error calculating cup status:', cupStatusError)
+      // Non-fatal: continue with finalization even if cup status calculation fails
+    }
+
     // Get current workflow stage to handle transitions correctly
     // Valid transitions: cupping → review → certified/rejected
     // We may need to transition through 'review' first
@@ -297,6 +406,73 @@ export async function POST(request: NextRequest) {
         } else {
           certificate = existingCert
         }
+      }
+    }
+
+    // Create certificates for sub-contracts (if any exist)
+    if (hasGradingData && certificate) {
+      try {
+        const { data: subContracts } = await supabaseAdmin
+          .from('sample_contracts')
+          .select('id, tracking_number, client_id')
+          .eq('sample_id', sample_id)
+          .order('sort_order', { ascending: true })
+
+        if (subContracts && subContracts.length > 0) {
+          // Get mother's client name for fallback
+          const { data: motherClient } = await supabaseAdmin
+            .from('clients')
+            .select('fantasy_name, company')
+            .eq('id', sample.client_id)
+            .single()
+          const motherIssuedTo = motherClient?.fantasy_name || motherClient?.company || 'Unknown Client'
+
+          for (const sc of subContracts) {
+            // Check if sub-contract certificate already exists
+            const { data: existingSubCert } = await supabaseAdmin
+              .from('certificates')
+              .select('id')
+              .eq('sample_contract_id', sc.id)
+              .maybeSingle()
+
+            if (!existingSubCert) {
+              const subCertNumber = decision === 'rejected'
+                ? `R-${sc.tracking_number}`
+                : sc.tracking_number
+
+              // Get sub-contract's QC client name (or fall back to mother's)
+              let subIssuedTo = motherIssuedTo
+              if (sc.client_id && sc.client_id !== sample.client_id) {
+                const { data: subClient } = await supabaseAdmin
+                  .from('clients')
+                  .select('fantasy_name, company')
+                  .eq('id', sc.client_id)
+                  .single()
+                if (subClient) {
+                  subIssuedTo = subClient.fantasy_name || subClient.company || subIssuedTo
+                }
+              }
+
+              await supabaseAdmin
+                .from('certificates')
+                .insert({
+                  sample_id: sample_id,
+                  sample_contract_id: sc.id,
+                  certificate_number: subCertNumber,
+                  issued_to: subIssuedTo,
+                  issued_by: user.id,
+                  status: 'issued',
+                  is_rejected: decision === 'rejected',
+                  compliance_violations: complianceResult.violations.length > 0
+                    ? complianceResult.violations
+                    : null,
+                })
+            }
+          }
+        }
+      } catch (subContractCertError) {
+        console.error('Error creating sub-contract certificates:', subContractCertError)
+        // Non-fatal: mother certificate was already created
       }
     }
 
@@ -612,7 +788,7 @@ async function evaluateQualityCompliance(
       }
     }
 
-    // 6. Check screen size distribution
+    // 6. Check screen size distribution (legacy template-level format)
     if (greenBean.screen_sizes && template.screen_size_requirements) {
       const screenSizes = greenBean.screen_sizes as Record<string, number>
       const requirements = template.screen_size_requirements as Record<string, { min_percent?: number; max_percent?: number }>
@@ -625,6 +801,102 @@ async function evaluateQualityCompliance(
         }
         if (req.max_percent !== undefined && actualPercent > req.max_percent) {
           violations.push(`Screen ${size}: ${actualPercent.toFixed(1)}% exceeds maximum (${req.max_percent}%)`)
+        }
+      }
+    }
+
+    // 6b. Check screen size distribution (new constraint-based format from parameters)
+    if (greenBean.screen_sizes && parameters.screen_size_requirements?.constraints) {
+      const screenSizes = greenBean.screen_sizes as Record<string, number>
+
+      for (const constraint of parameters.screen_size_requirements.constraints) {
+        const actualPercent = screenSizes[constraint.screen_size] || 0
+
+        switch (constraint.constraint_type) {
+          case 'minimum':
+            if (constraint.min_value !== undefined && actualPercent < constraint.min_value) {
+              violations.push(`Screen ${constraint.screen_size}: ${actualPercent.toFixed(1)}% is below minimum (${constraint.min_value}%)`)
+            }
+            break
+          case 'maximum':
+            if (constraint.max_value !== undefined && actualPercent > constraint.max_value) {
+              violations.push(`Screen ${constraint.screen_size}: ${actualPercent.toFixed(1)}% exceeds maximum (${constraint.max_value}%)`)
+            }
+            break
+          case 'range':
+            if (constraint.min_value !== undefined && actualPercent < constraint.min_value) {
+              violations.push(`Screen ${constraint.screen_size}: ${actualPercent.toFixed(1)}% is below minimum (${constraint.min_value}%)`)
+            }
+            if (constraint.max_value !== undefined && actualPercent > constraint.max_value) {
+              violations.push(`Screen ${constraint.screen_size}: ${actualPercent.toFixed(1)}% exceeds maximum (${constraint.max_value}%)`)
+            }
+            break
+          case 'exact':
+            if (constraint.min_value !== undefined && actualPercent !== constraint.min_value) {
+              violations.push(`Screen ${constraint.screen_size}: ${actualPercent.toFixed(1)}% does not match expected (${constraint.min_value}%)`)
+            }
+            break
+        }
+      }
+    }
+
+    // 7. Check moisture limits
+    if (greenBean.moisture_percentage !== undefined && greenBean.moisture_percentage !== null) {
+      if (parameters.moisture_min !== undefined && greenBean.moisture_percentage < parameters.moisture_min) {
+        violations.push(`Moisture: ${greenBean.moisture_percentage}% is below minimum (${parameters.moisture_min}%)`)
+      }
+      if (parameters.moisture_max !== undefined && greenBean.moisture_percentage > parameters.moisture_max) {
+        violations.push(`Moisture: ${greenBean.moisture_percentage}% exceeds maximum (${parameters.moisture_max}%)`)
+      }
+    }
+
+    // 8. Check quaker count
+    if (parameters.max_quakers !== undefined) {
+      const quakerCount = greenBean.quaker_count || 0
+      if (quakerCount > parameters.max_quakers) {
+        violations.push(`Quakers: ${quakerCount} exceeds maximum (${parameters.max_quakers})`)
+      }
+    }
+  }
+
+  // 9. Check cupping taint/fault counts against taint_fault_configuration rules
+  if (cuppingScores && cuppingScores.length > 0) {
+    const tfConfig = parameters.taint_fault_configuration
+    const tfRules = tfConfig?.rules
+
+    if (tfRules) {
+      // Count taints and faults from all cupping scores
+      let totalTaints = 0
+      let totalFaults = 0
+
+      for (const score of cuppingScores) {
+        if (score.defects && typeof score.defects === 'object') {
+          const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
+          if (Array.isArray(defects.taints)) {
+            totalTaints += defects.taints.length
+          }
+          if (Array.isArray(defects.faults)) {
+            totalFaults += defects.faults.length
+          }
+        }
+      }
+
+      // Average across cuppers (round up - any cupper detecting a defect counts)
+      const cupperCount = cuppingScores.length
+      const avgTaints = cupperCount > 0 ? Math.ceil(totalTaints / cupperCount) : 0
+      const avgFaults = cupperCount > 0 ? Math.ceil(totalFaults / cupperCount) : 0
+
+      if (tfRules.zero_tolerance && (avgTaints > 0 || avgFaults > 0)) {
+        violations.push(`Zero tolerance: ${avgTaints} taint(s) and ${avgFaults} fault(s) detected`)
+      } else {
+        if (tfRules.max_taints !== undefined && avgTaints > tfRules.max_taints) {
+          violations.push(`Cupping taints: ${avgTaints} exceeds limit (${tfRules.max_taints})`)
+        }
+        if (tfRules.max_faults !== undefined && avgFaults > tfRules.max_faults) {
+          violations.push(`Cupping faults: ${avgFaults} exceeds limit (${tfRules.max_faults})`)
+        }
+        if (tfRules.max_combined !== undefined && (avgTaints + avgFaults) > tfRules.max_combined) {
+          violations.push(`Cupping defects combined: ${avgTaints + avgFaults} exceeds limit (${tfRules.max_combined})`)
         }
       }
     }
@@ -669,11 +941,16 @@ async function checkHasValidationRules(qualitySpecId: string | null): Promise<bo
     return false
   }
 
-  // Check for cupping attributes or defect limits
+  // Check for cupping attributes, defect limits, screen sizes, moisture, quakers, or taint/fault rules
   const hasRules = Boolean(
     parameters.cupping_attributes ||
     parameters.defect_limits ||
-    parameters.screen_sizes
+    parameters.screen_sizes ||
+    parameters.screen_size_requirements?.constraints?.length ||
+    parameters.taint_fault_configuration?.rules ||
+    parameters.moisture_min !== undefined ||
+    parameters.moisture_max !== undefined ||
+    parameters.max_quakers !== undefined
   )
 
   return hasRules

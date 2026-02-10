@@ -48,7 +48,8 @@ export async function GET(request: NextRequest) {
         roaster:roasters(id, name, country),
         qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
-        certificate:certificates(id, certificate_number, status, created_at)
+        certificate:certificates(id, certificate_number, status, created_at),
+        sample_contracts(id, tracking_number)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -129,6 +130,11 @@ export async function GET(request: NextRequest) {
         certificate_number: certificate?.certificate_number || null,
         certificate_status: certificate?.status || null,
         certificate_created_at: certificate?.created_at || null,
+        // Sub-contract info
+        contract_count: Array.isArray(sample.sample_contracts) ? sample.sample_contracts.length : 0,
+        sub_contract_tracking_numbers: Array.isArray(sample.sample_contracts)
+          ? sample.sample_contracts.map((c: any) => c.tracking_number)
+          : [],
         // Remove nested objects to keep response clean
         quality_spec: undefined,
         seller: undefined,
@@ -137,7 +143,8 @@ export async function GET(request: NextRequest) {
         roaster: undefined,
         qc_client: undefined,
         end_client: undefined,
-        certificate: undefined
+        certificate: undefined,
+        sample_contracts: undefined
       }
     })
 
@@ -277,6 +284,7 @@ export async function POST(request: NextRequest) {
         seller_id: body.seller_id || null,
         exporter_id: body.exporter_id || null,
         same_seller_shipper: body.same_seller_shipper ?? true,
+        importer_is_qc_client: body.importer_is_qc_client ?? true,
         exporter_sample_number: body.exporter_sample_number || null,
         importer_id: body.importer_id || null,
         roaster_id: body.roaster_id || null,

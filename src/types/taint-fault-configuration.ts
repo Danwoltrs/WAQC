@@ -392,6 +392,49 @@ export function calculateTaintFaultStats(config: TaintFaultConfiguration) {
 }
 
 /**
+ * Rules for auto-calculating Clean Cup and Uniform Cup status from defects
+ */
+export interface CupStatusRules {
+  clean_cup: {
+    max_taints: number       // e.g. 0 = zero tolerance, 2 = up to 2 taints OK
+    max_faults: number       // e.g. 0 = zero tolerance
+    max_combined?: number    // optional combined limit
+  }
+  uniform_cup: {
+    max_taints: number
+    max_faults: number
+    max_combined?: number
+  }
+}
+
+/**
+ * Predefined Cup Status Rules presets
+ */
+export const CUP_STATUS_RULES_PRESETS: Record<string, { label: string; rules: CupStatusRules }> = {
+  'sca-standard': {
+    label: 'SCA Standard',
+    rules: {
+      clean_cup: { max_taints: 0, max_faults: 0 },
+      uniform_cup: { max_taints: 0, max_faults: 0 },
+    },
+  },
+  'commercial': {
+    label: 'Commercial',
+    rules: {
+      clean_cup: { max_taints: 2, max_faults: 0 },
+      uniform_cup: { max_taints: 1, max_faults: 0 },
+    },
+  },
+  'rio-minas': {
+    label: 'Rio Minas',
+    rules: {
+      clean_cup: { max_taints: 5, max_faults: 2 },
+      uniform_cup: { max_taints: 5, max_faults: 2 },
+    },
+  },
+}
+
+/**
  * Predefined Templates
  */
 

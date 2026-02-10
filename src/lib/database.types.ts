@@ -970,6 +970,7 @@ export type Database = {
           issued_to: string
           pdf_url: string | null
           revision_number: number | null
+          sample_contract_id: string | null
           sample_id: string | null
           status: Database["public"]["Enums"]["certificate_status"] | null
           superseded_by: string | null
@@ -991,6 +992,7 @@ export type Database = {
           issued_to: string
           pdf_url?: string | null
           revision_number?: number | null
+          sample_contract_id?: string | null
           sample_id?: string | null
           status?: Database["public"]["Enums"]["certificate_status"] | null
           superseded_by?: string | null
@@ -1012,6 +1014,7 @@ export type Database = {
           issued_to?: string
           pdf_url?: string | null
           revision_number?: number | null
+          sample_contract_id?: string | null
           sample_id?: string | null
           status?: Database["public"]["Enums"]["certificate_status"] | null
           superseded_by?: string | null
@@ -6873,6 +6876,117 @@ export type Database = {
           },
         ]
       }
+      sample_contracts: {
+        Row: {
+          id: string
+          sample_id: string
+          tracking_number: string
+          wolthers_contract_nr: string | null
+          seller_contract_nr: string | null
+          shipper_contract_nr: string | null
+          buyer_contract_nr: string | null
+          roaster_contract_nr: string | null
+          qc_client_contract_nr: string | null
+          end_client_contract_nr: string | null
+          supplier_contract_nr: string | null
+          ico_number: string | null
+          container_nr: string | null
+          importer_id: string | null
+          importer_is_qc_client: boolean | null
+          roaster_id: string | null
+          end_client_id: string | null
+          client_id: string | null
+          sort_order: number
+          created_at: string
+          updated_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          sample_id: string
+          tracking_number: string
+          wolthers_contract_nr?: string | null
+          seller_contract_nr?: string | null
+          shipper_contract_nr?: string | null
+          buyer_contract_nr?: string | null
+          roaster_contract_nr?: string | null
+          qc_client_contract_nr?: string | null
+          end_client_contract_nr?: string | null
+          supplier_contract_nr?: string | null
+          ico_number?: string | null
+          container_nr?: string | null
+          importer_id?: string | null
+          importer_is_qc_client?: boolean | null
+          roaster_id?: string | null
+          end_client_id?: string | null
+          client_id?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          sample_id?: string
+          tracking_number?: string
+          wolthers_contract_nr?: string | null
+          seller_contract_nr?: string | null
+          shipper_contract_nr?: string | null
+          buyer_contract_nr?: string | null
+          roaster_contract_nr?: string | null
+          qc_client_contract_nr?: string | null
+          end_client_contract_nr?: string | null
+          supplier_contract_nr?: string | null
+          ico_number?: string | null
+          container_nr?: string | null
+          importer_id?: string | null
+          importer_is_qc_client?: boolean | null
+          roaster_id?: string | null
+          end_client_id?: string | null
+          client_id?: string | null
+          sort_order?: number
+          created_at?: string
+          updated_at?: string
+          created_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sample_contracts_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "samples"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_importer_id_fkey"
+            columns: ["importer_id"]
+            isOneToOne: false
+            referencedRelation: "importers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_roaster_id_fkey"
+            columns: ["roaster_id"]
+            isOneToOne: false
+            referencedRelation: "roasters"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "clients"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sample_transfers: {
         Row: {
           approved_by: string | null
@@ -7034,6 +7148,7 @@ export type Database = {
           ico_number: string | null
           id: string
           importer_id: string | null
+          importer_is_qc_client: boolean | null
           importer_legacy: string | null
           laboratory_id: string | null
           locked: boolean | null
@@ -7095,6 +7210,7 @@ export type Database = {
           ico_number?: string | null
           id?: string
           importer_id?: string | null
+          importer_is_qc_client?: boolean | null
           importer_legacy?: string | null
           laboratory_id?: string | null
           locked?: boolean | null
@@ -7156,6 +7272,7 @@ export type Database = {
           ico_number?: string | null
           id?: string
           importer_id?: string | null
+          importer_is_qc_client?: boolean | null
           importer_legacy?: string | null
           laboratory_id?: string | null
           locked?: boolean | null

@@ -44,14 +44,6 @@ const SCA_TEMPLATE: CuppingAttributeTemplate = {
       scale: { type: 'numeric', min: 6, max: 10, increment: 0.25 }
     },
     {
-      attribute: 'Uniformity',
-      scale: { type: 'numeric', min: 0, max: 10, increment: 2 }
-    },
-    {
-      attribute: 'Clean Cup',
-      scale: { type: 'numeric', min: 0, max: 10, increment: 2 }
-    },
-    {
       attribute: 'Sweetness',
       scale: { type: 'numeric', min: 0, max: 10, increment: 2 }
     },
@@ -68,10 +60,6 @@ const COE_TEMPLATE: CuppingAttributeTemplate = {
   name: 'COE Standard',
   description: 'Cup of Excellence cupping protocol',
   attributes: [
-    {
-      attribute: 'Clean Cup',
-      scale: { type: 'numeric', min: 0, max: 8, increment: 2 }
-    },
     {
       attribute: 'Sweetness',
       scale: { type: 'numeric', min: 0, max: 8, increment: 2 }

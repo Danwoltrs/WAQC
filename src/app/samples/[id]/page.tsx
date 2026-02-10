@@ -30,6 +30,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
+import { SampleContractsSection } from '@/components/samples/sample-contracts-section'
 
 interface EditPermission {
   canEdit: boolean
@@ -45,8 +46,6 @@ interface CuppingScores {
   acidity?: number
   body?: number
   balance?: number
-  uniformity?: number
-  clean_cup?: number
   sweetness?: number
   overall?: number
   total?: number
@@ -189,6 +188,12 @@ export default function SampleDetailPage() {
   const [editReason, setEditReason] = useState('')
   const [savingCuppingGrading, setSavingCuppingGrading] = useState(false)
 
+  // Cup status and comments from quality_assessments
+  const [cleanCup, setCleanCup] = useState<boolean | null>(null)
+  const [uniformCup, setUniformCup] = useState<boolean | null>(null)
+  const [cuppingComments, setCuppingComments] = useState<string | null>(null)
+  const [gradingComments, setGradingComments] = useState<string | null>(null)
+
   // Certificate preview modal states
   const [showCertificateModal, setShowCertificateModal] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -251,6 +256,11 @@ export default function SampleDetailPage() {
           if (gradingDataRes.assessment.edit_history) {
             setEditHistory(gradingDataRes.assessment.edit_history)
           }
+          // Load cup status and comments
+          setCleanCup(gradingDataRes.assessment.clean_cup ?? null)
+          setUniformCup(gradingDataRes.assessment.uniform_cup ?? null)
+          setCuppingComments(gradingDataRes.assessment.cupping_comments ?? null)
+          setGradingComments(gradingDataRes.assessment.grading_comments ?? null)
         }
       }
     } catch (error) {
@@ -330,7 +340,11 @@ export default function SampleDetailPage() {
         body: JSON.stringify({
           green_bean_data: cuppingGradingFormData.grading?.green_bean_data,
           roast_data: cuppingGradingFormData.grading?.roast_data,
-          edit_history: [...editHistory, editEntry]
+          edit_history: [...editHistory, editEntry],
+          clean_cup: cleanCup,
+          uniform_cup: uniformCup,
+          cupping_comments: cuppingComments,
+          grading_comments: gradingComments,
         })
       })
 
@@ -1119,6 +1133,9 @@ export default function SampleDetailPage() {
             </Card>
           </div>
 
+          {/* 3.5. SUB-CONTRACTS */}
+          <SampleContractsSection sampleId={sample.id} isEditMode={isEditMode} />
+
           {/* 4. CUPPING & GRADING (with 7-day edit lock) */}
           <Card className={!canEditCuppingGrading && sample.certificate_id ? 'border-muted' : ''}>
             <CardHeader className="pb-3">
@@ -1200,8 +1217,6 @@ export default function SampleDetailPage() {
                       ['acidity', 'Acidity'],
                       ['body', 'Body'],
                       ['balance', 'Balance'],
-                      ['uniformity', 'Uniformity'],
-                      ['clean_cup', 'Clean Cup'],
                       ['sweetness', 'Sweetness'],
                       ['overall', 'Overall']
                     ].map(([key, label]) => (
@@ -1231,6 +1246,75 @@ export default function SampleDetailPage() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">No cupping scores available</p>
+              )}
+
+              {/* Clean Cup / Uniform Cup Status */}
+              {(cleanCup !== null || uniformCup !== null) && (
+                <div className="mt-3">
+                  <h4 className="text-sm font-medium mb-2">Cup Status</h4>
+                  <div className="flex gap-6">
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Clean Cup:</span>
+                      {isEditingCuppingGrading ? (
+                        <Checkbox
+                          checked={cleanCup === true}
+                          onCheckedChange={(checked) => setCleanCup(checked === true)}
+                        />
+                      ) : (
+                        <span className={`text-sm font-medium ${cleanCup ? 'text-green-600' : 'text-red-600'}`}>
+                          {cleanCup === true ? 'Yes' : cleanCup === false ? 'No' : '-'}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">Uniform Cup:</span>
+                      {isEditingCuppingGrading ? (
+                        <Checkbox
+                          checked={uniformCup === true}
+                          onCheckedChange={(checked) => setUniformCup(checked === true)}
+                        />
+                      ) : (
+                        <span className={`text-sm font-medium ${uniformCup ? 'text-green-600' : 'text-red-600'}`}>
+                          {uniformCup === true ? 'Yes' : uniformCup === false ? 'No' : '-'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Cupping Comments */}
+              {(cuppingComments || isEditingCuppingGrading) && (
+                <div className="mt-3">
+                  <h4 className="text-sm font-medium mb-1">Cupping Comments</h4>
+                  {isEditingCuppingGrading ? (
+                    <Textarea
+                      value={cuppingComments || ''}
+                      onChange={(e) => setCuppingComments(e.target.value || null)}
+                      placeholder="Cupping notes..."
+                      className="text-sm min-h-[60px]"
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{cuppingComments}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Grading Comments */}
+              {(gradingComments || isEditingCuppingGrading) && (
+                <div className="mt-3">
+                  <h4 className="text-sm font-medium mb-1">Grading Comments</h4>
+                  {isEditingCuppingGrading ? (
+                    <Textarea
+                      value={gradingComments || ''}
+                      onChange={(e) => setGradingComments(e.target.value || null)}
+                      placeholder="Grading notes..."
+                      className="text-sm min-h-[60px]"
+                    />
+                  ) : (
+                    <p className="text-sm text-muted-foreground">{gradingComments}</p>
+                  )}
+                </div>
               )}
 
               {/* Grading Data */}
