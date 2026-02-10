@@ -338,6 +338,9 @@ export async function POST(request: NextRequest) {
 
     // Create certificate only if both cupping AND grading are complete
     let certificate = null
+    const validFrom = new Date()
+    const validUntil = new Date(validFrom)
+    validUntil.setFullYear(validUntil.getFullYear() + 1)
 
     if (hasGradingData) {
       // Check if certificate already exists
@@ -380,6 +383,8 @@ export async function POST(request: NextRequest) {
             issued_to: issuedTo,
             issued_by: user.id,
             status: 'issued',
+            valid_from: validFrom.toISOString(),
+            valid_until: validUntil.toISOString(),
             is_rejected: decision === 'rejected',
             compliance_violations: complianceResult.violations.length > 0
               ? complianceResult.violations
@@ -473,6 +478,8 @@ export async function POST(request: NextRequest) {
                   issued_to: subIssuedTo,
                   issued_by: user.id,
                   status: 'issued',
+                  valid_from: validFrom.toISOString(),
+                  valid_until: validUntil.toISOString(),
                   is_rejected: decision === 'rejected',
                   compliance_violations: complianceResult.violations.length > 0
                     ? complianceResult.violations

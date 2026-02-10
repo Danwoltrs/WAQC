@@ -218,20 +218,27 @@ export interface CertificateScreenDefectsProps {
 /**
  * Sort screen sizes: numeric sizes descending (19, 18, 17...), with 'pan' always last
  */
+function extractScreenNumber(size: string | number): number {
+  const str = String(size)
+  // Extract number from strings like "Screen 14", "14", "Scr 14", etc.
+  const match = str.match(/(\d+)/)
+  return match ? parseInt(match[1], 10) : NaN
+}
+
 function sortScreenSizes(sizes: ScreenSize[]): ScreenSize[] {
   return [...sizes].sort((a, b) => {
     const aStr = String(a.size).toLowerCase()
     const bStr = String(b.size).toLowerCase()
 
-    // Pan always goes last
+    // Pan/Fondo always goes last
     if (aStr === 'pan' || aStr === 'fondo') return 1
     if (bStr === 'pan' || bStr === 'fondo') return -1
 
-    // Parse numeric values for comparison
-    const aNum = parseInt(String(a.size), 10)
-    const bNum = parseInt(String(b.size), 10)
+    // Extract numeric values for comparison (handles "Screen 14", "14", etc.)
+    const aNum = extractScreenNumber(a.size)
+    const bNum = extractScreenNumber(b.size)
 
-    // If both are numbers, sort descending
+    // If both have numbers, sort descending (largest first)
     if (!isNaN(aNum) && !isNaN(bNum)) {
       return bNum - aNum
     }

@@ -339,14 +339,14 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
               sample.seller_contract_nr,
             )}
 
-            {/* Shipper (only if different from seller) */}
-            {!sample.same_seller_shipper && renderEntityCell(
+            {/* Shipper (always shown, dash if same as seller or empty) */}
+            {renderEntityCell(
               'Shipper',
-              sample.exporter_name,
+              sample.same_seller_shipper ? null : sample.exporter_name,
               'exporter_id',
               exporters,
               'shipper_contract_nr',
-              sample.shipper_contract_nr || sample.exporter_contract_nr,
+              sample.shipper_contract_nr || (sample.same_seller_shipper ? null : sample.exporter_contract_nr),
             )}
 
             {/* Importer */}

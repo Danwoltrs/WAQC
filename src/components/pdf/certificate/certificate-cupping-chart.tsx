@@ -31,7 +31,7 @@ const chartStyles = StyleSheet.create({
     width: 0.5,
     backgroundColor: COLORS.border,
     marginVertical: 4,
-    marginLeft: 235, // Move separator further right (was 200)
+    marginLeft: 12,
     marginRight: 10,
     alignSelf: 'stretch',
   },
@@ -66,7 +66,7 @@ const chartStyles = StyleSheet.create({
     height: 16,
   },
   leftSection: {
-    width: 85,
+    width: 110,
     flexDirection: 'row',
     alignItems: 'baseline',
   },
@@ -194,16 +194,20 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
   const svgHeight = 16
   const lineY = 8 // Center the line vertically
 
+  // Add padding to prevent diamond clipping at edges
+  const svgPadding = RHOMBUS_SIZE + 1
+  const totalWidth = barWidth + svgPadding * 2
+
   return (
     <View style={{ flexDirection: 'column', height: 16, justifyContent: 'center' }}>
-      <Svg width={barWidth} height={svgHeight}>
+      <Svg width={totalWidth} height={svgHeight}>
         {/* Light vertical grid lines */}
         {gridPositions.map((pos, idx) => (
           <Line
             key={idx}
-            x1={pos}
+            x1={pos + svgPadding}
             y1={0}
-            x2={pos}
+            x2={pos + svgPadding}
             y2={svgHeight}
             stroke={GRID_LINE_COLOR}
             strokeWidth={0.5}
@@ -212,9 +216,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
 
         {/* Main horizontal line (charcoal) */}
         <Line
-          x1={0}
+          x1={svgPadding}
           y1={lineY}
-          x2={barWidth}
+          x2={barWidth + svgPadding}
           y2={lineY}
           stroke={CHARCOAL}
           strokeWidth={1}
@@ -223,9 +227,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
         {/* Spec range min line (taller) */}
         {validationRule && (
           <Line
-            x1={specMinX}
+            x1={specMinX + svgPadding}
             y1={lineY - SPEC_TICK_HEIGHT / 2}
-            x2={specMinX}
+            x2={specMinX + svgPadding}
             y2={lineY + SPEC_TICK_HEIGHT / 2}
             stroke={CHARCOAL}
             strokeWidth={1}
@@ -235,9 +239,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
         {/* Spec range max line (taller) - for both range AND minimum types */}
         {validationRule && (
           <Line
-            x1={specMaxX}
+            x1={specMaxX + svgPadding}
             y1={lineY - SPEC_TICK_HEIGHT / 2}
-            x2={specMaxX}
+            x2={specMaxX + svgPadding}
             y2={lineY + SPEC_TICK_HEIGHT / 2}
             stroke={CHARCOAL}
             strokeWidth={1}
@@ -247,10 +251,10 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
         {/* Score marker (rhombus/diamond) */}
         {score !== null && scorePos !== null && (
           <Path
-            d={`M ${scorePos} ${lineY - RHOMBUS_SIZE}
-                L ${scorePos + RHOMBUS_SIZE} ${lineY}
-                L ${scorePos} ${lineY + RHOMBUS_SIZE}
-                L ${scorePos - RHOMBUS_SIZE} ${lineY} Z`}
+            d={`M ${scorePos + svgPadding} ${lineY - RHOMBUS_SIZE}
+                L ${scorePos + svgPadding + RHOMBUS_SIZE} ${lineY}
+                L ${scorePos + svgPadding} ${lineY + RHOMBUS_SIZE}
+                L ${scorePos + svgPadding - RHOMBUS_SIZE} ${lineY} Z`}
             fill={isInSpec ? CHARCOAL : COLORS.outOfSpec}
           />
         )}
@@ -258,7 +262,7 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
 
       {/* Scale numbers below - only on last row, aligned with grid lines */}
       {isLast && (
-        <View style={{ flexDirection: 'row', width: barWidth, marginTop: 2, height: 8 }}>
+        <View style={{ flexDirection: 'row', width: totalWidth, marginTop: 2, height: 8 }}>
           {gridValues.map((val, idx) => {
             // Calculate text width estimate for centering
             const textWidth = String(val).length * 3
@@ -271,7 +275,7 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
                   chartStyles.scaleLabel,
                   {
                     position: 'absolute',
-                    left: gridPositions[idx] - offset,
+                    left: gridPositions[idx] + svgPadding - offset,
                   }
                 ]}
               >
@@ -388,7 +392,7 @@ export function CertificateCuppingChart({
         <View style={[chartStyles.attributeRow, { height: 12 }]}>
           <View style={chartStyles.leftSection} />
           <View style={chartStyles.chartSection}>
-            <View style={{ flexDirection: 'row', width: headerBarWidth, height: 10 }}>
+            <View style={{ flexDirection: 'row', width: headerBarWidth + (RHOMBUS_SIZE + 1) * 2, height: 10 }}>
               {headerGridValues.map((val, idx) => {
                 // Calculate text width estimate for centering
                 const textWidth = String(val).length * 3
@@ -400,7 +404,7 @@ export function CertificateCuppingChart({
                       chartStyles.scaleLabel,
                       {
                         position: 'absolute',
-                        left: headerGridPositions[idx] - offset,
+                        left: headerGridPositions[idx] + (RHOMBUS_SIZE + 1) - offset,
                       }
                     ]}
                   >

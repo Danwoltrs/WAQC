@@ -210,7 +210,6 @@ export default function SampleDetailPage() {
     if (params.id) {
       loadSampleDetails()
       loadEditPermission()
-      loadCuppingGradingData()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id])
@@ -227,10 +226,11 @@ export default function SampleDetailPage() {
     }
   }
 
-  const loadCuppingGradingData = async () => {
+  const loadCuppingGradingData = async (sampleUuid?: string) => {
+    const resolvedId = sampleUuid || params.id
     try {
-      // Load aggregated cupping scores
-      const cuppingRes = await fetch(`/api/cupping/scores/aggregate?sample_id=${params.id}`)
+      // Load aggregated cupping scores (must use UUID, not slug)
+      const cuppingRes = await fetch(`/api/cupping/scores/aggregate?sample_id=${resolvedId}`)
       if (cuppingRes.ok) {
         const cuppingData = await cuppingRes.json()
         if (cuppingData.aggregated?.attributes) {
@@ -244,7 +244,7 @@ export default function SampleDetailPage() {
       }
 
       // Load grading data (quality assessment)
-      const gradingRes = await fetch(`/api/samples/${params.id}/quality-assessment`)
+      const gradingRes = await fetch(`/api/samples/${resolvedId}/quality-assessment`)
       if (gradingRes.ok) {
         const gradingDataRes = await gradingRes.json()
         if (gradingDataRes.assessment) {
@@ -354,7 +354,7 @@ export default function SampleDetailPage() {
       }
 
       // Reload data
-      await loadCuppingGradingData()
+      await loadCuppingGradingData(sample?.id)
       setIsEditingCuppingGrading(false)
       setCuppingGradingFormData({})
       setEditReason('')
@@ -378,11 +378,14 @@ export default function SampleDetailPage() {
       if (sampleRes.ok && sampleData.sample) {
         setSample(sampleData.sample)
 
+        // Load cupping/grading data using resolved UUID
+        loadCuppingGradingData(sampleData.sample.id)
+
         // Set certificates array based on sample's certificate info
         if (sampleData.sample.certificate_id) {
           setCertificates([{
             id: sampleData.sample.certificate_id,
-            sample_id: params.id as string,
+            sample_id: sampleData.sample.id,
             certificate_number: sampleData.sample.certificate_number || 'Available',
             status: sampleData.sample.certificate_status || 'issued',
             created_at: sampleData.sample.certificate_created_at || new Date().toISOString()
@@ -1038,13 +1041,7 @@ export default function SampleDetailPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Supply Chain Table - spans 2 cols */}
             <Card className="lg:col-span-2">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base flex items-center gap-2">
-                  Supply Chain
-                  {isEditMode && <Badge variant="outline" className="text-xs">Editing</Badge>}
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+              <CardContent className="pt-6">
                 <SupplyChainEditTable
                   sample={sample}
                   isEditMode={isEditMode}
@@ -1104,10 +1101,17 @@ export default function SampleDetailPage() {
                   </>
                 ) : (
                   <>
-                    <Badge variant="secondary">
-                      <Clock className="h-3 w-3 mr-1" />
-                      Pending
-                    </Badge>
+                    {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected') ? (
+                      <Badge variant="default" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                        <AlertCircle className="h-3 w-3 mr-1" />
+                        {sample.workflow_stage === 'certified' ? 'Approved' : 'Rejected'} - Not Generated
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary">
+                        <Clock className="h-3 w-3 mr-1" />
+                        Pending
+                      </Badge>
+                    )}
                     {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review') && (
                       <Button
                         variant="default"

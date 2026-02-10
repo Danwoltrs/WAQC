@@ -208,6 +208,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       end_client_id,
       supplier_type,
       same_seller_shipper,
+      importer_is_qc_client,
       end_client_contract_nr,
       supplier_contract_nr,
       supplier
@@ -225,7 +226,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   if (sample.client_id) {
     const { data } = await supabase
       .from('clients')
-      .select('id, name, company, fantasy_name, logo_url, certificate_validity_enabled, certificate_validity_months, client_types')
+      .select('id, name, company, fantasy_name, logo_url, certificate_validity_enabled, certificate_validity_months, client_types, country')
       .eq('id', sample.client_id)
       .single()
     client = data
@@ -778,9 +779,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       },
       shipper: shipperEntity,
       importer: contractOverride?.importerEntity ?? {
-        // Use importer from DB, or fall back to client if they're an importer type
-        name: importerResult.data?.name ?? (isImporterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
-        country: importerResult.data?.country ?? null,
+        // Use importer from DB, or fall back to client if they're an importer type or importer_is_qc_client flag is set
+        name: importerResult.data?.name ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
+        country: importerResult.data?.country ?? client?.country ?? null,
         contract: sample.buyer_contract_nr ?? null,
         address: null, // Address not yet in importers table
       },
