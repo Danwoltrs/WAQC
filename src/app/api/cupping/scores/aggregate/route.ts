@@ -120,7 +120,7 @@ export async function GET(request: NextRequest) {
         .from('cupping_sessions')
         .select('id, cupper_ids')
         .contains('sample_ids', [sampleId])
-        .in('status', ['active', 'review'])
+        .in('status', ['active', 'review', 'completed', 'finalized'])
         .order('created_at', { ascending: false })
         .limit(1)
         .single()

@@ -20,6 +20,7 @@ const CHARCOAL = '#333333'
 
 const chartStyles = StyleSheet.create({
   container: {
+    marginTop: 12,
     marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -199,7 +200,7 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
   const totalWidth = barWidth + svgPadding * 2
 
   return (
-    <View style={{ flexDirection: 'column', height: 16, justifyContent: 'center' }}>
+    <View style={{ flexDirection: 'column', minHeight: 16, justifyContent: 'center' }}>
       <Svg width={totalWidth} height={svgHeight}>
         {/* Light vertical grid lines */}
         {gridPositions.map((pos, idx) => (
@@ -260,31 +261,7 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
         )}
       </Svg>
 
-      {/* Scale numbers below - only on last row, aligned with grid lines */}
-      {isLast && (
-        <View style={{ flexDirection: 'row', width: totalWidth, marginTop: 2, height: 8 }}>
-          {gridValues.map((val, idx) => {
-            // Calculate text width estimate for centering
-            const textWidth = String(val).length * 3
-            // Center each label on its grid line
-            const offset = textWidth / 2
-            return (
-              <Text
-                key={idx}
-                style={[
-                  chartStyles.scaleLabel,
-                  {
-                    position: 'absolute',
-                    left: gridPositions[idx] + svgPadding - offset,
-                  }
-                ]}
-              >
-                {val}
-              </Text>
-            )
-          })}
-        </View>
-      )}
+      {/* Scale numbers rendered in header row, not duplicated here */}
     </View>
   )
 }
@@ -473,7 +450,7 @@ export function CertificateCuppingChart({
                   scaleMin={attrScaleMin}
                   scaleMax={attrScaleMax}
                   globalMaxScale={globalMaxScale}
-                  isLast={index === attributes.length - 1}
+                  isLast={false}
                 />
               </View>
             </View>

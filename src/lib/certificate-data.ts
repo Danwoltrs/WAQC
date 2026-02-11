@@ -295,42 +295,22 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     .single()
 
   // Fetch cupping scores - average across all cuppers
-  // Try multiple approaches: completed sessions, finalized sessions, then any scores
+  // Get all scores for this sample regardless of session status
+  // (certificates should always show all available cupping data)
   let cuppingScores = null
 
-  // First try: completed or finalized sessions with inner join
-  const { data: finishedScores } = await supabase
+  const { data: allCuppingScores } = await supabase
     .from('cupping_scores')
     .select(`
       scores,
       notes,
-      defects,
-      session:cupping_sessions(
-        status,
-        session_type
-      )
+      defects
     `)
     .eq('sample_id', sampleId)
-    .in('session.status', ['completed', 'finalized'])
     .order('created_at', { ascending: false })
 
-  if (finishedScores && finishedScores.length > 0) {
-    cuppingScores = finishedScores
-  } else {
-    // Second try: any cupping scores for this sample (no session filter)
-    const { data: allScores } = await supabase
-      .from('cupping_scores')
-      .select(`
-        scores,
-        notes,
-        defects
-      `)
-      .eq('sample_id', sampleId)
-      .order('created_at', { ascending: false })
-
-    if (allScores && allScores.length > 0) {
-      cuppingScores = allScores
-    }
+  if (allCuppingScores && allCuppingScores.length > 0) {
+    cuppingScores = allCuppingScores
   }
 
   // Fetch certificate
@@ -793,8 +773,10 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         address: null, // Address not yet in roasters table
       },
       endClient: contractOverride?.endClientEntity ?? {
-        name: endClientResult.data?.fantasy_name ?? endClientResult.data?.company ?? null,
-        country: endClientResult.data?.country ?? null,
+        name: endClientResult.data?.fantasy_name ?? endClientResult.data?.company
+          ?? (isEndClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
+        country: endClientResult.data?.country
+          ?? (isEndClient ? (client?.country ?? null) : null),
         contract: sample.end_client_contract_nr ?? null,
         address: null,
       },

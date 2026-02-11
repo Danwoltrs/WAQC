@@ -19,13 +19,13 @@ const styles = StyleSheet.create({
   },
   // Screen section styles
   screenSection: {
-    width: 85,
+    width: 100,
     padding: 6,
   },
   screenDefectsSeparator: {
     width: 0.5,
     backgroundColor: COLORS.border,
-    marginHorizontal: 6,
+    marginHorizontal: 10,
     alignSelf: 'stretch',
   },
   screenTitle: {
@@ -67,10 +67,10 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     flexDirection: 'row',
-    marginBottom: 6,
-    paddingBottom: 4,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.borderLight,
+    marginTop: 6,
+    paddingTop: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.borderLight,
   },
   summaryItem: {
     flexDirection: 'row',
@@ -225,6 +225,23 @@ function extractScreenNumber(size: string | number): number {
   return match ? parseInt(match[1], 10) : NaN
 }
 
+/**
+ * Format screen size label: "Screen 14" → "Scr. 14", plain "14" → "Scr. 14", keep "Pan"/"Fondo" as-is
+ */
+function formatScreenLabel(size: string | number): string {
+  const str = String(size)
+  const lower = str.toLowerCase()
+  if (lower === 'pan' || lower === 'fondo') return str
+  // Already has "Scr" prefix
+  if (lower.startsWith('scr')) return str.replace(/^screen\s*/i, 'Scr. ')
+  // Has "Screen" prefix
+  if (lower.startsWith('screen')) return str.replace(/^screen\s*/i, 'Scr. ')
+  // Plain number
+  const num = str.match(/^\d+$/)
+  if (num) return `Scr. ${str}`
+  return str
+}
+
 function sortScreenSizes(sizes: ScreenSize[]): ScreenSize[] {
   return [...sizes].sort((a, b) => {
     const aStr = String(a.size).toLowerCase()
@@ -354,14 +371,14 @@ export function CertificateScreenDefects({
           {sortedScreenSizes.map((screen, index) => {
             const spec = checkScreenSpec(screen.size, screen.percentage, screenConstraints)
             return (
-              <View key={index}>
-                <View style={styles.screenRow}>
-                  <Text style={styles.screenLabel}>{screen.size}</Text>
+              <View key={index} style={styles.screenRow}>
+                <Text style={styles.screenLabel}>{formatScreenLabel(screen.size)}</Text>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
                   <Text style={spec.outOfSpec ? styles.screenValueOutOfSpec : styles.screenValue}>
-                    {screen.percentage !== null ? `${screen.percentage.toFixed(1)}%` : '-'}
+                    {screen.percentage !== null ? `${Math.round(screen.percentage)}%` : '-'}
                   </Text>
+                  {spec.note && <Text style={styles.screenSpecNote}> {spec.note}</Text>}
                 </View>
-                {spec.note && <Text style={styles.screenSpecNote}>{spec.note}</Text>}
               </View>
             )
           })}
@@ -376,7 +393,85 @@ export function CertificateScreenDefects({
       {/* Defects Section */}
       {hasDefectData && (
         <View style={styles.defectsSection}>
-          {/* Summary row on top */}
+          {/* Defect columns */}
+          {(() => {
+            const hasPrimary = primaryDefects.length > 0
+            const hasSecondary = secondaryDefects.length > 0
+            const showBothColumns = hasPrimary && hasSecondary
+            const showSingleCentered = (hasPrimary || hasSecondary) && !showBothColumns
+
+            return (
+              <View style={[
+                styles.defectsColumnsContainer,
+                showSingleCentered ? { justifyContent: 'center' as const } : {},
+              ]}>
+                {/* Primary Defects Column — show if has data or if both columns shown */}
+                {(hasPrimary || showBothColumns || (!hasPrimary && !hasSecondary)) && (
+                  <View style={styles.defectColumn}>
+                    <Text style={styles.defectColumnTitle}>Primary</Text>
+                    <View style={styles.defectHeaderRow}>
+                      <Text style={styles.defectHeaderName}>Defect</Text>
+                      <Text style={styles.defectHeaderQty}>Qty</Text>
+                      <Text style={styles.defectHeaderDef}>Def</Text>
+                    </View>
+                    {primaryDefects.length > 0 ? (
+                      primaryDefects.map((defect, index) => {
+                        const weight = defect.weight ?? 1
+                        const weighted = Math.round((defect.count * weight) * 100) / 100
+                        return (
+                          <View key={index} style={styles.defectRow}>
+                            <View style={styles.defectNameContainer}>
+                              <Text style={styles.defectName}>{defect.name}</Text>
+                              {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
+                            </View>
+                            <Text style={styles.defectQty}>{defect.count}</Text>
+                            <Text style={styles.defectDef}>{weighted}</Text>
+                          </View>
+                        )
+                      })
+                    ) : (
+                      <Text style={styles.noData}>None</Text>
+                    )}
+                  </View>
+                )}
+
+                {/* Vertical separator — only when both columns shown */}
+                {showBothColumns && <View style={styles.columnSeparator} />}
+
+                {/* Secondary Defects Column — show if has data or if both columns shown */}
+                {(hasSecondary || showBothColumns || (!hasPrimary && !hasSecondary)) && (
+                  <View style={styles.defectColumn}>
+                    <Text style={styles.defectColumnTitle}>Secondary</Text>
+                    <View style={styles.defectHeaderRow}>
+                      <Text style={styles.defectHeaderName}>Defect</Text>
+                      <Text style={styles.defectHeaderQty}>Qty</Text>
+                      <Text style={styles.defectHeaderDef}>Def</Text>
+                    </View>
+                    {secondaryDefects.length > 0 ? (
+                      secondaryDefects.map((defect, index) => {
+                        const weight = defect.weight ?? 1
+                        const weighted = Math.round((defect.count * weight) * 100) / 100
+                        return (
+                          <View key={index} style={styles.defectRow}>
+                            <View style={styles.defectNameContainer}>
+                              <Text style={styles.defectName}>{defect.name}</Text>
+                              {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
+                            </View>
+                            <Text style={styles.defectQty}>{defect.count}</Text>
+                            <Text style={styles.defectDef}>{weighted}</Text>
+                          </View>
+                        )
+                      })
+                    ) : (
+                      <Text style={styles.noData}>None</Text>
+                    )}
+                  </View>
+                )}
+              </View>
+            )
+          })()}
+
+          {/* Summary row below defect tables */}
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
               <Text style={styles.summaryLabel}>Primary:</Text>
@@ -403,70 +498,6 @@ export function CertificateScreenDefects({
               </Text>
               {totalOutOfSpec && (
                 <Text style={styles.summarySpecNote}>(max {maxTotalDefects})</Text>
-              )}
-            </View>
-          </View>
-
-          {/* Defect columns */}
-          <View style={styles.defectsColumnsContainer}>
-            {/* Primary Defects Column */}
-            <View style={styles.defectColumn}>
-              <Text style={styles.defectColumnTitle}>Primary</Text>
-              {/* Column headers */}
-              <View style={styles.defectHeaderRow}>
-                <Text style={styles.defectHeaderName}>Defect</Text>
-                <Text style={styles.defectHeaderQty}>Qty</Text>
-                <Text style={styles.defectHeaderDef}>Def</Text>
-              </View>
-              {primaryDefects.length > 0 ? (
-                primaryDefects.map((defect, index) => {
-                  const weight = defect.weight ?? 1
-                  const weighted = Math.round((defect.count * weight) * 100) / 100
-                  return (
-                    <View key={index} style={styles.defectRow}>
-                      <View style={styles.defectNameContainer}>
-                        <Text style={styles.defectName}>{defect.name}</Text>
-                        {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
-                      </View>
-                      <Text style={styles.defectQty}>{defect.count}</Text>
-                      <Text style={styles.defectDef}>{weighted}</Text>
-                    </View>
-                  )
-                })
-              ) : (
-                <Text style={styles.noData}>None</Text>
-              )}
-            </View>
-
-            {/* Vertical separator */}
-            <View style={styles.columnSeparator} />
-
-            {/* Secondary Defects Column */}
-            <View style={styles.defectColumn}>
-              <Text style={styles.defectColumnTitle}>Secondary</Text>
-              {/* Column headers */}
-              <View style={styles.defectHeaderRow}>
-                <Text style={styles.defectHeaderName}>Defect</Text>
-                <Text style={styles.defectHeaderQty}>Qty</Text>
-                <Text style={styles.defectHeaderDef}>Def</Text>
-              </View>
-              {secondaryDefects.length > 0 ? (
-                secondaryDefects.map((defect, index) => {
-                  const weight = defect.weight ?? 1
-                  const weighted = Math.round((defect.count * weight) * 100) / 100
-                  return (
-                    <View key={index} style={styles.defectRow}>
-                      <View style={styles.defectNameContainer}>
-                        <Text style={styles.defectName}>{defect.name}</Text>
-                        {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
-                      </View>
-                      <Text style={styles.defectQty}>{defect.count}</Text>
-                      <Text style={styles.defectDef}>{weighted}</Text>
-                    </View>
-                  )
-                })
-              ) : (
-                <Text style={styles.noData}>None</Text>
               )}
             </View>
           </View>
