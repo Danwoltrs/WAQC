@@ -79,19 +79,29 @@ interface PropertyItemProps {
   small?: boolean
   outOfSpec?: boolean
   specNote?: string
+  integer?: boolean
 }
 
-function PropertyItem({ label, value, unit, small, outOfSpec, specNote }: PropertyItemProps) {
+function PropertyItem({ label, value, unit, small, outOfSpec, specNote, integer }: PropertyItemProps) {
   if (value === null || value === undefined || value === '') return null
+
+  const formatValue = (v: string | number) => {
+    if (typeof v !== 'number') return v
+    return integer ? String(Math.round(v)) : v.toFixed(1)
+  }
 
   return (
     <View style={propStyles.propertyItem}>
       <Text style={propStyles.label}>{label}</Text>
       <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
         <Text style={outOfSpec ? propStyles.valueOutOfSpec : (small ? propStyles.valueSmall : propStyles.value)}>
-          {typeof value === 'number' ? value.toFixed(1) : value}
+          {formatValue(value)}
         </Text>
-        {unit && <Text style={propStyles.unit}> {unit}</Text>}
+        {unit && (
+          <Text style={outOfSpec ? { ...propStyles.unit, color: COLORS.outOfSpec } : propStyles.unit}>
+            {' '}{unit}
+          </Text>
+        )}
       </View>
       {specNote && <Text style={propStyles.specNote}>{specNote}</Text>}
     </View>
@@ -187,6 +197,7 @@ export function CertificatePhysicalProperties({
               value={quakers}
               outOfSpec={quakersOutOfSpec}
               specNote={quakersNote}
+              integer
             />
           )}
           {roastAspect && (

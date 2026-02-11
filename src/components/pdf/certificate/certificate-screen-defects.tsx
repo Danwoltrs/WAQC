@@ -39,27 +39,32 @@ const styles = StyleSheet.create({
   },
   screenRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'baseline',
     paddingVertical: 1,
   },
   screenLabel: {
     fontSize: 7,
     color: COLORS.dark,
+    width: 40,
   },
   screenValue: {
     fontSize: 7,
     fontWeight: 600,
     color: COLORS.dark,
+    width: 30,
+    textAlign: 'right',
   },
   screenValueOutOfSpec: {
     fontSize: 7,
     fontWeight: 700,
     color: COLORS.outOfSpec,
+    width: 30,
+    textAlign: 'right',
   },
   screenSpecNote: {
     fontSize: 5,
     color: COLORS.outOfSpec,
-    textAlign: 'right',
+    marginLeft: 2,
   },
   // Defects section styles
   defectsSection: {
@@ -102,6 +107,7 @@ const styles = StyleSheet.create({
   defectsColumnsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
+    justifyContent: 'flex-end',
   },
   defectColumn: {
     width: 130,
@@ -374,12 +380,10 @@ export function CertificateScreenDefects({
             return (
               <View key={index} style={styles.screenRow}>
                 <Text style={styles.screenLabel}>{formatScreenLabel(screen.size)}</Text>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
-                  <Text style={spec.outOfSpec ? styles.screenValueOutOfSpec : styles.screenValue}>
-                    {screen.percentage !== null ? `${Math.round(screen.percentage)}%` : '-'}
-                  </Text>
-                  {spec.note && <Text style={styles.screenSpecNote}> {spec.note}</Text>}
-                </View>
+                <Text style={spec.outOfSpec ? styles.screenValueOutOfSpec : styles.screenValue}>
+                  {screen.percentage !== null ? `${Math.round(screen.percentage)}%` : '-'}
+                </Text>
+                {spec.note && <Text style={styles.screenSpecNote}>{spec.note}</Text>}
               </View>
             )
           })}
