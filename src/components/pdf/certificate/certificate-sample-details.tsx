@@ -11,8 +11,8 @@ import { COLORS } from './certificate-styles'
 
 const detailStyles = StyleSheet.create({
   container: {
-    marginBottom: 8,
-    paddingVertical: 6,
+    marginBottom: 4,
+    paddingVertical: 4,
     paddingHorizontal: 10,
     borderWidth: 0.5,
     borderColor: COLORS.border,

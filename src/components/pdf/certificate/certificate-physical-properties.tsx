@@ -11,7 +11,7 @@ import { COLORS } from './certificate-styles'
 
 const propStyles = StyleSheet.create({
   container: {
-    marginBottom: 8,
+    marginBottom: 4,
     flexDirection: 'row',
     borderWidth: 0.5,
     borderColor: COLORS.border,
@@ -93,7 +93,7 @@ function PropertyItem({ label, value, unit, small, outOfSpec, specNote, integer 
   return (
     <View style={propStyles.propertyItem}>
       <Text style={propStyles.label}>{label}</Text>
-      <View style={{ flexDirection: 'row', alignItems: 'baseline' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', flexWrap: 'wrap' }}>
         <Text style={outOfSpec ? propStyles.valueOutOfSpec : (small ? propStyles.valueSmall : propStyles.value)}>
           {formatValue(value)}
         </Text>
@@ -102,8 +102,8 @@ function PropertyItem({ label, value, unit, small, outOfSpec, specNote, integer 
             {' '}{unit}
           </Text>
         )}
+        {specNote && <Text style={propStyles.specNote}> {specNote}</Text>}
       </View>
-      {specNote && <Text style={propStyles.specNote}>{specNote}</Text>}
     </View>
   )
 }

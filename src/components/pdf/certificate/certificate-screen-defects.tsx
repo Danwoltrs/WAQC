@@ -14,8 +14,8 @@ import type { ScreenSizeLimit } from '@/lib/certificate-data'
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    marginTop: 4,
-    marginBottom: 8,
+    marginTop: 2,
+    marginBottom: 4,
     gap: 10,
   },
   // Screen section styles
@@ -45,21 +45,21 @@ const styles = StyleSheet.create({
   screenLabel: {
     fontSize: 7,
     color: COLORS.dark,
-    width: 40,
+    width: 42,
+  },
+  screenValueColumn: {
+    width: 28,
+    alignItems: 'flex-end',
   },
   screenValue: {
     fontSize: 7,
     fontWeight: 600,
     color: COLORS.dark,
-    width: 30,
-    textAlign: 'right',
   },
   screenValueOutOfSpec: {
     fontSize: 7,
     fontWeight: 700,
     color: COLORS.outOfSpec,
-    width: 30,
-    textAlign: 'right',
   },
   screenSpecNote: {
     fontSize: 5,
@@ -73,6 +73,7 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     flexDirection: 'row',
+    justifyContent: 'center',
     marginTop: 6,
     paddingTop: 4,
     borderTopWidth: 0.5,
@@ -107,7 +108,7 @@ const styles = StyleSheet.create({
   defectsColumnsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'flex-end',
+    justifyContent: 'center',
   },
   defectColumn: {
     width: 130,
@@ -380,9 +381,11 @@ export function CertificateScreenDefects({
             return (
               <View key={index} style={styles.screenRow}>
                 <Text style={styles.screenLabel}>{formatScreenLabel(screen.size)}</Text>
-                <Text style={spec.outOfSpec ? styles.screenValueOutOfSpec : styles.screenValue}>
-                  {screen.percentage !== null ? `${Math.round(screen.percentage)}%` : '-'}
-                </Text>
+                <View style={styles.screenValueColumn}>
+                  <Text style={spec.outOfSpec ? styles.screenValueOutOfSpec : styles.screenValue}>
+                    {screen.percentage !== null ? `${Math.round(screen.percentage)}%` : '-'}
+                  </Text>
+                </View>
                 {spec.note && <Text style={styles.screenSpecNote}>{spec.note}</Text>}
               </View>
             )

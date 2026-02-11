@@ -19,8 +19,8 @@ const CHARCOAL = '#333333'
 
 const chartStyles = StyleSheet.create({
   container: {
-    marginTop: 12,
-    marginBottom: 8,
+    marginTop: 6,
+    marginBottom: 4,
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
@@ -127,20 +127,17 @@ interface ScaleChartProps {
   validationRule?: ValidationRule | null
   scaleMin: number
   scaleMax: number
-  globalMaxScale: number
-  isLast?: boolean
 }
 
 // Light grid line color
 const GRID_LINE_COLOR = '#E0E0E0'
 
-function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale, isLast }: ScaleChartProps) {
+function ScaleChart({ score, validationRule, scaleMin, scaleMax }: ScaleChartProps) {
   const range = scaleMax - scaleMin
   if (range <= 0) return null
 
-  // Calculate proportional width based on range relative to global max
-  const proportionalWidth = (range / globalMaxScale) * MAX_BAR_WIDTH
-  const barWidth = Math.max(proportionalWidth, 60) // Minimum width of 60
+  // All charts use full width regardless of scale range
+  const barWidth = MAX_BAR_WIDTH
 
   // Calculate score position
   const scorePos = score !== null ? ((score - scaleMin) / range) * barWidth : null
@@ -317,15 +314,6 @@ export function CertificateCuppingChart({
     return null
   }
 
-  // Find the maximum scale range for proportional sizing across ALL attributes
-  const globalMaxScale = Math.max(
-    ...attributes.map(attr => {
-      const attrMax = attr.scaleMax ?? scaleMax
-      const attrMin = attr.scaleMin ?? scaleMin
-      return attrMax - attrMin
-    })
-  )
-
   // Group attributes by scale range (e.g., 0-10 and 0-7)
   interface ScaleGroup {
     scaleMin: number
@@ -360,11 +348,10 @@ export function CertificateCuppingChart({
     <View style={chartStyles.container}>
       {/* Attributes section (left) */}
       <View style={chartStyles.attributesSection}>
-        <Text style={chartStyles.title}>Attributes</Text>
-
         {scaleGroups.map((group, groupIdx) => {
           const groupRange = group.scaleMax - group.scaleMin
-          const headerBarWidth = Math.max((groupRange / globalMaxScale) * MAX_BAR_WIDTH, 60)
+          // All groups use the same bar width (100%) for visual consistency
+          const headerBarWidth = MAX_BAR_WIDTH
 
           // Generate grid values for this group's header
           const gridCount = 5
@@ -448,8 +435,6 @@ export function CertificateCuppingChart({
                         validationRule={attr.validationRule}
                         scaleMin={attrScaleMin}
                         scaleMax={attrScaleMax}
-                        globalMaxScale={globalMaxScale}
-                        isLast={false}
                       />
                     </View>
                   </View>

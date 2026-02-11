@@ -12,9 +12,9 @@ import type { SupplyChainEntity } from '@/lib/certificate-data'
 
 const rowStyles = StyleSheet.create({
   container: {
-    marginBottom: 8,
+    marginBottom: 4,
     backgroundColor: COLORS.background,
-    paddingVertical: 8,
+    paddingVertical: 6,
     paddingHorizontal: 10,
     borderRadius: 4,
   },
@@ -132,7 +132,10 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
-  // Group 1: Wolthers (always first if present)
+  // Don't show End Client if the QC client has a logo (end client IS the QC client showing logo)
+  const showEndClient = !hasClientLogo || !namesMatch(endClient?.name, qcClient?.name)
+
+  // Group 1: Wolthers (always first if contract exists)
   const wolthersColumns: MergedColumn[] = wolthersContract
     ? [{ label: 'Wolthers', name: wolthersContract, contracts: [], address: null }]
     : []
@@ -147,11 +150,8 @@ export function CertificateSupplyChainRow({
 
   // When Seller/Exporter merge, drop "Exporter" from label for cleaner display
   for (const col of supplySideColumns) {
-    // If both Seller and Exporter merged, simplify to "Seller / Shipper" if shipper also merged
-    // or just "Seller" if it was Seller+Exporter
     if (col.label.includes('Seller') && col.label.includes('Exporter')) {
       col.label = col.label.replace(' / Exporter', '').replace('Exporter / ', '')
-      // If only Seller remains and shipper was also merged
       if (col.label === 'Seller' && col.label.includes('Shipper')) {
         col.label = 'Seller / Shipper'
       }
@@ -162,7 +162,7 @@ export function CertificateSupplyChainRow({
   const buySideEntities: Array<{ label: string; entity: SupplyChainEntity | null | undefined }> = [
     { label: 'Importer', entity: importer },
     { label: 'Roaster', entity: roaster },
-    { label: 'End Client', entity: endClient },
+    ...(showEndClient ? [{ label: 'End Client', entity: endClient }] : []),
     ...(showQcClient ? [{ label: 'QC Client', entity: qcClient }] : []),
   ]
   const buySideColumns = mergeEntities(buySideEntities)

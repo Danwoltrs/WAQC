@@ -22,8 +22,9 @@ const pageStyles = StyleSheet.create({
   page: {
     fontFamily: 'Inter',
     fontSize: 9,
-    padding: 30,
-    paddingBottom: 60, // Extra padding for footer
+    paddingHorizontal: 30,
+    paddingTop: 24,
+    paddingBottom: 50, // Space for footer
     backgroundColor: '#FFFFFF',
   },
 })
