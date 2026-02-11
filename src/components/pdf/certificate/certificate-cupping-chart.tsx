@@ -317,7 +317,7 @@ export function CertificateCuppingChart({
     return null
   }
 
-  // Find the maximum scale range for proportional sizing
+  // Find the maximum scale range for proportional sizing across ALL attributes
   const globalMaxScale = Math.max(
     ...attributes.map(attr => {
       const attrMax = attr.scaleMax ?? scaleMax
@@ -325,6 +325,28 @@ export function CertificateCuppingChart({
       return attrMax - attrMin
     })
   )
+
+  // Group attributes by scale range (e.g., 0-10 and 0-7)
+  interface ScaleGroup {
+    scaleMin: number
+    scaleMax: number
+    attrs: { attr: CuppingAttribute; originalIndex: number }[]
+  }
+
+  const groupMap = new Map<string, ScaleGroup>()
+  attributes.forEach((attr, idx) => {
+    const aMin = attr.scaleMin ?? scaleMin
+    const aMax = attr.scaleMax ?? scaleMax
+    const key = `${aMin}-${aMax}`
+    if (!groupMap.has(key)) {
+      groupMap.set(key, { scaleMin: aMin, scaleMax: aMax, attrs: [] })
+    }
+    groupMap.get(key)!.attrs.push({ attr, originalIndex: idx })
+  })
+
+  // Sort groups: largest range first
+  const scaleGroups = Array.from(groupMap.values())
+    .sort((a, b) => (b.scaleMax - b.scaleMin) - (a.scaleMax - a.scaleMin))
 
   // Format faults and taints for display (numbers, 0 means none)
   const faultsDisplay = faults != null && faults > 0 ? String(faults) : 'None'
@@ -334,106 +356,105 @@ export function CertificateCuppingChart({
   const taintsOutOfSpec = maxTaints !== undefined && taints != null && taints > maxTaints
   const faultsOutOfSpec = maxFaults !== undefined && faults != null && faults > maxFaults
 
-  // Calculate bar width for scale header (use first attribute's scale)
-  const firstAttr = attributes[0]
-  const firstScaleMin = firstAttr?.scaleMin ?? scaleMin
-  const firstScaleMax = firstAttr?.scaleMax ?? scaleMax
-  const firstRange = firstScaleMax - firstScaleMin
-  const headerBarWidth = Math.max((firstRange / globalMaxScale) * MAX_BAR_WIDTH, 60)
-
-  // Generate grid values for header
-  const gridCount = 5
-  const gridStep = firstRange / (gridCount - 1)
-  const headerGridValues: number[] = []
-  for (let i = 0; i < gridCount; i++) {
-    const val = firstScaleMin + (i * gridStep)
-    headerGridValues.push(Math.round(val * 10) / 10)
-  }
-  const headerGridPositions = headerGridValues.map(v => ((v - firstScaleMin) / firstRange) * headerBarWidth)
-
   return (
     <View style={chartStyles.container}>
       {/* Attributes section (left) */}
       <View style={chartStyles.attributesSection}>
         <Text style={chartStyles.title}>Attributes</Text>
 
-        {/* Scale header row */}
-        <View style={[chartStyles.attributeRow, { height: 12 }]}>
-          <View style={chartStyles.leftSection} />
-          {/* Spacer matching scoreValue width + marginRight */}
-          <View style={{ width: 32 }} />
-          <View style={chartStyles.chartSection}>
-            <View style={{ flexDirection: 'row', width: headerBarWidth + (RHOMBUS_SIZE + 1) * 2, height: 10 }}>
-              {headerGridValues.map((val, idx) => {
-                // Calculate text width estimate for centering
-                const textWidth = String(val).length * 3
-                const offset = textWidth / 2
-                return (
-                  <Text
-                    key={idx}
-                    style={[
-                      chartStyles.scaleLabel,
-                      {
-                        position: 'absolute',
-                        left: headerGridPositions[idx] + (RHOMBUS_SIZE + 1) - offset,
-                      }
-                    ]}
-                  >
-                    {val}
-                  </Text>
-                )
-              })}
-            </View>
-          </View>
-        </View>
+        {scaleGroups.map((group, groupIdx) => {
+          const groupRange = group.scaleMax - group.scaleMin
+          const headerBarWidth = Math.max((groupRange / globalMaxScale) * MAX_BAR_WIDTH, 60)
 
-        {attributes.map((attr, index) => {
-          const attrScaleMin = attr.scaleMin ?? scaleMin
-          const attrScaleMax = attr.scaleMax ?? scaleMax
-
-          // Check if score is in spec (only matters for color - red if out of spec)
-          const isInSpec = attr.score !== null && (
-            attr.validationRule
-              ? (attr.validationRule.type === 'minimum'
-                ? attr.score >= attr.validationRule.min_value
-                : attr.score >= attr.validationRule.min_value && (!attr.validationRule.max_value || attr.score <= attr.validationRule.max_value))
-              : true
+          // Generate grid values for this group's header
+          const gridCount = 5
+          const gridStep = groupRange / (gridCount - 1)
+          const headerGridValues: number[] = []
+          for (let i = 0; i < gridCount; i++) {
+            const val = group.scaleMin + (i * gridStep)
+            headerGridValues.push(Math.round(val * 10) / 10)
+          }
+          const headerGridPositions = headerGridValues.map(
+            v => ((v - group.scaleMin) / groupRange) * headerBarWidth
           )
 
-          const displayName = attr.abbreviation || attr.attribute
-
           return (
-            <View key={index} style={chartStyles.attributeRow}>
-              {/* Left section: Attribute name + spec */}
-              <View style={chartStyles.leftSection}>
-                <Text style={chartStyles.attributeName}>{displayName}</Text>
-                <Text style={chartStyles.specText}>
-                  {formatSpecText(attr.validationRule)}
-                </Text>
+            <View key={groupIdx}>
+              {/* Scale header row for this group */}
+              <View style={[chartStyles.attributeRow, { height: 12, marginTop: groupIdx > 0 ? 6 : 0 }]}>
+                <View style={chartStyles.leftSection} />
+                {/* Spacer matching scoreValue width + marginRight */}
+                <View style={{ width: 32 }} />
+                <View style={chartStyles.chartSection}>
+                  <View style={{ flexDirection: 'row', width: headerBarWidth + (RHOMBUS_SIZE + 1) * 2, height: 10 }}>
+                    {headerGridValues.map((val, idx) => {
+                      const textWidth = String(val).length * 3
+                      const offset = textWidth / 2
+                      return (
+                        <Text
+                          key={idx}
+                          style={[
+                            chartStyles.scaleLabel,
+                            {
+                              position: 'absolute',
+                              left: headerGridPositions[idx] + (RHOMBUS_SIZE + 1) - offset,
+                            }
+                          ]}
+                        >
+                          {val}
+                        </Text>
+                      )
+                    })}
+                  </View>
+                </View>
               </View>
 
-              {/* Score value - close to attribute name */}
-              <Text
-                style={[
-                  chartStyles.scoreValue,
-                  // Only red for out-of-spec, otherwise dark/black
-                  { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
-                ]}
-              >
-                {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
-              </Text>
+              {/* Attributes in this scale group */}
+              {group.attrs.map(({ attr, originalIndex }) => {
+                const attrScaleMin = attr.scaleMin ?? scaleMin
+                const attrScaleMax = attr.scaleMax ?? scaleMax
 
-              {/* Scale chart */}
-              <View style={chartStyles.chartSection}>
-                <ScaleChart
-                  score={attr.score}
-                  validationRule={attr.validationRule}
-                  scaleMin={attrScaleMin}
-                  scaleMax={attrScaleMax}
-                  globalMaxScale={globalMaxScale}
-                  isLast={false}
-                />
-              </View>
+                const isInSpec = attr.score !== null && (
+                  attr.validationRule
+                    ? (attr.validationRule.type === 'minimum'
+                      ? attr.score >= attr.validationRule.min_value
+                      : attr.score >= attr.validationRule.min_value && (!attr.validationRule.max_value || attr.score <= attr.validationRule.max_value))
+                    : true
+                )
+
+                const displayName = attr.abbreviation || attr.attribute
+
+                return (
+                  <View key={originalIndex} style={chartStyles.attributeRow}>
+                    <View style={chartStyles.leftSection}>
+                      <Text style={chartStyles.attributeName}>{displayName}</Text>
+                      <Text style={chartStyles.specText}>
+                        {formatSpecText(attr.validationRule)}
+                      </Text>
+                    </View>
+
+                    <Text
+                      style={[
+                        chartStyles.scoreValue,
+                        { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
+                      ]}
+                    >
+                      {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
+                    </Text>
+
+                    <View style={chartStyles.chartSection}>
+                      <ScaleChart
+                        score={attr.score}
+                        validationRule={attr.validationRule}
+                        scaleMin={attrScaleMin}
+                        scaleMax={attrScaleMax}
+                        globalMaxScale={globalMaxScale}
+                        isLast={false}
+                      />
+                    </View>
+                  </View>
+                )
+              })}
             </View>
           )
         })}
