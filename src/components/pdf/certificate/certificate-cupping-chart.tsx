@@ -360,6 +360,8 @@ export function CertificateCuppingChart({
         {/* Scale header row */}
         <View style={[chartStyles.attributeRow, { height: 12 }]}>
           <View style={chartStyles.leftSection} />
+          {/* Spacer matching scoreValue width + marginRight */}
+          <View style={{ width: 32 }} />
           <View style={chartStyles.chartSection}>
             <View style={{ flexDirection: 'row', width: headerBarWidth + (RHOMBUS_SIZE + 1) * 2, height: 10 }}>
               {headerGridValues.map((val, idx) => {
