@@ -157,7 +157,7 @@ export function QualityCertificate({
           moistureMin={specLimits?.moisture_min}
           moistureMax={specLimits?.moisture_max}
           maxQuakers={specLimits?.max_quakers}
-          showQuakers={specLimits?.max_quakers !== undefined ? true : undefined}
+          showQuakers={specLimits?.max_quakers !== undefined}
         />
 
         {/* 6. Screen Distribution + Defects */}

@@ -126,8 +126,8 @@ export function CertificatePhysicalProperties({
 }: CertificatePhysicalPropertiesProps) {
   // Check if we have any data to display
   const hasGreenData = moisture !== null || density !== null || greenAspect
-  // Show quakers if: explicitly showQuakers=true, or showQuakers is undefined and we have quaker data
-  const shouldShowQuakers = showQuakers !== false && (quakers !== null || maxQuakers !== undefined)
+  // Only show quakers if the quality spec asks for it (showQuakers=true)
+  const shouldShowQuakers = showQuakers === true
   const hasRoastData = shouldShowQuakers || roastAspect
 
   if (!hasGreenData && !hasRoastData) {

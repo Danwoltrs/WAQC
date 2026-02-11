@@ -7,7 +7,6 @@
  * - Charcoal/black diamonds for in-spec, red for out-of-spec
  * - Vertical tick marks showing scale range
  * - Scale numbers above the chart
- * - Dotted line connecting attribute name to score
  * - Clean Cup and Uniform Cup above Faults/Taints
  */
 
@@ -32,8 +31,8 @@ const chartStyles = StyleSheet.create({
     width: 0.5,
     backgroundColor: COLORS.border,
     marginVertical: 4,
-    marginLeft: 12,
-    marginRight: 10,
+    marginLeft: 8,
+    marginRight: 8,
     alignSelf: 'stretch',
   },
   defectsSection: {
@@ -67,7 +66,7 @@ const chartStyles = StyleSheet.create({
     height: 16,
   },
   leftSection: {
-    width: 110,
+    width: 80,
     flexDirection: 'row',
     alignItems: 'baseline',
   },
@@ -81,19 +80,12 @@ const chartStyles = StyleSheet.create({
     color: COLORS.muted,
     marginLeft: 1,
   },
-  dottedLine: {
-    flex: 1,
-    minWidth: 10,
-    maxWidth: 40,
-    height: 1,
-    marginHorizontal: 3,
-  },
   scoreValue: {
     fontSize: 9,
     fontWeight: 600,
     width: 28,
     textAlign: 'right',
-    marginRight: 6,
+    marginRight: 4,
   },
   chartSection: {
     flexDirection: 'row',
@@ -418,20 +410,7 @@ export function CertificateCuppingChart({
                 </Text>
               </View>
 
-              {/* Dotted line connecting name to score */}
-              <Svg style={chartStyles.dottedLine} height={1}>
-                <Line
-                  x1={0}
-                  y1={0.5}
-                  x2={40}
-                  y2={0.5}
-                  stroke={COLORS.muted}
-                  strokeWidth={0.5}
-                  strokeDasharray="1,2"
-                />
-              </Svg>
-
-              {/* Score value - close to graph */}
+              {/* Score value - close to attribute name */}
               <Text
                 style={[
                   chartStyles.scoreValue,

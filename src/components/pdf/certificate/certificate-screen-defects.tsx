@@ -14,6 +14,7 @@ import type { ScreenSizeLimit } from '@/lib/certificate-data'
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
+    marginTop: 4,
     marginBottom: 8,
     gap: 10,
   },
@@ -386,123 +387,103 @@ export function CertificateScreenDefects({
       )}
 
       {/* Separator between Screen and Defects */}
-      {hasScreenData && hasDefectData && (
+      {hasScreenData && (
         <View style={styles.screenDefectsSeparator} />
       )}
 
-      {/* Defects Section */}
-      {hasDefectData && (
-        <View style={styles.defectsSection}>
-          {/* Defect columns */}
-          {(() => {
-            const hasPrimary = primaryDefects.length > 0
-            const hasSecondary = secondaryDefects.length > 0
-            const showBothColumns = hasPrimary && hasSecondary
-            const showSingleCentered = (hasPrimary || hasSecondary) && !showBothColumns
-
-            return (
-              <View style={[
-                styles.defectsColumnsContainer,
-                showSingleCentered ? { justifyContent: 'center' as const } : {},
-              ]}>
-                {/* Primary Defects Column — show if has data or if both columns shown */}
-                {(hasPrimary || showBothColumns || (!hasPrimary && !hasSecondary)) && (
-                  <View style={styles.defectColumn}>
-                    <Text style={styles.defectColumnTitle}>Primary</Text>
-                    <View style={styles.defectHeaderRow}>
-                      <Text style={styles.defectHeaderName}>Defect</Text>
-                      <Text style={styles.defectHeaderQty}>Qty</Text>
-                      <Text style={styles.defectHeaderDef}>Def</Text>
+      {/* Defects Section - always show Primary */}
+      <View style={styles.defectsSection}>
+        {/* Defect columns */}
+        <View style={styles.defectsColumnsContainer}>
+          {/* Primary Defects Column — always shown */}
+          <View style={styles.defectColumn}>
+            <Text style={styles.defectColumnTitle}>Primary</Text>
+            <View style={styles.defectHeaderRow}>
+              <Text style={styles.defectHeaderName}>Defect</Text>
+              <Text style={styles.defectHeaderQty}>Qty</Text>
+              <Text style={styles.defectHeaderDef}>Def</Text>
+            </View>
+            {primaryDefects.length > 0 ? (
+              primaryDefects.map((defect, index) => {
+                const weight = defect.weight ?? 1
+                const weighted = Math.round((defect.count * weight) * 100) / 100
+                return (
+                  <View key={index} style={styles.defectRow}>
+                    <View style={styles.defectNameContainer}>
+                      <Text style={styles.defectName}>{defect.name}</Text>
+                      {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
                     </View>
-                    {primaryDefects.length > 0 ? (
-                      primaryDefects.map((defect, index) => {
-                        const weight = defect.weight ?? 1
-                        const weighted = Math.round((defect.count * weight) * 100) / 100
-                        return (
-                          <View key={index} style={styles.defectRow}>
-                            <View style={styles.defectNameContainer}>
-                              <Text style={styles.defectName}>{defect.name}</Text>
-                              {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
-                            </View>
-                            <Text style={styles.defectQty}>{defect.count}</Text>
-                            <Text style={styles.defectDef}>{weighted}</Text>
-                          </View>
-                        )
-                      })
-                    ) : (
-                      <Text style={styles.noData}>None</Text>
-                    )}
+                    <Text style={styles.defectQty}>{defect.count}</Text>
+                    <Text style={styles.defectDef}>{weighted}</Text>
                   </View>
-                )}
+                )
+              })
+            ) : (
+              <Text style={styles.noData}>None</Text>
+            )}
+          </View>
 
-                {/* Vertical separator — only when both columns shown */}
-                {showBothColumns && <View style={styles.columnSeparator} />}
-
-                {/* Secondary Defects Column — show if has data or if both columns shown */}
-                {(hasSecondary || showBothColumns || (!hasPrimary && !hasSecondary)) && (
-                  <View style={styles.defectColumn}>
-                    <Text style={styles.defectColumnTitle}>Secondary</Text>
-                    <View style={styles.defectHeaderRow}>
-                      <Text style={styles.defectHeaderName}>Defect</Text>
-                      <Text style={styles.defectHeaderQty}>Qty</Text>
-                      <Text style={styles.defectHeaderDef}>Def</Text>
+          {/* Vertical separator + Secondary — only when secondary has data */}
+          {secondaryDefects.length > 0 && (
+            <>
+              <View style={styles.columnSeparator} />
+              <View style={styles.defectColumn}>
+                <Text style={styles.defectColumnTitle}>Secondary</Text>
+                <View style={styles.defectHeaderRow}>
+                  <Text style={styles.defectHeaderName}>Defect</Text>
+                  <Text style={styles.defectHeaderQty}>Qty</Text>
+                  <Text style={styles.defectHeaderDef}>Def</Text>
+                </View>
+                {secondaryDefects.map((defect, index) => {
+                  const weight = defect.weight ?? 1
+                  const weighted = Math.round((defect.count * weight) * 100) / 100
+                  return (
+                    <View key={index} style={styles.defectRow}>
+                      <View style={styles.defectNameContainer}>
+                        <Text style={styles.defectName}>{defect.name}</Text>
+                        {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
+                      </View>
+                      <Text style={styles.defectQty}>{defect.count}</Text>
+                      <Text style={styles.defectDef}>{weighted}</Text>
                     </View>
-                    {secondaryDefects.length > 0 ? (
-                      secondaryDefects.map((defect, index) => {
-                        const weight = defect.weight ?? 1
-                        const weighted = Math.round((defect.count * weight) * 100) / 100
-                        return (
-                          <View key={index} style={styles.defectRow}>
-                            <View style={styles.defectNameContainer}>
-                              <Text style={styles.defectName}>{defect.name}</Text>
-                              {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
-                            </View>
-                            <Text style={styles.defectQty}>{defect.count}</Text>
-                            <Text style={styles.defectDef}>{weighted}</Text>
-                          </View>
-                        )
-                      })
-                    ) : (
-                      <Text style={styles.noData}>None</Text>
-                    )}
-                  </View>
-                )}
+                  )
+                })}
               </View>
-            )
-          })()}
+            </>
+          )}
+        </View>
 
-          {/* Summary row below defect tables */}
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Primary:</Text>
-              <Text style={primaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
-                {primaryDefectsCount ?? 0}
-              </Text>
-              {primaryOutOfSpec && (
-                <Text style={styles.summarySpecNote}>(max {maxPrimaryDefects})</Text>
-              )}
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Secondary:</Text>
-              <Text style={secondaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
-                {secondaryDefectsCount?.toFixed(2) ?? '0'}
-              </Text>
-              {secondaryOutOfSpec && (
-                <Text style={styles.summarySpecNote}>(max {maxSecondaryDefects})</Text>
-              )}
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Total:</Text>
-              <Text style={totalOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
-                {totalDefects.toFixed(2)}
-              </Text>
-              {totalOutOfSpec && (
-                <Text style={styles.summarySpecNote}>(max {maxTotalDefects})</Text>
-              )}
-            </View>
+        {/* Summary row below defect tables */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Primary:</Text>
+            <Text style={primaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+              {primaryDefectsCount ?? 0}
+            </Text>
+            {primaryOutOfSpec && (
+              <Text style={styles.summarySpecNote}>(max {maxPrimaryDefects})</Text>
+            )}
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Secondary:</Text>
+            <Text style={secondaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+              {secondaryDefectsCount?.toFixed(2) ?? '0'}
+            </Text>
+            {secondaryOutOfSpec && (
+              <Text style={styles.summarySpecNote}>(max {maxSecondaryDefects})</Text>
+            )}
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Total:</Text>
+            <Text style={totalOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+              {totalDefects.toFixed(2)}
+            </Text>
+            {totalOutOfSpec && (
+              <Text style={styles.summarySpecNote}>(max {maxTotalDefects})</Text>
+            )}
           </View>
         </View>
-      )}
+      </View>
     </View>
   )
 }
