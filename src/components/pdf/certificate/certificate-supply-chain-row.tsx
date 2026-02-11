@@ -12,9 +12,9 @@ import type { SupplyChainEntity } from '@/lib/certificate-data'
 
 const rowStyles = StyleSheet.create({
   container: {
-    marginBottom: 4,
+    marginBottom: 8,
     backgroundColor: COLORS.background,
-    paddingVertical: 6,
+    paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 4,
   },
@@ -132,9 +132,6 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
-  // Don't show End Client if the QC client has a logo (end client IS the QC client showing logo)
-  const showEndClient = !hasClientLogo || !namesMatch(endClient?.name, qcClient?.name)
-
   // Group 1: Wolthers (always first if contract exists)
   const wolthersColumns: MergedColumn[] = wolthersContract
     ? [{ label: 'Wolthers', name: wolthersContract, contracts: [], address: null }]
@@ -158,11 +155,11 @@ export function CertificateSupplyChainRow({
     }
   }
 
-  // Group 3: Buy-side (Importer, Roaster, End Client, QC Client) - merge if same name
+  // Group 3: Buy-side (Importer, Roaster, QC Client) - merge if same name
+  // End Client is not shown (QC client logo represents them)
   const buySideEntities: Array<{ label: string; entity: SupplyChainEntity | null | undefined }> = [
     { label: 'Importer', entity: importer },
     { label: 'Roaster', entity: roaster },
-    ...(showEndClient ? [{ label: 'End Client', entity: endClient }] : []),
     ...(showQcClient ? [{ label: 'QC Client', entity: qcClient }] : []),
   ]
   const buySideColumns = mergeEntities(buySideEntities)

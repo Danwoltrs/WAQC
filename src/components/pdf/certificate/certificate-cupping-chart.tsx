@@ -19,8 +19,8 @@ const CHARCOAL = '#333333'
 
 const chartStyles = StyleSheet.create({
   container: {
-    marginTop: 6,
-    marginBottom: 4,
+    marginTop: 10,
+    marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'flex-start',
   },

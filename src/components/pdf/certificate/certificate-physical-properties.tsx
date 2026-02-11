@@ -11,7 +11,7 @@ import { COLORS } from './certificate-styles'
 
 const propStyles = StyleSheet.create({
   container: {
-    marginBottom: 4,
+    marginBottom: 8,
     flexDirection: 'row',
     borderWidth: 0.5,
     borderColor: COLORS.border,
@@ -67,7 +67,7 @@ const propStyles = StyleSheet.create({
     color: COLORS.muted,
   },
   specNote: {
-    fontSize: 6,
+    fontSize: 7,
     color: COLORS.outOfSpec,
   },
 })

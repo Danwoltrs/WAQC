@@ -14,8 +14,8 @@ import type { ScreenSizeLimit } from '@/lib/certificate-data'
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    marginTop: 2,
-    marginBottom: 4,
+    marginTop: 4,
+    marginBottom: 8,
     gap: 10,
   },
   // Screen section styles
@@ -47,19 +47,19 @@ const styles = StyleSheet.create({
     color: COLORS.dark,
     width: 42,
   },
-  screenValueColumn: {
-    width: 28,
-    alignItems: 'flex-end',
-  },
   screenValue: {
     fontSize: 7,
     fontWeight: 600,
     color: COLORS.dark,
+    width: 30,
+    textAlign: 'right',
   },
   screenValueOutOfSpec: {
     fontSize: 7,
     fontWeight: 700,
     color: COLORS.outOfSpec,
+    width: 30,
+    textAlign: 'right',
   },
   screenSpecNote: {
     fontSize: 5,
@@ -381,11 +381,9 @@ export function CertificateScreenDefects({
             return (
               <View key={index} style={styles.screenRow}>
                 <Text style={styles.screenLabel}>{formatScreenLabel(screen.size)}</Text>
-                <View style={styles.screenValueColumn}>
-                  <Text style={spec.outOfSpec ? styles.screenValueOutOfSpec : styles.screenValue}>
-                    {screen.percentage !== null ? `${Math.round(screen.percentage)}%` : '-'}
-                  </Text>
-                </View>
+                <Text style={spec.outOfSpec ? styles.screenValueOutOfSpec : styles.screenValue}>
+                  {screen.percentage !== null ? `${Math.round(screen.percentage)}%` : '-'}
+                </Text>
                 {spec.note && <Text style={styles.screenSpecNote}>{spec.note}</Text>}
               </View>
             )

@@ -10,7 +10,7 @@ import { COLORS, getStatusColor, getStatusText } from './certificate-styles'
 
 const headerStyles = StyleSheet.create({
   container: {
-    marginBottom: 8,
+    marginBottom: 10,
   },
   topRow: {
     flexDirection: 'row',
