@@ -48,8 +48,8 @@ export async function GET(request: NextRequest) {
         roaster:roasters(id, name, country),
         qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
-        certificate:certificates(id, certificate_number, status, created_at),
-        sample_contracts(id, tracking_number)
+        certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
+        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, importer:importers(name), roaster:roasters(name), end_client:clients!sample_contracts_end_client_id_fkey(fantasy_name, company), qc_client:clients!sample_contracts_client_id_fkey(fantasy_name, company))
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -130,10 +130,27 @@ export async function GET(request: NextRequest) {
         certificate_number: certificate?.certificate_number || null,
         certificate_status: certificate?.status || null,
         certificate_created_at: certificate?.created_at || null,
-        // Sub-contract info
+        // Sub-contract info (rich data for expandable rows)
         contract_count: Array.isArray(sample.sample_contracts) ? sample.sample_contracts.length : 0,
         sub_contract_tracking_numbers: Array.isArray(sample.sample_contracts)
           ? sample.sample_contracts.map((c: any) => c.tracking_number)
+          : [],
+        sub_contracts: Array.isArray(sample.sample_contracts)
+          ? sample.sample_contracts.map((c: any) => {
+              // Build certificate lookup from the certificates array
+              const allCerts = Array.isArray(sample.certificate) ? sample.certificate : []
+              const subCert = allCerts.find((cert: any) => cert.sample_contract_id === c.id)
+              const scQcName = c.qc_client?.fantasy_name || c.qc_client?.company || null
+              return {
+                id: c.id,
+                tracking_number: c.tracking_number,
+                importer_name: c.importer?.name || (c.importer_is_qc_client ? (scQcName || qcClientName) : null),
+                roaster_name: c.roaster?.name || null,
+                end_client_name: c.end_client?.fantasy_name || c.end_client?.company || null,
+                has_certificate: !!subCert,
+                certificate_id: subCert?.id || null,
+              }
+            })
           : [],
         // Remove nested objects to keep response clean
         quality_spec: undefined,

@@ -168,6 +168,62 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to create sub-contract', details: insertError.message }, { status: 500 })
     }
 
+    // Auto-create certificate if mother sample already has one
+    try {
+      const { data: motherCert } = await supabase
+        .from('certificates')
+        .select('id, issued_by, valid_from, valid_until, is_rejected')
+        .eq('sample_id', sampleId)
+        .is('sample_contract_id', null)
+        .maybeSingle()
+
+      if (motherCert && contract) {
+        const isRejected = motherCert.is_rejected ?? false
+        const subCertNumber = isRejected
+          ? `R-${contract.tracking_number}`
+          : contract.tracking_number
+
+        // Get issued_to from mother sample's client
+        const { data: motherSample } = await supabase
+          .from('samples')
+          .select('client_id, clients!samples_client_id_fkey(fantasy_name, company)')
+          .eq('id', sampleId)
+          .single()
+
+        const motherClient = motherSample?.clients as { fantasy_name?: string; company?: string } | null
+        let issuedTo = motherClient?.fantasy_name || motherClient?.company || 'Unknown Client'
+
+        // If sub-contract has a different QC client, use that name
+        if (contract.client_id && contract.client_id !== motherSample?.client_id) {
+          const { data: subClient } = await supabase
+            .from('clients')
+            .select('fantasy_name, company')
+            .eq('id', contract.client_id)
+            .single()
+          if (subClient) {
+            issuedTo = subClient.fantasy_name || subClient.company || issuedTo
+          }
+        }
+
+        await supabase
+          .from('certificates')
+          .insert({
+            sample_id: sampleId,
+            sample_contract_id: contract.id,
+            certificate_number: subCertNumber,
+            issued_to: issuedTo,
+            issued_by: user.id,
+            status: 'issued',
+            valid_from: motherCert.valid_from,
+            valid_until: motherCert.valid_until,
+            is_rejected: isRejected,
+          })
+      }
+    } catch (certErr) {
+      console.error('Error auto-creating certificate for sub-contract:', certErr)
+      // Non-fatal: sub-contract was still created
+    }
+
     return NextResponse.json({ contract }, { status: 201 })
   } catch (error: any) {
     console.error('Error in POST /api/samples/[id]/contracts:', error)

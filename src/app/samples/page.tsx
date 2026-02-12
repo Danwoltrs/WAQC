@@ -41,12 +41,22 @@ import {
   Plus, Search, Filter, Eye, MapPin, Calendar,
   CheckCircle, XCircle, Clock, AlertCircle, FileText,
   Download, Printer, QrCode, MoreVertical, Users, Trash2,
-  Loader2, Award, Mail, Settings2
+  Loader2, Award, Mail, Settings2, ChevronDown, ChevronRight
 } from 'lucide-react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
 import { trackingNumberToSlug } from '@/lib/utils'
+
+interface SubContract {
+  id: string
+  tracking_number: string
+  importer_name: string | null
+  roaster_name: string | null
+  end_client_name: string | null
+  has_certificate: boolean
+  certificate_id: string | null
+}
 
 interface Sample {
   id: string
@@ -116,6 +126,7 @@ interface Sample {
   }
   contract_count?: number
   sub_contract_tracking_numbers?: string[]
+  sub_contracts?: SubContract[]
 }
 
 // Helper function to extract clean tracking number from potential JSON
@@ -167,6 +178,7 @@ export default function SamplesPage() {
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
 
   // Certificate preview modal states
   const [previewSample, setPreviewSample] = useState<Sample | null>(null)
@@ -697,6 +709,40 @@ export default function SamplesPage() {
     }
   }
 
+  const handleDownloadSubContractCertificate = async (sampleId: string, contractId: string, trackingNumber: string) => {
+    try {
+      setDownloadingSampleId(`${sampleId}_${contractId}`)
+      const response = await fetch(`/api/samples/${sampleId}/certificate?contract_id=${contractId}`)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${trackingNumber}.pdf`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+        document.body.removeChild(a)
+      }
+    } catch (error) {
+      console.error('Error downloading sub-contract certificate:', error)
+    } finally {
+      setDownloadingSampleId(null)
+    }
+  }
+
+  const toggleExpand = (sampleId: string) => {
+    setExpandedSamples(prev => {
+      const next = new Set(prev)
+      if (next.has(sampleId)) {
+        next.delete(sampleId)
+      } else {
+        next.add(sampleId)
+      }
+      return next
+    })
+  }
+
   const getStatusBadge = (status: string) => {
     const statusConfig: Record<string, { variant: any; icon: any; label: string; className?: string }> = {
       received: { variant: 'secondary', icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
@@ -1077,7 +1123,7 @@ export default function SamplesPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {samples.map((sample) => (
+                    {samples.flatMap((sample) => [
                       <ContextMenu key={sample.id} onOpenChange={(open) => {
                         if (open && !selectedSamples.has(sample.id)) {
                           setSelectedSamples(new Set([sample.id]))
@@ -1109,18 +1155,22 @@ export default function SamplesPage() {
                                 <div className="font-medium flex items-center gap-1.5">
                                   {parseTrackingNumber(sample.tracking_number)}
                                   {(sample.contract_count ?? 0) > 0 && (
-                                    <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground rounded-full">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        toggleExpand(sample.id)
+                                      }}
+                                      className="inline-flex items-center justify-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground rounded-full hover:bg-accent transition-colors cursor-pointer"
+                                      title={expandedSamples.has(sample.id) ? 'Collapse sub-contracts' : 'Expand sub-contracts'}
+                                    >
+                                      {expandedSamples.has(sample.id)
+                                        ? <ChevronDown className="h-2.5 w-2.5" />
+                                        : <ChevronRight className="h-2.5 w-2.5" />
+                                      }
                                       +{sample.contract_count}
-                                    </span>
+                                    </button>
                                   )}
                                 </div>
-                                {(sample.sub_contract_tracking_numbers?.length ?? 0) > 0 && (
-                                  <div className="mt-0.5 space-y-0.5">
-                                    {sample.sub_contract_tracking_numbers!.map((tn) => (
-                                      <div key={tn} className="text-[10px] text-muted-foreground">{tn}</div>
-                                    ))}
-                                  </div>
-                                )}
                                 {sample.exporter_sample_number && (
                                   <div className="text-xs text-muted-foreground mt-0.5">
                                     {sample.exporter_sample_number}
@@ -1344,8 +1394,70 @@ export default function SamplesPage() {
                             </>
                           )}
                         </ContextMenuContent>
-                      </ContextMenu>
-                    ))}
+                      </ContextMenu>,
+                      // Expanded sub-contract rows
+                      ...(expandedSamples.has(sample.id) && sample.sub_contracts?.length
+                        ? sample.sub_contracts.map((sc) => (
+                            <tr
+                              key={`sc-${sc.id}`}
+                              className="border-b border-border bg-muted/30"
+                            >
+                              <td className="py-2 px-4" />
+                              {selectedSamples.size > 0 && <td className="py-2 px-4" />}
+                              {columnVisibility.certNr && (
+                                <td className="py-2 px-4">
+                                  <div className="flex items-center gap-1.5 pl-4 text-sm text-muted-foreground">
+                                    <FileText className="h-3 w-3" />
+                                    {sc.tracking_number}
+                                  </div>
+                                </td>
+                              )}
+                              {columnVisibility.origin && <td className="py-2 px-4" />}
+                              {columnVisibility.type && <td className="py-2 px-4" />}
+                              {columnVisibility.quality && <td className="py-2 px-4" />}
+                              {columnVisibility.seller && <td className="py-2 px-4" />}
+                              {columnVisibility.shipper && <td className="py-2 px-4" />}
+                              {columnVisibility.wolthers && <td className="py-2 px-4" />}
+                              {columnVisibility.importer && (
+                                <td className="py-2 px-4 text-sm text-muted-foreground">
+                                  {sc.importer_name || '-'}
+                                </td>
+                              )}
+                              {columnVisibility.roaster && (
+                                <td className="py-2 px-4 text-sm text-muted-foreground">
+                                  {sc.roaster_name || '-'}
+                                </td>
+                              )}
+                              {columnVisibility.endClient && (
+                                <td className="py-2 px-4 text-sm text-muted-foreground">
+                                  {sc.end_client_name || '-'}
+                                </td>
+                              )}
+                              {columnVisibility.status && <td className="py-2 px-4" />}
+                              {columnVisibility.stage && <td className="py-2 px-4" />}
+                              {columnVisibility.storage && <td className="py-2 px-4" />}
+                              {columnVisibility.created && <td className="py-2 px-4" />}
+                              <td className="py-2 px-4">
+                                {sc.has_certificate && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
+                                    disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
+                                    title="Download sub-contract certificate"
+                                  >
+                                    {downloadingSampleId === `${sample.id}_${sc.id}` ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Download className="h-3 w-3" />
+                                    )}
+                                  </Button>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        : []),
+                    ])}
                   </tbody>
                 </table>
               </div>

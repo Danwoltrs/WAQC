@@ -277,17 +277,24 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // Check if certificate already exists
+    // Check if mother certificate already exists
     const { data: existingCert } = await supabase
       .from('certificates')
-      .select('id, certificate_number')
+      .select('id, certificate_number, issued_by, valid_from, valid_until, is_rejected')
       .eq('sample_id', id)
-      .single()
+      .is('sample_contract_id', null)
+      .maybeSingle()
 
     if (existingCert) {
+      // Mother cert exists — still ensure sub-contract certificates are created
+      await createSubContractCertificates(supabase, id, {
+        ...existingCert,
+        issued_by: existingCert.issued_by || user.id,
+      }, user.id)
+
       return NextResponse.json({
         message: 'Certificate already exists',
-        certificate: existingCert
+        certificate: { id: existingCert.id, certificate_number: existingCert.certificate_number }
       })
     }
 
@@ -331,6 +338,15 @@ export async function POST(
       }, { status: 500 })
     }
 
+    // Auto-create certificates for sub-contracts
+    await createSubContractCertificates(supabase, id, {
+      id: newCert.id,
+      issued_by: user.id,
+      valid_from: validFrom.toISOString(),
+      valid_until: validUntil.toISOString(),
+      is_rejected: isRejected,
+    }, user.id)
+
     return NextResponse.json({
       message: 'Certificate created',
       certificate: newCert
@@ -338,6 +354,83 @@ export async function POST(
   } catch (error) {
     console.error('Error in POST /api/samples/[id]/certificate:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * Create certificates for all sub-contracts that don't already have one.
+ * Mirrors the pattern in cupping/finalize/route.ts lines 429-496.
+ */
+async function createSubContractCertificates(
+  supabase: any,
+  sampleId: string,
+  motherCert: { id?: string; issued_by: string; valid_from: string; valid_until: string; is_rejected: boolean | null },
+  userId: string
+) {
+  try {
+    const { data: subContracts } = await supabase
+      .from('sample_contracts')
+      .select('id, tracking_number, client_id')
+      .eq('sample_id', sampleId)
+      .order('sort_order', { ascending: true })
+
+    if (!subContracts || subContracts.length === 0) return
+
+    // Get mother sample's client name for fallback issued_to
+    const { data: sample } = await supabase
+      .from('samples')
+      .select('client_id, clients!samples_client_id_fkey(fantasy_name, company)')
+      .eq('id', sampleId)
+      .single()
+
+    const motherClient = sample?.clients as { fantasy_name?: string; company?: string } | null
+    const motherIssuedTo = motherClient?.fantasy_name || motherClient?.company || 'Unknown Client'
+
+    for (const sc of subContracts) {
+      // Check if sub-contract certificate already exists
+      const { data: existingSubCert } = await supabase
+        .from('certificates')
+        .select('id')
+        .eq('sample_contract_id', sc.id)
+        .maybeSingle()
+
+      if (!existingSubCert) {
+        const isRejected = motherCert.is_rejected ?? false
+        const subCertNumber = isRejected
+          ? `R-${sc.tracking_number}`
+          : sc.tracking_number
+
+        // Get sub-contract's QC client name (or fall back to mother's)
+        let subIssuedTo = motherIssuedTo
+        if (sc.client_id && sc.client_id !== sample?.client_id) {
+          const { data: subClient } = await supabase
+            .from('clients')
+            .select('fantasy_name, company')
+            .eq('id', sc.client_id)
+            .single()
+          if (subClient) {
+            subIssuedTo = subClient.fantasy_name || subClient.company || subIssuedTo
+          }
+        }
+
+        await supabase
+          .from('certificates')
+          .insert({
+            sample_id: sampleId,
+            sample_contract_id: sc.id,
+            certificate_number: subCertNumber,
+            issued_to: subIssuedTo,
+            issued_by: userId,
+            status: 'issued',
+            valid_from: motherCert.valid_from,
+            valid_until: motherCert.valid_until,
+            is_rejected: isRejected,
+          })
+      }
+    }
+  } catch (err) {
+    console.error('Error creating sub-contract certificates:', err)
+    // Non-fatal: mother certificate was already created
   }
 }
 
