@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -548,6 +549,9 @@ export async function POST(request: NextRequest) {
     } catch (auditError) {
       console.error('Error logging audit:', auditError)
     }
+
+    // Invalidate cached certificate PDF since finalization changes certificate data
+    invalidateCertificatePdf(supabaseAdmin, sample_id).catch(() => {})
 
     // Build response message based on completion state
     let message: string

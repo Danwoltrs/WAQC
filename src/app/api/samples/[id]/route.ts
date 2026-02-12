@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { isUUID, slugToTrackingNumber } from '@/lib/utils'
 import { resolveSampleId } from '@/lib/sample-utils'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
@@ -275,6 +276,19 @@ export async function PATCH(
         error: 'Failed to update sample',
         details: updateError.message
       }, { status: 500 })
+    }
+
+    // Invalidate cached certificate PDF if certificate-relevant fields changed
+    const certFields = [
+      'container_nr', 'wolthers_contract_nr', 'buyer_contract_nr', 'exporter_contract_nr',
+      'roaster_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'qc_client_contract_nr',
+      'exporter_id', 'importer_id', 'roaster_id', 'seller_id', 'origin', 'bags',
+      'bag_type', 'bag_weight_kg', 'bags_quantity_mt', 'bag_count', 'equivalent_60kg_bags',
+      'end_client_id', 'end_client_contract_nr', 'quality_spec_id',
+    ]
+    const hasCertFieldChange = certFields.some((f) => body[f] !== undefined)
+    if (hasCertFieldChange) {
+      invalidateCertificatePdf(supabase, id).catch(() => {})
     }
 
     return NextResponse.json({ sample })

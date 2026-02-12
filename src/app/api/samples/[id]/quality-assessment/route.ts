@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 /**
  * POST /api/samples/[id]/quality-assessment
@@ -82,6 +83,9 @@ export async function POST(
         )
       }
 
+      // Invalidate cached certificate PDF since assessment data changed
+      invalidateCertificatePdf(supabase, sampleId).catch(() => {})
+
       return NextResponse.json({
         success: true,
         message: 'Quality assessment updated successfully',
@@ -107,6 +111,9 @@ export async function POST(
           { status: 500 }
         )
       }
+
+      // Invalidate cached certificate PDF since assessment data changed
+      invalidateCertificatePdf(supabase, sampleId).catch(() => {})
 
       return NextResponse.json({
         success: true,

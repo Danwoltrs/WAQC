@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleLabelDocument, SampleLabelData } from '@/components/pdf/sample-label'
-import { generateQRCode, getSampleTrackingUrl } from '@/lib/qr-code'
+import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
 
 /**
  * POST /api/samples/bulk/print-labels
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest) {
     // Generate QR codes and prepare label data
     const labelsWithQR: SampleLabelData[] = await Promise.all(
       samples.map(async (sample: any) => {
-        const trackingUrl = getSampleTrackingUrl(sample.tracking_number)
+        const trackingUrl = getCertificatePageUrl(sample.tracking_number)
         const qrCode = await generateQRCode(trackingUrl, {
           width: 250,
           margin: 1,

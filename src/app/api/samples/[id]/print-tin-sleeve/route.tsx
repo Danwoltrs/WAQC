@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { TinSleeveLabelDocument, TinSleeveLabelData } from '@/components/pdf/tin-sleeve-label'
-import { generateQRCode, getSampleTrackingUrl } from '@/lib/qr-code'
+import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
 import path from 'path'
 import fs from 'fs'
 
@@ -125,7 +125,7 @@ export async function GET(
     if ((sample as any).roaster_contract_nr) contracts.push((sample as any).roaster_contract_nr)
 
     // Generate QR code
-    const trackingUrl = getSampleTrackingUrl((sample as any).tracking_number)
+    const trackingUrl = getCertificatePageUrl((sample as any).tracking_number)
     const qrCode = await generateQRCode(trackingUrl, {
       width: 200,
       margin: 1,

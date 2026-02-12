@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -130,6 +131,11 @@ export async function PATCH(
     if (updateError) {
       console.error('Error updating score:', updateError)
       return NextResponse.json({ error: 'Failed to update score' }, { status: 500 })
+    }
+
+    // Invalidate cached certificate PDF since cupping score changed
+    if (existingScore.sample_id) {
+      invalidateCertificatePdf(supabase, existingScore.sample_id).catch(() => {})
     }
 
     return NextResponse.json({

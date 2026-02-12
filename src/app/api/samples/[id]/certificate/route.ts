@@ -5,6 +5,7 @@ import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { resolveSampleId } from '@/lib/sample-utils'
+import { uploadCertificatePdf, getCachedCertificatePdf } from '@/lib/certificate-storage'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -40,6 +41,39 @@ export async function GET(
 
     // Check for sub-contract certificate request
     const contractId = request.nextUrl.searchParams.get('contract_id')
+
+    // Check for cached PDF first
+    let certQuery = supabase
+      .from('certificates')
+      .select('id, certificate_number, pdf_url')
+      .eq('sample_id', id)
+
+    if (contractId) {
+      certQuery = certQuery.eq('sample_contract_id', contractId)
+    } else {
+      certQuery = certQuery.is('sample_contract_id', null)
+    }
+
+    const { data: certificate } = await certQuery
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (certificate?.pdf_url) {
+      console.log('[Certificate] Serving cached PDF:', certificate.pdf_url)
+      const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
+      if (cachedBuffer) {
+        const filename = `${certificate.certificate_number || 'certificate'}.pdf`
+        return new NextResponse(new Uint8Array(cachedBuffer), {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `inline; filename="${filename}"`,
+            'Cache-Control': 'public, max-age=3600',
+          },
+        })
+      }
+      console.log('[Certificate] Cached PDF not found in storage, regenerating...')
+    }
 
     // Get certificate data
     const certificateData = await getCertificateData(id, contractId || undefined)
@@ -97,8 +131,6 @@ export async function GET(
     }
 
     // Render PDF to buffer
-    // Type assertion needed because QualityCertificate returns a Document element
-    // but renderToBuffer's types expect DocumentProps directly
     console.log('[Certificate] Rendering PDF...')
     const certificateElement = React.createElement(QualityCertificate, {
       data: certificateData,
@@ -108,6 +140,13 @@ export async function GET(
     })
     const pdfBuffer = await renderToBuffer(certificateElement as any)
     console.log('[Certificate] PDF rendered, buffer size:', pdfBuffer.length)
+
+    // Cache the generated PDF in storage
+    if (certificate?.id) {
+      uploadCertificatePdf(supabase, id, certificate.id, Buffer.from(pdfBuffer), contractId || undefined)
+        .then((path) => path && console.log('[Certificate] Cached PDF at:', path))
+        .catch((err) => console.error('[Certificate] Cache upload failed:', err))
+    }
 
     // Generate filename - just the certificate number
     const certificateNumber = certificateData.certificate?.certificate_number || certificateData.sample.tracking_number

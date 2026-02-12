@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { getPendingSamplesForCupper } from '@/lib/queries/cupping-assignments'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 interface AttributeScore {
   attribute: string
@@ -175,6 +176,9 @@ export async function POST(request: NextRequest) {
         console.log(`Cupper ${user.id} still has ${pendingSamples.pending_count} pending sample(s)`)
       }
 
+      // Invalidate cached certificate PDF since cupping scores changed
+      invalidateCertificatePdf(supabase, sample_id).catch(() => {})
+
       return NextResponse.json({
         success: true,
         message: 'Cupping scores updated successfully',
@@ -227,6 +231,9 @@ export async function POST(request: NextRequest) {
       } else {
         console.log(`Cupper ${user.id} still has ${pendingSamples.pending_count} pending sample(s)`)
       }
+
+      // Invalidate cached certificate PDF since cupping scores changed
+      invalidateCertificatePdf(supabase, sample_id).catch(() => {})
 
       return NextResponse.json({
         success: true,

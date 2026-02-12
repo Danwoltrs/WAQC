@@ -92,3 +92,13 @@ export function getCertificateDownloadUrl(sampleId: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
   return `${baseUrl}/api/samples/${sampleId}/certificate`
 }
+
+/**
+ * Generate a public certificate page URL for QR codes on labels/sleeves
+ * @param trackingNumber - The sample tracking number (e.g. BD-890227/26)
+ * @returns URL string for the public certificate page
+ */
+export function getCertificatePageUrl(trackingNumber: string): string {
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
+  return `${baseUrl}/certificate/${trackingNumberToSlug(trackingNumber)}`
+}
