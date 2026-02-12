@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useToast } from '@/hooks/use-toast'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -30,6 +29,14 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu"
 import {
   Plus, Search, Filter, Eye, MapPin, Calendar,
   CheckCircle, XCircle, Clock, AlertCircle, FileText,
@@ -142,7 +149,6 @@ const formatSampleType = (type: string | undefined): string => {
 export default function SamplesPage() {
   const { profile } = useAuth()
   const router = useRouter()
-  const { toast } = useToast()
   const [samples, setSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -442,19 +448,7 @@ export default function SamplesPage() {
   }
 
   const handleBulkPrintCuppingCards = () => {
-    if (selectedSamples.size === 0) {
-      alert('Please select at least one sample')
-      return
-    }
-    const certifiedSamples = samples.filter(s => selectedSamples.has(s.id) && s.workflow_stage === 'certified')
-    if (certifiedSamples.length > 0) {
-      toast({
-        variant: 'destructive',
-        title: 'Certified samples cannot be reprinted',
-        description: `${certifiedSamples.length} sample(s) already certified: ${certifiedSamples.map(s => s.tracking_number).join(', ')}`,
-      })
-      return
-    }
+    if (selectedSamples.size === 0) return
     setShowCuppingCardsDialog(true)
   }
 
@@ -467,19 +461,7 @@ export default function SamplesPage() {
   }
 
   const handleBulkAssign = () => {
-    if (selectedSamples.size === 0) {
-      alert('Please select at least one sample')
-      return
-    }
-    const certifiedSamples = samples.filter(s => selectedSamples.has(s.id) && s.workflow_stage === 'certified')
-    if (certifiedSamples.length > 0) {
-      toast({
-        variant: 'destructive',
-        title: 'Certified samples cannot be reassigned',
-        description: `${certifiedSamples.length} sample(s) already certified: ${certifiedSamples.map(s => s.tracking_number).join(', ')}`,
-      })
-      return
-    }
+    if (selectedSamples.size === 0) return
     setShowAssignCuppersDialog(true)
   }
 
@@ -765,10 +747,12 @@ export default function SamplesPage() {
     setDateTo('')
   }
 
+  const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && s.workflow_stage === 'certified')
+
   return (
     <>
     <MainLayout>
-      <div className="p-6 space-y-6">
+      <div className="p-6 space-y-6 max-w-[1800px] ml-auto">
         {/* Header - Sticky on desktop */}
         <div className="sticky top-0 z-10 bg-background pb-4 -mx-6 px-6 pt-6 border-b md:border-0">
           <div className="flex items-center justify-between">
@@ -792,18 +776,23 @@ export default function SamplesPage() {
                   <DropdownMenuSeparator />
 
                   {/* Cupper Assignment - Priority Action */}
-                  <DropdownMenuItem onClick={handleBulkAssign}>
+                  <DropdownMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
                     <Users className="h-4 w-4 mr-2" />
                     {cuppersAssigned
                       ? `Reassign Cuppers (${assignedCuppers.length} assigned)`
                       : 'Assign Cuppers'}
                   </DropdownMenuItem>
+                  {hasCertifiedSelected && (
+                    <div className="px-2 pb-1 text-xs text-destructive">
+                      Certified sample selected
+                    </div>
+                  )}
 
                   {/* Print Actions - Only shown after cuppers assigned */}
                   {cuppersAssigned && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleBulkPrintCuppingCards}>
+                      <DropdownMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
                         <FileText className="h-4 w-4 mr-2" />
                         Print Cupping Cards
                       </DropdownMenuItem>
@@ -1090,185 +1079,273 @@ export default function SamplesPage() {
                   </thead>
                   <tbody>
                     {samples.map((sample) => (
-                      <tr
-                        key={sample.id}
-                        className="border-b border-border hover:bg-accent/50 transition-colors"
-                      >
-                        <td className="py-3 px-4">
-                          <Checkbox
-                            checked={selectedSamples.has(sample.id)}
-                            onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
-                          />
-                        </td>
-                        {selectedSamples.size > 0 && (
-                          <td className="py-3 px-4">
-                            {selectedSamples.has(sample.id) && (
+                      <ContextMenu key={sample.id} onOpenChange={(open) => {
+                        if (open && !selectedSamples.has(sample.id)) {
+                          setSelectedSamples(new Set([sample.id]))
+                          setSelectedQrCodes(new Set([sample.id]))
+                          setAssignedCuppers([])
+                          setCuppersAssigned(false)
+                        }
+                      }}>
+                        <ContextMenuTrigger asChild>
+                          <tr className="border-b border-border hover:bg-accent/50 transition-colors">
+                            <td className="py-3 px-4">
                               <Checkbox
-                                checked={selectedQrCodes.has(sample.id)}
-                                onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
+                                checked={selectedSamples.has(sample.id)}
+                                onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
                               />
+                            </td>
+                            {selectedSamples.size > 0 && (
+                              <td className="py-3 px-4">
+                                {selectedSamples.has(sample.id) && (
+                                  <Checkbox
+                                    checked={selectedQrCodes.has(sample.id)}
+                                    onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
+                                  />
+                                )}
+                              </td>
                             )}
-                          </td>
-                        )}
-                        {columnVisibility.certNr && (
-                          <td className="py-3 px-4">
-                            <div className="font-medium flex items-center gap-1.5">
-                              {parseTrackingNumber(sample.tracking_number)}
-                              {(sample.contract_count ?? 0) > 0 && (
-                                <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground rounded-full">
-                                  +{sample.contract_count}
-                                </span>
-                              )}
-                            </div>
-                            {(sample.sub_contract_tracking_numbers?.length ?? 0) > 0 && (
-                              <div className="mt-0.5 space-y-0.5">
-                                {sample.sub_contract_tracking_numbers!.map((tn) => (
-                                  <div key={tn} className="text-[10px] text-muted-foreground">{tn}</div>
-                                ))}
-                              </div>
-                            )}
-                            {sample.exporter_sample_number && (
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                {sample.exporter_sample_number}
-                              </div>
-                            )}
-                            {sample.sample_type === 'ss' && sample.container_nr && (
-                              <div className="text-xs text-muted-foreground mt-0.5">
-                                {sample.container_nr}
-                              </div>
-                            )}
-                          </td>
-                        )}
-                        {columnVisibility.origin && (
-                          <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
-                        )}
-                        {columnVisibility.type && (
-                          <td className="py-3 px-4 text-sm">
-                            <Badge variant="outline" className="text-xs">
-                              {formatSampleType(sample.sample_type)}
-                            </Badge>
-                          </td>
-                        )}
-                        {columnVisibility.quality && (
-                          <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
-                        )}
-                        {columnVisibility.seller && (
-                          <td className="py-3 px-4 text-sm">
-                            <div>{sample.seller_name || '-'}</div>
-                            {sample.seller_contract_nr && (
-                              <div className="text-xs text-muted-foreground">{sample.seller_contract_nr}</div>
-                            )}
-                          </td>
-                        )}
-                        {columnVisibility.shipper && (
-                          <td className="py-3 px-4 text-sm">
-                            <div>{sample.exporter_name || '-'}</div>
-                            {sample.shipper_contract_nr && (
-                              <div className="text-xs text-muted-foreground">{sample.shipper_contract_nr}</div>
-                            )}
-                          </td>
-                        )}
-                        {columnVisibility.wolthers && (
-                          <td className="py-3 px-4 text-sm font-mono text-xs">{sample.wolthers_contract_nr || '-'}</td>
-                        )}
-                        {columnVisibility.importer && (
-                          <td className="py-3 px-4 text-sm">
-                            <div>{sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || '-'}</div>
-                            {sample.buyer_contract_nr && (
-                              <div className="text-xs text-muted-foreground">{sample.buyer_contract_nr}</div>
-                            )}
-                          </td>
-                        )}
-                        {columnVisibility.roaster && (
-                          <td className="py-3 px-4 text-sm">
-                            <div>{sample.roaster_name || '-'}</div>
-                            {sample.roaster_contract_nr && (
-                              <div className="text-xs text-muted-foreground">{sample.roaster_contract_nr}</div>
-                            )}
-                          </td>
-                        )}
-                        {columnVisibility.endClient && (
-                          <td className="py-3 px-4 text-sm">
-                            <div>{sample.end_client_name || sample.qc_client_name || '-'}</div>
-                            {(sample.end_client_contract_nr || sample.qc_client_contract_nr) && (
-                              <div className="text-xs text-muted-foreground">{sample.end_client_contract_nr || sample.qc_client_contract_nr}</div>
-                            )}
-                          </td>
-                        )}
-                        {columnVisibility.status && (
-                          <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
-                        )}
-                        {columnVisibility.stage && (
-                          <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
-                        )}
-                        {columnVisibility.storage && (
-                          <td className="py-3 px-4 text-sm">
-                            {sample.storage_position ? (
-                              <div className="flex items-center gap-1">
-                                <MapPin className="h-3 w-3" />
-                                {sample.storage_position}
-                              </div>
-                            ) : (
-                              '-'
-                            )}
-                          </td>
-                        )}
-                        {columnVisibility.created && (
-                          <td className="py-3 px-4 text-sm">
-                            <div className="flex items-center gap-1">
-                              <Calendar className="h-3 w-3" />
-                              {new Date(sample.created_at).toLocaleDateString()}
-                            </div>
-                          </td>
-                        )}
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-1">
-                            <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
-                              <Button variant="outline" size="sm">
-                                <Eye className="h-3 w-3 mr-1" />
-                                View
-                              </Button>
-                            </Link>
-                            {/* Certificate buttons for samples with certificates */}
-                            {sample.certificate_id && (
-                              <>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleViewCertificate(sample)}
-                                  title="View Certificate"
-                                >
-                                  <Award className="h-3 w-3" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleDownloadCertificate(sample)}
-                                  disabled={downloadingSampleId === sample.id}
-                                  title="Download Certificate"
-                                >
-                                  {downloadingSampleId === sample.id ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    <Download className="h-3 w-3" />
+                            {columnVisibility.certNr && (
+                              <td className="py-3 px-4">
+                                <div className="font-medium flex items-center gap-1.5">
+                                  {parseTrackingNumber(sample.tracking_number)}
+                                  {(sample.contract_count ?? 0) > 0 && (
+                                    <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground rounded-full">
+                                      +{sample.contract_count}
+                                    </span>
                                   )}
-                                </Button>
-                              </>
+                                </div>
+                                {(sample.sub_contract_tracking_numbers?.length ?? 0) > 0 && (
+                                  <div className="mt-0.5 space-y-0.5">
+                                    {sample.sub_contract_tracking_numbers!.map((tn) => (
+                                      <div key={tn} className="text-[10px] text-muted-foreground">{tn}</div>
+                                    ))}
+                                  </div>
+                                )}
+                                {sample.exporter_sample_number && (
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {sample.exporter_sample_number}
+                                  </div>
+                                )}
+                                {sample.sample_type === 'ss' && sample.container_nr && (
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {sample.container_nr}
+                                  </div>
+                                )}
+                              </td>
                             )}
-                            {isGlobalAdmin && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDeleteSample(sample)}
-                                disabled={deletingId === sample.id}
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                            {columnVisibility.origin && (
+                              <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
+                            )}
+                            {columnVisibility.type && (
+                              <td className="py-3 px-4 text-sm">
+                                <Badge variant="outline" className="text-xs">
+                                  {formatSampleType(sample.sample_type)}
+                                </Badge>
+                              </td>
+                            )}
+                            {columnVisibility.quality && (
+                              <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
+                            )}
+                            {columnVisibility.seller && (
+                              <td className="py-3 px-4 text-sm">
+                                <div>{sample.seller_name || '-'}</div>
+                                {sample.seller_contract_nr && (
+                                  <div className="text-xs text-muted-foreground">{sample.seller_contract_nr}</div>
+                                )}
+                              </td>
+                            )}
+                            {columnVisibility.shipper && (
+                              <td className="py-3 px-4 text-sm">
+                                <div>{sample.exporter_name || '-'}</div>
+                                {sample.shipper_contract_nr && (
+                                  <div className="text-xs text-muted-foreground">{sample.shipper_contract_nr}</div>
+                                )}
+                              </td>
+                            )}
+                            {columnVisibility.wolthers && (
+                              <td className="py-3 px-4 text-sm font-mono text-xs">{sample.wolthers_contract_nr || '-'}</td>
+                            )}
+                            {columnVisibility.importer && (
+                              <td className="py-3 px-4 text-sm">
+                                <div>{sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || '-'}</div>
+                                {sample.buyer_contract_nr && (
+                                  <div className="text-xs text-muted-foreground">{sample.buyer_contract_nr}</div>
+                                )}
+                              </td>
+                            )}
+                            {columnVisibility.roaster && (
+                              <td className="py-3 px-4 text-sm">
+                                <div>{sample.roaster_name || '-'}</div>
+                                {sample.roaster_contract_nr && (
+                                  <div className="text-xs text-muted-foreground">{sample.roaster_contract_nr}</div>
+                                )}
+                              </td>
+                            )}
+                            {columnVisibility.endClient && (
+                              <td className="py-3 px-4 text-sm">
+                                <div>{sample.end_client_name || sample.qc_client_name || '-'}</div>
+                                {(sample.end_client_contract_nr || sample.qc_client_contract_nr) && (
+                                  <div className="text-xs text-muted-foreground">{sample.end_client_contract_nr || sample.qc_client_contract_nr}</div>
+                                )}
+                              </td>
+                            )}
+                            {columnVisibility.status && (
+                              <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
+                            )}
+                            {columnVisibility.stage && (
+                              <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
+                            )}
+                            {columnVisibility.storage && (
+                              <td className="py-3 px-4 text-sm">
+                                {sample.storage_position ? (
+                                  <div className="flex items-center gap-1">
+                                    <MapPin className="h-3 w-3" />
+                                    {sample.storage_position}
+                                  </div>
+                                ) : (
+                                  '-'
+                                )}
+                              </td>
+                            )}
+                            {columnVisibility.created && (
+                              <td className="py-3 px-4 text-sm">
+                                <div className="flex items-center gap-1">
+                                  <Calendar className="h-3 w-3" />
+                                  {new Date(sample.created_at).toLocaleDateString()}
+                                </div>
+                              </td>
+                            )}
+                            <td className="py-3 px-4">
+                              <div className="flex items-center gap-1">
+                                <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
+                                  <Button variant="outline" size="sm">
+                                    <Eye className="h-3 w-3 mr-1" />
+                                    View
+                                  </Button>
+                                </Link>
+                                {sample.certificate_id && (
+                                  <>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleViewCertificate(sample)}
+                                      title="View Certificate"
+                                    >
+                                      <Award className="h-3 w-3" />
+                                    </Button>
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      onClick={() => handleDownloadCertificate(sample)}
+                                      disabled={downloadingSampleId === sample.id}
+                                      title="Download Certificate"
+                                    >
+                                      {downloadingSampleId === sample.id ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Download className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  </>
+                                )}
+                                {isGlobalAdmin && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDeleteSample(sample)}
+                                    disabled={deletingId === sample.id}
+                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                  >
+                                    <Trash2 className="h-3 w-3" />
+                                  </Button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent className="w-56">
+                          <ContextMenuLabel>
+                            {selectedSamples.size > 1
+                              ? `${selectedSamples.size} samples selected`
+                              : parseTrackingNumber(sample.tracking_number)}
+                          </ContextMenuLabel>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem onClick={() => router.push(`/samples/${trackingNumberToSlug(sample.tracking_number)}`)}>
+                            <Eye className="h-4 w-4 mr-2" />
+                            View Sample
+                          </ContextMenuItem>
+                          <ContextMenuItem onClick={() => handleSelectAll(true)}>
+                            <Checkbox className="h-4 w-4 mr-2" checked={false} />
+                            Select All
+                          </ContextMenuItem>
+                          <ContextMenuItem onClick={() => {
+                            const uncertified = samples.filter(s => s.workflow_stage !== 'certified')
+                            const ids = new Set(uncertified.map(s => s.id))
+                            setSelectedSamples(ids)
+                            setSelectedQrCodes(ids)
+                            setAssignedCuppers([])
+                            setCuppersAssigned(false)
+                          }}>
+                            <Checkbox className="h-4 w-4 mr-2" checked={false} />
+                            Select All Uncertified
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
+                            <Users className="h-4 w-4 mr-2" />
+                            Assign Cuppers
+                          </ContextMenuItem>
+                          {hasCertifiedSelected && (
+                            <div className="px-2 pb-1 text-xs text-destructive">
+                              Certified sample selected
+                            </div>
+                          )}
+                          {cuppersAssigned && (
+                            <ContextMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
+                              <FileText className="h-4 w-4 mr-2" />
+                              Print Cupping Cards
+                            </ContextMenuItem>
+                          )}
+                          <ContextMenuSeparator />
+                          <ContextMenuItem onClick={handleBulkExport}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Export to Excel
+                          </ContextMenuItem>
+                          <ContextMenuItem onClick={handleBulkPrintTinSleeves}>
+                            <Printer className="h-4 w-4 mr-2" />
+                            Tin Label
+                          </ContextMenuItem>
+                          <ContextMenuItem onClick={handleBulkPrintBagSleeves}>
+                            <Printer className="h-4 w-4 mr-2" />
+                            Print Bag Sleeves
+                          </ContextMenuItem>
+                          {sample.certificate_id && (
+                            <>
+                              <ContextMenuSeparator />
+                              <ContextMenuItem onClick={() => handleViewCertificate(sample)}>
+                                <Award className="h-4 w-4 mr-2" />
+                                View Certificate
+                              </ContextMenuItem>
+                              <ContextMenuItem onClick={() => handleDownloadCertificate(sample)}>
+                                <Download className="h-4 w-4 mr-2" />
+                                Download Certificate
+                              </ContextMenuItem>
+                            </>
+                          )}
+                          {isGlobalAdmin && (
+                            <>
+                              <ContextMenuSeparator />
+                              <ContextMenuItem
+                                onClick={() => selectedSamples.size > 1 ? handleBulkDelete() : handleDeleteSample(sample)}
+                                className="text-destructive focus:text-destructive"
                               >
-                                <Trash2 className="h-3 w-3" />
-                              </Button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                {selectedSamples.size > 1 ? `Delete ${selectedSamples.size} Samples` : 'Delete Sample'}
+                              </ContextMenuItem>
+                            </>
+                          )}
+                        </ContextMenuContent>
+                      </ContextMenu>
                     ))}
                   </tbody>
                 </table>
