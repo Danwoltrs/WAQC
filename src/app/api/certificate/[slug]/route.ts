@@ -102,11 +102,12 @@ async function buildResponse(sample: any) {
   const greenBean = assessment?.green_bean_data as any
   const screenSizes = greenBean?.screen_sizes || null
   const defects = greenBean?.defects
-  const primaryDefects = defects?.total_primary ?? null
-  const secondaryDefects = defects?.total_secondary ?? null
-  const totalDefects = primaryDefects !== null && secondaryDefects !== null
+  // Grading saves as { primary, secondary, total }; certificate-data.ts uses { total_primary, total_secondary }
+  const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
+  const secondaryDefects = defects?.total_secondary ?? defects?.secondary ?? null
+  const totalDefects = defects?.total ?? (primaryDefects !== null && secondaryDefects !== null
     ? primaryDefects + secondaryDefects
-    : null
+    : null)
 
   // Get cupping scores for taints and faults
   const { data: cuppingScores } = await supabase

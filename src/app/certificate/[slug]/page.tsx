@@ -75,11 +75,12 @@ async function getCertificateInfo(slug: string) {
   const greenBean = assessment?.green_bean_data as any
   const screenSizes = greenBean?.screen_sizes || null
   const defects = greenBean?.defects
-  const primaryDefects = defects?.total_primary ?? null
-  const secondaryDefects = defects?.total_secondary ?? null
-  const totalDefects = primaryDefects !== null && secondaryDefects !== null
+  // Grading saves as { primary, secondary, total }; certificate-data.ts uses { total_primary, total_secondary }
+  const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
+  const secondaryDefects = defects?.total_secondary ?? defects?.secondary ?? null
+  const totalDefects = defects?.total ?? (primaryDefects !== null && secondaryDefects !== null
     ? primaryDefects + secondaryDefects
-    : null
+    : null)
 
   const cleanCup = assessment?.clean_cup ?? null
   const uniformCup = assessment?.uniform_cup ?? null
@@ -191,6 +192,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 
   // Build rich description for iPhone camera preview
   const parts: string[] = [status]
+  if (info.qualityName) parts.push(info.qualityName)
+  if (info.sample.origin) parts.push(info.sample.origin)
   if (info.totalDefects !== null) parts.push(`Defects: ${info.totalDefects}`)
   if (screenSummary) parts.push(`Screen: ${screenSummary}`)
 
@@ -202,7 +205,13 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     openGraph: {
       title: `${trackingNumber} - ${status}`,
       description,
+      siteName: 'Wolthers Coffee QC',
       type: 'website',
+    },
+    twitter: {
+      card: 'summary',
+      title: `${trackingNumber} - ${status}`,
+      description,
     },
   }
 }

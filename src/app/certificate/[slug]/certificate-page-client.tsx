@@ -145,9 +145,15 @@ export function CertificatePageClient({
         {sortedScreenSizes && sortedScreenSizes.length > 0 && (
           <div className="mb-4">
             <div className="space-y-1.5">
-              {sortedScreenSizes.map(([size, percent]) => (
+              {sortedScreenSizes.map(([size, percent]) => {
+                const lower = size.toLowerCase()
+                const isPan = lower === 'pan' || lower === 'fundo' || lower === 'bottom'
+                const label = isPan
+                  ? 'Pan'
+                  : `Scr. ${size.replace(/\D/g, '') || size}`
+                return (
                 <div key={size} className="flex items-center gap-3">
-                  <span className="text-xs font-medium w-14 text-right">{size}</span>
+                  <span className="text-xs font-medium w-12 text-right whitespace-nowrap">{label}</span>
                   <div className="flex-1 h-4 bg-black/[0.04] dark:bg-white/[0.06] rounded-full overflow-hidden">
                     <div
                       className="h-full rounded-full"
@@ -159,7 +165,8 @@ export function CertificatePageClient({
                   </div>
                   <span className="text-xs font-medium w-12">{percent.toFixed(1)}%</span>
                 </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         )}
