@@ -87,7 +87,7 @@ export interface ThermalCuppingCardData {
   ico_number?: string // ICO number (for SS samples)
   container_nr?: string // Container number (for SS samples)
   wolthers_contract_nr?: string // Wolthers contract number
-  exporter_sample_number?: string // Exporter's sample identification number
+  exporter_sample_number?: string | null // Exporter's sample identification number
   quality_name?: string // Optional based on user selection
   buyer_name?: string // Optional based on user selection
   exporter_name?: string // Optional based on user selection

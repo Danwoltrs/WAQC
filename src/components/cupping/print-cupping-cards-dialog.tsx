@@ -40,7 +40,7 @@ interface Sample {
   ico_number?: string
   container_nr?: string
   wolthers_contract_nr?: string
-  exporter_sample_number?: string
+  exporter_sample_number?: string | null
   exporter_id?: string
   client_id?: string
   quality_spec_id?: string
