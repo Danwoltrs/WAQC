@@ -1111,8 +1111,8 @@ export default function Home() {
     return <LoginForm />
   }
 
-  // Show QC access message for users who don't have QC enabled
-  if (profile && !profile.qc_enabled) {
+  // Show QC access message for users who have no role assigned
+  if (profile && !profile.qc_role) {
     return <QCAccessMessage />
   }
 

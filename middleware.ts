@@ -1,6 +1,13 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Routes that don't require authentication
+const PUBLIC_ROUTES = ['/', '/auth/callback', '/auth/accept-invite']
+
+function isPublicRoute(pathname: string): boolean {
+  return PUBLIC_ROUTES.includes(pathname) || pathname.startsWith('/api/')
+}
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: {
@@ -18,7 +25,6 @@ export async function middleware(request: NextRequest) {
             return request.cookies.get(name)?.value
           },
           set(name: string, value: string, options: any) {
-            // Ensure proper cookie attributes for cross-browser compatibility
             const cookieOptions = {
               ...options,
               path: options?.path || '/',
@@ -26,21 +32,18 @@ export async function middleware(request: NextRequest) {
               secure: process.env.NODE_ENV === 'production',
             }
 
-            // Update request cookies (for subsequent middleware/handlers)
             request.cookies.set({
               name,
               value,
               ...cookieOptions,
             })
 
-            // Create new response with updated cookies
             response = NextResponse.next({
               request: {
                 headers: request.headers,
               },
             })
 
-            // Set cookie in response
             response.cookies.set({
               name,
               value,
@@ -53,21 +56,18 @@ export async function middleware(request: NextRequest) {
               path: options?.path || '/',
             }
 
-            // Remove from request
             request.cookies.set({
               name,
               value: '',
               ...cookieOptions,
             })
 
-            // Create new response
             response = NextResponse.next({
               request: {
                 headers: request.headers,
               },
             })
 
-            // Remove from response
             response.cookies.set({
               name,
               value: '',
@@ -78,39 +78,29 @@ export async function middleware(request: NextRequest) {
       }
     )
 
-    // Refresh session if expired - required for Server Components
-    // Use getUser() to validate the JWT and refresh if needed
-    // Add timeout to prevent middleware from hanging
-    // IMPORTANT: This is non-blocking - we proceed even if auth check fails
-    const userPromise = supabase.auth.getUser()
-    const timeoutPromise = new Promise<any>((_, reject) =>
-      setTimeout(() => reject(new Error('Auth check timeout')), 15000)
-    )
+    // IMPORTANT: Actually await getUser() to refresh the session cookie.
+    // This is what keeps sessions alive between requests.
+    const { data: { user }, error } = await supabase.auth.getUser()
 
-    // Don't await - let this run in background
-    Promise.race([userPromise, timeoutPromise]).catch((err) => {
-      // Log but don't block on auth errors in middleware
-      console.warn('Middleware auth check failed:', err.message)
-    })
+    // Redirect unauthenticated users away from protected routes
+    if (!user && !isPublicRoute(request.nextUrl.pathname)) {
+      const redirectUrl = new URL('/', request.url)
+      return NextResponse.redirect(redirectUrl)
+    }
 
-    // Return immediately without waiting for auth check
     return response
   } catch (error) {
-    // Log error but allow request to proceed
-    console.error('Middleware error:', error)
+    // On error, allow public routes but redirect protected ones to login
+    if (!isPublicRoute(request.nextUrl.pathname)) {
+      const redirectUrl = new URL('/', request.url)
+      return NextResponse.redirect(redirectUrl)
+    }
     return response
   }
 }
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

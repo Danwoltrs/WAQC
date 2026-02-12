@@ -309,13 +309,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        // Check if QC is enabled
-        if (!profileData.qc_enabled) {
-          setProfile(profileData as Profile)
-          setLoading(false)
-          return
-        }
-
         // Ensure user has a QC role
         let finalProfile = profileData
         if (!profileData.qc_role) {
