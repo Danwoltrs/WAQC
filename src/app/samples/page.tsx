@@ -752,15 +752,14 @@ export default function SamplesPage() {
   return (
     <>
     <MainLayout>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
       <div className="p-6 space-y-6 max-w-[1800px]">
         {/* Header - Sticky on desktop */}
         <div className="sticky top-0 z-10 bg-background pb-4 -mx-6 px-6 pt-6 border-b md:border-0">
           <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Sample Tracking</h1>
-            <p className="text-muted-foreground">
-              Comprehensive sample management and tracking
-            </p>
           </div>
           <div className="flex gap-2">
             {selectedSamples.size > 0 && (
@@ -1354,6 +1353,76 @@ export default function SamplesPage() {
           </Card>
         )}
       </div>
+        </ContextMenuTrigger>
+        <ContextMenuContent className="w-56">
+          <ContextMenuLabel>
+            {selectedSamples.size > 0
+              ? `${selectedSamples.size} samples selected`
+              : 'No samples selected'}
+          </ContextMenuLabel>
+          <ContextMenuSeparator />
+          <ContextMenuItem onClick={() => handleSelectAll(true)}>
+            <Checkbox className="h-4 w-4 mr-2" checked={false} />
+            Select All
+          </ContextMenuItem>
+          <ContextMenuItem onClick={() => {
+            const uncertified = samples.filter(s => s.workflow_stage !== 'certified' && s.workflow_stage !== 'rejected')
+            const ids = new Set(uncertified.map(s => s.id))
+            setSelectedSamples(ids)
+            setSelectedQrCodes(ids)
+            setAssignedCuppers([])
+            setCuppersAssigned(false)
+          }}>
+            <Checkbox className="h-4 w-4 mr-2" checked={false} />
+            Select All Uncertified
+          </ContextMenuItem>
+          {selectedSamples.size > 0 && (
+            <>
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
+                <Users className="h-4 w-4 mr-2" />
+                Assign Cuppers
+              </ContextMenuItem>
+              {hasCertifiedSelected && (
+                <div className="px-2 pb-1 text-xs text-destructive">
+                  Certified/rejected sample selected
+                </div>
+              )}
+              {cuppersAssigned && (
+                <ContextMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Print Cupping Cards
+                </ContextMenuItem>
+              )}
+              <ContextMenuSeparator />
+              <ContextMenuItem onClick={handleBulkExport}>
+                <Download className="h-4 w-4 mr-2" />
+                Export to Excel
+              </ContextMenuItem>
+              <ContextMenuItem onClick={handleBulkPrintTinSleeves}>
+                <Printer className="h-4 w-4 mr-2" />
+                Tin Label
+              </ContextMenuItem>
+              <ContextMenuItem onClick={handleBulkPrintBagSleeves}>
+                <Printer className="h-4 w-4 mr-2" />
+                Print Bag Sleeves
+              </ContextMenuItem>
+              {isGlobalAdmin && (
+                <>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    onClick={handleBulkDelete}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete {selectedSamples.size} Sample{selectedSamples.size > 1 ? 's' : ''}
+                  </ContextMenuItem>
+                </>
+              )}
+            </>
+          )}
+        </ContextMenuContent>
+      </ContextMenu>
     </MainLayout>
 
       {/* Print Labels Dialog */}
