@@ -19,7 +19,7 @@ const CHARCOAL = '#333333'
 
 const chartStyles = StyleSheet.create({
   container: {
-    marginTop: 10,
+    marginTop: 30,
     marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -336,6 +336,15 @@ export function CertificateCuppingChart({
   const scaleGroups = Array.from(groupMap.values())
     .sort((a, b) => (b.scaleMax - b.scaleMin) - (a.scaleMax - a.scaleMin))
 
+  // If any attribute has 2+ decimal places, show all with 2 decimals for consistency
+  const hasMultiDecimal = attributes.some(attr => {
+    if (attr.score === null) return false
+    const str = String(attr.score)
+    const dotIdx = str.indexOf('.')
+    return dotIdx !== -1 && str.length - dotIdx - 1 >= 2
+  })
+  const decimalPlaces = hasMultiDecimal ? 2 : 1
+
   // Format faults and taints for display (numbers, 0 means none)
   const faultsDisplay = faults != null && faults > 0 ? String(faults) : 'None'
   const taintsDisplay = taints != null && taints > 0 ? String(taints) : 'None'
@@ -426,7 +435,7 @@ export function CertificateCuppingChart({
                         { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
                       ]}
                     >
-                      {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
+                      {attr.score !== null ? attr.score.toFixed(decimalPlaces) : '-'}
                     </Text>
 
                     <View style={chartStyles.chartSection}>

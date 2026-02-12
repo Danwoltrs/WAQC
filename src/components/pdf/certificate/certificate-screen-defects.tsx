@@ -14,7 +14,7 @@ import type { ScreenSizeLimit } from '@/lib/certificate-data'
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
-    marginTop: 4,
+    marginTop: 20,
     marginBottom: 8,
     gap: 10,
   },
@@ -51,15 +51,11 @@ const styles = StyleSheet.create({
     fontSize: 7,
     fontWeight: 600,
     color: COLORS.dark,
-    width: 30,
-    textAlign: 'right',
   },
   screenValueOutOfSpec: {
     fontSize: 7,
     fontWeight: 700,
     color: COLORS.outOfSpec,
-    width: 30,
-    textAlign: 'right',
   },
   screenSpecNote: {
     fontSize: 5,
@@ -73,7 +69,6 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     flexDirection: 'row',
-    justifyContent: 'center',
     marginTop: 6,
     paddingTop: 4,
     borderTopWidth: 0.5,
@@ -108,7 +103,6 @@ const styles = StyleSheet.create({
   defectsColumnsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    justifyContent: 'center',
   },
   defectColumn: {
     width: 130,
