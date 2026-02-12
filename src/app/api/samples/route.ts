@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
         qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
-        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, importer:importers(name), roaster:roasters(name), end_client:clients!sample_contracts_end_client_id_fkey(fantasy_name, company), qc_client:clients!sample_contracts_client_id_fkey(fantasy_name, company))
+        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -86,6 +86,31 @@ export async function GET(request: NextRequest) {
     if (workflow_stage) countQuery = countQuery.eq('workflow_stage', workflow_stage)
 
     const { count } = await countQuery
+
+    // Batch-fetch entity names for sub-contracts
+    const allSubContracts = (samples || []).flatMap((s: any) =>
+      Array.isArray(s.sample_contracts) ? s.sample_contracts : []
+    )
+    const importerIds = [...new Set(allSubContracts.map((c: any) => c.importer_id).filter(Boolean))] as string[]
+    const roasterIds = [...new Set(allSubContracts.map((c: any) => c.roaster_id).filter(Boolean))] as string[]
+    const clientIds = [...new Set([
+      ...allSubContracts.map((c: any) => c.end_client_id),
+      ...allSubContracts.map((c: any) => c.client_id),
+    ].filter(Boolean))] as string[]
+
+    const entityMaps = { importers: {} as Record<string, string>, roasters: {} as Record<string, string>, clients: {} as Record<string, string> }
+    if (importerIds.length > 0) {
+      const { data } = await supabase.from('importers').select('id, name').in('id', importerIds)
+      for (const r of data || []) entityMaps.importers[r.id] = r.name || ''
+    }
+    if (roasterIds.length > 0) {
+      const { data } = await supabase.from('roasters').select('id, name').in('id', roasterIds)
+      for (const r of data || []) entityMaps.roasters[r.id] = r.name || ''
+    }
+    if (clientIds.length > 0) {
+      const { data } = await supabase.from('clients').select('id, fantasy_name, company').in('id', clientIds)
+      for (const r of (data || []) as any[]) entityMaps.clients[r.id] = r.fantasy_name || r.company || ''
+    }
 
     // Transform samples to include flattened entity names
     const transformedSamples = (samples || []).map((sample: any) => {
@@ -137,16 +162,15 @@ export async function GET(request: NextRequest) {
           : [],
         sub_contracts: Array.isArray(sample.sample_contracts)
           ? sample.sample_contracts.map((c: any) => {
-              // Build certificate lookup from the certificates array
               const allCerts = Array.isArray(sample.certificate) ? sample.certificate : []
               const subCert = allCerts.find((cert: any) => cert.sample_contract_id === c.id)
-              const scQcName = c.qc_client?.fantasy_name || c.qc_client?.company || null
+              const scQcName = c.client_id ? entityMaps.clients[c.client_id] : null
               return {
                 id: c.id,
                 tracking_number: c.tracking_number,
-                importer_name: c.importer?.name || (c.importer_is_qc_client ? (scQcName || qcClientName) : null),
-                roaster_name: c.roaster?.name || null,
-                end_client_name: c.end_client?.fantasy_name || c.end_client?.company || null,
+                importer_name: (c.importer_id ? entityMaps.importers[c.importer_id] : null) || (c.importer_is_qc_client ? (scQcName || qcClientName) : null),
+                roaster_name: c.roaster_id ? entityMaps.roasters[c.roaster_id] : null,
+                end_client_name: c.end_client_id ? entityMaps.clients[c.end_client_id] : null,
                 has_certificate: !!subCert,
                 certificate_id: subCert?.id || null,
               }
