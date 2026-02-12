@@ -39,6 +39,9 @@ interface Sample {
   sample_type?: 'pss' | 'ss' | 'type'
   ico_number?: string
   container_nr?: string
+  wolthers_contract_nr?: string
+  exporter_sample_number?: string
+  exporter_id?: string
   client_id?: string
   quality_spec_id?: string
   laboratory_id?: string
@@ -48,6 +51,15 @@ interface Sample {
   client?: {
     id: string
     company: string
+    fantasy_name?: string
+  }
+  exporter?: {
+    id: string
+    name: string
+    client?: {
+      fantasy_name?: string
+      company?: string
+    }
   }
   laboratory?: {
     id: string
@@ -57,6 +69,7 @@ interface Sample {
   quality_spec?: {
     id: string
     template_id?: string
+    custom_name?: string
     custom_parameters?: any
     template?: {
       id: string
@@ -289,9 +302,11 @@ export function PrintCuppingCardsDialog({
             sample_type: sample.sample_type,
             ico_number: sample.ico_number,
             container_nr: sample.container_nr,
-            quality_name: template?.name,
-            buyer_name: sample.client?.company,
-            exporter_name: sample.exporter_legacy,
+            wolthers_contract_nr: sample.wolthers_contract_nr,
+            exporter_sample_number: sample.exporter_sample_number,
+            quality_name: sample.quality_spec?.custom_name || template?.name,
+            buyer_name: sample.client?.fantasy_name || sample.client?.company,
+            exporter_name: sample.exporter?.client?.fantasy_name || sample.exporter?.name || sample.exporter_legacy,
             lab_name: sample.laboratory?.name,
             template_name: template?.name || 'Standard',
             template_scale_info:

@@ -36,14 +36,26 @@ export async function POST(request: NextRequest) {
         sample_type,
         ico_number,
         container_nr,
+        wolthers_contract_nr,
+        exporter_sample_number,
         origin,
         exporter_legacy,
+        exporter_id,
         client_id,
         quality_spec_id,
         laboratory_id,
         client:clients!samples_client_id_fkey(
           id,
-          company
+          company,
+          fantasy_name
+        ),
+        exporter:exporters!samples_exporter_id_fkey(
+          id,
+          name,
+          client:clients(
+            fantasy_name,
+            company
+          )
         ),
         laboratory:laboratories!samples_laboratory_id_fkey(
           id,
@@ -53,6 +65,7 @@ export async function POST(request: NextRequest) {
         quality_spec:client_qualities!samples_quality_spec_id_fkey(
           id,
           template_id,
+          custom_name,
           custom_parameters,
           template:quality_templates!client_qualities_template_id_fkey(
             id,

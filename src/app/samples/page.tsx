@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useToast } from '@/hooks/use-toast'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -141,6 +142,7 @@ const formatSampleType = (type: string | undefined): string => {
 export default function SamplesPage() {
   const { profile } = useAuth()
   const router = useRouter()
+  const { toast } = useToast()
   const [samples, setSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -444,6 +446,15 @@ export default function SamplesPage() {
       alert('Please select at least one sample')
       return
     }
+    const certifiedSamples = samples.filter(s => selectedSamples.has(s.id) && s.workflow_stage === 'certified')
+    if (certifiedSamples.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Certified samples cannot be reprinted',
+        description: `${certifiedSamples.length} sample(s) already certified: ${certifiedSamples.map(s => s.tracking_number).join(', ')}`,
+      })
+      return
+    }
     setShowCuppingCardsDialog(true)
   }
 
@@ -458,6 +469,15 @@ export default function SamplesPage() {
   const handleBulkAssign = () => {
     if (selectedSamples.size === 0) {
       alert('Please select at least one sample')
+      return
+    }
+    const certifiedSamples = samples.filter(s => selectedSamples.has(s.id) && s.workflow_stage === 'certified')
+    if (certifiedSamples.length > 0) {
+      toast({
+        variant: 'destructive',
+        title: 'Certified samples cannot be reassigned',
+        description: `${certifiedSamples.length} sample(s) already certified: ${certifiedSamples.map(s => s.tracking_number).join(', ')}`,
+      })
       return
     }
     setShowAssignCuppersDialog(true)
