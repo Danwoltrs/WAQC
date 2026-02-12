@@ -30,7 +30,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
-import { SampleContractsSection } from '@/components/samples/sample-contracts-section'
+import { SampleContractsSection, MotherSampleInfo } from '@/components/samples/sample-contracts-section'
 
 interface EditPermission {
   canEdit: boolean
@@ -1138,7 +1138,28 @@ export default function SampleDetailPage() {
           </div>
 
           {/* 3.5. SUB-CONTRACTS */}
-          <SampleContractsSection sampleId={sample.id} isEditMode={isEditMode} />
+          <SampleContractsSection
+            sampleId={sample.id}
+            isEditMode={isEditMode}
+            motherSample={{
+              tracking_number: sample.tracking_number,
+              sample_type: sample.sample_type,
+              importer_name: sample.importer_name,
+              importer_is_qc_client: sample.importer_is_qc_client,
+              roaster_name: sample.roaster_name,
+              end_client_name: sample.end_client_name,
+              qc_client_name: sample.qc_client_name,
+              wolthers_contract_nr: sample.wolthers_contract_nr,
+              buyer_contract_nr: sample.buyer_contract_nr,
+              roaster_contract_nr: sample.roaster_contract_nr,
+              qc_client_contract_nr: sample.qc_client_contract_nr,
+              end_client_contract_nr: sample.end_client_contract_nr,
+              supplier_contract_nr: sample.supplier_contract_nr,
+              ico_number: sample.ico_number,
+              container_nr: sample.container_nr,
+              bags_quantity_mt: sample.bags_quantity_mt,
+            } as MotherSampleInfo}
+          />
 
           {/* 4. CUPPING & GRADING (with 7-day edit lock) */}
           <Card className={!canEditCuppingGrading && sample.certificate_id ? 'border-muted' : ''}>
