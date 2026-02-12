@@ -78,14 +78,22 @@ export async function middleware(request: NextRequest) {
       }
     )
 
-    // IMPORTANT: Actually await getUser() to refresh the session cookie.
-    // This is what keeps sessions alive between requests.
-    const { data: { user }, error } = await supabase.auth.getUser()
+    const pathname = request.nextUrl.pathname
 
-    // Redirect unauthenticated users away from protected routes
-    if (!user && !isPublicRoute(request.nextUrl.pathname)) {
-      const redirectUrl = new URL('/', request.url)
-      return NextResponse.redirect(redirectUrl)
+    // Skip auth validation for auth callback routes - their cookies must not be touched
+    // by getUser() which can clear/modify the PKCE code verifier needed for code exchange
+    const isAuthRoute = pathname === '/auth/callback' || pathname === '/auth/accept-invite'
+
+    if (!isAuthRoute) {
+      // IMPORTANT: Actually await getUser() to refresh the session cookie.
+      // This is what keeps sessions alive between requests.
+      const { data: { user } } = await supabase.auth.getUser()
+
+      // Redirect unauthenticated users away from protected routes
+      if (!user && !isPublicRoute(pathname)) {
+        const redirectUrl = new URL('/', request.url)
+        return NextResponse.redirect(redirectUrl)
+      }
     }
 
     return response
