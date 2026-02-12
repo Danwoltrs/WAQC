@@ -54,6 +54,8 @@ interface SubContract {
   importer_name: string | null
   roaster_name: string | null
   end_client_name: string | null
+  buyer_contract_nr: string | null
+  wolthers_contract_nr: string | null
   has_certificate: boolean
   certificate_id: string | null
 }
@@ -179,6 +181,7 @@ export default function SamplesPage() {
   const [dateTo, setDateTo] = useState<string>('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
+  const [expandedSubContracts, setExpandedSubContracts] = useState<Set<string>>(new Set())
 
   // Certificate preview modal states
   const [previewSample, setPreviewSample] = useState<Sample | null>(null)
@@ -738,6 +741,18 @@ export default function SamplesPage() {
         next.delete(sampleId)
       } else {
         next.add(sampleId)
+      }
+      return next
+    })
+  }
+
+  const toggleSubContract = (scId: string) => {
+    setExpandedSubContracts(prev => {
+      const next = new Set(prev)
+      if (next.has(scId)) {
+        next.delete(scId)
+      } else {
+        next.add(scId)
       }
       return next
     })
@@ -1395,67 +1410,118 @@ export default function SamplesPage() {
                           )}
                         </ContextMenuContent>
                       </ContextMenu>,
-                      // Expanded sub-contract rows
+                      // Expanded sub-contract rows (tree/folder style)
                       ...(expandedSamples.has(sample.id) && sample.sub_contracts?.length
-                        ? sample.sub_contracts.map((sc) => (
-                            <tr
-                              key={`sc-${sc.id}`}
-                              className="border-b border-border bg-muted/30"
-                            >
-                              <td className="py-2 px-4" />
-                              {selectedSamples.size > 0 && <td className="py-2 px-4" />}
-                              {columnVisibility.certNr && (
-                                <td className="py-2 px-4">
-                                  <div className="flex items-center gap-1.5 pl-4 text-sm text-muted-foreground">
-                                    <FileText className="h-3 w-3" />
-                                    {sc.tracking_number}
+                        ? sample.sub_contracts.flatMap((sc, scIdx) => {
+                            const isLast = scIdx === (sample.sub_contracts?.length ?? 0) - 1
+                            const isExpanded = expandedSubContracts.has(sc.id)
+                            const colCount = 1 + (selectedSamples.size > 0 ? 1 : 0) + Object.values(columnVisibility).filter(Boolean).length + 1
+                            return [
+                              <tr
+                                key={`sc-${sc.id}`}
+                                className="border-b border-border bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer"
+                                onClick={() => toggleSubContract(sc.id)}
+                              >
+                                <td className="py-0 px-4 w-10" />
+                                {selectedSamples.size > 0 && <td className="py-0 px-4" />}
+                                <td colSpan={colCount - 1 - (selectedSamples.size > 0 ? 1 : 0)} className="py-2 px-0">
+                                  <div className="flex items-center">
+                                    {/* Tree connector line */}
+                                    <div className="flex flex-col items-center w-8 self-stretch shrink-0">
+                                      <div className={`w-px bg-border flex-1 ${isLast && !isExpanded ? 'max-h-[50%]' : ''}`} />
+                                      {isLast && !isExpanded && <div className="w-px flex-1" />}
+                                    </div>
+                                    <div className="w-4 h-px bg-border shrink-0" />
+                                    {/* Sub-contract content */}
+                                    <div className="flex items-center gap-3 py-1 flex-1 min-w-0">
+                                      {isExpanded
+                                        ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
+                                        : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                                      }
+                                      <span className="text-sm font-medium">{sc.importer_name || sc.tracking_number}</span>
+                                      {(sc.buyer_contract_nr || sc.wolthers_contract_nr) && (
+                                        <span className="text-xs text-muted-foreground">
+                                          ({sc.buyer_contract_nr || sc.wolthers_contract_nr})
+                                        </span>
+                                      )}
+                                      <span className="text-xs text-muted-foreground font-mono ml-auto mr-4">
+                                        {sc.tracking_number}
+                                      </span>
+                                      {sc.has_certificate && (
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0 mr-2"
+                                          onClick={(e) => {
+                                            e.stopPropagation()
+                                            handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)
+                                          }}
+                                          disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
+                                          title="Download sub-contract certificate"
+                                        >
+                                          {downloadingSampleId === `${sample.id}_${sc.id}` ? (
+                                            <Loader2 className="h-3 w-3 animate-spin" />
+                                          ) : (
+                                            <Download className="h-3 w-3" />
+                                          )}
+                                        </Button>
+                                      )}
+                                    </div>
                                   </div>
                                 </td>
-                              )}
-                              {columnVisibility.origin && <td className="py-2 px-4" />}
-                              {columnVisibility.type && <td className="py-2 px-4" />}
-                              {columnVisibility.quality && <td className="py-2 px-4" />}
-                              {columnVisibility.seller && <td className="py-2 px-4" />}
-                              {columnVisibility.shipper && <td className="py-2 px-4" />}
-                              {columnVisibility.wolthers && <td className="py-2 px-4" />}
-                              {columnVisibility.importer && (
-                                <td className="py-2 px-4 text-sm text-muted-foreground">
-                                  {sc.importer_name || '-'}
-                                </td>
-                              )}
-                              {columnVisibility.roaster && (
-                                <td className="py-2 px-4 text-sm text-muted-foreground">
-                                  {sc.roaster_name || '-'}
-                                </td>
-                              )}
-                              {columnVisibility.endClient && (
-                                <td className="py-2 px-4 text-sm text-muted-foreground">
-                                  {sc.end_client_name || '-'}
-                                </td>
-                              )}
-                              {columnVisibility.status && <td className="py-2 px-4" />}
-                              {columnVisibility.stage && <td className="py-2 px-4" />}
-                              {columnVisibility.storage && <td className="py-2 px-4" />}
-                              {columnVisibility.created && <td className="py-2 px-4" />}
-                              <td className="py-2 px-4">
-                                {sc.has_certificate && (
-                                  <Button
-                                    variant="ghost"
-                                    size="sm"
-                                    onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
-                                    disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
-                                    title="Download sub-contract certificate"
-                                  >
-                                    {downloadingSampleId === `${sample.id}_${sc.id}` ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
-                                    ) : (
-                                      <Download className="h-3 w-3" />
-                                    )}
-                                  </Button>
-                                )}
-                              </td>
-                            </tr>
-                          ))
+                              </tr>,
+                              // Expanded detail row
+                              ...(isExpanded ? [
+                                <tr
+                                  key={`sc-detail-${sc.id}`}
+                                  className="border-b border-border bg-muted/10"
+                                >
+                                  <td className="py-0 px-4 w-10" />
+                                  {selectedSamples.size > 0 && <td className="py-0 px-4" />}
+                                  <td colSpan={colCount - 1 - (selectedSamples.size > 0 ? 1 : 0)} className="py-2 px-0">
+                                    <div className="flex items-start">
+                                      <div className="flex flex-col items-center w-8 self-stretch shrink-0">
+                                        {!isLast && <div className="w-px bg-border flex-1" />}
+                                      </div>
+                                      <div className="w-4 shrink-0" />
+                                      <div className="pl-6 grid grid-cols-4 gap-x-8 gap-y-1 text-xs pb-2">
+                                        {sc.importer_name && (
+                                          <>
+                                            <span className="text-muted-foreground">Importer</span>
+                                            <span>{sc.importer_name}</span>
+                                          </>
+                                        )}
+                                        {sc.roaster_name && (
+                                          <>
+                                            <span className="text-muted-foreground">Roaster</span>
+                                            <span>{sc.roaster_name}</span>
+                                          </>
+                                        )}
+                                        {sc.end_client_name && (
+                                          <>
+                                            <span className="text-muted-foreground">End Client</span>
+                                            <span>{sc.end_client_name}</span>
+                                          </>
+                                        )}
+                                        {sc.buyer_contract_nr && (
+                                          <>
+                                            <span className="text-muted-foreground">Buyer Contract</span>
+                                            <span>{sc.buyer_contract_nr}</span>
+                                          </>
+                                        )}
+                                        {sc.wolthers_contract_nr && (
+                                          <>
+                                            <span className="text-muted-foreground">Wolthers Contract</span>
+                                            <span>{sc.wolthers_contract_nr}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ] : []),
+                            ]
+                          })
                         : []),
                     ])}
                   </tbody>
