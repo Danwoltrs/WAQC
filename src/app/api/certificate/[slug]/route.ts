@@ -90,27 +90,42 @@ async function buildResponse(sample: any) {
     .limit(1)
     .maybeSingle()
 
-  // Get quality assessment for screen sizes and defects
+  // Get quality assessment for screen sizes, defects, and cup status
   const { data: assessment } = await supabase
     .from('quality_assessments')
-    .select('green_bean_data')
+    .select('green_bean_data, clean_cup, uniform_cup')
     .eq('sample_id', sample.id)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   const greenBean = assessment?.green_bean_data as any
-
-  // Screen distribution
   const screenSizes = greenBean?.screen_sizes || null
-
-  // Total defects
   const defects = greenBean?.defects
-  const totalDefects = defects
-    ? (defects.total_primary || 0) + (defects.total_secondary || 0)
+  const primaryDefects = defects?.total_primary ?? null
+  const secondaryDefects = defects?.total_secondary ?? null
+  const totalDefects = primaryDefects !== null && secondaryDefects !== null
+    ? primaryDefects + secondaryDefects
     : null
 
-  // Quality name
+  // Get cupping scores for taints and faults
+  const { data: cuppingScores } = await supabase
+    .from('cupping_scores')
+    .select('defects')
+    .eq('sample_id', sample.id)
+
+  let totalTaints = 0
+  let totalFaults = 0
+  if (cuppingScores) {
+    for (const score of cuppingScores) {
+      if (score.defects && typeof score.defects === 'object') {
+        const d = score.defects as { taints?: unknown[]; faults?: unknown[] }
+        if (Array.isArray(d.taints)) totalTaints += d.taints.length
+        if (Array.isArray(d.faults)) totalFaults += d.faults.length
+      }
+    }
+  }
+
   const qualitySpec = sample.quality_spec as any
   const qualityName = qualitySpec?.custom_name
     || qualitySpec?.template?.name_en
@@ -125,7 +140,13 @@ async function buildResponse(sample: any) {
     origin: sample.origin,
     quality_name: qualityName,
     screen_distribution: screenSizes,
+    primary_defects: primaryDefects,
+    secondary_defects: secondaryDefects,
     total_defects: totalDefects,
+    taints: totalTaints,
+    faults: totalFaults,
+    clean_cup: assessment?.clean_cup ?? null,
+    uniform_cup: assessment?.uniform_cup ?? null,
     has_pdf: !!certificate?.pdf_url,
   })
 }
