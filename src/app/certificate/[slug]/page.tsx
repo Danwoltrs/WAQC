@@ -237,15 +237,15 @@ export default async function CertificatePage({ params }: PageProps) {
       status={status}
       approvalDate={info.certificate?.created_at || null}
       origin={info.sample.origin || 'N/A'}
-      qualityName={info.qualityName}
-      screenSizes={info.screenSizes}
-      primaryDefects={info.primaryDefects}
-      secondaryDefects={info.secondaryDefects}
-      totalDefects={info.totalDefects}
-      totalTaints={info.totalTaints}
-      totalFaults={info.totalFaults}
-      cleanCup={info.cleanCup}
-      uniformCup={info.uniformCup}
+      qualityName={info.qualityName ?? null}
+      screenSizes={info.screenSizes ?? null}
+      primaryDefects={info.primaryDefects ?? null}
+      secondaryDefects={info.secondaryDefects ?? null}
+      totalDefects={info.totalDefects ?? null}
+      totalTaints={info.totalTaints ?? 0}
+      totalFaults={info.totalFaults ?? 0}
+      cleanCup={info.cleanCup ?? null}
+      uniformCup={info.uniformCup ?? null}
       pdfUrl={pdfUrl}
     />
   )
