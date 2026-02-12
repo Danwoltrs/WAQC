@@ -747,12 +747,12 @@ export default function SamplesPage() {
     setDateTo('')
   }
 
-  const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && s.workflow_stage === 'certified')
+  const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && s.workflow_stage === 'certified' || s.workflow_stage === 'rejected')
 
   return (
     <>
     <MainLayout>
-      <div className="p-6 space-y-6 max-w-[1800px] ml-auto">
+      <div className="p-6 space-y-6 max-w-[1800px]">
         {/* Header - Sticky on desktop */}
         <div className="sticky top-0 z-10 bg-background pb-4 -mx-6 px-6 pt-6 border-b md:border-0">
           <div className="flex items-center justify-between">
@@ -784,7 +784,7 @@ export default function SamplesPage() {
                   </DropdownMenuItem>
                   {hasCertifiedSelected && (
                     <div className="px-2 pb-1 text-xs text-destructive">
-                      Certified sample selected
+                      Certified/rejected sample selected
                     </div>
                   )}
 
@@ -1297,7 +1297,7 @@ export default function SamplesPage() {
                           </ContextMenuItem>
                           {hasCertifiedSelected && (
                             <div className="px-2 pb-1 text-xs text-destructive">
-                              Certified sample selected
+                              Certified/rejected sample selected
                             </div>
                           )}
                           {cuppersAssigned && (
