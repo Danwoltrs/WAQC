@@ -642,7 +642,7 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
 
           {contracts.length === 0 && !addingNew && (
             <p className="text-xs text-muted-foreground text-center py-2">
-              No sub-contracts yet. Click "Add Sub-Contract" to create one.
+              No sub-contracts yet. Click &ldquo;Add Sub-Contract&rdquo; to create one.
             </p>
           )}
         </CardContent>
