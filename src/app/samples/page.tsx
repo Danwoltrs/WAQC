@@ -747,7 +747,7 @@ export default function SamplesPage() {
     setDateTo('')
   }
 
-  const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && s.workflow_stage === 'certified' || s.workflow_stage === 'rejected')
+  const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && (s.workflow_stage === 'certified' || s.workflow_stage === 'rejected'))
 
   return (
     <>
@@ -1279,7 +1279,7 @@ export default function SamplesPage() {
                             Select All
                           </ContextMenuItem>
                           <ContextMenuItem onClick={() => {
-                            const uncertified = samples.filter(s => s.workflow_stage !== 'certified')
+                            const uncertified = samples.filter(s => s.workflow_stage !== 'certified' && s.workflow_stage !== 'rejected')
                             const ids = new Set(uncertified.map(s => s.id))
                             setSelectedSamples(ids)
                             setSelectedQrCodes(ids)
