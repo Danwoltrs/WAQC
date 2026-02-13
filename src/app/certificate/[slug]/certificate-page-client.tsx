@@ -1,7 +1,7 @@
 'use client'
 
 import Image from 'next/image'
-import { Download, CheckCircle, XCircle } from 'lucide-react'
+import { Download, CheckCircle, XCircle, Clock } from 'lucide-react'
 import {
   RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
   ResponsiveContainer,
@@ -9,7 +9,7 @@ import {
 
 interface CertificatePageClientProps {
   trackingNumber: string
-  status: 'APPROVED' | 'REJECTED'
+  status: 'APPROVED' | 'REJECTED' | 'IN_PROGRESS'
   approvalDate: string | null
   origin: string
   qualityName: string | null
@@ -43,6 +43,7 @@ export function CertificatePageClient({
   pdfUrl,
 }: CertificatePageClientProps) {
   const isApproved = status === 'APPROVED'
+  const isInProgress = status === 'IN_PROGRESS'
 
   // Sort screen sizes: numbered screens descending, then Pan at the bottom always
   const sortedScreenSizes = screenSizes
@@ -125,7 +126,12 @@ export function CertificatePageClient({
         </div>
         <div className="w-full max-w-lg mx-auto flex items-center justify-between">
           <h2 className="text-xl font-semibold">{trackingNumber}</h2>
-          {isApproved ? (
+          {isInProgress ? (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#a9a454]/10 text-[#a9a454]">
+              <Clock className="w-4 h-4" />
+              <span className="font-semibold text-xs">IN PROGRESS</span>
+            </div>
+          ) : isApproved ? (
             <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#22c55e]/10 text-[#22c55e]">
               <CheckCircle className="w-4 h-4" />
               <span className="font-semibold text-xs">APPROVED</span>
@@ -139,8 +145,33 @@ export function CertificatePageClient({
         </div>
       </div>
 
+      {/* In-progress state */}
+      {isInProgress && (
+        <div className="flex-1 flex items-center justify-center px-4">
+          <div className="w-full max-w-lg mx-auto">
+            <div className="bg-white dark:bg-white/[0.04] rounded-[20px] px-6 py-10 shadow-sm border border-black/10 dark:border-white/[0.15] text-center">
+              <div className="flex justify-center mb-4">
+                <div className="w-12 h-12 rounded-full bg-[#a9a454]/10 flex items-center justify-center">
+                  <Clock className="w-6 h-6 text-[#a9a454]" />
+                </div>
+              </div>
+              <h3 className="text-lg font-semibold mb-2">Cupping & Grading in Progress</h3>
+              <p className="text-sm text-muted-foreground">
+                This sample is currently being evaluated. The certificate will be available once the quality assessment is complete.
+              </p>
+              {origin !== 'N/A' && (
+                <div className="mt-6 pt-4 border-t border-black/[0.06] dark:border-white/[0.08]">
+                  <p className="text-xs text-muted-foreground">Origin</p>
+                  <p className="text-sm font-medium">{origin}</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Fixed Card Top */}
-      <div className="shrink-0 px-4">
+      {!isInProgress && <div className="shrink-0 px-4">
         <div className="w-full max-w-lg mx-auto">
           <div className="bg-white dark:bg-white/[0.04] rounded-t-[20px] px-6 pt-5 pb-4 shadow-sm border border-b-0 border-black/10 dark:border-white/[0.15]">
             <div className="flex justify-between items-start">
@@ -157,10 +188,10 @@ export function CertificatePageClient({
             </div>
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Scrollable Content */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 overscroll-none">
+      {!isInProgress && <div className="flex-1 min-h-0 overflow-y-auto px-4 overscroll-none">
         <div className="w-full max-w-lg mx-auto min-h-full pb-8 bg-white dark:bg-white/[0.04] border-x border-black/10 dark:border-white/[0.15]">
           <div className="px-6">
             {/* Quality name */}
@@ -303,10 +334,10 @@ export function CertificatePageClient({
 
           </div>
         </div>
-      </div>
+      </div>}
 
       {/* Fixed Footer - Card bottom (Taints/Faults) + Download Button */}
-      <div className="shrink-0 px-4 pb-6 bg-[#F9F9FA] dark:bg-[#2A2A2A]">
+      {!isInProgress && <div className="shrink-0 px-4 pb-6 bg-[#F9F9FA] dark:bg-[#2A2A2A]">
         <div className="w-full max-w-lg mx-auto">
           {/* Card bottom with rounded corners */}
           <div className="bg-white dark:bg-white/[0.04] rounded-b-[20px] px-6 pb-5 pt-0 border border-t-0 border-black/10 dark:border-white/[0.15]">
@@ -345,7 +376,7 @@ export function CertificatePageClient({
             Download Certificate PDF
           </a>
         </div>
-      </div>
+      </div>}
     </div>
   )
 }

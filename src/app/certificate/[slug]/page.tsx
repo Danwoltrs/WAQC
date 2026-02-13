@@ -1,7 +1,6 @@
 import { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
-import { slugToTrackingNumber, trackingNumberToSlug } from '@/lib/utils'
-import { redirect } from 'next/navigation'
+import { slugToTrackingNumber } from '@/lib/utils'
 import { CertificatePageClient } from './certificate-page-client'
 
 // Use service role for server-side data fetching
@@ -297,9 +296,27 @@ export default async function CertificatePage({ params }: PageProps) {
     )
   }
 
-  // If not certified, redirect to authenticated sample page
+  // If not certified, show in-progress page
   if (!info.certified) {
-    redirect(`/samples/${trackingNumberToSlug(info.sample.tracking_number)}`)
+    return (
+      <CertificatePageClient
+        trackingNumber={info.sample.tracking_number}
+        status="IN_PROGRESS"
+        approvalDate={null}
+        origin={info.sample.origin || 'N/A'}
+        qualityName={null}
+        screenSizes={null}
+        primaryDefects={null}
+        secondaryDefects={null}
+        totalDefects={null}
+        totalTaints={0}
+        totalFaults={0}
+        cleanCup={null}
+        uniformCup={null}
+        cuppingAttributes={[]}
+        pdfUrl=""
+      />
+    )
   }
 
   const status = info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED'
