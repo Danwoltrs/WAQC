@@ -37,6 +37,7 @@ interface AssignCuppersDialogProps {
   onOpenChange: (open: boolean) => void
   sampleCount: number
   onAssign: (cupperIds: string[], cuppers: Cupper[]) => void
+  existingCupperIds?: string[]
 }
 
 export function AssignCuppersDialog({
@@ -44,6 +45,7 @@ export function AssignCuppersDialog({
   onOpenChange,
   sampleCount,
   onAssign,
+  existingCupperIds,
 }: AssignCuppersDialogProps) {
   const [cuppers, setCuppers] = useState<Cupper[]>([])
   const [selectedCuppers, setSelectedCuppers] = useState<Set<string>>(new Set())
@@ -55,6 +57,8 @@ export function AssignCuppersDialog({
     }
   }, [open])
 
+  const isEditing = existingCupperIds && existingCupperIds.length > 0
+
   const loadCuppers = async () => {
     setLoading(true)
     try {
@@ -63,8 +67,12 @@ export function AssignCuppersDialog({
         const data = await response.json()
         const loadedCuppers = data.cuppers || []
         setCuppers(loadedCuppers)
-        // Pre-select all cuppers
-        setSelectedCuppers(new Set(loadedCuppers.map((c: Cupper) => c.id)))
+        // Pre-select existing cuppers if editing, otherwise all cuppers
+        if (existingCupperIds && existingCupperIds.length > 0) {
+          setSelectedCuppers(new Set(existingCupperIds))
+        } else {
+          setSelectedCuppers(new Set(loadedCuppers.map((c: Cupper) => c.id)))
+        }
       } else {
         console.error('Failed to load cuppers:', response.status, response.statusText)
         const errorData = await response.json().catch(() => ({}))
@@ -98,10 +106,11 @@ export function AssignCuppersDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
-          <DialogTitle>Assign Cuppers</DialogTitle>
+          <DialogTitle>{isEditing ? 'Manage Cuppers' : 'Assign Cuppers'}</DialogTitle>
           <DialogDescription>
-            Select cuppers who will evaluate the {sampleCount} selected sample
-            {sampleCount !== 1 ? 's' : ''}. Multiple cuppers can be assigned.
+            {isEditing
+              ? `Update cupper assignments for the ${sampleCount} selected sample${sampleCount !== 1 ? 's' : ''}.`
+              : `Select cuppers who will evaluate the ${sampleCount} selected sample${sampleCount !== 1 ? 's' : ''}. Multiple cuppers can be assigned.`}
           </DialogDescription>
         </DialogHeader>
 
@@ -190,7 +199,7 @@ export function AssignCuppersDialog({
             disabled={selectedCuppers.size === 0}
           >
             <Users className="h-4 w-4 mr-2" />
-            Assign {selectedCuppers.size > 0 ? selectedCuppers.size : ''} Cupper
+            {isEditing ? 'Update' : 'Assign'} {selectedCuppers.size > 0 ? selectedCuppers.size : ''} Cupper
             {selectedCuppers.size !== 1 ? 's' : ''}
           </Button>
         </DialogFooter>

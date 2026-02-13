@@ -124,6 +124,34 @@ export async function POST(request: NextRequest) {
       }, { status: 403 })
     }
 
+    // Minimum cupper count validation (mirrors /api/cupping/validate logic)
+    const rawCupperIds = (session.cupper_ids as string[]) || []
+    const uniqueCupperIds = new Set(rawCupperIds)
+    const assignedCupperCount = uniqueCupperIds.size
+    const isSingleCupperSession = assignedCupperCount === 1
+
+    const minCuppersRequired = (session.allow_single_cupper || isSingleCupperSession)
+      ? 1
+      : (session.min_cuppers_required || 2)
+
+    // Count how many assigned cuppers have completed scores for this sample
+    const { data: completedScores, error: scoresCountError } = await supabaseAdmin
+      .from('cupping_scores')
+      .select('cupper_id')
+      .eq('sample_id', sample_id)
+      .in('cupper_id', Array.from(uniqueCupperIds))
+
+    const completedCupperIds = new Set(
+      (completedScores || []).map((s: any) => s.cupper_id)
+    )
+    const completedCupperCount = completedCupperIds.size
+
+    if (completedCupperCount < minCuppersRequired) {
+      return NextResponse.json({
+        error: `Cannot finalize: only ${completedCupperCount} of ${minCuppersRequired} required cuppers have completed their scores`
+      }, { status: 400 })
+    }
+
     // Get the sample with quality spec info and current workflow stage
     // Exclude soft-deleted samples
     const { data: sample, error: sampleError } = await supabaseAdmin

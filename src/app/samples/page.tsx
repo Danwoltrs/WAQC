@@ -216,6 +216,8 @@ export default function SamplesPage() {
     email: string
   }>>([])
   const [cuppersAssigned, setCuppersAssigned] = useState(false)
+  const [existingCupperIds, setExistingCupperIds] = useState<string[]>([])
+  const [loadingCupperAssignments, setLoadingCupperAssignments] = useState(false)
 
   // Unique values for filters
   const [origins, setOrigins] = useState<string[]>([])
@@ -370,6 +372,45 @@ export default function SamplesPage() {
     return () => clearTimeout(debounce)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchQuery, originFilter, qualityFilter, dateFrom, dateTo])
+
+  // Fetch existing cupper assignments when selected samples change
+  useEffect(() => {
+    if (selectedSamples.size === 0) {
+      setExistingCupperIds([])
+      setAssignedCuppers([])
+      setCuppersAssigned(false)
+      return
+    }
+
+    const fetchExistingCuppers = async () => {
+      setLoadingCupperAssignments(true)
+      try {
+        const sampleIds = Array.from(selectedSamples)
+        const params = new URLSearchParams()
+        sampleIds.forEach(id => params.append('sample_ids', id))
+
+        const response = await fetch(`/api/cupping/session-cuppers?${params}`)
+        if (response.ok) {
+          const data = await response.json()
+          if (data.cuppers && data.cuppers.length > 0) {
+            setExistingCupperIds(data.cuppers.map((c: any) => c.id))
+            setAssignedCuppers(data.cuppers)
+            setCuppersAssigned(true)
+          } else {
+            setExistingCupperIds([])
+            setAssignedCuppers([])
+            setCuppersAssigned(false)
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching existing cupper assignments:', error)
+      } finally {
+        setLoadingCupperAssignments(false)
+      }
+    }
+
+    fetchExistingCuppers()
+  }, [selectedSamples])
 
   const handleSampleCreated = (trackingNumber: string) => {
     setDialogOpen(false)
@@ -545,7 +586,6 @@ export default function SamplesPage() {
     setShowCuppingCardsDialog(true)
   }
 
-  // Reset cupper assignment when sample selection changes
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       const allSampleIds = new Set(samples.map(s => s.id))
@@ -555,9 +595,6 @@ export default function SamplesPage() {
       setSelectedSamples(new Set())
       setSelectedQrCodes(new Set())
     }
-    // Reset cupper assignment
-    setAssignedCuppers([])
-    setCuppersAssigned(false)
   }
 
   const handleSelectSample = (sampleId: string, checked: boolean) => {
@@ -572,9 +609,6 @@ export default function SamplesPage() {
     }
     setSelectedSamples(newSelected)
     setSelectedQrCodes(newQrCodes)
-    // Reset cupper assignment when selection changes
-    setAssignedCuppers([])
-    setCuppersAssigned(false)
   }
 
   const handleDeleteSample = async (sample: Sample) => {
@@ -933,7 +967,7 @@ export default function SamplesPage() {
                   <DropdownMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
                     <Users className="h-4 w-4 mr-2" />
                     {cuppersAssigned
-                      ? `Reassign Cuppers (${assignedCuppers.length} assigned)`
+                      ? `Manage Cuppers (${assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')})`
                       : 'Assign Cuppers'}
                   </DropdownMenuItem>
                   {hasCertifiedSelected && (
@@ -1237,13 +1271,11 @@ export default function SamplesPage() {
                         if (open && !selectedSamples.has(sample.id)) {
                           setSelectedSamples(new Set([sample.id]))
                           setSelectedQrCodes(new Set([sample.id]))
-                          setAssignedCuppers([])
-                          setCuppersAssigned(false)
                         }
                       }}>
                         <ContextMenuTrigger asChild>
                           <tr className="border-b border-border hover:bg-accent/50 transition-colors">
-                            <td className="py-3 px-4 align-middle">
+                            <td className="py-3 px-4 align-top">
                               <div className="flex flex-col items-center gap-1">
                                 <Checkbox
                                   checked={selectedSamples.has(sample.id)}
@@ -1270,10 +1302,9 @@ export default function SamplesPage() {
                               </div>
                             </td>
                             {selectedSamples.size > 0 && (
-                              <td className="py-3 px-4 align-middle">
+                              <td className="py-3 px-4 align-top">
                                 {selectedSamples.has(sample.id) && (
                                   <Checkbox
-                                    className="mt-1"
                                     checked={selectedQrCodes.has(sample.id)}
                                     onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
                                   />
@@ -1451,8 +1482,6 @@ export default function SamplesPage() {
                             const ids = new Set(uncertified.map(s => s.id))
                             setSelectedSamples(ids)
                             setSelectedQrCodes(ids)
-                            setAssignedCuppers([])
-                            setCuppersAssigned(false)
                           }}>
                             <Checkbox className="h-4 w-4 mr-2" checked={false} />
                             Select All Uncertified
@@ -1805,6 +1834,7 @@ export default function SamplesPage() {
         onOpenChange={setShowAssignCuppersDialog}
         sampleCount={selectedSamples.size}
         onAssign={handleCuppersAssigned}
+        existingCupperIds={existingCupperIds}
       />
 
       {/* Add Sub-Contract Dialog */}
