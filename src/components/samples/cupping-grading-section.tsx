@@ -800,7 +800,7 @@ export function CuppingGradingSection({
                                 type="number" min="0" step="1"
                                 value={item.count || ''}
                                 onChange={(e) => updateCount(item.idx, parseInt(e.target.value) || 0)}
-                                className="h-5 w-12 text-xs text-center ml-auto shrink-0"
+                                className="h-6 w-16 text-xs text-center ml-auto shrink-0"
                               />
                               <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => removeDefect(item.idx)}>
                                 <X className="h-3 w-3" />
