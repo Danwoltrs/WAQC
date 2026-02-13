@@ -104,34 +104,36 @@ export function CertificatePageClient({
   return (
     <div className="h-dvh bg-[#F9F9FA] dark:bg-[#2A2A2A] flex flex-col">
       {/* Fixed Header */}
-      <div className="shrink-0 pt-6 pb-4 flex flex-col items-center px-4">
-        <Image
-          src="/images/logos/wolthers-logo-off-white.svg"
-          alt="Wolthers"
-          width={120}
-          height={32}
-          className="mb-3 hidden dark:block"
-          priority
-        />
-        <Image
-          src="/images/logos/wolthers-logo-black.svg"
-          alt="Wolthers"
-          width={120}
-          height={32}
-          className="mb-3 dark:hidden"
-          priority
-        />
-        <h2 className="text-xl font-semibold">{trackingNumber}</h2>
-        <div className="mt-3">
+      <div className="shrink-0 pt-6 pb-4 px-4">
+        <div className="flex justify-center mb-3">
+          <Image
+            src="/images/logos/wolthers-logo-off-white.svg"
+            alt="Wolthers"
+            width={120}
+            height={32}
+            className="hidden dark:block"
+            priority
+          />
+          <Image
+            src="/images/logos/wolthers-logo-black.svg"
+            alt="Wolthers"
+            width={120}
+            height={32}
+            className="dark:hidden"
+            priority
+          />
+        </div>
+        <div className="w-full max-w-lg mx-auto flex items-center justify-between">
+          <h2 className="text-xl font-semibold">{trackingNumber}</h2>
           {isApproved ? (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#22c55e]/10 text-[#22c55e]">
-              <CheckCircle className="w-5 h-5" />
-              <span className="font-semibold text-sm">APPROVED</span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#22c55e]/10 text-[#22c55e]">
+              <CheckCircle className="w-4 h-4" />
+              <span className="font-semibold text-xs">APPROVED</span>
             </div>
           ) : (
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#ef4444]/10 text-[#ef4444]">
-              <XCircle className="w-5 h-5" />
-              <span className="font-semibold text-sm">REJECTED</span>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#ef4444]/10 text-[#ef4444]">
+              <XCircle className="w-4 h-4" />
+              <span className="font-semibold text-xs">REJECTED</span>
             </div>
           )}
         </div>
