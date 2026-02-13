@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
-import { Trash2 } from 'lucide-react'
+import { Trash2, ChevronDown } from 'lucide-react'
 import { SubContractFormData, StepComponentProps } from './types'
 import type { Client } from './types'
 
@@ -99,7 +99,7 @@ function MotherContractSummary({ formData }: { formData: StepComponentProps['for
   ].filter(Boolean).join(' ')
   if (mtShipment) quantityParts.push(mtShipment)
 
-  // Each entity paired with its contract reference
+  // Each entity paired with its contract reference (shown with dash)
   const entities = [
     formData.seller && { label: 'Seller', value: formData.seller, ref: formData.seller_contract_nr },
     shipperName && { label: 'Shipper', value: shipperName, ref: formData.supplier_contract_nr },
@@ -122,25 +122,24 @@ function MotherContractSummary({ formData }: { formData: StepComponentProps['for
         )}
       </div>
 
-      {/* Entity names with contract refs underneath */}
-      <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+      {/* Entity names with contract refs inline after dash */}
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
         {entities.map(e => (
           <div key={e.label}>
-            <div>
-              <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
-              <span className="font-medium">{e.value}</span>
-            </div>
-            {e.ref && (
-              <div className="text-[11px] text-muted-foreground">{e.ref}</div>
-            )}
+            <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
+            <span className="font-medium">{e.value}</span>
+            {e.ref && <span className="text-muted-foreground text-xs"> - {e.ref}</span>}
           </div>
         ))}
       </div>
 
-      {/* Sample type, tracking info + quantity */}
+      {/* Sample type, PSS/SS info + quantity */}
       <div className="flex items-center justify-between text-xs pt-1.5 border-t border-border/50">
         <div className="flex items-center gap-2">
           {sampleType && <Badge variant="outline" className="text-[10px]">{sampleType}</Badge>}
+          {formData.exporter_sample_number && (
+            <span className="font-mono">{formData.exporter_sample_number}</span>
+          )}
           {formData.sample_type === 'ss' && formData.ico_number && (
             <>
               <span className="text-muted-foreground">|</span>
@@ -343,20 +342,97 @@ export function ContractPanel({
   sampleType: string
 }) {
   const [customWeight, setCustomWeight] = useState(false)
+  const [showDestination, setShowDestination] = useState(
+    !!(contract.roaster || contract.end_client || (!contract.importer_is_qc_client && contract.qc_client))
+  )
+  const [showQuantity, setShowQuantity] = useState(false)
+
   const dropdownOptions = contract.importer_is_qc_client ? mergedImporterOptions : importerOptions
   const availableWeights = contract.bag_type ? BAG_WEIGHTS[contract.bag_type as keyof typeof BAG_WEIGHTS] || [] : []
   const isPSS = sampleType === 'pss'
 
+  // Quantity summary for collapsible trigger
+  const quantitySummary = (() => {
+    const parts: string[] = []
+    if (contract.bags_quantity_mt && parseFloat(contract.bags_quantity_mt) > 0) {
+      parts.push(`${contract.bags_quantity_mt} MT`)
+    }
+    const bagLabel = contract.bag_type ? BAG_TYPE_LABELS[contract.bag_type] || '' : ''
+    if (bagLabel) parts.push(`in ${bagLabel}`)
+    if (contract.shipment_month) {
+      const [year, month] = contract.shipment_month.split('-')
+      const mn = MONTHS.find(m => m.value === month)?.label || month
+      parts.push(`${mn} ${year} shpt`)
+    }
+    return parts.join(' ')
+  })()
+
   return (
-    <div className="space-y-4">
-      {/* Supply Chain */}
-      <div>
-        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Supply Chain</Label>
+    <div className="space-y-3">
+      {/* Top: Left (references) | separator | Right (importer) */}
+      <div className="grid grid-cols-[180px_1px_1fr] gap-4">
+        {/* Left: Sample nr, Wolthers, Supplier, ICO, Container */}
+        <div className="space-y-2.5">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Sample nr</Label>
+            <Input
+              value={contract.exporter_sample_number}
+              onChange={(e) => updateContract('exporter_sample_number', e.target.value)}
+              placeholder="Sample ref."
+              className="h-8 text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Wolthers contract</Label>
+            <Input
+              value={contract.wolthers_contract_nr}
+              onChange={(e) => updateContract('wolthers_contract_nr', e.target.value)}
+              placeholder="Wolthers ref."
+              className="h-8 text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Supplier ref.</Label>
+            <Input
+              value={contract.supplier_contract_nr}
+              onChange={(e) => updateContract('supplier_contract_nr', e.target.value)}
+              placeholder="Supplier ref."
+              className="h-8 text-sm"
+            />
+          </div>
+          {!isPSS && (
+            <>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
+                <Input
+                  value={contract.ico_number}
+                  onChange={(e) => updateContract('ico_number', e.target.value)}
+                  placeholder="ICO number"
+                  className="h-8 text-sm"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
+                <Input
+                  value={contract.container_nr}
+                  onChange={(e) => updateContract('container_nr', e.target.value)}
+                  placeholder="Container nr."
+                  className="h-8 text-sm"
+                />
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* Vertical separator */}
+        <div className="bg-border" />
+
+        {/* Right: Importer + collapsible Roaster/End Client */}
         <div className="space-y-3">
-          {/* Importer */}
-          <div className="grid grid-cols-[180px_160px] gap-3 items-end">
+          {/* Importer (always visible) */}
+          <div className="grid grid-cols-[1fr_120px] gap-2 items-end">
             <div>
-              <div className="flex items-center gap-2 mb-1.5">
+              <div className="flex items-center gap-2 mb-1">
                 <Label className="text-xs text-muted-foreground">Importer</Label>
                 <div className="flex items-center gap-1">
                   <Checkbox
@@ -371,8 +447,8 @@ export function ContractPanel({
                 value={contract.importer || 'none'}
                 onValueChange={(value) => updateContract('importer', value === 'none' ? '' : value)}
               >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select importer" />
+                <SelectTrigger className="h-8 text-sm">
+                  <SelectValue placeholder="Select..." />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Select...</SelectItem>
@@ -383,312 +459,280 @@ export function ContractPanel({
               </Select>
             </div>
             <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Buyer Contract</Label>
+              <Label className="text-xs text-muted-foreground mb-1 block">Ref.</Label>
               <Input
                 value={contract.buyer_contract_nr}
                 onChange={(e) => updateContract('buyer_contract_nr', e.target.value)}
                 placeholder="Contract ref."
-                className="h-9"
+                className="h-8 text-sm"
               />
             </div>
           </div>
 
-          {/* QC Client (when not same as importer) */}
-          {!contract.importer_is_qc_client && (
-            <div className="grid grid-cols-[180px_160px] gap-3 items-end">
+          {/* Collapsible: Roaster & End Client */}
+          <div>
+            <button
+              type="button"
+              onClick={() => setShowDestination(!showDestination)}
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronDown className={`h-3 w-3 transition-transform ${showDestination ? '' : '-rotate-90'}`} />
+              Roaster & End Client
+            </button>
+            {showDestination && (
+              <div className="mt-2 space-y-2 pl-4 border-l border-border/50">
+                {/* QC Client (when not same as importer) */}
+                {!contract.importer_is_qc_client && (
+                  <div className="grid grid-cols-[1fr_120px] gap-2 items-end">
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">QC Client</Label>
+                      <Select
+                        value={contract.qc_client || 'none'}
+                        onValueChange={(value) => updateContract('qc_client', value === 'none' ? '' : value)}
+                      >
+                        <SelectTrigger className="h-8 text-sm">
+                          <SelectValue placeholder="Select..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Select...</SelectItem>
+                          {qcClients.map((c) => (
+                            <SelectItem key={c.id} value={c.fantasy_name || c.company}>
+                              {c.fantasy_name || c.company}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label className="text-xs text-muted-foreground mb-1 block">Ref.</Label>
+                      <Input
+                        value={contract.qc_client_contract_nr}
+                        onChange={(e) => updateContract('qc_client_contract_nr', e.target.value)}
+                        placeholder="Ref."
+                        className="h-8 text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Roaster */}
+                <div className="grid grid-cols-[1fr_120px] gap-2 items-end">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Roaster</Label>
+                    <Select
+                      value={contract.roaster || 'none'}
+                      onValueChange={(value) => updateContract('roaster', value === 'none' ? '' : value)}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Select...</SelectItem>
+                        {roasterOptions.map((opt) => (
+                          <SelectItem key={opt.name} value={opt.name}>{opt.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Ref.</Label>
+                    <Input
+                      value={contract.roaster_contract_nr}
+                      onChange={(e) => updateContract('roaster_contract_nr', e.target.value)}
+                      placeholder="Ref."
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                </div>
+
+                {/* End Client */}
+                <div className="grid grid-cols-[1fr_120px] gap-2 items-end">
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">End Client</Label>
+                    <Select
+                      value={contract.end_client || 'none'}
+                      onValueChange={(value) => updateContract('end_client', value === 'none' ? '' : value)}
+                    >
+                      <SelectTrigger className="h-8 text-sm">
+                        <SelectValue placeholder="Select..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Select...</SelectItem>
+                        {qcClients.map((c) => (
+                          <SelectItem key={c.id} value={c.fantasy_name || c.company}>
+                            {c.fantasy_name || c.company}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-xs text-muted-foreground mb-1 block">Ref.</Label>
+                    <Input
+                      value={contract.end_client_contract_nr}
+                      onChange={(e) => updateContract('end_client_contract_nr', e.target.value)}
+                      placeholder="Ref."
+                      className="h-8 text-sm"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Collapsible: Quantity */}
+      <div className="border-t pt-2">
+        <button
+          type="button"
+          onClick={() => setShowQuantity(!showQuantity)}
+          className="flex items-center gap-1.5 text-xs hover:text-foreground transition-colors w-full text-left"
+        >
+          <ChevronDown className={`h-3 w-3 text-muted-foreground transition-transform ${showQuantity ? '' : '-rotate-90'}`} />
+          <span className="font-medium">Quantity</span>
+          {quantitySummary && !showQuantity && (
+            <span className="text-muted-foreground ml-1">({quantitySummary})</span>
+          )}
+        </button>
+        {showQuantity && (
+          <div className="mt-2 pl-4 space-y-3">
+            <div className="grid grid-cols-4 gap-3">
               <div>
-                <Label className="text-xs text-muted-foreground mb-1.5 block">QC Client</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">Bag Type</Label>
                 <Select
-                  value={contract.qc_client || 'none'}
-                  onValueChange={(value) => updateContract('qc_client', value === 'none' ? '' : value)}
+                  value={contract.bag_type || 'none'}
+                  onValueChange={(value) => {
+                    updateContract('bag_type', value === 'none' ? '' : value)
+                    setCustomWeight(false)
+                  }}
                 >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select QC client" />
+                  <SelectTrigger className="h-8 text-sm">
+                    <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Select...</SelectItem>
-                    {qcClients.map((c) => (
-                      <SelectItem key={c.id} value={c.fantasy_name || c.company}>
-                        {c.fantasy_name || c.company}
-                      </SelectItem>
-                    ))}
+                    <SelectItem value="jute_bag">Jute Bag</SelectItem>
+                    <SelectItem value="pp_bag">PP Bag</SelectItem>
+                    <SelectItem value="big_bag">Big Bag (1 M/T)</SelectItem>
+                    <SelectItem value="bulk">Bulk (21.6 M/T)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
               <div>
-                <Label className="text-xs text-muted-foreground mb-1.5 block">QC Client Contract</Label>
+                <Label className="text-xs text-muted-foreground mb-1 block">
+                  {contract.bag_type === 'bulk' ? 'Equiv. 60kg Bags' : 'Qty of Bags'}
+                </Label>
                 <Input
-                  value={contract.qc_client_contract_nr}
-                  onChange={(e) => updateContract('qc_client_contract_nr', e.target.value)}
-                  placeholder="Contract ref."
-                  className="h-9"
+                  type="number"
+                  min="1"
+                  value={contract.bag_count}
+                  onChange={(e) => updateContract('bag_count', e.target.value)}
+                  placeholder={contract.bag_type === 'bulk' ? 'e.g., 360' : 'e.g., 300'}
+                  className="h-8 text-sm"
                 />
               </div>
-            </div>
-          )}
 
-          {/* Roaster */}
-          <div className="grid grid-cols-[180px_160px] gap-3 items-end">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster</Label>
-              <Select
-                value={contract.roaster || 'none'}
-                onValueChange={(value) => updateContract('roaster', value === 'none' ? '' : value)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select roaster" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Select...</SelectItem>
-                  {roasterOptions.map((opt) => (
-                    <SelectItem key={opt.name} value={opt.name}>{opt.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster Contract</Label>
-              <Input
-                value={contract.roaster_contract_nr}
-                onChange={(e) => updateContract('roaster_contract_nr', e.target.value)}
-                placeholder="Contract ref."
-                className="h-9"
-              />
-            </div>
-          </div>
-
-          {/* End Client */}
-          <div className="grid grid-cols-[180px_160px] gap-3 items-end">
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">End Client</Label>
-              <Select
-                value={contract.end_client || 'none'}
-                onValueChange={(value) => updateContract('end_client', value === 'none' ? '' : value)}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select end client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Select...</SelectItem>
-                  {qcClients.map((c) => (
-                    <SelectItem key={c.id} value={c.fantasy_name || c.company}>
-                      {c.fantasy_name || c.company}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label className="text-xs text-muted-foreground mb-1.5 block">End Client Contract</Label>
-              <Input
-                value={contract.end_client_contract_nr}
-                onChange={(e) => updateContract('end_client_contract_nr', e.target.value)}
-                placeholder="Contract ref."
-                className="h-9"
-              />
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Contract References */}
-      <div className="border-t pt-3">
-        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Contract References</Label>
-        <div className={`grid gap-3 ${isPSS ? 'grid-cols-2' : 'grid-cols-4'}`}>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Wolthers</Label>
-            <Input
-              value={contract.wolthers_contract_nr}
-              onChange={(e) => updateContract('wolthers_contract_nr', e.target.value)}
-              placeholder="Wolthers ref."
-              className="h-9"
-            />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Supplier</Label>
-            <Input
-              value={contract.supplier_contract_nr}
-              onChange={(e) => updateContract('supplier_contract_nr', e.target.value)}
-              placeholder="Supplier ref."
-              className="h-9"
-            />
-          </div>
-          {!isPSS && (
-            <>
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
-                <Input
-                  value={contract.ico_number}
-                  onChange={(e) => updateContract('ico_number', e.target.value)}
-                  placeholder="ICO number"
-                  className="h-9"
-                />
+                <Label className="text-xs text-muted-foreground mb-1 block">Bag Weight</Label>
+                {!customWeight && contract.bag_type ? (
+                  <Select
+                    value={contract.bag_weight_kg || 'none'}
+                    onValueChange={(value) => {
+                      if (value === 'custom') {
+                        setCustomWeight(true)
+                        updateContract('bag_weight_kg', '')
+                      } else if (value === 'none') {
+                        updateContract('bag_weight_kg', '')
+                      } else {
+                        updateContract('bag_weight_kg', value)
+                      }
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm">
+                      <SelectValue placeholder="Select weight" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">Select...</SelectItem>
+                      {availableWeights.map((w) => (
+                        <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
+                      ))}
+                      <SelectItem value="custom">Custom...</SelectItem>
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={contract.bag_weight_kg}
+                    onChange={(e) => updateContract('bag_weight_kg', e.target.value)}
+                    placeholder="e.g., 60"
+                    className="h-8 text-sm"
+                  />
+                )}
               </div>
+
               <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
-                <Input
-                  value={contract.container_nr}
-                  onChange={(e) => updateContract('container_nr', e.target.value)}
-                  placeholder="Container nr."
-                  className="h-9"
-                />
+                <Label className="text-xs text-muted-foreground mb-1 block">Shipment Month</Label>
+                <div className="flex">
+                  <Select
+                    value={contract.shipment_month?.split('-')[1] || String(new Date().getMonth() + 1).padStart(2, '0')}
+                    onValueChange={(month) => {
+                      const year = contract.shipment_month?.split('-')[0] || new Date().getFullYear().toString()
+                      updateContract('shipment_month', `${year}-${month}`)
+                    }}
+                  >
+                    <SelectTrigger className="rounded-r-none border-r-0 w-[70px] h-8 text-sm">
+                      <SelectValue placeholder="Mon" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MONTHS.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select
+                    value={contract.shipment_month?.split('-')[0] || new Date().getFullYear().toString()}
+                    onValueChange={(year) => {
+                      const month = contract.shipment_month?.split('-')[1] || String(new Date().getMonth() + 1).padStart(2, '0')
+                      updateContract('shipment_month', `${year}-${month}`)
+                    }}
+                  >
+                    <SelectTrigger className="rounded-l-none w-[80px] h-8 text-sm">
+                      <SelectValue placeholder="Year" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {YEARS.map((y) => (
+                        <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
-            </>
-          )}
-        </div>
-      </div>
+            </div>
 
-      {/* Quantity */}
-      <div className="border-t pt-3">
-        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Quantity</Label>
-        <div className="grid grid-cols-4 gap-3">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Bag Type</Label>
-            <Select
-              value={contract.bag_type || 'none'}
-              onValueChange={(value) => {
-                updateContract('bag_type', value === 'none' ? '' : value)
-                setCustomWeight(false)
-              }}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Select type" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select...</SelectItem>
-                <SelectItem value="jute_bag">Jute Bag</SelectItem>
-                <SelectItem value="pp_bag">PP Bag</SelectItem>
-                <SelectItem value="big_bag">Big Bag (1 M/T)</SelectItem>
-                <SelectItem value="bulk">Bulk (21.6 M/T)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">
-              {contract.bag_type === 'bulk' ? 'Equiv. 60kg Bags' : 'Qty of Bags'}
-            </Label>
-            <Input
-              type="number"
-              min="1"
-              value={contract.bag_count}
-              onChange={(e) => updateContract('bag_count', e.target.value)}
-              placeholder={contract.bag_type === 'bulk' ? 'e.g., 360' : 'e.g., 300'}
-              className="h-9"
-            />
-          </div>
-
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Bag Weight</Label>
-            {!customWeight && contract.bag_type ? (
-              <Select
-                value={contract.bag_weight_kg || 'none'}
-                onValueChange={(value) => {
-                  if (value === 'custom') {
-                    setCustomWeight(true)
-                    updateContract('bag_weight_kg', '')
-                  } else if (value === 'none') {
-                    updateContract('bag_weight_kg', '')
-                  } else {
-                    updateContract('bag_weight_kg', value)
-                  }
-                }}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select weight" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Select...</SelectItem>
-                  {availableWeights.map((w) => (
-                    <SelectItem key={w.value} value={w.value}>{w.label}</SelectItem>
-                  ))}
-                  <SelectItem value="custom">Custom...</SelectItem>
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                type="number"
-                step="0.01"
-                min="0"
-                value={contract.bag_weight_kg}
-                onChange={(e) => updateContract('bag_weight_kg', e.target.value)}
-                placeholder="e.g., 60"
-                className="h-9"
-              />
+            {contract.bag_count && contract.bag_weight_kg && (
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-primary/5 p-2.5 rounded-lg">
+                  <div className="text-xs font-medium mb-0.5 flex items-center gap-1">
+                    Total M/T
+                    <Badge variant="outline" className="text-[10px]">Auto</Badge>
+                  </div>
+                  <div className="text-base font-semibold">{contract.bags_quantity_mt} M/T</div>
+                </div>
+                <div className="bg-primary/5 p-2.5 rounded-lg">
+                  <div className="text-xs font-medium mb-0.5 flex items-center gap-1">
+                    Equiv. 60kg Bags
+                    <Badge variant="outline" className="text-[10px]">Auto</Badge>
+                  </div>
+                  <div className="text-base font-semibold">{contract.equivalent_60kg_bags} bags</div>
+                </div>
+              </div>
             )}
           </div>
-
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Shipment Month</Label>
-            <div className="flex">
-              <Select
-                value={contract.shipment_month?.split('-')[1] || String(new Date().getMonth() + 1).padStart(2, '0')}
-                onValueChange={(month) => {
-                  const year = contract.shipment_month?.split('-')[0] || new Date().getFullYear().toString()
-                  updateContract('shipment_month', `${year}-${month}`)
-                }}
-              >
-                <SelectTrigger className="rounded-r-none border-r-0 w-[70px] h-9">
-                  <SelectValue placeholder="Mon" />
-                </SelectTrigger>
-                <SelectContent>
-                  {MONTHS.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>{m.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select
-                value={contract.shipment_month?.split('-')[0] || new Date().getFullYear().toString()}
-                onValueChange={(year) => {
-                  const month = contract.shipment_month?.split('-')[1] || String(new Date().getMonth() + 1).padStart(2, '0')
-                  updateContract('shipment_month', `${year}-${month}`)
-                }}
-              >
-                <SelectTrigger className="rounded-l-none w-[80px] h-9">
-                  <SelectValue placeholder="Year" />
-                </SelectTrigger>
-                <SelectContent>
-                  {YEARS.map((y) => (
-                    <SelectItem key={y.value} value={y.value}>{y.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </div>
-
-        {contract.bag_count && contract.bag_weight_kg && (
-          <div className="grid grid-cols-2 gap-3 mt-3">
-            <div className="bg-primary/5 p-3 rounded-lg">
-              <div className="text-xs font-medium mb-0.5 flex items-center gap-1">
-                Total M/T
-                <Badge variant="outline" className="text-[10px]">Auto</Badge>
-              </div>
-              <div className="text-lg font-semibold">{contract.bags_quantity_mt} M/T</div>
-            </div>
-            <div className="bg-primary/5 p-3 rounded-lg">
-              <div className="text-xs font-medium mb-0.5 flex items-center gap-1">
-                Equiv. 60kg Bags
-                <Badge variant="outline" className="text-[10px]">Auto</Badge>
-              </div>
-              <div className="text-lg font-semibold">{contract.equivalent_60kg_bags} bags</div>
-            </div>
-          </div>
         )}
-      </div>
-
-      {/* Sample Reference */}
-      <div className="border-t pt-3">
-        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Sample Reference</Label>
-        <div className="w-[300px]">
-          <Label className="text-xs text-muted-foreground mb-1 block">Exporter Sample Number</Label>
-          <Input
-            value={contract.exporter_sample_number}
-            onChange={(e) => updateContract('exporter_sample_number', e.target.value)}
-            placeholder="Sample ref. for this contract"
-            className="h-9"
-          />
-        </div>
       </div>
     </div>
   )

@@ -837,8 +837,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           ))}
         </div>
         <div className="mt-2">
-          <p className="text-sm font-medium">{STEPS[currentStep - 1].name}</p>
-          <p className="text-xs text-muted-foreground">{STEPS[currentStep - 1].description}</p>
+          <p className="text-sm font-medium">Sample Intake - {STEPS[currentStep - 1].name}</p>
         </div>
       </HeaderWrapper>
 
@@ -953,8 +952,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
                   onClick={handleGoToContracts}
                   disabled={!validateStep(4)}
                 >
-                  Next: Add Sub-Contracts
-                  <ChevronRight className="h-4 w-4 ml-1" />
+                  + Add Sub-Contracts
                 </Button>
                 <Button
                   type="button"

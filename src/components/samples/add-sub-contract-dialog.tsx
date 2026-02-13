@@ -43,6 +43,7 @@ interface SampleData {
   bag_weight_kg?: number
   bag_type?: string
   shipment_month?: string
+  exporter_sample_number?: string | null
 }
 
 interface AddSubContractDialogProps {
@@ -95,16 +96,12 @@ function MotherSummary({ sample }: { sample: SampleData }) {
         )}
       </div>
 
-      <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
+      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
         {entities.map(e => (
           <div key={e.label}>
-            <div>
-              <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
-              <span className="font-medium">{e.value}</span>
-            </div>
-            {e.ref && (
-              <div className="text-[11px] text-muted-foreground">{e.ref}</div>
-            )}
+            <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
+            <span className="font-medium">{e.value}</span>
+            {e.ref && <span className="text-muted-foreground text-xs"> - {e.ref}</span>}
           </div>
         ))}
       </div>
@@ -113,6 +110,12 @@ function MotherSummary({ sample }: { sample: SampleData }) {
         <div className="flex items-center gap-2">
           {sampleType && <Badge variant="outline" className="text-[10px]">{sampleType}</Badge>}
           <span className="font-mono">{sample.tracking_number}</span>
+          {sample.exporter_sample_number && (
+            <>
+              <span className="text-muted-foreground">|</span>
+              <span className="font-mono">{sample.exporter_sample_number}</span>
+            </>
+          )}
           {sample.sample_type === 'ss' && sample.ico_number && (
             <>
               <span className="text-muted-foreground">|</span>
