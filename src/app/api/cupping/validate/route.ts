@@ -195,9 +195,14 @@ export async function GET(request: NextRequest) {
         ? 'Global admin permission'
         : `Waiting for ${assignedCupperCount === 1 ? 'cupper' : 'more cuppers'} (${completedCupperCount}/${assignedCupperCount})`
     } else if (!hasEnoughCuppers) {
-      // Not enough cuppers have completed
-      canValidate = false
-      reason = `Waiting for ${assignedCupperCount === 1 ? 'cupper' : 'more cuppers'} (${completedCupperCount}/${assignedCupperCount})`
+      // Not enough cuppers have completed - but master cuppers can bypass the minimum
+      if (isMasterCupper && userHasCompleted && (isAssigned || profile.laboratory_id === session.laboratory_id)) {
+        canValidate = true
+        reason = 'Master cupper bypass (minimum cuppers not met)'
+      } else {
+        canValidate = false
+        reason = `Waiting for more cuppers (${completedCupperCount}/${minCuppersRequired})`
+      }
     } else if (hasMasterCupperAssigned) {
       // If a master cupper is assigned, only master cuppers or lab admins can validate
       if (hasAdminPermissions && (isAssigned || profile.laboratory_id === session.laboratory_id)) {
