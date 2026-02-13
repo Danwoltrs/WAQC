@@ -5,6 +5,7 @@ import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ChevronDown } from 'lucide-react'
 import { CreateClientDialog } from './create-client-dialog'
 import { StepComponentProps } from './types'
 
@@ -19,6 +20,9 @@ export function SupplyChainStep({
 }: StepComponentProps) {
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientType, setCreateClientType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
+  const [showMore, setShowMore] = useState(
+    !!(formData.supplier || formData.roaster || formData.end_client)
+  )
 
   // Sellers/Shippers: from exporters table (deduplicated by name)
   const sellerOptions = useMemo(() => {
@@ -227,8 +231,8 @@ export function SupplyChainStep({
       {/* Divider */}
       <div className="border-t" />
 
-      {/* Importer Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
+      {/* Importer Row - with QC Client side-by-side when unchecked */}
+      <div className={`grid ${formData.importer_is_qc_client ? 'grid-cols-[180px_160px]' : 'grid-cols-[180px_160px_180px_160px]'} gap-3 items-end`}>
         <div>
           <div className="flex items-center gap-2 mb-1.5">
             <Label className="text-xs text-muted-foreground">Importer</Label>
@@ -284,156 +288,168 @@ export function SupplyChainStep({
             className="h-9"
           />
         </div>
-        <div></div>
-      </div>
 
-      {/* QC Client Row (only if not same as importer) */}
-      {!formData.importer_is_qc_client && (
-        <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block">QC Client</Label>
-            <Select
-              value={formData.qc_client || 'none'}
-              onValueChange={(value) => {
-                if (value === 'none') {
-                  updateFormData('qc_client', '')
-                } else {
-                  updateFormData('qc_client', value)
-                }
-              }}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Select QC client" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select...</SelectItem>
-                {qcClientOptions.map((client) => (
-                  <SelectItem key={client.id} value={client.fantasy_name!}>
-                    {client.fantasy_name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
-            <Input
-              value={formData.qc_client_contract_nr}
-              onChange={(e) => updateFormData('qc_client_contract_nr', e.target.value)}
-              placeholder="Contract ref."
-              className="h-9"
-            />
-          </div>
-          <div></div>
-        </div>
-      )}
+        {/* QC Client side-by-side (only when importer != QC Client) */}
+        {!formData.importer_is_qc_client && (
+          <>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block">QC Client</Label>
+              <Select
+                value={formData.qc_client || 'none'}
+                onValueChange={(value) => {
+                  if (value === 'none') {
+                    updateFormData('qc_client', '')
+                  } else {
+                    updateFormData('qc_client', value)
+                  }
+                }}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select QC client" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Select...</SelectItem>
+                  {qcClientOptions.map((client) => (
+                    <SelectItem key={client.id} value={client.fantasy_name!}>
+                      {client.fantasy_name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
+              <Input
+                value={formData.qc_client_contract_nr}
+                onChange={(e) => updateFormData('qc_client_contract_nr', e.target.value)}
+                placeholder="Contract ref."
+                className="h-9"
+              />
+            </div>
+          </>
+        )}
+      </div>
 
       {/* Divider */}
       <div className="border-t" />
 
-      {/* Supplier Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
-        <div>
-          <Label className="text-xs text-muted-foreground mb-1.5 block">Supplier</Label>
-          <Input
-            value={formData.supplier}
-            onChange={(e) => updateFormData('supplier', e.target.value)}
-            placeholder="Farm / cooperative"
-            className="h-9"
-          />
-        </div>
-        <div>
-          <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
-          <Input
-            value={formData.supplier_contract_nr}
-            onChange={(e) => updateFormData('supplier_contract_nr', e.target.value)}
-            placeholder="Contract ref."
-            className="h-9"
-          />
-        </div>
-        <div></div>
-      </div>
+      {/* Collapsible: Supplier, Roaster & End Client */}
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowMore(!showMore)}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
+        >
+          <ChevronDown className={`h-3 w-3 transition-transform ${showMore ? '' : '-rotate-90'}`} />
+          Supplier, Roaster & End Client
+          {(formData.supplier || formData.roaster || formData.end_client) && (
+            <span className="ml-1 text-foreground font-medium">
+              {[formData.supplier, formData.roaster, formData.end_client].filter(Boolean).join(', ')}
+            </span>
+          )}
+        </button>
 
-      {/* Roaster Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
-        <div>
-          <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster</Label>
-          <Select
-            value={formData.roaster || 'none'}
-            onValueChange={(value) => {
-              if (value === 'new') {
-                setCreateClientType('roaster')
-                setShowCreateClientDialog(true)
-              } else if (value === 'none') {
-                updateFormData('roaster', '')
-              } else {
-                updateFormData('roaster', value)
-              }
-            }}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Select roaster" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Select...</SelectItem>
-              <SelectItem value="new">+ Create New</SelectItem>
-              {roasterOptions.map((roaster) => (
-                <SelectItem key={roaster.id} value={roaster.name}>
-                  {roaster.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
-          <Input
-            value={formData.roaster_contract_nr}
-            onChange={(e) => updateFormData('roaster_contract_nr', e.target.value)}
-            placeholder="Contract ref."
-            className="h-9"
-          />
-        </div>
-        <div></div>
-      </div>
+        {showMore && (
+          <div className="space-y-4">
+            {/* Supplier Row */}
+            <div className="grid grid-cols-[180px_160px] gap-3 items-end">
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block">Supplier</Label>
+                <Input
+                  value={formData.supplier}
+                  onChange={(e) => updateFormData('supplier', e.target.value)}
+                  placeholder="Farm / cooperative"
+                  className="h-9"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
+                <Input
+                  value={formData.supplier_contract_nr}
+                  onChange={(e) => updateFormData('supplier_contract_nr', e.target.value)}
+                  placeholder="Contract ref."
+                  className="h-9"
+                />
+              </div>
+            </div>
 
-      {/* End Client Row */}
-      <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
-        <div>
-          <Label className="text-xs text-muted-foreground mb-1.5 block">End Client</Label>
-          <Select
-            value={formData.end_client || 'none'}
-            onValueChange={(value) => {
-              if (value === 'none') {
-                updateFormData('end_client', '')
-              } else {
-                updateFormData('end_client', value)
-              }
-            }}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Select end client" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Select...</SelectItem>
-              {qcClients.map((client) => (
-                <SelectItem key={client.id} value={client.fantasy_name || client.company}>
-                  {client.fantasy_name || client.company}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div>
-          <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
-          <Input
-            value={formData.end_client_contract_nr}
-            onChange={(e) => updateFormData('end_client_contract_nr', e.target.value)}
-            placeholder="Contract ref."
-            className="h-9"
-          />
-        </div>
-        <div></div>
+            {/* Roaster + End Client side-by-side */}
+            <div className="grid grid-cols-[180px_160px_180px_160px] gap-3 items-end">
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster</Label>
+                <Select
+                  value={formData.roaster || 'none'}
+                  onValueChange={(value) => {
+                    if (value === 'new') {
+                      setCreateClientType('roaster')
+                      setShowCreateClientDialog(true)
+                    } else if (value === 'none') {
+                      updateFormData('roaster', '')
+                    } else {
+                      updateFormData('roaster', value)
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select roaster" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select...</SelectItem>
+                    <SelectItem value="new">+ Create New</SelectItem>
+                    {roasterOptions.map((roaster) => (
+                      <SelectItem key={roaster.id} value={roaster.name}>
+                        {roaster.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
+                <Input
+                  value={formData.roaster_contract_nr}
+                  onChange={(e) => updateFormData('roaster_contract_nr', e.target.value)}
+                  placeholder="Contract ref."
+                  className="h-9"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block">End Client</Label>
+                <Select
+                  value={formData.end_client || 'none'}
+                  onValueChange={(value) => {
+                    if (value === 'none') {
+                      updateFormData('end_client', '')
+                    } else {
+                      updateFormData('end_client', value)
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="Select end client" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Select...</SelectItem>
+                    {qcClients.map((client) => (
+                      <SelectItem key={client.id} value={client.fantasy_name || client.company}>
+                        {client.fantasy_name || client.company}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
+                <Input
+                  value={formData.end_client_contract_nr}
+                  onChange={(e) => updateFormData('end_client_contract_nr', e.target.value)}
+                  placeholder="Contract ref."
+                  className="h-9"
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       <CreateClientDialog
