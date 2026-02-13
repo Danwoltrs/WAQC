@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
+import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
@@ -98,6 +99,10 @@ interface Sample {
   ico_number?: string
   container_nr?: string
   exporter_sample_number?: string | null
+  bag_count?: number
+  bag_weight_kg?: number
+  bag_type?: string
+  shipment_month?: string
   laboratory_id?: string
   created_at: string
   quality_spec_id?: string
@@ -182,6 +187,7 @@ export default function SamplesPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
   const [expandedSubContracts, setExpandedSubContracts] = useState<Set<string>>(new Set())
+  const [subContractSample, setSubContractSample] = useState<Sample | null>(null)
 
   // Certificate preview modal states
   const [previewSample, setPreviewSample] = useState<Sample | null>(null)
@@ -1339,6 +1345,10 @@ export default function SamplesPage() {
                             <Eye className="h-4 w-4 mr-2" />
                             View Sample
                           </ContextMenuItem>
+                          <ContextMenuItem onClick={() => setSubContractSample(sample)}>
+                            <Plus className="h-4 w-4 mr-2" />
+                            Add Sub-Contract
+                          </ContextMenuItem>
                           <ContextMenuItem onClick={() => handleSelectAll(true)}>
                             <Checkbox className="h-4 w-4 mr-2" checked={false} />
                             Select All
@@ -1647,6 +1657,16 @@ export default function SamplesPage() {
         sampleCount={selectedSamples.size}
         onAssign={handleCuppersAssigned}
       />
+
+      {/* Add Sub-Contract Dialog */}
+      {subContractSample && (
+        <AddSubContractDialog
+          open={!!subContractSample}
+          onOpenChange={(open) => !open && setSubContractSample(null)}
+          sample={subContractSample}
+          onSuccess={loadSamples}
+        />
+      )}
 
       {/* Certificate Preview Modal */}
       <Dialog open={!!previewSample} onOpenChange={(open) => !open && handleClosePreview()}>

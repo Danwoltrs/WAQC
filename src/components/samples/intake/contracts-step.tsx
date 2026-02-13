@@ -324,7 +324,7 @@ export function ContractsStep({
 
 // ---------- Contract Panel (form for a single sub-contract) ----------
 
-function ContractPanel({
+export function ContractPanel({
   contract,
   updateContract,
   importerOptions,
