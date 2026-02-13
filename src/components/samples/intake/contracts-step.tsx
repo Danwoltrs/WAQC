@@ -407,28 +407,6 @@ export function ContractPanel({
               className="h-8 text-sm"
             />
           </div>
-          {!isPSS && (
-            <>
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
-                <Input
-                  value={contract.ico_number}
-                  onChange={(e) => updateContract('ico_number', e.target.value)}
-                  placeholder="ICO number"
-                  className="h-8 text-sm"
-                />
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
-                <Input
-                  value={contract.container_nr}
-                  onChange={(e) => updateContract('container_nr', e.target.value)}
-                  placeholder="Container nr."
-                  className="h-8 text-sm"
-                />
-              </div>
-            </>
-          )}
         </div>
 
         {/* Vertical separator */}
@@ -575,6 +553,30 @@ export function ContractPanel({
           )}
         </div>
       </div>
+
+      {/* ICO & Container (SS only) */}
+      {!isPSS && (
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
+            <Input
+              value={contract.ico_number}
+              onChange={(e) => updateContract('ico_number', e.target.value)}
+              placeholder="ICO number"
+              className="h-8 text-sm"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
+            <Input
+              value={contract.container_nr}
+              onChange={(e) => updateContract('container_nr', e.target.value)}
+              placeholder="Container nr."
+              className="h-8 text-sm"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Quantity & Shipment (collapsible) */}
       <div className="border-t pt-2">

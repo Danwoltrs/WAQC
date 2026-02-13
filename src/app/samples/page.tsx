@@ -7,6 +7,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from '@/components/ui/alert-dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
@@ -194,6 +198,7 @@ export default function SamplesPage() {
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteSubContractTarget, setDeleteSubContractTarget] = useState<{ sample: Sample; sc: SubContract } | null>(null)
   const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
   const [selectedSubContractQrCodes, setSelectedSubContractQrCodes] = useState<Set<string>>(new Set())
   const [subContractSample, setSubContractSample] = useState<Sample | null>(null)
@@ -759,6 +764,73 @@ export default function SamplesPage() {
     }
   }
 
+  const handleViewSubContractCertificate = async (sampleId: string, contractId: string) => {
+    setPreviewSample(samples.find(s => s.id === sampleId) || null)
+    setPreviewLoading(true)
+    setPreviewPdfUrl(null)
+
+    try {
+      const response = await fetch(`/api/samples/${sampleId}/certificate?contract_id=${contractId}`)
+      if (response.ok) {
+        const blob = await response.blob()
+        const url = window.URL.createObjectURL(blob)
+        setPreviewPdfUrl(url)
+      }
+    } catch (error) {
+      console.error('Error loading sub-contract certificate preview:', error)
+    } finally {
+      setPreviewLoading(false)
+    }
+  }
+
+  const handleDeleteSubContract = (sample: Sample, sc: SubContract) => {
+    setDeleteSubContractTarget({ sample, sc })
+  }
+
+  const confirmDeleteSubContract = async () => {
+    if (!deleteSubContractTarget) return
+    const { sample, sc } = deleteSubContractTarget
+    setDeleteSubContractTarget(null)
+
+    try {
+      setDeletingId(sc.id)
+      const response = await fetch(
+        `/api/samples/${sample.id}/contracts?contract_id=${sc.id}`,
+        { method: 'DELETE' }
+      )
+
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to delete sub-contract')
+      }
+
+      // Remove from local state
+      setSamples(prev => prev.map(s => {
+        if (s.id !== sample.id) return s
+        const remaining = s.sub_contracts?.filter(c => c.id !== sc.id) || []
+        return {
+          ...s,
+          sub_contracts: remaining,
+          contract_count: remaining.length,
+        }
+      }))
+      // Collapse if no sub-contracts left
+      const remainingCount = (sample.sub_contracts?.length ?? 1) - 1
+      if (remainingCount <= 0) {
+        setExpandedSamples(prev => {
+          const next = new Set(prev)
+          next.delete(sample.id)
+          return next
+        })
+      }
+    } catch (error) {
+      console.error('Error deleting sub-contract:', error)
+      alert(error instanceof Error ? error.message : 'Failed to delete sub-contract.')
+    } finally {
+      setDeletingId(null)
+    }
+  }
+
   const toggleExpand = (sampleId: string) => {
     setExpandedSamples(prev => {
       const next = new Set(prev)
@@ -1171,7 +1243,7 @@ export default function SamplesPage() {
                       }}>
                         <ContextMenuTrigger asChild>
                           <tr className="border-b border-border hover:bg-accent/50 transition-colors">
-                            <td className="py-3 px-4">
+                            <td className="py-3 px-4 align-middle">
                               <div className="flex flex-col items-center gap-1">
                                 <Checkbox
                                   checked={selectedSamples.has(sample.id)}
@@ -1198,9 +1270,10 @@ export default function SamplesPage() {
                               </div>
                             </td>
                             {selectedSamples.size > 0 && (
-                              <td className="py-3 px-4">
+                              <td className="py-3 px-4 align-middle">
                                 {selectedSamples.has(sample.id) && (
                                   <Checkbox
+                                    className="mt-1"
                                     checked={selectedQrCodes.has(sample.id)}
                                     onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
                                   />
@@ -1552,20 +1625,54 @@ export default function SamplesPage() {
                                   </td>
                                 )}
                                 {/* Actions */}
-                                <td className="py-2 px-4">
-                                  <div className="flex items-center gap-1">
+                                <td className="py-1.5 px-4">
+                                  <div className="flex items-center gap-0.5">
+                                    <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
+                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]">
+                                        <Eye className="h-2.5 w-2.5 mr-0.5" />
+                                        View
+                                      </Button>
+                                    </Link>
                                     {sc.has_certificate && (
+                                      <>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0"
+                                          onClick={() => handleViewSubContractCertificate(sample.id, sc.id)}
+                                          title="View Certificate"
+                                        >
+                                          <Award className="h-2.5 w-2.5" />
+                                        </Button>
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 w-6 p-0"
+                                          onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
+                                          disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
+                                          title="Download Certificate"
+                                        >
+                                          {downloadingSampleId === `${sample.id}_${sc.id}` ? (
+                                            <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                          ) : (
+                                            <Download className="h-2.5 w-2.5" />
+                                          )}
+                                        </Button>
+                                      </>
+                                    )}
+                                    {isGlobalAdmin && (
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
-                                        disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
-                                        title="Download Certificate"
+                                        className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                        onClick={() => handleDeleteSubContract(sample, sc)}
+                                        disabled={deletingId === sc.id}
+                                        title="Delete Sub-Contract"
                                       >
-                                        {downloadingSampleId === `${sample.id}_${sc.id}` ? (
-                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        {deletingId === sc.id ? (
+                                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
                                         ) : (
-                                          <Download className="h-3 w-3" />
+                                          <Trash2 className="h-2.5 w-2.5" />
                                         )}
                                       </Button>
                                     )}
@@ -1759,6 +1866,26 @@ export default function SamplesPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Sub-Contract Confirmation */}
+      <AlertDialog open={!!deleteSubContractTarget} onOpenChange={(open) => !open && setDeleteSubContractTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Sub-Contract</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete sub-contract{' '}
+              <span className="font-medium text-foreground">{deleteSubContractTarget?.sc.tracking_number}</span>?
+              This will also delete its certificate if one exists.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteSubContract} className="bg-destructive hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
