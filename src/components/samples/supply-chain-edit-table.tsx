@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Building2, Loader2 } from 'lucide-react'
+import { Building2, Edit, Loader2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { CreateClientDialog } from '@/components/samples/intake/create-client-dialog'
 
 interface Entity {
@@ -52,11 +53,12 @@ interface SupplyChainEditTableProps {
   isEditMode: boolean
   formData: Record<string, any>
   onFormChange: (field: string, value: any) => void
+  onEditClick?: () => void
 }
 
 const KEEP_CURRENT = '__keep_current__'
 
-export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChange }: SupplyChainEditTableProps) {
+export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChange, onEditClick }: SupplyChainEditTableProps) {
   const [exporters, setExporters] = useState<Entity[]>([])
   const [importers, setImporters] = useState<Entity[]>([])
   const [roasters, setRoasters] = useState<Entity[]>([])
@@ -299,6 +301,19 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
   const effectiveImporterName = sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null)
   const effectiveEndClientName = sample.end_client_name || sample.qc_client_name
 
+  // In view mode, check if importer/roaster/end client are all the same as QC client
+  const qcName = sample.qc_client_name?.toLowerCase()?.trim()
+  const allSameAsQc = !isEditMode && qcName && (
+    (!effectiveImporterName || effectiveImporterName.toLowerCase().trim() === qcName) &&
+    (!sample.roaster_name || sample.roaster_name.toLowerCase().trim() === qcName) &&
+    (!effectiveEndClientName || effectiveEndClientName.toLowerCase().trim() === qcName)
+  )
+
+  // In view mode, hide roaster/end client rows if empty or all same as QC client
+  const showImporter = isEditMode || (!allSameAsQc && !!effectiveImporterName)
+  const showRoaster = isEditMode || (!allSameAsQc && !!sample.roaster_name)
+  const showEndClient = isEditMode || (!allSameAsQc && !!effectiveEndClientName)
+
   return (
     <>
       <div className="border rounded-lg overflow-hidden">
@@ -307,7 +322,16 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
             <tr className="border-b bg-muted/50">
               <th className="text-left py-2 px-3 font-medium w-[120px]">Party</th>
               <th className="text-left py-2 px-3 font-medium">Name</th>
-              <th className="text-left py-2 px-3 font-medium w-[180px]">Contract Ref</th>
+              <th className="text-left py-2 px-3 font-medium w-[180px]">
+                <div className="flex items-center justify-between">
+                  Contract Ref
+                  {!isEditMode && onEditClick && (
+                    <Button variant="ghost" size="icon" className="h-6 w-6 -mr-1" onClick={onEditClick} title="Edit">
+                      <Edit className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
+                </div>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -329,28 +353,39 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
               </td>
             </tr>
 
-            {/* Seller */}
-            {renderEntityCell(
-              'Seller',
-              sample.seller_name,
-              'seller_id',
-              exporters,
-              'seller_contract_nr',
-              sample.seller_contract_nr,
+            {/* Seller / Shipper - merged when same_seller_shipper */}
+            {sample.same_seller_shipper && !isEditMode ? (
+              renderEntityCell(
+                'Seller/Shipper',
+                sample.seller_name,
+                'seller_id',
+                exporters,
+                'seller_contract_nr',
+                sample.seller_contract_nr,
+              )
+            ) : (
+              <>
+                {renderEntityCell(
+                  'Seller',
+                  sample.seller_name,
+                  'seller_id',
+                  exporters,
+                  'seller_contract_nr',
+                  sample.seller_contract_nr,
+                )}
+                {renderEntityCell(
+                  'Shipper',
+                  sample.same_seller_shipper ? null : sample.exporter_name,
+                  'exporter_id',
+                  exporters,
+                  'shipper_contract_nr',
+                  sample.shipper_contract_nr || (sample.same_seller_shipper ? null : sample.exporter_contract_nr),
+                )}
+              </>
             )}
 
-            {/* Shipper (always shown, dash if same as seller or empty) */}
-            {renderEntityCell(
-              'Shipper',
-              sample.same_seller_shipper ? null : sample.exporter_name,
-              'exporter_id',
-              exporters,
-              'shipper_contract_nr',
-              sample.shipper_contract_nr || (sample.same_seller_shipper ? null : sample.exporter_contract_nr),
-            )}
-
-            {/* Importer */}
-            {renderEntityCell(
+            {/* Importer - hidden in view mode if all same as QC client */}
+            {showImporter && renderEntityCell(
               'Importer',
               effectiveImporterName,
               'importer_id',
@@ -359,8 +394,8 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
               sample.buyer_contract_nr,
             )}
 
-            {/* Roaster */}
-            {renderEntityCell(
+            {/* Roaster - hidden in view mode if empty */}
+            {showRoaster && renderEntityCell(
               'Roaster',
               sample.roaster_name,
               'roaster_id',
@@ -369,8 +404,8 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
               sample.roaster_contract_nr,
             )}
 
-            {/* End Client */}
-            {renderClientEntityCell(
+            {/* End Client - hidden in view mode if empty */}
+            {showEndClient && renderClientEntityCell(
               'End Client',
               effectiveEndClientName,
               'end_client_id',
@@ -379,14 +414,14 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
               sample.end_client_contract_nr,
             )}
 
-            {/* QC Client */}
+            {/* QC Client - inherit importer contract nr when others are collapsed */}
             {renderClientEntityCell(
               'QC Client',
               sample.qc_client_name,
               'client_id',
               qcClients,
               'qc_client_contract_nr',
-              sample.qc_client_contract_nr,
+              sample.qc_client_contract_nr || (allSameAsQc ? sample.buyer_contract_nr : null),
               true,
             )}
           </tbody>

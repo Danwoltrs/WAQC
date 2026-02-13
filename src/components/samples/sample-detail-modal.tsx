@@ -85,9 +85,11 @@ interface Sample {
   ico_marks?: string
   container_nr?: string
   processing_method?: string
+  micro_origin?: string
   laboratory_id?: string
   assigned_to?: string
   same_seller_shipper?: boolean
+  exporter_sample_number?: string
   created_at: string
   updated_at?: string
   certificate_id?: string | null
@@ -122,6 +124,7 @@ export interface SampleDetailModalProps {
   onOpenChange: (open: boolean) => void
   sampleId: string | null
   onSampleUpdated?: () => void
+  startInEditMode?: boolean
 }
 
 export function SampleDetailModal({
@@ -129,6 +132,7 @@ export function SampleDetailModal({
   onOpenChange,
   sampleId,
   onSampleUpdated,
+  startInEditMode,
 }: SampleDetailModalProps) {
   const { profile } = useAuth()
   const [sample, setSample] = useState<Sample | null>(null)
@@ -176,6 +180,14 @@ export function SampleDetailModal({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, sampleId])
+
+  // Auto-enter edit mode when startInEditMode is true and sample is loaded
+  useEffect(() => {
+    if (startInEditMode && sample && !loading && !isEditMode) {
+      handleEnterEditMode()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startInEditMode, sample, loading])
 
   const loadEditPermission = async (sampleUuid: string) => {
     try {
@@ -244,6 +256,7 @@ export function SampleDetailModal({
       ico_number: sample.ico_number,
       container_nr: sample.container_nr,
       processing_method: sample.processing_method,
+      micro_origin: sample.micro_origin,
       storage_position: sample.storage_position,
       ...(sample.seller_id ? { seller_id: sample.seller_id } : {}),
       ...(sample.exporter_id ? { exporter_id: sample.exporter_id } : {}),
@@ -656,13 +669,13 @@ export function SampleDetailModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden p-0">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
+            <div className="flex items-center justify-center py-12 px-6">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
             </div>
           ) : !sample ? (
-            <div className="text-center py-12">
+            <div className="text-center py-12 px-6">
               {loadError === 'unauthorized' ? (
                 <>
                   <h3 className="text-lg font-semibold mb-2">Session expired</h3>
@@ -688,348 +701,281 @@ export function SampleDetailModal({
               )}
             </div>
           ) : (
-            <div className="space-y-6">
-              {/* Header */}
-              <div>
-                <div className="flex items-center gap-3">
-                  <h2 className="text-2xl font-bold tracking-tight">{parseTrackingNumber(sample.tracking_number)}</h2>
-                  {getStatusBadge(sample.status)}
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {sample.origin} {sample.quality_name && `\u2022 ${sample.quality_name}`} \u2022 Created {new Date(sample.created_at).toLocaleDateString()}
-                </p>
-              </div>
-
-              {/* Storage Position */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Storage Position</CardTitle>
-                </CardHeader>
-                <CardContent>
+            <>
+              {/* Fixed Header */}
+              <DialogHeader className="shrink-0 px-6 pt-6 pb-4 border-b space-y-1.5">
+                <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
-                    <MapPin className="h-4 w-4 text-muted-foreground" />
-                    <Input
-                      value={isEditMode ? (formData.storage_position || '') : (sample.storage_position || '')}
-                      onChange={(e) => handleFormChange('storage_position', e.target.value)}
-                      className="max-w-xs h-9"
-                      placeholder="e.g., A1-B2"
-                      disabled={!isEditMode}
-                    />
-                    {!isEditMode && !sample.storage_position && (
-                      <span className="text-sm text-muted-foreground">Not assigned</span>
+                    <DialogTitle className="text-2xl font-bold tracking-tight">
+                      {parseTrackingNumber(sample.tracking_number)}
+                    </DialogTitle>
+                    {getStatusBadge(sample.status)}
+                    {sample.sample_type && (
+                      <Badge variant="outline" className="text-xs uppercase">
+                        {sample.sample_type}
+                      </Badge>
                     )}
                   </div>
-                </CardContent>
-              </Card>
-
-              {/* Sample Info */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    Sample Info
-                    {isEditMode && <Badge variant="outline" className="text-xs">Editing</Badge>}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground">Origin</label>
-                      <div className="text-sm font-medium mt-1">{sample.origin}</div>
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Quality</label>
-                      <div className="text-sm font-medium mt-1">{sample.quality_name || '-'}</div>
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Processing</label>
-                      {isEditMode ? (
-                        <Input
-                          value={formData.processing_method || ''}
-                          onChange={(e) => handleFormChange('processing_method', e.target.value)}
-                          className="h-8 text-sm mt-1"
-                          placeholder="e.g., Washed, Natural"
-                        />
-                      ) : (
-                        <div className="text-sm font-medium mt-1">{sample.processing_method || '-'}</div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">Bag Type</label>
-                      {isEditMode ? (
-                        <Select
-                          value={formData.bag_type || sample.bag_type || ''}
-                          onValueChange={(v) => handleFormChange('bag_type', v)}
-                        >
-                          <SelectTrigger className="h-8 text-sm mt-1">
-                            <SelectValue placeholder="Select..." />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="jute">Jute</SelectItem>
-                            <SelectItem value="grainpro">GrainPro</SelectItem>
-                            <SelectItem value="bulk">Bulk</SelectItem>
-                            <SelectItem value="other">Other</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <div className="text-sm font-medium mt-1">{sample.bag_type || '-'}</div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Bags quantity row */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-sm text-muted-foreground">Bags:</span>
+                  <div className="flex items-center gap-2 mr-8">
+                    <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
                     {isEditMode ? (
                       <Input
-                        type="number"
-                        value={formData.bag_count || ''}
-                        onChange={(e) => handleFormChange('bag_count', e.target.value ? parseInt(e.target.value) : null)}
-                        className="h-8 w-24 text-sm"
-                        placeholder="Count"
+                        value={formData.storage_position || ''}
+                        onChange={(e) => handleFormChange('storage_position', e.target.value)}
+                        className="h-8 w-32 text-sm"
+                        placeholder="e.g., A1-B2"
                       />
                     ) : (
-                      <span className="text-sm font-medium">{sample.bag_count || sample.bags || '-'}</span>
-                    )}
-                    <span className="text-sm text-muted-foreground">x</span>
-                    {isEditMode ? (
-                      <Input
-                        type="number"
-                        value={formData.bag_weight_kg || ''}
-                        onChange={(e) => handleFormChange('bag_weight_kg', e.target.value ? parseFloat(e.target.value) : null)}
-                        className="h-8 w-24 text-sm"
-                        placeholder="kg"
-                      />
-                    ) : (
-                      <span className="text-sm font-medium">{sample.bag_weight_kg || 60}</span>
-                    )}
-                    <span className="text-sm text-muted-foreground">kg</span>
-                    {(sample.bags_quantity_mt || sample.equivalent_60kg_bags) && (
-                      <span className="text-sm text-muted-foreground ml-2">
-                        ({sample.bags_quantity_mt ? `${sample.bags_quantity_mt} MT` : `${Math.round(sample.equivalent_60kg_bags || 0)} x 60kg`})
-                      </span>
+                      <span className="text-sm text-muted-foreground">{sample.storage_position || '\u2014'}</span>
                     )}
                   </div>
+                </div>
+                <DialogDescription className="flex items-center gap-2 flex-wrap">
+                  <span>{sample.origin}{sample.quality_name ? ` - ${sample.quality_name}` : ''}</span>
+                  <span className="text-muted-foreground">Created {new Date(sample.created_at).toLocaleDateString()}</span>
+                  {sample.assigned_to && (
+                    <span className="flex items-center gap-1">
+                      <User className="h-3 w-3" />
+                      {sample.assigned_to}
+                    </span>
+                  )}
+                </DialogDescription>
+              </DialogHeader>
 
-                  <Separator />
-
-                  {/* Container / ICO info */}
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div>
-                      <label className="text-sm text-muted-foreground">Container</label>
-                      {isEditMode ? (
-                        <Input
-                          value={formData.container_nr || ''}
-                          onChange={(e) => handleFormChange('container_nr', e.target.value)}
-                          className="h-8 text-sm font-mono mt-1"
-                          placeholder="Container #"
-                        />
-                      ) : (
-                        <div className="text-sm font-medium font-mono mt-1">{sample.container_nr || '-'}</div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">ICO #</label>
-                      {isEditMode ? (
-                        <Input
-                          value={formData.ico_number || ''}
-                          onChange={(e) => handleFormChange('ico_number', e.target.value)}
-                          className="h-8 text-sm font-mono mt-1"
-                          placeholder="ICO #"
-                        />
-                      ) : (
-                        <div className="text-sm font-medium font-mono mt-1">{sample.ico_number || '-'}</div>
-                      )}
-                    </div>
-                    <div>
-                      <label className="text-sm text-muted-foreground">ICO Marks</label>
-                      <div className="text-sm font-medium font-mono mt-1">{sample.ico_marks || '-'}</div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Supply Chain + Certificate Status */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <Card className="lg:col-span-2">
-                  <CardContent className="pt-6">
-                    <SupplyChainEditTable
-                      sample={sample}
-                      isEditMode={isEditMode}
-                      formData={formData}
-                      onFormChange={(field, value) => handleFormChange(field as keyof Sample, value)}
-                    />
-                  </CardContent>
-                </Card>
-
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Certificate Status</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {sample.certificate_id ? (
-                      <>
-                        <Badge variant="default" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
-                          <CheckCircle className="h-3 w-3 mr-1" />
-                          Certified
-                        </Badge>
-                        <div className="space-y-2">
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="w-full"
-                            onClick={handleViewCertificate}
-                            disabled={previewLoading}
-                          >
-                            {previewLoading ? (
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                              <Eye className="h-4 w-4 mr-2" />
-                            )}
-                            View Certificate
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full"
-                            onClick={handleDownloadCertificate}
-                            disabled={downloadingCertificate}
-                          >
-                            {downloadingCertificate ? (
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                              <Download className="h-4 w-4 mr-2" />
-                            )}
-                            Download PDF
-                          </Button>
-                        </div>
-                        {sample.certificate_created_at && (
-                          <p className="text-xs text-muted-foreground">
-                            Certified: {new Date(sample.certificate_created_at).toLocaleDateString()}
-                          </p>
-                        )}
-                      </>
-                    ) : (
-                      <>
-                        {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected') ? (
-                          <Badge variant="default" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
-                            <AlertCircle className="h-3 w-3 mr-1" />
-                            {sample.workflow_stage === 'certified' ? 'Approved' : 'Rejected'} - Not Generated
-                          </Badge>
-                        ) : (
-                          <Badge variant="secondary">
-                            <Clock className="h-3 w-3 mr-1" />
-                            Pending
-                          </Badge>
-                        )}
-                        {(sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review') && (
-                          <Button
-                            variant="default"
-                            size="sm"
-                            className="w-full"
-                            onClick={handleGenerateCertificate}
-                            disabled={generatingCertificate}
-                          >
-                            {generatingCertificate ? (
-                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                            ) : (
-                              <Award className="h-4 w-4 mr-2" />
-                            )}
-                            Generate
-                          </Button>
-                        )}
-                        <p className="text-xs text-muted-foreground">
-                          Stage: {sample.workflow_stage || 'received'}
-                        </p>
-                      </>
-                    )}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Cupping & Grading */}
-              <CuppingGradingSection
-                sample={sample}
-                profile={profile}
-                editPermission={editPermission}
-              />
-
-              {/* Additional Info */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Additional Info</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                    <div>
-                      <div className="text-xs text-muted-foreground">Workflow Stage</div>
-                      <div className="text-sm font-medium mt-1">{sample.workflow_stage || 'received'}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">Sample Type</div>
-                      <div className="text-sm font-medium mt-1 uppercase">{sample.sample_type || '-'}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">Assigned To</div>
-                      <div className="text-sm font-medium mt-1">
-                        {sample.assigned_to ? (
-                          <span className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            {sample.assigned_to}
-                          </span>
-                        ) : '-'}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-muted-foreground">Last Updated</div>
-                      <div className="text-sm font-medium mt-1">
-                        {sample.updated_at ? new Date(sample.updated_at).toLocaleDateString() : '-'}
-                      </div>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              {/* Action Buttons Row */}
-              <div className="flex flex-wrap gap-2 pt-2">
-                {!isEditMode ? (
-                  <>
-                    <Button variant="outline" size="sm" onClick={handleEnterEditMode}>
-                      <Edit className="h-4 w-4 mr-2" />
-                      Edit
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleShowQrCode}>
-                      <QrCode className="h-4 w-4 mr-2" />
-                      QR Code
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handlePrintLabel} disabled={printingLabel}>
-                      {printingLabel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Printer className="h-4 w-4 mr-2" />}
-                      Print Label
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleExport}>
-                      <Download className="h-4 w-4 mr-2" />
-                      Export
-                    </Button>
-                    {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
-                      <Button variant="destructive" size="sm" onClick={handleDelete} disabled={deleting}>
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        {deleting ? 'Deleting...' : 'Delete'}
+              {/* Scrollable Body */}
+              <div className="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+                {/* Sample Info + Supply Chain side by side */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  {/* Left: Sample Info */}
+                  <Card className="relative">
+                    {!isEditMode && (
+                      <Button variant="ghost" size="icon" className="absolute top-0.5 right-0.5 h-7 w-7" onClick={handleEnterEditMode} title="Edit">
+                        <Edit className="h-3.5 w-3.5" />
                       </Button>
                     )}
-                  </>
-                ) : (
-                  <>
-                    <Button variant="default" size="sm" onClick={handleSaveChanges} disabled={saving}>
-                      {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
-                      {saving ? 'Saving...' : 'Save Changes'}
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={handleCancelEdit} disabled={saving}>
-                      <X className="h-4 w-4 mr-2" />
-                      Cancel
-                    </Button>
-                  </>
-                )}
+                    <CardContent className="pt-4 space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="text-sm text-muted-foreground">Origin</label>
+                          <div className="text-sm font-medium mt-1">{sample.origin}</div>
+                        </div>
+                        <div>
+                          <label className="text-sm text-muted-foreground">Micro Origin</label>
+                          {isEditMode ? (
+                            <Input
+                              value={formData.micro_origin || ''}
+                              onChange={(e) => handleFormChange('micro_origin', e.target.value)}
+                              className="h-8 text-sm mt-1"
+                              placeholder="e.g., Cerrado Mineiro"
+                            />
+                          ) : (
+                            <div className="text-sm font-medium mt-1">{sample.micro_origin || '-'}</div>
+                          )}
+                        </div>
+                        <div>
+                          <label className="text-sm text-muted-foreground">Quality</label>
+                          <div className="text-sm font-medium mt-1">{sample.quality_name || '-'}</div>
+                        </div>
+                        <div>
+                          <label className="text-sm text-muted-foreground">Processing</label>
+                          {isEditMode ? (
+                            <Input
+                              value={formData.processing_method || ''}
+                              onChange={(e) => handleFormChange('processing_method', e.target.value)}
+                              className="h-8 text-sm mt-1"
+                              placeholder="e.g., Washed, Natural"
+                            />
+                          ) : (
+                            <div className="text-sm font-medium mt-1">{sample.processing_method || '-'}</div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Quantity row */}
+                      <div>
+                        <label className="text-sm text-muted-foreground">Quantity</label>
+                        {isEditMode ? (
+                          <div className="flex flex-wrap items-center gap-2 mt-1">
+                            <Input
+                              type="number"
+                              value={formData.bag_count || ''}
+                              onChange={(e) => handleFormChange('bag_count', e.target.value ? parseInt(e.target.value) : null)}
+                              className="h-8 w-20 text-sm"
+                              placeholder="Bags"
+                            />
+                            <span className="text-sm text-muted-foreground">x</span>
+                            <Input
+                              type="number"
+                              value={formData.bag_weight_kg || ''}
+                              onChange={(e) => handleFormChange('bag_weight_kg', e.target.value ? parseFloat(e.target.value) : null)}
+                              className="h-8 w-20 text-sm"
+                              placeholder="kg"
+                            />
+                            <span className="text-sm text-muted-foreground">kg</span>
+                            <Select
+                              value={formData.bag_type || sample.bag_type || ''}
+                              onValueChange={(v) => handleFormChange('bag_type', v)}
+                            >
+                              <SelectTrigger className="h-8 w-28 text-sm">
+                                <SelectValue placeholder="Bag type" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="jute_bag">Jute Bag</SelectItem>
+                                <SelectItem value="pp_bag">PP Bag</SelectItem>
+                                <SelectItem value="big_bag">Big Bag</SelectItem>
+                                <SelectItem value="bulk">Bulk</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        ) : (
+                          <div className="text-sm font-medium mt-1">
+                            {(() => {
+                              const bagCount = sample.bag_count || sample.bags
+                              const weightKg = sample.bag_weight_kg || 60
+                              const bagType = sample.bag_type
+                              const bagTypeDisplay: Record<string, string> = {
+                                jute_bag: 'jute bags',
+                                pp_bag: 'PP bags',
+                                big_bag: 'big bags',
+                                bulk: 'bulk',
+                              }
+                              const bagsPerContainer: Record<string, number> = {
+                                jute_bag: 320,
+                                pp_bag: 320,
+                                big_bag: 333,
+                                bulk: 360,
+                              }
+
+                              if (!bagCount) return '-'
+
+                              const totalKg = bagCount * weightKg
+                              const mt = totalKg / 1000
+                              const typeLabel = bagType ? bagTypeDisplay[bagType] || bagType : 'bags'
+                              const bpc = bagType ? (bagsPerContainer[bagType] || 320) : 320
+                              const containers = Math.ceil(bagCount / bpc)
+
+                              return `${bagCount} x ${weightKg} kg (${Number.isInteger(mt) ? mt : mt.toFixed(1)} MT) in ${typeLabel}, ${containers} container${containers !== 1 ? 's' : ''}`
+                            })()}
+                          </div>
+                        )}
+                      </div>
+
+                      <Separator />
+
+                      {/* PSS: show exporter sample info / SS: show Container + ICO */}
+                      {sample.sample_type?.toLowerCase() === 'pss' ? (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm text-muted-foreground">Exporter Sample #</label>
+                            <div className="text-sm font-medium font-mono mt-1">{sample.exporter_sample_number || '-'}</div>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <label className="text-sm text-muted-foreground">Container</label>
+                            {isEditMode ? (
+                              <Input
+                                value={formData.container_nr || ''}
+                                onChange={(e) => handleFormChange('container_nr', e.target.value)}
+                                className="h-8 text-sm font-mono mt-1"
+                                placeholder="Container #"
+                              />
+                            ) : (
+                              <div className="text-sm font-medium font-mono mt-1">{sample.container_nr || '-'}</div>
+                            )}
+                          </div>
+                          <div>
+                            <label className="text-sm text-muted-foreground">ICO #</label>
+                            {isEditMode ? (
+                              <Input
+                                value={formData.ico_number || ''}
+                                onChange={(e) => handleFormChange('ico_number', e.target.value)}
+                                className="h-8 text-sm font-mono mt-1"
+                                placeholder="ICO #"
+                              />
+                            ) : (
+                              <div className="text-sm font-medium font-mono mt-1">{sample.ico_number || '-'}</div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  {/* Right: Supply Chain */}
+                  <SupplyChainEditTable
+                    sample={sample}
+                    isEditMode={isEditMode}
+                    formData={formData}
+                    onFormChange={(field, value) => handleFormChange(field as keyof Sample, value)}
+                    onEditClick={handleEnterEditMode}
+                  />
+                </div>
+
+                {/* Cupping & Grading */}
+                <CuppingGradingSection
+                  sample={sample}
+                  profile={profile}
+                  editPermission={editPermission}
+                />
+
               </div>
-            </div>
+
+              {/* Fixed Footer */}
+              <div className="shrink-0 px-6 pt-4 pb-6 border-t">
+                <div className="flex flex-wrap gap-2">
+                  {!isEditMode ? (
+                    <>
+                      <Button variant="outline" size="sm" onClick={handleShowQrCode}>
+                        <QrCode className="h-4 w-4 mr-2" />
+                        QR Code
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handlePrintLabel} disabled={printingLabel}>
+                        {printingLabel ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Printer className="h-4 w-4 mr-2" />}
+                        Print Label
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleExport}>
+                        <Download className="h-4 w-4 mr-2" />
+                        Export
+                      </Button>
+                      {sample.certificate_id && (
+                        <>
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleViewCertificate} disabled={previewLoading} title="View Certificate">
+                            {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+                          </Button>
+                          <Button variant="outline" size="icon" className="h-8 w-8" onClick={handleDownloadCertificate} disabled={downloadingCertificate} title="Download PDF">
+                            {downloadingCertificate ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                          </Button>
+                        </>
+                      )}
+                      {!sample.certificate_id && (sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected' || sample.workflow_stage === 'review') && (
+                        <Button variant="outline" size="sm" onClick={handleGenerateCertificate} disabled={generatingCertificate}>
+                          {generatingCertificate ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Award className="h-4 w-4 mr-2" />}
+                          Generate Cert
+                        </Button>
+                      )}
+                      {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
+                        <Button variant="destructive" size="icon" className="h-8 w-8" onClick={handleDelete} disabled={deleting} title="Delete">
+                          {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                        </Button>
+                      )}
+                    </>
+                  ) : (
+                    <>
+                      <Button variant="default" size="sm" onClick={handleSaveChanges} disabled={saving}>
+                        {saving ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Save className="h-4 w-4 mr-2" />}
+                        {saving ? 'Saving...' : 'Save Changes'}
+                      </Button>
+                      <Button variant="outline" size="sm" onClick={handleCancelEdit} disabled={saving}>
+                        <X className="h-4 w-4 mr-2" />
+                        Cancel
+                      </Button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </>
           )}
         </DialogContent>
       </Dialog>
