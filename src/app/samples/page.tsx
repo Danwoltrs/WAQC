@@ -12,6 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
+import { SampleDetailModal } from '@/components/samples/sample-detail-modal'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
@@ -48,10 +49,7 @@ import {
   Download, Printer, QrCode, MoreVertical, Users, Trash2,
   Loader2, Award, Mail, Settings2, ChevronDown, ChevronRight
 } from 'lucide-react'
-import Link from 'next/link'
-import { useRouter } from 'next/navigation'
 import { useAuth } from '@/components/providers/auth-provider'
-import { trackingNumberToSlug } from '@/lib/utils'
 
 interface SubContract {
   id: string
@@ -179,8 +177,8 @@ const formatSampleType = (type: string | undefined): string => {
 
 export default function SamplesPage() {
   const { profile } = useAuth()
-  const router = useRouter()
   const [samples, setSamples] = useState<Sample[]>([])
+  const [detailSampleId, setDetailSampleId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
@@ -1313,9 +1311,9 @@ export default function SamplesPage() {
                             )}
                             {columnVisibility.certNr && (
                               <td className="py-3 px-4">
-                                <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`} className="font-medium hover:underline text-primary">
+                                <button onClick={() => setDetailSampleId(sample.id)} className="font-medium hover:underline text-primary text-left">
                                   {parseTrackingNumber(sample.tracking_number)}
-                                </Link>
+                                </button>
                                 {sample.exporter_sample_number && (
                                   <div className="text-xs text-muted-foreground mt-0.5">
                                     {sample.exporter_sample_number}
@@ -1418,12 +1416,10 @@ export default function SamplesPage() {
                                     View
                                   </Button>
                                 ) : (
-                                  <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
-                                    <Button variant="outline" size="sm">
-                                      <Eye className="h-3 w-3 mr-1" />
-                                      View
-                                    </Button>
-                                  </Link>
+                                  <Button variant="outline" size="sm" onClick={() => setDetailSampleId(sample.id)}>
+                                    <Eye className="h-3 w-3 mr-1" />
+                                    View
+                                  </Button>
                                 )}
                                 {sample.certificate_id && (
                                   <Button
@@ -1462,7 +1458,7 @@ export default function SamplesPage() {
                               : parseTrackingNumber(sample.tracking_number)}
                           </ContextMenuLabel>
                           <ContextMenuSeparator />
-                          <ContextMenuItem onClick={() => router.push(`/samples/${trackingNumberToSlug(sample.tracking_number)}`)}>
+                          <ContextMenuItem onClick={() => setDetailSampleId(sample.id)}>
                             <Eye className="h-4 w-4 mr-2" />
                             View Sample
                           </ContextMenuItem>
@@ -1569,9 +1565,9 @@ export default function SamplesPage() {
                                 {/* Cert Nr */}
                                 {columnVisibility.certNr && (
                                   <td className="py-1.5 px-4">
-                                    <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`} className="font-medium hover:underline text-primary">
+                                    <button onClick={() => setDetailSampleId(sample.id)} className="font-medium hover:underline text-primary text-left">
                                       {sc.tracking_number}
-                                    </Link>
+                                    </button>
                                   </td>
                                 )}
                                 {/* Origin - inherited */}
@@ -1661,12 +1657,10 @@ export default function SamplesPage() {
                                         View
                                       </Button>
                                     ) : (
-                                      <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
-                                        <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]">
-                                          <Eye className="h-2.5 w-2.5 mr-0.5" />
-                                          View
-                                        </Button>
-                                      </Link>
+                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={() => setDetailSampleId(sample.id)}>
+                                        <Eye className="h-2.5 w-2.5 mr-0.5" />
+                                        View
+                                      </Button>
                                     )}
                                     {sc.has_certificate && (
                                       <Button
@@ -1911,6 +1905,14 @@ export default function SamplesPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Sample Detail Modal */}
+      <SampleDetailModal
+        open={!!detailSampleId}
+        onOpenChange={(open) => { if (!open) setDetailSampleId(null) }}
+        sampleId={detailSampleId}
+        onSampleUpdated={loadSamples}
+      />
     </>
   )
 }
