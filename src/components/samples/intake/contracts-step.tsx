@@ -1,17 +1,17 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { ChevronLeft, ChevronRight, Plus, Trash2, Info } from 'lucide-react'
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
+import { Trash2 } from 'lucide-react'
 import { SubContractFormData, StepComponentProps } from './types'
-import type { Client, Importer, Roaster } from './types'
+import type { Client } from './types'
 
-// Month names for dropdown
 const MONTHS = [
   { value: '01', label: 'Jan' }, { value: '02', label: 'Feb' },
   { value: '03', label: 'Mar' }, { value: '04', label: 'Apr' },
@@ -21,18 +21,20 @@ const MONTHS = [
   { value: '11', label: 'Nov' }, { value: '12', label: 'Dec' },
 ]
 
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December']
+
 const generateYears = () => {
-  const currentYear = new Date().getFullYear()
+  const y = new Date().getFullYear()
   return [
-    { value: currentYear.toString(), label: currentYear.toString() },
-    { value: (currentYear + 1).toString(), label: (currentYear + 1).toString() },
-    { value: (currentYear + 2).toString(), label: (currentYear + 2).toString() },
+    { value: y.toString(), label: y.toString() },
+    { value: (y + 1).toString(), label: (y + 1).toString() },
+    { value: (y + 2).toString(), label: (y + 2).toString() },
   ]
 }
-
 const YEARS = generateYears()
 
-const BAG_WEIGHTS = {
+const BAG_WEIGHTS: Record<string, { value: string; label: string }[]> = {
   jute_bag: [
     { value: '30', label: '30 kg' }, { value: '59', label: '59 kg' },
     { value: '60', label: '60 kg' }, { value: '70', label: '70 kg' },
@@ -43,6 +45,10 @@ const BAG_WEIGHTS = {
   ],
   big_bag: [{ value: '1000', label: '1 M/T (1000 kg)' }],
   bulk: [{ value: '21600', label: '21.6 M/T (Bulk Container)' }],
+}
+
+const BAG_TYPE_LABELS: Record<string, string> = {
+  jute_bag: 'jute bags', pp_bag: 'PP bags', big_bag: 'big bags', bulk: 'bulk',
 }
 
 function createEmptyContract(formData: StepComponentProps['formData']): SubContractFormData {
@@ -70,9 +76,96 @@ function createEmptyContract(formData: StepComponentProps['formData']): SubContr
   }
 }
 
+// ---------- Mother Contract Summary (fixed at top) ----------
+
+function MotherContractSummary({ formData }: { formData: StepComponentProps['formData'] }) {
+  const shipperName = formData.same_seller_shipper ? formData.seller : formData.shipper
+  const bagLabel = formData.bag_type ? BAG_TYPE_LABELS[formData.bag_type] || formData.bag_type : ''
+
+  let shipmentLabel = ''
+  if (formData.shipment_month) {
+    const [year, month] = formData.shipment_month.split('-')
+    shipmentLabel = `${MONTH_NAMES[parseInt(month) - 1] || month} ${year} shpt`
+  }
+
+  const quantityParts: string[] = []
+  if (formData.bag_count && formData.bag_weight_kg && bagLabel) {
+    quantityParts.push(`${formData.bag_count} bags in ${formData.bag_weight_kg}kg ${bagLabel}`)
+  }
+  if (formData.bags_quantity_mt) quantityParts.push(`${formData.bags_quantity_mt} MT`)
+  if (shipmentLabel) quantityParts.push(shipmentLabel)
+
+  const entities = [
+    formData.seller && { label: 'Seller', value: formData.seller },
+    shipperName && { label: 'Shipper', value: shipperName },
+    formData.importer && { label: 'Importer', value: formData.importer },
+    formData.roaster && { label: 'Roaster', value: formData.roaster },
+    formData.end_client && { label: 'End Client', value: formData.end_client },
+    !formData.importer_is_qc_client && formData.qc_client && { label: 'QC Client', value: formData.qc_client },
+  ].filter(Boolean) as { label: string; value: string }[]
+
+  const contractRefs = [
+    formData.wolthers_contract_nr && { label: 'Wolthers', value: formData.wolthers_contract_nr },
+    formData.seller_contract_nr && { label: 'Seller', value: formData.seller_contract_nr },
+    formData.importer_contract_nr && { label: 'Buyer', value: formData.importer_contract_nr },
+    formData.roaster_contract_nr && { label: 'Roaster', value: formData.roaster_contract_nr },
+    formData.qc_client_contract_nr && { label: 'QC Client', value: formData.qc_client_contract_nr },
+    formData.end_client_contract_nr && { label: 'End Client', value: formData.end_client_contract_nr },
+    formData.supplier_contract_nr && { label: 'Supplier', value: formData.supplier_contract_nr },
+  ].filter(Boolean) as { label: string; value: string }[]
+
+  const sampleType = (formData.sample_type || '').toUpperCase()
+
+  return (
+    <div className="bg-muted/50 border rounded-xl p-4 space-y-2 sticky top-0 z-10">
+      <div className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">
+        Contract #1 (Mother)
+      </div>
+
+      {/* Entity names */}
+      <div className="flex flex-wrap gap-x-5 gap-y-0.5 text-sm">
+        {entities.map(e => (
+          <div key={e.label}>
+            <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
+            <span className="font-medium">{e.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Contract reference numbers */}
+      {contractRefs.length > 0 && (
+        <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3">
+          {contractRefs.map(r => (
+            <span key={r.label}>
+              {r.label}: <span className="text-foreground">{r.value}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {/* Sample type + quantity */}
+      <div className="flex items-center justify-between text-xs pt-1.5 border-t border-border/50">
+        <div className="flex items-center gap-2">
+          {sampleType && <Badge variant="outline" className="text-[10px]">{sampleType}</Badge>}
+          {formData.sample_type === 'ss' && (
+            <>
+              {formData.ico_number && <span>ICO: {formData.ico_number}</span>}
+              {formData.ico_number && formData.container_nr && <span className="text-muted-foreground">|</span>}
+              {formData.container_nr && <span>Container: {formData.container_nr}</span>}
+            </>
+          )}
+        </div>
+        {quantityParts.length > 0 && (
+          <div className="text-muted-foreground">{quantityParts.join(' | ')}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------- Main ContractsStep ----------
+
 interface ContractsStepProps extends StepComponentProps {
-  activeContractIndex: number
-  onActiveContractIndexChange: (index: number) => void
   onAddContract: () => void
   onRemoveContract: (index: number) => void
 }
@@ -83,218 +176,181 @@ export function ContractsStep({
   importers = [],
   roasters = [],
   qcClients = [],
-  activeContractIndex,
-  onActiveContractIndexChange,
   onAddContract,
   onRemoveContract,
 }: ContractsStepProps) {
   const contracts = formData.contracts
-  const contract = contracts[activeContractIndex]
+  const [openItems, setOpenItems] = useState<string[]>(
+    contracts.length > 0 ? [`contract-${contracts.length - 1}`] : []
+  )
+  const prevLengthRef = useRef(contracts.length)
 
-  // Helper to update a field on the active contract
-  const updateContract = (field: keyof SubContractFormData, value: string | boolean) => {
-    const updated = [...contracts]
-    updated[activeContractIndex] = { ...updated[activeContractIndex], [field]: value }
-    updateFormData('contracts', updated)
-  }
-
-  // Auto-calculate quantity when bag_count or bag_weight changes
+  // Auto-open newly added contract
   useEffect(() => {
-    if (!contract) return
-    const bagCount = parseInt(contract.bag_count) || 0
-    const bagWeight = parseFloat(contract.bag_weight_kg) || 0
-
-    if (bagCount > 0 && bagWeight > 0) {
-      let totalMT: number
-      let equivalent: number
-
-      if (contract.bag_type === 'bulk') {
-        totalMT = (bagCount * 60) / 1000
-        equivalent = bagCount
-      } else {
-        totalMT = (bagCount * bagWeight) / 1000
-        equivalent = (bagCount * bagWeight) / 60
-      }
-
-      const updated = [...contracts]
-      updated[activeContractIndex] = {
-        ...updated[activeContractIndex],
-        bags_quantity_mt: totalMT.toFixed(3),
-        equivalent_60kg_bags: Math.round(equivalent).toString(),
-      }
-      updateFormData('contracts', updated)
+    if (contracts.length > prevLengthRef.current) {
+      setOpenItems(prev => [...prev, `contract-${contracts.length - 1}`])
     }
-  }, [contract?.bag_count, contract?.bag_weight_kg, contract?.bag_type])
+    prevLengthRef.current = contracts.length
+  }, [contracts.length])
+
+  // Auto-calculate quantity for all contracts
+  useEffect(() => {
+    let hasChanges = false
+    const updated = contracts.map(c => {
+      const bagCount = parseInt(c.bag_count) || 0
+      const bagWeight = parseFloat(c.bag_weight_kg) || 0
+      if (bagCount <= 0 || bagWeight <= 0) return c
+      const totalMT = c.bag_type === 'bulk' ? (bagCount * 60) / 1000 : (bagCount * bagWeight) / 1000
+      const equivalent = c.bag_type === 'bulk' ? bagCount : (bagCount * bagWeight) / 60
+      const newMT = totalMT.toFixed(3)
+      const newEquiv = Math.round(equivalent).toString()
+      if (c.bags_quantity_mt === newMT && c.equivalent_60kg_bags === newEquiv) return c
+      hasChanges = true
+      return { ...c, bags_quantity_mt: newMT, equivalent_60kg_bags: newEquiv }
+    })
+    if (hasChanges) updateFormData('contracts', updated)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(contracts.map(c => `${c.bag_count}|${c.bag_weight_kg}|${c.bag_type}`))])
 
   // Auto-select bag weight when bag type changes
+  const prevBagTypesRef = useRef(contracts.map(c => c.bag_type))
   useEffect(() => {
-    if (!contract || !contract.bag_type) return
-
-    if (contract.bag_type === 'big_bag') {
-      updateContract('bag_weight_kg', '1000')
-    } else if (contract.bag_type === 'bulk') {
-      updateContract('bag_weight_kg', '21600')
-    } else if (contract.bag_type === 'jute_bag' || contract.bag_type === 'pp_bag') {
-      const isBrazil = formData.origin?.toLowerCase() === 'brazil'
-      updateContract('bag_weight_kg', isBrazil ? '60' : '70')
-    }
-  }, [contract?.bag_type])
+    const prev = prevBagTypesRef.current
+    let hasChanges = false
+    const updated = contracts.map((c, i) => {
+      if (!c.bag_type || c.bag_type === (prev[i] || '')) return c
+      hasChanges = true
+      let weight = ''
+      if (c.bag_type === 'big_bag') weight = '1000'
+      else if (c.bag_type === 'bulk') weight = '21600'
+      else weight = formData.origin?.toLowerCase() === 'brazil' ? '60' : '70'
+      return { ...c, bag_weight_kg: weight }
+    })
+    prevBagTypesRef.current = contracts.map(c => c.bag_type)
+    if (hasChanges) updateFormData('contracts', updated)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(contracts.map(c => c.bag_type))])
 
   // Deduplicated importer options
   const importerOptions = useMemo(() => {
     const seen = new Set<string>()
     return importers
-      .filter((i: any) => {
-        if (!i.name || seen.has(i.name)) return false
-        seen.add(i.name)
-        return true
-      })
+      .filter((i: any) => { if (!i.name || seen.has(i.name)) return false; seen.add(i.name); return true })
       .map((i: any) => ({ name: i.name }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [importers])
 
-  // Merged importer options (QC clients + linked importers)
+  // Merged importer options (QC clients + importers)
   const mergedImporterOptions = useMemo(() => {
-    if (contract?.importer_is_qc_client) {
-      const clientOptions = qcClients.map(c => ({
-        name: c.fantasy_name || c.company,
-      }))
-      const linkedImporters = importerOptions.filter((imp: any) => imp.clientId)
-      const seen = new Set<string>()
-      return [...clientOptions, ...linkedImporters]
-        .filter(opt => {
-          const key = opt.name.toLowerCase()
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-        .sort((a, b) => a.name.localeCompare(b.name))
-    }
-    return importerOptions
-  }, [contract?.importer_is_qc_client, qcClients, importerOptions])
+    const clientOptions = qcClients.map(c => ({ name: c.fantasy_name || c.company }))
+    const seen = new Set<string>()
+    return [...clientOptions, ...importerOptions]
+      .filter(opt => { const key = opt.name.toLowerCase(); if (seen.has(key)) return false; seen.add(key); return true })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  }, [qcClients, importerOptions])
 
   // Deduplicated roaster options
   const roasterOptions = useMemo(() => {
     const seen = new Set<string>()
     return roasters
-      .filter(r => {
-        if (!r.name || seen.has(r.name)) return false
-        seen.add(r.name)
-        return true
-      })
+      .filter(r => { if (!r.name || seen.has(r.name)) return false; seen.add(r.name); return true })
       .map(r => ({ name: r.name! }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [roasters])
 
-  const availableWeights = contract?.bag_type ? BAG_WEIGHTS[contract.bag_type as keyof typeof BAG_WEIGHTS] || [] : []
-
-  if (!contract) {
-    return (
-      <div className="flex flex-col items-center justify-center py-12 text-center">
-        <p className="text-sm text-muted-foreground mb-4">No sub-contracts yet.</p>
-        <Button type="button" variant="outline" onClick={onAddContract}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Contract
-        </Button>
-      </div>
-    )
+  const updateContractField = (index: number, field: keyof SubContractFormData, value: string | boolean) => {
+    const updated = [...contracts]
+    updated[index] = { ...updated[index], [field]: value }
+    updateFormData('contracts', updated)
   }
 
   return (
     <div className="space-y-4">
-      {/* Contract tabs / navigation */}
-      <div className="flex items-center gap-2">
-        <div className="flex gap-1.5 flex-1 overflow-x-auto">
-          {contracts.map((_, idx) => (
-            <button
-              key={idx}
-              type="button"
-              onClick={() => onActiveContractIndexChange(idx)}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium transition-colors whitespace-nowrap ${
-                idx === activeContractIndex
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              }`}
-            >
-              Contract #{idx + 2}
-            </button>
-          ))}
-        </div>
-        {contracts.length > 0 && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-7 text-xs text-muted-foreground hover:text-destructive shrink-0"
-            onClick={() => onRemoveContract(activeContractIndex)}
-          >
-            <Trash2 className="h-3 w-3 mr-1" />
-            Remove
-          </Button>
-        )}
-      </div>
+      <MotherContractSummary formData={formData} />
 
-      {/* Sliding container */}
-      <div className="overflow-hidden">
-        <div
-          className="transition-transform duration-300 ease-in-out"
-          style={{ transform: `translateX(-${activeContractIndex * 100}%)` }}
-        >
-          <div className="flex" style={{ width: `${contracts.length * 100}%` }}>
-            {contracts.map((c, idx) => (
-              <div key={idx} className="w-full px-0.5" style={{ flex: `0 0 ${100 / contracts.length}%` }}>
-                {idx === activeContractIndex && (
-                  <ContractPanel
-                    contract={c}
-                    updateContract={(field, value) => {
-                      const updated = [...contracts]
-                      updated[idx] = { ...updated[idx], [field]: value }
-                      updateFormData('contracts', updated)
-                    }}
-                    mergedImporterOptions={mergedImporterOptions}
-                    importerOptions={importerOptions}
-                    roasterOptions={roasterOptions}
-                    qcClients={qcClients}
-                    availableWeights={availableWeights}
-                    origin={formData.origin}
-                  />
-                )}
-              </div>
-            ))}
-          </div>
+      {contracts.length === 0 ? (
+        <div className="text-center py-8 text-sm text-muted-foreground">
+          No sub-contracts yet. Click &ldquo;+ Add Sub-Contract&rdquo; below to add one.
         </div>
-      </div>
+      ) : (
+        <Accordion type="multiple" value={openItems} onValueChange={setOpenItems}>
+          {contracts.map((contract, idx) => (
+            <AccordionItem key={idx} value={`contract-${idx}`} className="border rounded-lg px-4 mb-3">
+              <AccordionTrigger className="hover:no-underline py-3">
+                <div className="flex items-center gap-3 text-left flex-1 mr-2">
+                  <Badge variant="outline" className="shrink-0 text-[10px]">#{idx + 2}</Badge>
+                  <span className="font-medium text-sm truncate">
+                    {contract.importer || 'New Sub-Contract'}
+                  </span>
+                  {contract.buyer_contract_nr && (
+                    <span className="text-xs text-muted-foreground">({contract.buyer_contract_nr})</span>
+                  )}
+                  {contract.bags_quantity_mt && parseFloat(contract.bags_quantity_mt) > 0 && (
+                    <span className="text-xs text-muted-foreground ml-auto">{contract.bags_quantity_mt} MT</span>
+                  )}
+                </div>
+              </AccordionTrigger>
+              <AccordionContent>
+                <ContractPanel
+                  contract={contract}
+                  updateContract={(field, value) => updateContractField(idx, field, value)}
+                  importerOptions={importerOptions}
+                  mergedImporterOptions={mergedImporterOptions}
+                  roasterOptions={roasterOptions}
+                  qcClients={qcClients}
+                  origin={formData.origin}
+                  sampleType={formData.sample_type}
+                />
+                <div className="flex justify-end pt-2 pb-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs text-muted-foreground hover:text-destructive"
+                    onClick={() => onRemoveContract(idx)}
+                  >
+                    <Trash2 className="h-3 w-3 mr-1" />
+                    Remove
+                  </Button>
+                </div>
+              </AccordionContent>
+            </AccordionItem>
+          ))}
+        </Accordion>
+      )}
     </div>
   )
 }
 
-// Individual contract editing panel
+// ---------- Contract Panel (form for a single sub-contract) ----------
+
 function ContractPanel({
   contract,
   updateContract,
-  mergedImporterOptions,
   importerOptions,
+  mergedImporterOptions,
   roasterOptions,
   qcClients,
-  availableWeights,
   origin,
+  sampleType,
 }: {
   contract: SubContractFormData
   updateContract: (field: keyof SubContractFormData, value: string | boolean) => void
-  mergedImporterOptions: { name: string }[]
   importerOptions: { name: string }[]
+  mergedImporterOptions: { name: string }[]
   roasterOptions: { name: string }[]
   qcClients: Client[]
-  availableWeights: { value: string; label: string }[]
   origin: string
+  sampleType: string
 }) {
   const [customWeight, setCustomWeight] = useState(false)
-
   const dropdownOptions = contract.importer_is_qc_client ? mergedImporterOptions : importerOptions
+  const availableWeights = contract.bag_type ? BAG_WEIGHTS[contract.bag_type as keyof typeof BAG_WEIGHTS] || [] : []
+  const isPSS = sampleType === 'pss'
 
   return (
     <div className="space-y-4">
-      {/* Supply Chain Section */}
+      {/* Supply Chain */}
       <div>
         <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Supply Chain</Label>
         <div className="space-y-3">
@@ -439,7 +495,7 @@ function ContractPanel({
       {/* Contract References */}
       <div className="border-t pt-3">
         <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Contract References</Label>
-        <div className="grid grid-cols-4 gap-3">
+        <div className={`grid gap-3 ${isPSS ? 'grid-cols-2' : 'grid-cols-4'}`}>
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">Wolthers</Label>
             <Input
@@ -458,39 +514,41 @@ function ContractPanel({
               className="h-9"
             />
           </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
-            <Input
-              value={contract.ico_number}
-              onChange={(e) => updateContract('ico_number', e.target.value)}
-              placeholder="ICO number"
-              className="h-9"
-            />
-          </div>
-          <div>
-            <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
-            <Input
-              value={contract.container_nr}
-              onChange={(e) => updateContract('container_nr', e.target.value)}
-              placeholder="Container nr."
-              className="h-9"
-            />
-          </div>
+          {!isPSS && (
+            <>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">ICO Number</Label>
+                <Input
+                  value={contract.ico_number}
+                  onChange={(e) => updateContract('ico_number', e.target.value)}
+                  placeholder="ICO number"
+                  className="h-9"
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground mb-1 block">Container Nr.</Label>
+                <Input
+                  value={contract.container_nr}
+                  onChange={(e) => updateContract('container_nr', e.target.value)}
+                  placeholder="Container nr."
+                  className="h-9"
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Quantity Section */}
+      {/* Quantity */}
       <div className="border-t pt-3">
         <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Quantity</Label>
         <div className="grid grid-cols-4 gap-3">
-          {/* Bag Type */}
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">Bag Type</Label>
             <Select
               value={contract.bag_type || 'none'}
               onValueChange={(value) => {
                 updateContract('bag_type', value === 'none' ? '' : value)
-                updateContract('bag_weight_kg', '')
                 setCustomWeight(false)
               }}
             >
@@ -507,7 +565,6 @@ function ContractPanel({
             </Select>
           </div>
 
-          {/* Bag Count */}
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">
               {contract.bag_type === 'bulk' ? 'Equiv. 60kg Bags' : 'Qty of Bags'}
@@ -522,7 +579,6 @@ function ContractPanel({
             />
           </div>
 
-          {/* Bag Weight */}
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">Bag Weight</Label>
             {!customWeight && contract.bag_type ? (
@@ -563,7 +619,6 @@ function ContractPanel({
             )}
           </div>
 
-          {/* Shipment Month */}
           <div>
             <Label className="text-xs text-muted-foreground mb-1 block">Shipment Month</Label>
             <div className="flex">
@@ -603,7 +658,6 @@ function ContractPanel({
           </div>
         </div>
 
-        {/* Calculated totals */}
         {contract.bag_count && contract.bag_weight_kg && (
           <div className="grid grid-cols-2 gap-3 mt-3">
             <div className="bg-primary/5 p-3 rounded-lg">

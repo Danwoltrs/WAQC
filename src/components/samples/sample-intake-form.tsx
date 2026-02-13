@@ -135,7 +135,6 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const [approvedPSSSamples, setApprovedPSSSamples] = useState<any[]>([])
   const [generatedTrackingNumber, setGeneratedTrackingNumber] = useState<string>('')
   const [formData, setFormData] = useState<FormData>(initialFormData)
-  const [activeContractIndex, setActiveContractIndex] = useState(0)
 
   // Load clients, laboratories, exporters, importers, and roasters
   useEffect(() => {
@@ -451,26 +450,16 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
   const handleAddContract = () => {
     const newContract = createEmptyContract(formData)
-    const updated = [...formData.contracts, newContract]
-    setFormData(prev => ({ ...prev, contracts: updated }))
-    setActiveContractIndex(updated.length - 1)
+    setFormData(prev => ({ ...prev, contracts: [...prev.contracts, newContract] }))
   }
 
   const handleRemoveContract = (index: number) => {
-    const updated = formData.contracts.filter((_, i) => i !== index)
-    setFormData(prev => ({ ...prev, contracts: updated }))
-    setActiveContractIndex(Math.max(0, Math.min(index, updated.length - 1)))
+    setFormData(prev => ({ ...prev, contracts: prev.contracts.filter((_, i) => i !== index) }))
   }
 
   const handleGoToContracts = () => {
     if (validateStep(4)) {
       setError(null)
-      // Add a first contract if none exist
-      if (formData.contracts.length === 0) {
-        const newContract = createEmptyContract(formData)
-        setFormData(prev => ({ ...prev, contracts: [newContract] }))
-        setActiveContractIndex(0)
-      }
       setCurrentStep(5)
     } else {
       setError('Please fill in all required fields')
@@ -926,8 +915,6 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               importers={importers}
               roasters={roasters}
               qcClients={qcClients}
-              activeContractIndex={activeContractIndex}
-              onActiveContractIndexChange={setActiveContractIndex}
               onAddContract={handleAddContract}
               onRemoveContract={handleRemoveContract}
             />
@@ -966,7 +953,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
                   onClick={handleGoToContracts}
                   disabled={!validateStep(4)}
                 >
-                  Next: Add Contracts
+                  Next: Add Sub-Contracts
                   <ChevronRight className="h-4 w-4 ml-1" />
                 </Button>
                 <Button
@@ -986,7 +973,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
                   variant="outline"
                   onClick={handleAddContract}
                 >
-                  + Add Another
+                  + Add Sub-Contract
                 </Button>
                 <Button
                   type="button"
