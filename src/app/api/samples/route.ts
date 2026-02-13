@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
         qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
-        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr)
+        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -171,8 +171,16 @@ export async function GET(request: NextRequest) {
                 importer_name: (c.importer_id ? entityMaps.importers[c.importer_id] : null) || (c.importer_is_qc_client ? (scQcName || qcClientName) : null),
                 roaster_name: c.roaster_id ? entityMaps.roasters[c.roaster_id] : null,
                 end_client_name: c.end_client_id ? entityMaps.clients[c.end_client_id] : null,
+                qc_client_name: scQcName || qcClientName || null,
                 buyer_contract_nr: c.buyer_contract_nr || null,
                 wolthers_contract_nr: c.wolthers_contract_nr || null,
+                roaster_contract_nr: c.roaster_contract_nr || null,
+                end_client_contract_nr: c.end_client_contract_nr || null,
+                qc_client_contract_nr: c.qc_client_contract_nr || null,
+                supplier_contract_nr: c.supplier_contract_nr || null,
+                ico_number: c.ico_number || null,
+                container_nr: c.container_nr || null,
+                bags_quantity_mt: c.bags_quantity_mt || null,
                 has_certificate: !!subCert,
                 certificate_id: subCert?.id || null,
               }

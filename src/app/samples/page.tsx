@@ -55,8 +55,16 @@ interface SubContract {
   importer_name: string | null
   roaster_name: string | null
   end_client_name: string | null
+  qc_client_name: string | null
   buyer_contract_nr: string | null
   wolthers_contract_nr: string | null
+  roaster_contract_nr: string | null
+  end_client_contract_nr: string | null
+  qc_client_contract_nr: string | null
+  supplier_contract_nr: string | null
+  ico_number: string | null
+  container_nr: string | null
+  bags_quantity_mt: number | null
   has_certificate: boolean
   certificate_id: string | null
 }
@@ -80,6 +88,7 @@ interface Sample {
   qc_client_name?: string
   qc_client_country?: string
   importer_is_qc_client?: boolean
+  same_seller_shipper?: boolean
   buyer?: string
   quality_name?: string
   sample_type?: 'pss' | 'ss' | 'type'
@@ -186,7 +195,7 @@ export default function SamplesPage() {
   const [dateTo, setDateTo] = useState<string>('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
-  const [expandedSubContracts, setExpandedSubContracts] = useState<Set<string>>(new Set())
+  const [selectedSubContractQrCodes, setSelectedSubContractQrCodes] = useState<Set<string>>(new Set())
   const [subContractSample, setSubContractSample] = useState<Sample | null>(null)
 
   // Certificate preview modal states
@@ -435,11 +444,21 @@ export default function SamplesPage() {
     }
 
     try {
-      // Create sample-specific QR code flags
-      const sampleQrConfig = Array.from(selectedSamples).map(id => ({
+      // Create sample-specific QR code flags (mother samples + sub-contracts)
+      const sampleQrConfig: Array<{ id: string; includeQrCode: boolean; contractId?: string }> = Array.from(selectedSamples).map(id => ({
         id,
         includeQrCode: selectedQrCodes.has(id)
       }))
+
+      // Add sub-contract entries for any with QR selected
+      for (const sample of samples) {
+        if (!selectedSamples.has(sample.id) || !sample.sub_contracts?.length) continue
+        for (const sc of sample.sub_contracts) {
+          if (selectedSubContractQrCodes.has(sc.id)) {
+            sampleQrConfig.push({ id: sample.id, contractId: sc.id, includeQrCode: true })
+          }
+        }
+      }
 
       const response = await fetch('/api/samples/bulk/print-bag-sleeves', {
         method: 'POST',
@@ -752,14 +771,11 @@ export default function SamplesPage() {
     })
   }
 
-  const toggleSubContract = (scId: string) => {
-    setExpandedSubContracts(prev => {
+  const handleToggleSubContractQrCode = (scId: string, checked: boolean) => {
+    setSelectedSubContractQrCodes(prev => {
       const next = new Set(prev)
-      if (next.has(scId)) {
-        next.delete(scId)
-      } else {
-        next.add(scId)
-      }
+      if (checked) next.add(scId)
+      else next.delete(scId)
       return next
     })
   }
@@ -1156,10 +1172,30 @@ export default function SamplesPage() {
                         <ContextMenuTrigger asChild>
                           <tr className="border-b border-border hover:bg-accent/50 transition-colors">
                             <td className="py-3 px-4">
-                              <Checkbox
-                                checked={selectedSamples.has(sample.id)}
-                                onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
-                              />
+                              <div className="flex flex-col items-center gap-1">
+                                <Checkbox
+                                  checked={selectedSamples.has(sample.id)}
+                                  onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
+                                />
+                                {(sample.contract_count ?? 0) > 0 && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation()
+                                      toggleExpand(sample.id)
+                                    }}
+                                    className="p-0.5 rounded hover:bg-accent transition-colors"
+                                    title={expandedSamples.has(sample.id) ? 'Collapse sub-contracts' : `${sample.contract_count} sub-contract(s)`}
+                                  >
+                                    {expandedSamples.has(sample.id)
+                                      ? <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                                      : <ChevronRight className="h-3 w-3 text-muted-foreground" />
+                                    }
+                                  </button>
+                                )}
+                                {expandedSamples.has(sample.id) && (sample.contract_count ?? 0) > 0 && (
+                                  <div className="w-px bg-border h-2" />
+                                )}
+                              </div>
                             </td>
                             {selectedSamples.size > 0 && (
                               <td className="py-3 px-4">
@@ -1173,24 +1209,8 @@ export default function SamplesPage() {
                             )}
                             {columnVisibility.certNr && (
                               <td className="py-3 px-4">
-                                <div className="font-medium flex items-center gap-1.5">
+                                <div className="font-medium">
                                   {parseTrackingNumber(sample.tracking_number)}
-                                  {(sample.contract_count ?? 0) > 0 && (
-                                    <button
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        toggleExpand(sample.id)
-                                      }}
-                                      className="inline-flex items-center justify-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium bg-muted text-muted-foreground rounded-full hover:bg-accent transition-colors cursor-pointer"
-                                      title={expandedSamples.has(sample.id) ? 'Collapse sub-contracts' : 'Expand sub-contracts'}
-                                    >
-                                      {expandedSamples.has(sample.id)
-                                        ? <ChevronDown className="h-2.5 w-2.5" />
-                                        : <ChevronRight className="h-2.5 w-2.5" />
-                                      }
-                                      +{sample.contract_count}
-                                    </button>
-                                  )}
                                 </div>
                                 {sample.exporter_sample_number && (
                                   <div className="text-xs text-muted-foreground mt-0.5">
@@ -1420,117 +1440,139 @@ export default function SamplesPage() {
                           )}
                         </ContextMenuContent>
                       </ContextMenu>,
-                      // Expanded sub-contract rows (tree/folder style)
+                      // Expanded sub-contract rows (full table rows matching mother format)
                       ...(expandedSamples.has(sample.id) && sample.sub_contracts?.length
-                        ? sample.sub_contracts.flatMap((sc, scIdx) => {
+                        ? sample.sub_contracts.map((sc, scIdx) => {
                             const isLast = scIdx === (sample.sub_contracts?.length ?? 0) - 1
-                            const isExpanded = expandedSubContracts.has(sc.id)
-                            const colCount = 1 + (selectedSamples.size > 0 ? 1 : 0) + Object.values(columnVisibility).filter(Boolean).length + 1
-                            return [
+                            return (
                               <tr
                                 key={`sc-${sc.id}`}
-                                className="border-b border-border bg-muted/20 hover:bg-muted/40 transition-colors cursor-pointer"
-                                onClick={() => toggleSubContract(sc.id)}
+                                className="border-b border-border bg-muted/20 hover:bg-muted/40 transition-colors text-xs"
                               >
-                                <td className="py-0 px-4 w-10" />
-                                {selectedSamples.size > 0 && <td className="py-0 px-4" />}
-                                <td colSpan={colCount - 1 - (selectedSamples.size > 0 ? 1 : 0)} className="py-2 px-0">
-                                  <div className="flex items-center">
-                                    {/* Tree connector line */}
-                                    <div className="flex flex-col items-center w-8 self-stretch shrink-0">
-                                      <div className={`w-px bg-border flex-1 ${isLast && !isExpanded ? 'max-h-[50%]' : ''}`} />
-                                      {isLast && !isExpanded && <div className="w-px flex-1" />}
-                                    </div>
-                                    <div className="w-4 h-px bg-border shrink-0" />
-                                    {/* Sub-contract content */}
-                                    <div className="flex items-center gap-3 py-1 flex-1 min-w-0">
-                                      {isExpanded
-                                        ? <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
-                                        : <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                                      }
-                                      <span className="text-sm font-medium">{sc.importer_name || sc.tracking_number}</span>
-                                      {(sc.buyer_contract_nr || sc.wolthers_contract_nr) && (
-                                        <span className="text-xs text-muted-foreground">
-                                          ({sc.buyer_contract_nr || sc.wolthers_contract_nr})
-                                        </span>
-                                      )}
-                                      <span className="text-xs text-muted-foreground font-mono ml-auto mr-4">
-                                        {sc.tracking_number}
-                                      </span>
-                                      {sc.has_certificate && (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0 mr-2"
-                                          onClick={(e) => {
-                                            e.stopPropagation()
-                                            handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)
-                                          }}
-                                          disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
-                                          title="Download sub-contract certificate"
-                                        >
-                                          {downloadingSampleId === `${sample.id}_${sc.id}` ? (
-                                            <Loader2 className="h-3 w-3 animate-spin" />
-                                          ) : (
-                                            <Download className="h-3 w-3" />
-                                          )}
-                                        </Button>
-                                      )}
-                                    </div>
+                                {/* Tree connector in checkbox column */}
+                                <td className="py-0 px-0 w-10">
+                                  <div className="relative flex items-center justify-center" style={{minHeight: '40px'}}>
+                                    <div className="absolute left-1/2 -translate-x-1/2 top-0 w-px bg-border" style={{height: isLast ? '50%' : '100%'}} />
+                                    <div className="absolute left-1/2 top-1/2 -translate-y-1/2 h-px bg-border w-3" />
                                   </div>
                                 </td>
-                              </tr>,
-                              // Expanded detail row
-                              ...(isExpanded ? [
-                                <tr
-                                  key={`sc-detail-${sc.id}`}
-                                  className="border-b border-border bg-muted/10"
-                                >
-                                  <td className="py-0 px-4 w-10" />
-                                  {selectedSamples.size > 0 && <td className="py-0 px-4" />}
-                                  <td colSpan={colCount - 1 - (selectedSamples.size > 0 ? 1 : 0)} className="py-2 px-0">
-                                    <div className="flex items-start">
-                                      <div className="flex flex-col items-center w-8 self-stretch shrink-0">
-                                        {!isLast && <div className="w-px bg-border flex-1" />}
-                                      </div>
-                                      <div className="w-4 shrink-0" />
-                                      <div className="pl-6 grid grid-cols-4 gap-x-8 gap-y-1 text-xs pb-2">
-                                        {sc.importer_name && (
-                                          <>
-                                            <span className="text-muted-foreground">Importer</span>
-                                            <span>{sc.importer_name}</span>
-                                          </>
-                                        )}
-                                        {sc.roaster_name && (
-                                          <>
-                                            <span className="text-muted-foreground">Roaster</span>
-                                            <span>{sc.roaster_name}</span>
-                                          </>
-                                        )}
-                                        {sc.end_client_name && (
-                                          <>
-                                            <span className="text-muted-foreground">End Client</span>
-                                            <span>{sc.end_client_name}</span>
-                                          </>
-                                        )}
-                                        {sc.buyer_contract_nr && (
-                                          <>
-                                            <span className="text-muted-foreground">Buyer Contract</span>
-                                            <span>{sc.buyer_contract_nr}</span>
-                                          </>
-                                        )}
-                                        {sc.wolthers_contract_nr && (
-                                          <>
-                                            <span className="text-muted-foreground">Wolthers Contract</span>
-                                            <span>{sc.wolthers_contract_nr}</span>
-                                          </>
-                                        )}
-                                      </div>
-                                    </div>
+                                {/* QR column */}
+                                {selectedSamples.size > 0 && (
+                                  <td className="py-2 px-4">
+                                    {selectedSamples.has(sample.id) && (
+                                      <Checkbox
+                                        checked={selectedSubContractQrCodes.has(sc.id)}
+                                        onCheckedChange={(checked) => handleToggleSubContractQrCode(sc.id, checked as boolean)}
+                                      />
+                                    )}
                                   </td>
-                                </tr>
-                              ] : []),
-                            ]
+                                )}
+                                {/* Cert Nr */}
+                                {columnVisibility.certNr && (
+                                  <td className="py-1.5 px-4">
+                                    <div className="font-medium">{sc.tracking_number}</div>
+                                  </td>
+                                )}
+                                {/* Origin - inherited */}
+                                {columnVisibility.origin && (
+                                  <td className="py-1.5 px-4 text-muted-foreground">{sample.origin || '-'}</td>
+                                )}
+                                {/* Type - inherited */}
+                                {columnVisibility.type && (
+                                  <td className="py-1.5 px-4">
+                                    <Badge variant="outline" className="text-[10px] opacity-50">
+                                      {formatSampleType(sample.sample_type)}
+                                    </Badge>
+                                  </td>
+                                )}
+                                {/* Quality - inherited */}
+                                {columnVisibility.quality && (
+                                  <td className="py-1.5 px-4 text-muted-foreground">{sample.quality_name || '-'}</td>
+                                )}
+                                {/* Seller - inherited */}
+                                {columnVisibility.seller && (
+                                  <td className="py-1.5 px-4 text-muted-foreground">
+                                    <div>{sample.seller_name || '-'}</div>
+                                    {sc.supplier_contract_nr && (
+                                      <div className="text-[10px]">{sc.supplier_contract_nr}</div>
+                                    )}
+                                  </td>
+                                )}
+                                {/* Shipper - inherited */}
+                                {columnVisibility.shipper && (
+                                  <td className="py-1.5 px-4 text-muted-foreground">{sample.exporter_name || '-'}</td>
+                                )}
+                                {/* Wolthers */}
+                                {columnVisibility.wolthers && (
+                                  <td className="py-1.5 px-4 font-mono">{sc.wolthers_contract_nr || '-'}</td>
+                                )}
+                                {/* Importer */}
+                                {columnVisibility.importer && (
+                                  <td className="py-1.5 px-4">
+                                    <div>{sc.importer_name || '-'}</div>
+                                    {sc.buyer_contract_nr && (
+                                      <div className="text-[10px] text-muted-foreground">{sc.buyer_contract_nr}</div>
+                                    )}
+                                  </td>
+                                )}
+                                {/* Roaster */}
+                                {columnVisibility.roaster && (
+                                  <td className="py-1.5 px-4">
+                                    <div>{sc.roaster_name || '-'}</div>
+                                    {sc.roaster_contract_nr && (
+                                      <div className="text-[10px] text-muted-foreground">{sc.roaster_contract_nr}</div>
+                                    )}
+                                  </td>
+                                )}
+                                {/* End Client */}
+                                {columnVisibility.endClient && (
+                                  <td className="py-1.5 px-4">
+                                    <div>{sc.end_client_name || sc.qc_client_name || '-'}</div>
+                                    {(sc.end_client_contract_nr || sc.qc_client_contract_nr) && (
+                                      <div className="text-[10px] text-muted-foreground">{sc.end_client_contract_nr || sc.qc_client_contract_nr}</div>
+                                    )}
+                                  </td>
+                                )}
+                                {/* Status - inherited */}
+                                {columnVisibility.status && (
+                                  <td className="py-1.5 px-4">{getStatusBadge(sample.status)}</td>
+                                )}
+                                {/* Stage - inherited */}
+                                {columnVisibility.stage && (
+                                  <td className="py-1.5 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
+                                )}
+                                {/* Storage - inherited */}
+                                {columnVisibility.storage && (
+                                  <td className="py-1.5 px-4 text-muted-foreground">{sample.storage_position || '-'}</td>
+                                )}
+                                {/* Created - inherited */}
+                                {columnVisibility.created && (
+                                  <td className="py-1.5 px-4 text-muted-foreground">
+                                    {new Date(sample.created_at).toLocaleDateString()}
+                                  </td>
+                                )}
+                                {/* Actions */}
+                                <td className="py-2 px-4">
+                                  <div className="flex items-center gap-1">
+                                    {sc.has_certificate && (
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
+                                        disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
+                                        title="Download Certificate"
+                                      >
+                                        {downloadingSampleId === `${sample.id}_${sc.id}` ? (
+                                          <Loader2 className="h-3 w-3 animate-spin" />
+                                        ) : (
+                                          <Download className="h-3 w-3" />
+                                        )}
+                                      </Button>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            )
                           })
                         : []),
                     ])}

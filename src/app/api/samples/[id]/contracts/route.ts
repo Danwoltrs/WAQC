@@ -102,7 +102,9 @@ export async function POST(
     }
 
     // Generate tracking number using mother sample's params
-    const { data: trackingNumber, error: trackingError } = await supabase
+    // The RPC only checks `samples` table, so we also check `sample_contracts` for conflicts
+    // and increment the numeric part if needed.
+    const { data: rpcTrackingNumber, error: trackingError } = await supabase
       .rpc('generate_tracking_number', {
         p_client_id: sample.client_id,
         p_laboratory_id: sample.laboratory_id,
@@ -112,10 +114,46 @@ export async function POST(
         p_sample_type: sample.sample_type || 'pss'
       } as any)
 
-    if (trackingError || !trackingNumber) {
+    if (trackingError || !rpcTrackingNumber) {
       console.error('Error generating tracking number for sub-contract:', trackingError)
       return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
     }
+
+    // Parse tracking number format: "BD1-890231/26" → prefix="BD1", num=890231, suffix="26"
+    const tnStr = String(rpcTrackingNumber)
+    const slashIdx = tnStr.lastIndexOf('/')
+    const tnSuffix = slashIdx >= 0 ? tnStr.substring(slashIdx + 1) : ''
+    const tnLeft = slashIdx >= 0 ? tnStr.substring(0, slashIdx) : tnStr
+    const dashIdx = tnLeft.lastIndexOf('-')
+    const tnPrefix = dashIdx >= 0 ? tnLeft.substring(0, dashIdx) : ''
+    const tnNumStr = dashIdx >= 0 ? tnLeft.substring(dashIdx + 1) : tnLeft
+    const tnNumLen = tnNumStr.length
+
+    // Find the highest existing number with the same prefix/suffix pattern in sample_contracts
+    // Pattern: "BD1-%" for prefix "BD1", or just "%" for empty prefix, filtered by suffix
+    const likePattern = tnPrefix ? `${tnPrefix}-%` : '%'
+    const { data: existingContracts } = await supabase
+      .from('sample_contracts')
+      .select('tracking_number')
+      .like('tracking_number', tnSuffix ? `${likePattern}/${tnSuffix}` : likePattern)
+
+    let maxNum = parseInt(tnNumStr) || 0
+    if (existingContracts) {
+      for (const ec of existingContracts) {
+        const ecStr = ec.tracking_number || ''
+        const ecSlash = ecStr.lastIndexOf('/')
+        const ecLeft = ecSlash >= 0 ? ecStr.substring(0, ecSlash) : ecStr
+        const ecDash = ecLeft.lastIndexOf('-')
+        const ecNumStr = ecDash >= 0 ? ecLeft.substring(ecDash + 1) : ecLeft
+        const ecNum = parseInt(ecNumStr) || 0
+        if (ecNum >= maxNum) maxNum = ecNum + 1
+      }
+    }
+
+    // Build the final tracking number
+    const finalNumStr = maxNum.toString().padStart(tnNumLen, '0')
+    const finalLeft = tnPrefix ? `${tnPrefix}-${finalNumStr}` : finalNumStr
+    const trackingNumber = tnSuffix ? `${finalLeft}/${tnSuffix}` : finalLeft
 
     // Get current max sort_order
     const { data: maxSort } = await supabase
@@ -130,7 +168,7 @@ export async function POST(
 
     const contractData = {
       sample_id: sampleId,
-      tracking_number: String(trackingNumber),
+      tracking_number: trackingNumber,
       wolthers_contract_nr: body.wolthers_contract_nr || null,
       seller_contract_nr: body.seller_contract_nr || null,
       shipper_contract_nr: body.shipper_contract_nr || null,

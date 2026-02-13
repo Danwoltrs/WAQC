@@ -25,10 +25,10 @@ export async function POST(request: NextRequest) {
     const body = await request.json()
 
     // Support both old format (sample_ids array with global includeQrCode) and new format (samples array with per-sample QR flags)
-    let samplesConfig: Array<{ id: string; includeQrCode: boolean }>
+    let samplesConfig: Array<{ id: string; includeQrCode: boolean; contractId?: string }>
 
     if (body.samples && Array.isArray(body.samples)) {
-      // New format: array of {id, includeQrCode}
+      // New format: array of {id, includeQrCode, contractId?}
       samplesConfig = body.samples
     } else if (body.sample_ids && Array.isArray(body.sample_ids)) {
       // Old format: array of IDs with global includeQrCode flag
@@ -42,7 +42,20 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'At least one sample is required' }, { status: 400 })
     }
 
-    const sample_ids = samplesConfig.map(s => s.id)
+    const sample_ids = [...new Set(samplesConfig.map(s => s.id))]
+
+    // Fetch sub-contract data if any entries reference contractId
+    const contractIds = samplesConfig.filter(s => s.contractId).map(s => s.contractId!) as string[]
+    let subContractsMap: Record<string, any> = {}
+    if (contractIds.length > 0) {
+      const { data: contracts } = await supabase
+        .from('sample_contracts')
+        .select('id, tracking_number, wolthers_contract_nr, buyer_contract_nr, roaster_contract_nr, supplier_contract_nr, ico_number, container_nr')
+        .in('id', contractIds)
+      if (contracts) {
+        for (const c of contracts) subContractsMap[c.id] = c
+      }
+    }
 
     // Fetch samples with all required fields
     const { data: samples, error } = await supabase
@@ -100,8 +113,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
 
-    // Prepare label data for all samples with optional QR codes
-    const labels: SampleBagSleeveLabelData[] = await Promise.all(samples.map(async (sample: any) => {
+    // Build a map of samples by ID for quick lookup
+    const samplesById: Record<string, any> = {}
+    for (const s of samples) samplesById[s.id] = s
+
+    // Helper to build a label from a sample (optionally overriding with sub-contract data)
+    const buildLabel = async (sample: any, config: typeof samplesConfig[0]): Promise<SampleBagSleeveLabelData> => {
+      const sc = config.contractId ? subContractsMap[config.contractId] : null
+      const trackingNumber = sc?.tracking_number || sample.tracking_number
+
       // Get exporter name
       const exporterName = sample.exporter?.name || 'N/A'
 
@@ -111,45 +131,33 @@ export async function POST(request: NextRequest) {
       let qualityDescription = 'N/A'
 
       if (qualitySpec) {
-        // Client quality name is the custom_name if it exists
         clientQualityName = qualitySpec.custom_name || undefined
-
-        // Quality description comes from the template
         if (qualitySpec.template) {
           qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
         }
       }
 
-      // Format bags display (origin-specific defaults)
+      // Format bags display
       let bagsDisplay = 'N/A'
       if (sample.bag_count != null && sample.bag_weight_kg != null) {
         bagsDisplay = `${sample.bag_count} x ${sample.bag_weight_kg}kg`
-
-        // Add origin indicator
         const origin = sample.origin?.toLowerCase() || ''
-        if (origin.includes('brazil')) {
-          bagsDisplay += ' (Brazil)'
-        } else if (origin) {
-          bagsDisplay += ` (${sample.origin})`
-        }
+        if (origin.includes('brazil')) bagsDisplay += ' (Brazil)'
+        else if (origin) bagsDisplay += ` (${sample.origin})`
       }
 
-      // Collect contracts with types
+      // Collect contracts - use sub-contract overrides when available
       const contracts: Array<{ type: string; value: string }> = []
-      if (sample.wolthers_contract_nr) {
-        contracts.push({ type: 'Wolthers', value: sample.wolthers_contract_nr })
-      }
-      if (sample.buyer_contract_nr) {
-        contracts.push({ type: 'Importer', value: sample.buyer_contract_nr })
-      }
-      if (sample.exporter_contract_nr) {
-        contracts.push({ type: 'Exporter', value: sample.exporter_contract_nr })
-      }
-      if (sample.roaster_contract_nr) {
-        contracts.push({ type: 'Roaster', value: sample.roaster_contract_nr })
-      }
+      const w = sc?.wolthers_contract_nr || sample.wolthers_contract_nr
+      const b = sc?.buyer_contract_nr || sample.buyer_contract_nr
+      const e = sample.exporter_contract_nr
+      const r = sc?.roaster_contract_nr || sample.roaster_contract_nr
+      if (w) contracts.push({ type: 'Wolthers', value: w })
+      if (b) contracts.push({ type: 'Importer', value: b })
+      if (e) contracts.push({ type: 'Exporter', value: e })
+      if (r) contracts.push({ type: 'Roaster', value: r })
 
-      // Format date with short month (e.g., "28/Oct/2025")
+      // Format date
       const dateObj = new Date(sample.created_at)
       const day = dateObj.getDate().toString().padStart(2, '0')
       const month = dateObj.toLocaleDateString('en-US', { month: 'short' })
@@ -159,71 +167,52 @@ export async function POST(request: NextRequest) {
       // Determine sample type display
       let sampleTypeDisplay: 'PSS' | 'SS' | 'Type Sample' = 'PSS'
       const sampleType = sample.sample_type?.toLowerCase()
-      if (sampleType === 'type' || sampleType === 'stocklot') {
-        sampleTypeDisplay = 'Type Sample'
-      } else if (sampleType === 'ss') {
-        sampleTypeDisplay = 'SS'
-      }
+      if (sampleType === 'type' || sampleType === 'stocklot') sampleTypeDisplay = 'Type Sample'
+      else if (sampleType === 'ss') sampleTypeDisplay = 'SS'
 
       // Get laboratory information
       const lab = sample.laboratory
       const labInfo = lab ? {
         name: lab.name || 'Wolthers Coffee Quality Control',
-        address: lab.address || '',
-        city: lab.city || '',
-        state: lab.state || '',
-        zip_code: lab.zip_code || '',
-        country: lab.country || '',
-        phone: lab.contact_phone || '',
-        fax: '',
-        tax_id: lab.vat_number || '',
+        address: lab.address || '', city: lab.city || '', state: lab.state || '',
+        zip_code: lab.zip_code || '', country: lab.country || '',
+        phone: lab.contact_phone || '', fax: '', tax_id: lab.vat_number || '',
       } : {
         name: 'Wolthers Coffee Quality Control',
-        address: '',
-        city: '',
-        state: '',
-        zip_code: '',
-        country: '',
-        phone: '',
-        fax: '',
-        tax_id: '',
+        address: '', city: '', state: '', zip_code: '', country: '',
+        phone: '', fax: '', tax_id: '',
       }
 
-      // Generate QR code if requested for this specific sample
+      // Generate QR code if requested
       let qrCode: string | undefined
-      const sampleConfig = samplesConfig.find(s => s.id === sample.id)
-      if (sampleConfig?.includeQrCode) {
+      if (config.includeQrCode) {
         try {
-          const qrData = await fetchCertificateQRData(supabase, sample.id, sample.tracking_number)
+          const qrData = await fetchCertificateQRData(supabase, sample.id, trackingNumber)
           const qrContent = buildCertificateQRText(qrData)
-          qrCode = await generateQRCode(qrContent, {
-            width: 150,
-            margin: 1,
-          })
+          qrCode = await generateQRCode(qrContent, { width: 150, margin: 1 })
         } catch (qrError) {
-          console.error('Error generating QR code for sample', sample.id, ':', qrError)
-          // Continue without QR code if generation fails
+          console.error('Error generating QR code for', trackingNumber, ':', qrError)
         }
       }
 
       return {
-        sample_type: sampleTypeDisplay,
-        date,
-        tracking_number: sample.tracking_number,
-        exporter: exporterName,
-        hide_exporter: sample.hide_exporter_on_label || false,
-        bags_display: bagsDisplay,
-        client_quality_name: clientQualityName,
+        sample_type: sampleTypeDisplay, date, tracking_number: trackingNumber,
+        exporter: exporterName, hide_exporter: sample.hide_exporter_on_label || false,
+        bags_display: bagsDisplay, client_quality_name: clientQualityName,
         quality_description: qualityDescription,
-        ico_number: sample.ico_number,
-        container_number: sample.container_nr,
-        contracts,
-        buyer_reference: undefined,
-        logo_url: logoBase64,
-        qr_code: qrCode,
-        laboratory: labInfo,
+        ico_number: sc?.ico_number || sample.ico_number,
+        container_number: sc?.container_nr || sample.container_nr,
+        contracts, buyer_reference: undefined, logo_url: logoBase64,
+        qr_code: qrCode, laboratory: labInfo,
       }
-    }))
+    }
+
+    // Prepare label data for all config entries (mother samples + sub-contracts)
+    const labels: SampleBagSleeveLabelData[] = await Promise.all(
+      samplesConfig
+        .filter(cfg => samplesById[cfg.id])
+        .map(cfg => buildLabel(samplesById[cfg.id], cfg))
+    )
 
     // Generate PDF
     let pdfDocument, stream, buffer

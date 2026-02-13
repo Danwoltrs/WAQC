@@ -44,6 +44,7 @@ interface SampleData {
   bag_type?: string
   shipment_month?: string
   exporter_sample_number?: string | null
+  same_seller_shipper?: boolean
 }
 
 interface AddSubContractDialogProps {
@@ -89,46 +90,46 @@ function MotherSummary({ sample }: { sample: SampleData }) {
 
   return (
     <div className="bg-muted/50 border rounded-xl p-4 space-y-2">
-      {/* Wolthers contract at top (replaces "Contract #1 (Mother)") */}
-      {sample.wolthers_contract_nr && (
+      {/* Top: Wolthers left, tracking number right */}
+      <div className="flex items-center justify-between">
         <div className="text-xs font-mono text-muted-foreground">
-          Wolthers {sample.wolthers_contract_nr}
+          {sample.wolthers_contract_nr ? `Wolthers ${sample.wolthers_contract_nr}` : '\u00A0'}
         </div>
-      )}
-
-      {/* Entities in columns: Seller/Shipper | Importer/QC Client | Roaster/End Client */}
-      <div className="grid grid-cols-3 gap-x-5 gap-y-1">
-        <Entity label="Seller" value={sample.seller_name} ref={sample.seller_contract_nr} />
-        <Entity label="Importer" value={sample.importer_name} ref={sample.buyer_contract_nr} />
-        <Entity label="Roaster" value={sample.roaster_name} ref={sample.roaster_contract_nr} />
-
-        <Entity label="Shipper" value={sample.exporter_name} ref={sample.supplier_contract_nr} />
-        {!sample.importer_is_qc_client && sample.qc_client_name ? (
-          <Entity label="QC Client" value={sample.qc_client_name} ref={sample.qc_client_contract_nr} />
-        ) : <div />}
-        <Entity label="End Client" value={sample.end_client_name} ref={sample.end_client_contract_nr} />
+        <span className="text-sm font-mono font-medium">{sample.tracking_number}</span>
       </div>
 
-      {/* Sample type, PSS/SS info + quantity */}
+      {/* Entities: Seller/Shipper | Importer/Roaster | QC Client/End Client */}
+      <div className="grid grid-cols-3 gap-x-5 gap-y-1">
+        <Entity label={sample.same_seller_shipper ? 'Seller/Shipper' : 'Seller'} value={sample.seller_name} ref={sample.seller_contract_nr} />
+        <Entity label="Importer" value={sample.importer_name} ref={sample.buyer_contract_nr} />
+        {sample.qc_client_name ? (
+          <Entity label="QC Client" value={sample.qc_client_name} ref={sample.qc_client_contract_nr} />
+        ) : <div />}
+
+        {!sample.same_seller_shipper ? (
+          <Entity label="Shipper" value={sample.exporter_name} ref={sample.supplier_contract_nr} />
+        ) : <div />}
+        {sample.roaster_name ? (
+          <Entity label="Roaster" value={sample.roaster_name} ref={sample.roaster_contract_nr} />
+        ) : <div />}
+        {sample.end_client_name ? (
+          <Entity label="End Client" value={sample.end_client_name} ref={sample.end_client_contract_nr} />
+        ) : <div />}
+      </div>
+
+      {/* Bottom: PSS/SS badge + info on left, quantity on right */}
       <div className="flex items-center justify-between text-xs pt-1.5 border-t border-border/50">
         <div className="flex items-center gap-2">
           {sampleType && <Badge variant="outline" className="text-[10px]">{sampleType}</Badge>}
-          <span className="font-mono">{sample.tracking_number}</span>
-          {sample.exporter_sample_number && (
-            <>
-              <span className="text-muted-foreground">|</span>
-              <span className="font-mono">{sample.exporter_sample_number}</span>
-            </>
+          {sample.sample_type === 'pss' && sample.exporter_sample_number && (
+            <span className="font-mono">{sample.exporter_sample_number}</span>
           )}
           {sample.sample_type === 'ss' && sample.ico_number && (
-            <>
-              <span className="text-muted-foreground">|</span>
-              <span>ICO: {sample.ico_number}</span>
-            </>
+            <span>ICO: {sample.ico_number}</span>
           )}
           {sample.sample_type === 'ss' && sample.container_nr && (
             <>
-              <span className="text-muted-foreground">|</span>
+              {sample.ico_number && <span className="text-muted-foreground">|</span>}
               <span>Container: {sample.container_nr}</span>
             </>
           )}
@@ -191,44 +192,6 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     prevLengthRef.current = contracts.length
   }, [contracts.length])
 
-  // Auto-calculate quantity for all contracts
-  useEffect(() => {
-    let hasChanges = false
-    const updated = contracts.map(c => {
-      const bagCount = parseInt(c.bag_count) || 0
-      const bagWeight = parseFloat(c.bag_weight_kg) || 0
-      if (bagCount <= 0 || bagWeight <= 0) return c
-      const totalMT = c.bag_type === 'bulk' ? (bagCount * 60) / 1000 : (bagCount * bagWeight) / 1000
-      const equivalent = c.bag_type === 'bulk' ? bagCount : (bagCount * bagWeight) / 60
-      const newMT = totalMT.toFixed(3)
-      const newEquiv = Math.round(equivalent).toString()
-      if (c.bags_quantity_mt === newMT && c.equivalent_60kg_bags === newEquiv) return c
-      hasChanges = true
-      return { ...c, bags_quantity_mt: newMT, equivalent_60kg_bags: newEquiv }
-    })
-    if (hasChanges) setContracts(updated)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(contracts.map(c => `${c.bag_count}|${c.bag_weight_kg}|${c.bag_type}`))])
-
-  // Auto-select bag weight when bag type changes
-  const prevBagTypesRef = useRef<string[]>([])
-  useEffect(() => {
-    const prev = prevBagTypesRef.current
-    let hasChanges = false
-    const updated = contracts.map((c, i) => {
-      if (!c.bag_type || c.bag_type === (prev[i] || '')) return c
-      hasChanges = true
-      let weight = ''
-      if (c.bag_type === 'big_bag') weight = '1000'
-      else if (c.bag_type === 'bulk') weight = '21600'
-      else weight = (sample.origin || '').toLowerCase() === 'brazil' ? '60' : '70'
-      return { ...c, bag_weight_kg: weight }
-    })
-    prevBagTypesRef.current = contracts.map(c => c.bag_type)
-    if (hasChanges) setContracts(updated)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [JSON.stringify(contracts.map(c => c.bag_type))])
-
   const importerOptions = useMemo(() => {
     const seen = new Set<string>()
     return importers
@@ -261,6 +224,56 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
     })
   }
 
+  // Auto-assign bag weight when bag_type changes
+  useEffect(() => {
+    if (contracts.length === 0) return
+    setContracts(prev => {
+      const updated = prev.map(c => {
+        if (!c.bag_type) return c
+        let weight = ''
+        if (c.bag_type === 'big_bag') weight = '1000'
+        else if (c.bag_type === 'bulk') weight = '21600'
+        else if (c.bag_type === 'jute_bag' || c.bag_type === 'pp_bag') {
+          weight = (sample.origin || '').toLowerCase() === 'brazil' ? '60' : '70'
+        }
+        if (!weight || c.bag_weight_kg === weight) return c
+        return { ...c, bag_weight_kg: weight }
+      })
+      return JSON.stringify(updated) !== JSON.stringify(prev) ? updated : prev
+    })
+  }, [contracts.map(c => c.bag_type).join(',')])
+
+  // Auto-calculate MT and equivalent 60kg bags
+  useEffect(() => {
+    if (contracts.length === 0) return
+    setContracts(prev => {
+      const updated = prev.map(c => {
+        const bagCount = parseInt(c.bag_count) || 0
+        const bagWeight = parseFloat(c.bag_weight_kg) || 0
+        const isBulk = c.bag_type === 'bulk'
+        if (bagCount <= 0 || (!isBulk && bagWeight <= 0)) {
+          if (c.bags_quantity_mt || c.equivalent_60kg_bags) {
+            return { ...c, bags_quantity_mt: '', equivalent_60kg_bags: '' }
+          }
+          return c
+        }
+        let totalMT: number, equivalent: number
+        if (isBulk) {
+          totalMT = (bagCount * 60) / 1000
+          equivalent = bagCount
+        } else {
+          totalMT = (bagCount * bagWeight) / 1000
+          equivalent = (bagCount * bagWeight) / 60
+        }
+        const newMT = totalMT.toFixed(3)
+        const newEquiv = Math.round(equivalent).toString()
+        if (c.bags_quantity_mt === newMT && c.equivalent_60kg_bags === newEquiv) return c
+        return { ...c, bags_quantity_mt: newMT, equivalent_60kg_bags: newEquiv }
+      })
+      return JSON.stringify(updated) !== JSON.stringify(prev) ? updated : prev
+    })
+  }, [contracts.map(c => `${c.bag_count}|${c.bag_weight_kg}|${c.bag_type}`).join(',')])
+
   const handleAddContract = () => {
     const newContract: SubContractFormData = {
       importer: sample.importer_name || '',
@@ -268,21 +281,21 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
       roaster: sample.roaster_name || '',
       end_client: sample.end_client_name || '',
       qc_client: sample.qc_client_name || '',
-      wolthers_contract_nr: '',
-      buyer_contract_nr: '',
-      roaster_contract_nr: '',
-      qc_client_contract_nr: '',
-      end_client_contract_nr: '',
-      supplier_contract_nr: '',
-      ico_number: '',
-      container_nr: '',
+      wolthers_contract_nr: sample.wolthers_contract_nr || '',
+      buyer_contract_nr: sample.buyer_contract_nr || '',
+      roaster_contract_nr: sample.roaster_contract_nr || '',
+      qc_client_contract_nr: sample.qc_client_contract_nr || '',
+      end_client_contract_nr: sample.end_client_contract_nr || '',
+      supplier_contract_nr: sample.supplier_contract_nr || '',
+      ico_number: sample.ico_number || '',
+      container_nr: sample.container_nr || '',
       bag_count: sample.bag_count?.toString() || '',
       bag_weight_kg: sample.bag_weight_kg?.toString() || '',
       bag_type: (sample.bag_type as SubContractFormData['bag_type']) || '',
       bags_quantity_mt: sample.bags_quantity_mt?.toString() || '',
       equivalent_60kg_bags: '',
       shipment_month: sample.shipment_month || '',
-      exporter_sample_number: '',
+      exporter_sample_number: sample.exporter_sample_number || '',
     }
     setContracts(prev => [...prev, newContract])
   }
@@ -347,12 +360,12 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
           supplier_contract_nr: sc.supplier_contract_nr || null,
           ico_number: sc.ico_number || null,
           container_nr: sc.container_nr || null,
-          bag_count: parseInt(sc.bag_count) || null,
-          bag_weight_kg: parseFloat(sc.bag_weight_kg) || null,
-          bag_type: sc.bag_type || null,
-          bags_quantity_mt: parseFloat(sc.bags_quantity_mt) || null,
-          equivalent_60kg_bags: parseInt(sc.equivalent_60kg_bags) || null,
           exporter_sample_number: sc.exporter_sample_number || null,
+          bag_count: sc.bag_count ? parseInt(sc.bag_count) : null,
+          bag_weight_kg: sc.bag_weight_kg ? parseFloat(sc.bag_weight_kg) : null,
+          bag_type: sc.bag_type || null,
+          bags_quantity_mt: sc.bags_quantity_mt ? parseFloat(sc.bags_quantity_mt) : null,
+          equivalent_60kg_bags: sc.equivalent_60kg_bags ? parseInt(sc.equivalent_60kg_bags) : null,
           shipment_month: sc.shipment_month || null,
         }
 
@@ -364,7 +377,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
 
         if (!res.ok) {
           const err = await res.json()
-          throw new Error(err.error || `Failed to create sub-contract ${i + 1}`)
+          throw new Error(err.details || err.error || `Failed to create sub-contract ${i + 1}`)
         }
       }
 
@@ -379,7 +392,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
+      <DialogContent className="max-w-4xl max-h-[85vh] flex flex-col">
         <DialogHeader className="sr-only">
           <DialogTitle>Add Sub-Contracts</DialogTitle>
         </DialogHeader>
@@ -425,6 +438,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
                       qcClients={qcClients}
                       origin={sample.origin || ''}
                       sampleType={sample.sample_type || ''}
+                      sellerName={sample.seller_name || ''}
                     />
                     <div className="flex justify-end pt-2 pb-1">
                       <Button

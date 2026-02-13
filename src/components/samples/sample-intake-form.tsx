@@ -758,12 +758,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               supplier_contract_nr: sc.supplier_contract_nr || null,
               ico_number: sc.ico_number || null,
               container_nr: sc.container_nr || null,
-              bag_count: parseInt(sc.bag_count) || null,
-              bag_weight_kg: parseFloat(sc.bag_weight_kg) || null,
-              bag_type: sc.bag_type || null,
-              bags_quantity_mt: parseFloat(sc.bags_quantity_mt) || null,
-              equivalent_60kg_bags: parseInt(sc.equivalent_60kg_bags) || null,
               exporter_sample_number: sc.exporter_sample_number || null,
+              bag_count: sc.bag_count ? parseInt(sc.bag_count) : null,
+              bag_weight_kg: sc.bag_weight_kg ? parseFloat(sc.bag_weight_kg) : null,
+              bag_type: sc.bag_type || null,
+              bags_quantity_mt: sc.bags_quantity_mt ? parseFloat(sc.bags_quantity_mt) : null,
+              equivalent_60kg_bags: sc.equivalent_60kg_bags ? parseInt(sc.equivalent_60kg_bags) : null,
               shipment_month: sc.shipment_month || null,
             }
 
