@@ -339,7 +339,7 @@ export async function PATCH(
       'wolthers_contract_nr', 'seller_contract_nr', 'shipper_contract_nr',
       'buyer_contract_nr', 'roaster_contract_nr', 'qc_client_contract_nr',
       'end_client_contract_nr', 'supplier_contract_nr', 'ico_number', 'container_nr',
-      'importer_id', 'importer_is_qc_client', 'roaster_id', 'end_client_id', 'client_id',
+      'importer_id', 'importer_is_qc_client', 'roaster_id', 'end_client_id',
       'bag_count', 'bag_weight_kg', 'bag_type', 'bags_quantity_mt',
       'equivalent_60kg_bags', 'exporter_sample_number', 'shipment_month'
     ]

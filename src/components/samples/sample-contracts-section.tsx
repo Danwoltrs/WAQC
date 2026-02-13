@@ -287,13 +287,11 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
     const importerId = resolveEntityId(form.importer_name, importers)
     const roasterId = resolveEntityId(form.roaster_name, roasters)
     const endClientId = resolveEntityId(form.end_client_name, qcClients)
-    const clientId = resolveEntityId(form.qc_client_name, qcClients)
     return {
       importer_id: importerId,
       importer_is_qc_client: form.importer_is_qc_client,
       roaster_id: roasterId,
       end_client_id: endClientId,
-      client_id: form.importer_is_qc_client ? null : clientId,
       wolthers_contract_nr: form.wolthers_contract_nr || null,
       buyer_contract_nr: form.buyer_contract_nr || null,
       roaster_contract_nr: form.roaster_contract_nr || null,
@@ -746,6 +744,7 @@ function ContractForm({
                       setForm(f => ({ ...f, importer_is_qc_client: checked as boolean }))
                     }
                     className="h-3 w-3"
+                    disabled
                   />
                   <Label className="text-[10px] cursor-pointer text-muted-foreground">=QC Client</Label>
                 </div>
@@ -788,6 +787,7 @@ function ContractForm({
                   onValueChange={(value) =>
                     setForm(f => ({ ...f, qc_client_name: value === 'none' ? '' : value }))
                   }
+                  disabled
                 >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="Select QC client" />

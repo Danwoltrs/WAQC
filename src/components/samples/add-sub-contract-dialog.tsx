@@ -20,6 +20,7 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
 interface SampleData {
   id: string
   tracking_number: string
+  client_id?: string
   sample_type?: string
   origin?: string
   seller_name?: string
@@ -318,12 +319,6 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
         const keys: string[] = []
 
         if (sc.importer) {
-          if (sc.importer_is_qc_client) {
-            keys.push('client')
-            lookups.push(
-              Promise.resolve(supabase.from('clients').select('id').eq('fantasy_name', sc.importer).eq('is_qc_client', true).limit(1).maybeSingle())
-            )
-          }
           keys.push('importer')
           lookups.push(
             Promise.resolve(supabase.from('importers').select('id').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
@@ -337,11 +332,6 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
           keys.push('end_client')
           lookups.push(Promise.resolve(supabase.from('clients').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle()))
         }
-        if (!sc.importer_is_qc_client && sc.qc_client) {
-          keys.push('qc_client')
-          lookups.push(Promise.resolve(supabase.from('clients').select('id').eq('fantasy_name', sc.qc_client).eq('is_qc_client', true).limit(1).maybeSingle()))
-        }
-
         const results = await Promise.all(lookups)
         const resolved: Record<string, string | undefined> = {}
         results.forEach((r, idx) => { resolved[keys[idx]] = r?.data?.id })
@@ -351,7 +341,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
           importer_is_qc_client: sc.importer_is_qc_client,
           roaster_id: resolved['roaster'] || null,
           end_client_id: resolved['end_client'] || null,
-          client_id: resolved['client'] || resolved['qc_client'] || null,
+          client_id: sample.client_id || null,
           wolthers_contract_nr: sc.wolthers_contract_nr || null,
           buyer_contract_nr: sc.buyer_contract_nr || null,
           roaster_contract_nr: sc.roaster_contract_nr || null,
@@ -439,6 +429,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
                       origin={sample.origin || ''}
                       sampleType={sample.sample_type || ''}
                       sellerName={sample.seller_name || ''}
+                      lockQcClient
                     />
                     <div className="flex justify-end pt-2 pb-1">
                       <Button

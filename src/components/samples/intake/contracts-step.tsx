@@ -351,6 +351,7 @@ export function ContractPanel({
   origin,
   sampleType,
   sellerName,
+  lockQcClient,
 }: {
   contract: SubContractFormData
   updateContract: (field: keyof SubContractFormData, value: string | boolean) => void
@@ -361,6 +362,7 @@ export function ContractPanel({
   origin: string
   sampleType: string
   sellerName?: string
+  lockQcClient?: boolean
 }) {
   const [showDestination, setShowDestination] = useState(
     !!(contract.roaster || contract.end_client)
@@ -422,6 +424,7 @@ export function ContractPanel({
                   checked={contract.importer_is_qc_client}
                   onCheckedChange={(checked) => updateContract('importer_is_qc_client', checked as boolean)}
                   className="h-3 w-3"
+                  disabled={lockQcClient}
                 />
                 <Label className="text-[10px] cursor-pointer text-muted-foreground">=QC Client</Label>
               </div>
@@ -458,6 +461,7 @@ export function ContractPanel({
                 <Select
                   value={contract.qc_client || 'none'}
                   onValueChange={(value) => updateContract('qc_client', value === 'none' ? '' : value)}
+                  disabled={lockQcClient}
                 >
                   <SelectTrigger className="h-8 text-sm">
                     <SelectValue placeholder="Select..." />
