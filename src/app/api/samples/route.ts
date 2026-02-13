@@ -283,44 +283,78 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate tracking number + insert with retry on duplicate key conflict
-    // The generate_tracking_number() function uses MAX()+1 which can race under concurrent inserts
-    const MAX_RETRIES = 3
+    // The generate_tracking_number() RPC uses MAX()+1 which can race under concurrent inserts.
+    // On retry, we increment the numeric part of the failed tracking number instead of
+    // re-calling the RPC (which would return the same duplicate since no row was inserted).
+    const MAX_RETRIES = 5
     let sample: any = null
+    let lastTrackingNumber: string | null = null
 
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-      const { data: trackingNumberData, error: trackingError } = await supabase
-        .rpc('generate_tracking_number', {
-          p_client_id: clientId,
-          p_laboratory_id: body.laboratory_id,
-          p_origin: body.origin,
-          p_quality_template_id: qualitySpecId,
-          p_is_rejected: false,
-          p_sample_type: body.sample_type || 'pss'
-        } as any)
+      let trackingNumber: string
 
-      if (trackingError) {
-        console.error('Error generating tracking number:', trackingError)
-        return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
+      if (attempt === 1 || !lastTrackingNumber) {
+        // First attempt: use the RPC
+        const { data: trackingNumberData, error: trackingError } = await supabase
+          .rpc('generate_tracking_number', {
+            p_client_id: clientId,
+            p_laboratory_id: body.laboratory_id,
+            p_origin: body.origin,
+            p_quality_template_id: qualitySpecId,
+            p_is_rejected: false,
+            p_sample_type: body.sample_type || 'pss'
+          } as any)
+
+        if (trackingError) {
+          console.error('Error generating tracking number:', trackingError)
+          return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
+        }
+
+        if (trackingNumberData === null || trackingNumberData === undefined) {
+          console.error('Tracking number generation returned null for client:', clientId, 'origin:', body.origin)
+          return NextResponse.json({
+            error: 'Failed to generate tracking number - client configuration may be invalid',
+            details: 'The tracking number format for this client is not properly configured. Please contact an administrator.'
+          }, { status: 500 })
+        }
+
+        trackingNumber = String(trackingNumberData)
+
+        if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
+          console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
+          return NextResponse.json({
+            error: 'Failed to generate valid tracking number',
+            details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
+          }, { status: 500 })
+        }
+      } else {
+        // Retry: increment the numeric part of the last failed tracking number
+        // Parse format like "BD-890227/26" or "AS41926/26" — find the main sequence digits
+        const slashIdx = lastTrackingNumber.lastIndexOf('/')
+        const left = slashIdx >= 0 ? lastTrackingNumber.substring(0, slashIdx) : lastTrackingNumber
+        const suffix = slashIdx >= 0 ? lastTrackingNumber.substring(slashIdx) : ''
+        // Find the last group of digits in the left part (the sequence number)
+        const match = left.match(/^(.*?)(\d+)$/)
+        if (match) {
+          const prefix = match[1]
+          const numStr = match[2]
+          const nextNum = (parseInt(numStr) + 1).toString().padStart(numStr.length, '0')
+          trackingNumber = prefix + nextNum + suffix
+        } else {
+          // Can't parse — fall back to RPC call
+          const { data: rpcData } = await supabase.rpc('generate_tracking_number', {
+            p_client_id: clientId,
+            p_laboratory_id: body.laboratory_id,
+            p_origin: body.origin,
+            p_quality_template_id: qualitySpecId,
+            p_is_rejected: false,
+            p_sample_type: body.sample_type || 'pss'
+          } as any)
+          trackingNumber = String(rpcData)
+        }
       }
 
-      if (trackingNumberData === null || trackingNumberData === undefined) {
-        console.error('Tracking number generation returned null for client:', clientId, 'origin:', body.origin)
-        return NextResponse.json({
-          error: 'Failed to generate tracking number - client configuration may be invalid',
-          details: 'The tracking number format for this client is not properly configured. Please contact an administrator.'
-        }, { status: 500 })
-      }
-
-      const trackingNumber = String(trackingNumberData)
-
-      if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
-        console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
-        return NextResponse.json({
-          error: 'Failed to generate valid tracking number',
-          details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
-        }, { status: 500 })
-      }
-
+      lastTrackingNumber = trackingNumber
       console.log(`Generated tracking number: ${trackingNumber} (attempt ${attempt})`)
 
       const sampleData: Record<string, any> = {

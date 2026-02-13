@@ -170,11 +170,6 @@ export async function POST(
       if (ecNum >= maxNum) maxNum = ecNum + 1
     }
 
-    // Build the final tracking number
-    const finalNumStr = maxNum.toString().padStart(tnNumLen, '0')
-    const finalLeft = tnPrefix ? `${tnPrefix}-${finalNumStr}` : finalNumStr
-    const trackingNumber = tnSuffix ? `${finalLeft}/${tnSuffix}` : finalLeft
-
     // Get current max sort_order
     const { data: maxSort } = await supabase
       .from('sample_contracts')
@@ -186,44 +181,71 @@ export async function POST(
 
     const nextSortOrder = (maxSort?.sort_order ?? -1) + 1
 
-    const contractData = {
-      sample_id: sampleId,
-      tracking_number: trackingNumber,
-      wolthers_contract_nr: body.wolthers_contract_nr || null,
-      seller_contract_nr: body.seller_contract_nr || null,
-      shipper_contract_nr: body.shipper_contract_nr || null,
-      buyer_contract_nr: body.buyer_contract_nr || null,
-      roaster_contract_nr: body.roaster_contract_nr || null,
-      qc_client_contract_nr: body.qc_client_contract_nr || null,
-      end_client_contract_nr: body.end_client_contract_nr || null,
-      supplier_contract_nr: body.supplier_contract_nr || null,
-      ico_number: body.ico_number || null,
-      container_nr: body.container_nr || null,
-      importer_id: body.importer_id || null,
-      importer_is_qc_client: body.importer_is_qc_client ?? true,
-      roaster_id: body.roaster_id || null,
-      end_client_id: body.end_client_id || null,
-      client_id: body.client_id || null,
-      bag_count: body.bag_count || null,
-      bag_weight_kg: body.bag_weight_kg || null,
-      bag_type: body.bag_type || null,
-      bags_quantity_mt: body.bags_quantity_mt || null,
-      equivalent_60kg_bags: body.equivalent_60kg_bags || null,
-      exporter_sample_number: body.exporter_sample_number || null,
-      shipment_month: body.shipment_month || null,
-      sort_order: nextSortOrder,
-      created_by: user.id,
-    }
+    // Insert with retry on duplicate key — increment sequence on each retry
+    const MAX_CONTRACT_RETRIES = 5
+    let contract: any = null
 
-    const { data: contract, error: insertError } = await supabase
-      .from('sample_contracts')
-      .insert(contractData)
-      .select()
-      .single()
+    for (let attempt = 0; attempt < MAX_CONTRACT_RETRIES; attempt++) {
+      const currentNum = maxNum + attempt
+      const finalNumStr = currentNum.toString().padStart(tnNumLen, '0')
+      const finalLeft = tnPrefix ? `${tnPrefix}-${finalNumStr}` : finalNumStr
+      const trackingNumber = tnSuffix ? `${finalLeft}/${tnSuffix}` : finalLeft
 
-    if (insertError) {
+      const contractData = {
+        sample_id: sampleId,
+        tracking_number: trackingNumber,
+        wolthers_contract_nr: body.wolthers_contract_nr || null,
+        seller_contract_nr: body.seller_contract_nr || null,
+        shipper_contract_nr: body.shipper_contract_nr || null,
+        buyer_contract_nr: body.buyer_contract_nr || null,
+        roaster_contract_nr: body.roaster_contract_nr || null,
+        qc_client_contract_nr: body.qc_client_contract_nr || null,
+        end_client_contract_nr: body.end_client_contract_nr || null,
+        supplier_contract_nr: body.supplier_contract_nr || null,
+        ico_number: body.ico_number || null,
+        container_nr: body.container_nr || null,
+        importer_id: body.importer_id || null,
+        importer_is_qc_client: body.importer_is_qc_client ?? true,
+        roaster_id: body.roaster_id || null,
+        end_client_id: body.end_client_id || null,
+        client_id: body.client_id || null,
+        bag_count: body.bag_count || null,
+        bag_weight_kg: body.bag_weight_kg || null,
+        bag_type: body.bag_type || null,
+        bags_quantity_mt: body.bags_quantity_mt || null,
+        equivalent_60kg_bags: body.equivalent_60kg_bags || null,
+        exporter_sample_number: body.exporter_sample_number || null,
+        shipment_month: body.shipment_month || null,
+        sort_order: nextSortOrder,
+        created_by: user.id,
+      }
+
+      const { data: insertedContract, error: insertError } = await supabase
+        .from('sample_contracts')
+        .insert(contractData)
+        .select()
+        .single()
+
+      if (!insertError) {
+        contract = insertedContract
+        break
+      }
+
+      const isDuplicate = insertError.message?.includes('duplicate key') ||
+        insertError.message?.includes('unique constraint') ||
+        insertError.code === '23505'
+
+      if (isDuplicate && attempt < MAX_CONTRACT_RETRIES - 1) {
+        console.warn(`Duplicate tracking number ${trackingNumber} for sub-contract, retrying with incremented sequence...`)
+        continue
+      }
+
       console.error('Error creating sub-contract:', insertError)
       return NextResponse.json({ error: 'Failed to create sub-contract', details: insertError.message }, { status: 500 })
+    }
+
+    if (!contract) {
+      return NextResponse.json({ error: 'Failed to create sub-contract after retries' }, { status: 500 })
     }
 
     // Auto-create certificate if mother sample already has one
