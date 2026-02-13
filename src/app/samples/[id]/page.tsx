@@ -499,8 +499,7 @@ export default function SampleDetailPage() {
       const lines: string[] = [sample.tracking_number]
 
       // Fetch quality assessment for defects & screen sizes
-      const resolvedId = sampleUuid || params.id
-      const res = await fetch(`/api/samples/${resolvedId}/quality-assessment`)
+      const res = await fetch(`/api/samples/${sample.id}/quality-assessment`)
       if (res.ok) {
         const data = await res.json()
         const gb = data.assessment?.green_bean_data
