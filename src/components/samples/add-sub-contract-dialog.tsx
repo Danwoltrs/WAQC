@@ -96,21 +96,17 @@ function MotherSummary({ sample }: { sample: SampleData }) {
         </div>
       )}
 
-      {/* Entities in columns: Seller/Shipper | Importer/Roaster | QC Client/End Client */}
+      {/* Entities in columns: Seller/Shipper | Importer/QC Client | Roaster/End Client */}
       <div className="grid grid-cols-3 gap-x-5 gap-y-1">
         <Entity label="Seller" value={sample.seller_name} ref={sample.seller_contract_nr} />
         <Entity label="Importer" value={sample.importer_name} ref={sample.buyer_contract_nr} />
-        {!sample.importer_is_qc_client && sample.qc_client_name ? (
-          <Entity label="QC Client" value={sample.qc_client_name} ref={sample.qc_client_contract_nr} />
-        ) : sample.end_client_name ? (
-          <Entity label="End Client" value={sample.end_client_name} ref={sample.end_client_contract_nr} />
-        ) : <div />}
+        <Entity label="Roaster" value={sample.roaster_name} ref={sample.roaster_contract_nr} />
 
         <Entity label="Shipper" value={sample.exporter_name} ref={sample.supplier_contract_nr} />
-        <Entity label="Roaster" value={sample.roaster_name} ref={sample.roaster_contract_nr} />
-        {!sample.importer_is_qc_client && sample.qc_client_name && sample.end_client_name ? (
-          <Entity label="End Client" value={sample.end_client_name} ref={sample.end_client_contract_nr} />
+        {!sample.importer_is_qc_client && sample.qc_client_name ? (
+          <Entity label="QC Client" value={sample.qc_client_name} ref={sample.qc_client_contract_nr} />
         ) : <div />}
+        <Entity label="End Client" value={sample.end_client_name} ref={sample.end_client_contract_nr} />
       </div>
 
       {/* Sample type, PSS/SS info + quantity */}
@@ -384,7 +380,7 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-3xl max-h-[85vh] flex flex-col">
-        <DialogHeader>
+        <DialogHeader className="sr-only">
           <DialogTitle>Add Sub-Contracts</DialogTitle>
         </DialogHeader>
 

@@ -122,21 +122,17 @@ function MotherContractSummary({ formData }: { formData: StepComponentProps['for
         </div>
       )}
 
-      {/* Entities in columns: Seller/Shipper | Importer/Roaster | QC Client/End Client */}
+      {/* Entities in columns: Seller/Shipper | Importer/QC Client | Roaster/End Client */}
       <div className="grid grid-cols-3 gap-x-5 gap-y-1">
         <Entity label="Seller" value={formData.seller} ref={formData.seller_contract_nr} />
         <Entity label="Importer" value={formData.importer} ref={formData.importer_contract_nr} />
-        {!formData.importer_is_qc_client && formData.qc_client ? (
-          <Entity label="QC Client" value={formData.qc_client} ref={formData.qc_client_contract_nr} />
-        ) : formData.end_client ? (
-          <Entity label="End Client" value={formData.end_client} ref={formData.end_client_contract_nr} />
-        ) : <div />}
+        <Entity label="Roaster" value={formData.roaster} ref={formData.roaster_contract_nr} />
 
         <Entity label="Shipper" value={shipperName} ref={formData.supplier_contract_nr} />
-        <Entity label="Roaster" value={formData.roaster} ref={formData.roaster_contract_nr} />
-        {!formData.importer_is_qc_client && formData.qc_client && formData.end_client ? (
-          <Entity label="End Client" value={formData.end_client} ref={formData.end_client_contract_nr} />
+        {!formData.importer_is_qc_client && formData.qc_client ? (
+          <Entity label="QC Client" value={formData.qc_client} ref={formData.qc_client_contract_nr} />
         ) : <div />}
+        <Entity label="End Client" value={formData.end_client} ref={formData.end_client_contract_nr} />
       </div>
 
       {/* Sample type, PSS/SS info + quantity */}
@@ -436,7 +432,7 @@ export function ContractPanel({
         {/* Right: Importer + collapsible Roaster/End Client */}
         <div className="space-y-3">
           {/* Importer (always visible) */}
-          <div className="grid grid-cols-[1fr_120px] gap-2 items-end">
+          <div className="grid grid-cols-[160px_120px] gap-2 items-end">
             <div>
               <div className="flex items-center gap-2 mb-1">
                 <Label className="text-xs text-muted-foreground">Importer</Label>
