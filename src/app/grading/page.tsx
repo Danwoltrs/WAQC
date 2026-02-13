@@ -61,6 +61,7 @@ interface Sample {
   sample_type?: 'pss' | 'ss' | 'type' | 'specialty'
   ico_number?: string
   container_nr?: string
+  exporter_sample_number?: string
   origin?: string
   exporter_legacy?: string
   supplier?: {
@@ -977,9 +978,9 @@ export default function GradingPage() {
   const getSampleTabLabel = (sample: Sample): string => {
     switch (sample.sample_type) {
       case 'pss':
-        return sample.tracking_number
+        return sample.exporter_sample_number || sample.tracking_number
       case 'ss':
-        return sample.container_nr || sample.ico_number || sample.tracking_number
+        return sample.ico_number || sample.container_nr || sample.tracking_number
       case 'type':
         return sample.tracking_number
       default:
@@ -1245,7 +1246,11 @@ export default function GradingPage() {
                     >
                       <div className="flex flex-col items-start gap-0.5">
                         <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                        <span className="text-xs text-muted-foreground capitalize">{sample.sample_type || 'sample'}</span>
+                        <span className="text-xs text-muted-foreground">
+                          {sample.sample_type === 'ss' && sample.container_nr
+                            ? sample.container_nr
+                            : <span className="capitalize">{sample.sample_type || 'sample'}</span>}
+                        </span>
                       </div>
                     </TabsTrigger>
                   </div>
