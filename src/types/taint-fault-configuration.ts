@@ -152,11 +152,12 @@ export function createTaintFaultDefect(
   }
 ): TaintFaultDefect {
   const maxIntensity = options?.maxIntensity ?? 5
+  const increment = options?.increment ?? 0.5
   const taintRange = options?.taintRange !== undefined
     ? options.taintRange
     : { min: 0, max: 2 }
   const faultRange = options?.faultRange ?? {
-    min: taintRange ? taintRange.max + 1 : 1,
+    min: taintRange ? Math.round((taintRange.max + increment) * 1000) / 1000 : increment,
     max: maxIntensity
   }
 
@@ -166,7 +167,7 @@ export function createTaintFaultDefect(
     taint_range: taintRange,
     fault_range: faultRange,
     max_intensity: maxIntensity,
-    increment: options?.increment ?? 0.5,
+    increment,
     active: true,
     display_order: displayOrder
   }

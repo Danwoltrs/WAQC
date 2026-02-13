@@ -102,6 +102,23 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Validate custom_name uniqueness for this client if provided
+    if (body.custom_name) {
+      const { data: existingName } = await supabase
+        .from('client_qualities')
+        .select('id')
+        .eq('client_id', body.client_id)
+        .eq('custom_name', body.custom_name.trim())
+        .eq('is_active', true)
+        .single()
+
+      if (existingName) {
+        return NextResponse.json({
+          error: `Custom name "${body.custom_name.trim()}" is already in use for this client`
+        }, { status: 400 })
+      }
+    }
+
     // Prepare client quality data
     const clientQualityData: any = {
       client_id: body.client_id,

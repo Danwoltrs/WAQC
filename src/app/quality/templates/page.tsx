@@ -317,14 +317,11 @@ export default function QualityTemplatesPage() {
 
   return (
     <MainLayout>
-      <div className="p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-[1400px]">
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold tracking-tight">Quality Templates</h1>
-            <p className="text-muted-foreground">
-              Manage quality standards and specifications for coffee samples
-            </p>
           </div>
           <Button onClick={handleCreate}>
             <Plus className="h-4 w-4 mr-2" />

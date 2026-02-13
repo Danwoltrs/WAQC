@@ -128,7 +128,7 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
       </div>
 
       {/* All bag fields in one row */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 gap-4 ${formData.bag_type === 'bulk' ? 'md:grid-cols-3' : 'md:grid-cols-4'}`}>
         {/* Bag Type Selection */}
         <div className="space-y-2">
           <Label htmlFor="bag_type">Type of Bag *</Label>
@@ -187,7 +187,8 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
           </p>
         </div>
 
-        {/* Bag Weight */}
+        {/* Bag Weight - hidden for bulk */}
+        {formData.bag_type !== 'bulk' && (
         <div className="space-y-2">
           <Label htmlFor="bag_weight_kg">Bag Weight *</Label>
 
@@ -247,6 +248,7 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
             Weight per bag in kg
           </p>
         </div>
+        )}
 
         {/* Shipment Month */}
         <div className="space-y-2">

@@ -140,25 +140,23 @@ export function TaintFaultConfigManager({
     }
   }
 
-  const handleMakeAlwaysFault = (id: string) => {
+  const handleThresholdChange = (id: string, threshold: number) => {
     const defect = config.defects.find(d => d.id === id)
-    if (defect && defect.taint_range) {
-      // Convert to always-fault by removing taint range and adjusting fault range
+    if (!defect) return
+
+    const inc = defect.increment || 0.5
+    if (threshold <= 0) {
+      // Always fault: no taint range
       handleUpdateDefect(id, {
         taint_range: null,
-        fault_range: { min: 1, max: defect.max_intensity }
+        fault_range: { min: inc, max: defect.max_intensity }
       })
-    }
-  }
-
-  const handleMakeTaintFault = (id: string) => {
-    const defect = config.defects.find(d => d.id === id)
-    if (defect && !defect.taint_range) {
-      // Convert to taint/fault by adding default taint range
-      const mid = Math.floor(defect.max_intensity / 2)
+    } else {
+      // Taint up to threshold, fault above
+      const faultMin = Math.round((threshold + inc) * 1000) / 1000
       handleUpdateDefect(id, {
-        taint_range: { min: 0, max: mid },
-        fault_range: { min: mid + 1, max: defect.max_intensity }
+        taint_range: { min: 0, max: threshold },
+        fault_range: { min: faultMin, max: defect.max_intensity }
       })
     }
   }
@@ -171,7 +169,7 @@ export function TaintFaultConfigManager({
           <DialogHeader>
             <DialogTitle>Edit Defect Registry & Thresholds</DialogTitle>
             <DialogDescription>
-              Configure which defects to track and their taint/fault intensity ranges
+              Configure defects, their taint threshold (above = fault), and intensity settings
             </DialogDescription>
           </DialogHeader>
         </div>
@@ -233,8 +231,7 @@ export function TaintFaultConfigManager({
                     <thead className="bg-muted/50">
                       <tr>
                         <th className="text-left p-3 font-medium text-sm">Defect Name</th>
-                        <th className="text-center p-3 font-medium text-sm">Taint Range</th>
-                        <th className="text-center p-3 font-medium text-sm">Fault Range</th>
+                        <th className="text-center p-3 font-medium text-sm">Taint Threshold</th>
                         <th className="text-center p-3 font-medium text-sm">Max Intensity</th>
                         <th className="text-center p-3 font-medium text-sm">Increment</th>
                         <th className="text-center p-3 font-medium text-sm">Active</th>
@@ -253,86 +250,26 @@ export function TaintFaultConfigManager({
                           </td>
                           <td className="p-3 text-center">
                             {editingDefectId === defect.id ? (
-                              <div className="flex items-center justify-center gap-2">
-                                {defect.taint_range ? (
-                                  <>
-                                    <Input
-                                      type="number"
-                                      value={defect.taint_range.min}
-                                      onChange={(e) => {
-                                        const newMin = parseInt(e.target.value)
-                                        handleUpdateDefect(defect.id, {
-                                          taint_range: { ...defect.taint_range!, min: newMin }
-                                        })
-                                      }}
-                                      className="h-7 w-16 text-xs text-center"
-                                    />
-                                    <span className="text-xs">-</span>
-                                    <Input
-                                      type="number"
-                                      value={defect.taint_range.max}
-                                      onChange={(e) => {
-                                        const newMax = parseInt(e.target.value)
-                                        handleUpdateDefect(defect.id, {
-                                          taint_range: { ...defect.taint_range!, max: newMax }
-                                        })
-                                      }}
-                                      className="h-7 w-16 text-xs text-center"
-                                    />
-                                  </>
-                                ) : (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleMakeTaintFault(defect.id)}
-                                    className="h-6 text-xs"
-                                  >
-                                    Add Taint Range
-                                  </Button>
-                                )}
-                              </div>
+                              <Input
+                                type="number"
+                                step={defect.increment || 0.5}
+                                min="0"
+                                max={defect.max_intensity}
+                                value={defect.taint_range?.max ?? 0}
+                                onChange={(e) => {
+                                  const val = parseFloat(e.target.value)
+                                  if (!isNaN(val)) {
+                                    handleThresholdChange(defect.id, val)
+                                  }
+                                }}
+                                className="h-7 w-20 text-xs text-center mx-auto"
+                              />
                             ) : (
                               <button
                                 onClick={() => setEditingDefectId(defect.id)}
                                 className="text-sm hover:underline"
                               >
-                                {defect.taint_range ? `${defect.taint_range.min} - ${defect.taint_range.max}` : '-'}
-                              </button>
-                            )}
-                          </td>
-                          <td className="p-3 text-center">
-                            {editingDefectId === defect.id ? (
-                              <div className="flex items-center justify-center gap-2">
-                                <Input
-                                  type="number"
-                                  value={defect.fault_range.min}
-                                  onChange={(e) => {
-                                    const newMin = parseInt(e.target.value)
-                                    handleUpdateDefect(defect.id, {
-                                      fault_range: { ...defect.fault_range, min: newMin }
-                                    })
-                                  }}
-                                  className="h-7 w-16 text-xs text-center"
-                                />
-                                <span className="text-xs">-</span>
-                                <Input
-                                  type="number"
-                                  value={defect.fault_range.max}
-                                  onChange={(e) => {
-                                    const newMax = parseInt(e.target.value)
-                                    handleUpdateDefect(defect.id, {
-                                      fault_range: { ...defect.fault_range, max: newMax }
-                                    })
-                                  }}
-                                  className="h-7 w-16 text-xs text-center"
-                                />
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setEditingDefectId(defect.id)}
-                                className="text-sm hover:underline"
-                              >
-                                {defect.fault_range.min} - {defect.fault_range.max}
+                                {defect.taint_range ? defect.taint_range.max : '0 (always fault)'}
                               </button>
                             )}
                           </td>
@@ -340,10 +277,18 @@ export function TaintFaultConfigManager({
                             {editingDefectId === defect.id ? (
                               <Input
                                 type="number"
+                                step={defect.increment || 0.5}
+                                min="1"
                                 value={defect.max_intensity}
                                 onChange={(e) => {
-                                  const newMax = parseInt(e.target.value)
-                                  handleUpdateDefect(defect.id, { max_intensity: newMax })
+                                  const newMax = parseFloat(e.target.value)
+                                  if (!isNaN(newMax) && newMax > 0) {
+                                    // Also update fault_range.max to match
+                                    handleUpdateDefect(defect.id, {
+                                      max_intensity: newMax,
+                                      fault_range: { ...defect.fault_range, max: newMax }
+                                    })
+                                  }
                                 }}
                                 className="h-7 w-16 text-xs text-center mx-auto"
                               />
@@ -448,15 +393,15 @@ export function TaintFaultConfigManager({
                   <p className="text-sm font-medium mb-2">How it works:</p>
                   <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
                     <li>Intensity 0 = No defect present</li>
-                    <li>Taint Range = Minor defect, sample may still pass</li>
-                    <li>Fault Range = Major defect, sample typically fails</li>
-                    <li>Some defects are ALWAYS faults (e.g., {config.defects.filter(isAlwaysFault).map(d => d.name).join(', ') || 'None'})</li>
+                    <li>Taint Threshold = Max intensity still considered a taint (minor)</li>
+                    <li>Anything above the threshold = Fault (major, sample typically fails)</li>
+                    <li>Threshold 0 = Always a fault (e.g., {config.defects.filter(isAlwaysFault).map(d => d.name).join(', ') || 'None'})</li>
                   </ul>
 
                   <div className="mt-3 p-3 bg-muted/30 rounded-md">
                     <p className="text-sm font-medium mb-1">Example:</p>
-                    <p className="text-xs text-muted-foreground">&quot;Green&quot; defect at intensity 2 = Taint (acceptable)</p>
-                    <p className="text-xs text-muted-foreground">&quot;Green&quot; defect at intensity 3 = Fault (reject sample)</p>
+                    <p className="text-xs text-muted-foreground">Threshold = 2: intensity 1-2 = Taint (acceptable), intensity above 2 = Fault (reject)</p>
+                    <p className="text-xs text-muted-foreground">Threshold = 0: any intensity = Fault (always a fault)</p>
                   </div>
                 </div>
 
