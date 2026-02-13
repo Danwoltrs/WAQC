@@ -1649,6 +1649,36 @@
         "dependencies": [],
         "priority": "high",
         "subtasks": []
+      },
+      {
+        "id": 47,
+        "title": "Fix Certificate Generation Flow, Sample Page Data, and Certificate PDF Layout",
+        "description": "After Anderson clicked Validate & Certify on BR-025808/26, multiple issues were discovered across the certification pipeline, sample detail page, certificates list, and PDF layout. This task covers all bugs and UI improvements identified.",
+        "details": "## Issues Found (BR-025808/26 as test case)\n\n### BUG 1: Certificate record not created after Validate & Certify\nThe cupping finalize flow updates `workflow_stage` to \"certified\" and `status` to \"approved\", but does NOT create a record in the `certificates` table. This causes a cascade of downstream failures:\n- Certificate does NOT appear on the `/certificates` page\n- Sample detail page shows Certificate Status as \"Pending\" with \"Generate\" button (even though Stage: certified)\n- No download/view certificate buttons on the samples list page (conditioned on `sample.certificate_id`)\n\n**Root cause**: The finalize route (`/api/cupping/finalize`) updates sample workflow_stage but doesn't call the certificate creation logic (POST `/api/samples/[id]/certificate`). The certificate POST route exists and works, but is not called automatically.\n\n**Fix**: Either (a) have the finalize route also create the certificate record, or (b) fix the sample detail page to recognize certified stage even without a certificate record and allow generating. Currently the \"Generate\" button does appear for `workflow_stage === 'certified'` when `certificate_id` is null, but the overall status badge misleadingly says \"Pending\".\n\n**Files**: `src/app/api/cupping/finalize/route.ts`, `src/app/api/samples/[id]/certificate/route.ts`\n\n### BUG 2: Sample page not showing Cupping & Grading scores\nThe sample detail page shows \"No cupping scores available\" even though the certificate PDF has valid cupping data (all attributes scored at 3.0-3.25).\n\n**Root cause**: The aggregate endpoint (`/api/cupping/scores/aggregate`) may be filtering to only currently assigned cuppers from an active session, and after finalization the session is closed or cuppers are unassigned. The data is in `cupping_scores` table but the aggregate query is too restrictive.\n\n**Files**: `src/app/api/cupping/scores/aggregate/route.ts`, `src/app/samples/[id]/page.tsx`\n\n### BUG 3: Certificate Status shows \"Pending\" when stage is \"certified\"\nThe Certificate Status card on the sample detail page checks `sample.certificate_id` to determine if certified. When the finalize flow doesn't create a certificate record, it shows \"Pending\" even though the sample is certified.\n\n**Fix**: Show \"Certified (no certificate generated yet)\" when `workflow_stage === 'certified'` but `certificate_id` is null. Keep the Generate button prominent.\n\n**Files**: `src/app/samples/[id]/page.tsx` (lines 1057-1133)\n\n### UI 4: Supply Chain section on sample page\n- Remove the \"Supply Chain\" CardHeader/CardTitle — just show the table directly inside the card\n- Always show Seller and Shipper rows (currently Shipper is hidden when `same_seller_shipper` is true). Show `-` as the name if no data, so users can still edit and add a shipper later\n- Keep the same editable functionality\n\n**Files**: `src/app/samples/[id]/page.tsx` (lines 1037-1055), `src/components/samples/supply-chain-edit-table.tsx` (line 343 conditionally hides Shipper)\n\n### BUG 5: Certificate PDF missing supply chain entities\nThe generated PDF for BR-025808/26 shows only \"Wolthers\" on the left with no other entities. The importer (OFI) and roaster (National DCP) are missing. The `CertificateSupplyChainRow` component only renders entities with non-null names, so the data fetching in `certificate-data.ts` is not resolving the entities properly.\n\n**Root cause**: Likely the `getCertificateData()` function in `certificate-data.ts` is not finding the importer/roaster because they may be stored via different FK relationships (e.g., importer_id vs client-type fallback).\n\n**Files**: `src/lib/certificate-data.ts`, `src/components/pdf/certificate/certificate-supply-chain-row.tsx`\n\n### UI 6: Certificate PDF layout improvements\n**6a. Attribute labels truncated**: \"Fragrance/Aro...\" — the `leftSection` width is only 85px, too small for \"Fragrance/Aroma\". Increase to ~110px.\n\n**6b. Chart needs to shift right**: The chart SVG is positioned too close to the attribute labels, causing the labels to overlap. Add more spacing.\n\n**6c. Clean Cup/Uniform Cup/Faults/Taints too far right**: The `verticalSeparator` has `marginLeft: 235px` which pushes these elements far from the chart. Reduce to bring them closer.\n\n**6d. Last score diamond gets clipped**: The diamond/rhombus marker at the right edge of the SVG is clipped because the SVG width equals `barWidth` exactly, but the diamond extends `RHOMBUS_SIZE (4px)` beyond. Add padding to SVG width or use `overflow: visible`.\n\n**Files**: `src/components/pdf/certificate/certificate-cupping-chart.tsx` (styles at lines 68-69 for leftSection width, line 34 for verticalSeparator marginLeft, line 112 for MAX_BAR_WIDTH, line 199 for SVG width)\n\n### Test Strategy\n1. Load sample BR-025808/26 and verify cupping scores display\n2. Verify certificate status correctly reflects workflow_stage\n3. Generate certificate and verify it appears on certificates list\n4. Verify download buttons appear on samples list\n5. Check supply chain table shows Seller and Shipper rows always\n6. Generate PDF and verify supply chain entities appear\n7. Verify cupping chart labels are not truncated\n8. Verify diamond markers are not clipped at edges",
+        "testStrategy": "1. Load sample BR-025808/26 detail page - verify cupping scores display correctly. 2. Verify Certificate Status card shows appropriate state for certified samples without certificate records. 3. Click Generate to create certificate record - verify it appears on /certificates page. 4. Verify download/view buttons appear on samples list for the sample. 5. Check supply chain table always shows Seller and Shipper rows (with - for empty). 6. Generate PDF certificate and verify all supply chain entities (Importer=OFI, Roaster=National DCP) appear. 7. Verify cupping chart attribute labels are fully visible (no truncation). 8. Verify diamond markers are not clipped at chart edges. 9. Verify Clean Cup/Uniform Cup/Faults/Taints are closer to the chart.",
+        "status": "pending",
+        "dependencies": [],
+        "priority": "high",
+        "subtasks": [
+          {
+            "id": 1,
+            "title": "Fix certificate record creation in Validate & Certify flow",
+            "description": "The cupping finalize route updates workflow_stage to 'certified' but does NOT create a certificate record in the certificates table. This causes the certificate to not appear on /certificates, no download buttons on samples list, and Certificate Status showing 'Pending' on the sample detail page. Fix the finalize route to also create the certificate record (call the same logic as POST /api/samples/[id]/certificate), OR ensure the sample detail page handles the 'certified without certificate record' state gracefully and auto-generates on first view.",
+            "details": "Files: src/app/api/cupping/finalize/route.ts, src/app/api/samples/[id]/certificate/route.ts. The POST certificate route already has all the logic - it creates the record with certificate_number, issued_to, valid dates, status='issued'. The finalize route needs to call this after updating workflow_stage.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 47
+          },
+          {
+            "id": 2,
+            "title": "Fix cupping scores not displaying on sample detail page",
+            "description": "Sample detail page shows 'No cupping scores available' for BR-025808/26 even though the certificate PDF has valid cupping data (all attributes scored 3.0-3.25). The aggregate endpoint (/api/cupping/scores/aggregate) likely filters to only currently assigned cuppers from an active session, and after finalization the session is closed. The data exists in cupping_scores table but the query is too restrictive for finalized samples.",
+            "details": "Files: src/app/api/cupping/scores/aggregate/route.ts, src/app/samples/[id]/page.tsx (line 230-269). The aggregate endpoint needs to fall back to showing all cupping_scores for the sample when no active session/cuppers are found. The certificate-data.ts processCuppingScores function works correctly (it pulls all scores), so use similar logic.",
+            "status": "pending",
+            "dependencies": [],
+            "parentTaskId": 47
+          }
+        ]
       }
     ],
     "metadata": {
@@ -1661,7 +1691,7 @@
       ],
       "created": "2025-11-26T13:11:34.127Z",
       "description": "Tasks for master context",
-      "updated": "2026-02-04T14:18:51.421Z"
+      "updated": "2026-02-10T17:50:58.328Z"
     }
   }
 }

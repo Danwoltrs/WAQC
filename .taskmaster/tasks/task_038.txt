@@ -1,0 +1,143 @@
+# Task ID: 38
+# Title: Filter quality template client assignment UI to show only buyers and roasters with fantasy names
+# Status: done
+# Dependencies: 9, 17
+# Priority: medium
+# Description: Update the quality assignment dialog's client selection to filter out exporters and display only company fantasy names (not contact names) for a cleaner, more focused list when assigning quality specifications to clients.
+# Details:
+CURRENT IMPLEMENTATION ANALYSIS:
+
+The quality assignment dialog (src/components/quality-assignments/quality-assignment-dialog.tsx) currently displays all active clients when assigning quality templates. Lines 120-147 show the fetchAvailableClients() function that:
+1. Fetches all active clients via GET /api/clients?is_active=true
+2. Filters out clients that already have the template assigned
+3. Displays clients with fantasy_name || company as primary text (line 336) and contact name as secondary text (line 337)
+
+PROBLEM:
+- No filtering by client_types, so exporters appear in the list unnecessarily
+- Shows contact name (client.name) as secondary text, cluttering the interface
+- According to migration 011_extend_clients_table.sql, client_types is an array enum with values: 'producer_exporter', 'coop', 'exporter', 'importer_buyer', 'roaster', 'final_buyer', 'roaster_final_buyer'
+
+REQUIRED CHANGES:
+
+1. **Update API query in fetchAvailableClients()** (line 124):
+   - Modify GET /api/clients endpoint to accept client_types filter parameter
+   - Filter to only include clients where client_types array contains 'importer_buyer', 'roaster', 'final_buyer', or 'roaster_final_buyer'
+   - Exclude 'exporter', 'producer_exporter', 'coop'
+
+2. **Update display logic** (lines 335-338):
+   - Remove the secondary text showing contact name (line 337)
+   - Keep only the fantasy_name || company as the primary display text
+   - Simplify CommandItem to show single line: `<div className="font-medium">{client.fantasy_name || client.company}</div>`
+
+3. **Update button display** (lines 305-307):
+   - Keep current logic showing fantasy_name || company
+
+4. **Backend API enhancement** (src/app/api/clients/route.ts):
+   - Add support for ?client_types parameter to filter by specific client types
+   - Parse comma-separated list or array of client_types
+   - Update WHERE clause to use array overlap operator (&&) for filtering
+   - Example SQL: WHERE client_types && ARRAY['importer_buyer', 'roaster', 'final_buyer', 'roaster_final_buyer']::client_type[]
+
+IMPLEMENTATION STEPS:
+
+**Step 1: Update API endpoint** (src/app/api/clients/route.ts)
+```typescript
+// In GET handler, add client_types filtering
+const clientTypesParam = searchParams.get('client_types')
+let clientTypesFilter: string[] = []
+
+if (clientTypesParam) {
+  clientTypesFilter = clientTypesParam.split(',').map(t => t.trim())
+}
+
+// Modify query
+let query = supabase
+  .from('clients')
+  .select('*')
+  
+if (clientTypesFilter.length > 0) {
+  query = query.overlaps('client_types', clientTypesFilter)
+}
+```
+
+**Step 2: Update dialog component** (src/components/quality-assignments/quality-assignment-dialog.tsx)
+```typescript
+// Line 124 - Update fetch call
+const response = await fetch('/api/clients?is_active=true&client_types=importer_buyer,roaster,final_buyer,roaster_final_buyer')
+
+// Lines 335-338 - Simplify display to single line
+<div className="font-medium">{client.fantasy_name || client.company}</div>
+// Remove the secondary line showing client.name
+```
+
+**Step 3: Update filtered display logic** (lines 320-340)
+```typescript
+{filteredClients.map((client) => (
+  <CommandItem
+    key={client.id}
+    value={client.id}
+    onSelect={() => {
+      setSelectedClientId(client.id)
+      setClientOpen(false)
+    }}
+  >
+    <Check
+      className={cn(
+        "mr-2 h-4 w-4",
+        selectedClientId === client.id ? "opacity-100" : "opacity-0"
+      )}
+    />
+    <div className="font-medium">{client.fantasy_name || client.company}</div>
+  </CommandItem>
+))}
+```
+
+EDGE CASES:
+- If client has no fantasy_name, fall back to company field (already handled)
+- If API returns empty array after filtering, show "No clients found" message (already handled by CommandEmpty on line 318)
+- Ensure filtering maintains existing exclusion of already-assigned clients (lines 130-136)
+
+# Test Strategy:
+TESTING CHECKLIST:
+
+**1. API Endpoint Testing**
+- Test GET /api/clients without client_types parameter - should return all clients
+- Test GET /api/clients?client_types=roaster - should return only roaster clients
+- Test GET /api/clients?client_types=importer_buyer,roaster,final_buyer,roaster_final_buyer - should return filtered list
+- Verify response excludes exporters and producer_exporters
+- Test with is_active=true combined with client_types filter
+
+**2. UI Display Testing**
+- Open quality assignment dialog from quality templates page
+- Verify client dropdown only shows buyers and roasters (no exporters)
+- Verify each client shows only fantasy_name (or company if no fantasy_name)
+- Verify no secondary line with contact name appears
+- Verify button placeholder text shows correct fantasy_name || company
+
+**3. Search and Filtering**
+- Type in client search field to verify fuzzy matching still works
+- Verify search searches both fantasy_name and company fields (lines 260-263)
+- Verify clients already assigned template are excluded from list
+
+**4. Selection and Assignment**
+- Select a filtered client and verify assignment creation works
+- Check payload includes correct client_id
+- Verify toast notification shows success message
+- Verify list refreshes after successful assignment
+
+**5. Edge Cases**
+- Test with client that has fantasy_name - should display fantasy_name
+- Test with client that has no fantasy_name - should display company
+- Test with no available clients after filtering - verify "No clients found" appears
+- Test with all filtered clients already assigned - verify empty state
+
+**6. Database Verification**
+- Query database: SELECT id, fantasy_name, company, client_types FROM clients WHERE is_active = true;
+- Verify client_types array structure matches expected enum values
+- Confirm API filtering logic matches database query results
+
+**7. Regression Testing**
+- Verify from-client mode (assigning template to specific client) still works
+- Verify template selection in from-client mode unaffected
+- Verify custom name, quality code, cups per sample, and notes inputs still function
+- Verify preview display shows correct information

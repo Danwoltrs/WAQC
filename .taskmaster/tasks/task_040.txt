@@ -1,0 +1,293 @@
+# Task ID: 40
+# Title: Fix Client Update Triggers - Remove Buggy ON CONFLICT Logic
+# Status: pending
+# Dependencies: 2, 26
+# Priority: high
+# Description: Fix PostgreSQL error 42703 ('record new has no field client_id') in both trigger_sync_client_to_supply_chain and trigger_recalculate_on_client_pricing_change triggers by removing invalid ON CONFLICT logic and re-enabling both triggers currently disabled via migrations 117 and 122.
+# Details:
+**PROBLEM ANALYSIS:**
+
+Both triggers are currently disabled and contain buggy code causing SQL error 42703:
+
+1. **trigger_sync_client_to_supply_chain** (Migration 056, disabled in 117):
+   - Original issue: Line 26-34 in migration 056 uses `ON CONFLICT (id) DO UPDATE WHERE exporters.client_id = NEW.id`
+   - Problem: NEW is a `clients` record, not an `exporters` record, so NEW.id refers to client ID, not exporter ID
+   - The ON CONFLICT WHERE clause is trying to reference NEW in the context of the exporters table, which is invalid
+   - Migration 112 attempted a fix by removing ON CONFLICT entirely and using explicit SELECT/UPDATE logic
+
+2. **trigger_recalculate_on_client_pricing_change** (Migration 029, disabled in 122):
+   - Function: recalculate_client_sample_fees() at lines 42-52 in migration 029
+   - Triggered on: UPDATE OF pricing_model, price_per_sample, price_per_pound_cents ON clients
+   - Current code: Updates samples table by recalculating fees when client pricing changes
+   - Error suggests the function may have similar NEW context issues or conflicts with other triggers
+
+**ROOT CAUSE:**
+The original migration 056 used `ON CONFLICT (id) DO UPDATE SET ... WHERE exporters.client_id = NEW.id` which is PostgreSQL invalid syntax. The WHERE clause in ON CONFLICT cannot reference NEW from the parent trigger context - it operates on the conflicting row in the target table (exporters/importers/roasters), not the triggering row (clients).
+
+**IMPLEMENTATION STEPS:**
+
+1. **Extract recalculate_client_sample_fees() function code:**
+   ```bash
+   # Run migration 121 query to get current function definition
+   psql "postgresql://postgres.ntvykfqwkewjfxumuvze:2xDnxVRx0xjz8XQi@aws-0-us-west-1.pooler.supabase.com:6543/postgres" -c "SELECT pg_get_functiondef(p.oid) FROM pg_proc p JOIN pg_namespace n ON p.pronamespace = n.oid WHERE p.proname LIKE '%recalculate%' AND n.nspname = 'public';"
+   ```
+
+2. **Create new migration 123 to fix and re-enable both triggers:**
+
+   **A. Fix sync_client_to_supply_chain_entities() function:**
+   - Migration 112 already has the correct approach: remove ON CONFLICT entirely
+   - Use explicit SELECT to check for existing records
+   - Use conditional UPDATE or INSERT based on SELECT results
+   - Pattern for each entity type (exporters, importers, roasters):
+     ```sql
+     -- Check if entity already linked to this client
+     SELECT id INTO v_entity_id FROM exporters WHERE client_id = NEW.id LIMIT 1;
+     
+     IF v_entity_id IS NOT NULL THEN
+       -- Update existing linked entity
+       UPDATE exporters SET name = ..., updated_at = NOW() WHERE id = v_entity_id;
+     ELSE
+       -- Check for unlinked entity with matching name
+       SELECT id INTO v_entity_id FROM exporters 
+       WHERE LOWER(name) = LOWER(COALESCE(NEW.fantasy_name, NEW.company, NEW.name))
+       AND client_id IS NULL LIMIT 1;
+       
+       IF v_entity_id IS NOT NULL THEN
+         -- Link existing entity
+         UPDATE exporters SET client_id = NEW.id, ... WHERE id = v_entity_id;
+       ELSE
+         -- Create new entity
+         INSERT INTO exporters (...) VALUES (...);
+       END IF;
+     END IF;
+     ```
+
+   **B. Fix recalculate_client_sample_fees() function:**
+   - Review the function code from step 1
+   - Check if it references NEW.client_id (should be valid since NEW is a clients record)
+   - If issue exists, likely in the UPDATE query referencing NEW improperly
+   - Correct function should be:
+     ```sql
+     CREATE OR REPLACE FUNCTION recalculate_client_sample_fees()
+     RETURNS TRIGGER AS $$
+     BEGIN
+       -- Recalculate fees for all samples of this client
+       UPDATE samples
+       SET calculated_client_fee = calculate_client_fee(NEW.id, id)
+       WHERE client_id = NEW.id;
+       
+       RETURN NEW;
+     END;
+     $$ LANGUAGE plpgsql;
+     ```
+   - Note: Use NEW.id explicitly, not NEW.client_id (NEW is the clients row, so NEW.id IS the client_id)
+
+3. **Migration 123 structure:**
+   ```sql
+   -- Migration 123: Fix and re-enable client update triggers
+   -- Date: 2025-11-26
+   
+   -- Drop and recreate sync function (copy corrected version from migration 112)
+   DROP TRIGGER IF EXISTS trigger_sync_client_to_supply_chain ON clients;
+   DROP FUNCTION IF EXISTS sync_client_to_supply_chain_entities();
+   
+   CREATE OR REPLACE FUNCTION sync_client_to_supply_chain_entities()
+   RETURNS TRIGGER AS $$
+   -- [Include full corrected function from migration 112]
+   $$ LANGUAGE plpgsql;
+   
+   -- Recreate sync trigger
+   CREATE TRIGGER trigger_sync_client_to_supply_chain
+     AFTER INSERT OR UPDATE ON clients
+     FOR EACH ROW
+     EXECUTE FUNCTION sync_client_to_supply_chain_entities();
+   
+   -- Drop and recreate recalculate function with corrections
+   DROP TRIGGER IF EXISTS trigger_recalculate_on_client_pricing_change ON clients;
+   DROP FUNCTION IF EXISTS recalculate_client_sample_fees();
+   
+   CREATE OR REPLACE FUNCTION recalculate_client_sample_fees()
+   RETURNS TRIGGER AS $$
+   BEGIN
+     UPDATE samples
+     SET calculated_client_fee = calculate_client_fee(NEW.id, id)
+     WHERE client_id = NEW.id;
+     RETURN NEW;
+   END;
+   $$ LANGUAGE plpgsql;
+   
+   -- Recreate recalculate trigger
+   CREATE TRIGGER trigger_recalculate_on_client_pricing_change
+     AFTER UPDATE OF pricing_model, price_per_sample, price_per_pound_cents
+     ON clients
+     FOR EACH ROW
+     WHEN (
+       OLD.pricing_model IS DISTINCT FROM NEW.pricing_model OR
+       OLD.price_per_sample IS DISTINCT FROM NEW.price_per_sample OR
+       OLD.price_per_pound_cents IS DISTINCT FROM NEW.price_per_pound_cents
+     )
+     EXECUTE FUNCTION recalculate_client_sample_fees();
+   
+   -- Verification
+   SELECT 'Migration 123: Both triggers fixed and re-enabled' as status;
+   ```
+
+4. **Apply migration:**
+   ```bash
+   psql "postgresql://postgres.ntvykfqwkewjfxumuvze:2xDnxVRx0xjz8XQi@aws-0-us-west-1.pooler.supabase.com:6543/postgres" < database/migrations/123_fix_and_reenable_client_triggers.sql
+   ```
+
+**VERIFICATION QUERIES:**
+
+After migration, test both triggers:
+
+```sql
+-- Test 1: Verify triggers exist and are enabled
+SELECT tgname, tgenabled 
+FROM pg_trigger 
+WHERE tgname IN ('trigger_sync_client_to_supply_chain', 'trigger_recalculate_on_client_pricing_change');
+-- Both should show 'O' (enabled)
+
+-- Test 2: Test sync trigger with safe update
+UPDATE clients SET updated_at = NOW() WHERE id = (SELECT id FROM clients LIMIT 1);
+-- Should complete without errors
+
+-- Test 3: Test recalculate trigger with pricing update
+UPDATE clients SET price_per_sample = price_per_sample WHERE id = (SELECT id FROM clients WHERE pricing_model IS NOT NULL LIMIT 1);
+-- Should complete without errors and update sample fees
+
+-- Test 4: Verify supply chain entity sync
+SELECT c.id as client_id, c.fantasy_name, c.client_types,
+       e.id as exporter_id, i.id as importer_id, r.id as roaster_id
+FROM clients c
+LEFT JOIN exporters e ON e.client_id = c.id
+LEFT JOIN importers i ON i.client_id = c.id
+LEFT JOIN roasters r ON r.client_id = c.id
+WHERE c.client_types IS NOT NULL
+LIMIT 5;
+-- Verify entities are properly linked based on client_types
+```
+
+**KEY FIXES:**
+- Removed all `ON CONFLICT (id) DO UPDATE WHERE [entity].client_id = NEW.id` patterns
+- Replaced with explicit SELECT-based conditional logic
+- Ensured NEW references are valid in trigger context (NEW from clients table)
+- Both functions now use safe, explicit control flow instead of implicit ON CONFLICT logic
+
+# Test Strategy:
+**TESTING CHECKLIST:**
+
+**Pre-Migration State Verification:**
+1. Confirm both triggers are disabled:
+   ```sql
+   SELECT tgname, tgenabled FROM pg_trigger 
+   WHERE tgname IN ('trigger_sync_client_to_supply_chain', 'trigger_recalculate_on_client_pricing_change');
+   ```
+   Expected: tgenabled = 'D' (disabled) for both
+
+2. Attempt client update to confirm triggers don't fire:
+   ```sql
+   UPDATE clients SET company = company WHERE id = (SELECT id FROM clients LIMIT 1);
+   ```
+   Expected: Success, no trigger execution
+
+**Migration Application:**
+3. Extract recalculate function code (migration 121 query)
+4. Create migration 123 with corrected functions
+5. Apply migration and check for SQL errors
+6. Verify no error messages containing "42703" or "field client_id"
+
+**Post-Migration Functional Testing:**
+
+7. **Test trigger_sync_client_to_supply_chain:**
+   - Test A: Create new exporter client
+     ```sql
+     INSERT INTO clients (name, email, company, fantasy_name, country, client_types)
+     VALUES ('Test Exporter', 'test@example.com', 'Test Co', 'TestCo', 'Brazil', ARRAY['exporter']::client_type[])
+     RETURNING id;
+     ```
+     Expected: New exporter record created in exporters table with matching client_id
+   
+   - Test B: Update existing client with exporter type
+     ```sql
+     UPDATE clients SET fantasy_name = 'Updated Name' 
+     WHERE id = [test_client_id];
+     ```
+     Expected: Corresponding exporter.name updated
+   
+   - Test C: Create multi-type client
+     ```sql
+     INSERT INTO clients (name, email, company, client_types)
+     VALUES ('Multi Client', 'multi@test.com', 'Multi Corp', 
+             ARRAY['exporter', 'importer_buyer', 'roaster']::client_type[]);
+     ```
+     Expected: Records created in exporters, importers, AND roasters tables
+
+8. **Test trigger_recalculate_on_client_pricing_change:**
+   - Test A: Update pricing model
+     ```sql
+     UPDATE clients SET pricing_model = 'per_sample' 
+     WHERE id = [client_with_samples_id];
+     ```
+     Expected: All associated samples have calculated_client_fee recalculated
+   
+   - Test B: Update price_per_sample
+     ```sql
+     UPDATE clients SET price_per_sample = 25.00 
+     WHERE id = [client_with_samples_id];
+     ```
+     Expected: Sample fees updated to reflect new pricing
+   
+   - Test C: Update unrelated field (should NOT trigger)
+     ```sql
+     UPDATE clients SET company = 'New Company Name' 
+     WHERE id = [client_id];
+     ```
+     Expected: No sample fee recalculation
+
+9. **Edge Case Testing:**
+   - Test existing client with no client_types set
+   - Test client with NULL fantasy_name, company, name values
+   - Test client update when matching unlinked entity exists
+   - Test client with samples when pricing is NULL
+   - Test bulk client updates (10+ records)
+
+10. **Performance Testing:**
+    ```sql
+    EXPLAIN ANALYZE UPDATE clients SET price_per_sample = 30.00 
+    WHERE pricing_model = 'per_sample';
+    ```
+    Expected: Execution time reasonable (<5s for 100 clients)
+
+11. **Data Integrity Verification:**
+    ```sql
+    -- Check for orphaned supply chain entities
+    SELECT COUNT(*) FROM exporters WHERE client_id IS NULL;
+    SELECT COUNT(*) FROM importers WHERE client_id IS NULL;
+    SELECT COUNT(*) FROM roasters WHERE client_id IS NULL;
+    
+    -- Check for clients with types but no entities
+    SELECT c.id, c.fantasy_name, c.client_types,
+           e.id as exporter_exists, i.id as importer_exists, r.id as roaster_exists
+    FROM clients c
+    LEFT JOIN exporters e ON e.client_id = c.id
+    LEFT JOIN importers i ON i.client_id = c.id  
+    LEFT JOIN roasters r ON r.client_id = c.id
+    WHERE c.client_types IS NOT NULL 
+    AND array_length(c.client_types, 1) > 0
+    AND e.id IS NULL AND i.id IS NULL AND r.id IS NULL;
+    ```
+    Expected: Minimal orphaned entities, no clients with types missing entities
+
+12. **Rollback Test (if needed):**
+    - Re-disable triggers: Run migrations 117 and 122 again
+    - Verify client updates work without triggers
+    - Re-enable with migration 123
+
+**Success Criteria:**
+- ✅ Both triggers enabled (tgenabled = 'O')
+- ✅ No SQL error 42703 on any client UPDATE operations
+- ✅ Supply chain entities automatically sync on client create/update
+- ✅ Sample fees recalculate correctly on client pricing changes
+- ✅ No performance degradation on bulk operations
+- ✅ All edge cases handled gracefully

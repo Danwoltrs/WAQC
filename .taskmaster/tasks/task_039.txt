@@ -1,0 +1,11 @@
+# Task ID: 39
+# Title: Add Exporter Sample Number Field
+# Status: done
+# Dependencies: None
+# Priority: high
+# Description: Add exporter sample number field to sample creation form. This is the identification number provided by the exporter (e.g., one contract can have 5 containers with same contract number but different sample IDs).
+# Details:
+Must be added to: 1. Sample creation form at the start, 2. Cupping cards, 3. Certificates
+
+# Test Strategy:
+

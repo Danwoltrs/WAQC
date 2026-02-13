@@ -1,0 +1,39 @@
+# Task ID: 44
+# Title: Single-Cupper Session Auto-Detection for Validation
+# Status: done
+# Dependencies: None
+# Priority: medium
+# Description: Implement automatic detection of single-cupper sessions that bypass the 2-cupper minimum validation rule for emergency/holiday situations.
+# Details:
+COMPLETED (2025-12-01): Implemented automatic single-cupper session detection.
+
+PROBLEM:
+- Labs normally require 2 cuppers minimum for validation
+- Emergency/holiday situations sometimes require a single cupper to complete the entire workflow
+- Previously required manual setting of allow_single_cupper flag
+
+SOLUTION:
+Automatically detect when only 1 cupper is assigned to a session and bypass the 2-cupper minimum.
+
+CHANGES MADE:
+
+1. **API Endpoint** (src/app/api/cupping/validate/route.ts):
+   - Added detection: `const assignedCupperCount = (session.cupper_ids as string[])?.length || 0`
+   - Added flag: `const isSingleCupperSession = assignedCupperCount === 1`
+   - Updated min requirement: `(session.allow_single_cupper || isSingleCupperSession) ? 1 : 2`
+   - Added to response: `is_single_cupper_session`, `assigned_cuppers`, `is_single_cupper_exception`
+
+2. **Database Function** (database/migrations/123_cupping_access_control.sql):
+   - Added variables: `v_assigned_cupper_count`, `v_is_single_cupper_session`
+   - Count cuppers: `jsonb_array_length(COALESCE(v_session_record.cupper_ids, '[]'::jsonb))`
+   - Updated logic: `IF v_session_record.allow_single_cupper OR v_is_single_cupper_session THEN`
+
+BEHAVIOR:
+- When assigning cuppers, if only 1 cupper is assigned, system auto-treats as exception
+- Single cupper can validate their own scores after completing them
+- No manual configuration needed - detected by cupper_ids array length
+
+Commit: 6ac74b4
+
+# Test Strategy:
+
