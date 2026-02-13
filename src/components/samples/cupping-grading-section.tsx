@@ -248,9 +248,14 @@ export function CuppingGradingSection({
     const grading = JSON.parse(JSON.stringify(gradingData || {}))
     if (grading.green_bean_data) {
       // Normalize screen_analysis -> screen_sizes
-      if (!grading.green_bean_data.screen_sizes && grading.green_bean_data.screen_analysis) {
-        grading.green_bean_data.screen_sizes = grading.green_bean_data.screen_analysis
+      const raw = grading.green_bean_data.screen_sizes || grading.green_bean_data.screen_analysis || {}
+      // Normalize keys: "Screen 18" -> "18", "screen_18" -> "18", keep "Pan"/"18" as-is
+      const normalized: Record<string, number> = {}
+      for (const [key, val] of Object.entries(raw)) {
+        const clean = key.replace(/^screen[_ ]?/i, '').trim()
+        normalized[clean] = val as number
       }
+      grading.green_bean_data.screen_sizes = normalized
     }
     setCuppingGradingFormData({
       cupping: cuppingScores ? { ...cuppingScores } : {},
