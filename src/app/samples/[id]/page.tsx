@@ -30,7 +30,6 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
-import { SampleContractsSection, MotherSampleInfo } from '@/components/samples/sample-contracts-section'
 
 interface EditPermission {
   canEdit: boolean
@@ -209,14 +208,13 @@ export default function SampleDetailPage() {
   useEffect(() => {
     if (params.id) {
       loadSampleDetails()
-      loadEditPermission()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params.id])
 
-  const loadEditPermission = async () => {
+  const loadEditPermission = async (sampleUuid: string) => {
     try {
-      const res = await fetch(`/api/cupping/check-edit-permission?sampleId=${params.id}`)
+      const res = await fetch(`/api/cupping/check-edit-permission?sampleId=${sampleUuid}`)
       if (res.ok) {
         const data = await res.json()
         setEditPermission(data)
@@ -268,8 +266,10 @@ export default function SampleDetailPage() {
     }
   }
 
-  // Check if cupping/grading can be edited (within 7 days of certificate)
-  const canEditCuppingGrading = editPermission?.canEdit &&
+  // Check if cupping/grading can be edited (master cuppers + global admins only, within 7-day window)
+  const isMasterCupperOrAdmin = profile?.is_master_cupper || profile?.is_global_admin
+  const canEditCuppingGrading = isMasterCupperOrAdmin &&
+    editPermission?.canEdit &&
     (editPermission.reason === 'not_locked' || editPermission.reason === 'within_7_days')
 
   // Enter cupping/grading edit mode
@@ -378,7 +378,8 @@ export default function SampleDetailPage() {
       if (sampleRes.ok && sampleData.sample) {
         setSample(sampleData.sample)
 
-        // Load cupping/grading data using resolved UUID
+        // Load edit permission and cupping/grading data using resolved UUID
+        loadEditPermission(sampleData.sample.id)
         loadCuppingGradingData(sampleData.sample.id)
 
         // Set certificates array based on sample's certificate info
@@ -1200,30 +1201,6 @@ export default function SampleDetailPage() {
               </CardContent>
             </Card>
           </div>
-
-          {/* 3.5. SUB-CONTRACTS */}
-          <SampleContractsSection
-            sampleId={sample.id}
-            isEditMode={isEditMode}
-            motherSample={{
-              tracking_number: sample.tracking_number,
-              sample_type: sample.sample_type,
-              importer_name: sample.importer_name,
-              importer_is_qc_client: sample.importer_is_qc_client,
-              roaster_name: sample.roaster_name,
-              end_client_name: sample.end_client_name,
-              qc_client_name: sample.qc_client_name,
-              wolthers_contract_nr: sample.wolthers_contract_nr,
-              buyer_contract_nr: sample.buyer_contract_nr,
-              roaster_contract_nr: sample.roaster_contract_nr,
-              qc_client_contract_nr: sample.qc_client_contract_nr,
-              end_client_contract_nr: sample.end_client_contract_nr,
-              supplier_contract_nr: sample.supplier_contract_nr,
-              ico_number: sample.ico_number,
-              container_nr: sample.container_nr,
-              bags_quantity_mt: sample.bags_quantity_mt,
-            } as MotherSampleInfo}
-          />
 
           {/* 4. CUPPING & GRADING (with 7-day edit lock) */}
           <Card className={!canEditCuppingGrading && sample.certificate_id ? 'border-muted' : ''}>

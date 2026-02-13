@@ -1313,9 +1313,9 @@ export default function SamplesPage() {
                             )}
                             {columnVisibility.certNr && (
                               <td className="py-3 px-4">
-                                <div className="font-medium">
+                                <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`} className="font-medium hover:underline text-primary">
                                   {parseTrackingNumber(sample.tracking_number)}
-                                </div>
+                                </Link>
                                 {sample.exporter_sample_number && (
                                   <div className="text-xs text-muted-foreground mt-0.5">
                                     {sample.exporter_sample_number}
@@ -1412,36 +1412,33 @@ export default function SamplesPage() {
                             )}
                             <td className="py-3 px-4">
                               <div className="flex items-center gap-1">
-                                <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
-                                  <Button variant="outline" size="sm">
+                                {sample.certificate_id ? (
+                                  <Button variant="outline" size="sm" onClick={() => handleViewCertificate(sample)}>
                                     <Eye className="h-3 w-3 mr-1" />
                                     View
                                   </Button>
-                                </Link>
+                                ) : (
+                                  <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
+                                    <Button variant="outline" size="sm">
+                                      <Eye className="h-3 w-3 mr-1" />
+                                      View
+                                    </Button>
+                                  </Link>
+                                )}
                                 {sample.certificate_id && (
-                                  <>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleViewCertificate(sample)}
-                                      title="View Certificate"
-                                    >
-                                      <Award className="h-3 w-3" />
-                                    </Button>
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      onClick={() => handleDownloadCertificate(sample)}
-                                      disabled={downloadingSampleId === sample.id}
-                                      title="Download Certificate"
-                                    >
-                                      {downloadingSampleId === sample.id ? (
-                                        <Loader2 className="h-3 w-3 animate-spin" />
-                                      ) : (
-                                        <Download className="h-3 w-3" />
-                                      )}
-                                    </Button>
-                                  </>
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleDownloadCertificate(sample)}
+                                    disabled={downloadingSampleId === sample.id}
+                                    title="Download Certificate"
+                                  >
+                                    {downloadingSampleId === sample.id ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      <Download className="h-3 w-3" />
+                                    )}
+                                  </Button>
                                 )}
                                 {isGlobalAdmin && (
                                   <Button
@@ -1572,7 +1569,9 @@ export default function SamplesPage() {
                                 {/* Cert Nr */}
                                 {columnVisibility.certNr && (
                                   <td className="py-1.5 px-4">
-                                    <div className="font-medium">{sc.tracking_number}</div>
+                                    <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`} className="font-medium hover:underline text-primary">
+                                      {sc.tracking_number}
+                                    </Link>
                                   </td>
                                 )}
                                 {/* Origin - inherited */}
@@ -1656,38 +1655,34 @@ export default function SamplesPage() {
                                 {/* Actions */}
                                 <td className="py-1.5 px-4">
                                   <div className="flex items-center gap-0.5">
-                                    <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
-                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]">
+                                    {sc.has_certificate ? (
+                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={() => handleViewSubContractCertificate(sample.id, sc.id)}>
                                         <Eye className="h-2.5 w-2.5 mr-0.5" />
                                         View
                                       </Button>
-                                    </Link>
+                                    ) : (
+                                      <Link href={`/samples/${trackingNumberToSlug(sample.tracking_number)}`}>
+                                        <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]">
+                                          <Eye className="h-2.5 w-2.5 mr-0.5" />
+                                          View
+                                        </Button>
+                                      </Link>
+                                    )}
                                     {sc.has_certificate && (
-                                      <>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={() => handleViewSubContractCertificate(sample.id, sc.id)}
-                                          title="View Certificate"
-                                        >
-                                          <Award className="h-2.5 w-2.5" />
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          className="h-6 w-6 p-0"
-                                          onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
-                                          disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
-                                          title="Download Certificate"
-                                        >
-                                          {downloadingSampleId === `${sample.id}_${sc.id}` ? (
-                                            <Loader2 className="h-2.5 w-2.5 animate-spin" />
-                                          ) : (
-                                            <Download className="h-2.5 w-2.5" />
-                                          )}
-                                        </Button>
-                                      </>
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        className="h-6 w-6 p-0"
+                                        onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
+                                        disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
+                                        title="Download Certificate"
+                                      >
+                                        {downloadingSampleId === `${sample.id}_${sc.id}` ? (
+                                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                        ) : (
+                                          <Download className="h-2.5 w-2.5" />
+                                        )}
+                                      </Button>
                                     )}
                                     {isGlobalAdmin && (
                                       <Button
