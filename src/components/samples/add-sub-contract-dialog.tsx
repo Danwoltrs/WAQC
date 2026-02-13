@@ -73,39 +73,47 @@ function MotherSummary({ sample }: { sample: SampleData }) {
   ].filter(Boolean).join(' ')
   if (mtShipment) quantityParts.push(mtShipment)
 
-  // Each entity paired with its contract reference
-  const entities = [
-    sample.seller_name && { label: 'Seller', value: sample.seller_name, ref: sample.seller_contract_nr },
-    sample.exporter_name && { label: 'Shipper', value: sample.exporter_name, ref: sample.supplier_contract_nr },
-    sample.importer_name && { label: 'Importer', value: sample.importer_name, ref: sample.buyer_contract_nr },
-    sample.roaster_name && { label: 'Roaster', value: sample.roaster_name, ref: sample.roaster_contract_nr },
-    sample.end_client_name && { label: 'End Client', value: sample.end_client_name, ref: sample.end_client_contract_nr },
-    !sample.importer_is_qc_client && sample.qc_client_name && { label: 'QC Client', value: sample.qc_client_name, ref: sample.qc_client_contract_nr },
-  ].filter(Boolean) as { label: string; value: string; ref?: string }[]
-
   const sampleType = (sample.sample_type || '').toUpperCase()
+
+  // Helper to render entity with dash-separated contract ref
+  const Entity = ({ label, value, ref: contractRef }: { label: string; value?: string | null; ref?: string }) => {
+    if (!value) return null
+    return (
+      <div className="text-sm">
+        <span className="text-muted-foreground text-xs">{label}:</span>{' '}
+        <span className="font-medium">{value}</span>
+        {contractRef && <span className="text-muted-foreground text-xs"> - {contractRef}</span>}
+      </div>
+    )
+  }
 
   return (
     <div className="bg-muted/50 border rounded-xl p-4 space-y-2">
-      <div className="flex items-center justify-between">
-        <div className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">
-          Contract #1 (Mother)
+      {/* Wolthers contract at top (replaces "Contract #1 (Mother)") */}
+      {sample.wolthers_contract_nr && (
+        <div className="text-xs font-mono text-muted-foreground">
+          Wolthers {sample.wolthers_contract_nr}
         </div>
-        {sample.wolthers_contract_nr && (
-          <span className="text-xs font-mono text-muted-foreground">Wolthers {sample.wolthers_contract_nr}</span>
-        )}
+      )}
+
+      {/* Entities in columns: Seller/Shipper | Importer/Roaster | QC Client/End Client */}
+      <div className="grid grid-cols-3 gap-x-5 gap-y-1">
+        <Entity label="Seller" value={sample.seller_name} ref={sample.seller_contract_nr} />
+        <Entity label="Importer" value={sample.importer_name} ref={sample.buyer_contract_nr} />
+        {!sample.importer_is_qc_client && sample.qc_client_name ? (
+          <Entity label="QC Client" value={sample.qc_client_name} ref={sample.qc_client_contract_nr} />
+        ) : sample.end_client_name ? (
+          <Entity label="End Client" value={sample.end_client_name} ref={sample.end_client_contract_nr} />
+        ) : <div />}
+
+        <Entity label="Shipper" value={sample.exporter_name} ref={sample.supplier_contract_nr} />
+        <Entity label="Roaster" value={sample.roaster_name} ref={sample.roaster_contract_nr} />
+        {!sample.importer_is_qc_client && sample.qc_client_name && sample.end_client_name ? (
+          <Entity label="End Client" value={sample.end_client_name} ref={sample.end_client_contract_nr} />
+        ) : <div />}
       </div>
 
-      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-        {entities.map(e => (
-          <div key={e.label}>
-            <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
-            <span className="font-medium">{e.value}</span>
-            {e.ref && <span className="text-muted-foreground text-xs"> - {e.ref}</span>}
-          </div>
-        ))}
-      </div>
-
+      {/* Sample type, PSS/SS info + quantity */}
       <div className="flex items-center justify-between text-xs pt-1.5 border-t border-border/50">
         <div className="flex items-center gap-2">
           {sampleType && <Badge variant="outline" className="text-[10px]">{sampleType}</Badge>}

@@ -99,38 +99,44 @@ function MotherContractSummary({ formData }: { formData: StepComponentProps['for
   ].filter(Boolean).join(' ')
   if (mtShipment) quantityParts.push(mtShipment)
 
-  // Each entity paired with its contract reference (shown with dash)
-  const entities = [
-    formData.seller && { label: 'Seller', value: formData.seller, ref: formData.seller_contract_nr },
-    shipperName && { label: 'Shipper', value: shipperName, ref: formData.supplier_contract_nr },
-    formData.importer && { label: 'Importer', value: formData.importer, ref: formData.importer_contract_nr },
-    formData.roaster && { label: 'Roaster', value: formData.roaster, ref: formData.roaster_contract_nr },
-    formData.end_client && { label: 'End Client', value: formData.end_client, ref: formData.end_client_contract_nr },
-    !formData.importer_is_qc_client && formData.qc_client && { label: 'QC Client', value: formData.qc_client, ref: formData.qc_client_contract_nr },
-  ].filter(Boolean) as { label: string; value: string; ref?: string }[]
-
   const sampleType = (formData.sample_type || '').toUpperCase()
+
+  // Helper to render entity with dash-separated contract ref
+  const Entity = ({ label, value, ref: contractRef }: { label: string; value?: string; ref?: string }) => {
+    if (!value) return null
+    return (
+      <div className="text-sm">
+        <span className="text-muted-foreground text-xs">{label}:</span>{' '}
+        <span className="font-medium">{value}</span>
+        {contractRef && <span className="text-muted-foreground text-xs"> - {contractRef}</span>}
+      </div>
+    )
+  }
 
   return (
     <div className="bg-muted/50 border rounded-xl p-4 space-y-2 sticky top-0 z-10">
-      <div className="flex items-center justify-between">
-        <div className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">
-          Contract #1 (Mother)
+      {/* Wolthers contract at top (replaces "Contract #1 (Mother)") */}
+      {formData.wolthers_contract_nr && (
+        <div className="text-xs font-mono text-muted-foreground">
+          Wolthers {formData.wolthers_contract_nr}
         </div>
-        {formData.wolthers_contract_nr && (
-          <span className="text-xs font-mono text-muted-foreground">Wolthers {formData.wolthers_contract_nr}</span>
-        )}
-      </div>
+      )}
 
-      {/* Entity names with contract refs inline after dash */}
-      <div className="flex flex-wrap gap-x-5 gap-y-1 text-sm">
-        {entities.map(e => (
-          <div key={e.label}>
-            <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
-            <span className="font-medium">{e.value}</span>
-            {e.ref && <span className="text-muted-foreground text-xs"> - {e.ref}</span>}
-          </div>
-        ))}
+      {/* Entities in columns: Seller/Shipper | Importer/Roaster | QC Client/End Client */}
+      <div className="grid grid-cols-3 gap-x-5 gap-y-1">
+        <Entity label="Seller" value={formData.seller} ref={formData.seller_contract_nr} />
+        <Entity label="Importer" value={formData.importer} ref={formData.importer_contract_nr} />
+        {!formData.importer_is_qc_client && formData.qc_client ? (
+          <Entity label="QC Client" value={formData.qc_client} ref={formData.qc_client_contract_nr} />
+        ) : formData.end_client ? (
+          <Entity label="End Client" value={formData.end_client} ref={formData.end_client_contract_nr} />
+        ) : <div />}
+
+        <Entity label="Shipper" value={shipperName} ref={formData.supplier_contract_nr} />
+        <Entity label="Roaster" value={formData.roaster} ref={formData.roaster_contract_nr} />
+        {!formData.importer_is_qc_client && formData.qc_client && formData.end_client ? (
+          <Entity label="End Client" value={formData.end_client} ref={formData.end_client_contract_nr} />
+        ) : <div />}
       </div>
 
       {/* Sample type, PSS/SS info + quantity */}
