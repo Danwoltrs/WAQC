@@ -491,11 +491,76 @@ export default function SampleDetailPage() {
     setShowQrModal(true)
     setGeneratingQr(true)
     try {
-      // Generate QR code with sample tracking URL
       const QRCode = await import('qrcode')
       const baseUrl = typeof window !== 'undefined' ? window.location.origin : ''
-      const url = `${baseUrl}/samples/${trackingNumberToSlug(sample.tracking_number)}`
-      const dataUrl = await QRCode.toDataURL(url, { width: 256, margin: 2 })
+      const certUrl = `${baseUrl}/certificate/${trackingNumberToSlug(sample.tracking_number)}`
+
+      // Build certificate summary text (same as buildCertificateQRText)
+      const lines: string[] = [sample.tracking_number]
+
+      // Fetch quality assessment for defects & screen sizes
+      const resolvedId = sampleUuid || params.id
+      const res = await fetch(`/api/samples/${resolvedId}/quality-assessment`)
+      if (res.ok) {
+        const data = await res.json()
+        const gb = data.assessment?.green_bean_data
+        if (gb) {
+          const defects = gb.defects
+          const primary = defects?.total_primary ?? defects?.primary ?? null
+          const secondary = defects?.total_secondary ?? defects?.secondary ?? null
+          const total = defects?.total ?? (primary != null && secondary != null ? primary + secondary : null)
+          if (total != null) {
+            let defLine = `Def: ${total}`
+            if (primary != null && secondary != null) {
+              defLine += ` (${primary}p|${secondary}s)`
+            }
+            lines.push(defLine)
+          }
+
+          // Screen sizes grouped into ranges
+          const screenSizes = gb.screen_sizes as Record<string, number> | undefined
+          if (screenSizes) {
+            const numbered: Array<{ num: number; pct: number }> = []
+            let panPct = 0
+            for (const [key, pct] of Object.entries(screenSizes)) {
+              if (pct === 0) continue
+              if (/^(pan|fundo|bottom)$/i.test(key)) {
+                panPct += pct
+              } else {
+                const num = parseInt(key.replace(/\D/g, ''))
+                if (!isNaN(num)) numbered.push({ num, pct })
+              }
+            }
+            numbered.sort((a, b) => b.num - a.num)
+            const groups: Array<{ label: string; pct: number }> = []
+            let i = 0
+            while (i < numbered.length) {
+              let j = i
+              let groupPct = numbered[i].pct
+              while (j + 1 < numbered.length && numbered[j].num - numbered[j + 1].num === 1) {
+                j++
+                groupPct += numbered[j].pct
+              }
+              if (i === j) {
+                groups.push({ label: String(numbered[i].num), pct: groupPct })
+              } else if (j - i === 1) {
+                groups.push({ label: `${numbered[i].num}/${numbered[j].num}`, pct: groupPct })
+              } else {
+                groups.push({ label: `${numbered[j].num}-${numbered[i].num}`, pct: groupPct })
+              }
+              i = j + 1
+            }
+            if (panPct > 0) groups.push({ label: 'Pan', pct: panPct })
+            if (groups.length > 0) {
+              lines.push(groups.map(g => `${g.label}:${Math.round(g.pct)}%`).join(' '))
+            }
+          }
+        }
+      }
+
+      lines.push(certUrl)
+      const qrContent = lines.join('\n')
+      const dataUrl = await QRCode.toDataURL(qrContent, { width: 256, margin: 2 })
       setQrCodeDataUrl(dataUrl)
     } catch (error) {
       console.error('Error generating QR code:', error)

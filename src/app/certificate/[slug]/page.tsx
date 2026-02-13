@@ -26,7 +26,7 @@ async function getCertificateInfo(slug: string) {
     origin,
     workflow_stage,
     status,
-    quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en))
+    quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en, parameters))
   `
   const { data: directMatch } = await supabase
     .from('samples')
@@ -85,14 +85,16 @@ async function getCertificateInfo(slug: string) {
   const cleanCup = assessment?.clean_cup ?? null
   const uniformCup = assessment?.uniform_cup ?? null
 
-  // Get cupping scores for taints and faults
+  // Get cupping scores for taints, faults, and attribute averages
   const { data: cuppingScores } = await supabase
     .from('cupping_scores')
-    .select('defects')
+    .select('scores, defects')
     .eq('sample_id', sample.id)
 
   let totalTaints = 0
   let totalFaults = 0
+  const attributeScoresMap: Record<string, number[]> = {}
+
   if (cuppingScores) {
     for (const score of cuppingScores) {
       if (score.defects && typeof score.defects === 'object') {
@@ -100,11 +102,73 @@ async function getCertificateInfo(slug: string) {
         if (Array.isArray(d.taints)) totalTaints += d.taints.length
         if (Array.isArray(d.faults)) totalFaults += d.faults.length
       }
+      // Collect attribute scores for averaging
+      if (score.scores && typeof score.scores === 'object') {
+        for (const [attr, value] of Object.entries(score.scores as Record<string, unknown>)) {
+          if (typeof value !== 'number') continue
+          const lower = attr.toLowerCase()
+          // Skip non-chart attributes
+          if (['taints', 'taint', 'faults', 'fault', 'clean cup', 'cleancup', 'clean_cup',
+               'uniformity', 'uniform cup', 'uniformcup', 'uniform_cup'].includes(lower)) continue
+          if (!attributeScoresMap[attr]) attributeScoresMap[attr] = []
+          attributeScoresMap[attr].push(value)
+        }
+      }
     }
   }
 
+  // Build cupping attribute validation lookup from quality template
   const qualitySpec = sample.quality_spec as any
   const qualityName = qualitySpec?.custom_name || qualitySpec?.template?.name_en || null
+  const templateParams = qualitySpec?.template?.parameters as {
+    cupping_attributes?: Array<{
+      attribute: string
+      validation_rule?: { min_value?: number; max_value?: number }
+      scale?: { min?: number; max?: number }
+    }>
+  } | undefined
+
+  const attrLimitsMap: Record<string, { min?: number; max?: number }> = {}
+  if (templateParams?.cupping_attributes) {
+    for (const ca of templateParams.cupping_attributes) {
+      if (ca.validation_rule) {
+        attrLimitsMap[ca.attribute.toLowerCase()] = {
+          min: ca.validation_rule.min_value,
+          max: ca.validation_rule.max_value,
+        }
+      }
+    }
+  }
+
+  // Average cupping attributes and attach limits
+  const standardOrder = [
+    'Fragrance/Aroma', 'Fragrance', 'Aroma', 'Flavor', 'Aftertaste',
+    'Acidity', 'Body', 'Balance', 'Sweetness', 'Overall',
+  ]
+  const cuppingAttributes: Array<{
+    attribute: string
+    value: number
+    min?: number
+    max?: number
+  }> = Object.entries(attributeScoresMap)
+    .sort(([a], [b]) => {
+      const aIdx = standardOrder.findIndex(s => a.toLowerCase().includes(s.toLowerCase()))
+      const bIdx = standardOrder.findIndex(s => b.toLowerCase().includes(s.toLowerCase()))
+      if (aIdx === -1 && bIdx === -1) return a.localeCompare(b)
+      if (aIdx === -1) return 1
+      if (bIdx === -1) return -1
+      return aIdx - bIdx
+    })
+    .map(([attr, scores]) => {
+      const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
+      const limits = attrLimitsMap[attr.toLowerCase()]
+      return {
+        attribute: attr,
+        value: avg,
+        min: limits?.min,
+        max: limits?.max,
+      }
+    })
 
   return {
     sample,
@@ -119,6 +183,7 @@ async function getCertificateInfo(slug: string) {
     totalFaults,
     cleanCup,
     uniformCup,
+    cuppingAttributes,
   }
 }
 
@@ -255,6 +320,7 @@ export default async function CertificatePage({ params }: PageProps) {
       totalFaults={info.totalFaults ?? 0}
       cleanCup={info.cleanCup ?? null}
       uniformCup={info.uniformCup ?? null}
+      cuppingAttributes={info.cuppingAttributes ?? []}
       pdfUrl={pdfUrl}
     />
   )

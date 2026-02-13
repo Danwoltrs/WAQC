@@ -2,6 +2,10 @@
 
 import Image from 'next/image'
 import { Download, CheckCircle, XCircle } from 'lucide-react'
+import {
+  RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar,
+  ResponsiveContainer,
+} from 'recharts'
 
 interface CertificatePageClientProps {
   trackingNumber: string
@@ -17,6 +21,7 @@ interface CertificatePageClientProps {
   totalFaults: number
   cleanCup: boolean | null
   uniformCup: boolean | null
+  cuppingAttributes: Array<{ attribute: string; value: number; min?: number; max?: number }>
   pdfUrl: string
 }
 
@@ -34,6 +39,7 @@ export function CertificatePageClient({
   totalFaults,
   cleanCup,
   uniformCup,
+  cuppingAttributes,
   pdfUrl,
 }: CertificatePageClientProps) {
   const isApproved = status === 'APPROVED'
@@ -61,10 +67,44 @@ export function CertificatePageClient({
       })
     : null
 
+  // Determine radar chart scale from attribute values
+  const maxValue = cuppingAttributes.length > 0
+    ? Math.ceil(Math.max(...cuppingAttributes.map(a => a.value)))
+    : 10
+
+  // Determine consistent decimal places: if any score has decimals, all use the same precision
+  const maxDecimals = cuppingAttributes.reduce((max, a) => {
+    const str = String(a.value)
+    const dec = str.includes('.') ? str.split('.')[1].length : 0
+    return Math.max(max, dec)
+  }, 0)
+
+  // Build display labels: "Attr (min-max) score"
+  const radarData = cuppingAttributes.map(a => {
+    let limitsStr = ''
+    if (a.min != null && a.max != null) {
+      const mid = (a.min + a.max) / 2
+      const range = (a.max - a.min) / 2
+      limitsStr = Number.isInteger(range)
+        ? `(${mid}+/-${range})`
+        : `(${mid}+/-${range.toFixed(1)})`
+    } else if (a.min != null) {
+      limitsStr = `(>=${a.min})`
+    } else if (a.max != null) {
+      limitsStr = `(<=${a.max})`
+    }
+    return {
+      ...a,
+      label: a.attribute,
+      limitsStr,
+      scoreStr: maxDecimals > 0 ? a.value.toFixed(maxDecimals) : String(a.value),
+    }
+  })
+
   return (
-    <div className="min-h-screen bg-[#F9F9FA] dark:bg-[#2A2A2A] flex flex-col items-center px-4 py-8">
-      {/* Header with logo */}
-      <div className="w-full max-w-lg mb-4 flex flex-col items-center">
+    <div className="h-dvh bg-[#F9F9FA] dark:bg-[#2A2A2A] flex flex-col">
+      {/* Fixed Header */}
+      <div className="shrink-0 pt-6 pb-4 flex flex-col items-center px-4">
         <Image
           src="/images/logos/wolthers-logo-off-white.svg"
           alt="Wolthers"
@@ -82,139 +122,228 @@ export function CertificatePageClient({
           priority
         />
         <h2 className="text-xl font-semibold">{trackingNumber}</h2>
-      </div>
-
-      {/* Status Badge */}
-      <div className="mb-6">
-        {isApproved ? (
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#22c55e]/10 text-[#22c55e]">
-            <CheckCircle className="w-5 h-5" />
-            <span className="font-semibold text-sm">APPROVED</span>
-          </div>
-        ) : (
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#ef4444]/10 text-[#ef4444]">
-            <XCircle className="w-5 h-5" />
-            <span className="font-semibold text-sm">REJECTED</span>
-          </div>
-        )}
-      </div>
-
-      {/* Main Card */}
-      <div className="w-full max-w-lg bg-white dark:bg-white/[0.04] rounded-[20px] p-6 shadow-sm border border-black/10 dark:border-white/[0.15]">
-        {/* Top row: Date left, Origin right */}
-        <div className="flex justify-between items-start mb-4">
-          {formattedDate && (
-            <div>
-              <p className="text-xs text-muted-foreground">Certification Date</p>
-              <p className="text-sm font-medium">{formattedDate}</p>
+        <div className="mt-3">
+          {isApproved ? (
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#22c55e]/10 text-[#22c55e]">
+              <CheckCircle className="w-5 h-5" />
+              <span className="font-semibold text-sm">APPROVED</span>
+            </div>
+          ) : (
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#ef4444]/10 text-[#ef4444]">
+              <XCircle className="w-5 h-5" />
+              <span className="font-semibold text-sm">REJECTED</span>
             </div>
           )}
-          <div className="text-right">
-            <p className="text-xs text-muted-foreground">Origin</p>
-            <p className="text-sm font-medium">{origin}</p>
-          </div>
         </div>
-
-        {/* Quality name */}
-        {qualityName && (
-          <div className="mb-4">
-            <p className="text-xs text-muted-foreground">Quality</p>
-            <p className="text-sm font-medium">{qualityName}</p>
-          </div>
-        )}
-
-        {/* Defects row: Primary | Secondary = Total */}
-        {totalDefects !== null && (
-          <div className="mb-4">
-            <p className="text-xs text-muted-foreground mb-1">Total Defects</p>
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm text-muted-foreground">
-                {primaryDefects ?? 0} primary
-              </span>
-              <span className="text-muted-foreground">|</span>
-              <span className="text-sm text-muted-foreground">
-                {secondaryDefects ?? 0} secondary
-              </span>
-              <span className="text-muted-foreground">=</span>
-              <span className="text-lg font-semibold">{totalDefects}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Screen Size Distribution */}
-        {sortedScreenSizes && sortedScreenSizes.length > 0 && (
-          <div className="mb-4">
-            <div className="space-y-1.5">
-              {sortedScreenSizes.map(([size, percent]) => {
-                const lower = size.toLowerCase()
-                const isPan = lower === 'pan' || lower === 'fundo' || lower === 'bottom'
-                const label = isPan
-                  ? 'Pan'
-                  : `Scr. ${size.replace(/\D/g, '') || size}`
-                return (
-                <div key={size} className="flex items-center gap-3">
-                  <span className="text-xs font-medium w-12 text-right whitespace-nowrap">{label}</span>
-                  <div className="flex-1 h-4 bg-black/[0.04] dark:bg-white/[0.06] rounded-full overflow-hidden">
-                    <div
-                      className="h-full rounded-full"
-                      style={{
-                        width: `${Math.min(percent, 100)}%`,
-                        backgroundColor: '#556b2f',
-                      }}
-                    />
-                  </div>
-                  <span className="text-xs font-medium w-12">{percent.toFixed(1)}%</span>
-                </div>
-                )
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* Separator */}
-        <div className="border-t border-black/[0.06] dark:border-white/[0.08] my-4" />
-
-        {/* Taints & Faults */}
-        <div className="flex justify-between mb-4">
-          <div>
-            <p className="text-xs text-muted-foreground">Taints</p>
-            <p className="text-sm font-medium">{totalTaints}</p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Faults</p>
-            <p className="text-sm font-medium">{totalFaults}</p>
-          </div>
-          {/* Clean Cup & Uniform Cup */}
-          <div>
-            <p className="text-xs text-muted-foreground">Clean Cup</p>
-            <p className={`text-sm font-medium ${cleanCup === true ? 'text-[#22c55e]' : cleanCup === false ? 'text-[#ef4444]' : ''}`}>
-              {cleanCup === true ? 'Yes' : cleanCup === false ? 'No' : '-'}
-            </p>
-          </div>
-          <div>
-            <p className="text-xs text-muted-foreground">Uniform Cup</p>
-            <p className={`text-sm font-medium ${uniformCup === true ? 'text-[#22c55e]' : uniformCup === false ? 'text-[#ef4444]' : ''}`}>
-              {uniformCup === true ? 'Yes' : uniformCup === false ? 'No' : '-'}
-            </p>
-          </div>
-        </div>
-
-        {/* Download Button */}
-        <a
-          href={pdfUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-[12px] bg-[#556b2f] text-white font-medium text-sm hover:bg-[#556b2f]/90 transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          Download Certificate PDF
-        </a>
       </div>
 
-      {/* Footer */}
-      <p className="mt-6 text-xs text-muted-foreground text-center">
-        Wolthers Coffee Quality Control
-      </p>
+      {/* Fixed Card Top */}
+      <div className="shrink-0 px-4">
+        <div className="w-full max-w-lg mx-auto">
+          <div className="bg-white dark:bg-white/[0.04] rounded-t-[20px] px-6 pt-5 pb-4 shadow-sm border border-b-0 border-black/10 dark:border-white/[0.15]">
+            <div className="flex justify-between items-start">
+              {formattedDate && (
+                <div>
+                  <p className="text-xs text-muted-foreground">Certification Date</p>
+                  <p className="text-sm font-medium">{formattedDate}</p>
+                </div>
+              )}
+              <div className="text-right">
+                <p className="text-xs text-muted-foreground">Origin</p>
+                <p className="text-sm font-medium">{origin}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Scrollable Content */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 overscroll-none">
+        <div className="w-full max-w-lg mx-auto min-h-full pb-8 bg-white dark:bg-white/[0.04] border-x border-black/10 dark:border-white/[0.15]">
+          <div className="px-6">
+            {/* Quality name */}
+            {qualityName && (
+              <div className="mb-4">
+                <p className="text-xs text-muted-foreground">Quality</p>
+                <p className="text-sm font-medium">{qualityName}</p>
+              </div>
+            )}
+
+            {/* Defects row: Primary | Secondary = Total */}
+            {totalDefects !== null && (
+              <div className="mb-4">
+                <p className="text-xs text-muted-foreground mb-1">Total Defects</p>
+                <div className="flex items-baseline gap-2">
+                  <span className="text-sm text-muted-foreground">
+                    {primaryDefects ?? 0} primary
+                  </span>
+                  <span className="text-muted-foreground">|</span>
+                  <span className="text-sm text-muted-foreground">
+                    {secondaryDefects ?? 0} secondary
+                  </span>
+                  <span className="text-muted-foreground">=</span>
+                  <span className="text-lg font-semibold">{totalDefects}</span>
+                </div>
+              </div>
+            )}
+
+            {/* Screen Size Distribution */}
+            {sortedScreenSizes && sortedScreenSizes.length > 0 && (
+              <div className="mb-4">
+                <div className="space-y-1.5">
+                  {sortedScreenSizes.map(([size, percent]) => {
+                    const lower = size.toLowerCase()
+                    const isPan = lower === 'pan' || lower === 'fundo' || lower === 'bottom'
+                    const label = isPan
+                      ? 'Pan'
+                      : `Scr. ${size.replace(/\D/g, '') || size}`
+                    return (
+                    <div key={size} className="flex items-center gap-3">
+                      <span className="text-xs font-medium w-12 text-right whitespace-nowrap">{label}</span>
+                      <div className="flex-1 h-4 bg-black/[0.04] dark:bg-white/[0.06] rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full"
+                          style={{
+                            width: `${Math.min(percent, 100)}%`,
+                            backgroundColor: '#556b2f',
+                          }}
+                        />
+                      </div>
+                      <span className="text-xs font-medium w-12">{percent.toFixed(1)}%</span>
+                    </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Spider/Radar Chart for Cupping Attributes */}
+            {cuppingAttributes.length > 0 && (
+              <>
+                <div className="border-t border-black/[0.06] dark:border-white/[0.08] my-4" />
+                <div className="mb-4">
+                  <p className="text-xs text-muted-foreground mb-2">Cupping Profile</p>
+                  <div className="w-full h-[280px]">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart data={radarData} cx="50%" cy="50%" outerRadius="60%">
+                        <PolarGrid stroke="rgba(128,128,128,0.2)" />
+                        <PolarAngleAxis
+                          dataKey="label"
+                          tick={(props: any) => {
+                            const { x, y, payload, cx: chartCx, cy: chartCy } = props
+                            const item = radarData.find(d => d.label === payload.value)
+                            if (!item) return <text />
+                            const dx = x - chartCx
+                            const dy = y - chartCy
+                            const anchor = Math.abs(dx) < 5 ? 'middle' : dx > 0 ? 'start' : 'end'
+                            const offsetX = Math.abs(dx) < 5 ? 0 : dx > 0 ? 6 : -6
+                            const offsetY = Math.abs(dx) < 5 ? (dy < 0 ? -8 : 8) : 0
+                            return (
+                              <g>
+                                <text
+                                  x={x + offsetX}
+                                  y={y + offsetY}
+                                  textAnchor={anchor}
+                                  dominantBaseline="central"
+                                  style={{ fontSize: 9 }}
+                                  fill="rgba(128,128,128,0.6)"
+                                >
+                                  {item.label}
+                                </text>
+                                <text
+                                  x={x + offsetX}
+                                  y={y + offsetY + 12}
+                                  textAnchor={anchor}
+                                  dominantBaseline="central"
+                                  style={{ fontSize: 10, fontWeight: 600 }}
+                                  fill="#556b2f"
+                                >
+                                  {item.scoreStr}
+                                </text>
+                              </g>
+                            )
+                          }}
+                        />
+                        <PolarRadiusAxis
+                          angle={90}
+                          domain={[0, maxValue]}
+                          tick={{ fill: 'rgba(128,128,128,0.4)', fontSize: 9 }}
+                          tickCount={5}
+                        />
+                        <Radar
+                          dataKey="value"
+                          stroke="#556b2f"
+                          fill="#556b2f"
+                          fillOpacity={0.25}
+                          strokeWidth={2}
+                        />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  {/* Score list underneath */}
+                  <div className="mt-2 space-y-1.5">
+                    {radarData.map(item => (
+                      <div key={item.label} className="flex items-center justify-between">
+                        <div className="flex items-baseline gap-1.5">
+                          <span className="text-xs text-muted-foreground">{item.label}</span>
+                          {item.limitsStr && (
+                            <span className="text-[10px] text-muted-foreground/50">{item.limitsStr}</span>
+                          )}
+                        </div>
+                        <span className="text-xs font-semibold" style={{ color: '#556b2f' }}>{item.scoreStr}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+          </div>
+        </div>
+      </div>
+
+      {/* Fixed Footer - Card bottom (Taints/Faults) + Download Button */}
+      <div className="shrink-0 px-4 pb-6 bg-[#F9F9FA] dark:bg-[#2A2A2A]">
+        <div className="w-full max-w-lg mx-auto">
+          {/* Card bottom with rounded corners */}
+          <div className="bg-white dark:bg-white/[0.04] rounded-b-[20px] px-6 pb-5 pt-0 border border-t-0 border-black/10 dark:border-white/[0.15]">
+            <div className="border-t border-black/[0.06] dark:border-white/[0.08] pt-4" />
+            <div className="flex justify-between">
+              <div>
+                <p className="text-xs text-muted-foreground">Taints</p>
+                <p className="text-sm font-medium">{totalTaints}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Faults</p>
+                <p className="text-sm font-medium">{totalFaults}</p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Clean Cup</p>
+                <p className={`text-sm font-medium ${cleanCup === true ? 'text-[#22c55e]' : cleanCup === false ? 'text-[#ef4444]' : ''}`}>
+                  {cleanCup === true ? 'Yes' : cleanCup === false ? 'No' : '-'}
+                </p>
+              </div>
+              <div>
+                <p className="text-xs text-muted-foreground">Uniform Cup</p>
+                <p className={`text-sm font-medium ${uniformCup === true ? 'text-[#22c55e]' : uniformCup === false ? 'text-[#ef4444]' : ''}`}>
+                  {uniformCup === true ? 'Yes' : uniformCup === false ? 'No' : '-'}
+                </p>
+              </div>
+            </div>
+          </div>
+          <div className="h-3" />
+          <a
+            href={pdfUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full inline-flex items-center justify-center gap-2 px-4 py-3 rounded-[12px] bg-[#556b2f] text-white font-medium text-sm hover:bg-[#556b2f]/90 transition-colors"
+          >
+            <Download className="w-4 h-4" />
+            Download Certificate PDF
+          </a>
+        </div>
+      </div>
     </div>
   )
 }
