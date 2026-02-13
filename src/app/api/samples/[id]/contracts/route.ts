@@ -129,21 +129,38 @@ export async function POST(
     const tnNumStr = dashIdx >= 0 ? tnLeft.substring(dashIdx + 1) : tnLeft
     const tnNumLen = tnNumStr.length
 
-    // Find the highest existing number across ALL prefixes for this QC client suffix
-    // e.g. if suffix is "26", search "%/26" to find max across BD1-890231/26, ED1-890231/26, etc.
-    const suffixPattern = tnSuffix ? `%/${tnSuffix}` : '%'
+    // The sequence number is per QC client (client_id), shared across ALL prefixes/suffixes.
+    // Find the highest existing number for this client in both samples and sample_contracts.
+    const clientId = sample.client_id as string
 
-    const [{ data: existingContracts }, { data: existingSamples }] = await Promise.all([
-      supabase.from('sample_contracts').select('tracking_number').like('tracking_number', suffixPattern),
-      supabase.from('samples').select('tracking_number').like('tracking_number', suffixPattern).is('deleted_at', null),
-    ])
+    // 1. All tracking numbers from samples for this QC client (including soft-deleted)
+    const { data: clientSamples } = await supabase
+      .from('samples')
+      .select('id, tracking_number')
+      .eq('client_id', clientId)
 
+    const sampleTrackingNumbers = (clientSamples || []).map((s: any) => s.tracking_number)
+    const clientSampleIds = (clientSamples || []).map((s: any) => s.id)
+
+    // 2. All tracking numbers from sample_contracts for those samples
+    let contractTrackingNumbers: string[] = []
+    if (clientSampleIds.length > 0) {
+      // Batch in chunks of 200 to avoid URL length limits
+      for (let i = 0; i < clientSampleIds.length; i += 200) {
+        const chunk = clientSampleIds.slice(i, i + 200)
+        const { data: contracts } = await supabase
+          .from('sample_contracts')
+          .select('tracking_number')
+          .in('sample_id', chunk)
+        if (contracts) {
+          contractTrackingNumbers.push(...contracts.map((c: any) => c.tracking_number))
+        }
+      }
+    }
+
+    // 3. Find the max sequence number across all tracking numbers
     let maxNum = parseInt(tnNumStr) || 0
-    const allTrackingNumbers = [
-      ...(existingContracts || []).map((r: any) => r.tracking_number),
-      ...(existingSamples || []).map((r: any) => r.tracking_number),
-    ]
-    for (const ecStr of allTrackingNumbers) {
+    for (const ecStr of [...sampleTrackingNumbers, ...contractTrackingNumbers]) {
       if (!ecStr) continue
       const ecSlash = ecStr.lastIndexOf('/')
       const ecLeft = ecSlash >= 0 ? ecStr.substring(0, ecSlash) : ecStr
