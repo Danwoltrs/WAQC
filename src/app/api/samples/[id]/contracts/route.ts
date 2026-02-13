@@ -129,25 +129,28 @@ export async function POST(
     const tnNumStr = dashIdx >= 0 ? tnLeft.substring(dashIdx + 1) : tnLeft
     const tnNumLen = tnNumStr.length
 
-    // Find the highest existing number with the same prefix/suffix pattern in sample_contracts
-    // Pattern: "BD1-%" for prefix "BD1", or just "%" for empty prefix, filtered by suffix
-    const likePattern = tnPrefix ? `${tnPrefix}-%` : '%'
-    const { data: existingContracts } = await supabase
-      .from('sample_contracts')
-      .select('tracking_number')
-      .like('tracking_number', tnSuffix ? `${likePattern}/${tnSuffix}` : likePattern)
+    // Find the highest existing number across ALL prefixes for this QC client suffix
+    // e.g. if suffix is "26", search "%/26" to find max across BD1-890231/26, ED1-890231/26, etc.
+    const suffixPattern = tnSuffix ? `%/${tnSuffix}` : '%'
+
+    const [{ data: existingContracts }, { data: existingSamples }] = await Promise.all([
+      supabase.from('sample_contracts').select('tracking_number').like('tracking_number', suffixPattern),
+      supabase.from('samples').select('tracking_number').like('tracking_number', suffixPattern).is('deleted_at', null),
+    ])
 
     let maxNum = parseInt(tnNumStr) || 0
-    if (existingContracts) {
-      for (const ec of existingContracts) {
-        const ecStr = ec.tracking_number || ''
-        const ecSlash = ecStr.lastIndexOf('/')
-        const ecLeft = ecSlash >= 0 ? ecStr.substring(0, ecSlash) : ecStr
-        const ecDash = ecLeft.lastIndexOf('-')
-        const ecNumStr = ecDash >= 0 ? ecLeft.substring(ecDash + 1) : ecLeft
-        const ecNum = parseInt(ecNumStr) || 0
-        if (ecNum >= maxNum) maxNum = ecNum + 1
-      }
+    const allTrackingNumbers = [
+      ...(existingContracts || []).map((r: any) => r.tracking_number),
+      ...(existingSamples || []).map((r: any) => r.tracking_number),
+    ]
+    for (const ecStr of allTrackingNumbers) {
+      if (!ecStr) continue
+      const ecSlash = ecStr.lastIndexOf('/')
+      const ecLeft = ecSlash >= 0 ? ecStr.substring(0, ecSlash) : ecStr
+      const ecDash = ecLeft.lastIndexOf('-')
+      const ecNumStr = ecDash >= 0 ? ecLeft.substring(ecDash + 1) : ecLeft
+      const ecNum = parseInt(ecNumStr) || 0
+      if (ecNum >= maxNum) maxNum = ecNum + 1
     }
 
     // Build the final tracking number
