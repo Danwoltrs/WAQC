@@ -1838,7 +1838,7 @@ export default function SamplesPage() {
 
       {/* Certificate Preview Modal */}
       <Dialog open={!!previewSample} onOpenChange={(open) => !open && handleClosePreview()}>
-        <DialogContent className="sm:max-w-[900px] max-h-[90vh]">
+        <DialogContent className="sm:max-w-[1100px] max-h-[95vh]">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
@@ -1846,19 +1846,19 @@ export default function SamplesPage() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="flex-1 min-h-[500px] bg-muted rounded-lg overflow-hidden">
+          <div className="flex-1 min-h-[75vh] bg-muted rounded-lg overflow-hidden">
             {previewLoading ? (
-              <div className="flex items-center justify-center h-[500px]">
+              <div className="flex items-center justify-center h-[75vh]">
                 <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
               </div>
             ) : previewPdfUrl ? (
               <iframe
                 src={previewPdfUrl}
-                className="w-full h-[500px] border-0"
+                className="w-full h-[75vh] border-0"
                 title="Certificate Preview"
               />
             ) : (
-              <div className="flex items-center justify-center h-[500px] text-muted-foreground">
+              <div className="flex items-center justify-center h-[75vh] text-muted-foreground">
                 Unable to load certificate preview
               </div>
             )}
