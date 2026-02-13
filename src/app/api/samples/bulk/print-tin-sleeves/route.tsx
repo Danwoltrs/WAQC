@@ -87,6 +87,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
 
+    // Fetch sub-contracts for all samples
+    const { data: subContracts } = await supabase
+      .from('sample_contracts')
+      .select('id, sample_id, tracking_number, bags_quantity_mt')
+      .in('sample_id', sample_ids)
+      .order('sort_order', { ascending: true }) as { data: Array<{ id: string; sample_id: string; tracking_number: string; bags_quantity_mt: number | null }> | null }
+
+    // Group sub-contracts by sample_id
+    const subContractsBySample: Record<string, Array<{ tracking_number: string; bags_quantity_mt: number | null }>> = {}
+    if (subContracts) {
+      for (const sc of subContracts) {
+        if (!subContractsBySample[sc.sample_id]) {
+          subContractsBySample[sc.sample_id] = []
+        }
+        subContractsBySample[sc.sample_id].push(sc)
+      }
+    }
+
     // Bag type mapping
     const bagTypeMap: Record<string, string> = {
       jute_bag: 'Jute Bags',
@@ -116,15 +134,28 @@ export async function POST(request: NextRequest) {
           }
         }
 
+        // Build combined tracking number (mother + sub-contracts)
+        const sampleSubContracts = subContractsBySample[sample.id] || []
+        let combinedTrackingNumber = sample.tracking_number
+        if (sampleSubContracts.length > 0) {
+          const allNumbers = [sample.tracking_number, ...sampleSubContracts.map(sc => sc.tracking_number)]
+          combinedTrackingNumber = allNumbers.join(', ')
+        }
+
         // Format packaging
         const packaging = bagTypeMap[sample.bag_type] || 'N/A'
+
+        // Calculate total quantity including sub-contracts
+        const motherMT = sample.bags_quantity_mt || 0
+        const subContractMT = sampleSubContracts.reduce((sum: number, sc: any) => sum + (sc.bags_quantity_mt || 0), 0)
+        const totalMT = motherMT + subContractMT
 
         // Format bags display with quantity and MT
         let bagsDisplay = 'N/A'
         const bagCount = sample.bag_count
         const bagWeight = sample.bag_weight_kg
         const bagType = sample.bag_type
-        const quantityMT = sample.bags_quantity_mt
+        const quantityMT = totalMT || sample.bags_quantity_mt
         const equivalent60kg = sample.equivalent_60kg_bags
 
         if (bagType === 'bulk' && equivalent60kg) {
@@ -171,7 +202,7 @@ export async function POST(request: NextRequest) {
 
         return {
           date,
-          tracking_number: sample.tracking_number,
+          tracking_number: combinedTrackingNumber,
           sample_type: displaySampleType,
           exporter: exporterName,
           client_quality_name: clientQualityName,
