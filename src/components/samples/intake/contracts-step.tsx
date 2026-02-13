@@ -92,66 +92,65 @@ function MotherContractSummary({ formData }: { formData: StepComponentProps['for
   if (formData.bag_count && formData.bag_weight_kg && bagLabel) {
     quantityParts.push(`${formData.bag_count} bags in ${formData.bag_weight_kg}kg ${bagLabel}`)
   }
-  if (formData.bags_quantity_mt) quantityParts.push(`${formData.bags_quantity_mt} MT`)
-  if (shipmentLabel) quantityParts.push(shipmentLabel)
+  // MT and shipment combined: "19.2 MT February 2026 shpt"
+  const mtShipment = [
+    formData.bags_quantity_mt ? `${formData.bags_quantity_mt} MT` : '',
+    shipmentLabel,
+  ].filter(Boolean).join(' ')
+  if (mtShipment) quantityParts.push(mtShipment)
 
+  // Each entity paired with its contract reference
   const entities = [
-    formData.seller && { label: 'Seller', value: formData.seller },
-    shipperName && { label: 'Shipper', value: shipperName },
-    formData.importer && { label: 'Importer', value: formData.importer },
-    formData.roaster && { label: 'Roaster', value: formData.roaster },
-    formData.end_client && { label: 'End Client', value: formData.end_client },
-    !formData.importer_is_qc_client && formData.qc_client && { label: 'QC Client', value: formData.qc_client },
-  ].filter(Boolean) as { label: string; value: string }[]
-
-  const contractRefs = [
-    formData.wolthers_contract_nr && { label: 'Wolthers', value: formData.wolthers_contract_nr },
-    formData.seller_contract_nr && { label: 'Seller', value: formData.seller_contract_nr },
-    formData.importer_contract_nr && { label: 'Buyer', value: formData.importer_contract_nr },
-    formData.roaster_contract_nr && { label: 'Roaster', value: formData.roaster_contract_nr },
-    formData.qc_client_contract_nr && { label: 'QC Client', value: formData.qc_client_contract_nr },
-    formData.end_client_contract_nr && { label: 'End Client', value: formData.end_client_contract_nr },
-    formData.supplier_contract_nr && { label: 'Supplier', value: formData.supplier_contract_nr },
-  ].filter(Boolean) as { label: string; value: string }[]
+    formData.seller && { label: 'Seller', value: formData.seller, ref: formData.seller_contract_nr },
+    shipperName && { label: 'Shipper', value: shipperName, ref: formData.supplier_contract_nr },
+    formData.importer && { label: 'Importer', value: formData.importer, ref: formData.importer_contract_nr },
+    formData.roaster && { label: 'Roaster', value: formData.roaster, ref: formData.roaster_contract_nr },
+    formData.end_client && { label: 'End Client', value: formData.end_client, ref: formData.end_client_contract_nr },
+    !formData.importer_is_qc_client && formData.qc_client && { label: 'QC Client', value: formData.qc_client, ref: formData.qc_client_contract_nr },
+  ].filter(Boolean) as { label: string; value: string; ref?: string }[]
 
   const sampleType = (formData.sample_type || '').toUpperCase()
 
   return (
     <div className="bg-muted/50 border rounded-xl p-4 space-y-2 sticky top-0 z-10">
-      <div className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">
-        Contract #1 (Mother)
+      <div className="flex items-center justify-between">
+        <div className="text-[10px] uppercase text-muted-foreground tracking-wider font-medium">
+          Contract #1 (Mother)
+        </div>
+        {formData.wolthers_contract_nr && (
+          <span className="text-xs font-mono text-muted-foreground">Wolthers {formData.wolthers_contract_nr}</span>
+        )}
       </div>
 
-      {/* Entity names */}
-      <div className="flex flex-wrap gap-x-5 gap-y-0.5 text-sm">
+      {/* Entity names with contract refs underneath */}
+      <div className="flex flex-wrap gap-x-5 gap-y-1.5 text-sm">
         {entities.map(e => (
           <div key={e.label}>
-            <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
-            <span className="font-medium">{e.value}</span>
+            <div>
+              <span className="text-muted-foreground text-xs">{e.label}:</span>{' '}
+              <span className="font-medium">{e.value}</span>
+            </div>
+            {e.ref && (
+              <div className="text-[11px] text-muted-foreground">{e.ref}</div>
+            )}
           </div>
         ))}
       </div>
 
-      {/* Contract reference numbers */}
-      {contractRefs.length > 0 && (
-        <div className="text-xs text-muted-foreground flex flex-wrap gap-x-3">
-          {contractRefs.map(r => (
-            <span key={r.label}>
-              {r.label}: <span className="text-foreground">{r.value}</span>
-            </span>
-          ))}
-        </div>
-      )}
-
-      {/* Sample type + quantity */}
+      {/* Sample type, tracking info + quantity */}
       <div className="flex items-center justify-between text-xs pt-1.5 border-t border-border/50">
         <div className="flex items-center gap-2">
           {sampleType && <Badge variant="outline" className="text-[10px]">{sampleType}</Badge>}
-          {formData.sample_type === 'ss' && (
+          {formData.sample_type === 'ss' && formData.ico_number && (
             <>
-              {formData.ico_number && <span>ICO: {formData.ico_number}</span>}
-              {formData.ico_number && formData.container_nr && <span className="text-muted-foreground">|</span>}
-              {formData.container_nr && <span>Container: {formData.container_nr}</span>}
+              <span className="text-muted-foreground">|</span>
+              <span>ICO: {formData.ico_number}</span>
+            </>
+          )}
+          {formData.sample_type === 'ss' && formData.container_nr && (
+            <>
+              <span className="text-muted-foreground">|</span>
+              <span>Container: {formData.container_nr}</span>
             </>
           )}
         </div>
