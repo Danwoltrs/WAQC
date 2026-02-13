@@ -73,9 +73,16 @@ interface UserProfile {
   qc_role?: string | null
 }
 
+interface TaintFaultEntry {
+  name: string
+  intensity?: number | null
+}
+
 interface SampleData {
   id: string
   certificate_id?: string | null
+  quality_spec_id?: string | null
+  sample_type?: string | null
 }
 
 export interface CuppingGradingSectionProps {
@@ -104,6 +111,17 @@ export function CuppingGradingSection({
   const [cuppingComments, setCuppingComments] = useState<string | null>(null)
   const [gradingComments, setGradingComments] = useState<string | null>(null)
 
+  // Taints & faults from cupping aggregate
+  const [taintsData, setTaintsData] = useState<TaintFaultEntry[]>([])
+  const [faultsData, setFaultsData] = useState<TaintFaultEntry[]>([])
+  // Edit-mode copies
+  const [editTaints, setEditTaints] = useState<TaintFaultEntry[]>([])
+  const [editFaults, setEditFaults] = useState<TaintFaultEntry[]>([])
+  // Editable individual defects
+  const [editDefects, setEditDefects] = useState<DefectEntry[]>([])
+  // Quality spec: show quakers?
+  const [showQuakers, setShowQuakers] = useState(true)
+
   useEffect(() => {
     if (sample?.id) {
       loadCuppingGradingData(sample.id)
@@ -111,9 +129,33 @@ export function CuppingGradingSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample?.id])
 
+  // Fetch quality spec to determine if quakers should be shown
+  useEffect(() => {
+    if (sample?.quality_spec_id) {
+      fetch(`/api/client-qualities/${sample.quality_spec_id}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data) {
+            const params = data.client_quality?.template?.parameters
+            setShowQuakers(
+              params?.require_quaker_count === true ||
+              params?.max_quakers != null ||
+              sample?.sample_type === 'type'
+            )
+          }
+        })
+        .catch(() => setShowQuakers(true))
+    } else {
+      setShowQuakers(sample?.sample_type === 'type')
+    }
+  }, [sample?.quality_spec_id, sample?.sample_type])
+
   const loadCuppingGradingData = async (sampleUuid: string) => {
     try {
       // Load cupping scores from aggregate endpoint
+      let aggregateTaints: TaintFaultEntry[] = []
+      let aggregateFaults: TaintFaultEntry[] = []
+
       const cuppingRes = await fetch(`/api/cupping/scores/aggregate?sample_id=${sampleUuid}`)
       if (cuppingRes.ok) {
         const cuppingData = await cuppingRes.json()
@@ -123,6 +165,23 @@ export function CuppingGradingSection({
             scores[key as keyof CuppingScores] = value.finalScore
           })
           setCuppingScores(scores)
+        }
+        // Extract taints/faults from aggregate
+        if (cuppingData.aggregated?.defects) {
+          const d = cuppingData.aggregated.defects
+          const levels = cuppingData.aggregated.defect_levels || []
+          aggregateTaints = (d.taints || []).map((name: string) => {
+            const lvl = levels.find((dl: any) => dl.defectName === name && dl.type === 'taint')
+            const vals = lvl?.levels ? Object.values(lvl.levels) as number[] : []
+            const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : undefined
+            return { name, intensity: avg ? Math.round(avg * 10) / 10 : undefined }
+          })
+          aggregateFaults = (d.faults || []).map((name: string) => {
+            const lvl = levels.find((dl: any) => dl.defectName === name && dl.type === 'fault')
+            const vals = lvl?.levels ? Object.values(lvl.levels) as number[] : []
+            const avg = vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : undefined
+            return { name, intensity: avg ? Math.round(avg * 10) / 10 : undefined }
+          })
         }
       } else {
         // Aggregate may return 404 if no cupping_scores records but
@@ -154,6 +213,23 @@ export function CuppingGradingSection({
               setCuppingScores(cs as CuppingScores)
             }
           }
+
+          // Prefer stored taints/faults overrides in roast_data, else use aggregate
+          const rd = gradingDataRes.assessment.roast_data
+          if (rd?.taints && Array.isArray(rd.taints)) {
+            setTaintsData(rd.taints)
+          } else {
+            setTaintsData(aggregateTaints)
+          }
+          if (rd?.faults && Array.isArray(rd.faults)) {
+            setFaultsData(rd.faults)
+          } else {
+            setFaultsData(aggregateFaults)
+          }
+        } else {
+          // No assessment - use aggregate taints/faults
+          setTaintsData(aggregateTaints)
+          setFaultsData(aggregateFaults)
         }
       }
     } catch (error) {
@@ -168,10 +244,35 @@ export function CuppingGradingSection({
 
   const handleEnterCuppingGradingEdit = () => {
     if (!canEditCuppingGrading) return
+    // Deep-clone grading data and normalize screen_sizes key
+    const grading = JSON.parse(JSON.stringify(gradingData || {}))
+    if (grading.green_bean_data) {
+      // Normalize screen_analysis -> screen_sizes
+      if (!grading.green_bean_data.screen_sizes && grading.green_bean_data.screen_analysis) {
+        grading.green_bean_data.screen_sizes = grading.green_bean_data.screen_analysis
+      }
+    }
     setCuppingGradingFormData({
-      cupping: cuppingScores || {},
-      grading: gradingData || {}
+      cupping: cuppingScores ? { ...cuppingScores } : {},
+      grading,
     })
+    // Pre-fill defects list for per-defect editing
+    const gb = gradingData?.green_bean_data
+    const defects = gb?.defects
+    const list: DefectEntry[] = []
+    if (defects) {
+      if (Array.isArray(defects)) {
+        defects.forEach(d => list.push({ name: d.name, count: d.count }))
+      } else if (typeof defects === 'object') {
+        const d = defects as DefectsData
+        if (d.defect_list) d.defect_list.forEach(e => list.push({ name: e.name, count: e.count }))
+        else if (d.counts) Object.entries(d.counts).forEach(([n, c]) => list.push({ name: n, count: c as number }))
+      }
+    }
+    setEditDefects(list)
+    // Pre-fill taints/faults
+    setEditTaints([...taintsData])
+    setEditFaults([...faultsData])
     setEditReason('')
     setIsEditingCuppingGrading(true)
   }
@@ -219,12 +320,36 @@ export function CuppingGradingSection({
         changes
       }
 
+      // Build defects from edit state
+      const PRIMARY_NAMES_SAVE = ['full black', 'full sour', 'pod/cherry', 'pod', 'cherry',
+        'large husk', 'large stone', 'stone/stick', 'stone', 'stick', 'foreign material', 'foreign matter', 'foreign']
+      const isPrimarySave = (n: string) => PRIMARY_NAMES_SAVE.some(p => n.toLowerCase().includes(p))
+      const filteredDefects = editDefects.filter(d => d.name.trim())
+      const primaryTotal = filteredDefects.filter(d => isPrimarySave(d.name)).reduce((s, d) => s + d.count, 0)
+      const secondaryTotal = filteredDefects.filter(d => !isPrimarySave(d.name)).reduce((s, d) => s + d.count, 0)
+      const greenBeanWithDefects = {
+        ...cuppingGradingFormData.grading?.green_bean_data,
+        defects: {
+          defect_list: filteredDefects,
+          primary: primaryTotal,
+          secondary: secondaryTotal,
+          total: primaryTotal + secondaryTotal,
+        }
+      }
+
+      // Build roast_data with taints/faults
+      const roastDataWithTF = {
+        ...cuppingGradingFormData.grading?.roast_data,
+        taints: editTaints.filter(t => t.name.trim()),
+        faults: editFaults.filter(f => f.name.trim()),
+      }
+
       const response = await fetch(`/api/samples/${sample.id}/quality-assessment`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          green_bean_data: cuppingGradingFormData.grading?.green_bean_data,
-          roast_data: cuppingGradingFormData.grading?.roast_data,
+          green_bean_data: greenBeanWithDefects,
+          roast_data: roastDataWithTF,
           edit_history: [...editHistory, editEntry],
           clean_cup: cleanCup,
           uniform_cup: uniformCup,
@@ -415,12 +540,12 @@ export function CuppingGradingSection({
         )}
 
         {/* Grading Data */}
-        {gradingData?.green_bean_data && (() => {
-          const gb = gradingData.green_bean_data
+        {(gradingData?.green_bean_data || isEditingCuppingGrading) && (() => {
+          const gb = gradingData?.green_bean_data || {}
           const moistureVal = gb.moisture_percentage ?? gb.moisture ?? gb.humidity ?? null
           const greenAspect = gb.green_aspect ?? gb.aspect ?? null
-          const roastAspect = gradingData.roast_data?.roast_aspect ?? gradingData.roast_data?.roast_color ?? null
-          const quakers = gb.quakers ?? gradingData.roast_data?.quakers ?? null
+          const roastAspect = gradingData?.roast_data?.roast_aspect ?? gradingData?.roast_data?.roast_color ?? null
+          const quakers = gb.quakers ?? gradingData?.roast_data?.quakers ?? null
           const screenSizes = gb.screen_sizes ?? gb.screen_analysis ?? null
           const lockedStyle = !canEditCuppingGrading && sample.certificate_id ? 'text-muted-foreground' : ''
 
@@ -546,19 +671,21 @@ export function CuppingGradingSection({
                       <div className={`text-sm font-medium ${lockedStyle}`}>{gb.density || '-'}</div>
                     )}
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground">Quakers</div>
-                    {isEditingCuppingGrading ? (
-                      <Input
-                        type="number" step="1" min="0"
-                        value={cuppingGradingFormData.grading?.green_bean_data?.quakers ?? quakers ?? ''}
-                        onChange={(e) => updateGreenBean('quakers', parseInt(e.target.value) || 0)}
-                        className="h-7 text-sm mt-1"
-                      />
-                    ) : (
-                      <div className={`text-sm font-medium ${lockedStyle}`}>{quakers ?? '-'}</div>
-                    )}
-                  </div>
+                  {(showQuakers || quakers != null) && (
+                    <div>
+                      <div className="text-xs text-muted-foreground">Quakers</div>
+                      {isEditingCuppingGrading && showQuakers ? (
+                        <Input
+                          type="number" step="1" min="0"
+                          value={cuppingGradingFormData.grading?.green_bean_data?.quakers ?? quakers ?? ''}
+                          onChange={(e) => updateGreenBean('quakers', parseInt(e.target.value) || 0)}
+                          className="h-7 text-sm mt-1"
+                        />
+                      ) : (
+                        <div className={`text-sm font-medium ${lockedStyle}`}>{quakers ?? '-'}</div>
+                      )}
+                    </div>
+                  )}
                   <div>
                     <div className="text-xs text-muted-foreground">Green Aspect</div>
                     {isEditingCuppingGrading ? (
@@ -631,67 +758,63 @@ export function CuppingGradingSection({
                 {(defectTotal != null || defectPrimary != null || (defectCounts && Object.keys(defectCounts).length > 0) || (defectList && defectList.length > 0) || isEditingCuppingGrading) && (
                   <div className="mt-4">
                     <div className="text-xs text-muted-foreground mb-2">Defects</div>
-                    {isEditingCuppingGrading ? (
-                      <div className="grid grid-cols-3 gap-3">
-                        <div>
-                          <div className="text-xs text-muted-foreground mb-1">Primary</div>
-                          <Input
-                            type="number" step="1" min="0"
-                            value={(() => {
-                              const ed = cuppingGradingFormData.grading?.green_bean_data?.defects as DefectsData | undefined
-                              return ed?.primary ?? ed?.total_primary ?? defectPrimary ?? ''
-                            })()}
-                            onChange={(e) => updateDefectField('primary', parseInt(e.target.value) || 0)}
-                            className="h-7 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground mb-1">Secondary</div>
-                          <Input
-                            type="number" step="1" min="0"
-                            value={(() => {
-                              const ed = cuppingGradingFormData.grading?.green_bean_data?.defects as DefectsData | undefined
-                              return ed?.secondary ?? ed?.total_secondary ?? defectSecondary ?? ''
-                            })()}
-                            onChange={(e) => updateDefectField('secondary', parseInt(e.target.value) || 0)}
-                            className="h-7 text-sm"
-                          />
-                        </div>
-                        <div>
-                          <div className="text-xs text-muted-foreground mb-1">Total</div>
-                          <Input
-                            type="number" step="1" min="0"
-                            value={(() => {
-                              const ed = cuppingGradingFormData.grading?.green_bean_data?.defects as DefectsData | undefined
-                              return ed?.total ?? defectTotal ?? ''
-                            })()}
-                            onChange={(e) => updateDefectField('total', parseInt(e.target.value) || 0)}
-                            className="h-7 text-sm"
-                          />
-                        </div>
-                      </div>
-                    ) : (() => {
-                      // Classify individual defects into primary / secondary
+                    {(() => {
                       const PRIMARY_NAMES = ['full black', 'full sour', 'pod/cherry', 'pod', 'cherry',
                         'large husk', 'large stone', 'stone/stick', 'stone', 'stick', 'foreign material', 'foreign matter', 'foreign']
                       const isPrimary = (name: string) => PRIMARY_NAMES.some(p => name.toLowerCase().includes(p))
 
-                      const allIndividual: Array<{ name: string; count: number }> = []
-                      if (defectCounts) {
-                        Object.entries(defectCounts).forEach(([name, count]) => allIndividual.push({ name, count }))
-                      }
-                      if (defectList) {
-                        defectList.forEach((d) => allIndividual.push({ name: d.name, count: d.count }))
+                      // In edit mode, use editDefects state; in view mode, parse from data
+                      let allItems: Array<{ name: string; count: number; idx: number }>
+                      if (isEditingCuppingGrading) {
+                        allItems = editDefects.map((d, i) => ({ ...d, idx: i }))
+                      } else {
+                        const raw: Array<{ name: string; count: number }> = []
+                        if (defectCounts) Object.entries(defectCounts).forEach(([name, count]) => raw.push({ name, count }))
+                        if (defectList) defectList.forEach(d => raw.push({ name: d.name, count: d.count }))
+                        allItems = raw.map((d, i) => ({ ...d, idx: i }))
                       }
 
-                      const primaryDefects = allIndividual.filter(d => isPrimary(d.name))
-                      const secondaryDefects = allIndividual.filter(d => !isPrimary(d.name))
+                      const primaryItems = allItems.filter(d => isPrimary(d.name))
+                      const secondaryItems = allItems.filter(d => !isPrimary(d.name))
+                      const pTotal = primaryItems.reduce((s, d) => s + d.count, 0)
+                      const sTotal = secondaryItems.reduce((s, d) => s + d.count, 0)
+                      const secMid = Math.ceil(secondaryItems.length / 2)
+                      const secCol1 = secondaryItems.slice(0, secMid)
+                      const secCol2 = secondaryItems.slice(secMid)
+                      const maxRows = Math.max(primaryItems.length, secCol1.length, secCol2.length)
 
-                      // Split secondary into two columns
-                      const secMid = Math.ceil(secondaryDefects.length / 2)
-                      const secCol1 = secondaryDefects.slice(0, secMid)
-                      const secCol2 = secondaryDefects.slice(secMid)
-                      const maxRows = Math.max(primaryDefects.length, secCol1.length, secCol2.length)
+                      const updateCount = (idx: number, count: number) => {
+                        setEditDefects(prev => prev.map((d, i) => i === idx ? { ...d, count } : d))
+                      }
+                      const removeDefect = (idx: number) => {
+                        setEditDefects(prev => prev.filter((_, i) => i !== idx))
+                      }
+
+                      const renderCell = (item: typeof allItems[0] | undefined) => {
+                        if (!item) return null
+                        if (isEditingCuppingGrading) {
+                          return (
+                            <span className="flex items-center gap-1">
+                              <span className="text-muted-foreground truncate">{item.name}</span>
+                              <Input
+                                type="number" min="0" step="1"
+                                value={item.count || ''}
+                                onChange={(e) => updateCount(item.idx, parseInt(e.target.value) || 0)}
+                                className="h-5 w-12 text-xs text-center ml-auto shrink-0"
+                              />
+                              <Button variant="ghost" size="icon" className="h-5 w-5 shrink-0" onClick={() => removeDefect(item.idx)}>
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </span>
+                          )
+                        }
+                        return (
+                          <span className="flex items-center gap-1">
+                            <span className="text-muted-foreground">{item.name}</span>
+                            <span className="font-medium text-foreground ml-auto">{item.count}</span>
+                          </span>
+                        )
+                      }
 
                       return (
                         <div className="border rounded-lg overflow-hidden">
@@ -699,12 +822,12 @@ export function CuppingGradingSection({
                             <thead>
                               <tr className="bg-muted/50 border-b">
                                 <th className="py-1.5 px-2 text-left font-medium" colSpan={3}>
-                                  Total: {defectTotal ?? '-'}
-                                  <span className="ml-3 font-normal text-muted-foreground">Primary: {defectPrimary ?? '-'}</span>
-                                  <span className="ml-3 font-normal text-muted-foreground">Secondary: {defectSecondary ?? '-'}</span>
+                                  Total: {isEditingCuppingGrading ? pTotal + sTotal : (defectTotal ?? '-')}
+                                  <span className="ml-3 font-normal text-muted-foreground">Primary: {isEditingCuppingGrading ? pTotal : (defectPrimary ?? '-')}</span>
+                                  <span className="ml-3 font-normal text-muted-foreground">Secondary: {isEditingCuppingGrading ? sTotal : (defectSecondary ?? '-')}</span>
                                 </th>
                               </tr>
-                              {(primaryDefects.length > 0 || secondaryDefects.length > 0) && (
+                              {(primaryItems.length > 0 || secondaryItems.length > 0) && (
                                 <tr className="border-b">
                                   <th className="py-1 px-2 text-left font-medium text-muted-foreground">Primary</th>
                                   <th className="py-1 px-2 text-left font-medium text-muted-foreground" colSpan={2}>Secondary</th>
@@ -715,29 +838,125 @@ export function CuppingGradingSection({
                               <tbody>
                                 {Array.from({ length: maxRows }, (_, i) => (
                                   <tr key={i} className={i > 0 ? 'border-t' : ''}>
-                                    <td className="py-1 px-2 text-muted-foreground align-top">
-                                      {primaryDefects[i] ? (
-                                        <><span className="font-medium text-foreground">{primaryDefects[i].count}</span> {primaryDefects[i].name}</>
-                                      ) : null}
-                                    </td>
-                                    <td className="py-1 px-2 text-muted-foreground align-top">
-                                      {secCol1[i] ? (
-                                        <><span className="font-medium text-foreground">{secCol1[i].count}</span> {secCol1[i].name}</>
-                                      ) : null}
-                                    </td>
-                                    <td className="py-1 px-2 text-muted-foreground align-top">
-                                      {secCol2[i] ? (
-                                        <><span className="font-medium text-foreground">{secCol2[i].count}</span> {secCol2[i].name}</>
-                                      ) : null}
-                                    </td>
+                                    <td className="py-1 px-2 align-top">{renderCell(primaryItems[i])}</td>
+                                    <td className="py-1 px-2 align-top">{renderCell(secCol1[i])}</td>
+                                    <td className="py-1 px-2 align-top">{renderCell(secCol2[i])}</td>
                                   </tr>
                                 ))}
                               </tbody>
+                            )}
+                            {isEditingCuppingGrading && (
+                              <tfoot>
+                                <tr className="border-t">
+                                  <td colSpan={3} className="py-1 px-2">
+                                    <Button variant="ghost" size="sm" className="h-6 text-xs text-primary" onClick={() => setEditDefects(prev => [...prev, { name: '', count: 0 }])}>
+                                      + Add Defect
+                                    </Button>
+                                  </td>
+                                </tr>
+                              </tfoot>
                             )}
                           </table>
                         </div>
                       )
                     })()}
+                  </div>
+                )}
+                {/* Taints & Faults */}
+                {(taintsData.length > 0 || faultsData.length > 0 || isEditingCuppingGrading) && (
+                  <div className="mt-4">
+                    <div className="text-xs text-muted-foreground mb-2">Taints & Faults</div>
+                    {isEditingCuppingGrading ? (
+                      <div className="grid grid-cols-2 gap-4">
+                        {/* Taints edit */}
+                        <div>
+                          <div className="text-xs font-medium text-muted-foreground mb-1">Taints ({editTaints.length})</div>
+                          <div className="border rounded-lg overflow-hidden">
+                            <table className="w-full text-xs">
+                              <tbody>
+                                {editTaints.map((t, idx) => (
+                                  <tr key={idx} className={idx > 0 ? 'border-t' : ''}>
+                                    <td className="py-1 px-2">
+                                      <Input value={t.name} onChange={(e) => setEditTaints(prev => prev.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))} className="h-6 text-xs" placeholder="Name" />
+                                    </td>
+                                    <td className="py-1 px-2 w-16">
+                                      <Input type="number" step="0.5" min="0" value={t.intensity ?? ''} onChange={(e) => setEditTaints(prev => prev.map((x, i) => i === idx ? { ...x, intensity: parseFloat(e.target.value) || 0 } : x))} className="h-6 text-xs text-center" placeholder="Lvl" />
+                                    </td>
+                                    <td className="py-1 px-2 w-8">
+                                      <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditTaints(prev => prev.filter((_, i) => i !== idx))}>
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                ))}
+                                <tr className={editTaints.length > 0 ? 'border-t' : ''}>
+                                  <td colSpan={3} className="py-1 px-2">
+                                    <Button variant="ghost" size="sm" className="h-6 text-xs text-primary" onClick={() => setEditTaints(prev => [...prev, { name: '', intensity: undefined }])}>
+                                      + Add Taint
+                                    </Button>
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                        {/* Faults edit */}
+                        <div>
+                          <div className="text-xs font-medium text-muted-foreground mb-1">Faults ({editFaults.length})</div>
+                          <div className="border rounded-lg overflow-hidden">
+                            <table className="w-full text-xs">
+                              <tbody>
+                                {editFaults.map((f, idx) => (
+                                  <tr key={idx} className={idx > 0 ? 'border-t' : ''}>
+                                    <td className="py-1 px-2">
+                                      <Input value={f.name} onChange={(e) => setEditFaults(prev => prev.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))} className="h-6 text-xs" placeholder="Name" />
+                                    </td>
+                                    <td className="py-1 px-2 w-16">
+                                      <Input type="number" step="0.5" min="0" value={f.intensity ?? ''} onChange={(e) => setEditFaults(prev => prev.map((x, i) => i === idx ? { ...x, intensity: parseFloat(e.target.value) || 0 } : x))} className="h-6 text-xs text-center" placeholder="Lvl" />
+                                    </td>
+                                    <td className="py-1 px-2 w-8">
+                                      <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditFaults(prev => prev.filter((_, i) => i !== idx))}>
+                                        <X className="h-3 w-3" />
+                                      </Button>
+                                    </td>
+                                  </tr>
+                                ))}
+                                <tr className={editFaults.length > 0 ? 'border-t' : ''}>
+                                  <td colSpan={3} className="py-1 px-2">
+                                    <Button variant="ghost" size="sm" className="h-6 text-xs text-primary" onClick={() => setEditFaults(prev => [...prev, { name: '', intensity: undefined }])}>
+                                      + Add Fault
+                                    </Button>
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="flex gap-6 flex-wrap">
+                        {taintsData.length > 0 && (
+                          <div>
+                            <span className="text-xs font-medium text-amber-600 dark:text-amber-400">Taints: </span>
+                            <span className="text-xs">
+                              {taintsData.map((t, i) => (
+                                <span key={i}>{i > 0 ? ', ' : ''}{t.name}{t.intensity != null ? ` (${t.intensity})` : ''}</span>
+                              ))}
+                            </span>
+                          </div>
+                        )}
+                        {faultsData.length > 0 && (
+                          <div>
+                            <span className="text-xs font-medium text-red-600 dark:text-red-400">Faults: </span>
+                            <span className="text-xs">
+                              {faultsData.map((f, i) => (
+                                <span key={i}>{i > 0 ? ', ' : ''}{f.name}{f.intensity != null ? ` (${f.intensity})` : ''}</span>
+                              ))}
+                            </span>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

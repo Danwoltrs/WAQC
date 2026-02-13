@@ -915,7 +915,12 @@ export function SampleDetailModal({
 
                 {/* Cupping & Grading */}
                 <CuppingGradingSection
-                  sample={sample}
+                  sample={{
+                    id: sample.id,
+                    certificate_id: sample.certificate_id,
+                    quality_spec_id: sample.quality_spec_id,
+                    sample_type: sample.sample_type,
+                  }}
                   profile={profile}
                   editPermission={editPermission}
                 />
