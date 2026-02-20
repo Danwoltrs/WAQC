@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Save, Eye, EyeOff, Camera, Plus, Minus } from 'lucide-react'
+import { Save, Eye, EyeOff, Camera } from 'lucide-react'
 import { DefectPhotoUpload } from '@/components/grading/defect-photo-upload'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
@@ -1572,14 +1572,6 @@ export default function GradingPage() {
                                 {/* Quakers */}
                                 <div className="flex items-center gap-2">
                                   <Label className="text-sm w-16">Quakers</Label>
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => handleFieldChange(sample.id, 'quakers_count', Math.max(0, (gradingData?.quakers_count || 0) - 1))}
-                                  >
-                                    <Minus className="h-3 w-3" />
-                                  </Button>
                                   <Input
                                     type="number"
                                     min="0"
@@ -1587,14 +1579,6 @@ export default function GradingPage() {
                                     onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                     className="h-8 text-sm w-16 text-center"
                                   />
-                                  <Button
-                                    variant="outline"
-                                    size="icon"
-                                    className="h-8 w-8"
-                                    onClick={() => handleFieldChange(sample.id, 'quakers_count', (gradingData?.quakers_count || 0) + 1)}
-                                  >
-                                    <Plus className="h-3 w-3" />
-                                  </Button>
                                 </div>
 
                                 {/* Humidity and Density side by side */}
@@ -1604,18 +1588,6 @@ export default function GradingPage() {
                                     <Label className={`text-sm whitespace-nowrap w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                       Humidity (%)
                                     </Label>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        const current = gradingData?.moisture_percentage || 0
-                                        const newVal = Math.max(0, Math.round((current - 0.1) * 10) / 10)
-                                        handleFieldChange(sample.id, 'moisture_percentage', newVal)
-                                      }}
-                                    >
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
@@ -1648,18 +1620,6 @@ export default function GradingPage() {
                                       }}
                                       className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
                                     />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        const current = gradingData?.moisture_percentage || 0
-                                        const newVal = Math.min(100, Math.round((current + 0.1) * 10) / 10)
-                                        handleFieldChange(sample.id, 'moisture_percentage', newVal)
-                                      }}
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
                                   </div>
 
                                   {/* Density */}
@@ -1667,18 +1627,6 @@ export default function GradingPage() {
                                     <Label className="text-sm whitespace-nowrap w-20">
                                       Density (G/L)
                                     </Label>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        const current = gradingData?.density || 0
-                                        const newVal = Math.max(0, Math.round((current - 0.001) * 1000) / 1000)
-                                        handleFieldChange(sample.id, 'density', newVal)
-                                      }}
-                                    >
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
@@ -1712,18 +1660,6 @@ export default function GradingPage() {
                                       placeholder="0.700"
                                       className="h-8 text-sm w-16 text-center"
                                     />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        const current = gradingData?.density || 0
-                                        const newVal = Math.round((current + 0.001) * 1000) / 1000
-                                        handleFieldChange(sample.id, 'density', newVal)
-                                      }}
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
                                   </div>
                                 </div>
                               </div>
@@ -1733,14 +1669,6 @@ export default function GradingPage() {
                                 {showQuakers && (
                                   <div className="flex items-center gap-2">
                                     <Label className="text-sm w-16">Quakers</Label>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => handleFieldChange(sample.id, 'quakers_count', Math.max(0, (gradingData?.quakers_count || 0) - 1))}
-                                    >
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
                                     <Input
                                       type="number"
                                       min="0"
@@ -1748,14 +1676,6 @@ export default function GradingPage() {
                                       onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                       className="h-8 text-sm w-16 text-center"
                                     />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => handleFieldChange(sample.id, 'quakers_count', (gradingData?.quakers_count || 0) + 1)}
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
                                   </div>
                                 )}
 
@@ -1766,18 +1686,6 @@ export default function GradingPage() {
                                     <Label className={`text-sm whitespace-nowrap w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                       Humidity (%)
                                     </Label>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        const current = gradingData?.moisture_percentage || 0
-                                        const newVal = Math.max(0, Math.round((current - 0.1) * 10) / 10)
-                                        handleFieldChange(sample.id, 'moisture_percentage', newVal)
-                                      }}
-                                    >
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
@@ -1810,18 +1718,6 @@ export default function GradingPage() {
                                       }}
                                       className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
                                     />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        const current = gradingData?.moisture_percentage || 0
-                                        const newVal = Math.min(100, Math.round((current + 0.1) * 10) / 10)
-                                        handleFieldChange(sample.id, 'moisture_percentage', newVal)
-                                      }}
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
                                   </div>
 
                                   {/* Density */}
@@ -1829,18 +1725,6 @@ export default function GradingPage() {
                                     <Label className="text-sm whitespace-nowrap w-20">
                                       Density (G/L)
                                     </Label>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        const current = gradingData?.density || 0
-                                        const newVal = Math.max(0, Math.round((current - 0.001) * 1000) / 1000)
-                                        handleFieldChange(sample.id, 'density', newVal)
-                                      }}
-                                    >
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
@@ -1874,18 +1758,6 @@ export default function GradingPage() {
                                       placeholder="0.700"
                                       className="h-8 text-sm w-16 text-center"
                                     />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => {
-                                        const current = gradingData?.density || 0
-                                        const newVal = Math.round((current + 0.001) * 1000) / 1000
-                                        handleFieldChange(sample.id, 'density', newVal)
-                                      }}
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
                                   </div>
                                 </div>
                               </>
@@ -2052,14 +1924,6 @@ export default function GradingPage() {
                                       {defect.name}
                                       <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
                                     </Label>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => handleDefectCountChange(sample.id, defect.name, Math.max(0, (gradingData?.defect_counts[defect.name] || 0) - 1))}
-                                    >
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
                                     <Input
                                       type="number"
                                       min="0"
@@ -2068,17 +1932,7 @@ export default function GradingPage() {
                                       className="h-8 text-sm w-14 text-center"
                                       placeholder="0"
                                     />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => handleDefectCountChange(sample.id, defect.name, (gradingData?.defect_counts[defect.name] || 0) + 1)}
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
-                                    <div className="text-xs text-muted-foreground">
-                                      = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
-                                    </div>
+                                    <span className="text-xs text-muted-foreground whitespace-nowrap">= {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}</span>
                                   </div>
                                 ))}
                               </div>
@@ -2101,14 +1955,6 @@ export default function GradingPage() {
                                       {defect.name}
                                       <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
                                     </Label>
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => handleDefectCountChange(sample.id, defect.name, Math.max(0, (gradingData?.defect_counts[defect.name] || 0) - 1))}
-                                    >
-                                      <Minus className="h-3 w-3" />
-                                    </Button>
                                     <Input
                                       type="number"
                                       min="0"
@@ -2117,17 +1963,7 @@ export default function GradingPage() {
                                       className="h-8 text-sm w-14 text-center"
                                       placeholder="0"
                                     />
-                                    <Button
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-8 w-8"
-                                      onClick={() => handleDefectCountChange(sample.id, defect.name, (gradingData?.defect_counts[defect.name] || 0) + 1)}
-                                    >
-                                      <Plus className="h-3 w-3" />
-                                    </Button>
-                                    <div className="text-xs text-muted-foreground">
-                                      = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
-                                    </div>
+                                    <span className="text-xs text-muted-foreground whitespace-nowrap">= {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}</span>
                                   </div>
                                 ))}
                               </div>
