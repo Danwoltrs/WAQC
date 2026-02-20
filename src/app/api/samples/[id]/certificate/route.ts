@@ -59,11 +59,18 @@ export async function GET(
       .limit(1)
       .maybeSingle()
 
+    // Build sanitized filename: replace / with _, use lowercase r- for rejected
+    const sanitizeFilename = (certNum: string) => {
+      let name = certNum.replace(/\//g, '_')
+      if (name.startsWith('R-')) name = 'r-' + name.slice(2)
+      return name
+    }
+
     if (certificate?.pdf_url) {
       console.log('[Certificate] Serving cached PDF:', certificate.pdf_url)
       const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
       if (cachedBuffer) {
-        const filename = `${certificate.certificate_number || 'certificate'}.pdf`
+        const filename = sanitizeFilename(certificate.certificate_number || 'certificate') + '.pdf'
         return new NextResponse(new Uint8Array(cachedBuffer), {
           headers: {
             'Content-Type': 'application/pdf',
@@ -148,9 +155,9 @@ export async function GET(
         .catch((err) => console.error('[Certificate] Cache upload failed:', err))
     }
 
-    // Generate filename - just the certificate number
+    // Generate filename - sanitized certificate number
     const certificateNumber = certificateData.certificate?.certificate_number || certificateData.sample.tracking_number
-    const filename = `${certificateNumber}.pdf`
+    const filename = sanitizeFilename(certificateNumber) + '.pdf'
 
     // Return PDF response - convert Buffer to Uint8Array for NextResponse
     return new NextResponse(new Uint8Array(pdfBuffer), {

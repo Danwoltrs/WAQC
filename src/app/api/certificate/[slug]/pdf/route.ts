@@ -76,6 +76,14 @@ export async function GET(
       return NextResponse.json({ error: 'Certificate not found' }, { status: 404 })
     }
 
+    // Build sanitized filename: replace / with _, use lowercase r- for rejected
+    const sanitizeFilename = (certNum: string) => {
+      let name = certNum.replace(/\//g, '_')
+      if (name.startsWith('R-')) name = 'r-' + name.slice(2)
+      return name
+    }
+    const pdfFilename = sanitizeFilename(certificate.certificate_number) + '.pdf'
+
     // Try cached PDF first
     if (certificate.pdf_url) {
       const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
@@ -83,7 +91,7 @@ export async function GET(
         return new NextResponse(new Uint8Array(cachedBuffer), {
           headers: {
             'Content-Type': 'application/pdf',
-            'Content-Disposition': `inline; filename="${certificate.certificate_number}.pdf"`,
+            'Content-Disposition': `inline; filename="${pdfFilename}"`,
             'Cache-Control': 'public, max-age=3600',
           },
         })
@@ -149,7 +157,7 @@ export async function GET(
     return new NextResponse(new Uint8Array(pdfBuffer), {
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `inline; filename="${certificate.certificate_number}.pdf"`,
+        'Content-Disposition': `inline; filename="${pdfFilename}"`,
         'Cache-Control': 'no-cache',
       },
     })

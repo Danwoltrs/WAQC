@@ -56,6 +56,13 @@ export async function POST(request: NextRequest) {
       console.error('Error loading Wolthers logo:', err)
     }
 
+    // Build sanitized filename: replace / with _, use lowercase r- for rejected
+    const sanitizeFilename = (certNum: string) => {
+      let name = certNum.replace(/\//g, '_')
+      if (name.startsWith('R-')) name = 'r-' + name.slice(2)
+      return name
+    }
+
     // Create ZIP file
     const zip = new JSZip()
 
@@ -68,7 +75,7 @@ export async function POST(request: NextRequest) {
         if (cert.pdf_url) {
           const cachedBuffer = await getCachedCertificatePdf(supabase, cert.pdf_url)
           if (cachedBuffer) {
-            const filename = `${cert.certificate_number}.pdf`
+            const filename = sanitizeFilename(cert.certificate_number) + '.pdf'
             zip.file(filename, cachedBuffer)
             continue
           }
