@@ -40,6 +40,8 @@ export interface TaintFaultDefect {
   fault_range: { min: number; max: number }
   /** Maximum intensity value (typically 5 or 10) */
   max_intensity: number
+  /** Scoring increment step (e.g., 0.25, 0.5, 1). Defaults to 0.5 */
+  increment: number
   /** Whether this defect is actively used in QC */
   active: boolean
   /** Display order */
@@ -146,14 +148,16 @@ export function createTaintFaultDefect(
     maxIntensity?: number
     taintRange?: { min: number; max: number } | null
     faultRange?: { min: number; max: number }
+    increment?: number
   }
 ): TaintFaultDefect {
   const maxIntensity = options?.maxIntensity ?? 5
+  const increment = options?.increment ?? 0.5
   const taintRange = options?.taintRange !== undefined
     ? options.taintRange
     : { min: 0, max: 2 }
   const faultRange = options?.faultRange ?? {
-    min: taintRange ? taintRange.max + 1 : 1,
+    min: taintRange ? Math.round((taintRange.max + increment) * 1000) / 1000 : increment,
     max: maxIntensity
   }
 
@@ -163,6 +167,7 @@ export function createTaintFaultDefect(
     taint_range: taintRange,
     fault_range: faultRange,
     max_intensity: maxIntensity,
+    increment,
     active: true,
     display_order: displayOrder
   }
@@ -392,6 +397,49 @@ export function calculateTaintFaultStats(config: TaintFaultConfiguration) {
 }
 
 /**
+ * Rules for auto-calculating Clean Cup and Uniform Cup status from defects
+ */
+export interface CupStatusRules {
+  clean_cup: {
+    max_taints: number       // e.g. 0 = zero tolerance, 2 = up to 2 taints OK
+    max_faults: number       // e.g. 0 = zero tolerance
+    max_combined?: number    // optional combined limit
+  }
+  uniform_cup: {
+    max_taints: number
+    max_faults: number
+    max_combined?: number
+  }
+}
+
+/**
+ * Predefined Cup Status Rules presets
+ */
+export const CUP_STATUS_RULES_PRESETS: Record<string, { label: string; rules: CupStatusRules }> = {
+  'sca-standard': {
+    label: 'SCA Standard',
+    rules: {
+      clean_cup: { max_taints: 0, max_faults: 0 },
+      uniform_cup: { max_taints: 0, max_faults: 0 },
+    },
+  },
+  'commercial': {
+    label: 'Commercial',
+    rules: {
+      clean_cup: { max_taints: 2, max_faults: 0 },
+      uniform_cup: { max_taints: 1, max_faults: 0 },
+    },
+  },
+  'rio-minas': {
+    label: 'Rio Minas',
+    rules: {
+      clean_cup: { max_taints: 5, max_faults: 2 },
+      uniform_cup: { max_taints: 5, max_faults: 2 },
+    },
+  },
+}
+
+/**
  * Predefined Templates
  */
 
@@ -594,7 +642,8 @@ export function cloneTaintFaultDefect(
     id: `defect_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     name: `${defect.name} (copy)`,
     taint_range: defect.taint_range ? { ...defect.taint_range } : null,
-    fault_range: { ...defect.fault_range }
+    fault_range: { ...defect.fault_range },
+    increment: defect.increment ?? 0.5
   }
 }
 

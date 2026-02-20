@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronsUpDown, X, Plus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
 import { StepComponentProps } from './types'
@@ -315,33 +316,35 @@ export function QualityStep({
           <Label className="text-xs text-muted-foreground">Micro-Origin</Label>
           {availableMicroOrigins.length > 0 ? (
             <Popover open={microOriginOpen} onOpenChange={setMicroOriginOpen}>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  role="combobox"
-                  aria-expanded={microOriginOpen}
-                  className="w-[200px] justify-between h-9 font-normal"
-                  disabled={!formData.origin}
-                >
-                  {selectedMicroOrigins.length > 0 ? (
-                    <div className="flex flex-wrap gap-1 max-w-[160px]">
-                      {selectedMicroOrigins.slice(0, 2).map((region) => (
-                        <Badge key={region} variant="secondary" className="text-xs">
-                          {region}
-                        </Badge>
-                      ))}
-                      {selectedMicroOrigins.length > 2 && (
-                        <Badge variant="secondary" className="text-xs">
-                          +{selectedMicroOrigins.length - 2}
-                        </Badge>
-                      )}
-                    </div>
-                  ) : (
-                    <span className="text-muted-foreground text-xs">Select regions...</span>
+              <TooltipProvider delayDuration={300}>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={microOriginOpen}
+                        className="w-[200px] justify-between h-9 font-normal"
+                        disabled={!formData.origin}
+                      >
+                        {selectedMicroOrigins.length > 0 ? (
+                          <span className="truncate text-xs">
+                            {selectedMicroOrigins.join(', ')}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">Select regions...</span>
+                        )}
+                        <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                  </TooltipTrigger>
+                  {selectedMicroOrigins.length > 0 && (
+                    <TooltipContent side="top" className="max-w-[300px]">
+                      <p className="text-xs">{selectedMicroOrigins.join(', ')}</p>
+                    </TooltipContent>
                   )}
-                  <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
+                </Tooltip>
+              </TooltipProvider>
               <PopoverContent className="w-[220px] p-0" align="start">
                 <Command>
                   <CommandInput placeholder="Search..." />
@@ -535,32 +538,54 @@ export function QualityStep({
         </div>
       )}
 
-      {/* SS Sample: Link to PSS */}
+      {/* SS Sample: Link to PSS, ICO Number, and Container */}
       {formData.sample_type === 'ss' && (
-        <div className="space-y-2 bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <Label>Link to Approved Pre-Shipment Sample</Label>
-          <Select
-            value={formData.linked_pss_sample_id}
-            onValueChange={(value) => updateFormData('linked_pss_sample_id', value)}
-          >
-            <SelectTrigger className="w-[280px]">
-              <SelectValue placeholder="Select approved PSS sample..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">No linked sample</SelectItem>
-              {approvedPSSSamples.length > 0 ? (
-                approvedPSSSamples.map((sample) => (
-                  <SelectItem key={sample.id} value={sample.id}>
-                    {sample.tracking_number} - {sample.origin}
+        <div className="space-y-4 bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div className="space-y-2">
+            <Label>Link to Approved Pre-Shipment Sample</Label>
+            <Select
+              value={formData.linked_pss_sample_id}
+              onValueChange={(value) => updateFormData('linked_pss_sample_id', value)}
+            >
+              <SelectTrigger className="w-[280px]">
+                <SelectValue placeholder="Select approved PSS sample..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No linked sample</SelectItem>
+                {approvedPSSSamples.length > 0 ? (
+                  approvedPSSSamples.map((sample) => (
+                    <SelectItem key={sample.id} value={sample.id}>
+                      {sample.tracking_number} - {sample.origin}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="no-samples" disabled>
+                    No approved PSS samples
                   </SelectItem>
-                ))
-              ) : (
-                <SelectItem value="no-samples" disabled>
-                  No approved PSS samples
-                </SelectItem>
-              )}
-            </SelectContent>
-          </Select>
+                )}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs text-muted-foreground">ICO Number</Label>
+              <Input
+                value={formData.ico_number}
+                onChange={(e) => updateFormData('ico_number', e.target.value)}
+                placeholder="e.g., 123456789"
+                className="w-[180px] h-9"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs text-muted-foreground">Container Number</Label>
+              <Input
+                value={formData.container_nr}
+                onChange={(e) => updateFormData('container_nr', e.target.value)}
+                placeholder="e.g., MSKU1234567"
+                className="w-[180px] h-9"
+              />
+            </div>
+          </div>
         </div>
       )}
 

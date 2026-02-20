@@ -9,7 +9,9 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
-import { FlaskConical, FileText, Users, DollarSign, TrendingUp, Filter, Calendar, CheckCircle2, XCircle, Camera } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { FlaskConical, FileText, Users, TrendingUp, Filter, Calendar, CheckCircle2, XCircle, Camera, ExternalLink, MapPin } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
 import { ActivityHeatmap } from '@/components/dashboard/activity-heatmap'
@@ -23,6 +25,17 @@ interface Sample {
   quality_name: string | null
   status: string | null
   created_at: string | null
+  seller_name: string | null
+  exporter_name: string | null
+  importer_name: string | null
+  roaster_name: string | null
+  end_client_name: string | null
+  micro_origin: string | null
+  sample_type: string | null
+  certificate_status: string | null
+  container_nr: string | null
+  ico_number: string | null
+  exporter_sample_number: string | null
 }
 
 function DashboardContent() {
@@ -30,6 +43,14 @@ function DashboardContent() {
   const { profile } = useAuth()
   const [samples, setSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  // Log when content loading state changes
+  useEffect(() => {
+    if (!loading) {
+      console.log('[UI] Dashboard content ready')
+    }
+  }, [loading])
   const [approvedFilter, setApprovedFilter] = useState('week')
   const [rejectedFilter, setRejectedFilter] = useState('week')
   const [totalUsers, setTotalUsers] = useState(0)
@@ -37,8 +58,10 @@ function DashboardContent() {
   const [sampleDialogOpen, setSampleDialogOpen] = useState(false)
   const [scanDialogOpen, setScanDialogOpen] = useState(false)
   const [hasCardsPrinted, setHasCardsPrinted] = useState(false)
+  const [previewSample, setPreviewSample] = useState<any>(null)
 
   useEffect(() => {
+    console.log('[UI] Dashboard content fetch started')
     fetchSamples()
     fetchUserCount()
     checkCardsPrinted()
@@ -104,64 +127,110 @@ function DashboardContent() {
   }
 
   const fetchSamples = async () => {
+    // Timeout to prevent infinite loading - max 15 seconds for content fetch
+    const timeoutId = setTimeout(() => {
+      console.error('[UI] Dashboard content fetch timeout - forcing ready state')
+      setLoadError('Content load timed out. Please refresh.')
+      setLoading(false)
+    }, 15000)
+
     try {
-      const { data, error } = await supabase
-        .from('samples')
-        .select(`
-          id,
-          tracking_number,
-          origin,
-          quality_name,
-          status,
-          created_at,
-          client:clients(name, company)
-        `)
-        .is('deleted_at', null) // Exclude soft-deleted samples
-        .order('created_at', { ascending: false })
+      // Use the API route which already handles FK disambiguation
+      const response = await fetch('/api/samples?limit=200')
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}))
+        throw new Error(errData.error || `HTTP ${response.status}`)
+      }
+      const result = await response.json()
 
-      if (error) throw error
-
-      // Transform to flatten client name
-      const transformedSamples = (data || []).map((sample: any) => ({
-        ...sample,
-        buyer_name: sample.client?.company || sample.client?.name || null,
-        client: undefined
+      // Transform to dashboard format
+      const transformedSamples = (result.samples || []).map((sample: any) => ({
+        id: sample.id,
+        tracking_number: sample.tracking_number,
+        origin: sample.origin,
+        quality_name: sample.quality_name,
+        status: sample.status,
+        created_at: sample.created_at,
+        buyer_name: sample.qc_client_name || null,
+        seller_name: sample.seller_name || null,
+        exporter_name: sample.exporter_name || null,
+        importer_name: sample.importer_name || null,
+        roaster_name: sample.roaster_name || null,
+        end_client_name: sample.end_client_name || null,
+        micro_origin: sample.micro_origin || null,
+        sample_type: sample.sample_type || null,
+        certificate_status: sample.certificate_status || null,
+        container_nr: sample.container_nr || null,
+        ico_number: sample.ico_number || null,
+        exporter_sample_number: sample.exporter_sample_number || null,
       }))
 
       setSamples(transformedSamples)
-    } catch (error) {
+      setLoadError(null) // Clear any previous error
+    } catch (error: any) {
       console.error('Error fetching samples:', error)
+      setLoadError(error?.message || 'Failed to load samples')
     } finally {
+      clearTimeout(timeoutId)
       setLoading(false)
     }
   }
 
   // Organize samples by status
+  const mapSample = (s: Sample) => ({
+    sampleId: s.id,
+    trackingNumber: s.tracking_number,
+    client: s.buyer_name,
+    quality: s.quality_name || 'Standard',
+    origin: s.origin,
+    microOrigin: s.micro_origin,
+    sellerName: s.seller_name,
+    importerName: s.importer_name,
+    roasterName: s.roaster_name,
+    endClientName: s.end_client_name,
+    sampleType: s.sample_type,
+    certificateStatus: s.certificate_status,
+    createdAt: s.created_at,
+    containerNr: s.container_nr,
+    icoNumber: s.ico_number,
+    exporterSampleNumber: s.exporter_sample_number,
+  })
+  const getFilterDate = (filter: string) => {
+    const now = new Date()
+    if (filter === 'day') {
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    }
+    if (filter === 'week') {
+      const dayOfWeek = now.getDay()
+      const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+      const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysToMonday)
+      return monday
+    }
+    // month
+    return new Date(now.getFullYear(), now.getMonth(), 1)
+  }
+
+  const filterByDate = (s: Sample, filter: string) => {
+    if (!s.created_at) return false
+    return new Date(s.created_at) >= getFilterDate(filter)
+  }
+
   const samplesByStatus = {
-    inProgress: samples.filter(s => s.status === 'in_progress').map(s => ({
-      sampleId: s.id,
-      trackingNumber: s.tracking_number,
-      client: s.buyer_name,
-      quality: s.quality_name || 'Standard',
-    })),
-    underReview: samples.filter(s => s.status === 'under_review').map(s => ({
-      sampleId: s.id,
-      trackingNumber: s.tracking_number,
-      client: s.buyer_name,
-      quality: s.quality_name || 'Standard',
-    })),
-    approved: samples.filter(s => s.status === 'approved').map(s => ({
-      sampleId: s.id,
-      trackingNumber: s.tracking_number,
-      client: s.buyer_name,
-      quality: s.quality_name || 'Standard',
-    })),
-    rejected: samples.filter(s => s.status === 'rejected').map(s => ({
-      sampleId: s.id,
-      trackingNumber: s.tracking_number,
-      client: s.buyer_name,
-      quality: s.quality_name || 'Standard',
-    })),
+    inProgress: samples.filter(s => s.status === 'in_progress').map(mapSample),
+    underReview: samples.filter(s => s.status === 'under_review').map(mapSample),
+    approved: samples.filter(s => s.status === 'approved' && filterByDate(s, approvedFilter)).map(mapSample),
+    rejected: samples.filter(s => s.status === 'rejected' && filterByDate(s, rejectedFilter)).map(mapSample),
+  }
+
+  type DashboardSample = ReturnType<typeof mapSample>
+
+  const getSampleSecondaryId = (sample: DashboardSample) =>
+    sample.exporterSampleNumber || sample.containerNr || sample.icoNumber || null
+
+  const formatCardDate = (dateStr: string | null) => {
+    if (!dateStr) return null
+    const d = new Date(dateStr)
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
   }
 
   // Calculate stats from real data
@@ -322,8 +391,29 @@ function DashboardContent() {
     )
   }
 
+  if (loadError) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-screen gap-4">
+        <div className="text-center space-y-2">
+          <p className="text-lg font-semibold text-destructive">Failed to load dashboard</p>
+          <p className="text-sm text-muted-foreground">{loadError}</p>
+        </div>
+        <button
+          onClick={() => {
+            setLoadError(null)
+            setLoading(true)
+            fetchSamples()
+          }}
+          className="px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors"
+        >
+          Try Again
+        </button>
+      </div>
+    )
+  }
+
   return (
-    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6 max-w-[1400px]">
       {/* Mobile: Quick Actions FIRST */}
       <div className="sm:hidden space-y-3">
         <h2 className="text-lg font-bold">Quick Actions</h2>
@@ -457,21 +547,21 @@ function DashboardContent() {
               {samplesByStatus.inProgress.length} {samplesByStatus.inProgress.length === 1 ? 'sample' : 'samples'}
             </span>
           </div>
-          <Card className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              {samplesByStatus.inProgress.map((sample) => (
-                <div
-                  key={sample.sampleId}
-                  className="cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
-                  onClick={() => router.push('/cupping')}
-                >
-                  <p className="font-bold text-blue-600 dark:text-blue-400 mb-1 text-sm">{sample.trackingNumber}</p>
-                  {sample.client && <p className="text-xs text-foreground truncate">{sample.client}</p>}
-                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <div className="grid grid-cols-2 gap-2">
+            {samplesByStatus.inProgress.map((sample) => (
+              <Card
+                key={sample.sampleId}
+                className="cursor-pointer hover:shadow-md transition-all p-3"
+                onClick={() => setPreviewSample(sample)}
+              >
+                <p className="font-bold text-blue-600 dark:text-blue-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
+                <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
+                <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">{formatCardDate(sample.createdAt) || '\u00A0'}</p>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
@@ -485,21 +575,21 @@ function DashboardContent() {
               {samplesByStatus.underReview.length} {samplesByStatus.underReview.length === 1 ? 'sample' : 'samples'}
             </span>
           </div>
-          <Card className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              {samplesByStatus.underReview.map((sample) => (
-                <div
-                  key={sample.sampleId}
-                  className="cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
-                  onClick={() => router.push(`/samples/${sample.sampleId}`)}
-                >
-                  <p className="font-bold text-amber-600 dark:text-amber-400 mb-1 text-sm">{sample.trackingNumber}</p>
-                  {sample.client && <p className="text-xs text-foreground truncate">{sample.client}</p>}
-                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <div className="grid grid-cols-2 gap-2">
+            {samplesByStatus.underReview.map((sample) => (
+              <Card
+                key={sample.sampleId}
+                className="cursor-pointer hover:shadow-md transition-all p-3"
+                onClick={() => setPreviewSample(sample)}
+              >
+                <p className="font-bold text-amber-600 dark:text-amber-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
+                <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
+                <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">{formatCardDate(sample.createdAt) || '\u00A0'}</p>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
@@ -513,21 +603,21 @@ function DashboardContent() {
               {samplesByStatus.approved.length} {samplesByStatus.approved.length === 1 ? 'sample' : 'samples'}
             </span>
           </div>
-          <Card className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              {samplesByStatus.approved.map((sample) => (
-                <div
-                  key={sample.sampleId}
-                  className="cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
-                  onClick={() => router.push(`/samples/${sample.sampleId}`)}
-                >
-                  <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1 text-sm">{sample.trackingNumber}</p>
-                  {sample.client && <p className="text-xs text-foreground truncate">{sample.client}</p>}
-                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <div className="grid grid-cols-2 gap-2">
+            {samplesByStatus.approved.map((sample) => (
+              <Card
+                key={sample.sampleId}
+                className="cursor-pointer hover:shadow-md transition-all p-3"
+                onClick={() => setPreviewSample(sample)}
+              >
+                <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
+                <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
+                <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">{formatCardDate(sample.createdAt) || '\u00A0'}</p>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
@@ -541,21 +631,21 @@ function DashboardContent() {
               {samplesByStatus.rejected.length} {samplesByStatus.rejected.length === 1 ? 'sample' : 'samples'}
             </span>
           </div>
-          <Card className="p-4">
-            <div className="grid grid-cols-2 gap-3">
-              {samplesByStatus.rejected.map((sample) => (
-                <div
-                  key={sample.sampleId}
-                  className="cursor-pointer hover:bg-muted/50 p-2 rounded-lg transition-colors"
-                  onClick={() => router.push(`/samples/${sample.sampleId}`)}
-                >
-                  <p className="font-bold text-red-600 dark:text-red-400 mb-1 text-sm">{sample.trackingNumber}</p>
-                  {sample.client && <p className="text-xs text-foreground truncate">{sample.client}</p>}
-                  <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
-                </div>
-              ))}
-            </div>
-          </Card>
+          <div className="grid grid-cols-2 gap-2">
+            {samplesByStatus.rejected.map((sample) => (
+              <Card
+                key={sample.sampleId}
+                className="cursor-pointer hover:shadow-md transition-all p-3"
+                onClick={() => setPreviewSample(sample)}
+              >
+                <p className="font-bold text-red-600 dark:text-red-400 mb-0.5 text-sm truncate">{sample.trackingNumber}</p>
+                <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
+                <p className="text-xs font-medium truncate mt-1">{sample.client || 'No client'}</p>
+                <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                <p className="text-[10px] text-muted-foreground/60 mt-1">{formatCardDate(sample.createdAt) || '\u00A0'}</p>
+              </Card>
+            ))}
+          </div>
         </div>
       )}
 
@@ -564,11 +654,9 @@ function DashboardContent() {
         {/* In Progress Lane - Cupping Table */}
         {samplesByStatus.inProgress.length > 0 && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="flex items-center gap-2">
-                <FlaskConical className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-lg sm:text-xl font-bold">Cupping Table - In Progress</h2>
-              </div>
+            <div className="flex items-center gap-3">
+              <FlaskConical className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-xl font-bold">Cupping Table - In Progress</h2>
               <span className="text-sm text-muted-foreground">
                 {samplesByStatus.inProgress.length} {samplesByStatus.inProgress.length === 1 ? 'sample' : 'samples'}
               </span>
@@ -579,11 +667,13 @@ function DashboardContent() {
                   <div key={sample.sampleId} className="flex items-center">
                     <div
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
-                      onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                      onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-1">{sample.trackingNumber}</p>
-                      {sample.client && <p className="text-sm text-foreground truncate">{sample.client}</p>}
+                      <p className="font-bold text-blue-600 dark:text-blue-400 mb-0.5">{sample.trackingNumber}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
+                      <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatCardDate(sample.createdAt) || '\u00A0'}</p>
                     </div>
                     {index < samplesByStatus.inProgress.length - 1 && (
                       <div className="h-16 w-px bg-border mx-2" />
@@ -598,11 +688,9 @@ function DashboardContent() {
         {/* Under Review Lane */}
         {samplesByStatus.underReview.length > 0 && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="flex items-center gap-2">
-                <Calendar className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-lg sm:text-xl font-bold">Under Review</h2>
-              </div>
+            <div className="flex items-center gap-3">
+              <Calendar className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-xl font-bold">Under Review</h2>
               <span className="text-sm text-muted-foreground">
                 {samplesByStatus.underReview.length} {samplesByStatus.underReview.length === 1 ? 'sample' : 'samples'}
               </span>
@@ -613,11 +701,13 @@ function DashboardContent() {
                   <div key={sample.sampleId} className="flex items-center">
                     <div
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
-                      onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                      onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-1">{sample.trackingNumber}</p>
-                      {sample.client && <p className="text-sm text-foreground truncate">{sample.client}</p>}
+                      <p className="font-bold text-amber-600 dark:text-amber-400 mb-0.5">{sample.trackingNumber}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
+                      <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatCardDate(sample.createdAt) || '\u00A0'}</p>
                     </div>
                     {index < samplesByStatus.underReview.length - 1 && (
                       <div className="h-16 w-px bg-border mx-2" />
@@ -632,12 +722,10 @@ function DashboardContent() {
         {/* Approved Lane */}
         {samplesByStatus.approved.length > 0 && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="flex items-center gap-2">
-                <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-lg sm:text-xl font-bold">Approved Samples</h2>
-              </div>
-              <div className="flex items-center gap-2 sm:ml-auto">
+            <div className="flex items-center gap-3">
+              <CheckCircle2 className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-xl font-bold">Approved Samples</h2>
+              <div className="flex items-center gap-2 ml-auto">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <select
                   value={approvedFilter}
@@ -656,11 +744,13 @@ function DashboardContent() {
                   <div key={sample.sampleId} className="flex items-center">
                     <div
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
-                      onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                      onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-1">{sample.trackingNumber}</p>
-                      {sample.client && <p className="text-sm text-foreground truncate">{sample.client}</p>}
+                      <p className="font-bold text-emerald-600 dark:text-emerald-400 mb-0.5">{sample.trackingNumber}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
+                      <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatCardDate(sample.createdAt) || '\u00A0'}</p>
                     </div>
                     {index < samplesByStatus.approved.length - 1 && (
                       <div className="h-16 w-px bg-border mx-2" />
@@ -675,12 +765,10 @@ function DashboardContent() {
         {/* Rejected Lane */}
         {samplesByStatus.rejected.length > 0 && (
           <div className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-              <div className="flex items-center gap-2">
-                <XCircle className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-lg sm:text-xl font-bold">Rejected Samples</h2>
-              </div>
-              <div className="flex items-center gap-2 sm:ml-auto">
+            <div className="flex items-center gap-3">
+              <XCircle className="h-5 w-5 text-muted-foreground" />
+              <h2 className="text-xl font-bold">Rejected Samples</h2>
+              <div className="flex items-center gap-2 ml-auto">
                 <Filter className="h-4 w-4 text-muted-foreground" />
                 <select
                   value={rejectedFilter}
@@ -699,11 +787,13 @@ function DashboardContent() {
                   <div key={sample.sampleId} className="flex items-center">
                     <div
                       className="cursor-pointer hover:bg-muted/50 p-3 rounded-lg transition-colors"
-                      onClick={() => router.push(`/samples/${sample.sampleId}`)}
+                      onClick={() => setPreviewSample(sample)}
                     >
-                      <p className="font-bold text-red-600 dark:text-red-400 mb-1">{sample.trackingNumber}</p>
-                      {sample.client && <p className="text-sm text-foreground truncate">{sample.client}</p>}
+                      <p className="font-bold text-red-600 dark:text-red-400 mb-0.5">{sample.trackingNumber}</p>
+                      <p className="text-[11px] text-muted-foreground truncate">{getSampleSecondaryId(sample) || '\u00A0'}</p>
+                      <p className="text-sm font-medium truncate mt-1">{sample.client || 'No client'}</p>
                       <p className="text-xs text-muted-foreground truncate">{sample.quality}</p>
+                      <p className="text-[10px] text-muted-foreground/60 mt-1.5">{formatCardDate(sample.createdAt) || '\u00A0'}</p>
                     </div>
                     {index < samplesByStatus.rejected.length - 1 && (
                       <div className="h-16 w-px bg-border mx-2" />
@@ -715,6 +805,80 @@ function DashboardContent() {
           </div>
         )}
       </div>
+
+      {/* Sample Preview Dialog */}
+      <Dialog open={!!previewSample} onOpenChange={(open) => !open && setPreviewSample(null)}>
+        <DialogContent className="sm:max-w-[480px]">
+          {previewSample && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="text-lg">{previewSample.trackingNumber}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-2">
+                <div className="flex items-center gap-2">
+                  <span className="text-lg font-semibold">{previewSample.client || 'No client'}</span>
+                  {previewSample.quality && (
+                    <Badge variant="secondary" className="text-xs">{previewSample.quality}</Badge>
+                  )}
+                </div>
+
+                {previewSample.origin && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <MapPin className="h-3.5 w-3.5" />
+                    <span>{previewSample.origin}{previewSample.microOrigin ? ` / ${previewSample.microOrigin}` : ''}</span>
+                  </div>
+                )}
+
+                <div className="border-t pt-3 space-y-2">
+                  <h4 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">Supply Chain</h4>
+                  <div className="grid grid-cols-[100px_1fr] gap-y-1.5 gap-x-3 text-sm">
+                    {previewSample.sellerName && (
+                      <>
+                        <span className="text-muted-foreground">Seller</span>
+                        <span>{previewSample.sellerName}</span>
+                      </>
+                    )}
+                    {previewSample.importerName && (
+                      <>
+                        <span className="text-muted-foreground">Importer</span>
+                        <span>{previewSample.importerName}</span>
+                      </>
+                    )}
+                    {previewSample.roasterName && (
+                      <>
+                        <span className="text-muted-foreground">Roaster</span>
+                        <span>{previewSample.roasterName}</span>
+                      </>
+                    )}
+                    {previewSample.endClientName && (
+                      <>
+                        <span className="text-muted-foreground">End Client</span>
+                        <span>{previewSample.endClientName}</span>
+                      </>
+                    )}
+                    {!previewSample.sellerName && !previewSample.importerName && !previewSample.roasterName && !previewSample.endClientName && (
+                      <span className="col-span-2 text-muted-foreground text-xs">No supply chain data</span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-2">
+                  <Button
+                    className="flex-1"
+                    onClick={() => {
+                      router.push(`/samples/${previewSample.sampleId}`)
+                      setPreviewSample(null)
+                    }}
+                  >
+                    <ExternalLink className="h-4 w-4 mr-2" />
+                    View Full Details
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Lab Insights - HIDDEN on mobile */}
       <div className="hidden sm:grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -922,6 +1086,19 @@ function QCAccessMessage() {
 export default function Home() {
   const { user, profile, loading } = useAuth()
 
+  // Log UI state transitions
+  useEffect(() => {
+    if (loading) {
+      console.log('[UI] Home: loading state')
+    } else if (!user) {
+      console.log('[UI] Home: showing login')
+    } else if (profile && !profile.qc_enabled) {
+      console.log('[UI] Home: showing QC access message')
+    } else {
+      console.log('[UI] Home: showing dashboard')
+    }
+  }, [loading, user, profile])
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background">
@@ -934,8 +1111,8 @@ export default function Home() {
     return <LoginForm />
   }
 
-  // Show QC access message for users who don't have QC enabled
-  if (profile && !profile.qc_enabled) {
+  // Show QC access message for users who have no role assigned
+  if (profile && !profile.qc_role) {
     return <QCAccessMessage />
   }
 

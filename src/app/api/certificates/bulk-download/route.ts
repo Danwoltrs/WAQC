@@ -4,6 +4,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
+import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -35,10 +36,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Maximum 50 certificates per download' }, { status: 400 })
     }
 
-    // Get certificate records to find sample IDs
+    // Get certificate records to find sample IDs (include pdf_url for caching)
     const { data: certificates, error: certError } = await supabase
       .from('certificates')
-      .select('id, certificate_number, sample_id')
+      .select('id, certificate_number, sample_id, pdf_url')
       .in('id', certificateIds)
 
     if (certError || !certificates) {
@@ -58,11 +59,21 @@ export async function POST(request: NextRequest) {
     // Create ZIP file
     const zip = new JSZip()
 
-    // Generate each PDF and add to ZIP
+    // Generate each PDF and add to ZIP (use cached PDFs when available)
     for (const cert of certificates) {
       if (!cert.sample_id) continue
 
       try {
+        // Try cached PDF first
+        if (cert.pdf_url) {
+          const cachedBuffer = await getCachedCertificatePdf(supabase, cert.pdf_url)
+          if (cachedBuffer) {
+            const filename = `${cert.certificate_number}.pdf`
+            zip.file(filename, cachedBuffer)
+            continue
+          }
+        }
+
         // Get certificate data
         const certificateData = await getCertificateData(cert.sample_id)
         if (!certificateData) continue
@@ -105,6 +116,10 @@ export async function POST(request: NextRequest) {
           flagBase64,
         })
         const pdfBuffer = await renderToBuffer(certificateElement as any)
+
+        // Cache the generated PDF
+        uploadCertificatePdf(supabase, cert.sample_id, cert.id, Buffer.from(pdfBuffer))
+          .catch((err) => console.error('[BulkDownload] Cache upload failed:', err))
 
         // Add to ZIP with certificate number as filename
         const filename = `${cert.certificate_number}.pdf`

@@ -75,17 +75,17 @@ export default function OverviewDashboard() {
           created_at,
           client_id,
           origin,
-          supplier:suppliers(name),
-          importer:buyers!samples_importer_id_fkey(name),
+          seller:exporters!samples_seller_id_fkey(name),
+          importer:importers(name),
           roaster:roasters(name)
         `)
-        .not('supplier_id', 'is', null)
+        .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
         .gte('bags_quantity_mt', minBags)
 
       // Apply stakeholder filters (using IDs now)
       if (filters.supplier) {
-        query = query.eq('supplier_id', filters.supplier)
+        query = query.eq('seller_id', filters.supplier)
       }
       if (filters.importer) {
         query = query.eq('importer_id', filters.importer)
@@ -145,7 +145,7 @@ export default function OverviewDashboard() {
       const supplierMap = new Map<string, { approved: number; total: number; bags: number; origin?: string }>()
 
       samples.forEach((sample: any) => {
-        const supplierName = sample.supplier?.name
+        const supplierName = sample.seller?.name
         if (!supplierName) return
 
         const existing = supplierMap.get(supplierName)
@@ -182,7 +182,7 @@ export default function OverviewDashboard() {
       const routeMap = new Map<string, number>()
 
       samples.forEach((sample: any) => {
-        const supplierName = sample.supplier?.name
+        const supplierName = sample.seller?.name
         const importerName = sample.importer?.name
         const roasterName = sample.roaster?.name
 

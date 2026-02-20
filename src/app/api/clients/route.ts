@@ -24,6 +24,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const clientTypesParam = searchParams.get('client_types')
     const isActiveParam = searchParams.get('is_active')
+    const isQcClientParam = searchParams.get('is_qc_client')
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
@@ -56,6 +57,12 @@ export async function GET(request: NextRequest) {
       query = query.eq('is_active', isActive)
     }
 
+    // Apply is_qc_client filter
+    if (isQcClientParam) {
+      const isQcClient = isQcClientParam === 'true'
+      query = query.eq('is_qc_client', isQcClient)
+    }
+
     const { data: clients, error } = await query
 
     if (error) {
@@ -79,6 +86,11 @@ export async function GET(request: NextRequest) {
     if (isActiveParam) {
       const isActive = isActiveParam === 'true'
       countQuery = countQuery.eq('is_active', isActive)
+    }
+
+    if (isQcClientParam) {
+      const isQcClient = isQcClientParam === 'true'
+      countQuery = countQuery.eq('is_qc_client', isQcClient)
     }
 
     const { count } = await countQuery

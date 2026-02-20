@@ -4,6 +4,7 @@ export * from './supply-chain-step'
 export * from './quality-step'
 export * from './quantity-step'
 export * from './sample-details-step'
+export * from './contracts-step'
 export * from './success-view'
 // Legacy exports (kept for backwards compatibility but not used)
 export * from './basic-info-step'

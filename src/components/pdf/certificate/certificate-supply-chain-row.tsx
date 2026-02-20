@@ -1,8 +1,8 @@
 /**
  * Certificate supply chain row component
- * Redesigned with gray background and conditional columns
- * Shows: Tracking/Contract | Supplier | Exporter | Shipper | Importer | Roaster | QC Client
- * Each entity shows name, contract, and address (if available)
+ * Equal-width flex columns with entity deduplication
+ * 3 groups: Wolthers (left) | Supply-side (middle) | Buy-side (right)
+ * Entities with matching names within a group merge into one column
  */
 
 import React from 'react'
@@ -20,16 +20,15 @@ const rowStyles = StyleSheet.create({
   },
   row: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
   },
   entityColumn: {
-    minWidth: 80,
-    maxWidth: 140,
+    flex: 1,
+    paddingHorizontal: 4,
   },
-  referenceColumn: {
-    minWidth: 100,
-    maxWidth: 150,
+  separator: {
+    width: 0.5,
+    backgroundColor: COLORS.border,
+    alignSelf: 'stretch',
   },
   label: {
     fontSize: 7,
@@ -54,73 +53,7 @@ const rowStyles = StyleSheet.create({
     fontSize: 7,
     color: COLORS.mutedLight,
   },
-  separator: {
-    width: 1,
-    backgroundColor: COLORS.border,
-    marginHorizontal: 4,
-    alignSelf: 'stretch',
-  },
 })
-
-interface EntityColumnProps {
-  label: string
-  entity: SupplyChainEntity
-  showSeparator?: boolean
-}
-
-function EntityColumn({ label, entity, showSeparator }: EntityColumnProps) {
-  if (!entity.name) return null
-
-  return (
-    <>
-      <View style={rowStyles.entityColumn}>
-        <Text style={rowStyles.label}>{label}</Text>
-        <Text style={rowStyles.name}>{entity.name}</Text>
-        {entity.contract && (
-          <Text style={rowStyles.contract}>Ref: {entity.contract}</Text>
-        )}
-        {entity.address && (
-          <Text style={rowStyles.address}>{entity.address}</Text>
-        )}
-      </View>
-      {showSeparator && <View style={rowStyles.separator} />}
-    </>
-  )
-}
-
-// Wolthers contract column (tracking number removed - already shown in header)
-interface ReferenceColumnProps {
-  trackingNumber?: string | null
-  wolthersContract?: string | null
-  showSeparator?: boolean
-}
-
-function ReferenceColumn({ wolthersContract, showSeparator }: ReferenceColumnProps) {
-  if (!wolthersContract) return null
-
-  return (
-    <>
-      {/* Wolthers contract column only */}
-      <View style={rowStyles.entityColumn}>
-        <Text style={rowStyles.label}>Wolthers</Text>
-        <Text style={rowStyles.name}>{wolthersContract}</Text>
-      </View>
-      {showSeparator && <View style={rowStyles.separator} />}
-    </>
-  )
-}
-
-export interface CertificateSupplyChainRowProps {
-  trackingNumber?: string | null    // Sample tracking number
-  wolthersContract?: string | null  // Wolthers contract reference
-  supplier?: SupplyChainEntity | null
-  exporter: SupplyChainEntity
-  shipper?: SupplyChainEntity | null
-  importer: SupplyChainEntity
-  roaster: SupplyChainEntity
-  qcClient?: SupplyChainEntity | null
-  hasClientLogo?: boolean  // If true, don't show QC Client name (logo identifies them)
-}
 
 // Helper to compare names case-insensitively
 function namesMatch(a: string | null | undefined, b: string | null | undefined): boolean {
@@ -128,68 +61,138 @@ function namesMatch(a: string | null | undefined, b: string | null | undefined):
   return a.toLowerCase().trim() === b.toLowerCase().trim()
 }
 
+interface MergedColumn {
+  label: string
+  name: string
+  contracts: string[]
+  address: string | null
+}
+
+/**
+ * Merge entities within a group that share the same name.
+ * Returns an array of merged columns.
+ */
+function mergeEntities(
+  entities: Array<{ label: string; entity: SupplyChainEntity | null | undefined }>
+): MergedColumn[] {
+  const merged: MergedColumn[] = []
+
+  for (const { label, entity } of entities) {
+    if (!entity?.name) continue
+
+    // Find existing merged column with the same name (case-insensitive)
+    const existing = merged.find(m => namesMatch(m.name, entity.name))
+
+    if (existing) {
+      // Merge: combine labels (e.g. "Seller / Shipper"), add contracts
+      existing.label = `${existing.label} / ${label}`
+      if (entity.contract) {
+        existing.contracts.push(entity.contract)
+      }
+    } else {
+      merged.push({
+        label,
+        name: entity.name,
+        contracts: entity.contract ? [entity.contract] : [],
+        address: entity.address || null,
+      })
+    }
+  }
+
+  return merged
+}
+
+export interface CertificateSupplyChainRowProps {
+  trackingNumber?: string | null
+  wolthersContract?: string | null
+  supplier?: SupplyChainEntity | null
+  exporter: SupplyChainEntity
+  shipper?: SupplyChainEntity | null
+  importer: SupplyChainEntity
+  roaster: SupplyChainEntity
+  endClient?: SupplyChainEntity | null
+  qcClient?: SupplyChainEntity | null
+  hasClientLogo?: boolean
+}
+
 export function CertificateSupplyChainRow({
-  trackingNumber,
   wolthersContract,
   supplier,
   exporter,
   shipper,
   importer,
   roaster,
+  endClient,
   qcClient,
   hasClientLogo,
 }: CertificateSupplyChainRowProps) {
-  // Determine which entities to display
-  const hasSupplier = Boolean(supplier?.name)
-  const hasExporter = Boolean(exporter.name)
-  // Show shipper only if it exists and is different from exporter
-  const hasShipper = Boolean(shipper?.name) && !namesMatch(shipper?.name, exporter.name)
-  const hasImporter = Boolean(importer.name)
-  const hasRoaster = Boolean(roaster.name)
-  // Don't show QC Client if:
-  // 1. They have a logo displayed (logo identifies them), OR
-  // 2. Their name matches importer or roaster
-  const hasQcClient = Boolean(qcClient?.name) &&
+  // Don't show QC Client if they have a logo or match importer/roaster
+  const showQcClient = Boolean(qcClient?.name) &&
     !hasClientLogo &&
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
-  // Show Wolthers column if we have a Wolthers contract (tracking number shown in header)
-  const hasReference = Boolean(wolthersContract)
+  // Group 1: Wolthers (always first if contract exists)
+  const wolthersColumns: MergedColumn[] = wolthersContract
+    ? [{ label: 'Wolthers', name: wolthersContract, contracts: [], address: null }]
+    : []
 
-  // Count visible entities to determine separators
-  // Note: "Supplier" is called "Seller" in the UI (farm/coop/producer selling the coffee)
-  const entities = [
-    { show: hasSupplier, label: 'Seller', entity: supplier },
-    { show: hasExporter, label: 'Exporter', entity: exporter },
-    { show: hasShipper, label: 'Shipper', entity: shipper },
-    { show: hasImporter, label: 'Importer', entity: importer },
-    { show: hasRoaster, label: 'Roaster', entity: roaster },
-    { show: hasQcClient, label: 'QC Client', entity: qcClient },
-  ].filter(e => e.show)
+  // Group 2: Supply-side (Seller, Exporter, Shipper) - merge if same name
+  const supplySideEntities: Array<{ label: string; entity: SupplyChainEntity | null | undefined }> = [
+    { label: 'Seller', entity: supplier },
+    { label: 'Exporter', entity: exporter },
+    { label: 'Shipper', entity: shipper },
+  ]
+  const supplySideColumns = mergeEntities(supplySideEntities)
 
-  // If no supply chain data and no reference, don't render
-  if (entities.length === 0 && !hasReference) {
-    return null
+  // When Seller/Exporter merge, drop "Exporter" from label for cleaner display
+  for (const col of supplySideColumns) {
+    if (col.label.includes('Seller') && col.label.includes('Exporter')) {
+      col.label = col.label.replace(' / Exporter', '').replace('Exporter / ', '')
+      if (col.label === 'Seller' && col.label.includes('Shipper')) {
+        col.label = 'Seller / Shipper'
+      }
+    }
   }
+
+  // Group 3: Buy-side (Importer, Roaster, QC Client) - merge if same name
+  // End Client is not shown (QC client logo represents them)
+  const buySideEntities: Array<{ label: string; entity: SupplyChainEntity | null | undefined }> = [
+    { label: 'Importer', entity: importer },
+    { label: 'Roaster', entity: roaster },
+    ...(showQcClient ? [{ label: 'QC Client', entity: qcClient }] : []),
+  ]
+  const buySideColumns = mergeEntities(buySideEntities)
+
+  // When Importer/Roaster/etc merge, simplify label to "Buyer"
+  for (const col of buySideColumns) {
+    if (col.label.includes('Importer') && col.label.includes('Roaster')) {
+      col.label = 'Buyer'
+    }
+  }
+
+  // Flatten all columns
+  const allColumns = [...wolthersColumns, ...supplySideColumns, ...buySideColumns]
+
+  if (allColumns.length === 0) return null
 
   return (
     <View style={rowStyles.container}>
       <View style={rowStyles.row}>
-        {/* Reference column first (tracking number + Wolthers contract) */}
-        <ReferenceColumn
-          trackingNumber={trackingNumber}
-          wolthersContract={wolthersContract}
-          showSeparator={entities.length > 0}
-        />
-        {/* Supply chain entities */}
-        {entities.map((e, index) => (
-          <EntityColumn
-            key={e.label}
-            label={e.label}
-            entity={e.entity!}
-            showSeparator={index < entities.length - 1}
-          />
+        {allColumns.map((col, index) => (
+          <React.Fragment key={`${col.label}-${index}`}>
+            {index > 0 && <View style={rowStyles.separator} />}
+            <View style={rowStyles.entityColumn}>
+              <Text style={rowStyles.label}>{col.label}</Text>
+              <Text style={rowStyles.name}>{col.name}</Text>
+              {col.contracts.length > 0 && (
+                col.contracts.map((ref, refIdx) => (
+                  <Text key={refIdx} style={rowStyles.contract}>Ref: {ref}</Text>
+                ))
+              )}
+              {col.address && <Text style={rowStyles.address}>{col.address}</Text>}
+            </View>
+          </React.Fragment>
         ))}
       </View>
     </View>

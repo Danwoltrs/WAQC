@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleBagSleeveLabelDocument, SampleBagSleeveLabelData } from '@/components/pdf/sample-bag-sleeve-label'
-import { generateQRCode, getCertificateDownloadUrl } from '@/lib/qr-code'
+import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
 import path from 'path'
 import fs from 'fs'
 
@@ -169,12 +169,13 @@ export async function GET(
       sampleTypeDisplay = 'SS'
     }
 
-    // Generate QR code if requested
+    // Generate QR code if requested (includes certificate summary text)
     let qrCode: string | undefined
     if (includeQrCode) {
       try {
-        const certificateUrl = getCertificateDownloadUrl(id)
-        qrCode = await generateQRCode(certificateUrl, {
+        const qrData = await fetchCertificateQRData(supabase, (sample as any).id, (sample as any).tracking_number)
+        const qrContent = buildCertificateQRText(qrData)
+        qrCode = await generateQRCode(qrContent, {
           width: 150,
           margin: 1,
         })

@@ -7,6 +7,7 @@
  * - Charcoal/black diamonds for in-spec, red for out-of-spec
  * - Vertical tick marks showing scale range
  * - Scale numbers above the chart
+ * - Clean Cup and Uniform Cup above Faults/Taints
  */
 
 import React from 'react'
@@ -18,6 +19,7 @@ const CHARCOAL = '#333333'
 
 const chartStyles = StyleSheet.create({
   container: {
+    marginTop: 30,
     marginBottom: 8,
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -29,13 +31,22 @@ const chartStyles = StyleSheet.create({
     width: 0.5,
     backgroundColor: COLORS.border,
     marginVertical: 4,
-    marginLeft: 200, // Move separator 200px to the right
-    marginRight: 10,
+    marginLeft: 8,
+    marginRight: 8,
     alignSelf: 'stretch',
   },
   defectsSection: {
+    flexDirection: 'column',
+    paddingTop: 4,
+    gap: 8,
+  },
+  cupStatusRow: {
     flexDirection: 'row',
-    paddingTop: 18, // Push down to align with graph rows (skip past title)
+    gap: 16,
+    marginBottom: 4,
+  },
+  faultsTaintsRow: {
+    flexDirection: 'row',
     gap: 16,
   },
   defectColumn: {
@@ -55,7 +66,7 @@ const chartStyles = StyleSheet.create({
     height: 16,
   },
   leftSection: {
-    width: 115,
+    width: 80,
     flexDirection: 'row',
     alignItems: 'baseline',
   },
@@ -65,17 +76,18 @@ const chartStyles = StyleSheet.create({
     color: COLORS.dark,
   },
   specText: {
-    fontSize: 7,
+    fontSize: 6,
     color: COLORS.muted,
-    marginLeft: 2,
+    marginLeft: 1,
   },
   scoreValue: {
     fontSize: 9,
     fontWeight: 600,
-    marginLeft: 4,
+    width: 28,
+    textAlign: 'right',
+    marginRight: 4,
   },
   chartSection: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
   },
@@ -115,20 +127,17 @@ interface ScaleChartProps {
   validationRule?: ValidationRule | null
   scaleMin: number
   scaleMax: number
-  globalMaxScale: number
-  isLast?: boolean
 }
 
 // Light grid line color
 const GRID_LINE_COLOR = '#E0E0E0'
 
-function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale, isLast }: ScaleChartProps) {
+function ScaleChart({ score, validationRule, scaleMin, scaleMax }: ScaleChartProps) {
   const range = scaleMax - scaleMin
   if (range <= 0) return null
 
-  // Calculate proportional width based on range relative to global max
-  const proportionalWidth = (range / globalMaxScale) * MAX_BAR_WIDTH
-  const barWidth = Math.max(proportionalWidth, 60) // Minimum width of 60
+  // All charts use full width regardless of scale range
+  const barWidth = MAX_BAR_WIDTH
 
   // Calculate score position
   const scorePos = score !== null ? ((score - scaleMin) / range) * barWidth : null
@@ -175,16 +184,20 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
   const svgHeight = 16
   const lineY = 8 // Center the line vertically
 
+  // Add padding to prevent diamond clipping at edges
+  const svgPadding = RHOMBUS_SIZE + 1
+  const totalWidth = barWidth + svgPadding * 2
+
   return (
-    <View style={{ flexDirection: 'column', height: 16, justifyContent: 'center' }}>
-      <Svg width={barWidth} height={svgHeight}>
+    <View style={{ flexDirection: 'column', minHeight: 16, justifyContent: 'center' }}>
+      <Svg width={totalWidth} height={svgHeight}>
         {/* Light vertical grid lines */}
         {gridPositions.map((pos, idx) => (
           <Line
             key={idx}
-            x1={pos}
+            x1={pos + svgPadding}
             y1={0}
-            x2={pos}
+            x2={pos + svgPadding}
             y2={svgHeight}
             stroke={GRID_LINE_COLOR}
             strokeWidth={0.5}
@@ -193,9 +206,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
 
         {/* Main horizontal line (charcoal) */}
         <Line
-          x1={0}
+          x1={svgPadding}
           y1={lineY}
-          x2={barWidth}
+          x2={barWidth + svgPadding}
           y2={lineY}
           stroke={CHARCOAL}
           strokeWidth={1}
@@ -204,9 +217,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
         {/* Spec range min line (taller) */}
         {validationRule && (
           <Line
-            x1={specMinX}
+            x1={specMinX + svgPadding}
             y1={lineY - SPEC_TICK_HEIGHT / 2}
-            x2={specMinX}
+            x2={specMinX + svgPadding}
             y2={lineY + SPEC_TICK_HEIGHT / 2}
             stroke={CHARCOAL}
             strokeWidth={1}
@@ -216,9 +229,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
         {/* Spec range max line (taller) - for both range AND minimum types */}
         {validationRule && (
           <Line
-            x1={specMaxX}
+            x1={specMaxX + svgPadding}
             y1={lineY - SPEC_TICK_HEIGHT / 2}
-            x2={specMaxX}
+            x2={specMaxX + svgPadding}
             y2={lineY + SPEC_TICK_HEIGHT / 2}
             stroke={CHARCOAL}
             strokeWidth={1}
@@ -228,40 +241,16 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax, globalMaxScale,
         {/* Score marker (rhombus/diamond) */}
         {score !== null && scorePos !== null && (
           <Path
-            d={`M ${scorePos} ${lineY - RHOMBUS_SIZE}
-                L ${scorePos + RHOMBUS_SIZE} ${lineY}
-                L ${scorePos} ${lineY + RHOMBUS_SIZE}
-                L ${scorePos - RHOMBUS_SIZE} ${lineY} Z`}
+            d={`M ${scorePos + svgPadding} ${lineY - RHOMBUS_SIZE}
+                L ${scorePos + svgPadding + RHOMBUS_SIZE} ${lineY}
+                L ${scorePos + svgPadding} ${lineY + RHOMBUS_SIZE}
+                L ${scorePos + svgPadding - RHOMBUS_SIZE} ${lineY} Z`}
             fill={isInSpec ? CHARCOAL : COLORS.outOfSpec}
           />
         )}
       </Svg>
 
-      {/* Scale numbers below - only on last row, aligned with grid lines */}
-      {isLast && (
-        <View style={{ flexDirection: 'row', width: barWidth, marginTop: 2, height: 8 }}>
-          {gridValues.map((val, idx) => {
-            // Calculate text width estimate for centering
-            const textWidth = String(val).length * 3
-            // Center each label on its grid line
-            const offset = textWidth / 2
-            return (
-              <Text
-                key={idx}
-                style={[
-                  chartStyles.scaleLabel,
-                  {
-                    position: 'absolute',
-                    left: gridPositions[idx] - offset,
-                  }
-                ]}
-              >
-                {val}
-              </Text>
-            )
-          })}
-        </View>
-      )}
+      {/* Scale numbers rendered in header row, not duplicated here */}
     </View>
   )
 }
@@ -303,6 +292,9 @@ export interface CertificateCuppingChartProps {
   taintDetails?: DefectDetail[]
   cleanCup?: boolean | null
   uniformCup?: boolean | null
+  // Spec limits
+  maxTaints?: number
+  maxFaults?: number
 }
 
 export function CertificateCuppingChart({
@@ -315,120 +307,148 @@ export function CertificateCuppingChart({
   taintDetails,
   cleanCup,
   uniformCup,
+  maxTaints,
+  maxFaults,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
     return null
   }
 
-  // Find the maximum scale range for proportional sizing
-  const globalMaxScale = Math.max(
-    ...attributes.map(attr => {
-      const attrMax = attr.scaleMax ?? scaleMax
-      const attrMin = attr.scaleMin ?? scaleMin
-      return attrMax - attrMin
-    })
-  )
+  // Group attributes by scale range (e.g., 0-10 and 0-7)
+  interface ScaleGroup {
+    scaleMin: number
+    scaleMax: number
+    attrs: { attr: CuppingAttribute; originalIndex: number }[]
+  }
+
+  const groupMap = new Map<string, ScaleGroup>()
+  attributes.forEach((attr, idx) => {
+    const aMin = attr.scaleMin ?? scaleMin
+    const aMax = attr.scaleMax ?? scaleMax
+    const key = `${aMin}-${aMax}`
+    if (!groupMap.has(key)) {
+      groupMap.set(key, { scaleMin: aMin, scaleMax: aMax, attrs: [] })
+    }
+    groupMap.get(key)!.attrs.push({ attr, originalIndex: idx })
+  })
+
+  // Sort groups: largest range first
+  const scaleGroups = Array.from(groupMap.values())
+    .sort((a, b) => (b.scaleMax - b.scaleMin) - (a.scaleMax - a.scaleMin))
+
+  // If any attribute has 2+ decimal places, show all with 2 decimals for consistency
+  const hasMultiDecimal = attributes.some(attr => {
+    if (attr.score === null) return false
+    const str = String(attr.score)
+    const dotIdx = str.indexOf('.')
+    return dotIdx !== -1 && str.length - dotIdx - 1 >= 2
+  })
+  const decimalPlaces = hasMultiDecimal ? 2 : 1
 
   // Format faults and taints for display (numbers, 0 means none)
   const faultsDisplay = faults != null && faults > 0 ? String(faults) : 'None'
   const taintsDisplay = taints != null && taints > 0 ? String(taints) : 'None'
 
-  // Calculate bar width for scale header (use first attribute's scale)
-  const firstAttr = attributes[0]
-  const firstScaleMin = firstAttr?.scaleMin ?? scaleMin
-  const firstScaleMax = firstAttr?.scaleMax ?? scaleMax
-  const firstRange = firstScaleMax - firstScaleMin
-  const headerBarWidth = Math.max((firstRange / globalMaxScale) * MAX_BAR_WIDTH, 60)
-
-  // Generate grid values for header
-  const gridCount = 5
-  const gridStep = firstRange / (gridCount - 1)
-  const headerGridValues: number[] = []
-  for (let i = 0; i < gridCount; i++) {
-    const val = firstScaleMin + (i * gridStep)
-    headerGridValues.push(Math.round(val * 10) / 10)
-  }
-  const headerGridPositions = headerGridValues.map(v => ((v - firstScaleMin) / firstRange) * headerBarWidth)
+  // Taints/faults out-of-spec checks
+  const taintsOutOfSpec = maxTaints !== undefined && taints != null && taints > maxTaints
+  const faultsOutOfSpec = maxFaults !== undefined && faults != null && faults > maxFaults
 
   return (
     <View style={chartStyles.container}>
       {/* Attributes section (left) */}
       <View style={chartStyles.attributesSection}>
-        <Text style={chartStyles.title}>Attributes</Text>
+        {scaleGroups.map((group, groupIdx) => {
+          const groupRange = group.scaleMax - group.scaleMin
+          // All groups use the same bar width (100%) for visual consistency
+          const headerBarWidth = MAX_BAR_WIDTH
 
-        {/* Scale header row */}
-        <View style={[chartStyles.attributeRow, { height: 12 }]}>
-          <View style={chartStyles.leftSection} />
-          <View style={chartStyles.chartSection}>
-            <View style={{ flexDirection: 'row', width: headerBarWidth, height: 10 }}>
-              {headerGridValues.map((val, idx) => {
-                // Calculate text width estimate for centering
-                const textWidth = String(val).length * 3
-                const offset = textWidth / 2
-                return (
-                  <Text
-                    key={idx}
-                    style={[
-                      chartStyles.scaleLabel,
-                      {
-                        position: 'absolute',
-                        left: headerGridPositions[idx] - offset,
-                      }
-                    ]}
-                  >
-                    {val}
-                  </Text>
-                )
-              })}
-            </View>
-          </View>
-        </View>
-
-        {attributes.map((attr, index) => {
-          const attrScaleMin = attr.scaleMin ?? scaleMin
-          const attrScaleMax = attr.scaleMax ?? scaleMax
-
-          // Check if score is in spec (only matters for color - red if out of spec)
-          const isInSpec = attr.score !== null && (
-            attr.validationRule
-              ? (attr.validationRule.type === 'minimum'
-                ? attr.score >= attr.validationRule.min_value
-                : attr.score >= attr.validationRule.min_value && (!attr.validationRule.max_value || attr.score <= attr.validationRule.max_value))
-              : true
+          // Generate grid values for this group's header
+          const gridCount = 5
+          const gridStep = groupRange / (gridCount - 1)
+          const headerGridValues: number[] = []
+          for (let i = 0; i < gridCount; i++) {
+            const val = group.scaleMin + (i * gridStep)
+            headerGridValues.push(Math.round(val * 10) / 10)
+          }
+          const headerGridPositions = headerGridValues.map(
+            v => ((v - group.scaleMin) / groupRange) * headerBarWidth
           )
 
-          const displayName = attr.abbreviation || attr.attribute
-
           return (
-            <View key={index} style={chartStyles.attributeRow}>
-              {/* Left section: Attribute (spec) score */}
-              <View style={chartStyles.leftSection}>
-                <Text style={chartStyles.attributeName}>{displayName}</Text>
-                <Text style={chartStyles.specText}>
-                  {formatSpecText(attr.validationRule)}
-                </Text>
-                <Text
-                  style={[
-                    chartStyles.scoreValue,
-                    // Only red for out-of-spec, otherwise dark/black
-                    { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
-                  ]}
-                >
-                  {attr.score !== null ? attr.score.toFixed(attr.score % 1 === 0 ? 1 : 2) : '-'}
-                </Text>
+            <View key={groupIdx}>
+              {/* Scale header row for this group */}
+              <View style={[chartStyles.attributeRow, { height: 12, marginTop: groupIdx > 0 ? 6 : 0 }]}>
+                <View style={chartStyles.leftSection} />
+                {/* Spacer matching scoreValue width + marginRight */}
+                <View style={{ width: 32 }} />
+                <View style={chartStyles.chartSection}>
+                  <View style={{ flexDirection: 'row', width: headerBarWidth + (RHOMBUS_SIZE + 1) * 2, height: 10 }}>
+                    {headerGridValues.map((val, idx) => {
+                      const textWidth = String(val).length * 3
+                      const offset = textWidth / 2
+                      return (
+                        <Text
+                          key={idx}
+                          style={[
+                            chartStyles.scaleLabel,
+                            {
+                              position: 'absolute',
+                              left: headerGridPositions[idx] + (RHOMBUS_SIZE + 1) - offset,
+                            }
+                          ]}
+                        >
+                          {val}
+                        </Text>
+                      )
+                    })}
+                  </View>
+                </View>
               </View>
 
-              {/* Right section: Scale chart */}
-              <View style={chartStyles.chartSection}>
-                <ScaleChart
-                  score={attr.score}
-                  validationRule={attr.validationRule}
-                  scaleMin={attrScaleMin}
-                  scaleMax={attrScaleMax}
-                  globalMaxScale={globalMaxScale}
-                  isLast={index === attributes.length - 1}
-                />
-              </View>
+              {/* Attributes in this scale group */}
+              {group.attrs.map(({ attr, originalIndex }) => {
+                const attrScaleMin = attr.scaleMin ?? scaleMin
+                const attrScaleMax = attr.scaleMax ?? scaleMax
+
+                const isInSpec = attr.score !== null && (
+                  attr.validationRule
+                    ? (attr.validationRule.type === 'minimum'
+                      ? attr.score >= attr.validationRule.min_value
+                      : attr.score >= attr.validationRule.min_value && (!attr.validationRule.max_value || attr.score <= attr.validationRule.max_value))
+                    : true
+                )
+
+                const displayName = attr.abbreviation || attr.attribute
+
+                return (
+                  <View key={originalIndex} style={chartStyles.attributeRow}>
+                    <View style={chartStyles.leftSection}>
+                      <Text style={chartStyles.attributeName}>{displayName}</Text>
+                      <Text style={chartStyles.specText}>
+                        {formatSpecText(attr.validationRule)}
+                      </Text>
+                    </View>
+
+                    <Text
+                      style={[
+                        chartStyles.scoreValue,
+                        { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
+                      ]}
+                    >
+                      {attr.score !== null ? attr.score.toFixed(decimalPlaces) : '-'}
+                    </Text>
+
+                    <View style={chartStyles.chartSection}>
+                      <ScaleChart
+                        score={attr.score}
+                        validationRule={attr.validationRule}
+                        scaleMin={attrScaleMin}
+                        scaleMax={attrScaleMax}
+                      />
+                    </View>
+                  </View>
+                )
+              })}
             </View>
           )
         })}
@@ -437,11 +457,12 @@ export function CertificateCuppingChart({
       {/* Vertical separator */}
       <View style={chartStyles.verticalSeparator} />
 
-      {/* Right section: Clean/Uniform Cup + Faults + Taints */}
+      {/* Right section: Clean/Uniform Cup (side by side, above) + Faults/Taints (below) */}
       <View style={chartStyles.defectsSection}>
-        {/* Clean Cup and Uniform Cup */}
-        <View style={chartStyles.defectColumn}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 4 }}>
+        {/* Row 1: Clean Cup and Uniform Cup side by side */}
+        <View style={chartStyles.cupStatusRow}>
+          {/* Clean Cup */}
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
               {cleanCup === true ? (
                 <Path
@@ -472,6 +493,8 @@ export function CertificateCuppingChart({
             </Svg>
             <Text style={{ fontSize: 7, color: COLORS.dark }}>Clean Cup</Text>
           </View>
+
+          {/* Uniform Cup */}
           <View style={{ flexDirection: 'row', alignItems: 'center' }}>
             <Svg width={10} height={10} viewBox="0 0 14 14" style={{ marginRight: 4 }}>
               {uniformCup === true ? (
@@ -505,32 +528,45 @@ export function CertificateCuppingChart({
           </View>
         </View>
 
-        {/* Faults column */}
-        <View style={chartStyles.defectColumn}>
-          <Text style={chartStyles.title}>Faults</Text>
-          {faultDetails && faultDetails.length > 0 ? (
-            faultDetails.map((fault, idx) => (
-              <Text key={idx} style={chartStyles.defectValue}>
-                {fault.name}{fault.intensity ? ` (${fault.intensity})` : ''}
+        {/* Row 2: Faults and Taints side by side */}
+        <View style={chartStyles.faultsTaintsRow}>
+          {/* Faults column */}
+          <View style={chartStyles.defectColumn}>
+            <Text style={chartStyles.title}>Faults</Text>
+            {faultDetails && faultDetails.length > 0 ? (
+              faultDetails.map((fault, idx) => (
+                <Text key={idx} style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+                  {fault.name}{fault.intensity ? ` (${fault.intensity})` : ''}
+                </Text>
+              ))
+            ) : (
+              <Text style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+                {faultsDisplay}
               </Text>
-            ))
-          ) : (
-            <Text style={chartStyles.defectValue}>{faultsDisplay}</Text>
-          )}
-        </View>
+            )}
+            {faultsOutOfSpec && (
+              <Text style={{ fontSize: 6, color: COLORS.outOfSpec }}>(max {maxFaults})</Text>
+            )}
+          </View>
 
-        {/* Taints column */}
-        <View style={chartStyles.defectColumn}>
-          <Text style={chartStyles.title}>Taints</Text>
-          {taintDetails && taintDetails.length > 0 ? (
-            taintDetails.map((taint, idx) => (
-              <Text key={idx} style={chartStyles.defectValue}>
-                {taint.name}{taint.intensity ? ` (${taint.intensity})` : ''}
+          {/* Taints column */}
+          <View style={chartStyles.defectColumn}>
+            <Text style={chartStyles.title}>Taints</Text>
+            {taintDetails && taintDetails.length > 0 ? (
+              taintDetails.map((taint, idx) => (
+                <Text key={idx} style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+                  {taint.name}{taint.intensity ? ` (${taint.intensity})` : ''}
+                </Text>
+              ))
+            ) : (
+              <Text style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
+                {taintsDisplay}
               </Text>
-            ))
-          ) : (
-            <Text style={chartStyles.defectValue}>{taintsDisplay}</Text>
-          )}
+            )}
+            {taintsOutOfSpec && (
+              <Text style={{ fontSize: 6, color: COLORS.outOfSpec }}>(max {maxTaints})</Text>
+            )}
+          </View>
         </View>
       </View>
     </View>

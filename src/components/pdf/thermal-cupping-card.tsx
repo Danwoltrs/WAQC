@@ -86,7 +86,8 @@ export interface ThermalCuppingCardData {
   sample_type?: 'pss' | 'ss' | 'type' // Sample type
   ico_number?: string // ICO number (for SS samples)
   container_nr?: string // Container number (for SS samples)
-  exporter_sample_number?: string // Exporter's sample identification number
+  wolthers_contract_nr?: string // Wolthers contract number
+  exporter_sample_number?: string | null // Exporter's sample identification number
   quality_name?: string // Optional based on user selection
   buyer_name?: string // Optional based on user selection
   exporter_name?: string // Optional based on user selection
@@ -101,6 +102,12 @@ export interface ThermalCuppingCardData {
 }
 
 // Create styles for thermal cupping card (optimized for thermal printer)
+// Thick border for outer card outline (guillotine cutting lines)
+const CUT_BORDER = '2pt solid #000000'
+// Thin border for internal table structure
+const INNER_BORDER = '0.5pt solid #000000'
+const INNER_BORDER_LIGHT = '0.5pt solid #CCCCCC'
+
 const styles = StyleSheet.create({
   page: {
     flexDirection: 'column',
@@ -109,12 +116,12 @@ const styles = StyleSheet.create({
     fontSize: 8,
   },
   card: {
-    border: '1pt solid #000000',
+    border: CUT_BORDER,
     marginBottom: '8pt',
   },
   header: {
     flexDirection: 'row',
-    borderBottom: '1pt solid #000000',
+    borderBottom: INNER_BORDER,
     padding: '4pt',
   },
   qrSection: {
@@ -130,14 +137,29 @@ const styles = StyleSheet.create({
     width: '60pt',
     height: '60pt',
   },
+  qualityName: {
+    fontSize: 9,
+    fontWeight: 'bold',
+    marginTop: 'auto',
+    textAlign: 'left',
+  },
   headerInfo: {
     flex: 1,
     flexDirection: 'column',
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '2pt',
+  },
   companyName: {
     fontSize: 9,
     fontWeight: 'bold',
-    marginBottom: '2pt',
+  },
+  contractNr: {
+    fontSize: 8,
+    fontWeight: 'bold',
   },
   sampleNumber: {
     fontSize: 10,
@@ -150,24 +172,24 @@ const styles = StyleSheet.create({
     color: '#333333',
   },
   tableSection: {
-    borderBottom: '1pt solid #000000',
+    borderBottom: INNER_BORDER,
   },
   tableHeader: {
     flexDirection: 'row',
-    borderBottom: '1pt solid #000000',
+    borderBottom: INNER_BORDER,
     backgroundColor: '#F0F0F0',
   },
   cupperColumn: {
     width: '70pt',
     padding: '3pt',
-    borderRight: '0.5pt solid #CCCCCC',
+    borderRight: INNER_BORDER_LIGHT,
     fontSize: 7,
     fontWeight: 'bold',
   },
   attributeColumn: {
     width: '32pt',
     padding: '2pt',
-    borderRight: '0.5pt solid #CCCCCC',
+    borderRight: INNER_BORDER_LIGHT,
     fontSize: 6,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -179,19 +201,19 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    borderBottom: '0.5pt solid #CCCCCC',
+    borderBottom: INNER_BORDER_LIGHT,
     minHeight: '20pt',
   },
   cupperCell: {
     width: '70pt',
     padding: '3pt',
-    borderRight: '0.5pt solid #CCCCCC',
+    borderRight: INNER_BORDER_LIGHT,
     fontSize: 7,
   },
   attributeCell: {
     width: '32pt',
     padding: '3pt',
-    borderRight: '0.5pt solid #CCCCCC',
+    borderRight: INNER_BORDER_LIGHT,
     fontSize: 7,
     textAlign: 'center',
   },
@@ -205,7 +227,7 @@ const styles = StyleSheet.create({
   },
   defectSpace: {
     minHeight: '20pt',
-    borderBottom: '0.5pt solid #CCCCCC',
+    borderBottom: INNER_BORDER_LIGHT,
     marginBottom: '4pt',
   },
 })
@@ -272,6 +294,7 @@ export const ThermalCuppingCardDocument: React.FC<
       lab_name: card.lab_name ? String(card.lab_name) : undefined,
       ico_number: card.ico_number ? String(card.ico_number) : undefined,
       container_nr: card.container_nr ? String(card.container_nr) : undefined,
+      wolthers_contract_nr: card.wolthers_contract_nr ? String(card.wolthers_contract_nr) : undefined,
       exporter_sample_number: card.exporter_sample_number ? String(card.exporter_sample_number) : undefined,
       quality_name: card.quality_name ? String(card.quality_name) : undefined,
       buyer_name: card.buyer_name ? String(card.buyer_name) : undefined,
@@ -298,24 +321,25 @@ export const ThermalCuppingCardDocument: React.FC<
                 <Image src={card.qr_code} style={styles.qrCode} />
               </View>
               <View style={styles.headerInfo}>
-                <Text style={styles.companyName}>
-                  {card.lab_name?.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}
-                </Text>
-                {/* Sample Type and Identifier - Bold type followed by number/ICO */}
+                <View style={styles.headerTopRow}>
+                  <Text style={styles.companyName}>WOLTHERS & ASSOCIATES</Text>
+                  {card.wolthers_contract_nr && (
+                    <Text style={styles.contractNr}>{card.wolthers_contract_nr}</Text>
+                  )}
+                </View>
+                {/* Sample Type and Identifier */}
                 <Text style={styles.sampleNumber}>
                   <Text style={{ fontWeight: 'bold' }}>
                     {card.sample_type ? card.sample_type.toUpperCase() : 'TYPE'}:
                   </Text>{' '}
                   {card.sample_type === 'ss'
-                    ? (card.ico_number || card.container_nr || card.sample_number || card.tracking_number || 'Unknown')
-                    : (card.sample_number || card.tracking_number || 'Unknown')
+                    ? [
+                        card.ico_number || card.sample_number || card.tracking_number || 'Unknown',
+                        card.container_nr
+                      ].filter(Boolean).join('  |  ')
+                    : (card.exporter_sample_number || card.sample_number || card.tracking_number || 'Unknown')
                   }
                 </Text>
-                {show_quality && card.quality_name && (
-                  <Text style={styles.infoRow}>
-                    Quality: {card.quality_name}
-                  </Text>
-                )}
                 {show_buyer && card.buyer_name && (
                   <Text style={styles.infoRow}>Importer: {card.buyer_name}</Text>
                 )}
@@ -324,14 +348,15 @@ export const ThermalCuppingCardDocument: React.FC<
                     Exporter: {card.exporter_name}
                   </Text>
                 )}
-                {card.exporter_sample_number && (
+                {card.sample_type === 'ss' && card.exporter_sample_number && (
                   <Text style={styles.infoRow}>
                     Exp. Sample #: {card.exporter_sample_number}
                   </Text>
                 )}
-                <Text style={styles.infoRow}>
-                  Template: {card.template_name || 'Standard'} ({card.template_scale_info || '1-8, 0.25'})
-                </Text>
+                {/* Quality name pushed to bottom of header info */}
+                {show_quality && card.quality_name && (
+                  <Text style={styles.qualityName}>{card.quality_name}</Text>
+                )}
               </View>
             </View>
 

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 
-type LockReason = 'not_locked' | 'within_24h' | 'locked_after_scan' | 'locked_after_24h'
+type LockReason = 'not_locked' | 'within_7_days' | 'locked_after_scan' | 'locked_after_7_days'
 
 interface EditPermissionResponse {
   canEdit: boolean
@@ -18,8 +18,8 @@ interface EditPermissionResponse {
  * Lock Rules:
  * 1. If locked = TRUE and scanned_at is set → Cannot edit (locked after scan)
  * 2. If certificate_generated_at is NULL → Can edit (no certificate yet)
- * 3. If certificate_generated_at + 24h > now → Can edit (within 24h window)
- * 4. If certificate_generated_at + 24h <= now → Cannot edit (24h expired)
+ * 3. If certificate_generated_at + 7 days > now → Can edit (within 7-day window)
+ * 4. If certificate_generated_at + 7 days <= now → Cannot edit (7 days expired)
  *
  * Query Parameters:
  * - sampleId: string (required) - The sample ID to check
@@ -27,7 +27,7 @@ interface EditPermissionResponse {
  * Returns:
  * - canEdit: boolean - Whether the sample can be edited
  * - reason: LockReason - Why it can or cannot be edited
- * - lockExpiresAt: string | null - When the 24h lock will expire (ISO timestamp)
+ * - lockExpiresAt: string | null - When the 7-day lock will expire (ISO timestamp)
  * - message: string - Human-readable explanation
  */
 export async function GET(request: Request) {
@@ -89,27 +89,27 @@ export async function GET(request: Request) {
       return NextResponse.json(response)
     }
 
-    // Rule 3 & 4: Check 24h window from certificate generation
+    // Rule 3 & 4: Check 7-day window from certificate generation
     const certificateTime = new Date(sample.certificate_generated_at)
-    const lockExpiry = new Date(certificateTime.getTime() + 24 * 60 * 60 * 1000) // +24 hours
+    const lockExpiry = new Date(certificateTime.getTime() + 7 * 24 * 60 * 60 * 1000) // +7 days
     const now = new Date()
 
     if (now < lockExpiry) {
-      // Within 24h window
+      // Within 7-day window
       const response: EditPermissionResponse = {
         canEdit: true,
-        reason: 'within_24h',
+        reason: 'within_7_days',
         lockExpiresAt: lockExpiry.toISOString(),
-        message: `Sample can be edited within 24 hours of certificate generation. Lock expires at ${lockExpiry.toLocaleString()}.`
+        message: `Sample can be edited within 7 days of certificate generation. Lock expires at ${lockExpiry.toLocaleString()}.`
       }
       return NextResponse.json(response)
     } else {
-      // 24h expired
+      // 7 days expired
       const response: EditPermissionResponse = {
         canEdit: false,
-        reason: 'locked_after_24h',
+        reason: 'locked_after_7_days',
         lockExpiresAt: lockExpiry.toISOString(),
-        message: '24 hours have elapsed since certificate generation. Sample is permanently locked.'
+        message: '7 days have elapsed since certificate generation. Sample is permanently locked.'
       }
       return NextResponse.json(response)
     }

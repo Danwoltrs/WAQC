@@ -9,7 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 export default function UsersPage() {
   return (
     <MainLayout>
-      <div className="p-6">
+      <div className="mx-auto max-w-[1800px] p-6">
         <div className="mb-6">
           <h1 className="text-2xl font-semibold">User Management</h1>
           <p className="text-muted-foreground">Manage users, roles, permissions, invitations, and access requests</p>

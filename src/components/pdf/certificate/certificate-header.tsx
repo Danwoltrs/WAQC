@@ -10,7 +10,7 @@ import { COLORS, getStatusColor, getStatusText } from './certificate-styles'
 
 const headerStyles = StyleSheet.create({
   container: {
-    marginBottom: 12,
+    marginBottom: 10,
   },
   topRow: {
     flexDirection: 'row',
@@ -64,13 +64,13 @@ const headerStyles = StyleSheet.create({
     marginBottom: 4,
   },
   statusText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: 700,
     textTransform: 'uppercase',
   },
   certificateNumber: {
-    fontSize: 8,
-    fontWeight: 600,
+    fontSize: 11,
+    fontWeight: 700,
     color: COLORS.dark,
     marginTop: 4,
   },

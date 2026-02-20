@@ -12,12 +12,15 @@ import {
   Laboratory,
   Exporter,
   Importer,
+  Roaster,
   SampleInsert,
   STEPS,
   SupplyChainStep,
   QualityStep,
   QuantityStep,
   SampleDetailsStep,
+  ContractsStep,
+  createEmptyContract,
   SuccessView
 } from './intake'
 
@@ -66,6 +69,8 @@ const initialFormData: FormData = {
   supplier_contract_nr: '',
   roaster: '',
   roaster_contract_nr: '',
+  end_client: '',
+  end_client_contract_nr: '',
 
   // Step 2: Quality
   client_id: '',
@@ -98,7 +103,10 @@ const initialFormData: FormData = {
   // Step 4: Review
   arrival_date: new Date().toISOString().split('T')[0],
   notes: '',
-  photo_file: null
+  photo_file: null,
+
+  // Sub-contracts
+  contracts: []
 }
 
 export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFormProps = {}) {
@@ -121,18 +129,20 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const [laboratories, setLaboratories] = useState<Laboratory[]>([])
   const [exporters, setExporters] = useState<Exporter[]>([])
   const [importers, setImporters] = useState<Importer[]>([])
+  const [roasters, setRoasters] = useState<Roaster[]>([])
   const [qcClients, setQcClients] = useState<Client[]>([]) // Clients where is_qc_client = true
   const [filteredClients, setFilteredClients] = useState<Client[]>([])
   const [approvedPSSSamples, setApprovedPSSSamples] = useState<any[]>([])
   const [generatedTrackingNumber, setGeneratedTrackingNumber] = useState<string>('')
   const [formData, setFormData] = useState<FormData>(initialFormData)
 
-  // Load clients, laboratories, exporters, and importers
+  // Load clients, laboratories, exporters, importers, and roasters
   useEffect(() => {
     loadClients()
     loadLaboratories()
     loadExporters()
     loadImporters()
+    loadRoasters()
     loadQcClients()
 
     // Load saved form data from localStorage
@@ -335,14 +345,35 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     }
   }
 
-  const loadQcClients = async () => {
+  const loadRoasters = async () => {
     try {
-      const response = await fetch('/api/clients?limit=500')
+      const response = await fetch('/api/roasters')
       if (response.ok) {
         const data = await response.json()
-        // Filter for is_qc_client = true
-        const qcClientsList = (data.clients || []).filter((c: any) => c.is_qc_client)
-        setQcClients(qcClientsList as Client[])
+        const roastersList = data.roasters || []
+        // Deduplicate by name (case-insensitive)
+        const seen = new Set<string>()
+        const unique = roastersList.filter((r: any) => {
+          const key = r.name.toLowerCase()
+          if (seen.has(key)) return false
+          seen.add(key)
+          return true
+        })
+        setRoasters(unique as unknown as Roaster[])
+      } else {
+        console.error('Failed to load roasters:', response.status)
+      }
+    } catch (error) {
+      console.error('Error loading roasters:', error)
+    }
+  }
+
+  const loadQcClients = async () => {
+    try {
+      const response = await fetch('/api/clients?is_qc_client=true&is_active=true&limit=500')
+      if (response.ok) {
+        const data = await response.json()
+        setQcClients((data.clients || []) as Client[])
       } else {
         console.error('Failed to load QC clients:', response.status)
       }
@@ -384,6 +415,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       case 4:
         // Step 4: Review
         return !!formData.arrival_date
+      case 5:
+        // Step 5: Contracts - always valid (contracts are optional)
+        return true
       default:
         return false
     }
@@ -392,7 +426,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setError(null)
-      setCurrentStep(prev => Math.min(prev + 1, 4))
+      setCurrentStep(prev => Math.min(prev + 1, 5))
     } else {
       setError('Please fill in all required fields')
     }
@@ -411,6 +445,24 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         return
       }
       updateFormData('photo_file', file)
+    }
+  }
+
+  const handleAddContract = () => {
+    const newContract = createEmptyContract(formData)
+    setFormData(prev => ({ ...prev, contracts: [...prev.contracts, newContract] }))
+  }
+
+  const handleRemoveContract = (index: number) => {
+    setFormData(prev => ({ ...prev, contracts: prev.contracts.filter((_, i) => i !== index) }))
+  }
+
+  const handleGoToContracts = () => {
+    if (validateStep(4)) {
+      setError(null)
+      setCurrentStep(5)
+    } else {
+      setError('Please fill in all required fields')
     }
   }
 
@@ -473,29 +525,18 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )
       }
 
-      // 3. Importer lookup from clients table by fantasy_name (when importer_is_qc_client is true)
-      // or from importers table (when importer_is_qc_client is false)
+      // 3. Importer lookup - always look up from importers table for importer_id
+      // When importer_is_qc_client is true, ALSO look up from clients (handled by qc_client lookup below)
       if (formData.importer) {
         lookupKeys.push('importer')
-        if (formData.importer_is_qc_client) {
-          // Importer IS the QC Client - lookup from clients table
-          lookupPromises.push(
-            withTimeout(
-              async () => supabase.from('clients').select('id').eq('fantasy_name', formData.importer).eq('is_qc_client', true).limit(1).maybeSingle(),
-              LOOKUP_TIMEOUT,
-              'Importer lookup timeout'
-            ).catch(err => { console.error('[Importer lookup error]', err); return { data: null, error: err } })
-          )
-        } else {
-          // Separate importer - lookup from importers table
-          lookupPromises.push(
-            withTimeout(
-              async () => supabase.from('importers').select('id').ilike('name', toPattern(formData.importer)).limit(1).maybeSingle(),
-              LOOKUP_TIMEOUT,
-              'Importer lookup timeout'
-            ).catch(err => { console.error('[Importer lookup error]', err); return { data: null, error: err } })
-          )
-        }
+        // Always try importers table first (for importer_id FK)
+        lookupPromises.push(
+          withTimeout(
+            async () => supabase.from('importers').select('id').ilike('name', toPattern(formData.importer)).limit(1).maybeSingle(),
+            LOOKUP_TIMEOUT,
+            'Importer lookup timeout'
+          ).catch(err => { console.error('[Importer lookup error]', err); return { data: null, error: err } })
+        )
       }
 
       // 4. QC Client lookup - determine which name to search (only if not same as importer)
@@ -512,15 +553,33 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )
       }
 
-      // 5. Roaster lookup from clients table by fantasy_name (clients with roaster client_types)
+      // 5. Roaster lookup from roasters table by name
       if (formData.roaster) {
         lookupKeys.push('roaster')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('clients').select('id').eq('fantasy_name', formData.roaster).limit(1).maybeSingle(),
+            async () => supabase.from('roasters').select('id').ilike('name', formData.roaster).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Roaster lookup timeout'
           ).catch(err => { console.error('[Roaster lookup error]', err); return { data: null, error: err } })
+        )
+      }
+
+      // 6. End Client lookup from clients table by fantasy_name
+      // No client_types filter - any client can be an end client
+      if (formData.end_client) {
+        lookupKeys.push('end_client')
+        lookupPromises.push(
+          withTimeout(
+            async () => supabase
+              .from('clients')
+              .select('id')
+              .ilike('fantasy_name', formData.end_client.trim())
+              .limit(1)
+              .maybeSingle(),
+            LOOKUP_TIMEOUT,
+            'End client lookup timeout'
+          ).catch(err => { console.error('[End client lookup error]', err); return { data: null, error: err } })
         )
       }
 
@@ -548,9 +607,10 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       const seller_id = lookupResults['seller']
       // When same_seller_shipper is true, use seller_id as exporter_id
       const exporter_id = formData.same_seller_shipper ? seller_id : lookupResults['shipper']
-      // Only use importer_id when it's NOT the QC client (otherwise the ID is from clients table, not importers)
-      const importer_id = formData.importer_is_qc_client ? undefined : lookupResults['importer']
+      // Always use importer_id from importers table lookup (even when importer=QC client)
+      const importer_id = lookupResults['importer']
       const roaster_id = lookupResults['roaster']
+      const end_client_id = lookupResults['end_client']
 
       // QC Client: use fantasy_name lookup, fallback to form's client_id
       let qc_client_id = lookupResults['qc_client_fantasy'] || formData.client_id || undefined
@@ -561,10 +621,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         importer_id,
         qc_client_id,
         roaster_id,
+        end_client_id,
         same_seller_shipper: formData.same_seller_shipper
       })
 
-      const sampleData: Partial<SampleInsert> = {
+      const sampleData: Record<string, any> = {
         client_id: qc_client_id, // Use the resolved QC client ID
         laboratory_id: formData.laboratory_id,
         origin: formData.origin,
@@ -572,8 +633,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         seller_id: seller_id,
         exporter_id: exporter_id, // This is the shipper
         same_seller_shipper: formData.same_seller_shipper,
+        importer_is_qc_client: formData.importer_is_qc_client,
+        exporter_sample_number: formData.exporter_sample_number || undefined,
         importer_id: importer_id,
         roaster_id: roaster_id,
+        end_client_id: end_client_id,
+        end_client_contract_nr: formData.end_client_contract_nr || undefined,
+        supplier: formData.supplier || undefined,
+        supplier_contract_nr: formData.supplier_contract_nr || undefined,
         processing_method: formData.processing_method,
         sample_type: formData.sample_type || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,
@@ -623,6 +690,102 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       }
 
       console.log('[Sample Intake] Sample created successfully:', result.sample.tracking_number)
+
+      // Create sub-contracts sequentially (to avoid tracking number race conditions)
+      const createdSampleId = result.sample.id
+      const subContractTrackingNumbers: string[] = []
+
+      if (formData.contracts.length > 0) {
+        console.log('[Sample Intake] Creating', formData.contracts.length, 'sub-contracts...')
+        for (let i = 0; i < formData.contracts.length; i++) {
+          const sc = formData.contracts[i]
+          try {
+            // Resolve entity IDs for this sub-contract
+            const scLookups: Promise<any>[] = []
+            const scKeys: string[] = []
+
+            if (sc.importer) {
+              if (sc.importer_is_qc_client) {
+                scKeys.push('sc_client')
+                scLookups.push(
+                  Promise.resolve(supabase.from('clients').select('id').eq('fantasy_name', sc.importer).eq('is_qc_client', true).limit(1).maybeSingle())
+                    .catch(() => ({ data: null, error: null }))
+                )
+              }
+              scKeys.push('sc_importer')
+              scLookups.push(
+                Promise.resolve(supabase.from('importers').select('id').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
+                  .catch(() => ({ data: null, error: null }))
+              )
+            }
+            if (sc.roaster) {
+              scKeys.push('sc_roaster')
+              scLookups.push(
+                Promise.resolve(supabase.from('roasters').select('id').ilike('name', sc.roaster).limit(1).maybeSingle())
+                  .catch(() => ({ data: null, error: null }))
+              )
+            }
+            if (sc.end_client) {
+              scKeys.push('sc_end_client')
+              scLookups.push(
+                Promise.resolve(supabase.from('clients').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle())
+                  .catch(() => ({ data: null, error: null }))
+              )
+            }
+            if (!sc.importer_is_qc_client && sc.qc_client) {
+              scKeys.push('sc_qc_client')
+              scLookups.push(
+                Promise.resolve(supabase.from('clients').select('id').eq('fantasy_name', sc.qc_client).eq('is_qc_client', true).limit(1).maybeSingle())
+                  .catch(() => ({ data: null, error: null }))
+              )
+            }
+
+            const scResults = await Promise.all(scLookups)
+            const scResolved: Record<string, string | undefined> = {}
+            scResults.forEach((r, idx) => { scResolved[scKeys[idx]] = r?.data?.id })
+
+            const contractBody: Record<string, any> = {
+              importer_id: scResolved['sc_importer'] || null,
+              importer_is_qc_client: sc.importer_is_qc_client,
+              roaster_id: scResolved['sc_roaster'] || null,
+              end_client_id: scResolved['sc_end_client'] || null,
+              client_id: scResolved['sc_client'] || scResolved['sc_qc_client'] || null,
+              wolthers_contract_nr: sc.wolthers_contract_nr || null,
+              buyer_contract_nr: sc.buyer_contract_nr || null,
+              roaster_contract_nr: sc.roaster_contract_nr || null,
+              qc_client_contract_nr: sc.qc_client_contract_nr || null,
+              end_client_contract_nr: sc.end_client_contract_nr || null,
+              supplier_contract_nr: sc.supplier_contract_nr || null,
+              ico_number: sc.ico_number || null,
+              container_nr: sc.container_nr || null,
+              exporter_sample_number: sc.exporter_sample_number || null,
+              bag_count: sc.bag_count ? parseInt(sc.bag_count) : null,
+              bag_weight_kg: sc.bag_weight_kg ? parseFloat(sc.bag_weight_kg) : null,
+              bag_type: sc.bag_type || null,
+              bags_quantity_mt: sc.bags_quantity_mt ? parseFloat(sc.bags_quantity_mt) : null,
+              equivalent_60kg_bags: sc.equivalent_60kg_bags ? parseInt(sc.equivalent_60kg_bags) : null,
+              shipment_month: sc.shipment_month || null,
+            }
+
+            const scResponse = await fetch(`/api/samples/${createdSampleId}/contracts`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(contractBody)
+            })
+
+            if (scResponse.ok) {
+              const scResult = await scResponse.json()
+              subContractTrackingNumbers.push(scResult.contract.tracking_number)
+              console.log(`[Sample Intake] Sub-contract ${i + 1} created:`, scResult.contract.tracking_number)
+            } else {
+              console.error(`[Sample Intake] Failed to create sub-contract ${i + 1}`)
+            }
+          } catch (scErr) {
+            console.error(`[Sample Intake] Error creating sub-contract ${i + 1}:`, scErr)
+          }
+        }
+      }
+
       setGeneratedTrackingNumber(result.sample.tracking_number)
       setSuccess(true)
 
@@ -674,8 +837,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           ))}
         </div>
         <div className="mt-2">
-          <p className="text-sm font-medium">{STEPS[currentStep - 1].name}</p>
-          <p className="text-xs text-muted-foreground">{STEPS[currentStep - 1].description}</p>
+          <p className="text-sm font-medium">Sample Intake - {STEPS[currentStep - 1].name}</p>
         </div>
       </HeaderWrapper>
 
@@ -699,6 +861,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               approvedPSSSamples={approvedPSSSamples}
               exporters={exporters}
               importers={importers}
+              roasters={roasters}
               qcClients={qcClients}
             />
           )}
@@ -739,6 +902,22 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               onPhotoUpload={handlePhotoUpload}
             />
           )}
+
+          {currentStep === 5 && (
+            <ContractsStep
+              formData={formData}
+              updateFormData={updateFormData}
+              clients={clients}
+              laboratories={laboratories}
+              filteredClients={filteredClients}
+              approvedPSSSamples={approvedPSSSamples}
+              importers={importers}
+              roasters={roasters}
+              qcClients={qcClients}
+              onAddContract={handleAddContract}
+              onRemoveContract={handleRemoveContract}
+            />
+          )}
         </div>
 
         {/* Fixed footer */}
@@ -753,24 +932,57 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             Previous
           </Button>
 
-          {currentStep < 4 ? (
-            <Button
-              type="button"
-              onClick={handleNext}
-              disabled={!validateStep(currentStep)}
-            >
-              Next
-              <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={handleSubmit}
-              disabled={loading || !validateStep(4)}
-            >
-              {loading ? 'Creating Sample...' : 'Create Sample'}
-            </Button>
-          )}
+          <div className="flex gap-2">
+            {currentStep < 4 && (
+              <Button
+                type="button"
+                onClick={handleNext}
+                disabled={!validateStep(currentStep)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
+
+            {currentStep === 4 && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleGoToContracts}
+                  disabled={!validateStep(4)}
+                >
+                  + Add Sub-Contracts
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={loading || !validateStep(4)}
+                >
+                  {loading ? 'Creating Sample...' : 'Create Sample'}
+                </Button>
+              </>
+            )}
+
+            {currentStep === 5 && (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleAddContract}
+                >
+                  + Add Sub-Contract
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={loading}
+                >
+                  {loading ? 'Creating...' : 'Submit All'}
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </ContentWrapper>
     </FormWrapper>

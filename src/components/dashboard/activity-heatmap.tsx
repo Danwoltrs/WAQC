@@ -1,15 +1,9 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
+import { ChevronDown } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -27,19 +21,18 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
   const { profile } = useAuth()
   const [selectedYear, setSelectedYear] = useState(new Date().getFullYear())
   const [selectedLab, setSelectedLab] = useState<string>(profile?.laboratory_id || 'all')
+  const [labDropdownOpen, setLabDropdownOpen] = useState(false)
   const [activityData, setActivityData] = useState<DayActivity[]>([])
   const [availableYears, setAvailableYears] = useState<number[]>([])
-  const [laboratories, setLaboratories] = useState<Array<{ id: string; name: string }>>([])
+  const [laboratories, setLaboratories] = useState<Array<{ id: string; name: string; code: string; city: string | null }>>([])
   const [loading, setLoading] = useState(true)
 
-  // Load laboratories for filter (if global admin)
   useEffect(() => {
     if (showLabFilter) {
       loadLaboratories()
     }
   }, [showLabFilter])
 
-  // Load activity data when filters change
   useEffect(() => {
     loadActivityData()
   }, [selectedYear, selectedLab, profile?.laboratory_id])
@@ -48,11 +41,16 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
     try {
       const { data, error } = await supabase
         .from('laboratories')
-        .select('id, name')
+        .select('id, name, code, city')
         .order('name')
 
       if (error) throw error
-      setLaboratories(data || [])
+      setLaboratories((data || []).map(l => ({
+        id: l.id,
+        name: l.name,
+        code: l.code,
+        city: l.city,
+      })))
     } catch (error) {
       console.error('Error loading laboratories:', error)
     }
@@ -62,10 +60,7 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
     try {
       setLoading(true)
 
-      // Determine which lab to query
-      const labId = selectedLab === 'all' ? profile?.laboratory_id : selectedLab
-
-      // Get date range - 52 weeks back from current week (or end of selected year for past years)
+      const labId = selectedLab === 'all' ? null : selectedLab
       const now = new Date()
       const currentYear = now.getFullYear()
 
@@ -76,44 +71,37 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
         yearEnd = new Date(selectedYear, 11, 31, 23, 59, 59)
       }
 
-      // Go back 52 weeks from end date
       const yearStart = new Date(yearEnd)
       yearStart.setDate(yearEnd.getDate() - (52 * 7))
 
-      // Fetch samples data
       let samplesQuery = supabase
         .from('samples')
         .select('created_at, laboratory_id')
         .gte('created_at', yearStart.toISOString())
         .lte('created_at', yearEnd.toISOString())
 
-      if (labId && labId !== 'all') {
+      if (labId) {
         samplesQuery = samplesQuery.eq('laboratory_id', labId)
       }
 
       const { data: samplesData, error: samplesError } = await samplesQuery
-
       if (samplesError) throw samplesError
 
-      // Fetch cupping scores data (count of cups cupped)
       let scoresQuery = supabase
         .from('cupping_scores')
         .select('created_at, cupping_sessions!inner(laboratory_id)')
         .gte('created_at', yearStart.toISOString())
         .lte('created_at', yearEnd.toISOString())
 
-      if (labId && labId !== 'all') {
+      if (labId) {
         scoresQuery = scoresQuery.eq('cupping_sessions.laboratory_id', labId)
       }
 
       const { data: scoresData, error: scoresError } = await scoresQuery
-
       if (scoresError) throw scoresError
 
-      // Process data into daily counts
       const dailyMap = new Map<string, { samples: number; cups: number }>()
 
-      // Count samples per day
       samplesData?.forEach(sample => {
         if (sample.created_at) {
           const date = new Date(sample.created_at).toISOString().split('T')[0]
@@ -122,7 +110,6 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
         }
       })
 
-      // Count cups per day
       scoresData?.forEach(score => {
         if (score.created_at) {
           const date = new Date(score.created_at).toISOString().split('T')[0]
@@ -131,15 +118,12 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
         }
       })
 
-      // Convert to array
       const activities: DayActivity[] = []
       dailyMap.forEach((value, date) => {
         activities.push({ date, samples: value.samples, cups: value.cups })
       })
 
       setActivityData(activities)
-
-      // Get available years from data
       await loadAvailableYears()
     } catch (error) {
       console.error('Error loading activity data:', error)
@@ -150,7 +134,6 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
 
   const loadAvailableYears = async () => {
     try {
-      // Get earliest sample date
       const { data, error } = await supabase
         .from('samples')
         .select('created_at')
@@ -176,141 +159,148 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
     }
   }
 
-  // Generate heatmap grid with week metadata
-  const generateHeatmapData = () => {
-    const weeks: Array<{
-      days: Array<{ date: Date; activity: DayActivity | null }>
-      weekNumber: number
-      monthLabel?: string
-    }> = []
+  // Build a fast lookup map for activity data
+  const activityMap = useMemo(() => {
+    const map = new Map<string, DayActivity>()
+    activityData.forEach(a => map.set(a.date, a))
+    return map
+  }, [activityData])
 
-    // Start from current date
+  // Generate GitHub-style heatmap: 53 columns x 7 rows (Sun-Sat)
+  const heatmapData = useMemo(() => {
     const now = new Date()
     const currentYear = now.getFullYear()
 
-    // If viewing current year, end at current week
-    // If viewing past year, show full year
     let endDate: Date
     if (selectedYear === currentYear) {
-      endDate = now
+      endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     } else {
-      endDate = new Date(selectedYear, 11, 31) // End of selected year
+      endDate = new Date(selectedYear, 11, 31)
     }
 
-    // Find the Monday of the week containing the end date
-    const endDay = endDate.getDay()
-    const daysToMonday = endDay === 0 ? 6 : endDay - 1
-    const lastMonday = new Date(endDate)
-    lastMonday.setDate(endDate.getDate() - daysToMonday)
+    // Find the Saturday ending the current week (end of the row)
+    const endDow = endDate.getDay() // 0=Sun, 6=Sat
+    const lastSaturday = new Date(endDate)
+    lastSaturday.setDate(endDate.getDate() + (6 - endDow))
 
-    // Go back 52 weeks to start
-    const firstMonday = new Date(lastMonday)
-    firstMonday.setDate(lastMonday.getDate() - (51 * 7))
+    // Go back 52 full weeks to start on a Sunday
+    const firstSunday = new Date(lastSaturday)
+    firstSunday.setDate(lastSaturday.getDate() - (52 * 7))
 
-    let currentMonth = -1
+    const weeks: Array<{
+      days: Array<{ date: Date; dateStr: string; activity: DayActivity | null; isFuture: boolean }>
+      monthLabel?: string
+    }> = []
 
-    // Generate weeks from first Monday to last Monday
-    let weekCount = 0
-    let currentMonday = new Date(firstMonday)
+    let prevMonth = -1
+    const current = new Date(firstSunday)
+    const todayStr = now.toISOString().split('T')[0]
 
-    while (currentMonday <= lastMonday && weekCount < 53) {
-      const weekDays: Array<{ date: Date; activity: DayActivity | null }> = []
+    for (let w = 0; w < 53; w++) {
+      const weekDays: typeof weeks[0]['days'] = []
 
-      // Monday to Friday only (5 days)
-      for (let day = 0; day < 5; day++) {
-        const currentDate = new Date(currentMonday)
-        currentDate.setDate(currentMonday.getDate() + day)
+      for (let d = 0; d < 7; d++) {
+        const dateObj = new Date(current)
+        const dateStr = dateObj.toISOString().split('T')[0]
+        const isFuture = dateStr > todayStr
 
-        const dateStr = currentDate.toISOString().split('T')[0]
-        const activity = activityData.find(a => a.date === dateStr) || null
-        weekDays.push({ date: currentDate, activity })
+        weekDays.push({
+          date: dateObj,
+          dateStr,
+          activity: activityMap.get(dateStr) || null,
+          isFuture,
+        })
+        current.setDate(current.getDate() + 1)
       }
 
-      // Get week number
-      const weekNumber = getWeekNumber(currentMonday)
-
-      // Check if this is the first week of a new month
-      const monthOfWeek = currentMonday.getMonth()
+      // Check if this week starts a new month
+      const weekMonth = weekDays[0].date.getMonth()
       let monthLabel: string | undefined
-      if (monthOfWeek !== currentMonth) {
-        monthLabel = currentMonday.toLocaleDateString('en-US', { month: 'short' })
-        currentMonth = monthOfWeek
+      if (weekMonth !== prevMonth) {
+        monthLabel = weekDays[0].date.toLocaleDateString('en-US', { month: 'short' })
+        prevMonth = weekMonth
       }
 
-      weeks.push({ days: weekDays, weekNumber, monthLabel })
-
-      // Move to next Monday
-      currentMonday.setDate(currentMonday.getDate() + 7)
-      weekCount++
+      weeks.push({ days: weekDays, monthLabel })
     }
 
     return weeks
-  }
+  }, [selectedYear, activityMap])
 
-  // Calculate ISO week number
-  const getWeekNumber = (date: Date): number => {
-    const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()))
-    const dayNum = d.getUTCDay() || 7
-    d.setUTCDate(d.getUTCDate() + 4 - dayNum)
-    const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1))
-    return Math.ceil((((d.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
-  }
+  // Calculate max activity for color scaling
+  const maxActivity = useMemo(() => {
+    return Math.max(...activityData.map(a => a.samples + a.cups), 1)
+  }, [activityData])
 
-  const getActivityColor = (activity: DayActivity | null) => {
+  const getActivityColor = (activity: DayActivity | null, isFuture: boolean) => {
+    if (isFuture) return 'bg-transparent'
+
     if (!activity || (activity.samples === 0 && activity.cups === 0)) {
-      return 'bg-muted/20'
+      return 'bg-[#ebedf0] dark:bg-[#161b22]'
     }
 
     const total = activity.samples + activity.cups
+    const ratio = total / maxActivity
 
-    // Define intensity levels based on activity - green tones
-    if (total >= 20) return 'bg-emerald-600 dark:bg-emerald-500' // High activity
-    if (total >= 10) return 'bg-emerald-500 dark:bg-emerald-400' // Medium-high
-    if (total >= 5) return 'bg-emerald-400 dark:bg-emerald-300' // Medium
-    return 'bg-emerald-300 dark:bg-emerald-200' // Low activity
+    if (ratio > 0.75) return 'bg-[#216e39] dark:bg-[#39d353]'
+    if (ratio > 0.5) return 'bg-[#30a14e] dark:bg-[#26a641]'
+    if (ratio > 0.25) return 'bg-[#40c463] dark:bg-[#006d32]'
+    return 'bg-[#9be9a8] dark:bg-[#0e4429]'
   }
 
-  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri']
-  const heatmapData = generateHeatmapData()
+  const dayLabels = ['', 'Mon', '', 'Wed', '', 'Fri', '']
 
-  // Calculate max activity for tooltip context
-  const maxActivity = Math.max(...activityData.map(a => a.samples + a.cups), 1)
-
-  // Get current week number for highlighting
-  const getCurrentWeekNumber = () => {
-    const now = new Date()
-    return getWeekNumber(now)
-  }
-  const currentWeekNumber = getCurrentWeekNumber()
-
-  // Calculate totals for title
   const totalSamples = activityData.reduce((sum, a) => sum + a.samples, 0)
   const totalCups = activityData.reduce((sum, a) => sum + a.cups, 0)
 
+  const getLabDisplayName = (lab: { id: string; name: string; code: string; city: string | null }) => {
+    return lab.city || lab.code || lab.name
+  }
+
+  const selectedLabName = selectedLab === 'all'
+    ? 'All Labs'
+    : getLabDisplayName(laboratories.find(l => l.id === selectedLab) || { id: '', name: 'Lab', code: '', city: null })
+
   return (
-    <Card className="w-fit">
-      <CardHeader>
-        <div className="flex items-center justify-between">
-          <CardTitle>
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-4">
+          <CardTitle className="text-sm font-normal text-muted-foreground">
             {totalSamples.toLocaleString()} samples processed, and a total of {totalCups.toLocaleString()} cups in {selectedYear}
           </CardTitle>
-          <div className="flex gap-2">
-            {showLabFilter && laboratories.length > 0 && (
-              <Select value={selectedLab} onValueChange={setSelectedLab}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Select lab" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Labs</SelectItem>
-                  {laboratories.map(lab => (
-                    <SelectItem key={lab.id} value={lab.id}>
-                      {lab.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          </div>
+          {showLabFilter && laboratories.length > 0 && (
+            <div className="relative">
+              <button
+                onClick={() => setLabDropdownOpen(!labDropdownOpen)}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <span>{selectedLabName}</span>
+                <ChevronDown className="h-3 w-3" />
+              </button>
+              {labDropdownOpen && (
+                <>
+                  <div className="fixed inset-0 z-40" onClick={() => setLabDropdownOpen(false)} />
+                  <div className="absolute right-0 top-full mt-1 z-50 bg-popover border border-border rounded-md shadow-md py-1 min-w-[140px]">
+                    <button
+                      onClick={() => { setSelectedLab('all'); setLabDropdownOpen(false) }}
+                      className={`w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors ${selectedLab === 'all' ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
+                    >
+                      All Labs
+                    </button>
+                    {laboratories.map(lab => (
+                      <button
+                        key={lab.id}
+                        onClick={() => { setSelectedLab(lab.id); setLabDropdownOpen(false) }}
+                        className={`w-full text-left px-3 py-1.5 text-xs hover:bg-muted transition-colors ${selectedLab === lab.id ? 'font-medium text-foreground' : 'text-muted-foreground'}`}
+                      >
+                        {getLabDisplayName(lab)}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -319,74 +309,54 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
           </div>
         ) : (
-          <div className="space-y-4">
-            {/* Heatmap */}
-            <div className="w-fit">
-              <div className="flex gap-3">
-                {/* Weekday labels column */}
-                <div className="flex flex-col flex-shrink-0">
-                  {/* Empty space for month row */}
-                  <div className="h-4 mb-1" />
-                  {/* Weekday labels */}
-                  <div className="flex flex-col gap-[2px]">
-                    {weekdays.map(day => (
-                      <div key={day} className="h-[11px] flex items-center justify-end pr-2 min-w-[32px]">
-                        <span className="text-[10px] text-muted-foreground font-medium leading-none">{day}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Empty space for week number row */}
-                  <div className="h-4 mt-1" />
+          <div className="space-y-3">
+            {/* Heatmap grid */}
+            <div className="overflow-x-auto">
+              <div className="inline-flex gap-[3px]">
+                {/* Day labels column */}
+                <div className="flex flex-col gap-[3px] pr-2 pt-[18px]">
+                  {dayLabels.map((label, i) => (
+                    <div key={i} className="h-[13px] flex items-center justify-end">
+                      {label && (
+                        <span className="text-[10px] text-muted-foreground leading-none">{label}</span>
+                      )}
+                    </div>
+                  ))}
                 </div>
 
-                {/* Grid with months and week numbers */}
-                <div className="flex flex-col overflow-x-auto flex-1">
-                  {/* Month labels row */}
-                  <div className="flex gap-[2px] h-4 mb-1">
-                    {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="w-[11px] flex-shrink-0 flex items-start">
+                {/* Weeks grid */}
+                <div className="flex flex-col">
+                  {/* Month labels */}
+                  <div className="flex gap-[3px] h-[14px] mb-1">
+                    {heatmapData.map((week, wi) => (
+                      <div key={wi} className="w-[13px] flex-shrink-0">
                         {week.monthLabel && (
-                          <span className="text-[11px] font-semibold text-foreground whitespace-nowrap">
-                            {week.monthLabel}
-                          </span>
+                          <span className="text-[10px] text-muted-foreground whitespace-nowrap">{week.monthLabel}</span>
                         )}
                       </div>
                     ))}
                   </div>
 
-                  {/* Grid */}
-                  <div className="flex gap-[2px]">
-                    {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="flex flex-col gap-[2px] flex-shrink-0">
-                        {week.days.map((day, dayIndex) => {
-                          const dateStr = day.date.toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric'
-                          })
+                  {/* Grid of squares */}
+                  <div className="flex gap-[3px]">
+                    {heatmapData.map((week, wi) => (
+                      <div key={wi} className="flex flex-col gap-[3px]">
+                        {week.days.map((day, di) => {
+                          if (day.isFuture) {
+                            return <div key={di} className="w-[13px] h-[13px]" />
+                          }
                           const tooltip = day.activity
-                            ? `${dateStr}: ${day.activity.samples} samples, ${day.activity.cups} cups`
-                            : `${dateStr}: No activity`
+                            ? `${day.activity.samples + day.activity.cups} activities on ${day.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} (${day.activity.samples} samples, ${day.activity.cups} cups)`
+                            : `No activity on ${day.date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
 
                           return (
                             <div
-                              key={dayIndex}
-                              className={`w-[11px] h-[11px] rounded-sm ${getActivityColor(day.activity)} transition-all hover:ring-2 hover:ring-primary cursor-pointer`}
+                              key={di}
+                              className={`w-[13px] h-[13px] rounded-[2px] ${getActivityColor(day.activity, day.isFuture)} transition-colors hover:ring-1 hover:ring-foreground/30 cursor-default`}
                               title={tooltip}
                             />
                           )
                         })}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Week numbers row */}
-                  <div className="flex gap-[2px] h-4 mt-1">
-                    {heatmapData.map((week, weekIndex) => (
-                      <div key={weekIndex} className="w-[11px] flex-shrink-0 flex items-center justify-center">
-                        <span className={`text-[8px] font-medium ${week.weekNumber === currentWeekNumber ? 'text-emerald-500' : 'text-muted-foreground/60'}`}>
-                          {week.weekNumber}
-                        </span>
                       </div>
                     ))}
                   </div>
@@ -395,29 +365,28 @@ export function ActivityHeatmap({ showLabFilter = false }: ActivityHeatmapProps)
             </div>
 
             {/* Legend and year selector */}
-            <div className="flex items-center justify-between pt-4 border-t">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">Less</span>
-                <div className="flex gap-1">
-                  <div className="w-[11px] h-[11px] rounded-sm bg-muted/20" />
-                  <div className="w-[11px] h-[11px] rounded-sm bg-emerald-300 dark:bg-emerald-200" />
-                  <div className="w-[11px] h-[11px] rounded-sm bg-emerald-400 dark:bg-emerald-300" />
-                  <div className="w-[11px] h-[11px] rounded-sm bg-emerald-500 dark:bg-emerald-400" />
-                  <div className="w-[11px] h-[11px] rounded-sm bg-emerald-600 dark:bg-emerald-500" />
+            <div className="flex items-center justify-between pt-2">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[10px] text-muted-foreground">Less</span>
+                <div className="flex gap-[2px]">
+                  <div className="w-[13px] h-[13px] rounded-[2px] bg-[#ebedf0] dark:bg-[#161b22]" />
+                  <div className="w-[13px] h-[13px] rounded-[2px] bg-[#9be9a8] dark:bg-[#0e4429]" />
+                  <div className="w-[13px] h-[13px] rounded-[2px] bg-[#40c463] dark:bg-[#006d32]" />
+                  <div className="w-[13px] h-[13px] rounded-[2px] bg-[#30a14e] dark:bg-[#26a641]" />
+                  <div className="w-[13px] h-[13px] rounded-[2px] bg-[#216e39] dark:bg-[#39d353]" />
                 </div>
-                <span className="text-xs text-muted-foreground">More</span>
+                <span className="text-[10px] text-muted-foreground">More</span>
               </div>
 
-              {/* Year filters */}
               {availableYears.length > 0 && (
-                <div className="flex gap-2">
+                <div className="flex gap-1">
                   {availableYears.map(year => (
                     <Button
                       key={year}
                       variant={selectedYear === year ? 'default' : 'ghost'}
                       size="sm"
                       onClick={() => setSelectedYear(year)}
-                      className="h-8 px-3 text-xs"
+                      className="h-6 px-2 text-[10px]"
                     >
                       {year}
                     </Button>

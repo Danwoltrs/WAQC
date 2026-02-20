@@ -66,23 +66,39 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
           </div>
           <div>
             <span className="text-muted-foreground">Seller:</span> {formData.seller || '-'}
+            {formData.seller_contract_nr && <span className="text-muted-foreground"> - {formData.seller_contract_nr}</span>}
           </div>
           <div>
-            <span className="text-muted-foreground">Shipper:</span> {formData.shipper || '-'}
+            <span className="text-muted-foreground">Shipper:</span> {(formData.same_seller_shipper ? formData.seller : formData.shipper) || '-'}
+            {formData.supplier_contract_nr && <span className="text-muted-foreground"> - {formData.supplier_contract_nr}</span>}
           </div>
           {formData.importer && (
             <div>
               <span className="text-muted-foreground">Importer:</span> {formData.importer}
+              {formData.importer_contract_nr && <span className="text-muted-foreground"> - {formData.importer_contract_nr}</span>}
             </div>
           )}
           {!formData.importer_is_qc_client && formData.qc_client && (
             <div>
               <span className="text-muted-foreground">QC Client:</span> {formData.qc_client}
+              {formData.qc_client_contract_nr && <span className="text-muted-foreground"> - {formData.qc_client_contract_nr}</span>}
             </div>
           )}
           {formData.roaster && (
             <div>
               <span className="text-muted-foreground">Roaster:</span> {formData.roaster}
+              {formData.roaster_contract_nr && <span className="text-muted-foreground"> - {formData.roaster_contract_nr}</span>}
+            </div>
+          )}
+          {formData.end_client && (
+            <div>
+              <span className="text-muted-foreground">End Client:</span> {formData.end_client}
+              {formData.end_client_contract_nr && <span className="text-muted-foreground"> - {formData.end_client_contract_nr}</span>}
+            </div>
+          )}
+          {formData.wolthers_contract_nr && (
+            <div>
+              <span className="text-muted-foreground">Wolthers:</span> {formData.wolthers_contract_nr}
             </div>
           )}
           {formData.quality_name && (
@@ -98,8 +114,13 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
                 ? `${formData.bag_count} bags`
                 : 'N/A'}
             {formData.equivalent_60kg_bags && formData.origin?.toLowerCase() === 'brazil' &&
-              ` (${formData.equivalent_60kg_bags} x 60kg)`
+              ` (${Math.round(parseFloat(formData.equivalent_60kg_bags))} x 60kg)`
             }
+            {formData.shipment_month && (() => {
+              const [year, month] = formData.shipment_month.split('-')
+              const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+              return ` ${monthNames[parseInt(month) - 1] || month} ${year} shpt`
+            })()}
           </div>
         </div>
       </div>

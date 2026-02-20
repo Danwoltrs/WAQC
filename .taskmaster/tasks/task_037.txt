@@ -1,0 +1,149 @@
+# Task ID: 37
+# Title: Fix RLS Policy Blocking Lab Assistants from Creating Samples
+# Status: done
+# Dependencies: 1, 26
+# Priority: high
+# Description: Resolve RLS policy error 42501 that prevents lab assistants from inserting new samples into the database. Update the INSERT policy to properly handle lab_assistant role alongside other lab personnel roles.
+# Details:
+PROBLEM ANALYSIS:
+The error code 42501 "new row violates row-level security policy for table samples" occurs when lab assistants attempt to create samples through POST /api/samples. The current RLS INSERT policy in database/migrations/010_comprehensive_rls_policies.sql (lines 78-82) only permits these roles: 'lab_personnel', 'lab_quality_manager', 'global_quality_admin', 'global_admin'. However, the user_role ENUM (001_initial_schema.sql:10-20) includes 'lab_assistant' as a distinct role not covered by the current policy.
+
+ROOT CAUSE:
+The INSERT policy uses get_user_qc_role() which checks profiles.qc_role against a hardcoded list that excludes 'lab_assistant'. Migration 098_fix_rls_array_comparison_issue.sql updated the UPDATE policy to avoid array comparisons but only fixed updates, not inserts.
+
+IMPLEMENTATION STEPS:
+
+1. Create new migration file: database/migrations/106_fix_lab_assistant_sample_insert.sql
+
+2. Include comprehensive fix addressing both INSERT and any remaining role checks:
+
+```sql
+-- Migration 106: Fix RLS policy to allow lab_assistant to create samples
+-- Date: 2025-11-25
+-- Purpose: Add lab_assistant role to sample INSERT policy to resolve error 42501
+
+-- Drop existing INSERT policy
+DROP POLICY IF EXISTS "Lab personnel can insert samples" ON samples;
+
+-- Create updated INSERT policy that includes lab_assistant
+CREATE POLICY "Lab personnel can insert samples" ON samples
+    FOR INSERT
+    WITH CHECK (
+        -- Service role bypasses all checks
+        auth.jwt() ->> 'role' = 'service_role'
+        OR
+        -- Lab personnel in the same lab (including lab_assistant)
+        (
+            laboratory_id = get_user_qc_laboratory(auth.uid())
+            AND
+            (
+                get_user_qc_role(auth.uid()) = 'lab_assistant' OR
+                get_user_qc_role(auth.uid()) = 'lab_personnel' OR
+                get_user_qc_role(auth.uid()) = 'lab_quality_manager' OR
+                get_user_qc_role(auth.uid()) = 'global_quality_admin' OR
+                get_user_qc_role(auth.uid()) = 'global_admin'
+            )
+        )
+    );
+
+COMMENT ON POLICY "Lab personnel can insert samples" ON samples IS
+'Allows service role and all lab personnel (including lab_assistant) to create samples in their assigned laboratory. Avoids IN operator to prevent array comparison errors.';
+
+-- Verification query
+SELECT 
+    'Migration 106 completed - lab_assistant can now create samples' as status,
+    (SELECT COUNT(*) FROM pg_policies WHERE tablename = 'samples' AND policyname = 'Lab personnel can insert samples') as policy_exists;
+```
+
+3. Verify the user_role ENUM includes 'lab_assistant':
+```sql
+SELECT enum_range(NULL::user_role);
+```
+
+4. Apply migration using Supabase dashboard SQL editor or via API:
+```bash
+psql "postgresql://postgres.[PROJECT-REF]:[PASSWORD]@[HOST]:5432/postgres" -f database/migrations/106_fix_lab_assistant_sample_insert.sql
+```
+
+5. Test sample creation:
+- Log in as a user with qc_role = 'lab_assistant'
+- Verify qc_enabled = true and laboratory_id is set in profiles table
+- Attempt to create a sample via POST /api/samples with minimal required fields:
+  {
+    "laboratory_id": "[lab-uuid]",
+    "origin": "Brazil",
+    "exporter_id": "[exporter-uuid]"
+  }
+- Verify successful 200 response with generated tracking_number
+
+6. Edge cases to consider:
+- Users with qc_enabled = false should still be blocked
+- Users without laboratory_id assignment should be blocked
+- Service role should bypass all checks for admin operations
+- Cross-lab sample creation should be prevented (user's lab must match sample.laboratory_id)
+
+REFERENCE FILES:
+- Current INSERT policy: database/migrations/010_comprehensive_rls_policies.sql:78-82
+- UPDATE policy fix (template): database/migrations/098_fix_rls_array_comparison_issue.sql:10-52
+- Sample creation endpoint: src/app/api/samples/route.ts:125-249
+- Role ENUM definition: database/migrations/001_initial_schema.sql:10-20
+- Helper functions: database/migrations/001_initial_schema.sql:262-283
+
+# Test Strategy:
+TESTING CHECKLIST:
+
+1. **Pre-Migration Verification**
+   - Query current policy: SELECT * FROM pg_policies WHERE tablename = 'samples' AND policyname LIKE '%insert%';
+   - Document current behavior with lab_assistant user attempting sample creation (should fail with 42501)
+
+2. **Migration Application**
+   - Run migration 106 in Supabase SQL editor
+   - Verify success message: "Migration 106 completed - lab_assistant can now create samples"
+   - Confirm policy_exists = 1 in verification query output
+
+3. **Positive Test Cases**
+   - **Lab Assistant**: Create sample as lab_assistant → expect 201 success
+   - **Lab Personnel**: Create sample as lab_personnel → expect 201 success (regression test)
+   - **Lab Quality Manager**: Create sample as lab_quality_manager → expect 201 success
+   - **Global Admin**: Create sample as global_quality_admin → expect 201 success
+   - **Service Role**: Create sample using service role key → expect 201 success
+
+4. **Negative Test Cases**
+   - **Disabled User**: Create sample with qc_enabled = false → expect 403 or 401
+   - **No Lab Assignment**: Create sample with laboratory_id = NULL in profile → expect 403
+   - **Cross-Lab Attempt**: Lab assistant from Lab A tries to create sample for Lab B → expect 403
+   - **Unauthorized Role**: Client/supplier/buyer role attempts sample creation → expect 403
+   - **Unauthenticated**: No auth token → expect 401
+
+5. **Integration Testing**
+   - Use sample intake form in UI to create sample as lab_assistant
+   - Verify tracking number generation works (RPC call succeeds)
+   - Verify quality specification auto-detection works
+   - Check activity log/notifications created successfully
+   - Verify sample appears in samples list with correct laboratory_id
+
+6. **Database Verification**
+   ```sql
+   -- Verify policy structure
+   SELECT * FROM pg_policies 
+   WHERE tablename = 'samples' 
+   AND policyname = 'Lab personnel can insert samples';
+   
+   -- Test policy directly
+   SET ROLE authenticated;
+   SET request.jwt.claims.sub TO '[lab-assistant-uuid]';
+   INSERT INTO samples (laboratory_id, origin, exporter_id, tracking_number)
+   VALUES ('[lab-uuid]', 'Brazil', '[exporter-uuid]', 'TEST-001');
+   ```
+
+7. **Rollback Test**
+   - Document rollback procedure if migration fails
+   - Test reverting to previous policy definition
+   - Ensure no data corruption from failed inserts
+
+8. **Production Deployment Checklist**
+   - Backup current database state
+   - Apply migration during low-traffic window
+   - Monitor error logs for 42501 errors (should disappear)
+   - Verify sample creation rate returns to normal
+   - Keep migration 098 as reference for UPDATE policy consistency

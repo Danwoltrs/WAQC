@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { SampleLabelDocument, SampleLabelData } from '@/components/pdf/sample-label'
-import { generateQRCode, getSampleTrackingUrl } from '@/lib/qr-code'
+import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
 
 /**
  * POST /api/samples/bulk/print-labels
@@ -41,8 +41,8 @@ export async function POST(request: NextRequest) {
         oic_number,
         client_id,
         exporter:exporters!samples_exporter_id_fkey(name),
-        supplier:suppliers(name),
-        clients!inner (
+        seller:exporters!samples_seller_id_fkey(name),
+        clients!samples_client_id_fkey!inner (
           id,
           client_quality_names
         )
@@ -61,8 +61,9 @@ export async function POST(request: NextRequest) {
     // Generate QR codes and prepare label data
     const labelsWithQR: SampleLabelData[] = await Promise.all(
       samples.map(async (sample: any) => {
-        const trackingUrl = getSampleTrackingUrl(sample.tracking_number)
-        const qrCode = await generateQRCode(trackingUrl, {
+        const qrData = await fetchCertificateQRData(supabase, sample.id, sample.tracking_number)
+        const qrContent = buildCertificateQRText(qrData)
+        const qrCode = await generateQRCode(qrContent, {
           width: 250,
           margin: 1,
         })
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
         return {
           tracking_number: sample.tracking_number,
           sample_type: sampleType,
-          exporter: sample.exporter?.name || sample.supplier?.name || 'N/A',
+          exporter: sample.exporter?.name || sample.seller?.name || 'N/A',
           quality_name: qualityName,
           bags_quantity: sample.bags ? sample.bags.toString() : undefined,
           wolthers_contract: sample.wolthers_contract_nr || undefined,

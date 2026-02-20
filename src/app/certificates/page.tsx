@@ -52,6 +52,7 @@ interface Certificate {
     tracking_number: string
     origin: string
     client_id: string
+    workflow_stage: string | null
     client?: {
       id: string
       name: string
@@ -361,16 +362,19 @@ export default function CertificatesPage() {
   }
 
   // Get status badge
-  const getStatusBadge = (status: string) => {
-    switch (status) {
+  const getStatusBadge = (cert: Certificate) => {
+    const isRejected = cert.sample?.workflow_stage === 'rejected'
+    switch (cert.status) {
       case 'issued':
-        return <Badge className="bg-green-600 hover:bg-green-700">Issued</Badge>
+        return isRejected
+          ? <Badge className="bg-red-600 hover:bg-red-700">Issued</Badge>
+          : <Badge className="bg-green-600 hover:bg-green-700">Issued</Badge>
       case 'draft':
         return <Badge variant="secondary">Draft</Badge>
       case 'revoked':
         return <Badge variant="destructive">Revoked</Badge>
       default:
-        return <Badge variant="outline">{status}</Badge>
+        return <Badge variant="outline">{cert.status}</Badge>
     }
   }
 
@@ -394,7 +398,6 @@ export default function CertificatesPage() {
 
   // Certificate preview modal state
   const [previewCertificate, setPreviewCertificate] = useState<Certificate | null>(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [showSingleEmailDialog, setShowSingleEmailDialog] = useState(false)
   const [singleEmailSending, setSingleEmailSending] = useState(false)
@@ -404,36 +407,18 @@ export default function CertificatesPage() {
     roaster: true
   })
 
-  // Handle opening preview modal
-  const handleViewCertificate = async (cert: Certificate) => {
+  // Handle opening preview modal - use API URL directly so browser respects Content-Disposition filename
+  const handleViewCertificate = (cert: Certificate) => {
     setPreviewCertificate(cert)
-    setPreviewLoading(true)
-    setPreviewPdfUrl(null)
-
-    try {
-      if (cert.sample_id) {
-        const response = await fetch(`/api/samples/${cert.sample_id}/certificate`)
-        if (response.ok) {
-          const blob = await response.blob()
-          const url = window.URL.createObjectURL(blob)
-          setPreviewPdfUrl(url)
-        }
-      }
-    } catch (error) {
-      console.error('Error loading certificate preview:', error)
-    } finally {
-      setPreviewLoading(false)
+    if (cert.sample_id) {
+      setPreviewPdfUrl(`/api/samples/${cert.sample_id}/certificate`)
     }
   }
 
   // Handle closing preview modal
   const handleClosePreview = () => {
-    if (previewPdfUrl) {
-      window.URL.revokeObjectURL(previewPdfUrl)
-    }
     setPreviewCertificate(null)
     setPreviewPdfUrl(null)
-    setPreviewLoading(false)
   }
 
   // Handle single certificate email
@@ -484,7 +469,7 @@ export default function CertificatesPage() {
 
   return (
     <MainLayout>
-      <div className="p-6 space-y-4">
+      <div className="p-6 space-y-4 max-w-[1400px]">
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">
@@ -704,7 +689,7 @@ export default function CertificatesPage() {
                           {new Date(cert.created_at).toLocaleDateString()}
                         </td>
                         <td className="py-3 px-2">
-                          {getStatusBadge(cert.status)}
+                          {getStatusBadge(cert)}
                         </td>
                         <td className="py-3 px-2 text-right">
                           <div className="flex items-center justify-end gap-1">
@@ -897,7 +882,7 @@ export default function CertificatesPage() {
 
         {/* Certificate Preview Modal */}
         <Dialog open={!!previewCertificate} onOpenChange={(open) => !open && handleClosePreview()}>
-          <DialogContent className="sm:max-w-[900px] max-h-[90vh]">
+          <DialogContent className="sm:max-w-[1100px] max-h-[95vh]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
@@ -917,15 +902,11 @@ export default function CertificatesPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="flex-1 min-h-[500px] bg-muted rounded-lg overflow-hidden">
-              {previewLoading ? (
-                <div className="flex items-center justify-center h-full">
-                  <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-                </div>
-              ) : previewPdfUrl ? (
+            <div className="flex-1 min-h-[700px] bg-muted rounded-lg overflow-hidden">
+              {previewPdfUrl ? (
                 <iframe
                   src={previewPdfUrl}
-                  className="w-full h-[500px] border-0"
+                  className="w-full h-[700px] border-0"
                   title="Certificate Preview"
                 />
               ) : (

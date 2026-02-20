@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { isUUID, slugToTrackingNumber } from '@/lib/utils'
 import { resolveSampleId } from '@/lib/sample-utils'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
@@ -32,15 +33,20 @@ export async function GET(
     const lookupByUUID = isUUID(id)
     const trackingNumber = lookupByUUID ? null : slugToTrackingNumber(id)
 
-    let query = supabase
+    // Cast to any because TypeScript types don't recognize the seller FK
+    // (two FKs to exporters table: exporter_id and seller_id)
+    let query = (supabase as any)
       .from('samples')
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
+        seller:exporters!samples_seller_id_fkey(id, name, country),
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        client:clients(id, company, fantasy_name, client_types)
+        client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
+        end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
+        certificate:certificates(id, certificate_number, status, created_at)
       `)
 
     // Query by UUID or tracking number
@@ -50,7 +56,34 @@ export async function GET(
       query = query.eq('tracking_number', trackingNumber!)
     }
 
-    const { data: sample, error } = await query.single()
+    let { data: sample, error } = await query.single()
+
+    // If slug lookup returned no rows, try case-insensitive fallback
+    if (!lookupByUUID && error?.code === 'PGRST116') {
+      const fallbackQuery = (supabase as any)
+        .from('samples')
+        .select(`
+          *,
+          quality_spec:client_qualities(custom_name, quality_code),
+          seller:exporters!samples_seller_id_fkey(id, name, country),
+          exporter:exporters!samples_exporter_id_fkey(id, name, country),
+          importer:importers(id, name, country),
+          roaster:roasters(id, name, country),
+          client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
+          end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
+          certificate:certificates(id, certificate_number, status, created_at)
+        `)
+        .ilike('tracking_number', trackingNumber!)
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle()
+
+      const fallbackResult = await fallbackQuery
+      if (fallbackResult.data) {
+        sample = fallbackResult.data
+        error = null
+      }
+    }
 
     if (error) {
       if (error.code === 'PGRST116') {
@@ -61,17 +94,29 @@ export async function GET(
     }
 
     // Check if client is a roaster type (roaster_final_buyer, roaster, etc.)
-    const clientTypes = (sample.client as { client_types?: string[] } | null)?.client_types || []
+    const clientObj = sample.client as { fantasy_name?: string; company?: string; country?: string; client_types?: string[] } | null
+    const clientTypes = clientObj?.client_types || []
     const isRoasterClient = clientTypes.some((t: string) => t.includes('roaster'))
     const isImporterClient = clientTypes.some((t: string) => t.includes('importer'))
-    const clientName = (sample.client as { fantasy_name?: string; company?: string } | null)?.fantasy_name ||
-      (sample.client as { fantasy_name?: string; company?: string } | null)?.company || null
+    const clientName = clientObj?.fantasy_name || clientObj?.company || null
+
+    // Handle certificate array - Supabase returns array for one-to-many relations
+    // A sample can have at most one certificate, so we take the first one
+    const certificate = Array.isArray(sample.certificate)
+      ? sample.certificate[0] || null
+      : sample.certificate || null
 
     // Transform sample to include flattened entity names (matching list API format)
     const transformedSample = {
       ...sample,
-      quality_name: sample.quality_spec?.custom_name || null,
+      // Prefer sample's own quality_name (for type samples or custom entries),
+      // fall back to quality_spec's custom_name
+      quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
       quality_code: sample.quality_spec?.quality_code || null,
+      // Seller (farm/producer) from seller_id
+      seller_name: sample.seller?.name || null,
+      seller_country: sample.seller?.country || null,
+      // Exporter/Shipper from exporter_id
       exporter_name: sample.exporter?.name || null,
       exporter_country: sample.exporter?.country || null,
       // Use importer from DB, or fall back to client if they're an importer type
@@ -80,12 +125,26 @@ export async function GET(
       // Use roaster from DB, or fall back to client if they're a roaster type
       roaster_name: sample.roaster?.name || (isRoasterClient ? clientName : null),
       roaster_country: sample.roaster?.country || null,
+      // QC Client (who hired Wolthers) from client_id
+      qc_client_name: clientName,
+      qc_client_country: clientObj?.country || null,
+      // End client (final buyer) - when NULL, QC client IS the end client
+      end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
+      end_client_country: sample.end_client?.country || null,
+      // Certificate info (flattened)
+      certificate_id: certificate?.id || null,
+      certificate_number: certificate?.certificate_number || null,
+      certificate_status: certificate?.status || null,
+      certificate_created_at: certificate?.created_at || null,
       // Remove nested objects to keep response clean
       quality_spec: undefined,
+      seller: undefined,
       exporter: undefined,
       importer: undefined,
       roaster: undefined,
-      client: undefined
+      end_client: undefined,
+      client: undefined,
+      certificate: undefined
     }
 
     return NextResponse.json({ sample: transformedSample })
@@ -174,7 +233,11 @@ export async function PATCH(
       'roaster_id',
       'seller_id',
       'supplier_type',
-      'same_seller_shipper'
+      'same_seller_shipper',
+      'importer_is_qc_client',
+      'end_client_id',
+      'end_client_contract_nr',
+      'supplier_contract_nr'
     ]
 
     for (const field of allowedFields) {
@@ -213,6 +276,19 @@ export async function PATCH(
         error: 'Failed to update sample',
         details: updateError.message
       }, { status: 500 })
+    }
+
+    // Invalidate cached certificate PDF if certificate-relevant fields changed
+    const certFields = [
+      'container_nr', 'wolthers_contract_nr', 'buyer_contract_nr', 'exporter_contract_nr',
+      'roaster_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'qc_client_contract_nr',
+      'exporter_id', 'importer_id', 'roaster_id', 'seller_id', 'origin', 'bags',
+      'bag_type', 'bag_weight_kg', 'bags_quantity_mt', 'bag_count', 'equivalent_60kg_bags',
+      'end_client_id', 'end_client_contract_nr', 'quality_spec_id',
+    ]
+    const hasCertFieldChange = certFields.some((f) => body[f] !== undefined)
+    if (hasCertFieldChange) {
+      invalidateCertificatePdf(supabase, id).catch(() => {})
     }
 
     return NextResponse.json({ sample })

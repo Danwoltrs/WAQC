@@ -5,6 +5,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
+import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -67,6 +68,7 @@ export async function POST(request: NextRequest) {
         id,
         certificate_number,
         sample_id,
+        pdf_url,
         sample:samples(
           id,
           tracking_number,
@@ -182,6 +184,18 @@ export async function POST(request: NextRequest) {
           if (!cert.sample_id) continue
 
           try {
+            // Try cached PDF first
+            if ((cert as any).pdf_url) {
+              const cachedBuffer = await getCachedCertificatePdf(supabase, (cert as any).pdf_url)
+              if (cachedBuffer) {
+                attachments.push({
+                  filename: `${cert.certificate_number}.pdf`,
+                  content: cachedBuffer
+                })
+                continue
+              }
+            }
+
             const certificateData = await getCertificateData(cert.sample_id)
             if (!certificateData) continue
 
@@ -223,10 +237,15 @@ export async function POST(request: NextRequest) {
               flagBase64,
             })
             const pdfBuffer = await renderToBuffer(certificateElement as any)
+            const pdfContent = Buffer.from(pdfBuffer)
+
+            // Cache the generated PDF
+            uploadCertificatePdf(supabase, cert.sample_id, cert.id, pdfContent)
+              .catch((err) => console.error('[SendEmail] Cache upload failed:', err))
 
             attachments.push({
               filename: `${cert.certificate_number}.pdf`,
-              content: Buffer.from(pdfBuffer)
+              content: pdfContent
             })
           } catch (pdfError) {
             console.error(`Error generating PDF for certificate ${cert.id}:`, pdfError)

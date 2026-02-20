@@ -17,11 +17,15 @@ import {
   XCircle,
   Clock,
   Package,
+  Pencil,
 } from 'lucide-react'
 import { format } from 'date-fns'
+import Link from 'next/link'
+import { Button } from '@/components/ui/button'
 import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import { ClientQualityManager } from './client-quality-manager'
 import { ClientAnalyticsDashboard } from './client-analytics-dashboard'
+import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN, generateCertificatePreview } from '@/types/certificate-pattern'
 
 interface ClientDetailViewProps {
   clientId: string
@@ -125,7 +129,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
                 <CardDescription className="text-base mt-1">{client.name}</CardDescription>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-2">
               {client.is_qc_client && (
                 <Badge variant="default">QC Client</Badge>
               )}
@@ -138,6 +142,12 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
                   Inactive
                 </Badge>
               )}
+              <Link href={`/clients/${client.id}/edit`}>
+                <Button variant="outline" size="sm">
+                  <Pencil className="h-4 w-4 mr-2" />
+                  Edit
+                </Button>
+              </Link>
             </div>
           </div>
         </CardHeader>
@@ -240,7 +250,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="specs" className="space-y-4">
-          <ClientQualityManager clientId={clientId} clientName={client.name} />
+          <ClientQualityManager clientId={client.id} clientName={client.fantasy_name || client.company} />
         </TabsContent>
 
         <TabsContent value="metrics" className="space-y-4">
@@ -248,7 +258,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="analytics" className="space-y-4">
-          <ClientAnalyticsDashboard clientId={clientId} clientName={client.name} />
+          <ClientAnalyticsDashboard clientId={client.id} clientName={client.fantasy_name || client.company} />
         </TabsContent>
       </Tabs>
     </div>
@@ -310,6 +320,43 @@ function OverviewTab({ client }: { client: any }) {
           <InfoField label="Fee Payer" value={client.fee_payer?.replace('_', ' ')} />
           <InfoField label="Payment Terms" value={client.payment_terms} />
         </div>
+
+        {/* Certificate Pattern Section */}
+        {client.certificate_pattern && (
+          <div className="mt-6 pt-6 border-t">
+            <h3 className="text-sm font-semibold mb-3">Certificate Number Pattern</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Preview</p>
+                <p className="font-mono text-lg font-semibold mt-1">
+                  {generateCertificatePreview(
+                    client.certificate_pattern as CertificatePattern,
+                    client.certificate_pattern.has_quality_code ? 'QC' : undefined,
+                    client.certificate_pattern.has_origin_code ? 'BR' : undefined
+                  )}
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <InfoField
+                  label="Origin Code"
+                  value={client.certificate_pattern.has_origin_code ? `Yes (${client.certificate_pattern.origin_position})` : 'No'}
+                />
+                <InfoField
+                  label="Quality Code"
+                  value={client.certificate_pattern.has_quality_code ? `Yes (${client.certificate_pattern.quality_position})` : 'No'}
+                />
+                <InfoField
+                  label="Sequence Padding"
+                  value={String(client.certificate_pattern.sequence_padding || 6)}
+                />
+                <InfoField
+                  label="Year Format"
+                  value={client.certificate_pattern.year_format || 'YY'}
+                />
+              </div>
+            </div>
+          </div>
+        )}
       </CardContent>
     </Card>
   )

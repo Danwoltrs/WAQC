@@ -3,7 +3,8 @@ import { createClient } from '@/lib/supabase-server'
 
 /**
  * GET /api/importers
- * List all importers with optional search
+ * List all importers from the importers table
+ * (samples.importer_id FK references this table)
  */
 export async function GET(request: NextRequest) {
   try {
@@ -19,9 +20,9 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const country = searchParams.get('country')
 
-    let query = (supabase as any)
+    let query = supabase
       .from('importers')
-      .select('*')
+      .select('id, name, country, contact_email, contact_phone, notes')
       .order('name')
 
     if (search) {
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch importers' }, { status: 500 })
     }
 
-    return NextResponse.json({ importers })
+    return NextResponse.json({ importers: importers || [] })
   } catch (error) {
     console.error('Error in GET /api/importers:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })

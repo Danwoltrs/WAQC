@@ -1,5 +1,6 @@
 'use client'
 
+import { useRouter } from 'next/navigation'
 import { Bell, Calendar, Clock, AlertCircle, CheckCircle, XCircle, X, AlertTriangle, Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -56,12 +57,24 @@ const formatTimeAgo = (date: Date) => {
 }
 
 export function RightSidebar({ onClose }: RightSidebarProps) {
+  const router = useRouter()
   const { notifications, unreadCount, markAsRead, loading: notificationsLoading } = useNotifications({ limit: 10 })
   const { activities, loading: activitiesLoading } = useActivityFeed({ limit: 10 })
 
-  const handleNotificationClick = async (notificationId: string) => {
+  const handleNotificationClick = async (notificationId: string, link?: string | null) => {
     try {
+      // Mark as read
       await markAsRead([notificationId])
+
+      // Navigate to link if provided
+      if (link) {
+        // Close the sidebar first
+        if (onClose) {
+          onClose()
+        }
+        // Navigate to the link
+        router.push(link)
+      }
     } catch (error) {
       console.error('Failed to mark notification as read:', error)
     }
@@ -112,7 +125,7 @@ export function RightSidebar({ onClose }: RightSidebarProps) {
             notifications.slice(0, 10).map((notification) => (
               <div
                 key={notification.id}
-                onClick={() => handleNotificationClick(notification.id)}
+                onClick={() => handleNotificationClick(notification.id, notification.link)}
                 className={cn(
                   'flex gap-3 p-2 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer',
                   !notification.read && 'bg-accent/20'

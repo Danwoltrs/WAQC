@@ -24,7 +24,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Get client quality specifications with template details
+    // Get active client quality specifications with template details
     const { data: specifications, error } = await supabase
       .from('client_qualities')
       .select(`
@@ -32,6 +32,7 @@ export async function GET(
         template:quality_templates(*)
       `)
       .eq('client_id', clientId)
+      .eq('is_active', true)
       .order('created_at', { ascending: false })
 
     if (error) {

@@ -1,0 +1,40 @@
+# Task ID: 45
+# Title: Client URL Slugs Implementation
+# Status: done
+# Dependencies: None
+# Priority: medium
+# Description: Replace UUID-based client URLs with human-readable slugs based on fantasy name
+# Details:
+IMPLEMENTATION COMPLETED (2025-12-02):
+
+**Database Migration** (supabase/migrations/20251202000000_add_client_slug.sql):
+- Added `slug` column to clients table with unique constraint
+- Enabled `unaccent` PostgreSQL extension for accented character handling (é → e, ñ → n)
+- Created `generate_client_slug()` function:
+  - Converts fantasy_name/company to lowercase URL-safe slug
+  - Uses unaccent to transliterate accented characters
+  - Handles duplicates by appending -1, -2, etc.
+  - Limits to 50 characters
+- Created trigger `trigger_set_client_slug` for auto-generation on insert
+- Backfills existing clients with slugs
+- Added index `idx_clients_slug` for fast lookups
+
+**API Updates** (src/app/api/clients/[id]/route.ts):
+- Added `isUUID()` helper function to detect UUID vs slug
+- GET, PATCH, DELETE routes now support lookup by UUID or slug
+- Uses actual client.id (UUID) for all subsequent queries after initial lookup
+- Fully backward compatible - old UUID links still work
+
+**Frontend Updates** (src/app/clients/page.tsx):
+- Added `slug` field to Client interface
+- Updated links to use `client.slug || client.id` for fallback
+
+**Example Results**:
+- /clients/dunkin instead of /clients/38bed9ad-a915-4110-b313-1492809e6c24
+- Douqué → douque (accents handled)
+- Café São Paulo → cafe-sao-paulo
+
+**Commits**: 11870c3, 1121217
+
+# Test Strategy:
+

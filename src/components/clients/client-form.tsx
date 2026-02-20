@@ -283,7 +283,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
     country: '',
     zip_code: '',
     client_types: [],
-    is_qc_client: true,
+    is_qc_client: false,
     pricing_model: 'per_sample',
     price_per_sample: undefined,
     price_per_pound_cents: undefined,

@@ -1,10 +1,12 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { Header } from './header'
 import { LeftSidebar } from './left-sidebar'
 import { RightSidebar } from './right-sidebar'
 import { useNotifications } from '@/hooks/use-notifications'
+import { useAuth } from '@/components/providers/auth-provider'
 import { cn } from '@/lib/utils'
 
 interface MainLayoutProps {
@@ -12,10 +14,30 @@ interface MainLayoutProps {
 }
 
 export function MainLayout({ children }: MainLayoutProps) {
+  const { user, loading } = useAuth()
+  const router = useRouter()
   const [leftSidebarOpen, setLeftSidebarOpen] = useState(true)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [notificationsSidebarOpen, setNotificationsSidebarOpen] = useState(false)
   const { unreadCount } = useNotifications({ unreadOnly: true, limit: 100 })
+
+  // Redirect to login if not authenticated
+  if (!loading && !user) {
+    router.replace('/')
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
+
+  if (loading) {
+    return (
+      <div className="h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="h-screen flex flex-col bg-background">

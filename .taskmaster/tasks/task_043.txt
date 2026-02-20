@@ -1,0 +1,483 @@
+# Task ID: 43
+# Title: Fix Microsoft OAuth invitation flow losing token during redirect
+# Status: pending
+# Dependencies: 26
+# Priority: high
+# Description: Preserve invitation token through Microsoft OAuth redirect to prevent falling back to fragile email-only matching. Add token validation in callback handler, implement proper error handling for token validation failures, and add logging for debugging invitation acceptance flows.
+# Details:
+**PROBLEM ANALYSIS:**
+
+The current implementation in `src/app/auth/accept-invite/page.tsx` (lines 143-149) loses the invitation token during OAuth redirect:
+
+```typescript
+const { error: oauthError } = await supabase.auth.signInWithOAuth({
+  provider: 'azure',
+  options: {
+    redirectTo: `${window.location.origin}/auth/callback?next=/dashboard`,
+    scopes: 'email profile openid',
+  },
+})
+```
+
+When users authenticate via Microsoft OAuth, the system redirects to `/auth/callback` without preserving the invitation token. The callback handler (`src/app/auth/callback/route.ts`) then only exchanges the OAuth code for a session, and the database trigger `handle_new_user()` falls back to email-only matching (migration 096, lines 18-25). This fragile approach fails if:
+- Invitation has expired
+- Invitation was already accepted
+- Multiple invitations exist for the same email
+
+**IMPLEMENTATION STEPS:**
+
+### 1. **Preserve Token in OAuth Flow** (src/app/auth/accept-invite/page.tsx)
+
+Update `handleMicrosoftSignup` function (line 131-159):
+
+```typescript
+const handleMicrosoftSignup = async () => {
+  if (!token) {
+    setError('Invalid invitation')
+    return
+  }
+
+  setSubmitting(true)
+  setError(null)
+
+  try {
+    // Preserve invitation token through OAuth redirect
+    const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      provider: 'azure',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback?next=/dashboard&invitation_token=${token}`,
+        scopes: 'email profile openid',
+      },
+    })
+
+    if (oauthError) throw oauthError
+
+    // OAuth redirect will happen automatically
+  } catch (err: any) {
+    console.error('Error with Microsoft sign-in:', err)
+    setError(err.message || 'Failed to sign in with Microsoft. Please try again.')
+    setSubmitting(false)
+  }
+}
+```
+
+**Key Change:** Add `&invitation_token=${token}` to the `redirectTo` URL parameter.
+
+### 2. **Validate Token in Callback Handler** (src/app/auth/callback/route.ts)
+
+Update the `GET` handler to extract and validate the invitation token before profile creation:
+
+```typescript
+export async function GET(request: NextRequest) {
+  const requestUrl = new URL(request.url)
+  const code = requestUrl.searchParams.get('code')
+  const next = requestUrl.searchParams.get('next') || '/'
+  const invitationToken = requestUrl.searchParams.get('invitation_token')
+  const error = requestUrl.searchParams.get('error')
+  const errorDescription = requestUrl.searchParams.get('error_description')
+
+  // Log invitation token presence for debugging
+  if (invitationToken) {
+    console.log('OAuth callback with invitation token:', invitationToken.substring(0, 8) + '...')
+  }
+
+  // Handle OAuth errors
+  if (error) {
+    console.error('OAuth error:', error, errorDescription)
+    return NextResponse.redirect(
+      `${requestUrl.origin}/?error=${encodeURIComponent(errorDescription || error)}`
+    )
+  }
+
+  // If no code, redirect to home (login page)
+  if (!code) {
+    console.error('No code provided in OAuth callback')
+    return NextResponse.redirect(`${requestUrl.origin}/`)
+  }
+
+  try {
+    const cookieStore = await cookies()
+
+    // Create response to set cookies properly
+    const response = NextResponse.redirect(`${requestUrl.origin}${next}`)
+
+    const supabase = createServerClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            try {
+              cookieStore.set({ name, value, ...options })
+              response.cookies.set({ name, value, ...options })
+            } catch (error) {
+              console.error('Error setting cookie:', name, error)
+            }
+          },
+          remove(name: string, options: any) {
+            try {
+              cookieStore.set({ name, value: '', ...options })
+              response.cookies.set({ name, value: '', ...options })
+            } catch (error) {
+              console.error('Error removing cookie:', name, error)
+            }
+          },
+        },
+      }
+    )
+
+    // If invitation token provided, validate it before proceeding
+    if (invitationToken) {
+      const { data: invitation, error: invitationError } = await supabase
+        .from('user_invitations')
+        .select('*')
+        .eq('invitation_token', invitationToken)
+        .eq('status', 'pending')
+        .single()
+
+      if (invitationError || !invitation) {
+        console.error('Invalid or expired invitation token:', invitationError)
+        return NextResponse.redirect(
+          `${requestUrl.origin}/auth/accept-invite?token=${invitationToken}&error=${encodeURIComponent('Invitation not found or has expired')}`
+        )
+      }
+
+      // Check expiration
+      const expiresAt = new Date(invitation.expires_at)
+      if (expiresAt < new Date()) {
+        console.error('Invitation has expired:', invitationToken)
+        return NextResponse.redirect(
+          `${requestUrl.origin}/auth/accept-invite?token=${invitationToken}&error=${encodeURIComponent('This invitation has expired')}`
+        )
+      }
+
+      console.log('Valid invitation found for email:', invitation.email)
+    }
+
+    // Exchange code for session
+    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+
+    if (exchangeError) {
+      console.error('Error exchanging code for session:', exchangeError)
+      return NextResponse.redirect(
+        `${requestUrl.origin}/?error=${encodeURIComponent(exchangeError.message)}`
+      )
+    }
+
+    if (!data.session) {
+      console.error('No session returned after code exchange')
+      return NextResponse.redirect(
+        `${requestUrl.origin}/?error=No+session+created`
+      )
+    }
+
+    console.log('Successfully created session for user:', data.user?.id)
+    if (invitationToken) {
+      console.log('Profile should be created via invitation token:', invitationToken.substring(0, 8) + '...')
+    }
+    
+    return response
+
+  } catch (error) {
+    console.error('Unexpected error in OAuth callback:', error)
+    return NextResponse.redirect(
+      `${requestUrl.origin}/?error=${encodeURIComponent('Authentication failed')}`
+    )
+  }
+}
+```
+
+**Key Changes:**
+- Extract `invitation_token` from query parameters (line 8)
+- Add logging for debugging invitation flows
+- Validate token exists and is valid before exchanging OAuth code
+- Redirect back to accept-invite page with error if validation fails
+- Log successful invitation-based authentication
+
+### 3. **Update Database Trigger** (New migration file)
+
+Create migration `database/migrations/112_prioritize_invitation_token_over_email.sql`:
+
+```sql
+-- Migration 112: Prioritize invitation token over email matching in handle_new_user
+-- Date: 2025-11-27
+-- Purpose: Make invitation acceptance more robust by prioritizing token-based matching
+
+DROP FUNCTION IF EXISTS handle_new_user() CASCADE;
+
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+DECLARE
+  invitation_record RECORD;
+  invitation_token_param TEXT;
+BEGIN
+  -- Try to extract invitation_token from raw_user_meta_data if it was passed through OAuth
+  invitation_token_param := NEW.raw_user_meta_data->>'invitation_token';
+
+  -- Priority 1: Match by invitation token if available (most reliable)
+  IF invitation_token_param IS NOT NULL THEN
+    SELECT * INTO invitation_record
+    FROM user_invitations
+    WHERE invitation_token = invitation_token_param
+      AND status = 'pending'
+      AND expires_at > NOW()
+    LIMIT 1;
+
+    IF FOUND THEN
+      RAISE LOG 'Found invitation by token for user %', NEW.email;
+    END IF;
+  END IF;
+
+  -- Priority 2: Fallback to case-insensitive email matching only if no token match
+  IF invitation_record IS NULL THEN
+    SELECT * INTO invitation_record
+    FROM user_invitations
+    WHERE LOWER(email) = LOWER(NEW.email)
+      AND status = 'pending'
+      AND expires_at > NOW()
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF FOUND THEN
+      RAISE LOG 'Found invitation by email for user %', NEW.email;
+    END IF;
+  END IF;
+
+  -- If invitation exists, create profile with invitation data
+  IF invitation_record IS NOT NULL THEN
+    INSERT INTO public.profiles (
+      id,
+      email,
+      first_name,
+      last_name,
+      full_name,
+      qc_role,
+      laboratory_id,
+      is_cupper,
+      is_q_grader,
+      qc_enabled,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      NEW.id,
+      NEW.email,
+      invitation_record.first_name,
+      invitation_record.last_name,
+      invitation_record.first_name || ' ' || invitation_record.last_name,
+      invitation_record.qc_role,
+      invitation_record.laboratory_id,
+      invitation_record.is_cupper,
+      invitation_record.is_q_grader,
+      invitation_record.qc_enabled,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO NOTHING;
+
+    -- Mark invitation as accepted
+    UPDATE user_invitations
+    SET status = 'accepted',
+        accepted_at = NOW(),
+        updated_at = NOW()
+    WHERE id = invitation_record.id;
+
+    RAISE LOG 'Profile created and invitation accepted for user %', NEW.email;
+
+  ELSE
+    -- No invitation found - create basic profile from user metadata
+    RAISE LOG 'No invitation found for user %, creating basic profile', NEW.email;
+    
+    INSERT INTO public.profiles (
+      id,
+      email,
+      first_name,
+      last_name,
+      full_name,
+      qc_role,
+      qc_enabled,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      NEW.id,
+      NEW.email,
+      COALESCE(NEW.raw_user_meta_data->>'first_name', split_part(NEW.email, '@', 1)),
+      COALESCE(NEW.raw_user_meta_data->>'last_name', ''),
+      COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1)),
+      'lab_personnel',
+      false,
+      NOW(),
+      NOW()
+    )
+    ON CONFLICT (id) DO NOTHING;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+CREATE TRIGGER on_auth_user_created
+  AFTER INSERT ON auth.users
+  FOR EACH ROW
+  EXECUTE FUNCTION handle_new_user();
+
+COMMENT ON FUNCTION handle_new_user() IS
+'Automatically creates a profile when a user signs up. Prioritizes invitation token matching over email matching for OAuth flows.';
+```
+
+**Key Changes:**
+- Extract `invitation_token` from OAuth user metadata
+- Prioritize token-based matching over email matching
+- Add comprehensive logging with `RAISE LOG` statements
+- Add `ON CONFLICT (id) DO NOTHING` to prevent duplicate profile errors
+
+### 4. **Alternative: Pass Token via State Parameter** (Optional Enhancement)
+
+If Supabase OAuth supports state parameters, consider passing the token more securely:
+
+```typescript
+// In accept-invite page
+const stateData = {
+  invitation_token: token,
+  next: '/dashboard'
+}
+const encodedState = btoa(JSON.stringify(stateData))
+
+const { error: oauthError } = await supabase.auth.signInWithOAuth({
+  provider: 'azure',
+  options: {
+    redirectTo: `${window.location.origin}/auth/callback`,
+    scopes: 'email profile openid',
+    queryParams: {
+      state: encodedState
+    }
+  },
+})
+```
+
+Then decode in callback handler to extract the token.
+
+**ERROR HANDLING ADDITIONS:**
+
+1. **Accept-Invite Page:** Add error display from URL params (lines 20-24):
+```typescript
+const errorParam = searchParams.get('error')
+
+useEffect(() => {
+  if (errorParam) {
+    setError(decodeURIComponent(errorParam))
+  }
+}, [errorParam])
+```
+
+2. **Callback Handler:** Clear, actionable error messages for each failure scenario
+
+3. **Database Trigger:** Log all invitation matching attempts for audit trail
+
+**LOGGING STRATEGY:**
+
+- Log invitation token presence/absence at OAuth initiation
+- Log validation success/failure in callback handler
+- Log database trigger matching logic (token vs email)
+- Log profile creation and invitation acceptance status
+- Use consistent log format: `[OAuth Invitation] action: details`
+
+# Test Strategy:
+**COMPREHENSIVE TESTING CHECKLIST:**
+
+### 1. **Happy Path: OAuth with Valid Token**
+- Navigate to `/auth/accept-invite?token=valid-uuid`
+- Verify invitation details display correctly
+- Click "Continue with Microsoft"
+- Verify URL contains `invitation_token` parameter after redirect
+- Complete Microsoft OAuth flow
+- Verify successful redirect to `/dashboard`
+- Verify profile created with invitation data (not fallback data)
+- Verify invitation status changed to 'accepted' in `user_invitations` table
+- Verify no duplicate profile errors in server logs
+
+### 2. **Edge Case: Expired Invitation Token**
+- Navigate to `/auth/accept-invite?token=expired-uuid`
+- Click "Continue with Microsoft"
+- Verify redirect back to accept-invite page with error message
+- Verify error message: "Invitation not found or has expired"
+- Verify no profile created in database
+- Verify no session created
+
+### 3. **Edge Case: Invalid/Non-existent Token**
+- Navigate to `/auth/accept-invite?token=invalid-uuid`
+- Click "Continue with Microsoft"
+- Verify redirect back to accept-invite page with error message
+- Verify error handling prevents OAuth code exchange
+
+### 4. **Edge Case: Already Accepted Invitation**
+- Use invitation token that was already accepted
+- Click "Continue with Microsoft"
+- Verify appropriate error handling
+- Verify no duplicate profile creation attempts
+
+### 5. **Logging Verification**
+Test that logs appear for each step:
+- Check browser console for: "OAuth callback with invitation token: [truncated-token]"
+- Check server logs for: "Valid invitation found for email: [email]"
+- Check database logs for: "Found invitation by token for user [email]"
+- Check database logs for: "Profile created and invitation accepted for user [email]"
+
+### 6. **Fallback Behavior Testing**
+- Create user via Microsoft OAuth WITHOUT invitation token
+- Verify email-only matching still works as fallback
+- Check logs for: "Found invitation by email for user [email]"
+- Verify profile created with invitation data if email matches pending invitation
+
+### 7. **Comparison: Password Flow vs OAuth Flow**
+- Test same invitation with password signup (existing flow)
+- Test same invitation with Microsoft OAuth
+- Verify both result in identical profile data
+- Verify both mark invitation as 'accepted'
+- Compare timing and reliability
+
+### 8. **Cross-Browser Testing**
+- Test OAuth flow in Chrome, Safari, Firefox, Edge
+- Verify query parameters persist across OAuth redirects
+- Test on iOS Safari (mobile browser)
+
+### 9. **Database Integrity Testing**
+- Query `user_invitations` table before/after OAuth acceptance
+- Verify `status` changes from 'pending' to 'accepted'
+- Verify `accepted_at` timestamp populated
+- Query `profiles` table to confirm correct data populated
+- Verify no orphaned auth.users records without profiles
+
+### 10. **Security Testing**
+- Test with tampered invitation token in URL
+- Test with SQL injection patterns in token parameter
+- Verify token validation prevents unauthorized access
+- Test concurrent acceptance attempts with same token
+- Verify database constraints prevent duplicate profile creation
+
+### 11. **Migration Testing**
+- Run migration 112 on test database
+- Verify `handle_new_user()` function replaced successfully
+- Test with existing pending invitations (should still work)
+- Verify no breaking changes to existing user signup flows
+- Test rollback scenario if needed
+
+### 12. **Error Message Quality**
+- Verify all error messages are user-friendly
+- Verify errors don't expose sensitive system details
+- Verify errors provide actionable next steps
+- Test error message display in UI (styling, positioning)
+
+**ACCEPTANCE CRITERIA:**
+✅ OAuth invitation flow preserves token through redirect
+✅ Token validation occurs before profile creation
+✅ Expired/invalid tokens show clear error messages
+✅ Comprehensive logging enables debugging production issues
+✅ Fallback email matching still works when no token provided
+✅ No regression in existing password-based invitation flow
+✅ Database trigger handles token-based matching with priority
+✅ All edge cases handled gracefully with proper error messages

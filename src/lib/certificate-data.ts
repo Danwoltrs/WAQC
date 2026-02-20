@@ -48,6 +48,8 @@ export interface CuppingAttribute {
   score: number
   allowedMin: number | null
   allowedMax: number | null
+  scaleMin?: number  // Min of the rating scale (e.g., 1 for 1-7 scale)
+  scaleMax?: number  // Max of the rating scale (e.g., 7 for 1-7 scale)
 }
 
 export interface CuppingDefect {
@@ -67,6 +69,27 @@ export interface CuppingData {
   faultDetails: CuppingDefect[]  // Detailed fault info for certificate display
   cleanCup: boolean | null     // Yes/No for clean cup
   uniformCup: boolean | null   // Yes/No for uniform cup
+}
+
+export interface ScreenSizeLimit {
+  screen_size: string
+  constraint_type: 'minimum' | 'maximum' | 'range' | 'exact'
+  min_value?: number
+  max_value?: number
+}
+
+export interface QualitySpecLimits {
+  moisture_min?: number
+  moisture_max?: number
+  max_quakers?: number
+  defect_thresholds_primary?: number
+  defect_thresholds_secondary?: number
+  defect_thresholds_total?: number
+  max_taints?: number
+  max_faults?: number
+  max_combined_defects?: number
+  zero_tolerance_defects?: boolean
+  screen_size_constraints?: ScreenSizeLimit[]
 }
 
 export interface CertificateData {
@@ -96,6 +119,7 @@ export interface CertificateData {
     shipper: SupplyChainEntity     // Shipping company (if different from exporter)
     importer: SupplyChainEntity
     roaster: SupplyChainEntity
+    endClient: SupplyChainEntity
     qcClient: SupplyChainEntity
     wolthersContract: string | null
   }
@@ -122,6 +146,7 @@ export interface CertificateData {
   greenBeanAnalysis: GreenBeanAnalysis | null
   roastAnalysis: RoastAnalysis | null
   cuppingData: CuppingData | null
+  gradingComments: string | null
   certificate: {
     id: string
     certificate_number: string
@@ -136,12 +161,13 @@ export interface CertificateData {
     is_specialty: boolean
     has_validation: boolean
   } | null
+  specLimits: QualitySpecLimits | null
 }
 
 /**
  * Fetch all data needed for certificate generation
  */
-export async function getCertificateData(sampleId: string): Promise<CertificateData | null> {
+export async function getCertificateData(sampleId: string, contractId?: string): Promise<CertificateData | null> {
   const supabase = await createClient()
 
   // Fetch sample with related data
@@ -179,8 +205,13 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       importer_id,
       roaster_id,
       seller_id,
+      end_client_id,
       supplier_type,
-      same_seller_shipper
+      same_seller_shipper,
+      importer_is_qc_client,
+      end_client_contract_nr,
+      supplier_contract_nr,
+      supplier
     `)
     .eq('id', sampleId)
     .single()
@@ -195,7 +226,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   if (sample.client_id) {
     const { data } = await supabase
       .from('clients')
-      .select('id, name, company, fantasy_name, logo_url, certificate_validity_enabled, certificate_validity_months, client_types')
+      .select('id, name, company, fantasy_name, logo_url, certificate_validity_enabled, certificate_validity_months, client_types, country')
       .eq('id', sample.client_id)
       .single()
     client = data
@@ -227,7 +258,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
 
   // Fetch supply chain entities in parallel
   // Seller (supplier/farm/coop) uses seller_id which references exporters table
-  const [exporterResult, importerResult, roasterResult, sellerResult] = await Promise.all([
+  const [exporterResult, importerResult, roasterResult, sellerResult, endClientResult] = await Promise.all([
     sample.exporter_id
       ? supabase.from('exporters').select('name, country').eq('id', sample.exporter_id).single()
       : Promise.resolve({ data: null }),
@@ -240,12 +271,15 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     sample.seller_id
       ? supabase.from('exporters').select('name, country').eq('id', sample.seller_id).single()
       : Promise.resolve({ data: null }),
+    sample.end_client_id
+      ? supabase.from('clients').select('company, fantasy_name, country').eq('id', sample.end_client_id).single()
+      : Promise.resolve({ data: null }),
   ])
 
-  // Fetch quality assessment (green bean and roast data)
+  // Fetch quality assessment (green bean, roast data, and cup status)
   const { data: qualityAssessment } = await supabase
     .from('quality_assessments')
-    .select('green_bean_data, roast_data')
+    .select('green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -261,42 +295,22 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
     .single()
 
   // Fetch cupping scores - average across all cuppers
-  // Try multiple approaches: completed sessions, finalized sessions, then any scores
+  // Get all scores for this sample regardless of session status
+  // (certificates should always show all available cupping data)
   let cuppingScores = null
 
-  // First try: completed or finalized sessions with inner join
-  const { data: finishedScores } = await supabase
+  const { data: allCuppingScores } = await supabase
     .from('cupping_scores')
     .select(`
       scores,
       notes,
-      defects,
-      session:cupping_sessions(
-        status,
-        session_type
-      )
+      defects
     `)
     .eq('sample_id', sampleId)
-    .in('session.status', ['completed', 'finalized'])
     .order('created_at', { ascending: false })
 
-  if (finishedScores && finishedScores.length > 0) {
-    cuppingScores = finishedScores
-  } else {
-    // Second try: any cupping scores for this sample (no session filter)
-    const { data: allScores } = await supabase
-      .from('cupping_scores')
-      .select(`
-        scores,
-        notes,
-        defects
-      `)
-      .eq('sample_id', sampleId)
-      .order('created_at', { ascending: false })
-
-    if (allScores && allScores.length > 0) {
-      cuppingScores = allScores
-    }
+  if (allCuppingScores && allCuppingScores.length > 0) {
+    cuppingScores = allCuppingScores
   }
 
   // Fetch certificate
@@ -312,6 +326,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   let qualitySpec = null
   let isSpecialty = false
   let cuppingAttributeValidations: Record<string, { min?: number; max?: number }> | undefined
+  // Store scale info for each attribute (from template)
+  let cuppingAttributeScales: Record<string, { min: number; max: number }> | undefined
   if (sample.quality_spec_id) {
     const { data: spec } = await supabase
       .from('client_qualities')
@@ -320,7 +336,14 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         template:quality_templates(
           name,
           description,
-          parameters
+          parameters,
+          cupping_scale_min,
+          cupping_scale_max,
+          defect_thresholds_primary,
+          defect_thresholds_secondary,
+          max_taints_allowed,
+          max_faults_allowed,
+          screen_size_requirements
         )
       `)
       .eq('id', sample.quality_spec_id)
@@ -330,6 +353,7 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       // Template parameters structure from DB:
       // cupping_attributes is an ARRAY of attribute configs
       // Each attribute may have a validation_rule with min_value/max_value
+      // and a scale with min/max
       interface CuppingAttributeConfig {
         attribute: string
         validation_rule?: {
@@ -337,16 +361,60 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
           min_value?: number
           max_value?: number
         }
+        scale?: {
+          min?: number
+          max?: number
+          type?: string
+        }
       }
-      const templateParams = (spec.template as { name?: string; parameters?: unknown })?.parameters as {
+      const templateData = spec.template as {
+        name?: string
+        parameters?: unknown
+        cupping_scale_min?: number
+        cupping_scale_max?: number
+        defect_thresholds_primary?: number | null
+        defect_thresholds_secondary?: number | null
+        max_taints_allowed?: number | null
+        max_faults_allowed?: number | null
+        screen_size_requirements?: Record<string, { min_percent?: number; max_percent?: number }> | null
+      }
+      interface CertTemplateParameters {
         cupping_attributes?: CuppingAttributeConfig[]
-      } | undefined
+        moisture_min?: number
+        moisture_max?: number
+        max_quakers?: number
+        defect_thresholds_total?: number
+        taint_fault_configuration?: {
+          rules?: {
+            max_taints?: number
+            max_faults?: number
+            max_combined?: number
+            zero_tolerance?: boolean
+          }
+        }
+        screen_size_requirements?: {
+          constraints?: Array<{
+            screen_size: string
+            constraint_type: 'minimum' | 'maximum' | 'range' | 'exact'
+            min_value?: number
+            max_value?: number
+          }>
+        }
+      }
+      const templateParams = templateData?.parameters as CertTemplateParameters | undefined
+
+      // Get default scale from template level (fallback)
+      const defaultScaleMin = templateData?.cupping_scale_min ?? 0
+      const defaultScaleMax = templateData?.cupping_scale_max ?? 10
 
       // Convert array-based cupping_attributes with validation_rule to our Record format
+      // Also extract scale info for each attribute
       if (templateParams?.cupping_attributes && Array.isArray(templateParams.cupping_attributes)) {
         cuppingAttributeValidations = {}
+        cuppingAttributeScales = {}
         let hasAnyValidation = false
         for (const attr of templateParams.cupping_attributes) {
+          // Extract validation rules
           if (attr.validation_rule) {
             const min = attr.validation_rule.min_value
             const max = attr.validation_rule.max_value
@@ -355,10 +423,22 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
               hasAnyValidation = true
             }
           }
+          // Extract scale info (use attribute-level scale if available, otherwise template default)
+          // Only for numeric scales (not boolean)
+          if (attr.scale?.type !== 'boolean') {
+            cuppingAttributeScales[attr.attribute] = {
+              min: attr.scale?.min ?? defaultScaleMin,
+              max: attr.scale?.max ?? defaultScaleMax,
+            }
+          }
         }
         // If no attributes have validation rules, clear the object
         if (!hasAnyValidation) {
           cuppingAttributeValidations = undefined
+        }
+        // If no scale info was found, clear it
+        if (Object.keys(cuppingAttributeScales).length === 0) {
+          cuppingAttributeScales = undefined
         }
       }
 
@@ -374,6 +454,80 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         has_validation: Boolean(hasCuppingValidation),
       }
       isSpecialty = qualitySpec.is_specialty
+    }
+  }
+
+  // Build specLimits from template data
+  let specLimits: QualitySpecLimits | null = null
+  if (sample.quality_spec_id) {
+    // Re-use the template data already fetched above via qualitySpec query
+    // We need to re-fetch if spec wasn't found above, but normally it was
+    const { data: specForLimits } = await supabase
+      .from('client_qualities')
+      .select(`
+        template:quality_templates(
+          parameters,
+          defect_thresholds_primary,
+          defect_thresholds_secondary,
+          max_taints_allowed,
+          max_faults_allowed,
+          screen_size_requirements
+        )
+      `)
+      .eq('id', sample.quality_spec_id)
+      .single()
+
+    if (specForLimits?.template) {
+      const tmpl = specForLimits.template as {
+        parameters?: Record<string, unknown>
+        defect_thresholds_primary?: number | null
+        defect_thresholds_secondary?: number | null
+        max_taints_allowed?: number | null
+        max_faults_allowed?: number | null
+        screen_size_requirements?: Record<string, unknown> | null
+      }
+      const params = tmpl.parameters || {}
+
+      // Build screen size constraints from both legacy and new format
+      let screenConstraints: ScreenSizeLimit[] | undefined
+      // New format: parameters.screen_size_requirements.constraints
+      const paramScreenReqs = params.screen_size_requirements as { constraints?: ScreenSizeLimit[] } | undefined
+      if (paramScreenReqs?.constraints && Array.isArray(paramScreenReqs.constraints)) {
+        screenConstraints = paramScreenReqs.constraints
+      }
+      // Legacy format: template.screen_size_requirements as {size: {min_percent, max_percent}}
+      if (!screenConstraints && tmpl.screen_size_requirements && typeof tmpl.screen_size_requirements === 'object') {
+        const legacy = tmpl.screen_size_requirements as Record<string, { min_percent?: number; max_percent?: number }>
+        screenConstraints = Object.entries(legacy).map(([size, req]) => ({
+          screen_size: size,
+          constraint_type: (req.min_percent !== undefined && req.max_percent !== undefined ? 'range' : req.min_percent !== undefined ? 'minimum' : 'maximum') as ScreenSizeLimit['constraint_type'],
+          min_value: req.min_percent,
+          max_value: req.max_percent,
+        }))
+      }
+
+      // Get taint/fault limits from both template columns and parameters
+      const tfRules = (params.taint_fault_configuration as { rules?: { max_taints?: number; max_faults?: number; max_combined?: number; zero_tolerance?: boolean } })?.rules
+
+      specLimits = {
+        moisture_min: params.moisture_min as number | undefined,
+        moisture_max: params.moisture_max as number | undefined,
+        max_quakers: params.max_quakers as number | undefined,
+        defect_thresholds_primary: tmpl.defect_thresholds_primary ?? undefined,
+        defect_thresholds_secondary: tmpl.defect_thresholds_secondary ?? undefined,
+        defect_thresholds_total: params.defect_thresholds_total as number | undefined,
+        max_taints: tfRules?.max_taints ?? (tmpl.max_taints_allowed ?? undefined),
+        max_faults: tfRules?.max_faults ?? (tmpl.max_faults_allowed ?? undefined),
+        max_combined_defects: tfRules?.max_combined,
+        zero_tolerance_defects: tfRules?.zero_tolerance,
+        screen_size_constraints: screenConstraints,
+      }
+
+      // If all fields are undefined, set to null (no limits configured)
+      const hasAnyLimit = Object.values(specLimits).some(v => v !== undefined)
+      if (!hasAnyLimit) {
+        specLimits = null
+      }
     }
   }
 
@@ -427,14 +581,26 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
   // Process cupping scores
   let cuppingData: CuppingData | null = null
   if (cuppingScores && cuppingScores.length > 0) {
-    cuppingData = processCuppingScores(cuppingScores, isSpecialty, cuppingAttributeValidations)
+    cuppingData = processCuppingScores(
+      cuppingScores,
+      isSpecialty,
+      cuppingAttributeValidations,
+      cuppingAttributeScales,
+      qualityAssessment?.clean_cup ?? null,
+      qualityAssessment?.uniform_cup ?? null
+    )
   }
+
+  // Generate current date for issued_date (used when no certificate record exists yet or as fallback)
+  const currentDate = new Date().toISOString()
 
   // Calculate valid_until only if client has certificate validity enabled
   // Validity starts from the first day of the month following the issue date
+  // Use certificate.created_at if available, otherwise use current date
   let validUntil: string | null = null
-  if (certificate?.created_at && client?.certificate_validity_enabled) {
-    const issueDate = new Date(certificate.created_at)
+  if (client?.certificate_validity_enabled) {
+    const issueDateStr = certificate?.created_at || currentDate
+    const issueDate = new Date(issueDateStr)
     // Start from first day of next month
     const startDate = new Date(issueDate.getFullYear(), issueDate.getMonth() + 1, 1)
     // Add the configured months (default 6)
@@ -466,21 +632,106 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         address: null,
       }
     : {
-        // When shipper is different, we still use exporter entity but with shipper contract
-        // This could be enhanced later with a separate shippers table
-        name: sample.shipper_contract_nr ? (exporterResult.data?.name ?? null) : null,
-        country: sample.shipper_contract_nr ? (exporterResult.data?.country ?? null) : null,
+        // When shipper is different, show exporter entity as shipper
+        name: exporterResult.data?.name ?? null,
+        country: exporterResult.data?.country ?? null,
         contract: sample.shipper_contract_nr || null,
         address: null,
       }
 
-  // Generate current date for issued_date fallback (used when no certificate record exists yet)
-  const currentDate = new Date().toISOString()
+  // If a sub-contract is specified, fetch it and override supply chain + tracking number
+  let contractOverride: {
+    tracking_number: string
+    importerEntity: SupplyChainEntity
+    roasterEntity: SupplyChainEntity
+    endClientEntity: SupplyChainEntity
+    qcClientEntity: SupplyChainEntity
+    wolthersContract: string | null
+    ico_number: string | null
+    container_nr: string | null
+    certificateData: CertificateData['certificate']
+  } | null = null
+
+  if (contractId) {
+    const { data: contract } = await (supabase as any)
+      .from('sample_contracts')
+      .select(`
+        *,
+        importer:importers(name, country),
+        roaster:roasters(name, country),
+        end_client:clients!sample_contracts_end_client_id_fkey(fantasy_name, company, country),
+        qc_client:clients!sample_contracts_client_id_fkey(fantasy_name, company, country, client_types)
+      `)
+      .eq('id', contractId)
+      .single()
+
+    if (contract) {
+      const scQcClient = contract.qc_client || client
+      const scQcClientName = scQcClient?.fantasy_name ?? scQcClient?.company ?? null
+      const scIsImporterClient = scQcClient?.client_types?.some((t: string) => t.includes('importer')) ?? false
+      const scIsRoasterClient = scQcClient?.client_types?.some((t: string) => t.includes('roaster')) ?? false
+
+      // Fetch sub-contract's certificate
+      const { data: scCert } = await supabase
+        .from('certificates')
+        .select('id, certificate_number, created_at, status')
+        .eq('sample_contract_id', contractId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single()
+
+      contractOverride = {
+        tracking_number: contract.tracking_number,
+        importerEntity: {
+          name: contract.importer?.name ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
+          country: contract.importer?.country ?? null,
+          contract: contract.buyer_contract_nr ?? null,
+          address: null,
+        },
+        roasterEntity: {
+          name: contract.roaster?.name ?? (scIsRoasterClient ? scQcClientName : null),
+          country: contract.roaster?.country ?? null,
+          contract: contract.roaster_contract_nr ?? null,
+          address: null,
+        },
+        endClientEntity: {
+          name: contract.end_client?.fantasy_name ?? contract.end_client?.company ?? null,
+          country: contract.end_client?.country ?? null,
+          contract: contract.end_client_contract_nr ?? null,
+          address: null,
+        },
+        qcClientEntity: {
+          name: scQcClientName,
+          country: scQcClient?.country ?? null,
+          contract: contract.qc_client_contract_nr ?? null,
+          address: null,
+        },
+        wolthersContract: contract.wolthers_contract_nr ?? null,
+        ico_number: contract.ico_number ?? sample.ico_number,
+        container_nr: contract.container_nr ?? sample.container_nr,
+        certificateData: scCert
+          ? {
+              id: scCert.id,
+              certificate_number: scCert.certificate_number,
+              issued_date: scCert.created_at || currentDate,
+              valid_until: validUntil,
+              status: scCert.status,
+            }
+          : {
+              id: '',
+              certificate_number: contract.tracking_number,
+              issued_date: currentDate,
+              valid_until: validUntil,
+              status: null,
+            },
+      }
+    }
+  }
 
   return {
     sample: {
       id: sample.id,
-      tracking_number: sample.tracking_number,
+      tracking_number: contractOverride?.tracking_number ?? sample.tracking_number,
       origin: sample.origin,
       origin_display: getCountryName(sample.origin),
       micro_origin: sample.micro_origin,
@@ -492,8 +743,8 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
       bags_quantity_mt: sample.bags_quantity_mt,
       equivalent_60kg_bags: sample.equivalent_60kg_bags,
       shipment_month: sample.shipment_month,
-      ico_number: sample.ico_number,
-      container_nr: sample.container_nr,
+      ico_number: contractOverride?.ico_number ?? sample.ico_number,
+      container_nr: contractOverride?.container_nr ?? sample.container_nr,
       created_at: sample.created_at,
       status: sample.status,
       certifications: null, // Certifications not yet stored on samples
@@ -507,21 +758,29 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         address: null, // Address not yet in exporters table
       },
       shipper: shipperEntity,
-      importer: {
-        // Use importer from DB, or fall back to client if they're an importer type
-        name: importerResult.data?.name ?? (isImporterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
-        country: importerResult.data?.country ?? null,
+      importer: contractOverride?.importerEntity ?? {
+        // Use importer from DB, or fall back to client if they're an importer type or importer_is_qc_client flag is set
+        name: importerResult.data?.name ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
+        country: importerResult.data?.country ?? client?.country ?? null,
         contract: sample.buyer_contract_nr ?? null,
         address: null, // Address not yet in importers table
       },
-      roaster: {
+      roaster: contractOverride?.roasterEntity ?? {
         // Use roaster from DB, or fall back to client if they're a roaster type
         name: roasterResult.data?.name ?? (isRoasterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: roasterResult.data?.country ?? null,
         contract: sample.roaster_contract_nr ?? null,
         address: null, // Address not yet in roasters table
       },
-      qcClient: {
+      endClient: contractOverride?.endClientEntity ?? {
+        name: endClientResult.data?.fantasy_name ?? endClientResult.data?.company
+          ?? (isEndClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
+        country: endClientResult.data?.country
+          ?? (isEndClient ? (client?.country ?? null) : null),
+        contract: sample.end_client_contract_nr ?? null,
+        address: null,
+      },
+      qcClient: contractOverride?.qcClientEntity ?? {
         // Don't show in supply chain if:
         // - end_client type (they don't import/roast coffee)
         // - importer type with no explicit importer_id (already shown as importer)
@@ -531,16 +790,16 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
         contract: (isEndClient || (isImporterClient && !importerResult.data?.name) || (isRoasterClient && !roasterResult.data?.name)) ? null : (sample.qc_client_contract_nr ?? null),
         address: null, // Address not yet in clients table
       },
-      wolthersContract: sample.wolthers_contract_nr ?? null,
+      wolthersContract: contractOverride?.wolthersContract ?? sample.wolthers_contract_nr ?? null,
     },
     client,
     laboratory,
     greenBeanAnalysis,
     roastAnalysis,
     cuppingData,
-    // Certificate data: use DB record if exists, otherwise create a placeholder with current date
-    // This ensures the PDF always shows an issue date even on first generation
-    certificate: certificate
+    gradingComments: qualityAssessment?.grading_comments || null,
+    // Certificate data: use sub-contract certificate if available, otherwise mother certificate
+    certificate: contractOverride?.certificateData ?? (certificate
       ? {
           id: certificate.id,
           certificate_number: certificate.certificate_number,
@@ -555,8 +814,9 @@ export async function getCertificateData(sampleId: string): Promise<CertificateD
           issued_date: currentDate,
           valid_until: validUntil,
           status: null,
-        },
+        }),
     qualitySpec,
+    specLimits,
   }
 }
 
@@ -749,6 +1009,8 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
 
 // Type for cupping attribute validation ranges from quality template
 type CuppingAttributeValidations = Record<string, { min?: number; max?: number }>
+// Type for cupping attribute scale ranges from quality template
+type CuppingAttributeScales = Record<string, { min: number; max: number }>
 
 /**
  * Process cupping scores from multiple cuppers into averaged data
@@ -756,7 +1018,10 @@ type CuppingAttributeValidations = Record<string, { min?: number; max?: number }
 function processCuppingScores(
   cuppingScores: Array<{ scores: unknown; notes: string | null; defects?: unknown }>,
   isSpecialty: boolean,
-  attributeValidations?: CuppingAttributeValidations
+  attributeValidations?: CuppingAttributeValidations,
+  attributeScales?: CuppingAttributeScales,
+  persistedCleanCup?: boolean | null,
+  persistedUniformCup?: boolean | null
 ): CuppingData {
   // Collect all scores by attribute
   const attributeScores: Record<string, number[]> = {}
@@ -821,21 +1086,15 @@ function processCuppingScores(
           if (attrLower === 'taints' || attrLower === 'taint' || attrLower === 'faults' || attrLower === 'fault') {
             continue
           } else if (attrLower === 'clean cup' || attrLower === 'cleancup' || attrLower === 'clean_cup') {
-            // Track Clean Cup separately for boolean conversion
+            // Track Clean Cup separately for backward-compat boolean conversion
+            // (only used if quality_assessments.clean_cup is null)
             cleanCupScores.push(value)
-            // Also add to attributes for chart display
-            if (!attributeScores[attr]) {
-              attributeScores[attr] = []
-            }
-            attributeScores[attr].push(value)
+            // Do NOT add to attributeScores - no longer displayed in chart
           } else if (attrLower === 'uniformity' || attrLower === 'uniform cup' || attrLower === 'uniformcup' || attrLower === 'uniform_cup') {
-            // Track Uniform Cup separately for boolean conversion
+            // Track Uniform Cup separately for backward-compat boolean conversion
+            // (only used if quality_assessments.uniform_cup is null)
             uniformCupScores.push(value)
-            // Also add to attributes for chart display
-            if (!attributeScores[attr]) {
-              attributeScores[attr] = []
-            }
-            attributeScores[attr].push(value)
+            // Do NOT add to attributeScores - no longer displayed in chart
           } else {
             if (!attributeScores[attr]) {
               attributeScores[attr] = []
@@ -853,6 +1112,7 @@ function processCuppingScores(
   let scoreCount = 0
 
   // Standard SCA cupping attributes in order
+  // (Uniformity and Clean Cup removed - now derived from defects, not scored)
   const standardOrder = [
     'Fragrance/Aroma',
     'Fragrance',
@@ -862,8 +1122,6 @@ function processCuppingScores(
     'Acidity',
     'Body',
     'Balance',
-    'Uniformity',
-    'Clean Cup',
     'Sweetness',
     'Overall',
   ]
@@ -899,11 +1157,29 @@ function processCuppingScores(
       }
     }
 
+    // Look up scale for this attribute (case-insensitive match)
+    let scaleMin: number | undefined
+    let scaleMax: number | undefined
+
+    if (attributeScales) {
+      const scale = attributeScales[attr] ||
+        Object.entries(attributeScales).find(
+          ([key]) => key.toLowerCase() === attr.toLowerCase()
+        )?.[1]
+
+      if (scale) {
+        scaleMin = scale.min
+        scaleMax = scale.max
+      }
+    }
+
     attributes.push({
       name: attr,
       score: Math.round(avg * 100) / 100,
       allowedMin,
       allowedMax,
+      scaleMin,
+      scaleMax,
     })
 
     totalScore += avg
@@ -922,17 +1198,18 @@ function processCuppingScores(
     ? Math.round(faultsCounts.reduce((a, b) => a + b, 0) / faultsCounts.length * 10) / 10
     : null
 
-  // Convert Clean Cup and Uniform Cup to boolean values
-  // In SCA cupping, score of 10 = all cups clean/uniform (true)
-  // Score < 10 = at least one cup had issues (false)
-  let cleanCup: boolean | null = null
-  if (cleanCupScores.length > 0) {
+  // Clean Cup and Uniform Cup: prefer persisted values from quality_assessments
+  // Fall back to legacy numeric score conversion for backward compat
+  let cleanCup: boolean | null = persistedCleanCup ?? null
+  if (cleanCup === null && cleanCupScores.length > 0) {
+    // Backward compat: old numeric scores (10 = clean, <10 = not clean)
     const avgCleanCup = cleanCupScores.reduce((a, b) => a + b, 0) / cleanCupScores.length
     cleanCup = avgCleanCup >= 10
   }
 
-  let uniformCup: boolean | null = null
-  if (uniformCupScores.length > 0) {
+  let uniformCup: boolean | null = persistedUniformCup ?? null
+  if (uniformCup === null && uniformCupScores.length > 0) {
+    // Backward compat: old numeric scores
     const avgUniformCup = uniformCupScores.reduce((a, b) => a + b, 0) / uniformCupScores.length
     uniformCup = avgUniformCup >= 10
   }

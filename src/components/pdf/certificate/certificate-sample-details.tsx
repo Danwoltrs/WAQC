@@ -11,7 +11,7 @@ import { COLORS } from './certificate-styles'
 
 const detailStyles = StyleSheet.create({
   container: {
-    marginBottom: 8,
+    marginBottom: 10,
     paddingVertical: 6,
     paddingHorizontal: 10,
     borderWidth: 0.5,
@@ -104,7 +104,7 @@ function formatQuantity(props: CertificateSampleDetailsProps): QuantityResult {
   if (normalizedBagType === 'big bags' || normalizedBagType === 'bigbags' || normalizedBagType === 'big bag') {
     // Big bags format: "(in big bags, eq. 333 × 60 kg bags)"
     if (equivalent60kgBags) {
-      packagingInfo = `(in big bags, eq. ${equivalent60kgBags} × 60 kg bags)`
+      packagingInfo = `(in big bags, eq. ${Math.round(equivalent60kgBags)} × 60 kg bags)`
     } else {
       packagingInfo = '(in big bags)'
     }
@@ -127,7 +127,7 @@ function formatQuantity(props: CertificateSampleDetailsProps): QuantityResult {
     } else if (equivalent60kgBags && equivalent60kgBags > 0) {
       // Use equivalent 60kg bags when actual bag count is 0 or missing
       const bagTypeLabel = cleanBagType ? ` ${cleanBagType}` : ''
-      parts.push(`${equivalent60kgBags} × 60 kg${bagTypeLabel}${bagSuffix}`)
+      parts.push(`${Math.round(equivalent60kgBags)} × 60 kg${bagTypeLabel}${bagSuffix}`)
     }
 
     if (parts.length > 0) {

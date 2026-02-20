@@ -36,15 +36,20 @@ export async function GET(request: NextRequest) {
     // Build query with filters and join with related tables
     // Note: Use explicit relationship names due to multiple FKs to exporters table
     // Filter out soft-deleted samples (deleted_at is set on soft delete)
+    // Include certificate info for samples that have certificates
     let query = (supabase as any)
       .from('samples')
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
+        seller:exporters!samples_seller_id_fkey(id, name, country),
         exporter:exporters!samples_exporter_id_fkey(id, name, country),
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        end_client:end_clients(id, name, country)
+        qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
+        end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
+        certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
+        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -82,28 +87,117 @@ export async function GET(request: NextRequest) {
 
     const { count } = await countQuery
 
+    // Batch-fetch entity names for sub-contracts
+    const allSubContracts = (samples || []).flatMap((s: any) =>
+      Array.isArray(s.sample_contracts) ? s.sample_contracts : []
+    )
+    const importerIds = [...new Set(allSubContracts.map((c: any) => c.importer_id).filter(Boolean))] as string[]
+    const roasterIds = [...new Set(allSubContracts.map((c: any) => c.roaster_id).filter(Boolean))] as string[]
+    const clientIds = [...new Set([
+      ...allSubContracts.map((c: any) => c.end_client_id),
+      ...allSubContracts.map((c: any) => c.client_id),
+    ].filter(Boolean))] as string[]
+
+    const entityMaps = { importers: {} as Record<string, string>, roasters: {} as Record<string, string>, clients: {} as Record<string, string> }
+    if (importerIds.length > 0) {
+      const { data } = await supabase.from('importers').select('id, name').in('id', importerIds)
+      for (const r of data || []) entityMaps.importers[r.id] = r.name || ''
+    }
+    if (roasterIds.length > 0) {
+      const { data } = await supabase.from('roasters').select('id, name').in('id', roasterIds)
+      for (const r of data || []) entityMaps.roasters[r.id] = r.name || ''
+    }
+    if (clientIds.length > 0) {
+      const { data } = await supabase.from('clients').select('id, fantasy_name, company').in('id', clientIds)
+      for (const r of (data || []) as any[]) entityMaps.clients[r.id] = r.fantasy_name || r.company || ''
+    }
+
     // Transform samples to include flattened entity names
-    const transformedSamples = (samples || []).map((sample: any) => ({
-      ...sample,
-      // Prioritize sample's own quality_name (for type samples or custom entries),
-      // fall back to quality_spec's custom_name
-      quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
-      quality_code: sample.quality_spec?.quality_code || null,
-      exporter_name: sample.exporter?.name || null,
-      exporter_country: sample.exporter?.country || null,
-      importer_name: sample.importer?.name || null,
-      importer_country: sample.importer?.country || null,
-      roaster_name: sample.roaster?.name || null,
-      roaster_country: sample.roaster?.country || null,
-      end_client_name: sample.end_client?.name || null,
-      end_client_country: sample.end_client?.country || null,
-      // Remove nested objects to keep response clean
-      quality_spec: undefined,
-      exporter: undefined,
-      importer: undefined,
-      roaster: undefined,
-      end_client: undefined
-    }))
+    const transformedSamples = (samples || []).map((sample: any) => {
+      // Handle certificate array - Supabase returns array for one-to-many relations
+      // A sample can have at most one certificate, so we take the first one
+      const certificate = Array.isArray(sample.certificate)
+        ? sample.certificate[0] || null
+        : sample.certificate || null
+
+      // Check QC client types for importer/roaster fallback (same logic as detail API)
+      const clientTypes: string[] = sample.qc_client?.client_types || []
+      const isImporterClient = clientTypes.some((t: string) => t.includes('importer'))
+      const isRoasterClient = clientTypes.some((t: string) => t.includes('roaster'))
+      const qcClientName = sample.qc_client?.fantasy_name || sample.qc_client?.company || null
+
+      return {
+        ...sample,
+        // Prioritize sample's own quality_name (for type samples or custom entries),
+        // fall back to quality_spec's custom_name
+        quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
+        quality_code: sample.quality_spec?.quality_code || null,
+        // Seller (farm/producer) from seller_id
+        seller_name: sample.seller?.name || null,
+        seller_country: sample.seller?.country || null,
+        // Exporter/Shipper from exporter_id
+        exporter_name: sample.exporter?.name || null,
+        exporter_country: sample.exporter?.country || null,
+        // Importer: from DB, or importer_is_qc_client flag, or QC client with importer type
+        importer_name: sample.importer?.name || (sample.importer_is_qc_client ? qcClientName : null) || (isImporterClient ? qcClientName : null),
+        importer_country: sample.importer?.country || (isImporterClient ? sample.qc_client?.country : null),
+        // Roaster: from DB, or QC client with roaster type
+        roaster_name: sample.roaster?.name || (isRoasterClient ? qcClientName : null),
+        roaster_country: sample.roaster?.country || (isRoasterClient ? sample.qc_client?.country : null),
+        // QC Client (who hired Wolthers) from client_id
+        qc_client_name: qcClientName,
+        qc_client_country: sample.qc_client?.country || null,
+        // End client (final buyer) - when NULL, QC client IS the end client
+        end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
+        end_client_country: sample.end_client?.country || null,
+        // Certificate info (flattened)
+        certificate_id: certificate?.id || null,
+        certificate_number: certificate?.certificate_number || null,
+        certificate_status: certificate?.status || null,
+        certificate_created_at: certificate?.created_at || null,
+        // Sub-contract info (rich data for expandable rows)
+        contract_count: Array.isArray(sample.sample_contracts) ? sample.sample_contracts.length : 0,
+        sub_contract_tracking_numbers: Array.isArray(sample.sample_contracts)
+          ? sample.sample_contracts.map((c: any) => c.tracking_number)
+          : [],
+        sub_contracts: Array.isArray(sample.sample_contracts)
+          ? sample.sample_contracts.map((c: any) => {
+              const allCerts = Array.isArray(sample.certificate) ? sample.certificate : []
+              const subCert = allCerts.find((cert: any) => cert.sample_contract_id === c.id)
+              const scQcName = c.client_id ? entityMaps.clients[c.client_id] : null
+              return {
+                id: c.id,
+                tracking_number: c.tracking_number,
+                importer_name: (c.importer_id ? entityMaps.importers[c.importer_id] : null) || (c.importer_is_qc_client ? (scQcName || qcClientName) : null),
+                roaster_name: c.roaster_id ? entityMaps.roasters[c.roaster_id] : null,
+                end_client_name: c.end_client_id ? entityMaps.clients[c.end_client_id] : null,
+                qc_client_name: scQcName || qcClientName || null,
+                buyer_contract_nr: c.buyer_contract_nr || null,
+                wolthers_contract_nr: c.wolthers_contract_nr || null,
+                roaster_contract_nr: c.roaster_contract_nr || null,
+                end_client_contract_nr: c.end_client_contract_nr || null,
+                qc_client_contract_nr: c.qc_client_contract_nr || null,
+                supplier_contract_nr: c.supplier_contract_nr || null,
+                ico_number: c.ico_number || null,
+                container_nr: c.container_nr || null,
+                bags_quantity_mt: c.bags_quantity_mt || null,
+                has_certificate: !!subCert,
+                certificate_id: subCert?.id || null,
+              }
+            })
+          : [],
+        // Remove nested objects to keep response clean
+        quality_spec: undefined,
+        seller: undefined,
+        exporter: undefined,
+        importer: undefined,
+        roaster: undefined,
+        qc_client: undefined,
+        end_client: undefined,
+        certificate: undefined,
+        sample_contracts: undefined
+      }
+    })
 
     return NextResponse.json({
       samples: transformedSamples,
@@ -142,115 +236,39 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    // Validate required fields
-    if (!body.laboratory_id || !body.origin || !body.exporter_id) {
+    // Validate required fields (exporter_id is optional since it's from a soft name lookup)
+    if (!body.laboratory_id || !body.origin) {
+      const missing = []
+      if (!body.laboratory_id) missing.push('laboratory_id')
+      if (!body.origin) missing.push('origin')
       return NextResponse.json({
-        error: 'Missing required fields: laboratory_id, origin, exporter_id'
+        error: `Missing required fields: ${missing.join(', ')}`
       }, { status: 400 })
     }
 
     // Client ID is optional - if not provided, use null for tracking number generation
     const clientId = body.client_id || null
 
-    // Generate tracking number using helper function
-    // Note: Function signature updated in migration 061 to support lab-specific type sample prefixes
-    // TypeScript types will be regenerated in next deployment
-    const { data: trackingNumberData, error: trackingError } = await supabase
-      .rpc('generate_tracking_number', {
-        p_client_id: clientId,
-        p_laboratory_id: body.laboratory_id,
-        p_origin: body.origin,
-        p_quality_template_id: body.quality_spec_id || null,
-        p_is_rejected: false,
-        p_sample_type: body.sample_type || 'pss'
-      } as any)
-
-    if (trackingError) {
-      console.error('Error generating tracking number:', trackingError)
-      return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
-    }
-
-    // Extract the tracking number string from the RPC response
-    // CRITICAL: Validate that we got a real tracking number, not null
-    // The RPC call returns the string directly, not wrapped in an object
-    if (trackingNumberData === null || trackingNumberData === undefined) {
-      console.error('Tracking number generation returned null for client:', clientId, 'origin:', body.origin)
-      return NextResponse.json({
-        error: 'Failed to generate tracking number - client configuration may be invalid',
-        details: 'The tracking number format for this client is not properly configured. Please contact an administrator.'
-      }, { status: 500 })
-    }
-
-    const trackingNumber = String(trackingNumberData)
-
-    // Additional validation - ensure we don't have the literal string "null"
-    if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
-      console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
-      return NextResponse.json({
-        error: 'Failed to generate valid tracking number',
-        details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
-      }, { status: 500 })
-    }
-
-    console.log('Generated tracking number:', trackingNumber, 'for client:', clientId)
-
     // Use provided bag weight, only calculate if not provided and we have quantity + count
     let bagWeightKg: number | null = body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null
     if (!bagWeightKg && body.bags_quantity_mt && body.bag_count && body.bag_type !== 'bulk') {
-      // Only calculate for non-bulk types where bag weight wasn't provided
-      // Convert MT to kg (multiply by 1000) and divide by bag count
       bagWeightKg = (parseFloat(body.bags_quantity_mt) * 1000) / parseInt(body.bag_count)
-      bagWeightKg = Math.round(bagWeightKg * 100) / 100 // Round to 2 decimal places
+      bagWeightKg = Math.round(bagWeightKg * 100) / 100
     }
 
-    // Log quality_name for debugging
-    console.log('API received quality_name:', body.quality_name, 'Type:', typeof body.quality_name)
-
-    // Prepare sample data with foreign key IDs
-    const sampleData: SampleInsert = {
-      tracking_number: trackingNumber,
-      client_id: clientId,
-      laboratory_id: body.laboratory_id,
-      quality_spec_id: body.quality_spec_id || null,
-      quality_name: body.quality_name || null,
-      hide_exporter_on_label: body.hide_exporter_on_label || false,
-      origin: body.origin,
-      exporter_id: body.exporter_id,
-      exporter_sample_number: body.exporter_sample_number || null,
-      importer_id: body.importer_id || null,
-      roaster_id: body.roaster_id || null,
-      status: body.status || 'received',
-      storage_position: body.storage_position || null,
-      // Phase 2 fields
-      wolthers_contract_nr: body.wolthers_contract_nr || null,
-      exporter_contract_nr: body.exporter_contract_nr || null,
-      buyer_contract_nr: body.buyer_contract_nr || null,
-      roaster_contract_nr: body.roaster_contract_nr || null,
-      ico_number: body.ico_number || null,
-      container_nr: body.container_nr || null,
-      sample_type: body.sample_type || null,
-      bags_quantity_mt: body.bags_quantity_mt ? parseFloat(body.bags_quantity_mt) : null,
-      bag_count: body.bag_count ? parseInt(body.bag_count) : null,
-      bag_weight_kg: body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null,
-      equivalent_60kg_bags: body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null,
-      bag_type: body.bag_type || null,
-      processing_method: body.processing_method || null,
-      workflow_stage: body.workflow_stage || 'received',
-      assigned_to: body.assigned_to || null
-    }
-
-    console.log('Inserting sample with quality_name:', sampleData.quality_name)
-
-    // Validate bag quantities if provided
-    if (sampleData.bags_quantity_mt && sampleData.bags_quantity_mt <= 0) {
+    // Validate bag quantities
+    const bagsQuantityMt = body.bags_quantity_mt ? parseFloat(body.bags_quantity_mt) : null
+    const bagCount = body.bag_count ? parseInt(body.bag_count) : null
+    if (bagsQuantityMt && bagsQuantityMt <= 0) {
       return NextResponse.json({ error: 'bags_quantity_mt must be positive' }, { status: 400 })
     }
-    if (sampleData.bag_count && sampleData.bag_count <= 0) {
+    if (bagCount && bagCount <= 0) {
       return NextResponse.json({ error: 'bag_count must be positive' }, { status: 400 })
     }
 
     // Auto-detect quality specification if not provided
-    if (!sampleData.quality_spec_id && body.auto_detect_quality !== false) {
+    let qualitySpecId = body.quality_spec_id || null
+    if (!qualitySpecId && body.auto_detect_quality !== false && body.client_id) {
       const { data: qualitySpecs } = await supabase
         .from('client_qualities')
         .select('id')
@@ -260,20 +278,155 @@ export async function POST(request: NextRequest) {
         .single()
 
       if (qualitySpecs) {
-        sampleData.quality_spec_id = (qualitySpecs as any).id
+        qualitySpecId = (qualitySpecs as any).id
       }
     }
 
-    // Insert sample
-    const { data: sample, error: insertError } = await supabase
-      .from('samples')
-      .insert(sampleData)
-      .select()
-      .single()
+    // Generate tracking number + insert with retry on duplicate key conflict
+    // The generate_tracking_number() RPC uses MAX()+1 which can race under concurrent inserts.
+    // On retry, we increment the numeric part of the failed tracking number instead of
+    // re-calling the RPC (which would return the same duplicate since no row was inserted).
+    const MAX_RETRIES = 5
+    let sample: any = null
+    let lastTrackingNumber: string | null = null
 
-    if (insertError) {
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      let trackingNumber: string
+
+      if (attempt === 1 || !lastTrackingNumber) {
+        // First attempt: use the RPC
+        const { data: trackingNumberData, error: trackingError } = await supabase
+          .rpc('generate_tracking_number', {
+            p_client_id: clientId,
+            p_laboratory_id: body.laboratory_id,
+            p_origin: body.origin,
+            p_quality_template_id: qualitySpecId,
+            p_is_rejected: false,
+            p_sample_type: body.sample_type || 'pss'
+          } as any)
+
+        if (trackingError) {
+          console.error('Error generating tracking number:', trackingError)
+          return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
+        }
+
+        if (trackingNumberData === null || trackingNumberData === undefined) {
+          console.error('Tracking number generation returned null for client:', clientId, 'origin:', body.origin)
+          return NextResponse.json({
+            error: 'Failed to generate tracking number - client configuration may be invalid',
+            details: 'The tracking number format for this client is not properly configured. Please contact an administrator.'
+          }, { status: 500 })
+        }
+
+        trackingNumber = String(trackingNumberData)
+
+        if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
+          console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
+          return NextResponse.json({
+            error: 'Failed to generate valid tracking number',
+            details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
+          }, { status: 500 })
+        }
+      } else {
+        // Retry: increment the numeric part of the last failed tracking number
+        // Parse format like "BD-890227/26" or "AS41926/26" — find the main sequence digits
+        const slashIdx = lastTrackingNumber.lastIndexOf('/')
+        const left = slashIdx >= 0 ? lastTrackingNumber.substring(0, slashIdx) : lastTrackingNumber
+        const suffix = slashIdx >= 0 ? lastTrackingNumber.substring(slashIdx) : ''
+        // Find the last group of digits in the left part (the sequence number)
+        const match = left.match(/^(.*?)(\d+)$/)
+        if (match) {
+          const prefix = match[1]
+          const numStr = match[2]
+          const nextNum = (parseInt(numStr) + 1).toString().padStart(numStr.length, '0')
+          trackingNumber = prefix + nextNum + suffix
+        } else {
+          // Can't parse — fall back to RPC call
+          const { data: rpcData } = await supabase.rpc('generate_tracking_number', {
+            p_client_id: clientId,
+            p_laboratory_id: body.laboratory_id,
+            p_origin: body.origin,
+            p_quality_template_id: qualitySpecId,
+            p_is_rejected: false,
+            p_sample_type: body.sample_type || 'pss'
+          } as any)
+          trackingNumber = String(rpcData)
+        }
+      }
+
+      lastTrackingNumber = trackingNumber
+      console.log(`Generated tracking number: ${trackingNumber} (attempt ${attempt})`)
+
+      const sampleData: Record<string, any> = {
+        tracking_number: trackingNumber,
+        client_id: clientId,
+        laboratory_id: body.laboratory_id,
+        quality_spec_id: qualitySpecId,
+        quality_name: body.quality_name || null,
+        hide_exporter_on_label: body.hide_exporter_on_label || false,
+        origin: body.origin,
+        micro_origin: body.micro_origin || null,
+        seller_id: body.seller_id || null,
+        exporter_id: body.exporter_id || null,
+        same_seller_shipper: body.same_seller_shipper ?? true,
+        importer_is_qc_client: body.importer_is_qc_client ?? true,
+        exporter_sample_number: body.exporter_sample_number || null,
+        importer_id: body.importer_id || null,
+        roaster_id: body.roaster_id || null,
+        end_client_id: body.end_client_id || null,
+        end_client_contract_nr: body.end_client_contract_nr || null,
+        supplier: body.supplier || null,
+        supplier_contract_nr: body.supplier_contract_nr || null,
+        status: body.status || 'received',
+        storage_position: body.storage_position || null,
+        wolthers_contract_nr: body.wolthers_contract_nr || null,
+        seller_contract_nr: body.seller_contract_nr || null,
+        shipper_contract_nr: body.shipper_contract_nr || null,
+        exporter_contract_nr: body.exporter_contract_nr || null,
+        buyer_contract_nr: body.buyer_contract_nr || null,
+        roaster_contract_nr: body.roaster_contract_nr || null,
+        qc_client_contract_nr: body.qc_client_contract_nr || null,
+        ico_number: body.ico_number || null,
+        container_nr: body.container_nr || null,
+        sample_type: body.sample_type || null,
+        shipment_month: body.shipment_month || null,
+        bags_quantity_mt: bagsQuantityMt,
+        bag_count: bagCount,
+        bag_weight_kg: body.bag_weight_kg ? parseFloat(body.bag_weight_kg) : null,
+        equivalent_60kg_bags: body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null,
+        bag_type: body.bag_type || null,
+        processing_method: body.processing_method || null,
+        workflow_stage: body.workflow_stage || 'received',
+        assigned_to: body.assigned_to || null
+      }
+
+      const { data: insertedSample, error: insertError } = await (supabase as any)
+        .from('samples')
+        .insert(sampleData)
+        .select()
+        .single()
+
+      if (!insertError) {
+        sample = insertedSample
+        break
+      }
+
+      // Check for duplicate key error - retry with new tracking number
+      const isDuplicate = insertError.message?.includes('duplicate key') ||
+        insertError.message?.includes('unique constraint') ||
+        insertError.code === '23505'
+
+      if (isDuplicate && attempt < MAX_RETRIES) {
+        console.warn(`Duplicate tracking number ${trackingNumber}, retrying (attempt ${attempt + 1})...`)
+        continue
+      }
+
       console.error('Error creating sample:', insertError)
       return NextResponse.json({ error: 'Failed to create sample', details: insertError.message }, { status: 500 })
+    }
+
+    if (!sample) {
+      return NextResponse.json({ error: 'Failed to create sample after retries' }, { status: 500 })
     }
 
     // Get client name for activity logging (only if client_id is provided)
@@ -290,8 +443,8 @@ export async function POST(request: NextRequest) {
 
     // Log activity
     await activities.sampleRegistered(
-      (sample as any).id,
-      trackingNumber,
+      sample.id,
+      sample.tracking_number,
       clientName,
       body.laboratory_id
     )

@@ -91,12 +91,16 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
   async function fetchClientQualities() {
     try {
       const response = await fetch(`/api/client-qualities?client_id=${clientId}`)
-      if (!response.ok) throw new Error('Failed to fetch client qualities')
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Client qualities API error:', response.status, errorData)
+        throw new Error(errorData.details || errorData.error || `HTTP ${response.status}`)
+      }
       const data = await response.json()
       setClientQualities(data.client_qualities || [])
-    } catch (err) {
+    } catch (err: any) {
       console.error('Error fetching client qualities:', err)
-      setError('Failed to load quality assignments')
+      setError(err.message || 'Failed to load quality assignments')
     } finally {
       setLoading(false)
     }

@@ -88,8 +88,10 @@ export async function GET(request: NextRequest) {
     // Check if user is assigned to this session
     const isAssigned = (session.cupper_ids as string[])?.includes(user.id)
 
-    // Check if user is a master cupper
+    // Check if user is a master cupper or has admin-level QC role
     const isMasterCupper = profile.is_master_cupper === true
+    const isLabAdmin = ['lab_admin', 'lab_manager'].includes(profile.qc_role)
+    const hasAdminPermissions = isMasterCupper || isLabAdmin || profile.is_global_admin
 
     // Check if any master cupper is assigned to the session
     // Note: is_master_cupper may not be in TypeScript types yet (new migration 123)
@@ -100,8 +102,11 @@ export async function GET(request: NextRequest) {
 
     const hasMasterCupperAssigned = (assignedProfiles as any[])?.some(p => p.is_master_cupper === true) || false
 
-    // Count completed cuppers (those who have submitted scores for ALL samples)
+    // Count completed cuppers
+    // When validating a specific sample (sampleId provided), check if cuppers scored THAT sample
+    // When validating the whole session, check if cuppers scored ALL samples
     const sampleIds = session.sample_ids || []
+    const isPerSampleValidation = !!sampleId
 
     // First try to get scores by session_id
     let { data: scores, error: scoresError } = await supabase
@@ -117,30 +122,38 @@ export async function GET(request: NextRequest) {
     // This handles legacy scores saved without session_id
     if (!scores || scores.length === 0) {
       console.log('[VALIDATE] No scores found by session_id, trying sample_ids fallback')
-      const { data: sampleScores, error: sampleScoresError } = await supabase
-        .from('cupping_scores')
-        .select('cupper_id, sample_id')
-        .in('sample_id', sampleIds)
+      // When validating a specific sample, only query for that sample's scores
+      const queryIds = isPerSampleValidation ? [sampleId!] : sampleIds
+      if (queryIds.length > 0) {
+        const { data: sampleScores, error: sampleScoresError } = await supabase
+          .from('cupping_scores')
+          .select('cupper_id, sample_id')
+          .in('sample_id', queryIds)
 
-      if (sampleScoresError) {
-        console.error('Error fetching scores by sample_ids:', sampleScoresError)
-      } else {
-        scores = sampleScores
+        if (sampleScoresError) {
+          console.error('Error fetching scores by sample_ids:', sampleScoresError)
+        } else {
+          scores = sampleScores
+        }
       }
     }
 
-    console.log(`[VALIDATE] Found ${scores?.length || 0} scores for session ${session.id}`)
+    console.log(`[VALIDATE] Found ${scores?.length || 0} scores for session ${session.id}, perSample=${isPerSampleValidation}`)
 
     // Count how many samples each cupper has scored
+    // When doing per-sample validation, only count scores for the target sample
     const cupperSampleCounts = new Map<string, number>()
     for (const score of scores || []) {
       if (!score.cupper_id) continue
+      // For per-sample validation, only count scores matching the specific sample
+      if (isPerSampleValidation && score.sample_id !== sampleId) continue
       const count = cupperSampleCounts.get(score.cupper_id) || 0
       cupperSampleCounts.set(score.cupper_id, count + 1)
     }
 
-    // Count cuppers who have scored ALL samples
-    const totalSamples = sampleIds.length || 1
+    // For per-sample validation: cupper needs to have scored just this 1 sample
+    // For session validation: cupper needs to have scored ALL samples
+    const totalSamples = isPerSampleValidation ? 1 : (sampleIds.length || 1)
     let completedCupperCount = 0
     for (const [cupperId, count] of cupperSampleCounts) {
       if (count >= totalSamples) {
@@ -182,17 +195,22 @@ export async function GET(request: NextRequest) {
         ? 'Global admin permission'
         : `Waiting for ${assignedCupperCount === 1 ? 'cupper' : 'more cuppers'} (${completedCupperCount}/${assignedCupperCount})`
     } else if (!hasEnoughCuppers) {
-      // Not enough cuppers have completed
-      canValidate = false
-      reason = `Waiting for ${assignedCupperCount === 1 ? 'cupper' : 'more cuppers'} (${completedCupperCount}/${assignedCupperCount})`
-    } else if (hasMasterCupperAssigned) {
-      // If a master cupper is assigned, only master cuppers can validate
-      if (isMasterCupper && (isAssigned || profile.laboratory_id === session.laboratory_id)) {
+      // Not enough cuppers have completed - but master cuppers can bypass the minimum
+      if (isMasterCupper && userHasCompleted && (isAssigned || profile.laboratory_id === session.laboratory_id)) {
         canValidate = true
-        reason = 'Master cupper permission'
+        reason = 'Master cupper bypass (minimum cuppers not met)'
       } else {
         canValidate = false
-        reason = 'Only the assigned master cupper can validate this session'
+        reason = `Waiting for more cuppers (${completedCupperCount}/${minCuppersRequired})`
+      }
+    } else if (hasMasterCupperAssigned) {
+      // If a master cupper is assigned, only master cuppers or lab admins can validate
+      if (hasAdminPermissions && (isAssigned || profile.laboratory_id === session.laboratory_id)) {
+        canValidate = true
+        reason = isMasterCupper ? 'Master cupper permission' : 'Lab admin permission'
+      } else {
+        canValidate = false
+        reason = 'Only master cuppers or lab admins can validate this session'
       }
     } else {
       // No master cupper assigned - any assigned cupper who has completed can validate
@@ -226,6 +244,9 @@ export async function GET(request: NextRequest) {
         is_q_grader: profile.is_q_grader,
         is_master_cupper: profile.is_master_cupper,
         is_global_admin: profile.is_global_admin,
+        is_lab_admin: isLabAdmin,
+        has_admin_permissions: hasAdminPermissions,
+        qc_role: profile.qc_role,
         is_assigned: isAssigned,
         has_completed: userHasCompleted
       },

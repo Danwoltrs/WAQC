@@ -83,25 +83,25 @@ export async function POST(request: NextRequest) {
     })
 
     if (matchingSession && !session_id) {
-      // Found existing session - update it instead of creating new
+      // Found existing session - REPLACE cuppers with new selection (user's choice is definitive)
       finalSessionId = matchingSession.id
       const existingCupperIds = (matchingSession.cupper_ids as string[]) || []
 
-      // Find truly new cuppers (not already in the session)
+      // Find truly new cuppers (not already in the session) for notifications
       newCupperIds = cupper_ids.filter(id => !existingCupperIds.includes(id))
 
-      // Merge cuppers and samples
-      const mergedCupperIds = [...new Set([...existingCupperIds, ...cupper_ids])]
+      // Merge samples (may be adding new samples) but REPLACE cuppers
       const existingSampleIds = (matchingSession.sample_ids as string[]) || []
       const mergedSampleIds = [...new Set([...existingSampleIds, ...sample_ids])]
 
       const { error: updateError } = await dbClient
         .from('cupping_sessions')
         .update({
-          cupper_ids: mergedCupperIds,
+          cupper_ids: cupper_ids,
+          participants: cupper_ids,
           sample_ids: mergedSampleIds,
-          min_cuppers_required: Math.min(mergedCupperIds.length, 2),
-          allow_single_cupper: mergedCupperIds.length === 1,
+          min_cuppers_required: Math.min(cupper_ids.length, 2),
+          allow_single_cupper: cupper_ids.length === 1,
         })
         .eq('id', finalSessionId)
 
@@ -113,7 +113,7 @@ export async function POST(request: NextRequest) {
         }, { status: 500 })
       }
 
-      console.log(`Updated existing cupping session: ${finalSessionId} (added ${newCupperIds.length} new cupper(s))`)
+      console.log(`Updated existing cupping session: ${finalSessionId} (replaced cuppers: ${cupper_ids.length}, added ${newCupperIds.length} new)`)
     } else if (!finalSessionId) {
       // Create a new cupping session with the assigned cuppers and samples
       const { data: newSession, error: sessionError } = await dbClient
@@ -162,7 +162,10 @@ export async function POST(request: NextRequest) {
           .from('cupping_sessions')
           .update({
             cupper_ids: mergedCupperIds,
+            participants: mergedCupperIds,
             sample_ids: mergedSampleIds,
+            min_cuppers_required: Math.min(mergedCupperIds.length, 2),
+            allow_single_cupper: mergedCupperIds.length === 1,
           })
           .eq('id', session_id)
 

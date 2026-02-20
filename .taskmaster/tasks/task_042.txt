@@ -1,0 +1,141 @@
+# Task ID: 42
+# Title: Implement Dashboard Cupping Card Scan Modal with Device-Aware UI and Comprehensive Workflow State Tracking
+# Status: done
+# Dependencies: 13, 16, 21
+# Priority: high
+# Description: Build a modal-based cupping card scanning interface accessible from the dashboard with device-aware camera/upload handling, comprehensive workflow state tracking (cards printed, scanned, locked), one-scan-per-sample enforcement, and 24-hour certificate edit lock mechanism.
+# Details:
+**IMPLEMENTATION COMPLETED (2025-11-27)**
+
+Core functionality successfully implemented with the following components:
+
+**1. Database Schema (supabase/migrations/20251127000000_add_sample_scan_tracking.sql):**
+- Added to samples table: cards_printed_at, scanned_at, certificate_generated_at, locked
+- Added to cupping_scores table: entry_method (manual/ocr)
+- Performance indexes created for all timestamp fields
+- Migration applied and verified in production
+
+**2. API Endpoints:**
+
+- **GET /api/samples/check-cards-printed** (src/app/api/samples/check-cards-printed/route.ts):
+  - Returns hasCardsPrinted boolean and count
+  - Efficient query with limit(1) for performance
+  - Used by dashboard to enable/disable scan button
+
+- **GET /api/cupping/check-edit-permission** (src/app/api/cupping/check-edit-permission/route.ts):
+  - Implements 4-tier lock logic:
+    * Rule 1: Locked after scan (prevents re-scanning)
+    * Rule 2: Not locked if no certificate generated
+    * Rule 3: Within 24h window from certificate (allowed)
+    * Rule 4: After 24h from certificate (permanently locked)
+  - Returns EditPermissionResponse with canEdit, reason, lockExpiresAt, message
+  - Handles sampleId query parameter
+
+**3. DashboardScanDialog Component (src/components/dashboard/dashboard-scan-dialog.tsx):**
+- Device-aware UI with automatic mobile/iPad detection
+- Auto-opens camera on mobile devices using facingMode: 'environment'
+- Desktop: Shows upload dropzone + camera button
+- MediaDevices.getUserMedia integration for camera access
+- Canvas-based photo capture from video stream
+- Reuses existing OCR processing endpoint (/api/cupping/ocr/process-card)
+- Pre-scan lock validation (checks if sample already scanned)
+- OCRValidationDialog integration for score validation
+- Submits scores with entryMethod='ocr'
+
+**4. Dashboard Integration (src/app/page.tsx):**
+- Scan button enabled/disabled based on hasCardsPrinted state
+- checkCardsPrinted function called on mount
+- Modal-based workflow instead of page navigation
+- handleScanComplete callback refreshes state after scan
+
+**5. Score Submission (src/app/api/cupping/scores/submit/route.ts):**
+- Accepts entryMethod parameter (default: 'manual')
+- Adds entry_method field to cupping score inserts
+- Sample locking after OCR validation:
+  * Sets scanned_at timestamp
+  * Sets locked: true
+  * Uses supabaseAdmin to bypass RLS
+- Prevents re-scanning after validation
+
+**6. Move-to-Cupping Integration (src/app/api/samples/bulk/move-to-cupping/route.ts):**
+- Sets cards_printed_at timestamp when samples move to analysis stage
+- Enables dashboard scan button workflow
+
+**WORKFLOW LOGIC:**
+1. Print cards → cards_printed_at set → Scan button enabled
+2. Scan cards → Validate → Save → scanned_at + locked set
+3. Direct editing allowed in cupping page (no need to re-scan)
+4. Certificate generation → certificate_generated_at set
+5. 24-hour window for edits → Then permanent lock
+
+**DEFERRED FEATURES:**
+- Cupping page lock indicators (banner, disabled inputs, lock icon)
+- Manual lock-session endpoint for admin use
+- Real-time lock status subscriptions
+- Lock-related notifications
+- Background job for automatic 24h lock enforcement
+
+Reason for deferral: Cupping interface file exceeds 1500 lines. User approved deferring lock UI to future refactoring session. Core scan workflow is fully operational without these UI enhancements.
+
+**PRODUCTION STATUS:**
+- Build successful (commit 88930b1)
+- 15 files changed, 1208 insertions, 55 deletions
+- Ready for production testing
+- User confirmed implementation correctness
+
+# Test Strategy:
+**COMPLETED TESTING:**
+
+1. ✅ Database Migration:
+   - Migration applied successfully to production
+   - All columns created with correct types and defaults
+   - Indexes created and verified
+   - Column comments added for documentation
+
+2. ✅ API Endpoints:
+   - check-cards-printed returns correct boolean and count
+   - check-edit-permission implements all 4 lock rules correctly
+   - Proper error handling for missing parameters
+   - Type assertions used for new fields not in generated types
+
+3. ✅ Device Detection:
+   - isMobileDevice() detects mobile/iPad correctly
+   - hasCamera() async check for camera availability
+   - Auto-camera launch on mobile devices verified
+   - Desktop shows both upload and camera options
+
+4. ✅ OCR Integration:
+   - Reuses existing process-card endpoint
+   - entryMethod='ocr' passed to score submission
+   - Pre-scan validation checks scanned_at/locked status
+   - OCRValidationDialog integration working
+
+5. ✅ Sample Lock Enforcement:
+   - scanned_at timestamp set after successful OCR validation
+   - locked flag set to true after validation
+   - Re-scan attempts blocked with appropriate error
+   - Admin client used to bypass RLS for locking
+
+6. ✅ Dashboard Integration:
+   - Scan button enabled/disabled based on cards_printed_at
+   - Modal opens correctly from dashboard
+   - State refreshes after successful scan
+   - checkCardsPrinted called on component mount
+
+7. ✅ Build Verification:
+   - npm run build completed successfully
+   - No TypeScript errors
+   - All imports resolved correctly
+   - Production deployment successful
+
+**DEFERRED TESTING (for future lock UI implementation):**
+
+- Cupping page lock banner display
+- Disabled input fields when locked
+- Lock icon and countdown timer
+- Real-time lock status subscriptions
+- Lock-related notification creation
+- Manual lock-session endpoint
+- 24-hour background lock automation
+- Keyboard navigation through lock indicators
+- Screen reader announcements for lock status

@@ -30,7 +30,9 @@ import { DefectConfigManager } from './defect-config-manager'
 import {
   TaintFaultConfiguration,
   createEmptyTaintFaultConfiguration,
-  BRAZIL_TRADITIONAL_TAINTS_FAULTS
+  BRAZIL_TRADITIONAL_TAINTS_FAULTS,
+  CupStatusRules,
+  CUP_STATUS_RULES_PRESETS
 } from '@/types/taint-fault-configuration'
 import { TaintFaultConfigManager } from './taint-fault-config-manager'
 import { CuppingAttributeConfigManager, AttributeWithScale } from './cupping-attribute-config-manager'
@@ -74,6 +76,7 @@ interface TemplateParameters {
   }
   cupping_attributes?: CuppingAttribute[] // New flexible attribute format
   taint_fault_configuration?: TaintFaultConfiguration // New flexible taint/fault format
+  cup_status_rules?: CupStatusRules // Rules for auto-calculating Clean Cup and Uniform Cup
   micro_region_configuration?: MicroRegionConfiguration // Micro-region requirements per origin
 }
 
@@ -157,6 +160,7 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   const [cuppingExpanded, setCuppingExpanded] = useState(false)
   const [taintFaultExpanded, setTaintFaultExpanded] = useState(false)
   const [taintFaultListExpanded, setTaintFaultListExpanded] = useState(false)
+  const [cupStatusRulesExpanded, setCupStatusRulesExpanded] = useState(false)
 
   // Info section states
   const [showScreenSizeInfo, setShowScreenSizeInfo] = useState(false)
@@ -343,6 +347,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
     template?.parameters.taint_fault_configuration || BRAZIL_TRADITIONAL_TAINTS_FAULTS.configuration
   )
   const [taintFaultDialogOpen, setTaintFaultDialogOpen] = useState(false)
+
+  // Cup Status Rules (Clean Cup / Uniform Cup derived from defects)
+  const [cupStatusRules, setCupStatusRules] = useState<CupStatusRules | null>(
+    template?.parameters.cup_status_rules || null
+  )
 
   // Micro-Region Configuration
   const [microRegionConfiguration, setMicroRegionConfiguration] = useState<MicroRegionConfiguration>(
@@ -644,6 +653,11 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
                                    (taintFaultConfiguration.faults && taintFaultConfiguration.faults.length > 0)
       if (hasTaintFaultConfig) {
         parameters.taint_fault_configuration = taintFaultConfiguration
+      }
+
+      // Cup Status Rules (Clean Cup / Uniform Cup derived from defects)
+      if (cupStatusRules) {
+        parameters.cup_status_rules = cupStatusRules
       }
 
       // Micro-Region Configuration
@@ -1677,6 +1691,8 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         onChange={handleAttributesChange}
       />
 
+      {/* Taints and Faults + Clean/Uniform Cups side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {/* Taints and Faults (New Flexible System) */}
       <Card>
         <CardHeader className="pb-3 cursor-pointer" onClick={() => setTaintFaultExpanded(!taintFaultExpanded)}>
@@ -1887,6 +1903,143 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         )}
       </Card>
 
+
+      {/* Clean/Uniform Cups */}
+      <Card>
+        <CardHeader className="pb-3 cursor-pointer" onClick={() => setCupStatusRulesExpanded(!cupStatusRulesExpanded)}>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 min-w-0 flex-1">
+              {cupStatusRulesExpanded ? <ChevronDown className="h-4 w-4 flex-shrink-0" /> : <ChevronRight className="h-4 w-4 flex-shrink-0" />}
+              <CardTitle className="text-sm font-semibold flex-shrink-0">Clean/Uniform Cups</CardTitle>
+              {!cupStatusRulesExpanded && cupStatusRules && (
+                <span className="text-[11px] text-muted-foreground truncate">
+                  - Clean Cup: T{'\u2264'}{cupStatusRules.clean_cup.max_taints} F{'\u2264'}{cupStatusRules.clean_cup.max_faults} | Uniform Cup: T{'\u2264'}{cupStatusRules.uniform_cup.max_taints} F{'\u2264'}{cupStatusRules.uniform_cup.max_faults}
+                </span>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        {cupStatusRulesExpanded && (
+        <CardContent className="space-y-3 pt-0">
+          <p className="text-xs text-muted-foreground">
+            Define how Clean Cup and Uniform Cup are auto-calculated from defect counts. If no rules are set, these will default to true (no defects = clean/uniform).
+          </p>
+
+          {/* Preset Selector */}
+          <div className="flex items-center gap-2">
+            <Label className="text-xs flex-shrink-0">Preset:</Label>
+            <Select
+              value=""
+              onValueChange={(presetId) => {
+                const preset = CUP_STATUS_RULES_PRESETS[presetId]
+                if (preset) {
+                  setCupStatusRules({ ...preset.rules })
+                }
+              }}
+            >
+              <SelectTrigger className="h-7 text-xs w-48">
+                <SelectValue placeholder="Apply preset..." />
+              </SelectTrigger>
+              <SelectContent>
+                {Object.entries(CUP_STATUS_RULES_PRESETS).map(([id, preset]) => (
+                  <SelectItem key={id} value={id} className="text-xs">
+                    {preset.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {cupStatusRules && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setCupStatusRules(null)}
+                className="h-7 text-xs text-destructive"
+              >
+                Clear
+              </Button>
+            )}
+          </div>
+
+          {cupStatusRules ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Clean Cup Rules */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <h4 className="text-xs font-semibold">Clean Cup</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Max Taints</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={cupStatusRules.clean_cup.max_taints}
+                      onChange={(e) => setCupStatusRules(prev => prev ? {
+                        ...prev,
+                        clean_cup: { ...prev.clean_cup, max_taints: parseInt(e.target.value) || 0 }
+                      } : null)}
+                      className="h-7 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Max Faults</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={cupStatusRules.clean_cup.max_faults}
+                      onChange={(e) => setCupStatusRules(prev => prev ? {
+                        ...prev,
+                        clean_cup: { ...prev.clean_cup, max_faults: parseInt(e.target.value) || 0 }
+                      } : null)}
+                      className="h-7 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Uniform Cup Rules */}
+              <div className="rounded-lg border p-3 space-y-2">
+                <h4 className="text-xs font-semibold">Uniform Cup</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Max Taints</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={cupStatusRules.uniform_cup.max_taints}
+                      onChange={(e) => setCupStatusRules(prev => prev ? {
+                        ...prev,
+                        uniform_cup: { ...prev.uniform_cup, max_taints: parseInt(e.target.value) || 0 }
+                      } : null)}
+                      className="h-7 text-xs"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-[11px] text-muted-foreground">Max Faults</Label>
+                    <Input
+                      type="number"
+                      min="0"
+                      value={cupStatusRules.uniform_cup.max_faults}
+                      onChange={(e) => setCupStatusRules(prev => prev ? {
+                        ...prev,
+                        uniform_cup: { ...prev.uniform_cup, max_faults: parseInt(e.target.value) || 0 }
+                      } : null)}
+                      className="h-7 text-xs"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center justify-between px-2.5 py-2 rounded-lg border bg-muted/30">
+              <p className="text-xs text-muted-foreground">
+                No cup status rules configured. Select a preset above to get started.
+              </p>
+            </div>
+          )}
+        </CardContent>
+        )}
+      </Card>
+      </div>
 
       {/* Taint/Fault Configuration Dialog */}
       <TaintFaultConfigManager

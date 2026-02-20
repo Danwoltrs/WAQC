@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { getPendingSamplesForCupper } from '@/lib/queries/cupping-assignments'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -250,6 +251,9 @@ export async function POST(request: NextRequest) {
             console.log(`Sample ${card.tracking_number} locked after OCR scan`)
           }
         }
+
+        // Invalidate cached certificate PDF since cupping scores changed
+        invalidateCertificatePdf(supabase, card.sample_id).catch(() => {})
 
         results.push({
           sample_id: card.sample_id,

@@ -9,7 +9,7 @@ import { COLORS } from './certificate-styles'
 
 const descStyles = StyleSheet.create({
   container: {
-    marginBottom: 8,
+    marginBottom: 42,
     paddingVertical: 4,
   },
   sectionLabel: {

@@ -148,7 +148,10 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
               <View style={styles.infoSection}>
               {/* Header Row: Tracking Number + Date */}
               <View style={styles.headerRow}>
-                <Text style={styles.trackingNumber}>{label.tracking_number}</Text>
+                <Text style={label.tracking_number.includes(',')
+                  ? { ...styles.trackingNumber, fontSize: (styles.trackingNumber.fontSize as number) * 0.75 }
+                  : styles.trackingNumber
+                }>{label.tracking_number}</Text>
                 <Text style={styles.date}>
                   <Text style={styles.dateLabel}>Date: </Text>
                   {label.date}

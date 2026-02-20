@@ -3,27 +3,30 @@
  * Two separate sections: Screen | Defects
  * Screen: sorted largest to smallest with pan always last
  * Defects: summary row on top, two columns (Primary | Secondary) with dotted lines to counts
+ * Supports out-of-spec highlighting (red+bold) with limit notes
  */
 
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
+import type { ScreenSizeLimit } from '@/lib/certificate-data'
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
+    marginTop: 20,
     marginBottom: 8,
     gap: 10,
   },
   // Screen section styles
   screenSection: {
-    width: 85,
+    width: 100,
     padding: 6,
   },
   screenDefectsSeparator: {
     width: 0.5,
     backgroundColor: COLORS.border,
-    marginHorizontal: 6,
+    marginHorizontal: 10,
     alignSelf: 'stretch',
   },
   screenTitle: {
@@ -36,17 +39,28 @@ const styles = StyleSheet.create({
   },
   screenRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    alignItems: 'baseline',
     paddingVertical: 1,
   },
   screenLabel: {
     fontSize: 7,
     color: COLORS.dark,
+    width: 42,
   },
   screenValue: {
     fontSize: 7,
     fontWeight: 600,
     color: COLORS.dark,
+  },
+  screenValueOutOfSpec: {
+    fontSize: 7,
+    fontWeight: 700,
+    color: COLORS.outOfSpec,
+  },
+  screenSpecNote: {
+    fontSize: 5,
+    color: COLORS.outOfSpec,
+    marginLeft: 2,
   },
   // Defects section styles
   defectsSection: {
@@ -55,10 +69,10 @@ const styles = StyleSheet.create({
   },
   summaryRow: {
     flexDirection: 'row',
-    marginBottom: 6,
-    paddingBottom: 4,
-    borderBottomWidth: 0.5,
-    borderBottomColor: COLORS.borderLight,
+    marginTop: 6,
+    paddingTop: 4,
+    borderTopWidth: 0.5,
+    borderTopColor: COLORS.borderLight,
   },
   summaryItem: {
     flexDirection: 'row',
@@ -75,6 +89,16 @@ const styles = StyleSheet.create({
     fontSize: 8,
     fontWeight: 700,
     color: COLORS.dark,
+  },
+  summaryValueOutOfSpec: {
+    fontSize: 8,
+    fontWeight: 700,
+    color: COLORS.outOfSpec,
+  },
+  summarySpecNote: {
+    fontSize: 5,
+    color: COLORS.outOfSpec,
+    marginLeft: 2,
   },
   defectsColumnsContainer: {
     flexDirection: 'row',
@@ -186,25 +210,54 @@ export interface CertificateScreenDefectsProps {
   primaryDefectsCount?: number | null
   secondaryDefectsCount?: number | null
   totalDefectsWeight?: number | null
+  // Spec limits
+  screenConstraints?: ScreenSizeLimit[]
+  maxPrimaryDefects?: number
+  maxSecondaryDefects?: number
+  maxTotalDefects?: number
 }
 
 /**
  * Sort screen sizes: numeric sizes descending (19, 18, 17...), with 'pan' always last
  */
+function extractScreenNumber(size: string | number): number {
+  const str = String(size)
+  // Extract number from strings like "Screen 14", "14", "Scr 14", etc.
+  const match = str.match(/(\d+)/)
+  return match ? parseInt(match[1], 10) : NaN
+}
+
+/**
+ * Format screen size label: "Screen 14" → "Scr. 14", plain "14" → "Scr. 14", keep "Pan"/"Fondo" as-is
+ */
+function formatScreenLabel(size: string | number): string {
+  const str = String(size)
+  const lower = str.toLowerCase()
+  if (lower === 'pan' || lower === 'fondo') return str
+  // Already has "Scr" prefix
+  if (lower.startsWith('scr')) return str.replace(/^screen\s*/i, 'Scr. ')
+  // Has "Screen" prefix
+  if (lower.startsWith('screen')) return str.replace(/^screen\s*/i, 'Scr. ')
+  // Plain number
+  const num = str.match(/^\d+$/)
+  if (num) return `Scr. ${str}`
+  return str
+}
+
 function sortScreenSizes(sizes: ScreenSize[]): ScreenSize[] {
   return [...sizes].sort((a, b) => {
     const aStr = String(a.size).toLowerCase()
     const bStr = String(b.size).toLowerCase()
 
-    // Pan always goes last
+    // Pan/Fondo always goes last
     if (aStr === 'pan' || aStr === 'fondo') return 1
     if (bStr === 'pan' || bStr === 'fondo') return -1
 
-    // Parse numeric values for comparison
-    const aNum = parseInt(String(a.size), 10)
-    const bNum = parseInt(String(b.size), 10)
+    // Extract numeric values for comparison (handles "Screen 14", "14", etc.)
+    const aNum = extractScreenNumber(a.size)
+    const bNum = extractScreenNumber(b.size)
 
-    // If both are numbers, sort descending
+    // If both have numbers, sort descending (largest first)
     if (!isNaN(aNum) && !isNaN(bNum)) {
       return bNum - aNum
     }
@@ -224,11 +277,58 @@ function sortDefects(defects: Defect[]): Defect[] {
   return [...defects].sort((a, b) => b.count - a.count)
 }
 
+/**
+ * Check a screen size value against constraints
+ */
+function checkScreenSpec(
+  size: string | number,
+  percentage: number | null,
+  constraints?: ScreenSizeLimit[]
+): { outOfSpec: boolean; note: string } {
+  if (!constraints || percentage === null) return { outOfSpec: false, note: '' }
+
+  const sizeStr = String(size).toLowerCase()
+  const constraint = constraints.find(c => c.screen_size.toLowerCase() === sizeStr)
+  if (!constraint) return { outOfSpec: false, note: '' }
+
+  switch (constraint.constraint_type) {
+    case 'minimum':
+      if (constraint.min_value !== undefined && percentage < constraint.min_value) {
+        return { outOfSpec: true, note: `(min ${constraint.min_value}%)` }
+      }
+      break
+    case 'maximum':
+      if (constraint.max_value !== undefined && percentage > constraint.max_value) {
+        return { outOfSpec: true, note: `(max ${constraint.max_value}%)` }
+      }
+      break
+    case 'range':
+      if (constraint.min_value !== undefined && percentage < constraint.min_value) {
+        return { outOfSpec: true, note: `(min ${constraint.min_value}%)` }
+      }
+      if (constraint.max_value !== undefined && percentage > constraint.max_value) {
+        return { outOfSpec: true, note: `(max ${constraint.max_value}%)` }
+      }
+      break
+    case 'exact':
+      if (constraint.min_value !== undefined && percentage !== constraint.min_value) {
+        return { outOfSpec: true, note: `(req ${constraint.min_value}%)` }
+      }
+      break
+  }
+
+  return { outOfSpec: false, note: '' }
+}
+
 export function CertificateScreenDefects({
   screenSizes,
   defects,
   primaryDefectsCount,
   secondaryDefectsCount,
+  screenConstraints,
+  maxPrimaryDefects,
+  maxSecondaryDefects,
+  maxTotalDefects,
 }: CertificateScreenDefectsProps) {
   const hasScreenData = screenSizes && screenSizes.length > 0
   const hasDefectData = defects && defects.length > 0
@@ -257,60 +357,83 @@ export function CertificateScreenDefects({
   // Calculate totals
   const totalDefects = ((primaryDefectsCount ?? 0) + (secondaryDefectsCount ?? 0))
 
+  // Defect summary out-of-spec checks
+  const primaryVal = primaryDefectsCount ?? 0
+  const secondaryVal = secondaryDefectsCount ?? 0
+  const primaryOutOfSpec = maxPrimaryDefects !== undefined && primaryVal > maxPrimaryDefects
+  const secondaryOutOfSpec = maxSecondaryDefects !== undefined && secondaryVal > maxSecondaryDefects
+  const totalOutOfSpec = maxTotalDefects !== undefined && totalDefects > maxTotalDefects
+
   return (
     <View style={styles.container}>
       {/* Screen Distribution Section */}
       {hasScreenData && (
         <View style={styles.screenSection}>
           <Text style={styles.screenTitle}>Screen</Text>
-          {sortedScreenSizes.map((screen, index) => (
-            <View key={index} style={styles.screenRow}>
-              <Text style={styles.screenLabel}>{screen.size}</Text>
-              <Text style={styles.screenValue}>
-                {screen.percentage !== null ? `${screen.percentage.toFixed(1)}%` : '-'}
-              </Text>
-            </View>
-          ))}
+          {sortedScreenSizes.map((screen, index) => {
+            const spec = checkScreenSpec(screen.size, screen.percentage, screenConstraints)
+            return (
+              <View key={index} style={styles.screenRow}>
+                <Text style={styles.screenLabel}>{formatScreenLabel(screen.size)}</Text>
+                <Text style={spec.outOfSpec ? styles.screenValueOutOfSpec : styles.screenValue}>
+                  {screen.percentage !== null ? `${Math.round(screen.percentage)}%` : '-'}
+                </Text>
+                {spec.note && <Text style={styles.screenSpecNote}>{spec.note}</Text>}
+              </View>
+            )
+          })}
         </View>
       )}
 
       {/* Separator between Screen and Defects */}
-      {hasScreenData && hasDefectData && (
+      {hasScreenData && (
         <View style={styles.screenDefectsSeparator} />
       )}
 
-      {/* Defects Section */}
-      {hasDefectData && (
-        <View style={styles.defectsSection}>
-          {/* Summary row on top */}
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Primary:</Text>
-              <Text style={styles.summaryValue}>{primaryDefectsCount ?? 0}</Text>
+      {/* Defects Section - always show Primary */}
+      <View style={styles.defectsSection}>
+        {/* Defect columns */}
+        <View style={styles.defectsColumnsContainer}>
+          {/* Primary Defects Column — always shown */}
+          <View style={styles.defectColumn}>
+            <Text style={styles.defectColumnTitle}>Primary</Text>
+            <View style={styles.defectHeaderRow}>
+              <Text style={styles.defectHeaderName}>Defect</Text>
+              <Text style={styles.defectHeaderQty}>Qty</Text>
+              <Text style={styles.defectHeaderDef}>Def</Text>
             </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Secondary:</Text>
-              <Text style={styles.summaryValue}>{secondaryDefectsCount?.toFixed(2) ?? '0'}</Text>
-            </View>
-            <View style={styles.summaryItem}>
-              <Text style={styles.summaryLabel}>Total:</Text>
-              <Text style={styles.summaryValue}>{totalDefects.toFixed(2)}</Text>
-            </View>
+            {primaryDefects.length > 0 ? (
+              primaryDefects.map((defect, index) => {
+                const weight = defect.weight ?? 1
+                const weighted = Math.round((defect.count * weight) * 100) / 100
+                return (
+                  <View key={index} style={styles.defectRow}>
+                    <View style={styles.defectNameContainer}>
+                      <Text style={styles.defectName}>{defect.name}</Text>
+                      {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
+                    </View>
+                    <Text style={styles.defectQty}>{defect.count}</Text>
+                    <Text style={styles.defectDef}>{weighted}</Text>
+                  </View>
+                )
+              })
+            ) : (
+              <Text style={styles.noData}>None</Text>
+            )}
           </View>
 
-          {/* Defect columns */}
-          <View style={styles.defectsColumnsContainer}>
-            {/* Primary Defects Column */}
-            <View style={styles.defectColumn}>
-              <Text style={styles.defectColumnTitle}>Primary</Text>
-              {/* Column headers */}
-              <View style={styles.defectHeaderRow}>
-                <Text style={styles.defectHeaderName}>Defect</Text>
-                <Text style={styles.defectHeaderQty}>Qty</Text>
-                <Text style={styles.defectHeaderDef}>Def</Text>
-              </View>
-              {primaryDefects.length > 0 ? (
-                primaryDefects.map((defect, index) => {
+          {/* Vertical separator + Secondary — only when secondary has data */}
+          {secondaryDefects.length > 0 && (
+            <>
+              <View style={styles.columnSeparator} />
+              <View style={styles.defectColumn}>
+                <Text style={styles.defectColumnTitle}>Secondary</Text>
+                <View style={styles.defectHeaderRow}>
+                  <Text style={styles.defectHeaderName}>Defect</Text>
+                  <Text style={styles.defectHeaderQty}>Qty</Text>
+                  <Text style={styles.defectHeaderDef}>Def</Text>
+                </View>
+                {secondaryDefects.map((defect, index) => {
                   const weight = defect.weight ?? 1
                   const weighted = Math.round((defect.count * weight) * 100) / 100
                   return (
@@ -323,46 +446,43 @@ export function CertificateScreenDefects({
                       <Text style={styles.defectDef}>{weighted}</Text>
                     </View>
                   )
-                })
-              ) : (
-                <Text style={styles.noData}>None</Text>
-              )}
-            </View>
-
-            {/* Vertical separator */}
-            <View style={styles.columnSeparator} />
-
-            {/* Secondary Defects Column */}
-            <View style={styles.defectColumn}>
-              <Text style={styles.defectColumnTitle}>Secondary</Text>
-              {/* Column headers */}
-              <View style={styles.defectHeaderRow}>
-                <Text style={styles.defectHeaderName}>Defect</Text>
-                <Text style={styles.defectHeaderQty}>Qty</Text>
-                <Text style={styles.defectHeaderDef}>Def</Text>
+                })}
               </View>
-              {secondaryDefects.length > 0 ? (
-                secondaryDefects.map((defect, index) => {
-                  const weight = defect.weight ?? 1
-                  const weighted = Math.round((defect.count * weight) * 100) / 100
-                  return (
-                    <View key={index} style={styles.defectRow}>
-                      <View style={styles.defectNameContainer}>
-                        <Text style={styles.defectName}>{defect.name}</Text>
-                        {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
-                      </View>
-                      <Text style={styles.defectQty}>{defect.count}</Text>
-                      <Text style={styles.defectDef}>{weighted}</Text>
-                    </View>
-                  )
-                })
-              ) : (
-                <Text style={styles.noData}>None</Text>
-              )}
-            </View>
+            </>
+          )}
+        </View>
+
+        {/* Summary row below defect tables */}
+        <View style={styles.summaryRow}>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Primary:</Text>
+            <Text style={primaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+              {primaryDefectsCount ?? 0}
+            </Text>
+            {primaryOutOfSpec && (
+              <Text style={styles.summarySpecNote}>(max {maxPrimaryDefects})</Text>
+            )}
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Secondary:</Text>
+            <Text style={secondaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+              {secondaryDefectsCount?.toFixed(2) ?? '0'}
+            </Text>
+            {secondaryOutOfSpec && (
+              <Text style={styles.summarySpecNote}>(max {maxSecondaryDefects})</Text>
+            )}
+          </View>
+          <View style={styles.summaryItem}>
+            <Text style={styles.summaryLabel}>Total:</Text>
+            <Text style={totalOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+              {totalDefects.toFixed(2)}
+            </Text>
+            {totalOutOfSpec && (
+              <Text style={styles.summarySpecNote}>(max {maxTotalDefects})</Text>
+            )}
           </View>
         </View>
-      )}
+      </View>
     </View>
   )
 }

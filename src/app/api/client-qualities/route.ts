@@ -47,7 +47,12 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching client qualities:', error)
-      return NextResponse.json({ error: 'Failed to fetch client qualities' }, { status: 500 })
+      return NextResponse.json({
+        error: 'Failed to fetch client qualities',
+        details: error.message,
+        code: error.code,
+        hint: error.hint
+      }, { status: 500 })
     }
 
     return NextResponse.json({ client_qualities: clientQualities })
@@ -93,6 +98,23 @@ export async function POST(request: NextRequest) {
       if (existingCode) {
         return NextResponse.json({
           error: `Quality code "${body.quality_code}" is already in use for this client`
+        }, { status: 400 })
+      }
+    }
+
+    // Validate custom_name uniqueness for this client if provided
+    if (body.custom_name) {
+      const { data: existingName } = await supabase
+        .from('client_qualities')
+        .select('id')
+        .eq('client_id', body.client_id)
+        .eq('custom_name', body.custom_name.trim())
+        .eq('is_active', true)
+        .single()
+
+      if (existingName) {
+        return NextResponse.json({
+          error: `Custom name "${body.custom_name.trim()}" is already in use for this client`
         }, { status: 400 })
       }
     }

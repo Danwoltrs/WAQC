@@ -75,6 +75,12 @@ function abbreviateAttribute(attr: string | AttributeForCard, maxLength: number 
 
 // Create styles for A4 multi-card layout (8 cards per page, 2x4 grid)
 // Design: Thick borders show exactly where to cut with guillotine
+// Thick border for outer card outline (guillotine cutting lines)
+const CUT_BORDER = '2pt solid #000000'
+// Thin border for internal table structure
+const INNER_BORDER = '0.5pt solid #000000'
+const INNER_BORDER_LIGHT = '0.5pt solid #CCCCCC'
+
 const styles = StyleSheet.create({
   page: {
     flexDirection: 'row',
@@ -88,12 +94,12 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   card: {
-    border: '2pt solid #000000', // THICK BLACK BORDER shows cutting lines
+    border: CUT_BORDER,
     fontSize: 6,
   },
   header: {
     flexDirection: 'row',
-    borderBottom: '1pt solid #000000',
+    borderBottom: INNER_BORDER,
     padding: '2pt',
   },
   qrSection: {
@@ -109,14 +115,29 @@ const styles = StyleSheet.create({
     width: '50pt',
     height: '50pt',
   },
+  qualityName: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    marginTop: 'auto',
+    textAlign: 'left',
+  },
   headerInfo: {
     flex: 1,
     flexDirection: 'column',
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: '1pt',
+  },
   companyName: {
     fontSize: 6,
     fontWeight: 'bold',
-    marginBottom: '1pt',
+  },
+  contractNr: {
+    fontSize: 6,
+    fontWeight: 'bold',
   },
   sampleNumber: {
     fontSize: 7,
@@ -132,24 +153,24 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   tableSection: {
-    borderBottom: '1pt solid #000000',
+    borderBottom: INNER_BORDER,
   },
   tableHeader: {
     flexDirection: 'row',
-    borderBottom: '1pt solid #000000',
+    borderBottom: INNER_BORDER,
     backgroundColor: '#F0F0F0',
   },
   cupperColumn: {
     width: '60pt',
     padding: '2pt',
-    borderRight: '0.5pt solid #CCCCCC',
+    borderRight: INNER_BORDER_LIGHT,
     fontSize: 9,
     fontWeight: 'bold',
   },
   attributeColumn: {
     width: '30pt',
     padding: '2pt',
-    borderRight: '0.5pt solid #CCCCCC',
+    borderRight: INNER_BORDER_LIGHT,
     fontSize: 7,
     fontWeight: 'bold',
     textAlign: 'center',
@@ -161,19 +182,19 @@ const styles = StyleSheet.create({
   },
   tableRow: {
     flexDirection: 'row',
-    borderBottom: '0.5pt solid #CCCCCC',
+    borderBottom: INNER_BORDER_LIGHT,
     minHeight: '18pt',
   },
   cupperCell: {
     width: '60pt',
     padding: '2pt',
-    borderRight: '0.5pt solid #CCCCCC',
+    borderRight: INNER_BORDER_LIGHT,
     fontSize: 9,
   },
   attributeCell: {
     width: '30pt',
     padding: '2pt',
-    borderRight: '0.5pt solid #CCCCCC',
+    borderRight: INNER_BORDER_LIGHT,
     fontSize: 10,
     textAlign: 'center',
   },
@@ -187,7 +208,7 @@ const styles = StyleSheet.create({
   },
   defectSpace: {
     minHeight: '12pt',
-    borderBottom: '0.5pt solid #CCCCCC',
+    borderBottom: INNER_BORDER_LIGHT,
     marginBottom: '2pt',
   },
 })
@@ -254,6 +275,7 @@ export const ThermalCuppingCardA4Document: React.FC<
       lab_name: card.lab_name ? String(card.lab_name) : undefined,
       ico_number: card.ico_number ? String(card.ico_number) : undefined,
       container_nr: card.container_nr ? String(card.container_nr) : undefined,
+      wolthers_contract_nr: card.wolthers_contract_nr ? String(card.wolthers_contract_nr) : undefined,
       exporter_sample_number: card.exporter_sample_number ? String(card.exporter_sample_number) : undefined,
       quality_name: card.quality_name ? String(card.quality_name) : undefined,
       buyer_name: card.buyer_name ? String(card.buyer_name) : undefined,
@@ -293,24 +315,25 @@ export const ThermalCuppingCardA4Document: React.FC<
                     <Image src={card.qr_code} style={styles.qrCode} />
                   </View>
                   <View style={styles.headerInfo}>
-                    <Text style={styles.companyName}>
-                      {card.lab_name?.toUpperCase() || 'WOLTHERS COFFEE QUALITY CONTROL'}
-                    </Text>
-                    {/* Sample Type and Identifier - Bold type followed by number/ICO */}
+                    <View style={styles.headerTopRow}>
+                      <Text style={styles.companyName}>WOLTHERS & ASSOCIATES</Text>
+                      {card.wolthers_contract_nr && (
+                        <Text style={styles.contractNr}>{card.wolthers_contract_nr}</Text>
+                      )}
+                    </View>
+                    {/* Sample Type and Identifier */}
                     <Text style={styles.sampleNumber}>
                       <Text style={{ fontWeight: 'bold' }}>
                         {card.sample_type ? card.sample_type.toUpperCase() : 'TYPE'}:
                       </Text>{' '}
                       {card.sample_type === 'ss'
-                        ? (card.ico_number || card.container_nr || card.sample_number || card.tracking_number || 'Unknown')
-                        : (card.sample_number || card.tracking_number || 'Unknown')
+                        ? [
+                            card.ico_number || card.sample_number || card.tracking_number || 'Unknown',
+                            card.container_nr
+                          ].filter(Boolean).join('  |  ')
+                        : (card.exporter_sample_number || card.sample_number || card.tracking_number || 'Unknown')
                       }
                     </Text>
-                    {show_quality && card.quality_name && (
-                      <Text style={styles.infoRow}>
-                        <Text style={styles.infoLabel}>Quality:</Text> {card.quality_name}
-                      </Text>
-                    )}
                     {show_buyer && card.buyer_name && (
                       <Text style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Importer:</Text> {card.buyer_name}
@@ -321,14 +344,15 @@ export const ThermalCuppingCardA4Document: React.FC<
                         <Text style={styles.infoLabel}>Exporter:</Text> {card.exporter_name}
                       </Text>
                     )}
-                    {card.exporter_sample_number && (
+                    {card.sample_type === 'ss' && card.exporter_sample_number && (
                       <Text style={styles.infoRow}>
                         <Text style={styles.infoLabel}>Exp. Sample #:</Text> {card.exporter_sample_number}
                       </Text>
                     )}
-                    <Text style={styles.infoRow}>
-                      <Text style={styles.infoLabel}>Template:</Text> {card.template_name || 'Standard'} ({card.template_scale_info || '1-8, 0.25'})
-                    </Text>
+                    {/* Quality name pushed to bottom of header info */}
+                    {show_quality && card.quality_name && (
+                      <Text style={styles.qualityName}>{card.quality_name}</Text>
+                    )}
                   </View>
                 </View>
 

@@ -7,6 +7,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
+import { Textarea } from '@/components/ui/textarea'
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -14,7 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
-import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera, FileDown, Pencil } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType, validateScoreAgainstRule } from '@/types/attribute-scales'
@@ -23,6 +25,7 @@ import {
   getVisibilitySettings,
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
+import { TaintFaultDefect } from '@/types/taint-fault-configuration'
 import { CuppingReports } from '@/components/cupping/cupping-reports'
 import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
@@ -50,6 +53,7 @@ interface Sample {
   sample_type: 'type' | 'pss' | 'ss' | 'specialty'
   ico_number?: string
   container_nr?: string
+  exporter_sample_number?: string
   client?: {
     id: string
     company: string
@@ -176,7 +180,11 @@ function CuppingPageContent() {
   // Template attributes and defects per sample
   const [attributesMap, setAttributesMap] = useState<Map<string, AttributeWithScale[]>>(new Map())
   const [availableDefectsMap, setAvailableDefectsMap] = useState<Map<string, string[]>>(new Map())
+  const [defectConfigsMap, setDefectConfigsMap] = useState<Map<string, Map<string, TaintFaultDefect>>>(new Map())
   const [cupsPerSampleMap, setCupsPerSampleMap] = useState<Map<string, number>>(new Map())
+
+  // Cupping comments per sample
+  const [cuppingCommentsMap, setCuppingCommentsMap] = useState<Map<string, string>>(new Map())
 
   // Client quality per sample
   const [clientQualityMap, setClientQualityMap] = useState<Map<string, ClientQuality>>(new Map())
@@ -431,6 +439,8 @@ function CuppingPageContent() {
             const newAvailableDefectsMap = new Map<string, string[]>()
             const newCupsPerSampleMap = new Map<string, number>()
             const newClientQualityMap = new Map<string, ClientQuality>()
+            const newCommentsMap = new Map<string, string>()
+            const newDefectConfigsMap = new Map<string, Map<string, TaintFaultDefect>>()
 
             for (const sample of detailsData.samples) {
               await loadSampleCuppingConfig(
@@ -439,8 +449,22 @@ function CuppingPageContent() {
                 newAttributesMap,
                 newAvailableDefectsMap,
                 newCupsPerSampleMap,
-                newClientQualityMap
+                newClientQualityMap,
+                newDefectConfigsMap
               )
+
+              // Load existing cupping comments from quality assessment
+              try {
+                const qaRes = await fetch(`/api/samples/${sample.id}/quality-assessment`)
+                if (qaRes.ok) {
+                  const qaData = await qaRes.json()
+                  if (qaData.assessment?.cupping_comments) {
+                    newCommentsMap.set(sample.id, qaData.assessment.cupping_comments)
+                  }
+                }
+              } catch {
+                // Non-fatal: comments are optional
+              }
             }
 
             setCuppingDataMap(newCuppingMap)
@@ -448,6 +472,8 @@ function CuppingPageContent() {
             setAvailableDefectsMap(newAvailableDefectsMap)
             setCupsPerSampleMap(newCupsPerSampleMap)
             setClientQualityMap(newClientQualityMap)
+            setCuppingCommentsMap(newCommentsMap)
+            setDefectConfigsMap(newDefectConfigsMap)
           }
         } else {
           // No samples assigned - this is normal if user isn't assigned to any sessions
@@ -468,7 +494,8 @@ function CuppingPageContent() {
     attributesMap: Map<string, AttributeWithScale[]>,
     availableDefectsMap: Map<string, string[]>,
     cupsMap: Map<string, number>,
-    clientQualityMap: Map<string, ClientQuality>
+    clientQualityMap: Map<string, ClientQuality>,
+    defectConfigsMap: Map<string, Map<string, TaintFaultDefect>>
   ) => {
     try {
       // Initialize empty cupping data
@@ -531,18 +558,28 @@ function CuppingPageContent() {
           if (cuppingDefects && Array.isArray(cuppingDefects)) {
             // Extract defect names - handle both string arrays and object arrays
             // Filter out inactive defects (where active === false)
-            const defectNames = cuppingDefects
+            const activeDefects = cuppingDefects
               .filter((d: any) => {
                 // If it's a string, include it
                 if (typeof d === 'string') return true
                 // If it's an object, only include if active is true or undefined
                 return d.active !== false
               })
-              .map((d: any) =>
-                typeof d === 'string' ? d : d.name
-              )
+            const defectNames = activeDefects.map((d: any) =>
+              typeof d === 'string' ? d : d.name
+            )
             console.log('Filtered defect names:', defectNames)
             availableDefectsMap.set(sample.id, defectNames)
+
+            // Store full defect config objects for increment lookup
+            const configMap = new Map<string, TaintFaultDefect>()
+            activeDefects.forEach((d: any) => {
+              if (typeof d === 'object' && d.name) {
+                configMap.set(d.name, d as TaintFaultDefect)
+              }
+            })
+            defectConfigsMap.set(sample.id, configMap)
+
             defectsSet = true
           }
         }
@@ -636,9 +673,9 @@ function CuppingPageContent() {
   const getSampleTabLabel = (sample: Sample): string => {
     switch (sample.sample_type) {
       case 'pss':
-        return sample.tracking_number
+        return sample.exporter_sample_number || sample.tracking_number
       case 'ss':
-        return sample.container_nr || sample.ico_number || sample.tracking_number
+        return sample.ico_number || sample.container_nr || sample.tracking_number
       case 'type':
         return sample.tracking_number
       default:
@@ -703,12 +740,18 @@ function CuppingPageContent() {
   }
 
   const handleAddDefectClick = (defectName: string) => {
+    // Use the defect's configured increment as the initial intensity value
+    const sampleId = activeSampleId
+    const dConfig = defectConfigsMap.get(sampleId)?.get(defectName)
+    const initialIntensity = dConfig?.increment ?? 0.5
     setDefectModalOpen(defectName)
-    setModalCupIntensities([1])
+    setModalCupIntensities([initialIntensity])
   }
 
   const addCupToModal = () => {
-    setModalCupIntensities([...modalCupIntensities, 1])
+    const dConfig = defectModalOpen ? defectConfigsMap.get(activeSampleId)?.get(defectModalOpen) : null
+    const initialIntensity = dConfig?.increment ?? 0.5
+    setModalCupIntensities([...modalCupIntensities, initialIntensity])
   }
 
   const removeCupFromModal = (index: number) => {
@@ -824,7 +867,8 @@ function CuppingPageContent() {
           defects: {
             taints: cuppingData.defects.filter(d => d.is_taint),
             faults: cuppingData.defects.filter(d => !d.is_taint)
-          }
+          },
+          cupping_comments: cuppingCommentsMap.get(activeSampleId) || null
         })
       })
 
@@ -1256,7 +1300,11 @@ function CuppingPageContent() {
                       >
                         <div className="flex flex-col items-start gap-0.5">
                           <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                          <span className="text-xs text-muted-foreground capitalize">{sample.sample_type || 'sample'}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {sample.sample_type === 'ss' && sample.container_nr
+                              ? sample.container_nr
+                              : <span className="capitalize">{sample.sample_type || 'sample'}</span>}
+                          </span>
                         </div>
                       </TabsTrigger>
                     </div>
@@ -1533,6 +1581,37 @@ function CuppingPageContent() {
                                 )
                               }
 
+                              // Boolean scale with checkbox (Clean Cup, Uniformity)
+                              if (scale.type === 'boolean') {
+                                const trueValue = scale.trueValue ?? 10
+                                const falseValue = scale.falseValue ?? 0
+                                const isChecked = value === trueValue
+                                const trueLabel = scale.trueLabel ?? 'Yes'
+                                const falseLabel = scale.falseLabel ?? 'No'
+
+                                return (
+                                  <div key={attribute} className="flex items-center gap-2">
+                                    <Checkbox
+                                      id={`${sample.id}-${attribute}`}
+                                      checked={isChecked}
+                                      onCheckedChange={(checked) => {
+                                        updateAttribute(sample.id, attribute, checked ? trueValue : falseValue)
+                                      }}
+                                      className="h-5 w-5"
+                                    />
+                                    <label
+                                      htmlFor={`${sample.id}-${attribute}`}
+                                      className={`text-sm font-medium cursor-pointer ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}
+                                    >
+                                      {attribute}
+                                      <span className={`ml-1.5 text-xs ${isChecked ? 'text-green-600' : 'text-muted-foreground'}`}>
+                                        ({isChecked ? trueLabel : falseLabel})
+                                      </span>
+                                    </label>
+                                  </div>
+                                )
+                              }
+
                               return null
                             })}
                           </div>
@@ -1541,10 +1620,15 @@ function CuppingPageContent() {
                           <div className="hidden md:block w-[420px] flex-shrink-0">
                             {cuppingData && cuppingData.attributes.some(a => a.value !== null) ? (
                               (() => {
-                                // Calculate max value across all attributes for consistent chart scale
+                                // Filter out boolean attributes (Clean Cup, Uniformity) from the spider chart
+                                const chartAttributes = attributes.filter(a => a.scale.type !== 'boolean')
+
+                                if (chartAttributes.length === 0) return null
+
+                                // Calculate max value across all chart attributes for consistent chart scale
                                 const maxScaleValue = Math.max(
-                                  ...attributes.map(({ scale }) =>
-                                    scale.type === 'numeric' ? scale.max : (scale.type === 'boolean' ? (scale.trueValue ?? 10) : Math.max(...scale.options.map(o => o.value)))
+                                  ...chartAttributes.map(({ scale }) =>
+                                    scale.type === 'numeric' ? scale.max : (scale.type === 'wording' ? Math.max(...scale.options.map(o => o.value)) : 10)
                                   )
                                 )
 
@@ -1554,13 +1638,13 @@ function CuppingPageContent() {
                                 const tickVals = Array.from({ length: numTicks }, (_, i) => i * tickInterval)
 
                                 // Prepare data for Plotly first (needed for labels)
-                                const values = attributes.map(({ attribute }) => {
+                                const values = chartAttributes.map(({ attribute }) => {
                                   const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
                                   return attrScore?.value ?? 0
                                 })
 
                                 // Format attribute labels with scores and threshold ranges
-                                const formattedLabels = attributes.map(({ attribute, validation_rule }, idx) => {
+                                const formattedLabels = chartAttributes.map(({ attribute, validation_rule }, idx) => {
                                   const score = values[idx]
                                   const scoreDisplay = score > 0 ? ` ${score}` : ''
 
@@ -1590,9 +1674,9 @@ function CuppingPageContent() {
                                 const closedValues = [...values, values[0]]
                                 const closedLabels = [...formattedLabels, formattedLabels[0]]
 
-                                // Check if all scores are within spec
+                                // Check if all chart scores are within spec
                                 const allWithinSpec = cuppingData.attributes.every(a => {
-                                  const attr = attributes.find(attr => attr.attribute === a.attribute)
+                                  const attr = chartAttributes.find(attr => attr.attribute === a.attribute)
                                   if (!a.value || !attr?.validation_rule) return true
                                   return validateScoreAgainstRule(a.value, attr.validation_rule).valid
                                 })
@@ -1690,15 +1774,22 @@ function CuppingPageContent() {
                                   </Button>
                                 </PopoverTrigger>
                                 <PopoverContent className="w-80 p-4" align="start">
+                                  {(() => {
+                                    const dConfig = defectConfigsMap.get(sample.id)?.get(defectName)
+                                    const step = dConfig?.increment ?? 0.5
+                                    const maxInt = dConfig?.max_intensity ?? 10
+                                    const taintMax = dConfig?.taint_range?.max ?? 3
+
+                                    return (
                                   <div className="space-y-3">
                                     {/* Defect Name Header */}
                                     <div className="flex items-center justify-between pb-2 border-b">
                                       <span className="text-sm font-medium">{defectName}</span>
                                       <Badge
-                                        variant={Math.max(...modalCupIntensities) <= 3 ? 'secondary' : 'destructive'}
+                                        variant={Math.max(...modalCupIntensities) <= taintMax ? 'secondary' : 'destructive'}
                                         className="text-[10px] px-2 py-0.5"
                                       >
-                                        {Math.max(...modalCupIntensities) <= 3 ? 'Taint' : 'Fault'}
+                                        {Math.max(...modalCupIntensities) <= taintMax ? 'Taint' : 'Fault'}
                                       </Badge>
                                     </div>
 
@@ -1714,33 +1805,40 @@ function CuppingPageContent() {
                                                 variant="outline"
                                                 size="icon"
                                                 className="h-6 w-6 cursor-pointer"
-                                                onClick={() => updateCupIntensity(index, Math.max(1, intensity - 1))}
+                                                onClick={() => {
+                                                  const newVal = Math.round((intensity - step) * 100) / 100
+                                                  updateCupIntensity(index, Math.max(step, newVal))
+                                                }}
                                               >
                                                 <Minus className="h-3 w-3" />
                                               </Button>
                                               <Input
                                                 type="number"
+                                                step={step}
                                                 value={intensity}
                                                 onChange={(e) => {
-                                                  const v = parseInt(e.target.value)
-                                                  if (!isNaN(v) && v >= 1 && v <= 7) {
+                                                  const v = parseFloat(e.target.value)
+                                                  if (!isNaN(v) && v >= step && v <= maxInt) {
                                                     updateCupIntensity(index, v)
                                                   }
                                                 }}
-                                                className="w-12 h-6 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                min={1}
-                                                max={7}
+                                                className="w-14 h-6 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                                min={step}
+                                                max={maxInt}
                                               />
                                               <Button
                                                 variant="outline"
                                                 size="icon"
                                                 className="h-6 w-6 cursor-pointer"
-                                                onClick={() => updateCupIntensity(index, Math.min(7, intensity + 1))}
+                                                onClick={() => {
+                                                  const newVal = Math.round((intensity + step) * 100) / 100
+                                                  updateCupIntensity(index, Math.min(maxInt, newVal))
+                                                }}
                                               >
                                                 <Plus className="h-3 w-3" />
                                               </Button>
                                               <span className="text-xs text-muted-foreground ml-1">
-                                                {intensity <= 3 ? 'Taint' : 'Fault'}
+                                                {intensity <= taintMax ? 'Taint' : 'Fault'}
                                               </span>
                                             </div>
                                             {modalCupIntensities.length > 1 && (
@@ -1792,6 +1890,8 @@ function CuppingPageContent() {
                                       </Button>
                                     </div>
                                   </div>
+                                    )
+                                  })()}
                                 </PopoverContent>
                               </Popover>
                             ))}
@@ -1866,6 +1966,21 @@ function CuppingPageContent() {
                       </Card>
                     </div>
                   )}
+
+                  {/* Cupping Comments */}
+                  <div className="mt-3">
+                    <Label className="text-xs font-medium mb-1 block">Comments</Label>
+                    <Textarea
+                      placeholder="Cupping notes for this sample..."
+                      value={cuppingCommentsMap.get(sample.id) || ''}
+                      onChange={(e) => {
+                        const newMap = new Map(cuppingCommentsMap)
+                        newMap.set(sample.id, e.target.value)
+                        setCuppingCommentsMap(newMap)
+                      }}
+                      className="text-xs min-h-[60px] resize-none"
+                    />
+                  </div>
                 </div>
               </TabsContent>
             )

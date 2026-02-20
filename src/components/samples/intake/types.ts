@@ -5,6 +5,7 @@ export type Client = Database['public']['Tables']['clients']['Row']
 export type Laboratory = Database['public']['Tables']['laboratories']['Row']
 export type Exporter = Database['public']['Tables']['exporters']['Row']
 export type Importer = Database['public']['Tables']['importers']['Row']
+export type Roaster = Database['public']['Tables']['roasters']['Row']
 
 export interface FormData {
   // Step 1: Supply Chain (Buyer/Seller)
@@ -23,6 +24,8 @@ export interface FormData {
   supplier_contract_nr: string // Supplier's contract reference number
   roaster: string // Optional roaster
   roaster_contract_nr: string // Roaster's contract reference number
+  end_client: string // Optional end client (final buyer, e.g., Dunkin')
+  end_client_contract_nr: string // End Client's contract reference number
 
   // Step 2: Quality
   client_id: string // The QC client (resolved from importer or qc_client)
@@ -56,6 +59,35 @@ export interface FormData {
   arrival_date: string
   notes: string
   photo_file: File | null
+
+  // Sub-contracts
+  contracts: SubContractFormData[]
+}
+
+export interface SubContractFormData {
+  // Entity overrides (NULL = inherit from mother)
+  importer: string
+  importer_is_qc_client: boolean
+  roaster: string
+  end_client: string
+  qc_client: string
+  // Contract references
+  wolthers_contract_nr: string
+  buyer_contract_nr: string
+  roaster_contract_nr: string
+  qc_client_contract_nr: string
+  end_client_contract_nr: string
+  supplier_contract_nr: string
+  ico_number: string
+  container_nr: string
+  // Quantity fields (per sub-contract)
+  bag_count: string
+  bag_weight_kg: string
+  bag_type: 'jute_bag' | 'pp_bag' | 'big_bag' | 'bulk' | ''
+  bags_quantity_mt: string
+  equivalent_60kg_bags: string
+  shipment_month: string
+  exporter_sample_number: string
 }
 
 export interface Step {
@@ -73,6 +105,7 @@ export interface StepComponentProps {
   approvedPSSSamples: any[]
   exporters?: Exporter[]
   importers?: Importer[]
+  roasters?: Roaster[] // Roasters from the roasters table
   qcClients?: Client[] // Clients where is_qc_client = true
   error?: string | null
   isGlobalUser?: boolean // True if user is global_admin or global_cupper_admin

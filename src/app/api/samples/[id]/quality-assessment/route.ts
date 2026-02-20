@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 /**
  * POST /api/samples/[id]/quality-assessment
@@ -21,7 +22,7 @@ export async function POST(
 
     const { id: sampleId } = await params
     const body = await request.json()
-    const { green_bean_data, roast_data } = body
+    const { green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments } = body
 
     // Verify sample exists
     const { data: sample, error: sampleError } = await supabase
@@ -63,6 +64,12 @@ export async function POST(
         }
       }
 
+      // Update cup status if provided (boolean fields)
+      if (clean_cup !== undefined) updatedData.clean_cup = clean_cup
+      if (uniform_cup !== undefined) updatedData.uniform_cup = uniform_cup
+      if (cupping_comments !== undefined) updatedData.cupping_comments = cupping_comments
+      if (grading_comments !== undefined) updatedData.grading_comments = grading_comments
+
       const { error: updateError } = await supabase
         .from('quality_assessments')
         .update(updatedData)
@@ -75,6 +82,9 @@ export async function POST(
           { status: 500 }
         )
       }
+
+      // Invalidate cached certificate PDF since assessment data changed
+      invalidateCertificatePdf(supabase, sampleId).catch(() => {})
 
       return NextResponse.json({
         success: true,
@@ -101,6 +111,9 @@ export async function POST(
           { status: 500 }
         )
       }
+
+      // Invalidate cached certificate PDF since assessment data changed
+      invalidateCertificatePdf(supabase, sampleId).catch(() => {})
 
       return NextResponse.json({
         success: true,

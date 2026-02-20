@@ -22,8 +22,9 @@ const pageStyles = StyleSheet.create({
   page: {
     fontFamily: 'Inter',
     fontSize: 9,
-    padding: 30,
-    paddingBottom: 60, // Extra padding for footer
+    paddingHorizontal: 30,
+    paddingTop: 24,
+    paddingBottom: 50, // Space for footer
     backgroundColor: '#FFFFFF',
   },
 })
@@ -48,8 +49,10 @@ export function QualityCertificate({
     greenBeanAnalysis,
     roastAnalysis,
     cuppingData,
+    gradingComments,
     certificate,
     qualitySpec,
+    specLimits,
   } = data
 
   // Prepare screen sizes for screen defects component
@@ -81,6 +84,7 @@ export function QualityCertificate({
     : null
 
   // Prepare cupping attributes for cupping chart
+  // Use scale info from template if available (e.g., Dunkin uses 1-7 scale)
   const cuppingAttributes = cuppingData?.attributes?.map(attr => ({
     attribute: attr.name,
     score: attr.score,
@@ -91,8 +95,9 @@ export function QualityCertificate({
           max_value: attr.allowedMax ?? undefined,
         }
       : null,
-    scaleMin: 0,
-    scaleMax: 10,
+    // Use attribute-specific scale if available, otherwise default to 0-10
+    scaleMin: attr.scaleMin ?? 0,
+    scaleMax: attr.scaleMax ?? 10,
   })) || []
 
   return (
@@ -119,6 +124,7 @@ export function QualityCertificate({
           shipper={supplyChain.shipper}
           importer={supplyChain.importer}
           roaster={supplyChain.roaster}
+          endClient={supplyChain.endClient}
           qcClient={supplyChain.qcClient}
           hasClientLogo={!!clientLogoBase64}
         />
@@ -149,6 +155,10 @@ export function QualityCertificate({
           greenAspect={greenBeanAnalysis?.green_aspect}
           quakers={roastAnalysis?.quaker_count ?? null}
           roastAspect={roastAnalysis?.roast_aspect}
+          moistureMin={specLimits?.moisture_min}
+          moistureMax={specLimits?.moisture_max}
+          maxQuakers={specLimits?.max_quakers}
+          showQuakers={specLimits?.max_quakers !== undefined}
         />
 
         {/* 6. Screen Distribution + Defects */}
@@ -157,6 +167,10 @@ export function QualityCertificate({
           defects={defects}
           primaryDefectsCount={greenBeanAnalysis?.defects?.total_primary ?? null}
           secondaryDefectsCount={greenBeanAnalysis?.defects?.total_secondary ?? null}
+          screenConstraints={specLimits?.screen_size_constraints}
+          maxPrimaryDefects={specLimits?.defect_thresholds_primary}
+          maxSecondaryDefects={specLimits?.defect_thresholds_secondary}
+          maxTotalDefects={specLimits?.defect_thresholds_total}
         />
 
         {/* 7. Cupping Box Plot Chart with Faults/Taints and Clean/Uniform Cup */}
@@ -172,6 +186,8 @@ export function QualityCertificate({
           taintDetails={cuppingData?.taintDetails}
           cleanCup={cuppingData?.cleanCup}
           uniformCup={cuppingData?.uniformCup}
+          maxTaints={specLimits?.max_taints}
+          maxFaults={specLimits?.max_faults}
         />
 
         {/* 8. Cup Status Row - Removed as now integrated into cupping chart */}
@@ -180,6 +196,7 @@ export function QualityCertificate({
         {/* 9. Notes section */}
         <CertificateComments
           cuppingNotes={cuppingData?.comments || null}
+          additionalNotes={gradingComments}
         />
 
         {/* 10. Footer with lab info */}

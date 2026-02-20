@@ -36,10 +36,11 @@ export function LoginForm() {
 
       if (error) {
         setError(error.message)
+        setLoading(false)
       }
+      // If no error, onAuthStateChange will fire SIGNED_IN and update the UI
     } catch (err) {
       setError('An unexpected error occurred')
-    } finally {
       setLoading(false)
     }
   }

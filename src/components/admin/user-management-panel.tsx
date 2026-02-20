@@ -168,7 +168,7 @@ export function UserManagementPanel() {
 
   const fetchUsers = async () => {
     try {
-      let query = supabase.from('profiles').select('*').eq('qc_enabled', true)
+      let query = supabase.from('profiles').select('*')
 
       // Lab admins only see their lab's users
       if (profile?.qc_role === 'lab_quality_manager' && profile?.laboratory_id) {

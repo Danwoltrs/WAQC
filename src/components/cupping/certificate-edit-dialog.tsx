@@ -39,10 +39,13 @@ interface SampleData {
   seller_contract_nr: string | null
   shipper_contract_nr: string | null
   qc_client_contract_nr: string | null
+  end_client_contract_nr: string | null
+  supplier_contract_nr: string | null
   exporter_id: string | null
   importer_id: string | null
   roaster_id: string | null
   seller_id: string | null
+  end_client_id: string | null
 }
 
 interface Entity {
@@ -66,6 +69,7 @@ export function CertificateEditDialog({
   const [exporters, setExporters] = useState<Entity[]>([])
   const [importers, setImporters] = useState<Entity[]>([])
   const [roasters, setRoasters] = useState<Entity[]>([])
+  const [clients, setClients] = useState<Entity[]>([])
 
   // Form state
   const [formData, setFormData] = useState<Partial<SampleData>>({})
@@ -104,10 +108,13 @@ export function CertificateEditDialog({
           seller_contract_nr,
           shipper_contract_nr,
           qc_client_contract_nr,
+          end_client_contract_nr,
+          supplier_contract_nr,
           exporter_id,
           importer_id,
           roaster_id,
-          seller_id
+          seller_id,
+          end_client_id
         `)
         .eq('id', sampleId)
         .single()
@@ -118,15 +125,17 @@ export function CertificateEditDialog({
       setFormData(sampleData)
 
       // Load entities in parallel
-      const [exportersRes, importersRes, roastersRes] = await Promise.all([
+      const [exportersRes, importersRes, roastersRes, clientsRes] = await Promise.all([
         supabase.from('exporters').select('id, name, country').order('name'),
         supabase.from('importers').select('id, name, country').order('name'),
         supabase.from('roasters').select('id, name, country').order('name'),
+        supabase.from('clients').select('id, fantasy_name, country').order('fantasy_name'),
       ])
 
       setExporters(exportersRes.data || [])
       setImporters(importersRes.data || [])
       setRoasters(roastersRes.data || [])
+      setClients((clientsRes.data || []).map(c => ({ id: c.id, name: (c as any).fantasy_name || c.id, country: c.country })))
     } catch (error) {
       console.error('Error loading data:', error)
       toast({
@@ -285,6 +294,27 @@ export function CertificateEditDialog({
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* End Client */}
+              <div className="space-y-2">
+                <Label>End Client</Label>
+                <Select
+                  value={formData.end_client_id || ''}
+                  onValueChange={(value) => handleInputChange('end_client_id', value || null)}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select end client..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="">None</SelectItem>
+                    {clients.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name} {c.country ? `(${c.country})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             </TabsContent>
 
             {/* Reference Numbers Tab */}
@@ -359,6 +389,24 @@ export function CertificateEditDialog({
                     value={formData.qc_client_contract_nr || ''}
                     onChange={(e) => handleInputChange('qc_client_contract_nr', e.target.value || null)}
                     placeholder="QC Client's contract number"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>End Client Contract</Label>
+                  <Input
+                    value={formData.end_client_contract_nr || ''}
+                    onChange={(e) => handleInputChange('end_client_contract_nr', e.target.value || null)}
+                    placeholder="End Client's contract number"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Supplier Contract</Label>
+                  <Input
+                    value={formData.supplier_contract_nr || ''}
+                    onChange={(e) => handleInputChange('supplier_contract_nr', e.target.value || null)}
+                    placeholder="Supplier's contract number"
                   />
                 </div>
               </div>

@@ -43,10 +43,11 @@ export async function GET(request: NextRequest) {
           tracking_number,
           origin,
           client_id,
+          workflow_stage,
           exporter_id,
           importer_id,
           roaster_id,
-          client:clients(
+          client:clients!samples_client_id_fkey(
             id,
             name,
             company,

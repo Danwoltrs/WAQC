@@ -5,6 +5,7 @@ import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { resolveSampleId } from '@/lib/sample-utils'
+import { uploadCertificatePdf, getCachedCertificatePdf } from '@/lib/certificate-storage'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -38,8 +39,44 @@ export async function GET(
     }
     console.log('[Certificate] Generating PDF for sample:', id)
 
+    // Check for sub-contract certificate request
+    const contractId = request.nextUrl.searchParams.get('contract_id')
+
+    // Check for cached PDF first
+    let certQuery = supabase
+      .from('certificates')
+      .select('id, certificate_number, pdf_url')
+      .eq('sample_id', id)
+
+    if (contractId) {
+      certQuery = certQuery.eq('sample_contract_id', contractId)
+    } else {
+      certQuery = certQuery.is('sample_contract_id', null)
+    }
+
+    const { data: certificate } = await certQuery
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (certificate?.pdf_url) {
+      console.log('[Certificate] Serving cached PDF:', certificate.pdf_url)
+      const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
+      if (cachedBuffer) {
+        const filename = `${certificate.certificate_number || 'certificate'}.pdf`
+        return new NextResponse(new Uint8Array(cachedBuffer), {
+          headers: {
+            'Content-Type': 'application/pdf',
+            'Content-Disposition': `inline; filename="${filename}"`,
+            'Cache-Control': 'public, max-age=3600',
+          },
+        })
+      }
+      console.log('[Certificate] Cached PDF not found in storage, regenerating...')
+    }
+
     // Get certificate data
-    const certificateData = await getCertificateData(id)
+    const certificateData = await getCertificateData(id, contractId || undefined)
     if (!certificateData) {
       console.error('[Certificate] No certificate data found for sample:', id)
       return NextResponse.json({ error: 'Sample not found or no data available' }, { status: 404 })
@@ -94,8 +131,6 @@ export async function GET(
     }
 
     // Render PDF to buffer
-    // Type assertion needed because QualityCertificate returns a Document element
-    // but renderToBuffer's types expect DocumentProps directly
     console.log('[Certificate] Rendering PDF...')
     const certificateElement = React.createElement(QualityCertificate, {
       data: certificateData,
@@ -105,6 +140,13 @@ export async function GET(
     })
     const pdfBuffer = await renderToBuffer(certificateElement as any)
     console.log('[Certificate] PDF rendered, buffer size:', pdfBuffer.length)
+
+    // Cache the generated PDF in storage
+    if (certificate?.id) {
+      uploadCertificatePdf(supabase, id, certificate.id, Buffer.from(pdfBuffer), contractId || undefined)
+        .then((path) => path && console.log('[Certificate] Cached PDF at:', path))
+        .catch((err) => console.error('[Certificate] Cache upload failed:', err))
+    }
 
     // Generate filename - just the certificate number
     const certificateNumber = certificateData.certificate?.certificate_number || certificateData.sample.tracking_number
@@ -160,10 +202,11 @@ export async function POST(
         id,
         tracking_number,
         client_id,
+        origin,
         workflow_stage,
         status,
         quality_spec_id,
-        client:clients(id, name, company)
+        client:clients!samples_client_id_fkey(id, name, company)
       `)
       .eq('id', id)
       .single()
@@ -234,25 +277,33 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // Check if certificate already exists
+    // Check if mother certificate already exists
     const { data: existingCert } = await supabase
       .from('certificates')
-      .select('id, certificate_number')
+      .select('id, certificate_number, issued_by, valid_from, valid_until, is_rejected')
       .eq('sample_id', id)
-      .single()
+      .is('sample_contract_id', null)
+      .maybeSingle()
 
     if (existingCert) {
+      // Mother cert exists — still ensure sub-contract certificates are created
+      await createSubContractCertificates(supabase, id, {
+        ...existingCert,
+        issued_by: existingCert.issued_by || user.id,
+      }, user.id)
+
       return NextResponse.json({
         message: 'Certificate already exists',
-        certificate: existingCert
+        certificate: { id: existingCert.id, certificate_number: existingCert.certificate_number }
       })
     }
 
-    // Generate certificate number from tracking_number
-    // For rejected samples, prefix with 'R-'
-    const certificateNumber = isRejected
-      ? `R-${sample.tracking_number}`
-      : sample.tracking_number
+    // Certificate number = tracking number (same identifier throughout the sample lifecycle)
+    // Rejected samples get R- prefix
+    let certificateNumber = sample.tracking_number
+    if (isRejected) {
+      certificateNumber = `R-${certificateNumber}`
+    }
 
     // Get client name for issued_to (required field)
     const clientData = sample.client as { name?: string; company?: string } | null
@@ -287,6 +338,15 @@ export async function POST(
       }, { status: 500 })
     }
 
+    // Auto-create certificates for sub-contracts
+    await createSubContractCertificates(supabase, id, {
+      id: newCert.id,
+      issued_by: user.id,
+      valid_from: validFrom.toISOString(),
+      valid_until: validUntil.toISOString(),
+      is_rejected: isRejected,
+    }, user.id)
+
     return NextResponse.json({
       message: 'Certificate created',
       certificate: newCert
@@ -294,6 +354,83 @@ export async function POST(
   } catch (error) {
     console.error('Error in POST /api/samples/[id]/certificate:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+  }
+}
+
+/**
+ * Create certificates for all sub-contracts that don't already have one.
+ * Mirrors the pattern in cupping/finalize/route.ts lines 429-496.
+ */
+async function createSubContractCertificates(
+  supabase: any,
+  sampleId: string,
+  motherCert: { id?: string; issued_by: string; valid_from: string; valid_until: string; is_rejected: boolean | null },
+  userId: string
+) {
+  try {
+    const { data: subContracts } = await supabase
+      .from('sample_contracts')
+      .select('id, tracking_number, client_id')
+      .eq('sample_id', sampleId)
+      .order('sort_order', { ascending: true })
+
+    if (!subContracts || subContracts.length === 0) return
+
+    // Get mother sample's client name for fallback issued_to
+    const { data: sample } = await supabase
+      .from('samples')
+      .select('client_id, clients!samples_client_id_fkey(fantasy_name, company)')
+      .eq('id', sampleId)
+      .single()
+
+    const motherClient = sample?.clients as { fantasy_name?: string; company?: string } | null
+    const motherIssuedTo = motherClient?.fantasy_name || motherClient?.company || 'Unknown Client'
+
+    for (const sc of subContracts) {
+      // Check if sub-contract certificate already exists
+      const { data: existingSubCert } = await supabase
+        .from('certificates')
+        .select('id')
+        .eq('sample_contract_id', sc.id)
+        .maybeSingle()
+
+      if (!existingSubCert) {
+        const isRejected = motherCert.is_rejected ?? false
+        const subCertNumber = isRejected
+          ? `R-${sc.tracking_number}`
+          : sc.tracking_number
+
+        // Get sub-contract's QC client name (or fall back to mother's)
+        let subIssuedTo = motherIssuedTo
+        if (sc.client_id && sc.client_id !== sample?.client_id) {
+          const { data: subClient } = await supabase
+            .from('clients')
+            .select('fantasy_name, company')
+            .eq('id', sc.client_id)
+            .single()
+          if (subClient) {
+            subIssuedTo = subClient.fantasy_name || subClient.company || subIssuedTo
+          }
+        }
+
+        await supabase
+          .from('certificates')
+          .insert({
+            sample_id: sampleId,
+            sample_contract_id: sc.id,
+            certificate_number: subCertNumber,
+            issued_to: subIssuedTo,
+            issued_by: userId,
+            status: 'issued',
+            valid_from: motherCert.valid_from,
+            valid_until: motherCert.valid_until,
+            is_rejected: isRejected,
+          })
+      }
+    }
+  } catch (err) {
+    console.error('Error creating sub-contract certificates:', err)
+    // Non-fatal: mother certificate was already created
   }
 }
 

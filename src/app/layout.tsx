@@ -10,6 +10,7 @@ import { Toaster as Sonner } from "sonner"
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://qc.wolthers.com'),
   title: "Wolthers Coffee QC",
   description: "Coffee Quality Control System for Wolthers Global Laboratory Network",
   viewport: {

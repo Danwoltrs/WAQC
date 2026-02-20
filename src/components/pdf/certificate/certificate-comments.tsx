@@ -10,8 +10,8 @@ import { COLORS } from './certificate-styles'
 const commentsStyles = StyleSheet.create({
   container: {
     marginTop: 'auto',
-    marginBottom: 40,
-    padding: 10,
+    marginBottom: 16,
+    padding: 8,
     borderWidth: 0.5,
     borderColor: COLORS.border,
     borderRadius: 4,
