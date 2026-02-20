@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import {
   Edit, Save, X, Lock, Coffee, Beaker, Loader2
 } from 'lucide-react'
@@ -121,6 +122,8 @@ export function CuppingGradingSection({
   const [editDefects, setEditDefects] = useState<DefectEntry[]>([])
   // Quality spec: show quakers?
   const [showQuakers, setShowQuakers] = useState(true)
+  // Available defect names from quality spec template
+  const [availableDefectNames, setAvailableDefectNames] = useState<string[]>([])
 
   useEffect(() => {
     if (sample?.id) {
@@ -129,8 +132,10 @@ export function CuppingGradingSection({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sample?.id])
 
-  // Fetch quality spec to determine if quakers should be shown
+  // Fetch quality spec to determine if quakers should be shown + available defect names
   useEffect(() => {
+    // Default SCA defect names as fallback
+    const SCA_DEFAULTS = ['Fermented', 'Earthy', 'Phenolic', 'Chemical', 'Musty', 'Woody', 'Rancid', 'Moldy', 'Sour', 'Stinker', 'Sour/Acetic', 'Green', 'Quaker', 'Musty/Moldy', 'Harsh', 'Grassy/green', 'Past crop', 'Fruity', 'Dirty']
     if (sample?.quality_spec_id) {
       fetch(`/api/client-qualities/${sample.quality_spec_id}`)
         .then(r => r.ok ? r.json() : null)
@@ -142,11 +147,22 @@ export function CuppingGradingSection({
               params?.max_quakers != null ||
               sample?.sample_type === 'type'
             )
+            // Extract defect names from taint_fault_configuration
+            const tfConfig = params?.taint_fault_configuration
+            if (tfConfig?.defects?.length > 0) {
+              setAvailableDefectNames(tfConfig.defects.map((d: any) => d.name))
+            } else {
+              setAvailableDefectNames(SCA_DEFAULTS)
+            }
           }
         })
-        .catch(() => setShowQuakers(true))
+        .catch(() => {
+          setShowQuakers(true)
+          setAvailableDefectNames(SCA_DEFAULTS)
+        })
     } else {
       setShowQuakers(sample?.sample_type === 'type')
+      setAvailableDefectNames(SCA_DEFAULTS)
     }
   }, [sample?.quality_spec_id, sample?.sample_type])
 
@@ -882,10 +898,21 @@ export function CuppingGradingSection({
                                 {editTaints.map((t, idx) => (
                                   <tr key={idx} className={idx > 0 ? 'border-t' : ''}>
                                     <td className="py-1 px-2">
-                                      <Input value={t.name} onChange={(e) => setEditTaints(prev => prev.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))} className="h-6 text-xs" placeholder="Name" />
+                                      <Select value={t.name || '__empty__'} onValueChange={(v) => setEditTaints(prev => prev.map((x, i) => i === idx ? { ...x, name: v === '__empty__' ? '' : v } : x))}>
+                                        <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="__empty__">Select...</SelectItem>
+                                          {availableDefectNames.filter(n => !editTaints.some((et, ei) => ei !== idx && et.name === n)).map(n => (
+                                            <SelectItem key={n} value={n}>{n}</SelectItem>
+                                          ))}
+                                          {t.name && !availableDefectNames.includes(t.name) && (
+                                            <SelectItem value={t.name}>{t.name}</SelectItem>
+                                          )}
+                                        </SelectContent>
+                                      </Select>
                                     </td>
-                                    <td className="py-1 px-2 w-16">
-                                      <Input type="number" step="0.5" min="0" value={t.intensity ?? ''} onChange={(e) => setEditTaints(prev => prev.map((x, i) => i === idx ? { ...x, intensity: parseFloat(e.target.value) || 0 } : x))} className="h-6 text-xs text-center" placeholder="Lvl" />
+                                    <td className="py-1 px-2 w-20">
+                                      <Input type="number" step="0.5" min="0" value={t.intensity ?? ''} onChange={(e) => setEditTaints(prev => prev.map((x, i) => i === idx ? { ...x, intensity: parseFloat(e.target.value) || 0 } : x))} className="h-7 w-20 text-xs text-center" placeholder="Lvl" />
                                     </td>
                                     <td className="py-1 px-2 w-8">
                                       <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditTaints(prev => prev.filter((_, i) => i !== idx))}>
@@ -914,10 +941,21 @@ export function CuppingGradingSection({
                                 {editFaults.map((f, idx) => (
                                   <tr key={idx} className={idx > 0 ? 'border-t' : ''}>
                                     <td className="py-1 px-2">
-                                      <Input value={f.name} onChange={(e) => setEditFaults(prev => prev.map((x, i) => i === idx ? { ...x, name: e.target.value } : x))} className="h-6 text-xs" placeholder="Name" />
+                                      <Select value={f.name || '__empty__'} onValueChange={(v) => setEditFaults(prev => prev.map((x, i) => i === idx ? { ...x, name: v === '__empty__' ? '' : v } : x))}>
+                                        <SelectTrigger className="h-7 text-xs"><SelectValue placeholder="Select..." /></SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="__empty__">Select...</SelectItem>
+                                          {availableDefectNames.filter(n => !editFaults.some((ef, ei) => ei !== idx && ef.name === n)).map(n => (
+                                            <SelectItem key={n} value={n}>{n}</SelectItem>
+                                          ))}
+                                          {f.name && !availableDefectNames.includes(f.name) && (
+                                            <SelectItem value={f.name}>{f.name}</SelectItem>
+                                          )}
+                                        </SelectContent>
+                                      </Select>
                                     </td>
-                                    <td className="py-1 px-2 w-16">
-                                      <Input type="number" step="0.5" min="0" value={f.intensity ?? ''} onChange={(e) => setEditFaults(prev => prev.map((x, i) => i === idx ? { ...x, intensity: parseFloat(e.target.value) || 0 } : x))} className="h-6 text-xs text-center" placeholder="Lvl" />
+                                    <td className="py-1 px-2 w-20">
+                                      <Input type="number" step="0.5" min="0" value={f.intensity ?? ''} onChange={(e) => setEditFaults(prev => prev.map((x, i) => i === idx ? { ...x, intensity: parseFloat(e.target.value) || 0 } : x))} className="h-7 w-20 text-xs text-center" placeholder="Lvl" />
                                     </td>
                                     <td className="py-1 px-2 w-8">
                                       <Button variant="ghost" size="icon" className="h-5 w-5" onClick={() => setEditFaults(prev => prev.filter((_, i) => i !== idx))}>

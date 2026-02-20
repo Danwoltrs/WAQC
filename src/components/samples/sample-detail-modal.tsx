@@ -24,6 +24,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { trackingNumberToSlug } from '@/lib/utils'
+import { MICRO_ORIGINS } from '@/components/samples/intake/constants'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { CuppingGradingSection } from '@/components/samples/cupping-grading-section'
 
@@ -761,14 +762,34 @@ export function SampleDetailModal({
                         </div>
                         <div>
                           <label className="text-sm text-muted-foreground">Micro Origin</label>
-                          {isEditMode ? (
-                            <Input
-                              value={formData.micro_origin || ''}
-                              onChange={(e) => handleFormChange('micro_origin', e.target.value)}
-                              className="h-8 text-sm mt-1"
-                              placeholder="e.g., Cerrado Mineiro"
-                            />
-                          ) : (
+                          {isEditMode ? (() => {
+                            const regionOptions = MICRO_ORIGINS[sample.origin] || []
+                            const currentVal = formData.micro_origin ?? sample.micro_origin ?? ''
+                            if (regionOptions.length > 0) {
+                              return (
+                                <Select value={currentVal || '__none__'} onValueChange={(v) => handleFormChange('micro_origin', v === '__none__' ? '' : v)}>
+                                  <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Select micro origin..." /></SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="__none__">- None -</SelectItem>
+                                    {regionOptions.map(r => (
+                                      <SelectItem key={r} value={r}>{r}</SelectItem>
+                                    ))}
+                                    {currentVal && !regionOptions.includes(currentVal) && currentVal !== '' && (
+                                      <SelectItem value={currentVal}>{currentVal}</SelectItem>
+                                    )}
+                                  </SelectContent>
+                                </Select>
+                              )
+                            }
+                            return (
+                              <Input
+                                value={currentVal}
+                                onChange={(e) => handleFormChange('micro_origin', e.target.value)}
+                                className="h-8 text-sm mt-1"
+                                placeholder="e.g., Cerrado Mineiro"
+                              />
+                            )
+                          })() : (
                             <div className="text-sm font-medium mt-1">{sample.micro_origin || '-'}</div>
                           )}
                         </div>
