@@ -777,33 +777,36 @@ async function evaluateQualityCompliance(
   }
 
   // 2. Check defect intensity levels against per-defect thresholds
+  // Cupping scores store defects as: { taints: [{name, intensity, cups_affected}], faults: [...] }
   if (cuppingScores && parameters.defect_limits) {
     for (const score of cuppingScores) {
       if (score.defects && typeof score.defects === 'object') {
-        const defects = score.defects as any
+        const defects = score.defects as { taints?: Array<{ name?: string; intensity?: number }>; faults?: Array<{ name?: string; intensity?: number }> }
 
-        // Check taints with levels
-        if (defects.taints_with_levels && Array.isArray(defects.taints_with_levels)) {
-          for (const taint of defects.taints_with_levels) {
+        // Check taints
+        if (Array.isArray(defects.taints)) {
+          for (const taint of defects.taints) {
             const defectName = taint.name?.toLowerCase()
-            const defectLevel = taint.level || 0
+            if (!defectName) continue
+            const defectIntensity = taint.intensity || 0
             const limit = parameters.defect_limits[defectName]
 
-            if (limit?.max_level !== undefined && defectLevel > limit.max_level) {
-              violations.push(`Taint "${taint.name}": Level ${defectLevel} exceeds maximum (${limit.max_level})`)
+            if (limit?.max_level !== undefined && defectIntensity > limit.max_level) {
+              violations.push(`Taint "${taint.name}": Intensity ${defectIntensity} exceeds maximum (${limit.max_level})`)
             }
           }
         }
 
-        // Check faults with levels
-        if (defects.faults_with_levels && Array.isArray(defects.faults_with_levels)) {
-          for (const fault of defects.faults_with_levels) {
+        // Check faults
+        if (Array.isArray(defects.faults)) {
+          for (const fault of defects.faults) {
             const defectName = fault.name?.toLowerCase()
-            const defectLevel = fault.level || 0
+            if (!defectName) continue
+            const defectIntensity = fault.intensity || 0
             const limit = parameters.defect_limits[defectName]
 
-            if (limit?.max_level !== undefined && defectLevel > limit.max_level) {
-              violations.push(`Fault "${fault.name}": Level ${defectLevel} exceeds maximum (${limit.max_level})`)
+            if (limit?.max_level !== undefined && defectIntensity > limit.max_level) {
+              violations.push(`Fault "${fault.name}": Intensity ${defectIntensity} exceeds maximum (${limit.max_level})`)
             }
           }
         }
@@ -844,26 +847,27 @@ async function evaluateQualityCompliance(
       }
     }
 
-    // Check taint/fault counts
-    if (greenBean.taints_count !== undefined && template.max_taints_allowed !== null) {
-      if (greenBean.taints_count > template.max_taints_allowed) {
-        violations.push(`Taints: ${greenBean.taints_count} exceeds limit (${template.max_taints_allowed})`)
-      }
-    }
+    // Note: taint/fault counts are checked in step 9 from cupping scores (not green bean data)
 
-    if (greenBean.faults_count !== undefined && template.max_faults_allowed !== null) {
-      if (greenBean.faults_count > template.max_faults_allowed) {
-        violations.push(`Faults: ${greenBean.faults_count} exceeds limit (${template.max_faults_allowed})`)
+    // Convert screen size grams to percentages (grading page stores grams, requirements are in %)
+    let screenPercentages: Record<string, number> | null = null
+    if (greenBean.screen_sizes && typeof greenBean.screen_sizes === 'object') {
+      const rawSizes = greenBean.screen_sizes as Record<string, number>
+      const totalGrams = Object.values(rawSizes).reduce((sum, g) => sum + (g || 0), 0)
+      if (totalGrams > 0) {
+        screenPercentages = {}
+        for (const [size, grams] of Object.entries(rawSizes)) {
+          screenPercentages[size] = (grams / totalGrams) * 100
+        }
       }
     }
 
     // 6. Check screen size distribution (legacy template-level format)
-    if (greenBean.screen_sizes && template.screen_size_requirements) {
-      const screenSizes = greenBean.screen_sizes as Record<string, number>
+    if (screenPercentages && template.screen_size_requirements) {
       const requirements = template.screen_size_requirements as Record<string, { min_percent?: number; max_percent?: number }>
 
       for (const [size, req] of Object.entries(requirements)) {
-        const actualPercent = screenSizes[size] || 0
+        const actualPercent = screenPercentages[size] || 0
 
         if (req.min_percent !== undefined && actualPercent < req.min_percent) {
           violations.push(`Screen ${size}: ${actualPercent.toFixed(1)}% is below minimum (${req.min_percent}%)`)
@@ -875,11 +879,9 @@ async function evaluateQualityCompliance(
     }
 
     // 6b. Check screen size distribution (new constraint-based format from parameters)
-    if (greenBean.screen_sizes && parameters.screen_size_requirements?.constraints) {
-      const screenSizes = greenBean.screen_sizes as Record<string, number>
-
+    if (screenPercentages && parameters.screen_size_requirements?.constraints) {
       for (const constraint of parameters.screen_size_requirements.constraints) {
-        const actualPercent = screenSizes[constraint.screen_size] || 0
+        const actualPercent = screenPercentages[constraint.screen_size] || 0
 
         switch (constraint.constraint_type) {
           case 'minimum':
@@ -920,8 +922,9 @@ async function evaluateQualityCompliance(
     }
 
     // 8. Check quaker count
+    // Grading page stores as green_bean_data.quakers, legacy may use quaker_count
     if (parameters.max_quakers !== undefined) {
-      const quakerCount = greenBean.quaker_count || 0
+      const quakerCount = greenBean.quakers ?? greenBean.quaker_count ?? 0
       if (quakerCount > parameters.max_quakers) {
         violations.push(`Quakers: ${quakerCount} exceeds maximum (${parameters.max_quakers})`)
       }
@@ -929,44 +932,71 @@ async function evaluateQualityCompliance(
   }
 
   // 9. Check cupping taint/fault counts against taint_fault_configuration rules
+  // Falls back to template-level max_taints_allowed / max_faults_allowed columns
   if (cuppingScores && cuppingScores.length > 0) {
     const tfConfig = parameters.taint_fault_configuration
     const tfRules = tfConfig?.rules
 
-    if (tfRules) {
-      // Count taints and faults from all cupping scores
-      let totalTaints = 0
-      let totalFaults = 0
+    // Count taints and faults from all cupping scores
+    let totalTaints = 0
+    let totalFaults = 0
 
-      for (const score of cuppingScores) {
-        if (score.defects && typeof score.defects === 'object') {
-          const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
-          if (Array.isArray(defects.taints)) {
-            totalTaints += defects.taints.length
-          }
-          if (Array.isArray(defects.faults)) {
-            totalFaults += defects.faults.length
-          }
+    for (const score of cuppingScores) {
+      if (score.defects && typeof score.defects === 'object') {
+        const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
+        if (Array.isArray(defects.taints)) {
+          totalTaints += defects.taints.length
+        }
+        if (Array.isArray(defects.faults)) {
+          totalFaults += defects.faults.length
         }
       }
+    }
 
-      // Average across cuppers (round up - any cupper detecting a defect counts)
-      const cupperCount = cuppingScores.length
-      const avgTaints = cupperCount > 0 ? Math.ceil(totalTaints / cupperCount) : 0
-      const avgFaults = cupperCount > 0 ? Math.ceil(totalFaults / cupperCount) : 0
+    // Average across cuppers (round up - any cupper detecting a defect counts)
+    const cupperCount = cuppingScores.length
+    const avgTaints = cupperCount > 0 ? Math.ceil(totalTaints / cupperCount) : 0
+    const avgFaults = cupperCount > 0 ? Math.ceil(totalFaults / cupperCount) : 0
 
-      if (tfRules.zero_tolerance && (avgTaints > 0 || avgFaults > 0)) {
+    // Check if tfRules has any actual configuration
+    const hasConfiguredRules = tfRules && (
+      tfRules.zero_tolerance === true ||
+      (typeof tfRules.max_taints === 'number') ||
+      (typeof tfRules.max_faults === 'number') ||
+      (typeof tfRules.max_combined === 'number')
+    )
+
+    if (hasConfiguredRules) {
+      // Use parameters-level taint_fault_configuration rules
+      if (tfRules!.zero_tolerance && (avgTaints > 0 || avgFaults > 0)) {
         violations.push(`Zero tolerance: ${avgTaints} taint(s) and ${avgFaults} fault(s) detected`)
       } else {
-        if (tfRules.max_taints !== undefined && avgTaints > tfRules.max_taints) {
-          violations.push(`Cupping taints: ${avgTaints} exceeds limit (${tfRules.max_taints})`)
+        if (typeof tfRules!.max_taints === 'number' && avgTaints > tfRules!.max_taints) {
+          violations.push(`Cupping taints: ${avgTaints} exceeds limit (${tfRules!.max_taints})`)
         }
-        if (tfRules.max_faults !== undefined && avgFaults > tfRules.max_faults) {
-          violations.push(`Cupping faults: ${avgFaults} exceeds limit (${tfRules.max_faults})`)
+        if (typeof tfRules!.max_faults === 'number' && avgFaults > tfRules!.max_faults) {
+          violations.push(`Cupping faults: ${avgFaults} exceeds limit (${tfRules!.max_faults})`)
         }
-        if (tfRules.max_combined !== undefined && (avgTaints + avgFaults) > tfRules.max_combined) {
-          violations.push(`Cupping defects combined: ${avgTaints + avgFaults} exceeds limit (${tfRules.max_combined})`)
+        if (typeof tfRules!.max_combined === 'number' && (avgTaints + avgFaults) > tfRules!.max_combined) {
+          violations.push(`Cupping defects combined: ${avgTaints + avgFaults} exceeds limit (${tfRules!.max_combined})`)
         }
+      }
+    } else {
+      // Fallback: use template-level max_taints_allowed / max_faults_allowed columns
+      const maxTaintsAllowed = typeof template.max_taints_allowed === 'number' ? template.max_taints_allowed : null
+      const maxFaultsAllowed = typeof template.max_faults_allowed === 'number' ? template.max_faults_allowed : null
+
+      if (maxTaintsAllowed !== null && avgTaints > maxTaintsAllowed) {
+        violations.push(`Cupping taints: ${avgTaints} exceeds limit (${maxTaintsAllowed})`)
+      }
+      if (maxFaultsAllowed !== null && avgFaults > maxFaultsAllowed) {
+        violations.push(`Cupping faults: ${avgFaults} exceeds limit (${maxFaultsAllowed})`)
+      }
+
+      // If no taint rules exist at all but taints are detected, reject by default
+      // (taints are serious cupping defects that should always trigger rejection)
+      if (maxTaintsAllowed === null && avgTaints > 0) {
+        violations.push(`Cupping taints detected: ${avgTaints} (no tolerance configured, rejecting by default)`)
       }
     }
   }

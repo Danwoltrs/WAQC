@@ -56,12 +56,17 @@ export function QualityCertificate({
   } = data
 
   // Prepare screen sizes for screen defects component
-  const screenSizes = greenBeanAnalysis?.screen_sizes
-    ? Object.entries(greenBeanAnalysis.screen_sizes).map(([size, percentage]) => ({
-        size,
-        percentage: typeof percentage === 'number' ? percentage : null,
-      }))
-    : null
+  // DB stores grams; convert to percentages for display
+  const screenSizes = (() => {
+    if (!greenBeanAnalysis?.screen_sizes) return null
+    const entries = Object.entries(greenBeanAnalysis.screen_sizes)
+    const totalGrams = entries.reduce((sum, [, g]) => sum + (typeof g === 'number' ? g : 0), 0)
+    if (totalGrams === 0) return null
+    return entries.map(([size, grams]) => ({
+      size,
+      percentage: typeof grams === 'number' ? (grams / totalGrams) * 100 : null,
+    }))
+  })()
 
   // Prepare defects for screen defects component
   const defects = greenBeanAnalysis?.defects

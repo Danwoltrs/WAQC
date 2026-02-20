@@ -372,12 +372,13 @@ export default function CertificatesPage() {
 
   // Get status badge
   const getStatusBadge = (cert: Certificate) => {
-    const isRejected = cert.sample?.workflow_stage === 'rejected'
+    // Use certificate's is_rejected flag as authoritative (sample workflow_stage as fallback)
+    const isRejected = cert.is_rejected === true || cert.sample?.workflow_stage === 'rejected'
     switch (cert.status) {
       case 'issued':
         return isRejected
-          ? <Badge className="bg-red-600 hover:bg-red-700">Issued</Badge>
-          : <Badge className="bg-green-600 hover:bg-green-700">Issued</Badge>
+          ? <Badge className="bg-red-600 hover:bg-red-700 text-white">Rejected</Badge>
+          : <Badge className="bg-green-600 hover:bg-green-700 text-white">Approved</Badge>
       case 'draft':
         return <Badge variant="secondary">Draft</Badge>
       case 'revoked':

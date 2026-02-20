@@ -154,6 +154,7 @@ export interface CertificateData {
     valid_until: string | null
     status: string | null
     override_comment: string | null
+    is_rejected?: boolean | null
   } | null
   qualitySpec: {
     name: string | null
@@ -163,6 +164,23 @@ export interface CertificateData {
     has_validation: boolean
   } | null
   specLimits: QualitySpecLimits | null
+}
+
+/**
+ * Resolve the definitive sample status using the certificate's is_rejected flag.
+ * The certificate record is authoritative because the override route updates it
+ * but the sample update may fail silently due to RLS restrictions.
+ */
+function resolveStatus(
+  sampleStatus: string | null,
+  certificate: { is_rejected?: boolean | null } | null,
+  contractCert?: { is_rejected?: boolean | null } | null
+): 'approved' | 'rejected' | string | null {
+  // Use sub-contract certificate if available, otherwise mother certificate
+  const cert = contractCert ?? certificate
+  if (cert?.is_rejected === true) return 'rejected'
+  if (cert?.is_rejected === false) return 'approved'
+  return sampleStatus
 }
 
 /**
@@ -317,7 +335,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   // Fetch certificate
   const { data: certificate } = await supabase
     .from('certificates')
-    .select('id, certificate_number, created_at, status, override_comment')
+    .select('id, certificate_number, created_at, status, override_comment, is_rejected')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -654,7 +672,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     wolthersContract: string | null
     ico_number: string | null
     container_nr: string | null
-    certificateData: NonNullable<CertificateData['certificate']>
+    certificateData: NonNullable<CertificateData['certificate']> & { is_rejected?: boolean | null }
   } | null = null
 
   if (contractId) {
@@ -679,7 +697,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       // Fetch sub-contract's certificate
       const { data: scCert } = await supabase
         .from('certificates')
-        .select('id, certificate_number, created_at, status, override_comment')
+        .select('id, certificate_number, created_at, status, override_comment, is_rejected')
         .eq('sample_contract_id', contractId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -722,6 +740,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
               valid_until: validUntil,
               status: scCert.status,
               override_comment: scCert.override_comment ?? null,
+              is_rejected: scCert.is_rejected ?? null,
             }
           : {
               id: '',
@@ -730,6 +749,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
               valid_until: validUntil,
               status: null,
               override_comment: null,
+              is_rejected: null,
             },
       }
     }
@@ -753,7 +773,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       ico_number: contractOverride?.ico_number ?? sample.ico_number,
       container_nr: contractOverride?.container_nr ?? sample.container_nr,
       created_at: sample.created_at,
-      status: sample.status,
+      // Use certificate's is_rejected flag as authoritative source for status
+      // (override route updates certificate but sample update may fail due to RLS)
+      status: resolveStatus(sample.status, certificate, contractOverride?.certificateData),
       certifications: null, // Certifications not yet stored on samples
     },
     supplyChain: {
@@ -814,6 +836,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
           valid_until: validUntil,
           status: certificate.status,
           override_comment: certificate.override_comment ?? null,
+          is_rejected: certificate.is_rejected ?? null,
         }
       : {
           // Placeholder when no certificate record exists yet (first generation)
@@ -823,6 +846,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
           valid_until: validUntil,
           status: null,
           override_comment: null,
+          is_rejected: null,
         }),
     qualitySpec,
     specLimits,

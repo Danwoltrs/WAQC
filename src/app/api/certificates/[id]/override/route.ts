@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
+
+// Admin client bypasses RLS for sample status updates
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } }
+)
 
 /**
  * PATCH /api/certificates/[id]/override
@@ -80,9 +88,9 @@ export async function PATCH(
       )
     }
 
-    // Update the sample status and workflow_stage
+    // Update the sample status and workflow_stage using admin client to bypass RLS
     if (certificate.sample_id) {
-      const { error: sampleError } = await supabase
+      const { error: sampleError } = await supabaseAdmin
         .from('samples')
         .update({
           status: isRejecting ? 'rejected' : 'approved',
@@ -92,6 +100,10 @@ export async function PATCH(
 
       if (sampleError) {
         console.error('[Override] Sample update failed:', sampleError)
+        return NextResponse.json(
+          { error: 'Failed to update sample status', details: sampleError.message },
+          { status: 500 }
+        )
       }
 
       // Update sub-contract certificates (same sample, different contract)
@@ -120,8 +132,8 @@ export async function PATCH(
         }
       }
 
-      // Invalidate cached PDFs so they regenerate with the new comment
-      await invalidateCertificatePdf(supabase, certificate.sample_id)
+      // Invalidate cached PDFs so they regenerate with the new status
+      await invalidateCertificatePdf(supabaseAdmin, certificate.sample_id)
     }
 
     return NextResponse.json({
