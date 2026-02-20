@@ -968,6 +968,7 @@ export type Database = {
           issued_at: string
           issued_by: string | null
           issued_to: string
+          override_comment: string | null
           pdf_url: string | null
           revision_number: number | null
           sample_contract_id: string | null
@@ -990,6 +991,7 @@ export type Database = {
           issued_at?: string
           issued_by?: string | null
           issued_to: string
+          override_comment?: string | null
           pdf_url?: string | null
           revision_number?: number | null
           sample_contract_id?: string | null
@@ -1012,6 +1014,7 @@ export type Database = {
           issued_at?: string
           issued_by?: string | null
           issued_to?: string
+          override_comment?: string | null
           pdf_url?: string | null
           revision_number?: number | null
           sample_contract_id?: string | null

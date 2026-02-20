@@ -197,6 +197,7 @@ export function QualityCertificate({
         <CertificateComments
           cuppingNotes={cuppingData?.comments || null}
           additionalNotes={gradingComments}
+          overrideComment={certificate?.override_comment}
         />
 
         {/* 10. Footer with lab info */}

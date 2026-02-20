@@ -35,9 +35,11 @@ import {
   Loader2,
   CheckCircle,
   XCircle,
+  RefreshCw,
 } from 'lucide-react'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
+import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 
 interface Certificate {
   id: string
@@ -47,6 +49,7 @@ interface Certificate {
   created_at: string
   pdf_url: string | null
   sample_id: string | null
+  is_rejected: boolean | null
   sample: {
     id: string
     tracking_number: string
@@ -310,7 +313,9 @@ export default function CertificatesPage() {
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `${certificateNumber}.pdf`
+        let sanitizedName = certificateNumber.replace(/\//g, '_')
+        if (sanitizedName.startsWith('R-')) sanitizedName = 'r-' + sanitizedName.slice(2)
+        a.download = `${sanitizedName}.pdf`
         document.body.appendChild(a)
         a.click()
         window.URL.revokeObjectURL(url)
@@ -395,6 +400,9 @@ export default function CertificatesPage() {
   }
 
   const recipientAvailability = getSelectedCertificateRecipients()
+
+  // Override dialog state
+  const [overrideCertificate, setOverrideCertificate] = useState<Certificate | null>(null)
 
   // Certificate preview modal state
   const [previewCertificate, setPreviewCertificate] = useState<Certificate | null>(null)
@@ -711,6 +719,14 @@ export default function CertificatesPage() {
                                 >
                                   <Download className="h-4 w-4" />
                                 </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setOverrideCertificate(cert)}
+                                  title="Override Status"
+                                >
+                                  <RefreshCw className="h-4 w-4" />
+                                </Button>
                               </>
                             )}
                           </div>
@@ -941,6 +957,18 @@ export default function CertificatesPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Override Status Dialog */}
+        {overrideCertificate && (
+          <OverrideStatusDialog
+            open={!!overrideCertificate}
+            onOpenChange={(open) => !open && setOverrideCertificate(null)}
+            certificateId={overrideCertificate.id}
+            certificateNumber={overrideCertificate.certificate_number}
+            currentlyRejected={!!overrideCertificate.is_rejected}
+            onSuccess={loadCertificates}
+          />
+        )}
 
         {/* Single Certificate Email Dialog */}
         <Dialog open={showSingleEmailDialog} onOpenChange={setShowSingleEmailDialog}>

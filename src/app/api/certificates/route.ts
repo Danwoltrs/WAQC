@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
         created_at,
         pdf_url,
         sample_id,
+        is_rejected,
         sample:samples(
           id,
           tracking_number,

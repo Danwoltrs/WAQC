@@ -33,16 +33,28 @@ const commentsStyles = StyleSheet.create({
     fontSize: 8,
     color: COLORS.mutedLight,
   },
+  overrideLabel: {
+    fontSize: 9,
+    fontWeight: 600,
+    color: '#b07946',
+  },
+  overrideText: {
+    fontSize: 9,
+    color: COLORS.dark,
+    lineHeight: 1.4,
+  },
 })
 
 export interface CertificateCommentsProps {
   cuppingNotes: string | null
   additionalNotes?: string | null
+  overrideComment?: string | null
 }
 
 export function CertificateComments({
   cuppingNotes,
   additionalNotes,
+  overrideComment,
 }: CertificateCommentsProps) {
   // Combine notes if both exist
   const hasNotes = cuppingNotes || additionalNotes
@@ -56,11 +68,19 @@ export function CertificateComments({
   return (
     <View style={commentsStyles.container}>
       <Text style={commentsStyles.title}>Comments</Text>
+      {overrideComment ? (
+        <View style={{ marginBottom: notesText ? 6 : 0 }}>
+          <Text style={commentsStyles.overrideText}>
+            <Text style={commentsStyles.overrideLabel}>Override: </Text>
+            {overrideComment}
+          </Text>
+        </View>
+      ) : null}
       {notesText ? (
         <Text style={commentsStyles.commentsText}>{notesText}</Text>
-      ) : (
+      ) : !overrideComment ? (
         <Text style={commentsStyles.emptyText}>No comments</Text>
-      )}
+      ) : null}
     </View>
   )
 }

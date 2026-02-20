@@ -23,6 +23,13 @@ interface QualityComplianceResult {
 interface QualityTemplateParameters {
   cupping_attributes?: Record<string, { min?: number; max?: number }>
   defect_limits?: Record<string, { max_level?: number }>
+  defect_configuration?: {
+    thresholds?: {
+      max_primary?: number
+      max_secondary?: number
+      max_total?: number
+    }
+  }
   screen_sizes?: Record<string, { min_percent?: number; max_percent?: number }>
   taint_fault_configuration?: {
     rules?: {
@@ -810,26 +817,30 @@ async function evaluateQualityCompliance(
     const defects = greenBean.defects
 
     if (defects) {
+      // Grading page stores weighted totals as defects.primary / defects.secondary
+      const primaryCount = defects.primary || 0
+      const secondaryCount = defects.secondary || 0
+
+      // Defect thresholds can come from template columns OR parameters.defect_configuration.thresholds
+      const defectConfig = parameters.defect_configuration as { thresholds?: { max_primary?: number; max_secondary?: number; max_total?: number } } | undefined
+      const maxPrimary = template.defect_thresholds_primary ?? defectConfig?.thresholds?.max_primary ?? null
+      const maxSecondary = template.defect_thresholds_secondary ?? defectConfig?.thresholds?.max_secondary ?? null
+      const maxTotal = (parameters as any).defect_thresholds_total ?? defectConfig?.thresholds?.max_total ?? null
+
       // Check primary defect count
-      const primaryCount = defects.total_primary || 0
-      if (template.defect_thresholds_primary !== null &&
-          primaryCount > template.defect_thresholds_primary) {
-        violations.push(`Primary defects: ${primaryCount} exceeds limit (${template.defect_thresholds_primary})`)
+      if (maxPrimary !== null && primaryCount > maxPrimary) {
+        violations.push(`Primary defects: ${primaryCount} exceeds limit (${maxPrimary})`)
       }
 
       // Check secondary defect count
-      const secondaryCount = defects.total_secondary || 0
-      if (template.defect_thresholds_secondary !== null &&
-          secondaryCount > template.defect_thresholds_secondary) {
-        violations.push(`Secondary defects: ${secondaryCount} exceeds limit (${template.defect_thresholds_secondary})`)
+      if (maxSecondary !== null && secondaryCount > maxSecondary) {
+        violations.push(`Secondary defects: ${secondaryCount} exceeds limit (${maxSecondary})`)
       }
 
       // Check total defect count (primary + secondary)
       const totalCount = primaryCount + secondaryCount
-      // Note: total threshold may be in parameters or as separate field
-      const totalThreshold = (parameters as any).defect_thresholds_total
-      if (totalThreshold !== undefined && totalCount > totalThreshold) {
-        violations.push(`Total defects: ${totalCount} exceeds limit (${totalThreshold})`)
+      if (maxTotal !== null && totalCount > maxTotal) {
+        violations.push(`Total defects: ${totalCount} exceeds limit (${maxTotal})`)
       }
     }
 

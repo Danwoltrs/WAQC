@@ -153,6 +153,7 @@ export interface CertificateData {
     issued_date: string
     valid_until: string | null
     status: string | null
+    override_comment: string | null
   } | null
   qualitySpec: {
     name: string | null
@@ -316,7 +317,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   // Fetch certificate
   const { data: certificate } = await supabase
     .from('certificates')
-    .select('id, certificate_number, created_at, status')
+    .select('id, certificate_number, created_at, status, override_comment')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -506,6 +507,10 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         }))
       }
 
+      // Get defect thresholds from parameters.defect_configuration.thresholds (template builder format)
+      const defectConfig = params.defect_configuration as { thresholds?: { max_primary?: number; max_secondary?: number; max_total?: number } } | undefined
+      const defectThresholds = defectConfig?.thresholds
+
       // Get taint/fault limits from both template columns and parameters
       const tfRules = (params.taint_fault_configuration as { rules?: { max_taints?: number; max_faults?: number; max_combined?: number; zero_tolerance?: boolean } })?.rules
 
@@ -513,9 +518,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         moisture_min: params.moisture_min as number | undefined,
         moisture_max: params.moisture_max as number | undefined,
         max_quakers: params.max_quakers as number | undefined,
-        defect_thresholds_primary: tmpl.defect_thresholds_primary ?? undefined,
-        defect_thresholds_secondary: tmpl.defect_thresholds_secondary ?? undefined,
-        defect_thresholds_total: params.defect_thresholds_total as number | undefined,
+        defect_thresholds_primary: tmpl.defect_thresholds_primary ?? defectThresholds?.max_primary ?? undefined,
+        defect_thresholds_secondary: tmpl.defect_thresholds_secondary ?? defectThresholds?.max_secondary ?? undefined,
+        defect_thresholds_total: (params.defect_thresholds_total as number | undefined) ?? defectThresholds?.max_total ?? undefined,
         max_taints: tfRules?.max_taints ?? (tmpl.max_taints_allowed ?? undefined),
         max_faults: tfRules?.max_faults ?? (tmpl.max_faults_allowed ?? undefined),
         max_combined_defects: tfRules?.max_combined,
@@ -649,7 +654,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     wolthersContract: string | null
     ico_number: string | null
     container_nr: string | null
-    certificateData: CertificateData['certificate']
+    certificateData: NonNullable<CertificateData['certificate']>
   } | null = null
 
   if (contractId) {
@@ -674,7 +679,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       // Fetch sub-contract's certificate
       const { data: scCert } = await supabase
         .from('certificates')
-        .select('id, certificate_number, created_at, status')
+        .select('id, certificate_number, created_at, status, override_comment')
         .eq('sample_contract_id', contractId)
         .order('created_at', { ascending: false })
         .limit(1)
@@ -716,6 +721,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
               issued_date: scCert.created_at || currentDate,
               valid_until: validUntil,
               status: scCert.status,
+              override_comment: scCert.override_comment ?? null,
             }
           : {
               id: '',
@@ -723,6 +729,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
               issued_date: currentDate,
               valid_until: validUntil,
               status: null,
+              override_comment: null,
             },
       }
     }
@@ -806,6 +813,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
           issued_date: certificate.created_at || currentDate,
           valid_until: validUntil,
           status: certificate.status,
+          override_comment: certificate.override_comment ?? null,
         }
       : {
           // Placeholder when no certificate record exists yet (first generation)
@@ -814,6 +822,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
           issued_date: currentDate,
           valid_until: validUntil,
           status: null,
+          override_comment: null,
         }),
     qualitySpec,
     specLimits,
