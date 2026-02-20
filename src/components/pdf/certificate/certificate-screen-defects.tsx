@@ -105,7 +105,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   defectColumn: {
-    width: 130,
+    width: 140,
   },
   defectHeaderRow: {
     flexDirection: 'row',

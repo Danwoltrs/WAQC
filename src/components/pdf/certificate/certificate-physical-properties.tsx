@@ -18,7 +18,11 @@ const propStyles = StyleSheet.create({
     borderRadius: 4,
     overflow: 'hidden',
   },
-  section: {
+  sectionLeft: {
+    width: 290,
+    padding: 8,
+  },
+  sectionRight: {
     flex: 1,
     padding: 8,
   },
@@ -168,7 +172,7 @@ export function CertificatePhysicalProperties({
   return (
     <View style={propStyles.container}>
       {/* Green Bean Section */}
-      <View style={propStyles.section}>
+      <View style={propStyles.sectionLeft}>
         <Text style={propStyles.sectionTitle}>Green Bean</Text>
         <View style={propStyles.propertiesRow}>
           <PropertyItem
@@ -188,7 +192,7 @@ export function CertificatePhysicalProperties({
       <View style={propStyles.separator} />
 
       {/* Roast Section */}
-      <View style={propStyles.section}>
+      <View style={propStyles.sectionRight}>
         <Text style={propStyles.sectionTitle}>Roast Analysis</Text>
         <View style={propStyles.propertiesRow}>
           {shouldShowQuakers && (
