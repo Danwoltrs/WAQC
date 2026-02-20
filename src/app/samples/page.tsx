@@ -47,7 +47,7 @@ import {
   Plus, Search, Filter, Eye, MapPin, Calendar,
   CheckCircle, XCircle, Clock, AlertCircle, FileText,
   Download, Printer, QrCode, MoreVertical, Users, Trash2,
-  Loader2, Award, Mail, Settings2, ChevronDown, ChevronRight
+  Loader2, Award, Mail, Settings2, ChevronDown, ChevronRight, Edit
 } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
 
@@ -179,6 +179,7 @@ export default function SamplesPage() {
   const { profile } = useAuth()
   const [samples, setSamples] = useState<Sample[]>([])
   const [detailSampleId, setDetailSampleId] = useState<string | null>(null)
+  const [detailStartInEditMode, setDetailStartInEditMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string | null>(null)
@@ -1462,6 +1463,13 @@ export default function SamplesPage() {
                             <Eye className="h-4 w-4 mr-2" />
                             View Sample
                           </ContextMenuItem>
+                          <ContextMenuItem onClick={() => {
+                            setDetailStartInEditMode(true)
+                            setDetailSampleId(sample.id)
+                          }}>
+                            <Edit className="h-4 w-4 mr-2" />
+                            Edit Sample
+                          </ContextMenuItem>
                           <ContextMenuItem onClick={() => setSubContractSample(sample)}>
                             <Plus className="h-4 w-4 mr-2" />
                             Add Sub-Contract
@@ -1909,9 +1917,15 @@ export default function SamplesPage() {
       {/* Sample Detail Modal */}
       <SampleDetailModal
         open={!!detailSampleId}
-        onOpenChange={(open) => { if (!open) setDetailSampleId(null) }}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDetailSampleId(null)
+            setDetailStartInEditMode(false)
+          }
+        }}
         sampleId={detailSampleId}
         onSampleUpdated={loadSamples}
+        startInEditMode={detailStartInEditMode}
       />
     </>
   )
