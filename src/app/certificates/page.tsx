@@ -56,6 +56,10 @@ interface Certificate {
     origin: string
     client_id: string
     workflow_stage: string | null
+    sample_type: string | null
+    exporter_sample_number: string | null
+    ico_number: string | null
+    container_nr: string | null
     client?: {
       id: string
       name: string
@@ -681,7 +685,16 @@ export default function CertificatesPage() {
                               href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
                               className="text-primary hover:underline"
                             >
-                              {parseTrackingNumber(cert.sample.tracking_number)}
+                              {cert.sample.sample_type === 'pss' ? (
+                                <span>{cert.sample.exporter_sample_number || parseTrackingNumber(cert.sample.tracking_number)}</span>
+                              ) : cert.sample.sample_type === 'ss' ? (
+                                <div className="flex flex-col leading-tight">
+                                  <span>{cert.sample.ico_number || '-'}</span>
+                                  <span className="text-xs text-muted-foreground">{cert.sample.container_nr || '-'}</span>
+                                </div>
+                              ) : (
+                                <span>{parseTrackingNumber(cert.sample.tracking_number)}</span>
+                              )}
                             </Link>
                           ) : (
                             <span className="text-muted-foreground">-</span>
