@@ -786,14 +786,8 @@ export default function GradingPage() {
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          // Preserve existing loaded defect counts
+          // Preserve existing loaded defect counts - don't initialize to 0 so inputs show blank
           const defectCounts: { [key: string]: number } = { ...gradingData.defect_counts }
-          defectConfigs.forEach((defect: DefectConfig) => {
-            // Only initialize to 0 if not already loaded from quality assessment
-            if (!(defect.name in defectCounts)) {
-              defectCounts[defect.name] = 0
-            }
-          })
           gradingData.defect_counts = defectCounts
         }
       }
@@ -962,11 +956,6 @@ export default function GradingPage() {
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
           const defectCounts: { [key: string]: number } = { ...gradingData.defect_counts }
-          typeDefectConfigs.forEach((defect: DefectConfig) => {
-            if (!(defect.name in defectCounts)) {
-              defectCounts[defect.name] = 0
-            }
-          })
           gradingData.defect_counts = defectCounts
         }
       }
@@ -1432,7 +1421,7 @@ export default function GradingPage() {
                             const secondColumn = shouldSplit ? screens.slice(midpoint) : []
 
                             const renderScreenRow = (screen: ScreenSizeConstraint) => {
-                              const gramsValue = gradingData?.screen_sizes[screen.screen_size] || 0
+                              const gramsValue = gradingData?.screen_sizes[screen.screen_size] || ''
                               const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
                               const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
 
@@ -1594,7 +1583,7 @@ export default function GradingPage() {
                                   <Input
                                     type="number"
                                     min="0"
-                                    value={gradingData?.quakers_count || 0}
+                                    value={gradingData?.quakers_count || ''}
                                     onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                     className="h-8 text-sm w-16 text-center"
                                   />
@@ -1755,7 +1744,7 @@ export default function GradingPage() {
                                     <Input
                                       type="number"
                                       min="0"
-                                      value={gradingData?.quakers_count || 0}
+                                      value={gradingData?.quakers_count || ''}
                                       onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                       className="h-8 text-sm w-16 text-center"
                                     />
@@ -2074,7 +2063,7 @@ export default function GradingPage() {
                                     <Input
                                       type="number"
                                       min="0"
-                                      value={gradingData?.defect_counts[defect.name] || 0}
+                                      value={gradingData?.defect_counts[defect.name] || ''}
                                       onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
                                       className="h-8 text-sm w-14 text-center"
                                       placeholder="0"
@@ -2123,7 +2112,7 @@ export default function GradingPage() {
                                     <Input
                                       type="number"
                                       min="0"
-                                      value={gradingData?.defect_counts[defect.name] || 0}
+                                      value={gradingData?.defect_counts[defect.name] || ''}
                                       onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
                                       className="h-8 text-sm w-14 text-center"
                                       placeholder="0"
