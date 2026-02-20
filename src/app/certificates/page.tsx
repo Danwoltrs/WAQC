@@ -607,14 +607,14 @@ export default function CertificatesPage() {
               <div className="overflow-x-auto">
                 <table className="w-full">
                   <thead>
-                    <tr className="border-b">
-                      <th className="py-3 px-2 text-left">
+                    <tr className="border-b bg-muted/50">
+                      <th className="py-3 px-4 text-left">
                         <Checkbox
                           checked={selectedCertificates.size === filteredCertificates.length && filteredCertificates.length > 0}
                           onCheckedChange={toggleSelectAll}
                         />
                       </th>
-                      <th className="py-3 px-2 text-left">
+                      <th className="py-3 px-4 text-left">
                         <button
                           className="flex items-center font-medium text-sm hover:text-primary"
                           onClick={() => handleSort('certificate_number')}
@@ -623,10 +623,10 @@ export default function CertificatesPage() {
                           <SortIcon field="certificate_number" />
                         </button>
                       </th>
-                      <th className="py-3 px-2 text-left">
+                      <th className="py-3 px-4 text-left">
                         <span className="font-medium text-sm">Sample</span>
                       </th>
-                      <th className="py-3 px-2 text-left">
+                      <th className="py-3 px-4 text-left">
                         <button
                           className="flex items-center font-medium text-sm hover:text-primary"
                           onClick={() => handleSort('issued_to')}
@@ -635,7 +635,7 @@ export default function CertificatesPage() {
                           <SortIcon field="issued_to" />
                         </button>
                       </th>
-                      <th className="py-3 px-2 text-left">
+                      <th className="py-3 px-4 text-left">
                         <button
                           className="flex items-center font-medium text-sm hover:text-primary"
                           onClick={() => handleSort('origin')}
@@ -644,7 +644,7 @@ export default function CertificatesPage() {
                           <SortIcon field="origin" />
                         </button>
                       </th>
-                      <th className="py-3 px-2 text-left">
+                      <th className="py-3 px-4 text-left">
                         <button
                           className="flex items-center font-medium text-sm hover:text-primary"
                           onClick={() => handleSort('created_at')}
@@ -653,7 +653,7 @@ export default function CertificatesPage() {
                           <SortIcon field="created_at" />
                         </button>
                       </th>
-                      <th className="py-3 px-2 text-left">
+                      <th className="py-3 px-4 text-left">
                         <button
                           className="flex items-center font-medium text-sm hover:text-primary"
                           onClick={() => handleSort('status')}
@@ -662,7 +662,7 @@ export default function CertificatesPage() {
                           <SortIcon field="status" />
                         </button>
                       </th>
-                      <th className="py-3 px-2 text-right">
+                      <th className="py-3 px-4 text-right">
                         <span className="font-medium text-sm">Actions</span>
                       </th>
                     </tr>
@@ -670,16 +670,16 @@ export default function CertificatesPage() {
                   <tbody>
                     {filteredCertificates.map(cert => (
                       <tr key={cert.id} className="border-b hover:bg-muted/50">
-                        <td className="py-3 px-2">
+                        <td className="py-3 px-4">
                           <Checkbox
                             checked={selectedCertificates.has(cert.id)}
                             onCheckedChange={() => toggleSelect(cert.id)}
                           />
                         </td>
-                        <td className="py-3 px-2 font-mono text-sm">
+                        <td className="py-3 px-4 font-mono text-sm">
                           {cert.certificate_number}
                         </td>
-                        <td className="py-3 px-2">
+                        <td className="py-3 px-4">
                           {cert.sample ? (
                             <Link
                               href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
@@ -700,20 +700,20 @@ export default function CertificatesPage() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </td>
-                        <td className="py-3 px-2">
+                        <td className="py-3 px-4">
                           {getClientName(cert)}
                         </td>
-                        <td className="py-3 px-2">
+                        <td className="py-3 px-4">
                           {cert.sample?.origin || '-'}
                         </td>
-                        <td className="py-3 px-2 text-sm text-muted-foreground">
+                        <td className="py-3 px-4 text-sm text-muted-foreground">
                           {new Date(cert.created_at).toLocaleDateString()}
                         </td>
-                        <td className="py-3 px-2">
+                        <td className="py-3 px-4">
                           {getStatusBadge(cert)}
                         </td>
-                        <td className="py-3 px-2 text-right">
-                          <div className="flex items-center justify-end gap-1">
+                        <td className="py-3 px-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
                             {cert.sample_id && (
                               <>
                                 <Button

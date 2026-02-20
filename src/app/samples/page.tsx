@@ -1550,7 +1550,7 @@ export default function SamplesPage() {
                             return (
                               <tr
                                 key={`sc-${sc.id}`}
-                                className="border-b border-border bg-muted/20 hover:bg-muted/40 transition-colors text-xs"
+                                className="border-b border-border bg-muted/40 hover:bg-muted/60 transition-colors text-xs"
                               >
                                 {/* Tree connector in checkbox column */}
                                 <td className="py-0 px-0 w-10">

@@ -1231,7 +1231,7 @@ export default function GradingPage() {
                     {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
                     <TabsTrigger
                       value={sample.id}
-                      className={`rounded-none border-transparent data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
+                      className={`rounded-none border-b-2 border-transparent data-[state=active]:border-b-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
                     >
                       <div className="flex flex-col items-start gap-0.5">
                         <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
@@ -1571,10 +1571,11 @@ export default function GradingPage() {
                               <div className="flex gap-4">
                                 {/* Quakers */}
                                 <div className="flex items-center gap-2">
-                                  <Label className="text-sm w-16">Quakers</Label>
+                                  <Label className="text-sm w-20">Quakers</Label>
                                   <Input
                                     type="number"
                                     min="0"
+                                    step="1"
                                     value={gradingData?.quakers_count || ''}
                                     onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                     className="h-8 text-sm w-16 text-center"
@@ -1618,7 +1619,7 @@ export default function GradingPage() {
                                           setRawInputsMap(newRaw)
                                         }
                                       }}
-                                      className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                      className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400 font-bold' : ''}`}
                                     />
                                   </div>
 
@@ -1668,10 +1669,11 @@ export default function GradingPage() {
                                 {/* When 1 column or no quakers: show stacked */}
                                 {showQuakers && (
                                   <div className="flex items-center gap-2">
-                                    <Label className="text-sm w-16">Quakers</Label>
+                                    <Label className="text-sm w-20">Quakers</Label>
                                     <Input
                                       type="number"
                                       min="0"
+                                      step="1"
                                       value={gradingData?.quakers_count || ''}
                                       onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                       className="h-8 text-sm w-16 text-center"
@@ -1716,7 +1718,7 @@ export default function GradingPage() {
                                           setRawInputsMap(newRaw)
                                         }
                                       }}
-                                      className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}
+                                      className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400 font-bold' : ''}`}
                                     />
                                   </div>
 
