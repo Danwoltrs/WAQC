@@ -173,12 +173,11 @@ export default function ClientsPage() {
   }
 
   const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteConfirmClient, setDeleteConfirmClient] = useState<Client | null>(null)
+  const [deleteLinkedRecords, setDeleteLinkedRecords] = useState<{ samples: number; contracts: number; qualities: number } | null>(null)
+  const [deleteProcessing, setDeleteProcessing] = useState(false)
 
   const handleDelete = async (client: Client) => {
-    if (!confirm(`Are you sure you want to delete client "${client.fantasy_name || client.name}"?`)) {
-      return
-    }
-
     try {
       setDeleteError(null)
       const response = await fetch(`/api/clients/${client.id}`, {
@@ -188,12 +187,45 @@ export default function ClientsPage() {
       if (response.ok) {
         await loadClients()
       } else {
-        const error = await response.json()
-        setDeleteError(error.error || 'Failed to delete client')
+        const data = await response.json()
+        if (data.error === 'confirm_delete' && data.linked_records) {
+          // Show confirmation dialog with linked records info
+          setDeleteConfirmClient(client)
+          setDeleteLinkedRecords(data.linked_records)
+        } else {
+          setDeleteError(data.error || 'Failed to delete client')
+        }
       }
     } catch (error) {
       console.error('Error deleting client:', error)
       setDeleteError('Failed to delete client. Please try again.')
+    }
+  }
+
+  const handleConfirmForceDelete = async () => {
+    if (!deleteConfirmClient) return
+    setDeleteProcessing(true)
+    try {
+      const response = await fetch(`/api/clients/${deleteConfirmClient.id}?force=true`, {
+        method: 'DELETE'
+      })
+      if (response.ok) {
+        setDeleteConfirmClient(null)
+        setDeleteLinkedRecords(null)
+        await loadClients()
+      } else {
+        const data = await response.json()
+        setDeleteError(data.error || 'Failed to delete client')
+        setDeleteConfirmClient(null)
+        setDeleteLinkedRecords(null)
+      }
+    } catch (error) {
+      console.error('Error force-deleting client:', error)
+      setDeleteError('Failed to delete client. Please try again.')
+      setDeleteConfirmClient(null)
+      setDeleteLinkedRecords(null)
+    } finally {
+      setDeleteProcessing(false)
     }
   }
 
@@ -283,11 +315,39 @@ export default function ClientsPage() {
       <Dialog open={!!deleteError} onOpenChange={() => setDeleteError(null)}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Cannot Delete Client</DialogTitle>
+            <DialogTitle>Error</DialogTitle>
             <DialogDescription>{deleteError}</DialogDescription>
           </DialogHeader>
           <div className="flex justify-end">
             <Button variant="outline" onClick={() => setDeleteError(null)}>OK</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog (linked records) */}
+      <Dialog open={!!deleteConfirmClient} onOpenChange={(open) => { if (!open) { setDeleteConfirmClient(null); setDeleteLinkedRecords(null) } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Client</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &ldquo;{deleteConfirmClient?.fantasy_name || deleteConfirmClient?.name}&rdquo;? This client has linked records:
+            </DialogDescription>
+          </DialogHeader>
+          {deleteLinkedRecords && (
+            <ul className="text-sm space-y-1 ml-4 list-disc">
+              {deleteLinkedRecords.samples > 0 && <li>{deleteLinkedRecords.samples} sample(s)</li>}
+              {deleteLinkedRecords.contracts > 0 && <li>{deleteLinkedRecords.contracts} sub-contract(s)</li>}
+              {deleteLinkedRecords.qualities > 0 && <li>{deleteLinkedRecords.qualities} quality specification(s)</li>}
+            </ul>
+          )}
+          <p className="text-sm text-muted-foreground">
+            Linked samples and contracts will be unlinked (not deleted). Quality specifications will be removed.
+          </p>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => { setDeleteConfirmClient(null); setDeleteLinkedRecords(null) }}>Cancel</Button>
+            <Button variant="destructive" onClick={handleConfirmForceDelete} disabled={deleteProcessing}>
+              {deleteProcessing ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Deleting...</> : 'Delete Client'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

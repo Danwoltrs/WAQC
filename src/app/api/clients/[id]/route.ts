@@ -243,61 +243,52 @@ export async function DELETE(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    // Check if client is in use by samples (as client_id or end_client_id)
-    const { count: samplesCount } = await supabase
-      .from('samples')
-      .select('*', { count: 'exact', head: true })
-      .eq('client_id', client.id)
+    // Check for linked records and return counts
+    const force = request.nextUrl.searchParams.get('force') === 'true'
 
-    if (samplesCount && samplesCount > 0) {
+    const [
+      { count: samplesCount },
+      { count: endClientCount },
+      { count: contractClientCount },
+      { count: contractEndClientCount },
+      { count: qualityCount },
+    ] = await Promise.all([
+      supabase.from('samples').select('*', { count: 'exact', head: true }).eq('client_id', client.id),
+      supabase.from('samples').select('*', { count: 'exact', head: true }).eq('end_client_id', client.id),
+      supabase.from('sample_contracts').select('*', { count: 'exact', head: true }).eq('client_id', client.id),
+      supabase.from('sample_contracts').select('*', { count: 'exact', head: true }).eq('end_client_id', client.id),
+      supabase.from('client_qualities').select('*', { count: 'exact', head: true }).eq('client_id', client.id),
+    ])
+
+    const linkedRecords = {
+      samples: (samplesCount || 0) + (endClientCount || 0),
+      contracts: (contractClientCount || 0) + (contractEndClientCount || 0),
+      qualities: qualityCount || 0,
+    }
+    const hasLinkedRecords = linkedRecords.samples > 0 || linkedRecords.contracts > 0 || linkedRecords.qualities > 0
+
+    // If linked records exist and force not set, return the counts for confirmation dialog
+    if (hasLinkedRecords && !force) {
       return NextResponse.json({
-        error: `Cannot delete client: ${samplesCount} sample(s) are linked to this client. Remove or reassign them first.`,
-        sample_count: samplesCount
-      }, { status: 400 })
+        error: 'confirm_delete',
+        linked_records: linkedRecords,
+        message: 'This client has linked records. Confirm deletion to proceed.',
+      }, { status: 409 })
     }
 
-    // Check if client is used as end_client in samples
-    const { count: endClientCount } = await supabase
-      .from('samples')
-      .select('*', { count: 'exact', head: true })
-      .eq('end_client_id', client.id)
-
-    if (endClientCount && endClientCount > 0) {
-      return NextResponse.json({
-        error: `Cannot delete client: ${endClientCount} sample(s) reference this client as end client.`,
-        sample_count: endClientCount
-      }, { status: 400 })
+    // Delete linked quality specifications first (to avoid FK violations)
+    if (linkedRecords.qualities > 0) {
+      await supabase.from('client_qualities').delete().eq('client_id', client.id)
     }
 
-    // Check if client is used in sample_contracts
-    const { count: contractClientCount } = await supabase
-      .from('sample_contracts')
-      .select('*', { count: 'exact', head: true })
-      .eq('client_id', client.id)
-
-    const { count: contractEndClientCount } = await supabase
-      .from('sample_contracts')
-      .select('*', { count: 'exact', head: true })
-      .eq('end_client_id', client.id)
-
-    const totalContractRefs = (contractClientCount || 0) + (contractEndClientCount || 0)
-    if (totalContractRefs > 0) {
-      return NextResponse.json({
-        error: `Cannot delete client: ${totalContractRefs} sub-contract(s) reference this client.`,
-      }, { status: 400 })
+    // Nullify FK references in samples and contracts so the client can be deleted
+    if (linkedRecords.samples > 0) {
+      await supabase.from('samples').update({ client_id: null } as any).eq('client_id', client.id)
+      await supabase.from('samples').update({ end_client_id: null } as any).eq('end_client_id', client.id)
     }
-
-    // Check if client has quality specifications
-    const { count: qualityCount } = await supabase
-      .from('client_qualities')
-      .select('*', { count: 'exact', head: true })
-      .eq('client_id', client.id)
-
-    if (qualityCount && qualityCount > 0) {
-      return NextResponse.json({
-        error: `Cannot delete client: ${qualityCount} quality specification(s) are assigned. Remove them first.`,
-        quality_specs_count: qualityCount
-      }, { status: 400 })
+    if (linkedRecords.contracts > 0) {
+      await supabase.from('sample_contracts').update({ client_id: null } as any).eq('client_id', client.id)
+      await supabase.from('sample_contracts').update({ end_client_id: null } as any).eq('end_client_id', client.id)
     }
 
     // Delete client using actual UUID

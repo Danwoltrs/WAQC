@@ -84,6 +84,7 @@ const initialFormData: FormData = {
   quality_name: '',
   hide_exporter_on_label: false,
   certifications: [],
+  crop_year: '',
 
   // Legacy contract fields
   wolthers_contract_nr: '',
@@ -642,6 +643,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         supplier: formData.supplier || undefined,
         supplier_contract_nr: formData.supplier_contract_nr || undefined,
         processing_method: formData.processing_method,
+        crop_year: formData.crop_year || undefined,
         sample_type: formData.sample_type || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,
         quality_name: formData.quality_name ? formData.quality_name.trim() : undefined,

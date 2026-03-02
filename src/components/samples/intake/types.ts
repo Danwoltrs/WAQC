@@ -39,6 +39,7 @@ export interface FormData {
   quality_name: string
   hide_exporter_on_label: boolean
   certifications: string[] // Multiple certifications (Rainforest Alliance, Fair Trade, etc.)
+  crop_year: string // e.g. "25/26"
 
   // Legacy/Other contract numbers (kept for backwards compatibility)
   wolthers_contract_nr: string

@@ -146,6 +146,7 @@ export function QualityCertificate({
           containerNumber={sample.container_nr}
           icoNumber={sample.ico_number}
           microOrigin={sample.micro_origin}
+          cropYear={sample.crop_year}
         />
 
         {/* 4. Quality Description + Certifications */}

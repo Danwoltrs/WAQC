@@ -169,6 +169,7 @@ export async function GET(request: NextRequest) {
       .in('id', Array.from(allSampleIds))
       .in('workflow_stage', ['analysis', 'review'])
       .is('deleted_at', null)
+      .order('created_at', { ascending: true })
 
     if (samplesError) {
       console.error('Error fetching samples:', samplesError)

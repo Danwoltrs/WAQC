@@ -76,6 +76,7 @@ export async function POST(request: NextRequest) {
       `)
       .in('id', sample_ids)
       .is('deleted_at', null)
+      .order('created_at', { ascending: true })
 
     if (error) {
       console.error('Error fetching sample details:', error)

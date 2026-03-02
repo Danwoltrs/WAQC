@@ -396,6 +396,7 @@ export async function POST(request: NextRequest) {
         equivalent_60kg_bags: body.equivalent_60kg_bags ? parseFloat(body.equivalent_60kg_bags) : null,
         bag_type: body.bag_type || null,
         processing_method: body.processing_method || null,
+        crop_year: body.crop_year || null,
         workflow_stage: body.workflow_stage || 'received',
         assigned_to: body.assigned_to || null
       }

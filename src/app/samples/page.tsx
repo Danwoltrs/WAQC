@@ -848,6 +848,30 @@ export default function SamplesPage() {
     })
   }
 
+  // Duplicate sample (SS flow): create a new independent sample record with the same contract
+  const handleDuplicateSample = async (sample: Sample) => {
+    if (!confirm(`Duplicate sample "${sample.tracking_number}"? This will create a new independent sample record sharing the same contract.`)) {
+      return
+    }
+    try {
+      const res = await fetch(`/api/samples/${sample.id}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!res.ok) {
+        const err = await res.json()
+        alert(err.error || 'Failed to duplicate sample')
+        return
+      }
+      const data = await res.json()
+      alert(`Sample duplicated successfully: ${data.sample.tracking_number}`)
+      loadSamples()
+    } catch (error) {
+      console.error('Error duplicating sample:', error)
+      alert('Failed to duplicate sample')
+    }
+  }
+
   const handleToggleSubContractQrCode = (scId: string, checked: boolean) => {
     setSelectedSubContractQrCodes(prev => {
       const next = new Set(prev)
@@ -1442,10 +1466,17 @@ export default function SamplesPage() {
                             <Edit className="h-4 w-4 mr-2" />
                             Edit Sample
                           </ContextMenuItem>
-                          <ContextMenuItem onClick={() => setSubContractSample(sample)}>
-                            <Plus className="h-4 w-4 mr-2" />
-                            Add Sub-Contract
-                          </ContextMenuItem>
+                          {sample.sample_type === 'ss' ? (
+                            <ContextMenuItem onClick={() => handleDuplicateSample(sample)}>
+                              <Plus className="h-4 w-4 mr-2" />
+                              Duplicate Sample
+                            </ContextMenuItem>
+                          ) : (
+                            <ContextMenuItem onClick={() => setSubContractSample(sample)}>
+                              <Plus className="h-4 w-4 mr-2" />
+                              Add Sub-Contract
+                            </ContextMenuItem>
+                          )}
                           <ContextMenuItem onClick={() => handleSelectAll(true)}>
                             <Checkbox className="h-4 w-4 mr-2" checked={false} />
                             Select All

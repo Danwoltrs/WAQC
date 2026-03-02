@@ -323,30 +323,8 @@ export function PrintCuppingCardsDialog({
           console.log(`Card data for ${sample.tracking_number}:`, cardData)
           cards.push(cardData)
 
-          // Also generate cards for sub-contracts (multiple containers under the same sample)
-          const sampleSubContracts = subContracts.filter(sc => sc.sample_id === sample.id)
-          for (const sc of sampleSubContracts) {
-            try {
-              const scQrContent = `WAQC:${sample.id}:${sc.tracking_number}:${templateId}`
-              const scQrCode = await QRCode.toDataURL(scQrContent, {
-                width: 250,
-                margin: 2,
-                errorCorrectionLevel: 'H',
-              })
-
-              cards.push({
-                ...cardData,
-                sample_number: sc.tracking_number,
-                tracking_number: sc.tracking_number,
-                ico_number: sc.ico_number || sample.ico_number,
-                container_nr: sc.container_nr || sample.container_nr,
-                wolthers_contract_nr: sc.wolthers_contract_nr || sample.wolthers_contract_nr,
-                qr_code: scQrCode,
-              })
-            } catch (scError) {
-              console.error(`Error generating card for sub-contract ${sc.tracking_number}:`, scError)
-            }
-          }
+          // PSS sub-contracts share the same physical sample — only 1 cupping card needed (the mother card).
+          // SS duplicates are separate sample records and each gets their own card via the outer loop.
         } catch (sampleError) {
           console.error(`Error generating card for sample ${sample.tracking_number}:`, sampleError)
           // Continue with other samples even if one fails

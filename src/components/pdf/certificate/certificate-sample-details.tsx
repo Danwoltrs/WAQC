@@ -65,6 +65,8 @@ export interface CertificateSampleDetailsProps {
   microOrigin?: string | null
   // Shipment
   shipmentMonth?: string | null
+  // Crop year
+  cropYear?: string | null
 }
 
 interface QuantityResult {
@@ -161,6 +163,7 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
     icoNumber,
     microOrigin,
     shipmentMonth,
+    cropYear,
   } = props
 
   const quantity = formatQuantity(props)
@@ -200,6 +203,11 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
   // Shipment month
   if (shipmentMonth) {
     items.push({ label: 'Ship', value: shipmentMonth })
+  }
+
+  // Crop year
+  if (cropYear) {
+    items.push({ label: 'Crop', value: cropYear })
   }
 
   // Micro-origin

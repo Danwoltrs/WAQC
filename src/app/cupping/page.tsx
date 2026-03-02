@@ -1526,12 +1526,12 @@ function CuppingPageContent() {
                       </CardContent>
                     </Card>
                   ) : (
-                    <div className="space-y-6">
+                    <div className="space-y-4">
                       {/* Attributes Section - Compact with Spider Chart */}
-                      <Card className="p-6 w-fit">
-                        <div className="flex gap-8">
+                      <Card className="p-4 w-fit">
+                        <div className="flex gap-6">
                           {/* Attributes List - Two Columns */}
-                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-2">
+                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-0.5">
                             {attributes.map(({ attribute, scale, validation_rule }) => {
                               const attrScore = cuppingData?.attributes.find(a => a.attribute === attribute)
                               const value = attrScore?.value ?? (scale.type === 'numeric' ? scale.min : null)

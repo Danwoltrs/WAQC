@@ -114,6 +114,7 @@ export interface CertificateData {
     created_at: string | null
     status: 'approved' | 'rejected' | string | null
     certifications: string[] | null  // RA, FT, Organic, EUDR, FLO
+    crop_year: string | null
   }
   supplyChain: {
     supplier: SupplyChainEntity    // Farm/coop (optional)
@@ -781,6 +782,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       // (override route updates certificate but sample update may fail due to RLS)
       status: resolveStatus(sample.status, certificate, contractOverride?.certificateData),
       certifications: null, // Certifications not yet stored on samples
+      crop_year: sample.crop_year ?? null,
     },
     supplyChain: {
       supplier: supplierEntity,

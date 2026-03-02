@@ -864,10 +864,8 @@ export default function GradingPage() {
           // Preserve existing loaded screen sizes
           const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
           allScreens.forEach(screen => {
-            // Only initialize to 0 if not already loaded from quality assessment
-            if (!(screen.screen_size in screenSizes)) {
-              screenSizes[screen.screen_size] = 0
-            }
+            // Ensure the key exists in the map (preserve loaded values, leave new ones absent)
+            // Don't initialize to 0 — inputs should start blank
           })
           gradingData.screen_sizes = screenSizes
         }
@@ -906,10 +904,8 @@ export default function GradingPage() {
           // Preserve existing loaded screen sizes
           const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
           sortedConstraints.forEach((constraint: ScreenSizeConstraint) => {
-            // Only initialize to 0 if not already loaded from quality assessment
-            if (!(constraint.screen_size in screenSizes)) {
-              screenSizes[constraint.screen_size] = 0
-            }
+            // Ensure the key exists in the map (preserve loaded values, leave new ones absent)
+            // Don't initialize to 0 — inputs should start blank
           })
           gradingData.screen_sizes = screenSizes
         }
@@ -1421,7 +1417,8 @@ export default function GradingPage() {
                             const secondColumn = shouldSplit ? screens.slice(midpoint) : []
 
                             const renderScreenRow = (screen: ScreenSizeConstraint) => {
-                              const gramsValue = gradingData?.screen_sizes[screen.screen_size] ?? ''
+                              const rawGrams = gradingData?.screen_sizes[screen.screen_size]
+                              const gramsValue = rawGrams !== undefined ? rawGrams : ''
                               const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
                               const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
 
@@ -1433,7 +1430,10 @@ export default function GradingPage() {
                                     min="0"
                                     step="1"
                                     value={gramsValue}
-                                    onChange={(e) => handleScreenSizeChange(sample.id, screen.screen_size, parseFloat(e.target.value) || 0)}
+                                    onChange={(e) => {
+                                      const val = e.target.value
+                                      handleScreenSizeChange(sample.id, screen.screen_size, val === '' ? 0 : (parseFloat(val) || 0))
+                                    }}
                                     className="h-8 text-sm w-full"
                                     placeholder="grams"
                                   />

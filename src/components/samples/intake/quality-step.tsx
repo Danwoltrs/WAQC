@@ -14,6 +14,24 @@ import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, Command
 import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
 import { StepComponentProps } from './types'
 import { ORIGINS, PROCESSING_METHODS, MICRO_ORIGINS, CERTIFICATIONS } from './constants'
+
+// Generate crop year options: always include 23/24 through current+1, auto-add new year each July
+function getCropYearOptions(): string[] {
+  const now = new Date()
+  const currentYear = now.getFullYear()
+  const currentMonth = now.getMonth() // 0-indexed (6 = July)
+  // If we're in or past July, the current crop year starts this year (e.g. July 2026 => 26/27)
+  // Otherwise, the current crop year started last year (e.g. March 2026 => 25/26)
+  const latestStartYear = currentMonth >= 6 ? currentYear : currentYear - 1
+  const startYear = 2023 // Always start from 23/24
+  const options: string[] = []
+  for (let y = startYear; y <= latestStartYear + 1; y++) {
+    const short1 = String(y).slice(-2)
+    const short2 = String(y + 1).slice(-2)
+    options.push(`${short1}/${short2}`)
+  }
+  return options
+}
 import {
   Dialog,
   DialogContent,
@@ -462,6 +480,23 @@ export function QualityStep({
               </Command>
             </PopoverContent>
           </Popover>
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <Label className="text-xs text-muted-foreground">Crop Year</Label>
+          <Select
+            value={formData.crop_year || 'none'}
+            onValueChange={(value) => updateFormData('crop_year', value === 'none' ? '' : value)}
+          >
+            <SelectTrigger className="w-[110px] h-9">
+              <SelectValue placeholder="Select..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">Select...</SelectItem>
+              {getCropYearOptions().map((cy) => (
+                <SelectItem key={cy} value={cy}>{cy}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex flex-col gap-1.5">
           <Label className="text-xs text-muted-foreground">Quality Specification {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}</Label>
