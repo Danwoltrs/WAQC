@@ -416,6 +416,14 @@ export async function POST(request: NextRequest) {
         insertError.message?.includes('unique constraint') ||
         insertError.code === '23505'
 
+      // If the duplicate is specifically about exporter_sample_number, give a clear message
+      if (isDuplicate && insertError.message?.includes('exporter_sample')) {
+        return NextResponse.json({
+          error: 'A sample with this exporter sample number and container already exists. Please use a different sample number or container number.',
+          details: insertError.message
+        }, { status: 409 })
+      }
+
       if (isDuplicate && attempt < MAX_RETRIES) {
         console.warn(`Duplicate tracking number ${trackingNumber}, retrying (attempt ${attempt + 1})...`)
         continue

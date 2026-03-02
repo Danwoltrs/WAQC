@@ -315,7 +315,11 @@ export default function SamplesPage() {
             s.buyer_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.roaster_contract_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
             s.ico_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-            s.container_nr?.toLowerCase().includes(searchQuery.toLowerCase())
+            s.container_nr?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.exporter_sample_number?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.qc_client_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.quality_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            s.certificate_number?.toLowerCase().includes(searchQuery.toLowerCase())
           )
         }
 
@@ -1045,7 +1049,7 @@ export default function SamplesPage() {
                 <div className="flex-1 relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search by tracking number, supplier, contracts, ICO, container..."
+                    placeholder="Search by tracking, supplier, contract, ICO, container, sample nr, quality..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-9"

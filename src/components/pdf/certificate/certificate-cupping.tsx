@@ -136,9 +136,10 @@ function isInSpec(score: number, min: number | null, max: number | null): boolea
 interface AttributeRowProps {
   attribute: CuppingAttribute
   showRange: boolean
+  descriptor?: string | null
 }
 
-function AttributeRow({ attribute, showRange }: AttributeRowProps) {
+function AttributeRow({ attribute, showRange, descriptor }: AttributeRowProps) {
   const { name, score, allowedMin, allowedMax } = attribute
   const inSpec = isInSpec(score, allowedMin, allowedMax)
   const rangeStr = showRange && allowedMin !== null && allowedMax !== null
@@ -157,7 +158,7 @@ function AttributeRow({ attribute, showRange }: AttributeRowProps) {
           !inSpec && showRange ? cuppingStyles.scoreOutOfSpec : {},
         ]}
       >
-        {formatScore(score)}
+        {formatScore(score)}{descriptor ? ` (${descriptor})` : ''}
       </Text>
     </View>
   )
@@ -176,7 +177,7 @@ export function CertificateCupping({
     return null
   }
 
-  const { attributes, overallScore, comments, isSpecialty, taints, faults } = cuppingData
+  const { attributes, overallScore, comments, isSpecialty, taints, faults, flavorDescriptor } = cuppingData
   const showRanges = hasQualityTemplate
 
   // Check if taints or faults have values
@@ -186,13 +187,17 @@ export function CertificateCupping({
   return (
     <View style={cuppingStyles.container}>
       <View style={cuppingStyles.table}>
-        {attributes.map((attr, index) => (
-          <AttributeRow
-            key={index}
-            attribute={attr}
-            showRange={showRanges}
-          />
-        ))}
+        {attributes.map((attr, index) => {
+          const isFlavorAttr = attr.name.toLowerCase() === 'flavor' || attr.name.toLowerCase() === 'flavor/bebida'
+          return (
+            <AttributeRow
+              key={index}
+              attribute={attr}
+              showRange={showRanges}
+              descriptor={isFlavorAttr ? flavorDescriptor : null}
+            />
+          )
+        })}
       </View>
 
       {/* Taints & Faults */}

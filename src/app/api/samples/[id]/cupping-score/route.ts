@@ -34,7 +34,7 @@ export async function POST(
     const { id: sampleId } = await params
     const body = await request.json()
 
-    const { attributes, defects, cupping_comments } = body
+    const { attributes, defects, cupping_comments, flavor_descriptor } = body
 
     if (!attributes || !Array.isArray(attributes)) {
       return NextResponse.json({ error: 'Invalid attributes data' }, { status: 400 })
@@ -66,12 +66,16 @@ export async function POST(
       .single()
 
     // Convert attributes array to scores object
-    const scoresObject: Record<string, number> = {}
+    const scoresObject: Record<string, number | string> = {}
     attributes.forEach((attr: { attribute: string; value: number | null }) => {
       if (attr.value !== null) {
         scoresObject[attr.attribute] = attr.value
       }
     })
+    // Store flavor descriptor alongside scores
+    if (flavor_descriptor) {
+      scoresObject['Flavor_descriptor'] = flavor_descriptor
+    }
 
     // Prepare cupping score data
     const cuppingScoreData = {

@@ -105,6 +105,7 @@ function mergeEntities(
 export interface CertificateSupplyChainRowProps {
   trackingNumber?: string | null
   wolthersContract?: string | null
+  exporterSampleNumber?: string | null
   supplier?: SupplyChainEntity | null
   exporter: SupplyChainEntity
   shipper?: SupplyChainEntity | null
@@ -117,6 +118,7 @@ export interface CertificateSupplyChainRowProps {
 
 export function CertificateSupplyChainRow({
   wolthersContract,
+  exporterSampleNumber,
   supplier,
   exporter,
   shipper,
@@ -132,10 +134,14 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
-  // Group 1: Wolthers (always first if contract exists)
+  // Group 1: Wolthers (always first if contract or sample number exists)
   const wolthersColumns: MergedColumn[] = wolthersContract
     ? [{ label: 'Wolthers', name: wolthersContract, contracts: [], address: null }]
     : []
+  // Add exporter sample number as a separate column if present
+  if (exporterSampleNumber) {
+    wolthersColumns.push({ label: 'Sample Nr', name: exporterSampleNumber, contracts: [], address: null })
+  }
 
   // Group 2: Supply-side (Seller, Exporter, Shipper) - merge if same name
   const supplySideEntities: Array<{ label: string; entity: SupplyChainEntity | null | undefined }> = [

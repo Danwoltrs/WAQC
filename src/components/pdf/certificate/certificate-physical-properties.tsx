@@ -87,7 +87,7 @@ interface PropertyItemProps {
 }
 
 function PropertyItem({ label, value, unit, small, outOfSpec, specNote, integer }: PropertyItemProps) {
-  if (value === null || value === undefined || value === '') return null
+  if (value === null || value === undefined) return null
 
   const formatValue = (v: string | number) => {
     if (typeof v !== 'number') return v

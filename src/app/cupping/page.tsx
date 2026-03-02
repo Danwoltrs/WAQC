@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
@@ -16,7 +16,7 @@ import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
+import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, ChevronLeft, ChevronRight, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale } from '@/types/cupping-templates'
 import { AttributeScaleType, validateScoreAgainstRule } from '@/types/attribute-scales'
@@ -185,6 +185,44 @@ function CuppingPageContent() {
 
   // Cupping comments per sample
   const [cuppingCommentsMap, setCuppingCommentsMap] = useState<Map<string, string>>(new Map())
+
+  // Flavor descriptor per sample (for general cupping Flavor attribute)
+  const [flavorDescriptorMap, setFlavorDescriptorMap] = useState<Map<string, string>>(new Map())
+
+  // Sample tab scrolling
+  const tabsScrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const updateScrollButtons = useCallback(() => {
+    const el = tabsScrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 0)
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
+  }, [])
+
+  const scrollTabs = useCallback((direction: 'left' | 'right') => {
+    const el = tabsScrollRef.current
+    if (!el) return
+    const amount = direction === 'left' ? -200 : 200
+    el.scrollBy({ left: amount, behavior: 'smooth' })
+    setTimeout(updateScrollButtons, 300)
+  }, [updateScrollButtons])
+
+  // Scroll active tab into view when it changes
+  useEffect(() => {
+    if (!activeSampleId || !tabsScrollRef.current) return
+    const activeTab = tabsScrollRef.current.querySelector(`[data-sample-id="${activeSampleId}"]`)
+    if (activeTab) {
+      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
+      setTimeout(updateScrollButtons, 300)
+    }
+  }, [activeSampleId, updateScrollButtons])
+
+  // Update scroll buttons when samples change
+  useEffect(() => {
+    setTimeout(updateScrollButtons, 100)
+  }, [samples, updateScrollButtons])
 
   // Client quality per sample
   const [clientQualityMap, setClientQualityMap] = useState<Map<string, ClientQuality>>(new Map())
@@ -441,6 +479,7 @@ function CuppingPageContent() {
             const newClientQualityMap = new Map<string, ClientQuality>()
             const newCommentsMap = new Map<string, string>()
             const newDefectConfigsMap = new Map<string, Map<string, TaintFaultDefect>>()
+            const newFlavorDescriptorMap = new Map<string, string>()
 
             for (const sample of detailsData.samples) {
               await loadSampleCuppingConfig(
@@ -450,7 +489,8 @@ function CuppingPageContent() {
                 newAvailableDefectsMap,
                 newCupsPerSampleMap,
                 newClientQualityMap,
-                newDefectConfigsMap
+                newDefectConfigsMap,
+                newFlavorDescriptorMap
               )
 
               // Load existing cupping comments from quality assessment
@@ -474,6 +514,7 @@ function CuppingPageContent() {
             setClientQualityMap(newClientQualityMap)
             setCuppingCommentsMap(newCommentsMap)
             setDefectConfigsMap(newDefectConfigsMap)
+            setFlavorDescriptorMap(newFlavorDescriptorMap)
           }
         } else {
           // No samples assigned - this is normal if user isn't assigned to any sessions
@@ -495,7 +536,8 @@ function CuppingPageContent() {
     availableDefectsMap: Map<string, string[]>,
     cupsMap: Map<string, number>,
     clientQualityMap: Map<string, ClientQuality>,
-    defectConfigsMap: Map<string, Map<string, TaintFaultDefect>>
+    defectConfigsMap: Map<string, Map<string, TaintFaultDefect>>,
+    flavorDescMap?: Map<string, string>
   ) => {
     try {
       // Initialize empty cupping data
@@ -624,6 +666,11 @@ function CuppingPageContent() {
 
               return { ...attr, value: null }
             })
+          }
+
+          // Load flavor descriptor if saved
+          if (userScore.scores?.Flavor_descriptor && flavorDescMap) {
+            flavorDescMap.set(sample.id, userScore.scores.Flavor_descriptor)
           }
 
           // Populate defects from saved taints/faults
@@ -859,11 +906,13 @@ function CuppingPageContent() {
       }
 
       // Call the API to save cupping scores
+      const flavorDesc = flavorDescriptorMap.get(activeSampleId)
       const response = await fetch(`/api/samples/${activeSampleId}/cupping-score`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           attributes: cuppingData.attributes,
+          flavor_descriptor: flavorDesc || null,
           defects: {
             taints: cuppingData.defects.filter(d => d.is_taint),
             faults: cuppingData.defects.filter(d => !d.is_taint)
@@ -1262,55 +1311,81 @@ function CuppingPageContent() {
           <TabsContent value="cupping" className="m-0 flex-1">
             {/* Sample Tabs */}
             <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full h-full flex flex-col">
-          <div className="border-b bg-card sticky top-0 z-50">
-            <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start">
-              {samples.map((sample, index) => {
-                  const isActive = sample.id === activeSampleId
-                  const cuppingData = cuppingDataMap.get(sample.id)
+          <div className="border-b bg-card sticky top-0 z-50 flex items-center">
+            {canScrollLeft && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-14 w-8 shrink-0 rounded-none border-r"
+                onClick={() => scrollTabs('left')}
+              >
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+            )}
+            <div
+              ref={tabsScrollRef}
+              className="overflow-x-auto flex-1 scrollbar-hide"
+              onScroll={updateScrollButtons}
+            >
+              <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start w-max">
+                {samples.map((sample, index) => {
+                    const isActive = sample.id === activeSampleId
+                    const cuppingData = cuppingDataMap.get(sample.id)
 
-                  // Determine background color based on status
-                  let bgColor = ''
+                    // Determine background color based on status
+                    let bgColor = ''
 
-                  if (isActive) {
-                    // Active tabs: yellow for PSS/SS, blue for type samples
-                    bgColor = sample.sample_type === 'type' ? 'bg-blue-500/20' : 'bg-yellow-500/20'
-                  } else {
-                    // Non-active tabs: check if they have data and compliance status
-                    const hasData = cuppingData && (
-                      cuppingData.attributes.some(a => a.value !== null) ||
-                      cuppingData.defects.length > 0
-                    )
+                    if (isActive) {
+                      // Active tabs: yellow for PSS/SS, blue for type samples
+                      bgColor = sample.sample_type === 'type' ? 'bg-blue-500/20' : 'bg-yellow-500/20'
+                    } else {
+                      // Non-active tabs: check if they have data and compliance status
+                      const hasData = cuppingData && (
+                        cuppingData.attributes.some(a => a.value !== null) ||
+                        cuppingData.defects.length > 0
+                      )
 
-                    if (hasData && sample.sample_type !== 'type') {
-                      const compliance = getCuppingComplianceStatus(sample.id)
-                      if (compliance.status === 'fail') {
-                        bgColor = 'bg-red-500/20'
-                      } else if (compliance.status === 'pass') {
-                        bgColor = 'bg-green-500/20'
+                      if (hasData && sample.sample_type !== 'type') {
+                        const compliance = getCuppingComplianceStatus(sample.id)
+                        if (compliance.status === 'fail') {
+                          bgColor = 'bg-red-500/20'
+                        } else if (compliance.status === 'pass') {
+                          bgColor = 'bg-green-500/20'
+                        }
                       }
                     }
-                  }
 
-                  return (
-                    <div key={sample.id} className={`flex items-center ${bgColor}`}>
-                      {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
-                      <TabsTrigger
-                        value={sample.id}
-                        className={`rounded-none border-transparent data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
-                      >
-                        <div className="flex flex-col items-start gap-0.5">
-                          <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                          <span className="text-xs text-muted-foreground">
-                            {sample.sample_type === 'ss' && sample.container_nr
-                              ? sample.container_nr
-                              : <span className="capitalize">{sample.sample_type || 'sample'}</span>}
-                          </span>
-                        </div>
-                      </TabsTrigger>
-                    </div>
-                  )
-                })}
-            </TabsList>
+                    return (
+                      <div key={sample.id} data-sample-id={sample.id} className={`flex items-center ${bgColor}`}>
+                        {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
+                        <TabsTrigger
+                          value={sample.id}
+                          className={`rounded-none border-transparent data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
+                        >
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {sample.sample_type === 'ss' && sample.container_nr
+                                ? sample.container_nr
+                                : <span className="capitalize">{sample.sample_type || 'sample'}</span>}
+                            </span>
+                          </div>
+                        </TabsTrigger>
+                      </div>
+                    )
+                  })}
+              </TabsList>
+            </div>
+            {canScrollRight && (
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-14 w-8 shrink-0 rounded-none border-l"
+                onClick={() => scrollTabs('right')}
+              >
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            )}
           </div>
 
           {samples.map(sample => {
@@ -1476,6 +1551,7 @@ function CuppingPageContent() {
 
                               // Numeric scale with +/- buttons and input
                               if (scale.type === 'numeric') {
+                                const isFlavorAttr = attribute.toLowerCase() === 'flavor' || attribute.toLowerCase() === 'flavor/bebida'
                                 return (
                                   <div key={attribute} className="flex items-center gap-1.5">
                                     <div className="flex items-baseline gap-1">
@@ -1535,13 +1611,35 @@ function CuppingPageContent() {
                                         <Plus className="h-3 w-3" />
                                       </Button>
                                     </div>
+                                    {isFlavorAttr && (
+                                      <Select
+                                        value={flavorDescriptorMap.get(sample.id) || ''}
+                                        onValueChange={(val) => {
+                                          const newMap = new Map(flavorDescriptorMap)
+                                          newMap.set(sample.id, val)
+                                          setFlavorDescriptorMap(newMap)
+                                        }}
+                                      >
+                                        <SelectTrigger className="w-[130px] h-8 text-sm">
+                                          <SelectValue placeholder="Descriptor..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {['Special', 'S.Soft', 'Soft', 'Softish', 'Hard', 'Hardish', 'Rioy', 'Rioy/Rio', 'Rio', 'Strong Rio'].map(desc => (
+                                            <SelectItem key={desc} value={desc}>{desc}</SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    )}
                                   </div>
                                 )
                               }
 
-                              // Wording scale with dropdown
+                              // Wording scale with +/- buttons, text input, label, and dropdown
                               if (scale.type === 'wording' && scale.options) {
-                                const selectedOption = scale.options.find(o => o.value === value)
+                                const sortedOptions = [...scale.options].sort((a, b) => a.display_order - b.display_order)
+                                const selectedOption = sortedOptions.find(o => o.value === value)
+                                const minVal = Math.min(...sortedOptions.map(o => o.value))
+                                const maxVal = Math.max(...sortedOptions.map(o => o.value))
 
                                 return (
                                   <div key={attribute} className="flex items-center gap-1.5">
@@ -1555,6 +1653,46 @@ function CuppingPageContent() {
                                         </span>
                                       )}
                                     </div>
+                                    <div className="flex items-center gap-1">
+                                      <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        onClick={() => decrementScore(sample.id, attribute, scale)}
+                                      >
+                                        <Minus className="h-3 w-3" />
+                                      </Button>
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        value={value ?? ''}
+                                        onChange={(e) => {
+                                          const inputVal = e.target.value
+                                          if (inputVal === '') return
+                                          const v = parseInt(inputVal, 10)
+                                          if (!isNaN(v) && v >= minVal && v <= maxVal) {
+                                            updateAttribute(sample.id, attribute, v)
+                                          }
+                                        }}
+                                        onBlur={(e) => {
+                                          const v = parseInt(e.target.value, 10)
+                                          if (isNaN(v) || v < minVal) {
+                                            updateAttribute(sample.id, attribute, minVal)
+                                          } else if (v > maxVal) {
+                                            updateAttribute(sample.id, attribute, maxVal)
+                                          }
+                                        }}
+                                        className="w-12 px-1 py-1 text-center border rounded text-sm font-semibold"
+                                      />
+                                      <Button
+                                        variant="outline"
+                                        size="icon"
+                                        className="h-7 w-7"
+                                        onClick={() => incrementScore(sample.id, attribute, scale)}
+                                      >
+                                        <Plus className="h-3 w-3" />
+                                      </Button>
+                                    </div>
                                     <Select
                                       value={selectedOption?.label}
                                       onValueChange={(label) => {
@@ -1564,17 +1702,15 @@ function CuppingPageContent() {
                                         }
                                       }}
                                     >
-                                      <SelectTrigger className="w-[190px] h-8 text-sm">
+                                      <SelectTrigger className="w-[130px] h-8 text-sm">
                                         <SelectValue placeholder="Select..." />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        {scale.options
-                                          .sort((a, b) => a.display_order - b.display_order)
-                                          .map((option) => (
-                                            <SelectItem key={option.label} value={option.label}>
-                                              {option.label} ({option.value})
-                                            </SelectItem>
-                                          ))}
+                                        {sortedOptions.map((option) => (
+                                          <SelectItem key={option.label} value={option.label}>
+                                            {option.label} ({option.value})
+                                          </SelectItem>
+                                        ))}
                                       </SelectContent>
                                     </Select>
                                   </div>

@@ -16,7 +16,8 @@ export function SupplyChainStep({
   exporters = [],
   importers = [],
   roasters = [],
-  qcClients = []
+  qcClients = [],
+  approvedPSSSamples = []
 }: StepComponentProps) {
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
   const [createClientType, setCreateClientType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
@@ -106,8 +107,88 @@ export function SupplyChainStep({
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [roasters])
 
+  // Handle PSS selection and auto-fill
+  const handlePSSSelection = (pssId: string) => {
+    updateFormData('linked_pss_sample_id', pssId)
+    if (pssId && pssId !== 'none') {
+      const pss = approvedPSSSamples.find((s: any) => s.id === pssId)
+      if (pss) {
+        // Auto-fill fields from the linked PSS
+        if (pss.origin) updateFormData('origin', pss.origin)
+        if (pss.micro_origin) updateFormData('micro_origin', pss.micro_origin)
+        if (pss.quality_spec_id) {
+          updateFormData('quality_spec_id', pss.quality_spec_id)
+          if (pss.quality_name) updateFormData('quality_name', pss.quality_name)
+        }
+        if (pss.ico_number) updateFormData('ico_number', pss.ico_number)
+        if (pss.seller_name) updateFormData('seller', pss.seller_name)
+        if (pss.exporter_name) updateFormData('shipper', pss.exporter_name)
+        if (pss.exporter_sample_number) updateFormData('exporter_sample_number', pss.exporter_sample_number)
+        if (pss.wolthers_contract_nr) updateFormData('wolthers_contract_nr', pss.wolthers_contract_nr)
+        if (pss.exporter_contract_nr) updateFormData('exporter_contract_nr', pss.exporter_contract_nr)
+        if (pss.processing_method) updateFormData('processing_method', pss.processing_method)
+      }
+    }
+  }
+
   return (
     <div className="space-y-4">
+      {/* PSS Link for SS samples */}
+      {formData.sample_type === 'ss' && (
+        <div className="space-y-4 bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+          <div className="space-y-2">
+            <Label>Link to Approved Pre-Shipment Sample</Label>
+            <Select
+              value={formData.linked_pss_sample_id}
+              onValueChange={handlePSSSelection}
+            >
+              <SelectTrigger className="w-[360px]">
+                <SelectValue placeholder="Select approved PSS sample..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No linked sample</SelectItem>
+                {approvedPSSSamples.length > 0 ? (
+                  approvedPSSSamples.map((sample: any) => (
+                    <SelectItem key={sample.id} value={sample.id}>
+                      {sample.tracking_number} - {sample.origin}
+                    </SelectItem>
+                  ))
+                ) : (
+                  <SelectItem value="no-samples" disabled>
+                    No approved PSS samples
+                  </SelectItem>
+                )}
+              </SelectContent>
+            </Select>
+            {formData.linked_pss_sample_id && formData.linked_pss_sample_id !== 'none' && (
+              <p className="text-xs text-muted-foreground">
+                Fields auto-filled from linked PSS. You can override any values below.
+              </p>
+            )}
+          </div>
+          <div className="flex gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs text-muted-foreground">ICO Number</Label>
+              <Input
+                value={formData.ico_number}
+                onChange={(e) => updateFormData('ico_number', e.target.value)}
+                placeholder="e.g., 123456789"
+                className="w-[180px] h-9"
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label className="text-xs text-muted-foreground">Container Number</Label>
+              <Input
+                value={formData.container_nr}
+                onChange={(e) => updateFormData('container_nr', e.target.value)}
+                placeholder="e.g., MSKU1234567"
+                className="w-[180px] h-9"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Seller Row */}
       <div className="grid grid-cols-[180px_160px_140px_160px] gap-3 items-end">
         <div>

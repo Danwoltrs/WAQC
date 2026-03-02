@@ -111,6 +111,7 @@ export function PrintCuppingCardsDialog({
   const [loading, setLoading] = useState(false)
   const [isReadyForDownload, setIsReadyForDownload] = useState(false)
   const [pdfKey, setPdfKey] = useState(0) // Force PDF regeneration only when needed
+  const [subContracts, setSubContracts] = useState<any[]>([])
 
   const toggleVisibility = (key: keyof SampleVisibilitySettings) => {
     const newValue = !visibility[key]
@@ -146,6 +147,7 @@ export function PrintCuppingCardsDialog({
         const data = await response.json()
         console.log('Received sample details:', data.samples)
         setFullSamples(data.samples || [])
+        setSubContracts(data.sub_contracts || [])
       } else {
         const errorText = await response.text()
         console.error('Failed to load sample details:', response.status, errorText)
@@ -320,6 +322,31 @@ export function PrintCuppingCardsDialog({
 
           console.log(`Card data for ${sample.tracking_number}:`, cardData)
           cards.push(cardData)
+
+          // Also generate cards for sub-contracts (multiple containers under the same sample)
+          const sampleSubContracts = subContracts.filter(sc => sc.sample_id === sample.id)
+          for (const sc of sampleSubContracts) {
+            try {
+              const scQrContent = `WAQC:${sample.id}:${sc.tracking_number}:${templateId}`
+              const scQrCode = await QRCode.toDataURL(scQrContent, {
+                width: 250,
+                margin: 2,
+                errorCorrectionLevel: 'H',
+              })
+
+              cards.push({
+                ...cardData,
+                sample_number: sc.tracking_number,
+                tracking_number: sc.tracking_number,
+                ico_number: sc.ico_number || sample.ico_number,
+                container_nr: sc.container_nr || sample.container_nr,
+                wolthers_contract_nr: sc.wolthers_contract_nr || sample.wolthers_contract_nr,
+                qr_code: scQrCode,
+              })
+            } catch (scError) {
+              console.error(`Error generating card for sub-contract ${sc.tracking_number}:`, scError)
+            }
+          }
         } catch (sampleError) {
           console.error(`Error generating card for sample ${sample.tracking_number}:`, sampleError)
           // Continue with other samples even if one fails

@@ -69,6 +69,7 @@ export interface CuppingData {
   faultDetails: CuppingDefect[]  // Detailed fault info for certificate display
   cleanCup: boolean | null     // Yes/No for clean cup
   uniformCup: boolean | null   // Yes/No for uniform cup
+  flavorDescriptor: string | null  // Flavor descriptor (e.g., "Hard", "Soft")
 }
 
 export interface ScreenSizeLimit {
@@ -109,6 +110,7 @@ export interface CertificateData {
     shipment_month: string | null
     ico_number: string | null
     container_nr: string | null
+    exporter_sample_number: string | null
     created_at: string | null
     status: 'approved' | 'rejected' | string | null
     certifications: string[] | null  // RA, FT, Organic, EUDR, FLO
@@ -208,6 +210,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       shipment_month,
       ico_number,
       container_nr,
+      exporter_sample_number,
       created_at,
       status,
       wolthers_contract_nr,
@@ -559,9 +562,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   if (qualityAssessment?.green_bean_data) {
     const gbd = qualityAssessment.green_bean_data as Record<string, unknown>
     greenBeanAnalysis = {
-      moisture_percentage: (gbd.moisture_percentage as number) || null,
-      density: (gbd.density as number) || null,
-      humidity: (gbd.humidity as number) || null,
+      moisture_percentage: typeof gbd.moisture_percentage === 'number' ? gbd.moisture_percentage : null,
+      density: typeof gbd.density === 'number' ? gbd.density : null,
+      humidity: typeof gbd.humidity === 'number' ? gbd.humidity : null,
       green_aspect: (gbd.green_aspect as string) || (gbd.aspect as string) || null,
       screen_sizes: (gbd.screen_sizes as Record<string, number>) || null,
       defects: parseDefects(gbd.defects),
@@ -593,7 +596,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     }
   } else if (roastDataJson || quakerCount !== null) {
     roastAnalysis = {
-      agtron_score: (roastDataJson?.agtron_score as number) || null,
+      agtron_score: typeof roastDataJson?.agtron_score === 'number' ? roastDataJson.agtron_score : null,
       quaker_count: quakerCount,
       roast_date: (roastDataJson?.roast_date as string) || null,
       roast_level: (roastDataJson?.roast_level as string) || null,
@@ -772,6 +775,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       shipment_month: sample.shipment_month,
       ico_number: contractOverride?.ico_number ?? sample.ico_number,
       container_nr: contractOverride?.container_nr ?? sample.container_nr,
+      exporter_sample_number: sample.exporter_sample_number ?? null,
       created_at: sample.created_at,
       // Use certificate's is_rejected flag as authoritative source for status
       // (override route updates certificate but sample update may fail due to RLS)
@@ -1046,6 +1050,48 @@ type CuppingAttributeValidations = Record<string, { min?: number; max?: number }
 type CuppingAttributeScales = Record<string, { min: number; max: number }>
 
 /**
+ * Deduplicate cupping defects (taints/faults) across multiple cuppers.
+ * Groups by defect name (case-insensitive). If multiple cuppers scored the same
+ * defect at different intensities:
+ * - If intensity difference ≤1: use the higher value
+ * - If intensity difference >1: use the higher value (master cupper should have resolved)
+ * Cups affected are summed across cuppers.
+ */
+function deduplicateDefects(defects: CuppingDefect[]): CuppingDefect[] {
+  if (defects.length === 0) return []
+
+  const grouped = new Map<string, CuppingDefect[]>()
+  for (const defect of defects) {
+    const key = defect.name.toLowerCase().trim()
+    if (!grouped.has(key)) {
+      grouped.set(key, [])
+    }
+    grouped.get(key)!.push(defect)
+  }
+
+  const result: CuppingDefect[] = []
+  for (const [, group] of grouped) {
+    // Use the display name from the first entry
+    const name = group[0].name
+    // Collect all non-null intensities
+    const intensities = group
+      .map(d => d.intensity)
+      .filter((i): i is number => i !== null)
+    // Use the highest intensity
+    const intensity = intensities.length > 0 ? Math.max(...intensities) : null
+    // Sum cups affected
+    const cups = group
+      .map(d => d.cups_affected)
+      .filter((c): c is number => c !== null)
+    const cupsAffected = cups.length > 0 ? Math.max(...cups) : null
+
+    result.push({ name, intensity, cups_affected: cupsAffected })
+  }
+
+  return result
+}
+
+/**
  * Process cupping scores from multiple cuppers into averaged data
  */
 function processCuppingScores(
@@ -1063,6 +1109,7 @@ function processCuppingScores(
   const faultsCounts: number[] = []
   const cleanCupScores: number[] = []
   const uniformCupScores: number[] = []
+  const flavorDescriptors: string[] = []
   // Collect all taints and faults with details
   const allTaints: CuppingDefect[] = []
   const allFaults: CuppingDefect[] = []
@@ -1112,7 +1159,12 @@ function processCuppingScores(
 
     if (score.scores && typeof score.scores === 'object') {
       const scores = score.scores as Record<string, unknown>
+      // Extract flavor descriptor (stored as string)
+      if (typeof scores['Flavor_descriptor'] === 'string') {
+        flavorDescriptors.push(scores['Flavor_descriptor'])
+      }
       for (const [attr, value] of Object.entries(scores)) {
+        if (attr === 'Flavor_descriptor') continue
         if (typeof value === 'number') {
           const attrLower = attr.toLowerCase()
           // Skip taints/faults as numeric attributes - we get them from defects JSONB
@@ -1171,7 +1223,23 @@ function processCuppingScores(
 
   for (const attr of sortedAttrs) {
     const scores = attributeScores[attr]
-    const avg = scores.reduce((a, b) => a + b, 0) / scores.length
+    let avg: number
+
+    // For Flavor/Bebida: apply 0.5 threshold rule
+    // If all cuppers are within 0.5 of each other, average is fine
+    // If spread exceeds 0.5, use the higher value (master cupper should have resolved)
+    const isFlavorAttr = attr.toLowerCase() === 'flavor' || attr.toLowerCase() === 'bebida' || attr.toLowerCase() === 'flavor/bebida'
+    if (isFlavorAttr && scores.length > 1) {
+      const spread = Math.max(...scores) - Math.min(...scores)
+      if (spread > 0.5) {
+        // Spread too large - use the higher value (master cupper's intended final score)
+        avg = Math.max(...scores)
+      } else {
+        avg = scores.reduce((a, b) => a + b, 0) / scores.length
+      }
+    } else {
+      avg = scores.reduce((a, b) => a + b, 0) / scores.length
+    }
 
     // Look up validation for this attribute (case-insensitive match)
     let allowedMin: number | null = null
@@ -1247,6 +1315,22 @@ function processCuppingScores(
     uniformCup = avgUniformCup >= 10
   }
 
+  // Deduplicate taints: group by name, consolidate intensity across cuppers
+  // If intensity difference ≤1, use the higher value
+  // If difference >1, flag with both values (master cupper should resolve)
+  const deduplicatedTaints = deduplicateDefects(allTaints)
+  const deduplicatedFaults = deduplicateDefects(allFaults)
+
+  // Flavor descriptor: use the most common descriptor across cuppers
+  let flavorDescriptor: string | null = null
+  if (flavorDescriptors.length > 0) {
+    const counts = new Map<string, number>()
+    for (const d of flavorDescriptors) {
+      counts.set(d, (counts.get(d) || 0) + 1)
+    }
+    flavorDescriptor = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+  }
+
   return {
     attributes,
     overallScore,
@@ -1254,9 +1338,10 @@ function processCuppingScores(
     isSpecialty,
     taints,
     faults,
-    taintDetails: allTaints,
-    faultDetails: allFaults,
+    taintDetails: deduplicatedTaints,
+    faultDetails: deduplicatedFaults,
     cleanCup,
     uniformCup,
+    flavorDescriptor,
   }
 }

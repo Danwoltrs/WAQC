@@ -124,6 +124,7 @@ export function QualityCertificate({
         <CertificateSupplyChainRow
           trackingNumber={sample.tracking_number}
           wolthersContract={supplyChain.wolthersContract}
+          exporterSampleNumber={sample.exporter_sample_number}
           supplier={supplyChain.supplier}
           exporter={supplyChain.exporter}
           shipper={supplyChain.shipper}

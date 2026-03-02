@@ -172,12 +172,15 @@ export default function ClientsPage() {
     }
   }
 
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+
   const handleDelete = async (client: Client) => {
     if (!confirm(`Are you sure you want to delete client "${client.fantasy_name || client.name}"?`)) {
       return
     }
 
     try {
+      setDeleteError(null)
       const response = await fetch(`/api/clients/${client.id}`, {
         method: 'DELETE'
       })
@@ -186,11 +189,11 @@ export default function ClientsPage() {
         await loadClients()
       } else {
         const error = await response.json()
-        alert(`Failed to delete client: ${error.error}`)
+        setDeleteError(error.error || 'Failed to delete client')
       }
     } catch (error) {
       console.error('Error deleting client:', error)
-      alert('Failed to delete client')
+      setDeleteError('Failed to delete client. Please try again.')
     }
   }
 
@@ -276,6 +279,19 @@ export default function ClientsPage() {
 
   return (
     <MainLayout>
+      {/* Delete Error Dialog */}
+      <Dialog open={!!deleteError} onOpenChange={() => setDeleteError(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Cannot Delete Client</DialogTitle>
+            <DialogDescription>{deleteError}</DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end">
+            <Button variant="outline" onClick={() => setDeleteError(null)}>OK</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       <div className="p-6 space-y-6">
         {/* Header */}
         <div className="flex items-center justify-between">

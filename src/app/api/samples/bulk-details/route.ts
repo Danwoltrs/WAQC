@@ -85,15 +85,25 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    console.log('Fetched samples count:', samples?.length || 0)
-    if (samples && samples.length > 0) {
-      console.log('Sample 0 client:', samples[0].client)
-      console.log('Sample 0 quality_spec:', samples[0].quality_spec)
-      console.log('Sample 0 laboratory:', samples[0].laboratory)
-    }
+    // Fetch sub-contracts for these samples so we can generate one card per container
+    const { data: subContracts } = await supabase
+      .from('sample_contracts')
+      .select(`
+        id,
+        sample_id,
+        tracking_number,
+        ico_number,
+        container_nr,
+        wolthers_contract_nr,
+        buyer_contract_nr,
+        importer_id,
+        client_id
+      `)
+      .in('sample_id', sample_ids)
 
     return NextResponse.json({
-      samples: samples || []
+      samples: samples || [],
+      sub_contracts: subContracts || []
     })
   } catch (error: any) {
     console.error('Error in POST /api/samples/bulk-details:', error)

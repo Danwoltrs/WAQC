@@ -243,7 +243,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    // Check if client is in use by samples
+    // Check if client is in use by samples (as client_id or end_client_id)
     const { count: samplesCount } = await supabase
       .from('samples')
       .select('*', { count: 'exact', head: true })
@@ -251,8 +251,39 @@ export async function DELETE(
 
     if (samplesCount && samplesCount > 0) {
       return NextResponse.json({
-        error: 'Cannot delete client that has associated samples',
+        error: `Cannot delete client: ${samplesCount} sample(s) are linked to this client. Remove or reassign them first.`,
         sample_count: samplesCount
+      }, { status: 400 })
+    }
+
+    // Check if client is used as end_client in samples
+    const { count: endClientCount } = await supabase
+      .from('samples')
+      .select('*', { count: 'exact', head: true })
+      .eq('end_client_id', client.id)
+
+    if (endClientCount && endClientCount > 0) {
+      return NextResponse.json({
+        error: `Cannot delete client: ${endClientCount} sample(s) reference this client as end client.`,
+        sample_count: endClientCount
+      }, { status: 400 })
+    }
+
+    // Check if client is used in sample_contracts
+    const { count: contractClientCount } = await supabase
+      .from('sample_contracts')
+      .select('*', { count: 'exact', head: true })
+      .eq('client_id', client.id)
+
+    const { count: contractEndClientCount } = await supabase
+      .from('sample_contracts')
+      .select('*', { count: 'exact', head: true })
+      .eq('end_client_id', client.id)
+
+    const totalContractRefs = (contractClientCount || 0) + (contractEndClientCount || 0)
+    if (totalContractRefs > 0) {
+      return NextResponse.json({
+        error: `Cannot delete client: ${totalContractRefs} sub-contract(s) reference this client.`,
       }, { status: 400 })
     }
 
@@ -264,7 +295,7 @@ export async function DELETE(
 
     if (qualityCount && qualityCount > 0) {
       return NextResponse.json({
-        error: 'Cannot delete client that has quality specifications. Please delete quality specs first.',
+        error: `Cannot delete client: ${qualityCount} quality specification(s) are assigned. Remove them first.`,
         quality_specs_count: qualityCount
       }, { status: 400 })
     }
@@ -277,6 +308,13 @@ export async function DELETE(
 
     if (deleteError) {
       console.error('Error deleting client:', deleteError)
+      // Provide user-friendly message for FK constraint violations
+      if (deleteError.message?.includes('foreign key') || deleteError.message?.includes('violates') || deleteError.code === '23503') {
+        return NextResponse.json({
+          error: 'Cannot delete client: it is still referenced by other records. Check samples, contracts, or certificates linked to this client.',
+          details: deleteError.message
+        }, { status: 400 })
+      }
       return NextResponse.json({
         error: 'Failed to delete client',
         details: deleteError.message

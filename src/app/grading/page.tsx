@@ -1421,7 +1421,7 @@ export default function GradingPage() {
                             const secondColumn = shouldSplit ? screens.slice(midpoint) : []
 
                             const renderScreenRow = (screen: ScreenSizeConstraint) => {
-                              const gramsValue = gradingData?.screen_sizes[screen.screen_size] || ''
+                              const gramsValue = gradingData?.screen_sizes[screen.screen_size] ?? ''
                               const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
                               const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
 
@@ -1576,7 +1576,7 @@ export default function GradingPage() {
                                     type="number"
                                     min="0"
                                     step="1"
-                                    value={gradingData?.quakers_count || ''}
+                                    value={gradingData?.quakers_count ?? ''}
                                     onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                     className="h-8 text-sm w-16 text-center"
                                   />
@@ -1674,7 +1674,7 @@ export default function GradingPage() {
                                       type="number"
                                       min="0"
                                       step="1"
-                                      value={gradingData?.quakers_count || ''}
+                                      value={gradingData?.quakers_count ?? ''}
                                       onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                       className="h-8 text-sm w-16 text-center"
                                     />
@@ -1929,7 +1929,7 @@ export default function GradingPage() {
                                     <Input
                                       type="number"
                                       min="0"
-                                      value={gradingData?.defect_counts[defect.name] || ''}
+                                      value={gradingData?.defect_counts[defect.name] ?? ''}
                                       onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
                                       className="h-8 text-sm w-14 text-center"
                                       placeholder="0"
@@ -1960,7 +1960,7 @@ export default function GradingPage() {
                                     <Input
                                       type="number"
                                       min="0"
-                                      value={gradingData?.defect_counts[defect.name] || ''}
+                                      value={gradingData?.defect_counts[defect.name] ?? ''}
                                       onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
                                       className="h-8 text-sm w-14 text-center"
                                       placeholder="0"

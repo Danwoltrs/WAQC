@@ -538,57 +538,6 @@ export function QualityStep({
         </div>
       )}
 
-      {/* SS Sample: Link to PSS, ICO Number, and Container */}
-      {formData.sample_type === 'ss' && (
-        <div className="space-y-4 bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
-          <div className="space-y-2">
-            <Label>Link to Approved Pre-Shipment Sample</Label>
-            <Select
-              value={formData.linked_pss_sample_id}
-              onValueChange={(value) => updateFormData('linked_pss_sample_id', value)}
-            >
-              <SelectTrigger className="w-[280px]">
-                <SelectValue placeholder="Select approved PSS sample..." />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No linked sample</SelectItem>
-                {approvedPSSSamples.length > 0 ? (
-                  approvedPSSSamples.map((sample) => (
-                    <SelectItem key={sample.id} value={sample.id}>
-                      {sample.tracking_number} - {sample.origin}
-                    </SelectItem>
-                  ))
-                ) : (
-                  <SelectItem value="no-samples" disabled>
-                    No approved PSS samples
-                  </SelectItem>
-                )}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-xs text-muted-foreground">ICO Number</Label>
-              <Input
-                value={formData.ico_number}
-                onChange={(e) => updateFormData('ico_number', e.target.value)}
-                placeholder="e.g., 123456789"
-                className="w-[180px] h-9"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label className="text-xs text-muted-foreground">Container Number</Label>
-              <Input
-                value={formData.container_nr}
-                onChange={(e) => updateFormData('container_nr', e.target.value)}
-                placeholder="e.g., MSKU1234567"
-                className="w-[180px] h-9"
-              />
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Link Quality Template Dialog */}
       {selectedImporterClient && (
         <LinkQualityTemplateDialog

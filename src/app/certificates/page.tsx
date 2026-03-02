@@ -60,6 +60,7 @@ interface Certificate {
     exporter_sample_number: string | null
     ico_number: string | null
     container_nr: string | null
+    wolthers_contract_nr: string | null
     client?: {
       id: string
       name: string
@@ -81,12 +82,31 @@ interface Certificate {
       name: string
       contact_email: string | null
     }
+    seller?: {
+      id: string
+      name: string
+    }
+    quality_spec_id: string | null
+    quality_spec?: {
+      id: string
+      custom_name: string | null
+      template?: {
+        id: string
+        name: string
+      }
+    } | null
   } | null
 }
 
 interface Client {
   id: string
   name: string
+}
+
+interface Quality {
+  id: string
+  name: string
+  client_id: string
 }
 
 type SortField = 'certificate_number' | 'created_at' | 'issued_to' | 'origin' | 'status'
@@ -108,10 +128,12 @@ const parseTrackingNumber = (trackingNumber: string): string => {
 export default function CertificatesPage() {
   const [certificates, setCertificates] = useState<Certificate[]>([])
   const [clients, setClients] = useState<Client[]>([])
+  const [qualities, setQualities] = useState<Quality[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('all')
   const [clientFilter, setClientFilter] = useState<string>('all')
+  const [qualityFilter, setQualityFilter] = useState<string>('all')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [sortField, setSortField] = useState<SortField>('created_at')
@@ -146,6 +168,7 @@ export default function CertificatesPage() {
       if (response.ok) {
         setCertificates(data.certificates || [])
         setClients(data.clients || [])
+        setQualities(data.qualities || [])
       } else {
         console.error('Failed to load certificates:', data.error)
       }
@@ -160,7 +183,8 @@ export default function CertificatesPage() {
   const filteredCertificates = useMemo(() => {
     let result = [...certificates]
 
-    // Search filter
+    // Search filter - searches across certificate number, client, sample number,
+    // wolthers contract, seller/shipper, exporter, ICO, container, tracking number
     if (searchQuery) {
       const query = searchQuery.toLowerCase()
       result = result.filter(cert =>
@@ -170,7 +194,13 @@ export default function CertificatesPage() {
         cert.sample?.client?.name?.toLowerCase().includes(query) ||
         cert.sample?.client?.company?.toLowerCase().includes(query) ||
         cert.sample?.client?.fantasy_name?.toLowerCase().includes(query) ||
-        cert.sample?.origin?.toLowerCase().includes(query)
+        cert.sample?.origin?.toLowerCase().includes(query) ||
+        cert.sample?.wolthers_contract_nr?.toLowerCase().includes(query) ||
+        cert.sample?.exporter_sample_number?.toLowerCase().includes(query) ||
+        cert.sample?.ico_number?.toLowerCase().includes(query) ||
+        cert.sample?.container_nr?.toLowerCase().includes(query) ||
+        cert.sample?.exporter?.name?.toLowerCase().includes(query) ||
+        cert.sample?.seller?.name?.toLowerCase().includes(query)
       )
     }
 
@@ -182,6 +212,11 @@ export default function CertificatesPage() {
     // Client filter
     if (clientFilter && clientFilter !== 'all') {
       result = result.filter(cert => cert.sample?.client?.id === clientFilter)
+    }
+
+    // Quality filter
+    if (qualityFilter && qualityFilter !== 'all') {
+      result = result.filter(cert => cert.sample?.quality_spec_id === qualityFilter)
     }
 
     // Date filters
@@ -233,7 +268,7 @@ export default function CertificatesPage() {
     })
 
     return result
-  }, [certificates, searchQuery, statusFilter, clientFilter, dateFrom, dateTo, sortField, sortOrder])
+  }, [certificates, searchQuery, statusFilter, clientFilter, qualityFilter, dateFrom, dateTo, sortField, sortOrder])
 
   // Handle column sort
   const handleSort = (field: SortField) => {
@@ -492,7 +527,7 @@ export default function CertificatesPage() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                   <Input
-                    placeholder="Search certificates..."
+                    placeholder="Search by certificate, contract, client, seller, sample..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="pl-10"
@@ -514,7 +549,10 @@ export default function CertificatesPage() {
               </Select>
 
               {/* Client Filter */}
-              <Select value={clientFilter} onValueChange={setClientFilter}>
+              <Select value={clientFilter} onValueChange={(value) => {
+                setClientFilter(value)
+                setQualityFilter('all')
+              }}>
                 <SelectTrigger className="w-[180px]">
                   <SelectValue placeholder="Client" />
                 </SelectTrigger>
@@ -527,6 +565,27 @@ export default function CertificatesPage() {
                   ))}
                 </SelectContent>
               </Select>
+
+              {/* Quality Filter (cascading from client) */}
+              {clientFilter !== 'all' && (() => {
+                const clientQualities = qualities.filter(q => q.client_id === clientFilter)
+                if (clientQualities.length === 0) return null
+                return (
+                  <Select value={qualityFilter} onValueChange={setQualityFilter}>
+                    <SelectTrigger className="w-[180px]">
+                      <SelectValue placeholder="Quality" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">All Qualities</SelectItem>
+                      {clientQualities.map(q => (
+                        <SelectItem key={q.id} value={q.id}>
+                          {q.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )
+              })()}
 
               {/* Date Range */}
               <div className="flex items-center gap-2">
