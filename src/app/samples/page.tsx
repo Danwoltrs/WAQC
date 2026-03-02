@@ -204,7 +204,6 @@ export default function SamplesPage() {
 
   // Certificate preview modal states
   const [previewSample, setPreviewSample] = useState<Sample | null>(null)
-  const [previewLoading, setPreviewLoading] = useState(false)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [downloadingSampleId, setDownloadingSampleId] = useState<string | null>(null)
 
@@ -726,32 +725,15 @@ export default function SamplesPage() {
   }
 
   // Certificate handlers
-  const handleViewCertificate = async (sample: Sample) => {
+  const handleViewCertificate = (sample: Sample) => {
     setPreviewSample(sample)
-    setPreviewLoading(true)
-    setPreviewPdfUrl(null)
-
-    try {
-      const response = await fetch(`/api/samples/${sample.id}/certificate`)
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        setPreviewPdfUrl(url)
-      }
-    } catch (error) {
-      console.error('Error loading certificate preview:', error)
-    } finally {
-      setPreviewLoading(false)
-    }
+    // Use direct API URL so the browser's PDF viewer respects Content-Disposition filename
+    setPreviewPdfUrl(`/api/samples/${sample.id}/certificate`)
   }
 
   const handleClosePreview = () => {
-    if (previewPdfUrl) {
-      window.URL.revokeObjectURL(previewPdfUrl)
-    }
     setPreviewSample(null)
     setPreviewPdfUrl(null)
-    setPreviewLoading(false)
   }
 
   const handleDownloadCertificate = async (sample: Sample) => {
@@ -801,23 +783,9 @@ export default function SamplesPage() {
     }
   }
 
-  const handleViewSubContractCertificate = async (sampleId: string, contractId: string) => {
+  const handleViewSubContractCertificate = (sampleId: string, contractId: string) => {
     setPreviewSample(samples.find(s => s.id === sampleId) || null)
-    setPreviewLoading(true)
-    setPreviewPdfUrl(null)
-
-    try {
-      const response = await fetch(`/api/samples/${sampleId}/certificate?contract_id=${contractId}`)
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        setPreviewPdfUrl(url)
-      }
-    } catch (error) {
-      console.error('Error loading sub-contract certificate preview:', error)
-    } finally {
-      setPreviewLoading(false)
-    }
+    setPreviewPdfUrl(`/api/samples/${sampleId}/certificate?contract_id=${contractId}`)
   }
 
   const handleDeleteSubContract = (sample: Sample, sc: SubContract) => {
@@ -1859,11 +1827,7 @@ export default function SamplesPage() {
           </DialogHeader>
 
           <div className="flex-1 min-h-[75vh] bg-muted rounded-lg overflow-hidden">
-            {previewLoading ? (
-              <div className="flex items-center justify-center h-[75vh]">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : previewPdfUrl ? (
+            {previewPdfUrl ? (
               <iframe
                 src={previewPdfUrl}
                 className="w-full h-[75vh] border-0"
