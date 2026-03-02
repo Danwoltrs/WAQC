@@ -1423,7 +1423,7 @@ export default function GradingPage() {
                               const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
 
                               return (
-                                <div key={screen.screen_size} className="grid grid-cols-[70px_60px_45px] gap-1.5 items-center">
+                                <div key={screen.screen_size} className="grid grid-cols-[70px_80px_45px] gap-1.5 items-center">
                                   <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
                                   <Input
                                     type="number"
@@ -1576,7 +1576,7 @@ export default function GradingPage() {
                                     type="number"
                                     min="0"
                                     step="1"
-                                    value={gradingData?.quakers_count ?? ''}
+                                    value={gradingData?.quakers_count || ''}
                                     onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
                                     className="h-8 text-sm w-16 text-center"
                                   />
@@ -1585,14 +1585,14 @@ export default function GradingPage() {
                                 {/* Humidity and Density side by side */}
                                 <div className="flex gap-4">
                                   {/* Humidity */}
-                                  <div className="flex items-center gap-1">
-                                    <Label className={`text-sm whitespace-nowrap w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                  <div className="flex items-center gap-2">
+                                    <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                       Humidity (%)
                                     </Label>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage != null ? String(gradingData.moisture_percentage) : '')}
+                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage ? String(gradingData.moisture_percentage) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
@@ -1624,14 +1624,14 @@ export default function GradingPage() {
                                   </div>
 
                                   {/* Density */}
-                                  <div className="flex items-center gap-1">
-                                    <Label className="text-sm whitespace-nowrap w-20">
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-sm whitespace-nowrap">
                                       Density (G/L)
                                     </Label>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density != null ? String(gradingData.density) : '')}
+                                      value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density ? String(gradingData.density) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
@@ -1684,14 +1684,14 @@ export default function GradingPage() {
                                 {/* Humidity and Density side by side */}
                                 <div className="flex gap-4">
                                   {/* Humidity */}
-                                  <div className="flex items-center gap-1">
-                                    <Label className={`text-sm whitespace-nowrap w-20 ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                  <div className="flex items-center gap-2">
+                                    <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                       Humidity (%)
                                     </Label>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage != null ? String(gradingData.moisture_percentage) : '')}
+                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage ? String(gradingData.moisture_percentage) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
@@ -1723,14 +1723,14 @@ export default function GradingPage() {
                                   </div>
 
                                   {/* Density */}
-                                  <div className="flex items-center gap-1">
-                                    <Label className="text-sm whitespace-nowrap w-20">
+                                  <div className="flex items-center gap-2">
+                                    <Label className="text-sm whitespace-nowrap">
                                       Density (G/L)
                                     </Label>
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density != null ? String(gradingData.density) : '')}
+                                      value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density ? String(gradingData.density) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
