@@ -1579,6 +1579,11 @@ export default function SamplesPage() {
                                     <button onClick={() => setDetailSampleId(sample.id)} className="font-medium hover:underline text-primary text-left">
                                       {sc.tracking_number}
                                     </button>
+                                    {(sc.container_nr || sc.ico_number) && (
+                                      <div className="text-[10px] text-muted-foreground">
+                                        {[sc.container_nr, sc.ico_number ? `ICO: ${sc.ico_number}` : null].filter(Boolean).join(' | ')}
+                                      </div>
+                                    )}
                                   </td>
                                 )}
                                 {/* Origin - inherited */}
