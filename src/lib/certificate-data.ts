@@ -1079,7 +1079,7 @@ function deduplicateDefects(defects: CuppingDefect[]): CuppingDefect[] {
       .filter((i): i is number => i !== null)
     // Use the highest intensity
     const intensity = intensities.length > 0 ? Math.max(...intensities) : null
-    // Sum cups affected
+    // Use max cups affected (cuppers evaluate the same set of cups)
     const cups = group
       .map(d => d.cups_affected)
       .filter((c): c is number => c !== null)

@@ -1592,7 +1592,7 @@ export default function GradingPage() {
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage != null && gradingData.moisture_percentage !== 0 ? String(gradingData.moisture_percentage) : '')}
+                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage != null ? String(gradingData.moisture_percentage) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
@@ -1691,7 +1691,7 @@ export default function GradingPage() {
                                     <Input
                                       type="text"
                                       inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage != null && gradingData.moisture_percentage !== 0 ? String(gradingData.moisture_percentage) : '')}
+                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage != null ? String(gradingData.moisture_percentage) : '')}
                                       onChange={(e) => {
                                         const val = e.target.value
                                         if (val === '' || /^\d*\.?\d*$/.test(val)) {
