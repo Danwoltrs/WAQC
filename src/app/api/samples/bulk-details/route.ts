@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
         client_id,
         quality_spec_id,
         laboratory_id,
+        created_at,
         client:clients!samples_client_id_fkey(
           id,
           company,

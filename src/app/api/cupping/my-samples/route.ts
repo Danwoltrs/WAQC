@@ -156,6 +156,7 @@ export async function GET(request: NextRequest) {
         workflow_stage,
         status,
         quality_spec_id,
+        created_at,
         client:clients!samples_client_id_fkey(id, company, fantasy_name),
         quality_spec:client_qualities(
           id,

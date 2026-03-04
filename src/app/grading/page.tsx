@@ -1049,9 +1049,9 @@ export default function GradingPage() {
       const payload = {
         green_bean_data: {
           screen_sizes: gradingData.screen_sizes,
-          moisture_percentage: gradingData.moisture_percentage,
-          density: gradingData.density,
-          quakers: gradingData.quakers_count,
+          moisture_percentage: gradingData.moisture_percentage || null,
+          density: gradingData.density || null,
+          quakers: gradingData.quakers_count || null,
           green_aspect: gradingData.green_aspect,
           defects: {
             counts: gradingData.defect_counts,
