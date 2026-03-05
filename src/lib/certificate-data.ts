@@ -317,20 +317,39 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     .limit(1)
     .single()
 
-  // Fetch cupping scores - average across all cuppers
-  // Get all scores for this sample regardless of session status
-  // (certificates should always show all available cupping data)
+  // Fetch cupping session to check for master cupper
+  const { data: cuppingSession } = await (supabase as any)
+    .from('cupping_sessions')
+    .select('id, cupper_ids, master_cupper_id')
+    .contains('sample_ids', [sampleId])
+    .in('status', ['active', 'review', 'completed', 'finalized'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .single()
+
+  const masterCupperId: string | null = cuppingSession?.master_cupper_id || null
+  const sessionCupperIds: string[] | null = (cuppingSession?.cupper_ids as string[]) || null
+
+  // Fetch cupping scores with cupper_id for master cupper filtering
   let cuppingScores = null
 
-  const { data: allCuppingScores } = await supabase
+  let scoreQuery = supabase
     .from('cupping_scores')
     .select(`
       scores,
       notes,
-      defects
+      defects,
+      cupper_id
     `)
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
+
+  // Filter to only assigned cuppers if session exists
+  if (sessionCupperIds && sessionCupperIds.length > 0) {
+    scoreQuery = scoreQuery.in('cupper_id', sessionCupperIds)
+  }
+
+  const { data: allCuppingScores } = await scoreQuery
 
   if (allCuppingScores && allCuppingScores.length > 0) {
     cuppingScores = allCuppingScores
@@ -606,15 +625,17 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   }
 
   // Process cupping scores
+  // When a master cupper exists, use their scores as final (no averaging)
   let cuppingData: CuppingData | null = null
   if (cuppingScores && cuppingScores.length > 0) {
     cuppingData = processCuppingScores(
-      cuppingScores,
+      cuppingScores as any,
       isSpecialty,
       cuppingAttributeValidations,
       cuppingAttributeScales,
       qualityAssessment?.clean_cup ?? null,
-      qualityAssessment?.uniform_cup ?? null
+      qualityAssessment?.uniform_cup ?? null,
+      masterCupperId
     )
   }
 
@@ -1094,16 +1115,21 @@ function deduplicateDefects(defects: CuppingDefect[]): CuppingDefect[] {
 }
 
 /**
- * Process cupping scores from multiple cuppers into averaged data
+ * Process cupping scores from multiple cuppers into final certificate data
+ * When a master cupper exists, their scores are used as-is (no averaging)
+ * Defect cup counts use MAX consolidation (not sum/average)
  */
 function processCuppingScores(
-  cuppingScores: Array<{ scores: unknown; notes: string | null; defects?: unknown }>,
+  cuppingScores: Array<{ scores: unknown; notes: string | null; defects?: unknown; cupper_id?: string }>,
   isSpecialty: boolean,
   attributeValidations?: CuppingAttributeValidations,
   attributeScales?: CuppingAttributeScales,
   persistedCleanCup?: boolean | null,
-  persistedUniformCup?: boolean | null
+  persistedUniformCup?: boolean | null,
+  masterCupperId?: string | null
 ): CuppingData {
+  // Cast to allow cupper_id access
+  const scoresWithCupper = cuppingScores as Array<{ scores: unknown; notes: string | null; defects?: unknown; cupper_id?: string | null }>
   // Collect all scores by attribute
   const attributeScores: Record<string, number[]> = {}
   const allNotes: string[] = []
@@ -1223,24 +1249,31 @@ function processCuppingScores(
     return aIndex - bIndex
   })
 
+  // If master cupper exists, extract their scores separately
+  let masterScoreMap: Record<string, number> | null = null
+  if (masterCupperId) {
+    const masterEntry = scoresWithCupper.find(s => s.cupper_id === masterCupperId)
+    if (masterEntry?.scores && typeof masterEntry.scores === 'object') {
+      masterScoreMap = masterEntry.scores as Record<string, number>
+    }
+  }
+
   for (const attr of sortedAttrs) {
     const scores = attributeScores[attr]
-    let avg: number
+    let finalValue: number
 
-    // For Flavor/Bebida: apply 0.5 threshold rule
-    // If all cuppers are within 0.5 of each other, average is fine
-    // If spread exceeds 0.5, use the higher value (master cupper should have resolved)
-    const isFlavorAttr = attr.toLowerCase() === 'flavor' || attr.toLowerCase() === 'bebida' || attr.toLowerCase() === 'flavor/bebida'
-    if (isFlavorAttr && scores.length > 1) {
-      const spread = Math.max(...scores) - Math.min(...scores)
-      if (spread > 0.5) {
-        // Spread too large - use the higher value (master cupper's intended final score)
-        avg = Math.max(...scores)
+    if (masterScoreMap) {
+      // Master cupper exists: use their score directly (no averaging)
+      const masterVal = masterScoreMap[attr]
+      if (masterVal !== undefined && masterVal !== null && typeof masterVal === 'number') {
+        finalValue = masterVal
       } else {
-        avg = scores.reduce((a, b) => a + b, 0) / scores.length
+        // Master cupper didn't score this attribute; fall back to mean
+        finalValue = scores.reduce((a, b) => a + b, 0) / scores.length
       }
     } else {
-      avg = scores.reduce((a, b) => a + b, 0) / scores.length
+      // No master cupper: use mean
+      finalValue = scores.reduce((a, b) => a + b, 0) / scores.length
     }
 
     // Look up validation for this attribute (case-insensitive match)
@@ -1278,14 +1311,14 @@ function processCuppingScores(
 
     attributes.push({
       name: attr,
-      score: Math.round(avg * 100) / 100,
+      score: Math.round(finalValue * 100) / 100,
       allowedMin,
       allowedMax,
       scaleMin,
       scaleMax,
     })
 
-    totalScore += avg
+    totalScore += finalValue
     scoreCount++
   }
 
@@ -1293,12 +1326,13 @@ function processCuppingScores(
   // For other methods, it might be an average
   const overallScore = scoreCount > 0 ? Math.round(totalScore * 100) / 100 : null
 
-  // Calculate average taints and faults (sum up if multiple cuppers)
+  // Defect cup consolidation: use MAX across cuppers (not sum or average)
+  // When multiple cuppers report finding a defect in 1 cup, that is 1 cup - not N cups
   const taints = taintsCounts.length > 0
-    ? Math.round(taintsCounts.reduce((a, b) => a + b, 0) / taintsCounts.length * 10) / 10
+    ? Math.max(...taintsCounts)
     : null
   const faults = faultsCounts.length > 0
-    ? Math.round(faultsCounts.reduce((a, b) => a + b, 0) / faultsCounts.length * 10) / 10
+    ? Math.max(...faultsCounts)
     : null
 
   // Clean Cup and Uniform Cup: prefer persisted values from quality_assessments

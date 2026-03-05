@@ -37,8 +37,9 @@ interface AttributeStats {
   values: number[]
   hasDiscrepancy: boolean
   outliers: string[] // Cupper IDs who are outliers
-  finalScore: number // Rounded average score (to nearest 0.25)
+  finalScore: number // Master cupper's score or rounded mean (to nearest increment)
   range: number // max - min (discrepancy amount)
+  increment: number // The quality spec increment for this attribute
 }
 
 interface DefectLevelStats {
@@ -135,6 +136,36 @@ export async function GET(request: NextRequest) {
       }
     }
 
+    // Fetch quality spec increments per attribute for proper rounding
+    const attributeIncrements: Record<string, number> = {}
+    let defaultIncrement = 0.25
+    if (sampleId) {
+      const { data: sampleSpec } = await supabaseAdmin
+        .from('samples')
+        .select('quality_spec_id')
+        .eq('id', sampleId)
+        .single()
+
+      if (sampleSpec?.quality_spec_id) {
+        const { data: specData } = await supabaseAdmin
+          .from('client_qualities')
+          .select('custom_parameters, template:quality_templates(parameters)')
+          .eq('id', sampleSpec.quality_spec_id)
+          .single()
+
+        if (specData) {
+          const params = (specData as any).custom_parameters || (specData.template as any)?.parameters
+          if (params?.cupping_attributes && Array.isArray(params.cupping_attributes)) {
+            for (const attr of params.cupping_attributes) {
+              if (attr.attribute && attr.scale?.type === 'numeric' && attr.scale?.increment) {
+                attributeIncrements[attr.attribute] = attr.scale.increment
+              }
+            }
+          }
+        }
+      }
+    }
+
     // Build query
     let query = supabase
       .from('cupping_scores')
@@ -226,18 +257,29 @@ export async function GET(request: NextRequest) {
       const outliers = detectOutliers(cupperValues, stats)
       const range = stats.max - stats.min
 
-      // If a master cupper is designated, use their score as the final score
-      // Otherwise fall back to the rounded mean
+      // Look up the quality spec increment for this attribute (case-insensitive)
+      let increment = defaultIncrement
+      const lowerAttr = attribute.toLowerCase()
+      for (const [key, inc] of Object.entries(attributeIncrements)) {
+        if (key.toLowerCase() === lowerAttr) {
+          increment = inc
+          break
+        }
+      }
+
+      // If a master cupper is designated, use their score as the initial final score
+      // The master cupper will confirm/adjust on the validation screen
+      // Otherwise use the rounded mean as a starting point for the master cupper
       let finalScore: number
       if (masterCupperId) {
         const masterScore = scores.find((s: any) => s.cupper_id === masterCupperId)
         const masterScores = masterScore?.scores as Record<string, number> | undefined
         const masterValue = masterScores?.[attribute]
         finalScore = (masterValue !== undefined && masterValue !== null)
-          ? masterValue
-          : roundToNearestIncrement(stats.mean, 0.25)
+          ? roundToNearestIncrement(masterValue, increment)
+          : roundToNearestIncrement(stats.mean, increment)
       } else {
-        finalScore = roundToNearestIncrement(stats.mean, 0.25)
+        finalScore = roundToNearestIncrement(stats.mean, increment)
       }
 
       attributeStats[attribute] = {
@@ -247,6 +289,7 @@ export async function GET(request: NextRequest) {
         outliers,
         finalScore,
         range,
+        increment,
       }
 
       if (outliers.length > 0) {
@@ -275,6 +318,11 @@ export async function GET(request: NextRequest) {
     const taintLevels: Map<string, Map<string, number>> = new Map()
     const faultLevels: Map<string, Map<string, number>> = new Map()
 
+    // Track cups_affected per cupper per defect for MAX consolidation (Task 2)
+    // Structure: Map<defectName, Map<cupperName, cups_affected>>
+    const taintCups: Map<string, Map<string, number>> = new Map()
+    const faultCups: Map<string, Map<string, number>> = new Map()
+
     scores.forEach((score: any) => {
       const cupperName = score.cupper?.full_name || score.cupper_id || 'Unknown'
       const defects = score.defects || {}
@@ -292,12 +340,15 @@ export async function GET(request: NextRequest) {
           let taintName: string
           let taintIntensity = 0
 
+          let taintCupsAffected = 0
+
           if (typeof taint === 'string') {
             taintName = taint
           } else if (taint && typeof taint === 'object') {
             // It's an object - extract name property
             taintName = taint.name || taint.defect_name || String(taint)
             taintIntensity = taint.intensity || taint.level || 0
+            taintCupsAffected = taint.cups_affected || 0
           } else {
             // Fallback - convert to string
             taintName = String(taint)
@@ -314,6 +365,14 @@ export async function GET(request: NextRequest) {
                 taintLevels.set(taintName, new Map())
               }
               taintLevels.get(taintName)!.set(cupperName, taintIntensity)
+            }
+
+            // Track cups_affected per cupper (for MAX consolidation)
+            if (taintCupsAffected > 0) {
+              if (!taintCups.has(taintName)) {
+                taintCups.set(taintName, new Map())
+              }
+              taintCups.get(taintName)!.set(cupperName, taintCupsAffected)
             }
           }
         })
@@ -340,6 +399,7 @@ export async function GET(request: NextRequest) {
           // Extract name whether it's a string or object - be very defensive
           let faultName: string
           let faultIntensity = 0
+          let faultCupsAffected = 0
 
           if (typeof fault === 'string') {
             faultName = fault
@@ -347,6 +407,7 @@ export async function GET(request: NextRequest) {
             // It's an object - extract name property
             faultName = fault.name || fault.defect_name || String(fault)
             faultIntensity = fault.intensity || fault.level || 0
+            faultCupsAffected = fault.cups_affected || 0
           } else {
             // Fallback - convert to string
             faultName = String(fault)
@@ -363,6 +424,14 @@ export async function GET(request: NextRequest) {
                 faultLevels.set(faultName, new Map())
               }
               faultLevels.get(faultName)!.set(cupperName, faultIntensity)
+            }
+
+            // Track cups_affected per cupper (for MAX consolidation)
+            if (faultCupsAffected > 0) {
+              if (!faultCups.has(faultName)) {
+                faultCups.set(faultName, new Map())
+              }
+              faultCups.get(faultName)!.set(cupperName, faultCupsAffected)
             }
           }
         })
@@ -491,6 +560,78 @@ export async function GET(request: NextRequest) {
       })
     }
 
+    // Build consolidated defect data using MAX logic (Task 2)
+    // The number of defective cups = MAX cups reported by any single cupper for that defect
+    const consolidatedDefects: Array<{
+      name: string
+      type: 'taint' | 'fault'
+      consolidated_cups: number // MAX across cuppers
+      consolidated_intensity: number // MAX across cuppers
+      per_cupper: Record<string, { cups: number; intensity: number }>
+    }> = []
+
+    // Consolidate taints
+    allTaints.forEach(taintName => {
+      const perCupper: Record<string, { cups: number; intensity: number }> = {}
+      const cupsMap = taintCups.get(taintName) || new Map()
+      const levelsMap = taintLevels.get(taintName) || new Map()
+
+      // Collect per-cupper data
+      const allCupperNames = new Set([...cupsMap.keys(), ...levelsMap.keys()])
+      // Also add cuppers who reported the defect but with no numeric data
+      cupperDefects.forEach((defects, cupperName) => {
+        if (defects.taints.has(taintName)) allCupperNames.add(cupperName)
+      })
+
+      allCupperNames.forEach(cupperName => {
+        perCupper[cupperName] = {
+          cups: cupsMap.get(cupperName) || 1, // Default: at least 1 cup if reported
+          intensity: levelsMap.get(cupperName) || 0,
+        }
+      })
+
+      const allCups = Object.values(perCupper).map(d => d.cups)
+      const allIntensities = Object.values(perCupper).map(d => d.intensity).filter(i => i > 0)
+
+      consolidatedDefects.push({
+        name: taintName,
+        type: 'taint',
+        consolidated_cups: allCups.length > 0 ? Math.max(...allCups) : 1,
+        consolidated_intensity: allIntensities.length > 0 ? Math.max(...allIntensities) : 0,
+        per_cupper: perCupper,
+      })
+    })
+
+    // Consolidate faults
+    allFaults.forEach(faultName => {
+      const perCupper: Record<string, { cups: number; intensity: number }> = {}
+      const cupsMap = faultCups.get(faultName) || new Map()
+      const levelsMap = faultLevels.get(faultName) || new Map()
+
+      const allCupperNames = new Set([...cupsMap.keys(), ...levelsMap.keys()])
+      cupperDefects.forEach((defects, cupperName) => {
+        if (defects.faults.has(faultName)) allCupperNames.add(cupperName)
+      })
+
+      allCupperNames.forEach(cupperName => {
+        perCupper[cupperName] = {
+          cups: cupsMap.get(cupperName) || 1,
+          intensity: levelsMap.get(cupperName) || 0,
+        }
+      })
+
+      const allCups = Object.values(perCupper).map(d => d.cups)
+      const allIntensities = Object.values(perCupper).map(d => d.intensity).filter(i => i > 0)
+
+      consolidatedDefects.push({
+        name: faultName,
+        type: 'fault',
+        consolidated_cups: allCups.length > 0 ? Math.max(...allCups) : 1,
+        consolidated_intensity: allIntensities.length > 0 ? Math.max(...allIntensities) : 0,
+        per_cupper: perCupper,
+      })
+    })
+
     // Build aggregated result
     // Convert Map to serializable object for defect_levels
     const serializableDefectLevelStats = defectLevelStats.map(stat => ({
@@ -557,6 +698,7 @@ export async function GET(request: NextRequest) {
       success: true,
       aggregated,
       individual_scores: individualScores,
+      consolidated_defects: consolidatedDefects,
       can_see_all_scores: canSeeAllScores,
       master_cupper_id: masterCupperId,
     })

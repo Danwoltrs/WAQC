@@ -247,6 +247,7 @@ export async function POST(request: NextRequest) {
 
       const { data: allCuppingScores } = await cupScoreQuery
 
+      // Use MAX consolidation: the number of defective cups = MAX reported by any single cupper
       let totalTaints = 0
       let totalFaults = 0
 
@@ -255,10 +256,10 @@ export async function POST(request: NextRequest) {
           if (score.defects && typeof score.defects === 'object') {
             const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
             if (Array.isArray(defects.taints)) {
-              totalTaints += defects.taints.length
+              totalTaints = Math.max(totalTaints, defects.taints.length)
             }
             if (Array.isArray(defects.faults)) {
-              totalFaults += defects.faults.length
+              totalFaults = Math.max(totalFaults, defects.faults.length)
             }
           }
         }
@@ -689,7 +690,7 @@ async function evaluateQualityCompliance(
   // This prevents old scores from removed cuppers from affecting compliance evaluation
   let scoreQuery = supabaseAdmin
     .from('cupping_scores')
-    .select('scores, defects, cupper_id')
+    .select('scores, defects, cupper_id, session_id')
     .eq('sample_id', sampleId)
 
   if (assignedCupperIds && assignedCupperIds.length > 0) {
@@ -710,16 +711,46 @@ async function evaluateQualityCompliance(
   // 1. Check cupping attributes against thresholds
   // Handle both array format (new) and object format (legacy) for cupping_attributes
   if (cuppingScores && cuppingScores.length > 0 && parameters.cupping_attributes) {
-    // Calculate average scores across all cuppers
-    const avgScores: Record<string, number> = {}
-    const scoreCounts: Record<string, number> = {}
+    // Find the master cupper's session for this sample
+    const { data: sampleSession } = await supabaseAdmin
+      .from('cupping_sessions')
+      .select('master_cupper_id')
+      .contains('sample_ids', [sampleId])
+      .in('status', ['active', 'review', 'completed', 'finalized'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
 
+    const sessionMasterCupperId = sampleSession?.master_cupper_id || null
+
+    // Get final scores: use master cupper's scores if designated, otherwise mean
+    const finalScores: Record<string, number> = {}
+
+    if (sessionMasterCupperId) {
+      // Master cupper's scores are authoritative
+      const masterScore = cuppingScores.find(s => s.cupper_id === sessionMasterCupperId)
+      if (masterScore?.scores && typeof masterScore.scores === 'object') {
+        for (const [attr, value] of Object.entries(masterScore.scores as Record<string, number>)) {
+          if (typeof value === 'number') {
+            finalScores[attr] = value
+          }
+        }
+      }
+    }
+
+    // Fill in any missing attributes with mean across cuppers
     for (const score of cuppingScores) {
       if (score.scores && typeof score.scores === 'object') {
         for (const [attr, value] of Object.entries(score.scores as Record<string, number>)) {
-          if (typeof value === 'number') {
-            avgScores[attr] = (avgScores[attr] || 0) + value
-            scoreCounts[attr] = (scoreCounts[attr] || 0) + 1
+          if (typeof value === 'number' && finalScores[attr] === undefined) {
+            // Not set by master cupper, compute mean
+            let sum = 0
+            let count = 0
+            for (const s of cuppingScores) {
+              const sv = (s.scores as Record<string, number>)?.[attr]
+              if (typeof sv === 'number') { sum += sv; count++ }
+            }
+            finalScores[attr] = count > 0 ? sum / count : value
           }
         }
       }
@@ -749,10 +780,8 @@ async function evaluateQualityCompliance(
       }
     }
 
-    // Calculate averages and check against thresholds
-    for (const [attr, total] of Object.entries(avgScores)) {
-      const avg = total / (scoreCounts[attr] || 1)
-
+    // Check final scores against thresholds
+    for (const [attr, score] of Object.entries(finalScores)) {
       // Try exact match first, then case-insensitive match
       let limits = validationMap[attr]
       if (!limits) {
@@ -766,11 +795,11 @@ async function evaluateQualityCompliance(
       }
 
       if (limits) {
-        if (limits.min !== undefined && avg < limits.min) {
-          violations.push(`${attr}: ${avg.toFixed(2)} is below minimum (${limits.min})`)
+        if (limits.min !== undefined && score < limits.min) {
+          violations.push(`${attr}: ${score.toFixed(2)} is below minimum (${limits.min})`)
         }
-        if (limits.max !== undefined && avg > limits.max) {
-          violations.push(`${attr}: ${avg.toFixed(2)} is above maximum (${limits.max})`)
+        if (limits.max !== undefined && score > limits.max) {
+          violations.push(`${attr}: ${score.toFixed(2)} is above maximum (${limits.max})`)
         }
       }
     }
@@ -937,26 +966,26 @@ async function evaluateQualityCompliance(
     const tfConfig = parameters.taint_fault_configuration
     const tfRules = tfConfig?.rules
 
-    // Count taints and faults from all cupping scores
-    let totalTaints = 0
-    let totalFaults = 0
+    // Count taints and faults using MAX consolidation across cuppers
+    // When multiple cuppers each find a defect, use the MAX cups from any single cupper
+    let maxTaints = 0
+    let maxFaults = 0
 
     for (const score of cuppingScores) {
       if (score.defects && typeof score.defects === 'object') {
         const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
         if (Array.isArray(defects.taints)) {
-          totalTaints += defects.taints.length
+          maxTaints = Math.max(maxTaints, defects.taints.length)
         }
         if (Array.isArray(defects.faults)) {
-          totalFaults += defects.faults.length
+          maxFaults = Math.max(maxFaults, defects.faults.length)
         }
       }
     }
 
-    // Average across cuppers (round up - any cupper detecting a defect counts)
-    const cupperCount = cuppingScores.length
-    const avgTaints = cupperCount > 0 ? Math.ceil(totalTaints / cupperCount) : 0
-    const avgFaults = cupperCount > 0 ? Math.ceil(totalFaults / cupperCount) : 0
+    // Use MAX consolidated counts (not averaged)
+    const avgTaints = maxTaints
+    const avgFaults = maxFaults
 
     // Check if tfRules has any actual configuration
     const hasConfiguredRules = tfRules && (

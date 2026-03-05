@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
-import { AlertCircle, CheckCircle2, Edit, Loader2, Save, X, FileCheck, Check, XCircle, Download } from 'lucide-react'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface AttributeStats {
@@ -29,6 +30,7 @@ interface AttributeStats {
   outliers: string[]
   finalScore: number
   range: number
+  increment: number
 }
 
 interface AggregatedScores {
@@ -55,18 +57,20 @@ interface IndividualScore {
   cupper_name: string
   scores: Record<string, number>
   defects: {
-    taints?: string[]
-    faults?: string[]
+    taints?: Array<string | { name?: string; intensity?: number; cups_affected?: number }>
+    faults?: Array<string | { name?: string; intensity?: number; cups_affected?: number }>
   }
   created_at: string
   is_own_score?: boolean
+  is_master_cupper?: boolean
 }
 
-interface EditingState {
-  cupperId: string
-  attribute: string
-  originalValue: number
-  newValue: number
+interface ConsolidatedDefect {
+  name: string
+  type: 'taint' | 'fault'
+  consolidated_cups: number
+  consolidated_intensity: number
+  per_cupper: Record<string, { cups: number; intensity: number }>
 }
 
 interface ValidationPermissions {
@@ -116,6 +120,11 @@ interface CuppingValidationModalProps {
   onEditScore?: (cupperId: string) => void
 }
 
+// Round to nearest valid increment
+function snapToIncrement(value: number, increment: number): number {
+  return Math.round(value / increment) * increment
+}
+
 // Helper function to download certificate PDF
 async function downloadCertificate(sampleId: string, trackingNumber: string): Promise<boolean> {
   try {
@@ -155,28 +164,24 @@ export function CuppingValidationModal({
   const [loading, setLoading] = useState(false)
   const [aggregated, setAggregated] = useState<AggregatedScores | null>(null)
   const [individualScores, setIndividualScores] = useState<IndividualScore[]>([])
+  const [consolidatedDefects, setConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
   const [permissions, setPermissions] = useState<ValidationPermissions | null>(null)
   const [qualitySpecInfo, setQualitySpecInfo] = useState<QualitySpecInfo | null>(null)
-  const [editing, setEditing] = useState<EditingState | null>(null)
-  const [saving, setSaving] = useState(false)
   const [finalizing, setFinalizing] = useState(false)
+  const [masterCupperId, setMasterCupperId] = useState<string | null>(null)
 
-  // Check if user can edit scores based on permissions
-  const canEditScores = () => {
+  // Master cupper's final decisions (editable on validation screen)
+  const [finalScores, setFinalScores] = useState<Record<string, number>>({})
+  const [finalDefects, setFinalDefects] = useState<Record<string, { cups: number; intensity: number; type: 'taint' | 'fault' }>>({})
+
+  // Check if user can edit final scores (master cupper or admin)
+  const canEditFinals = useCallback(() => {
     if (!permissions) return false
-    const { user_profile, stats } = permissions
-    // Global admins can always edit
-    if (user_profile.is_global_admin) return true
-    // Master cuppers can edit
-    if (user_profile.is_master_cupper) return true
-    // Lab admins can edit
-    if (user_profile.is_lab_admin || user_profile.has_admin_permissions) return true
-    // If no master cupper assigned, any assigned cupper can edit
-    if (!stats.has_master_cupper_assigned && user_profile.is_assigned) return true
-    // Q-graders can edit
-    if (user_profile.is_q_grader) return true
-    return false
-  }
+    const { user_profile } = permissions
+    return user_profile.is_global_admin || user_profile.is_master_cupper ||
+      user_profile.is_lab_admin || user_profile.has_admin_permissions ||
+      user_profile.is_q_grader
+  }, [permissions])
 
   // Fetch aggregated scores, permissions, and quality spec info when modal opens
   useEffect(() => {
@@ -216,7 +221,6 @@ export function CuppingValidationModal({
       if (response.ok) {
         setQualitySpecInfo(data)
       } else {
-        // No quality spec or error - assume no validation rules
         setQualitySpecInfo({ has_validation_rules: false, quality_spec_name: null })
       }
     } catch (error) {
@@ -236,6 +240,26 @@ export function CuppingValidationModal({
       if (data.success) {
         setAggregated(data.aggregated)
         setIndividualScores(data.individual_scores)
+        setConsolidatedDefects(data.consolidated_defects || [])
+        setMasterCupperId(data.master_cupper_id || null)
+
+        // Initialize final scores from the aggregated finalScore values
+        const initScores: Record<string, number> = {}
+        for (const [attr, stats] of Object.entries(data.aggregated.attributes as Record<string, AttributeStats>)) {
+          initScores[attr] = stats.finalScore
+        }
+        setFinalScores(initScores)
+
+        // Initialize final defects from consolidated data
+        const initDefects: Record<string, { cups: number; intensity: number; type: 'taint' | 'fault' }> = {}
+        for (const defect of (data.consolidated_defects || []) as ConsolidatedDefect[]) {
+          initDefects[defect.name] = {
+            cups: defect.consolidated_cups,
+            intensity: defect.consolidated_intensity,
+            type: defect.type,
+          }
+        }
+        setFinalDefects(initDefects)
       } else {
         toast({
           title: 'Error',
@@ -255,8 +279,69 @@ export function CuppingValidationModal({
     }
   }
 
+  // Update a final score and snap to increment
+  const updateFinalScore = (attribute: string, rawValue: string) => {
+    const increment = aggregated?.attributes[attribute]?.increment || 0.25
+    const parsed = parseFloat(rawValue)
+    if (isNaN(parsed)) return
+    setFinalScores(prev => ({ ...prev, [attribute]: parsed }))
+  }
+
+  // Snap to increment on blur
+  const snapFinalScore = (attribute: string) => {
+    const increment = aggregated?.attributes[attribute]?.increment || 0.25
+    const current = finalScores[attribute]
+    if (current === undefined) return
+    const snapped = snapToIncrement(current, increment)
+    setFinalScores(prev => ({ ...prev, [attribute]: snapped }))
+  }
+
+  // Update final defect
+  const updateFinalDefect = (defectName: string, field: 'cups' | 'intensity' | 'type', value: number | string) => {
+    setFinalDefects(prev => ({
+      ...prev,
+      [defectName]: {
+        ...prev[defectName],
+        [field]: field === 'type' ? value : Number(value),
+      },
+    }))
+  }
+
+  // Save final scores back to the master cupper's score record before finalizing
+  const saveFinalScores = async (): Promise<boolean> => {
+    if (!masterCupperId || !sampleId) return true // No master cupper, nothing to save
+
+    // Find the master cupper's score record
+    const masterScore = individualScores.find(s => s.is_master_cupper || s.cupper_id === masterCupperId)
+    if (!masterScore?.score_id) return true
+
+    try {
+      // Update each attribute on the master cupper's score
+      for (const [attribute, value] of Object.entries(finalScores)) {
+        const response = await fetch(`/api/cupping/scores/${masterScore.score_id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ attribute, value }),
+        })
+
+        if (!response.ok) {
+          const data = await response.json()
+          throw new Error(data.error || `Failed to update ${attribute}`)
+        }
+      }
+      return true
+    } catch (error) {
+      console.error('Error saving final scores:', error)
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to save final scores',
+        variant: 'destructive',
+      })
+      return false
+    }
+  }
+
   const handleFinalize = async (manualDecision?: 'approved' | 'rejected', overrideDiscrepancies?: boolean) => {
-    // Check permission first
     if (!permissions?.can_validate) {
       toast({
         title: 'Cannot Validate',
@@ -266,7 +351,7 @@ export function CuppingValidationModal({
       return
     }
 
-    // Block if discrepancies exist unless override is requested by master cupper
+    // Block if discrepancies exist unless override is requested
     if (aggregated?.hasDiscrepancies && !overrideDiscrepancies) {
       toast({
         title: 'Cannot Finalize',
@@ -285,8 +370,35 @@ export function CuppingValidationModal({
       return
     }
 
+    // Validate all final scores are valid increments
+    if (aggregated) {
+      for (const [attr, stats] of Object.entries(aggregated.attributes)) {
+        const value = finalScores[attr]
+        if (value === undefined) continue
+        const increment = stats.increment || 0.25
+        const snapped = snapToIncrement(value, increment)
+        if (Math.abs(value - snapped) > 0.001) {
+          toast({
+            title: 'Invalid Score',
+            description: `${attr}: ${value} is not a valid ${increment} increment. Expected ${snapped}.`,
+            variant: 'destructive',
+          })
+          return
+        }
+      }
+    }
+
     setFinalizing(true)
     try {
+      // Save the master cupper's final scores before finalizing
+      if (canEditFinals()) {
+        const saved = await saveFinalScores()
+        if (!saved) {
+          setFinalizing(false)
+          return
+        }
+      }
+
       const response = await fetch('/api/cupping/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -304,13 +416,10 @@ export function CuppingValidationModal({
         throw new Error(data.error || 'Failed to finalize scores')
       }
 
-      // Show result based on auto-determined decision
       const isApproved = data.decision === 'approved'
       const isPending = data.decision === 'pending'
-      const isRejected = data.decision === 'rejected'
 
       if (isPending) {
-        // Grading not complete - show info message
         toast({
           title: 'Cupping Scores Finalized',
           description: data.message || 'Sample moved to Review. Certificate will be generated after grading is complete.',
@@ -325,7 +434,6 @@ export function CuppingValidationModal({
         })
       }
 
-      // Show violations if any (only for approved/rejected, not pending)
       if (!isPending && data.violations && data.violations.length > 0) {
         setTimeout(() => {
           toast({
@@ -336,7 +444,7 @@ export function CuppingValidationModal({
         }, 500)
       }
 
-      // Auto-download certificate if approved or rejected (not pending)
+      // Auto-download certificate
       if (!isPending && sampleId) {
         const trackingNumber = sampleTrackingNumber || aggregated?.sample_tracking_number || 'unknown'
         const downloadSuccess = await downloadCertificate(sampleId, trackingNumber)
@@ -369,10 +477,8 @@ export function CuppingValidationModal({
     }
   }
 
-  // Determine if button should be disabled
   const canFinalize = permissions?.can_validate && !aggregated?.hasDiscrepancies
 
-  // Get button text based on state
   const getButtonText = () => {
     if (!permissions?.can_validate) {
       return permissions?.reason || 'Validation Not Allowed'
@@ -383,109 +489,17 @@ export function CuppingValidationModal({
     return 'Finalize Scores'
   }
 
-  const startEditing = (cupperId: string | null, attribute: string, currentValue: number, isOwnScore?: boolean) => {
-    // Users can always edit their own scores
-    if (isOwnScore) {
-      setEditing({
-        cupperId: cupperId || '',
-        attribute,
-        originalValue: currentValue,
-        newValue: currentValue,
-      })
-      return
-    }
-
-    // For others' scores, need admin/master cupper permission
-    if (!canEditScores()) {
-      toast({
-        title: 'Permission Denied',
-        description: 'Only master cuppers can edit scores when a master cupper is assigned to the session',
-        variant: 'destructive',
-      })
-      return
-    }
-    setEditing({
-      cupperId: cupperId || '',
-      attribute,
-      originalValue: currentValue,
-      newValue: currentValue,
-    })
-  }
-
-  const cancelEditing = () => {
-    setEditing(null)
-  }
-
-  const handleSaveEdit = async () => {
-    if (!editing) return
-
-    // Find score by cupper_id or score_id (handles anonymized scores)
-    const score = individualScores.find(s =>
-      s.cupper_id === editing.cupperId ||
-      s.score_id === editing.cupperId
-    )
-    if (!score?.score_id) {
-      toast({
-        title: 'Error',
-        description: 'Cannot find score to update',
-        variant: 'destructive',
-      })
-      return
-    }
-
-    setSaving(true)
-    try {
-      const response = await fetch(`/api/cupping/scores/${score.score_id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          attribute: editing.attribute,
-          value: editing.newValue,
-        }),
-      })
-
-      const data = await response.json()
-
-      if (!response.ok) {
-        throw new Error(data.error || 'Failed to update score')
-      }
-
-      toast({
-        title: 'Score Updated',
-        description: `${editing.attribute} updated from ${editing.originalValue} to ${editing.newValue}`,
-      })
-
-      // Refresh the data
-      await fetchAggregatedScores()
-      setEditing(null)
-    } catch (error: any) {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to save score',
-        variant: 'destructive',
-      })
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const handleEditCupperScore = (cupperId: string) => {
-    // Legacy handler - now we use inline editing
-    if (!canEditScores()) {
-      toast({
-        title: 'Permission Denied',
-        description: 'Only master cuppers can edit scores when a master cupper is assigned to the session',
-        variant: 'destructive',
-      })
-      return
-    }
-    onEditScore?.(cupperId)
-  }
+  // Calculate overall final score
+  const overallFinalScore = Object.values(finalScores).reduce((sum, v) => sum + v, 0)
 
   if (loading) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Score Validation</DialogTitle>
+            <DialogDescription>Loading scores...</DialogDescription>
+          </DialogHeader>
           <div className="flex items-center justify-center p-8">
             <Loader2 className="h-8 w-8 animate-spin" />
           </div>
@@ -509,6 +523,9 @@ export function CuppingValidationModal({
     )
   }
 
+  const isMultiCupper = individualScores.length > 1
+  const editable = canEditFinals()
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
@@ -528,20 +545,20 @@ export function CuppingValidationModal({
             )}
           </DialogTitle>
           <DialogDescription>
-            Sample: {sampleTrackingNumber || aggregated.sample_tracking_number} • {aggregated.total_cuppers} {aggregated.total_cuppers === 1 ? 'Cupper' : 'Cuppers'}
+            Sample: {sampleTrackingNumber || aggregated.sample_tracking_number} -- {aggregated.total_cuppers} {aggregated.total_cuppers === 1 ? 'Cupper' : 'Cuppers'}
+            {masterCupperId && <span className="ml-2 text-amber-600 font-medium">(Master cupper assigned)</span>}
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="overview" className="w-full">
+        <Tabs defaultValue="final-scores" className="w-full">
           <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="overview">Overview</TabsTrigger>
-            <TabsTrigger value="comparison">Cupper Comparison</TabsTrigger>
+            <TabsTrigger value="final-scores">Final Scores</TabsTrigger>
+            <TabsTrigger value="comparison">Cupper Reference</TabsTrigger>
             <TabsTrigger value="defects">Defects</TabsTrigger>
           </TabsList>
 
-          {/* Overview Tab */}
-          <TabsContent value="overview" className="space-y-4">
-            {/* Discrepancy Alerts */}
+          {/* Final Scores Tab - Master cupper sets final values */}
+          <TabsContent value="final-scores" className="space-y-4">
             {aggregated.hasDiscrepancies && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />
@@ -556,67 +573,24 @@ export function CuppingValidationModal({
               </Alert>
             )}
 
-            {/* Aggregated Scores Grid */}
-            <Card>
-              <CardHeader>
-                <CardTitle>Aggregated Scores</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                  {Object.entries(aggregated.attributes).map(([attribute, stats]) => (
-                    <div
-                      key={attribute}
-                      className={`p-4 rounded-lg border ${
-                        stats.hasDiscrepancy
-                          ? 'border-red-500 bg-red-50 dark:bg-red-950'
-                          : 'border-green-500 bg-green-50 dark:bg-green-950'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="text-sm font-medium">{attribute}</span>
-                        {stats.hasDiscrepancy && (
-                          <Badge variant="destructive" className="text-xs">
-                            ±{(stats.range ?? 0).toFixed(2)}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="text-2xl font-bold">
-                        {(stats.finalScore ?? 0).toFixed(2)}
-                      </div>
-                      <div className="text-xs text-muted-foreground mt-1">
-                        Range: {(stats.min ?? 0).toFixed(2)} - {(stats.max ?? 0).toFixed(2)}
-                      </div>
-                      {stats.hasDiscrepancy && stats.outliers.length > 0 && (
-                        <div className="text-xs text-red-600 dark:text-red-400 mt-1">
-                          Discrepancy: {stats.outliers.join(', ')}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
+            {isMultiCupper && editable && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertTitle>Master Cupper Decision Required</AlertTitle>
+                <AlertDescription className="text-sm">
+                  Review each cupper&apos;s scores in the Cupper Reference tab, then set the final score for each attribute below.
+                  Values snap to the quality spec increment on blur.
+                </AlertDescription>
+              </Alert>
+            )}
 
-                {/* Overall Score */}
-                <div className="mt-6 p-4 bg-muted rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Overall Score</span>
-                    <div className="text-2xl font-bold">
-                      {(aggregated.overall_score.mean ?? 0).toFixed(2)}
-                    </div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Comparison Tab */}
-          <TabsContent value="comparison" className="space-y-4">
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center justify-between">
-                  <span>Cupper Score Comparison</span>
-                  {canEditScores() && (
-                    <span className="text-xs font-normal text-muted-foreground">
-                      Click any score to edit
+                  <span>Final Scores{editable ? ' (Editable)' : ''}</span>
+                  {!editable && (
+                    <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
+                      <Lock className="h-3 w-3" /> Read-only
                     </span>
                   )}
                 </CardTitle>
@@ -627,15 +601,102 @@ export function CuppingValidationModal({
                     <thead>
                       <tr className="border-b">
                         <th className="text-left p-2 font-semibold">Attribute</th>
+                        {isMultiCupper && <th className="text-center p-2 font-semibold text-muted-foreground text-xs">Mean</th>}
+                        {isMultiCupper && <th className="text-center p-2 font-semibold text-muted-foreground text-xs">Range</th>}
+                        <th className="text-center p-2 font-semibold">
+                          <span className={editable ? 'text-amber-600' : ''}>Final Score</span>
+                        </th>
+                        <th className="text-center p-2 font-semibold text-muted-foreground text-xs">Increment</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(aggregated.attributes).map(([attribute, stats]) => {
+                        const increment = stats.increment || 0.25
+                        const currentFinal = finalScores[attribute] ?? stats.finalScore
+
+                        return (
+                          <tr key={attribute} className={`border-b ${stats.hasDiscrepancy ? 'bg-red-50 dark:bg-red-950' : ''}`}>
+                            <td className="p-2 font-medium">
+                              {attribute}
+                              {stats.hasDiscrepancy && (
+                                <Badge variant="destructive" className="ml-2 text-xs">
+                                  Discrepancy
+                                </Badge>
+                              )}
+                            </td>
+                            {isMultiCupper && (
+                              <td className="text-center p-2 text-sm text-muted-foreground">
+                                {stats.mean.toFixed(2)}
+                              </td>
+                            )}
+                            {isMultiCupper && (
+                              <td className="text-center p-2 text-sm text-muted-foreground">
+                                {stats.min.toFixed(2)} - {stats.max.toFixed(2)}
+                              </td>
+                            )}
+                            <td className="text-center p-2">
+                              {editable ? (
+                                <Input
+                                  type="number"
+                                  step={increment}
+                                  value={currentFinal}
+                                  onChange={(e) => updateFinalScore(attribute, e.target.value)}
+                                  onBlur={() => snapFinalScore(attribute)}
+                                  className="w-20 h-8 text-center text-sm font-bold mx-auto border-amber-400 bg-amber-50 dark:bg-amber-950"
+                                />
+                              ) : (
+                                <span className="font-bold text-lg">{currentFinal.toFixed(2)}</span>
+                              )}
+                            </td>
+                            <td className="text-center p-2 text-xs text-muted-foreground">
+                              {increment}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t-2">
+                        <td className="p-2 font-bold">Overall</td>
+                        {isMultiCupper && <td className="text-center p-2 text-sm text-muted-foreground">{aggregated.overall_score.mean.toFixed(2)}</td>}
+                        {isMultiCupper && <td />}
+                        <td className="text-center p-2 font-bold text-lg">{overallFinalScore.toFixed(2)}</td>
+                        <td />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Cupper Comparison Tab - Reference only */}
+          <TabsContent value="comparison" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>
+                  <span>Cupper Score Reference</span>
+                  <span className="text-xs font-normal text-muted-foreground ml-2">
+                    (Reference only - set final scores in the Final Scores tab)
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b">
+                        <th className="text-left p-2 font-semibold">Attribute</th>
                         {individualScores.map((score) => (
                           <th key={score.cupper_id || score.score_id} className="text-center p-2 font-semibold">
-                            <span>
-                              {score.cupper_name}
-                              {score.is_own_score && <span className="text-xs text-muted-foreground ml-1">(You)</span>}
+                            <span className="flex flex-col items-center gap-0.5">
+                              <span>{score.cupper_name}</span>
+                              {score.is_own_score && <span className="text-xs text-muted-foreground">(You)</span>}
+                              {score.is_master_cupper && <Badge className="text-xs bg-amber-600">Master</Badge>}
                             </span>
                           </th>
                         ))}
-                        <th className="text-center p-2 font-semibold">Final</th>
+                        <th className="text-center p-2 font-semibold text-amber-600">Final</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -644,79 +705,23 @@ export function CuppingValidationModal({
                           <td className="p-2 font-medium">{attribute}</td>
                           {individualScores.map((score) => {
                             const scoreKey = score.cupper_id || score.score_id || ''
-                            const isEditing = editing?.cupperId === scoreKey && editing?.attribute === attribute
                             const cellValue = score.scores[attribute]
-                            const canEdit = score.is_own_score || canEditScores()
 
                             return (
                               <td
                                 key={`${attribute}-${scoreKey}`}
                                 className={`text-center p-2 ${
-                                  stats.hasDiscrepancy
-                                    ? 'bg-red-50 dark:bg-red-950'
-                                    : ''
-                                } ${canEdit && !isEditing ? 'cursor-pointer hover:bg-accent' : ''}`}
-                                onClick={() => {
-                                  if (!isEditing && cellValue !== undefined && canEdit) {
-                                    startEditing(scoreKey, attribute, cellValue, score.is_own_score)
-                                  }
-                                }}
+                                  stats.hasDiscrepancy ? 'bg-red-50 dark:bg-red-950' : ''
+                                }`}
                               >
-                                {isEditing ? (
-                                  <div className="flex items-center gap-1 justify-center">
-                                    <Input
-                                      type="number"
-                                      step="0.25"
-                                      value={editing.newValue}
-                                      onChange={(e) => setEditing({
-                                        ...editing,
-                                        newValue: parseFloat(e.target.value) || 0
-                                      })}
-                                      className="w-16 h-7 text-center text-sm"
-                                      autoFocus
-                                      onKeyDown={(e) => {
-                                        if (e.key === 'Enter') handleSaveEdit()
-                                        if (e.key === 'Escape') cancelEditing()
-                                      }}
-                                    />
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-7 w-7 p-0"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        handleSaveEdit()
-                                      }}
-                                      disabled={saving}
-                                    >
-                                      {saving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3 text-green-600" />}
-                                    </Button>
-                                    <Button
-                                      size="sm"
-                                      variant="ghost"
-                                      className="h-7 w-7 p-0"
-                                      onClick={(e) => {
-                                        e.stopPropagation()
-                                        cancelEditing()
-                                      }}
-                                    >
-                                      <X className="h-3 w-3 text-red-600" />
-                                    </Button>
-                                  </div>
-                                ) : (
-                                  <span>{typeof cellValue === 'number' && !isNaN(cellValue) ? cellValue.toFixed(2) : 'N/A'}</span>
-                                )}
+                                <span>{typeof cellValue === 'number' && !isNaN(cellValue) ? cellValue.toFixed(2) : 'N/A'}</span>
                               </td>
                             )
                           })}
-                          <td
-                            className={`text-center p-2 font-bold ${
-                              stats.hasDiscrepancy
-                                ? 'bg-red-100 dark:bg-red-900'
-                                : 'bg-green-100 dark:bg-green-900'
-                            }`}
-                          >
-                            {(stats.finalScore ?? 0).toFixed(2)}
+                          <td className={`text-center p-2 font-bold ${
+                            stats.hasDiscrepancy ? 'bg-red-100 dark:bg-red-900' : 'bg-green-100 dark:bg-green-900'
+                          }`}>
+                            {(finalScores[attribute] ?? stats.finalScore).toFixed(2)}
                           </td>
                         </tr>
                       ))}
@@ -727,117 +732,138 @@ export function CuppingValidationModal({
             </Card>
           </TabsContent>
 
-          {/* Defects Tab */}
+          {/* Defects Tab - Consolidated with master cupper overrides */}
           <TabsContent value="defects" className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Taints */}
+            {consolidatedDefects.length > 0 ? (
               <Card>
                 <CardHeader>
-                  <CardTitle>Taints</CardTitle>
+                  <CardTitle className="flex items-center justify-between">
+                    <span>Defect Validation</span>
+                    {editable && (
+                      <span className="text-xs font-normal text-muted-foreground">
+                        Cups = MAX across cuppers. Adjust as needed.
+                      </span>
+                    )}
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {aggregated.defects.taints.length > 0 ? (
-                    <div className="space-y-2">
-                      {aggregated.defects.taints.map((taint) => {
-                        // Check which cuppers identified this taint
-                        const cuppersWithTaint = individualScores.filter(
-                          (score) => score.defects.taints?.includes(taint)
-                        )
-                        const allCuppersAgree = cuppersWithTaint.length === individualScores.length
+                  <div className="space-y-4">
+                    {consolidatedDefects.map((defect) => {
+                      const finalDef = finalDefects[defect.name]
+                      const cupperEntries = Object.entries(defect.per_cupper)
 
-                        return (
-                          <div
-                            key={taint}
-                            className={`p-3 rounded-lg border ${
-                              allCuppersAgree
-                                ? 'border-green-500 bg-green-50 dark:bg-green-950'
-                                : 'border-red-500 bg-red-50 dark:bg-red-950'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium">{taint}</span>
-                              <Badge
-                                variant={allCuppersAgree ? 'default' : 'destructive'}
-                                className={allCuppersAgree ? 'bg-green-600' : ''}
-                              >
-                                {cuppersWithTaint.length}/{individualScores.length}
+                      return (
+                        <div
+                          key={defect.name}
+                          className="p-4 rounded-lg border border-border"
+                        >
+                          <div className="flex items-center justify-between mb-3">
+                            <div className="flex items-center gap-2">
+                              <span className="font-medium">{defect.name}</span>
+                              <Badge variant={defect.type === 'fault' ? 'destructive' : 'secondary'}>
+                                {finalDef?.type || defect.type}
                               </Badge>
                             </div>
-                            {!allCuppersAgree && (
-                              <div className="text-xs text-red-600 dark:text-red-400 mt-1">
-                                Only: {cuppersWithTaint.map((s) => s.cupper_name).join(', ')}
-                              </div>
-                            )}
+                            <Badge variant="outline">
+                              {cupperEntries.length}/{individualScores.length} cupper{cupperEntries.length !== 1 ? 's' : ''}
+                            </Badge>
                           </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No taints detected</p>
-                  )}
+
+                          {/* Per-cupper reference */}
+                          <div className="text-xs text-muted-foreground mb-3 space-y-1">
+                            {cupperEntries.map(([cupperName, data]) => (
+                              <div key={cupperName} className="flex items-center gap-2">
+                                <span className="font-medium">{cupperName}:</span>
+                                <span>{data.cups} cup{data.cups !== 1 ? 's' : ''}</span>
+                                {data.intensity > 0 && <span>- intensity {data.intensity}</span>}
+                              </div>
+                            ))}
+                          </div>
+
+                          {/* Master cupper final decision */}
+                          <div className={`grid grid-cols-3 gap-3 pt-3 border-t ${editable ? 'bg-amber-50 dark:bg-amber-950 -mx-4 -mb-4 px-4 pb-4 rounded-b-lg' : ''}`}>
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground block mb-1">
+                                Final Cups
+                              </label>
+                              {editable ? (
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  value={finalDef?.cups ?? defect.consolidated_cups}
+                                  onChange={(e) => updateFinalDefect(defect.name, 'cups', e.target.value)}
+                                  className="h-8 text-sm border-amber-400"
+                                />
+                              ) : (
+                                <span className="font-bold">{finalDef?.cups ?? defect.consolidated_cups}</span>
+                              )}
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground block mb-1">
+                                Final Intensity
+                              </label>
+                              {editable ? (
+                                <Input
+                                  type="number"
+                                  step="0.25"
+                                  min={0}
+                                  value={finalDef?.intensity ?? defect.consolidated_intensity}
+                                  onChange={(e) => updateFinalDefect(defect.name, 'intensity', e.target.value)}
+                                  onBlur={() => {
+                                    const val = finalDef?.intensity ?? defect.consolidated_intensity
+                                    updateFinalDefect(defect.name, 'intensity', snapToIncrement(val, 0.25))
+                                  }}
+                                  className="h-8 text-sm border-amber-400"
+                                />
+                              ) : (
+                                <span className="font-bold">{finalDef?.intensity ?? defect.consolidated_intensity}</span>
+                              )}
+                            </div>
+                            <div>
+                              <label className="text-xs font-medium text-muted-foreground block mb-1">
+                                Type
+                              </label>
+                              {editable ? (
+                                <Select
+                                  value={finalDef?.type || defect.type}
+                                  onValueChange={(v) => updateFinalDefect(defect.name, 'type', v)}
+                                >
+                                  <SelectTrigger className="h-8 text-sm border-amber-400">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="taint">Taint</SelectItem>
+                                    <SelectItem value="fault">Fault</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              ) : (
+                                <span className="font-bold capitalize">{finalDef?.type || defect.type}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 </CardContent>
               </Card>
-
-              {/* Faults */}
+            ) : (
               <Card>
-                <CardHeader>
-                  <CardTitle>Faults</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {aggregated.defects.faults.length > 0 ? (
-                    <div className="space-y-2">
-                      {aggregated.defects.faults.map((fault) => {
-                        // Check which cuppers identified this fault
-                        const cuppersWithFault = individualScores.filter(
-                          (score) => score.defects.faults?.includes(fault)
-                        )
-                        const allCuppersAgree = cuppersWithFault.length === individualScores.length
-
-                        return (
-                          <div
-                            key={fault}
-                            className={`p-3 rounded-lg border ${
-                              allCuppersAgree
-                                ? 'border-green-500 bg-green-50 dark:bg-green-950'
-                                : 'border-red-500 bg-red-50 dark:bg-red-950'
-                            }`}
-                          >
-                            <div className="flex items-center justify-between">
-                              <span className="font-medium">{fault}</span>
-                              <Badge
-                                variant={allCuppersAgree ? 'default' : 'destructive'}
-                                className={allCuppersAgree ? 'bg-green-600' : ''}
-                              >
-                                {cuppersWithFault.length}/{individualScores.length}
-                              </Badge>
-                            </div>
-                            {!allCuppersAgree && (
-                              <div className="text-xs text-red-600 dark:text-red-400 mt-1">
-                                Only: {cuppersWithFault.map((s) => s.cupper_name).join(', ')}
-                              </div>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No faults detected</p>
-                  )}
+                <CardContent className="py-8 text-center text-muted-foreground">
+                  No defects detected by any cupper
                 </CardContent>
               </Card>
-            </div>
+            )}
           </TabsContent>
         </Tabs>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
-          {/* Permission status indicator */}
           {permissions && !permissions.can_validate && (
             <div className="flex-1 text-sm text-muted-foreground text-left">
               {permissions.reason}
             </div>
           )}
 
-          {/* Cupper stats */}
           {permissions?.stats && (
             <div className="text-xs text-muted-foreground">
               {permissions.stats.completed_cuppers}/{permissions.stats.assigned_cuppers} {permissions.stats.assigned_cuppers === 1 ? 'cupper' : 'cuppers'} completed
@@ -849,9 +875,7 @@ export function CuppingValidationModal({
               Close
             </Button>
             {canFinalize ? (
-              // Show different buttons based on whether validation rules exist
               qualitySpecInfo && !qualitySpecInfo.has_validation_rules ? (
-                // No validation rules - show manual Approve/Reject buttons
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected')}
@@ -879,7 +903,6 @@ export function CuppingValidationModal({
                   </Button>
                 </>
               ) : (
-                // Has validation rules - use auto-determined decision
                 <Button
                   onClick={() => handleFinalize()}
                   disabled={finalizing}
@@ -894,9 +917,7 @@ export function CuppingValidationModal({
                 </Button>
               )
             ) : aggregated?.hasDiscrepancies && permissions?.can_validate ? (
-              // Has discrepancies but master cupper can override
               qualitySpecInfo && !qualitySpecInfo.has_validation_rules ? (
-                // No validation rules - show manual Approve/Reject with override
                 <>
                   <Button
                     onClick={() => handleFinalize('rejected', true)}
@@ -924,7 +945,6 @@ export function CuppingValidationModal({
                   </Button>
                 </>
               ) : (
-                // Has validation rules - use auto-determined decision with override
                 <Button
                   onClick={() => handleFinalize(undefined, true)}
                   disabled={finalizing}

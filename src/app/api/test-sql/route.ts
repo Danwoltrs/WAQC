@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+// @ts-ignore - mssql types not installed
 import sql from "mssql";
 
 const config: sql.config = {
@@ -29,7 +30,7 @@ export async function GET() {
       `SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_TYPE = 'BASE TABLE'`
     );
 
-    const tables = result.recordset.map((row) => row.TABLE_NAME);
+    const tables = result.recordset.map((row: any) => row.TABLE_NAME);
 
     return NextResponse.json({
       success: true,
