@@ -188,6 +188,9 @@ function CuppingPageContent() {
   // Flavor descriptor per sample (for general cupping Flavor attribute)
   const [flavorDescriptorMap, setFlavorDescriptorMap] = useState<Map<string, string>>(new Map())
 
+  // Track raw input text while user is actively typing (allows "4." intermediate states)
+  const [rawInputMap, setRawInputMap] = useState<Map<string, string>>(new Map())
+
   // Sample tab scrolling
   const tabsScrollRef = useRef<HTMLDivElement>(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
@@ -1534,22 +1537,20 @@ function CuppingPageContent() {
                     </Card>
                   ) : (
                     <div className="space-y-4">
-                      {/* Attributes Section - Compact 3-Column Grid with Spider Chart */}
-                      <Card className="p-4 w-fit">
-                        <div className="flex gap-6">
-                          {/* Attributes Grid - 3 Columns */}
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                      {/* Attributes Section - Table Layout with separate Radar Chart */}
+                      <div className="flex gap-6 items-start">
+                        {/* Attributes Table */}
+                        <table className="border-collapse">
+                          <tbody>
                             {attributes.map(({ attribute, scale, validation_rule }) => {
                               const attrScore = cuppingData?.attributes.find(a => a.attribute === attribute)
                               const value = attrScore?.value ?? null
 
-                              // Check if value is within validation range
                               const hasValue = value !== null
                               const isWithinSpec = hasValue && validation_rule
                                 ? validateScoreAgainstRule(value, validation_rule).valid
                                 : true
 
-                              // Format validation range
                               const validationDisplay = validation_rule
                                 ? validation_rule.type === 'minimum'
                                   ? `≥${validation_rule.min_value}`
@@ -1557,97 +1558,96 @@ function CuppingPageContent() {
                                 : null
 
                               const isFlavorAttr = attribute.toLowerCase() === 'flavor' || attribute.toLowerCase() === 'flavor/bebida'
-
-                              // Get the increment for this attribute's scale
                               const increment = scale.type === 'numeric' ? scale.increment : 1
 
-                              // Round value to nearest valid increment
                               const roundToIncrement = (v: number, inc: number): number => {
                                 return Math.round(v / inc) * inc
                               }
 
-                              // Numeric scale - input only, no +/- buttons
                               if (scale.type === 'numeric') {
                                 return (
-                                  <div key={attribute} className={`border rounded-lg p-2.5 ${hasValue && !isWithinSpec ? 'border-destructive/50' : 'border-border'}`}>
-                                    <div className="flex items-baseline justify-between mb-1">
-                                      <span className={`text-xs font-medium ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}>
+                                  <tr key={attribute} className="h-10">
+                                    <td className="pr-4 py-1">
+                                      <span className={`text-sm font-medium whitespace-nowrap ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}>
                                         {attribute}
                                       </span>
                                       {validationDisplay && (
-                                        <span className="text-[10px] text-muted-foreground">
+                                        <span className="text-[10px] text-muted-foreground ml-1.5">
                                           {validationDisplay}
                                         </span>
                                       )}
-                                    </div>
-                                    <input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={hasValue ? String(value) : ''}
-                                      onFocus={(e) => {
-                                        e.target.select()
-                                      }}
-                                      onChange={(e) => {
-                                        const inputVal = e.target.value
-                                        if (inputVal === '') {
-                                          updateAttribute(sample.id, attribute, null)
-                                          return
-                                        }
-                                        // Allow partial decimal input mid-typing without snapping
-                                        if (/^\d*\.?\d*$/.test(inputVal)) {
-                                          if (!inputVal.endsWith('.')) {
-                                            const v = parseFloat(inputVal)
-                                            if (!isNaN(v) && v >= 0 && v <= scale.max) {
-                                              updateAttribute(sample.id, attribute, v)
+                                    </td>
+                                    <td className="py-1">
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          value={rawInputMap.get(`${sample.id}:${attribute}`) ?? (hasValue ? String(value) : '')}
+                                          onFocus={(e) => e.target.select()}
+                                          onChange={(e) => {
+                                            const inputVal = e.target.value
+                                            const key = `${sample.id}:${attribute}`
+                                            if (inputVal === '') {
+                                              setRawInputMap(prev => { const m = new Map(prev); m.delete(key); return m })
+                                              updateAttribute(sample.id, attribute, null)
+                                              return
                                             }
-                                          }
-                                        }
-                                      }}
-                                      onBlur={(e) => {
-                                        const raw = e.target.value
-                                        if (raw === '' || raw === '.') {
-                                          updateAttribute(sample.id, attribute, null)
-                                          return
-                                        }
-                                        const v = parseFloat(raw)
-                                        if (isNaN(v)) {
-                                          updateAttribute(sample.id, attribute, null)
-                                          return
-                                        }
-                                        const clamped = Math.min(Math.max(v, scale.min), scale.max)
-                                        const rounded = roundToIncrement(clamped, increment)
-                                        const final = Math.min(Math.max(rounded, scale.min), scale.max)
-                                        const clean = Math.round(final * 10000) / 10000
-                                        updateAttribute(sample.id, attribute, clean)
-                                      }}
-                                      className="w-[60px] max-w-[60px] px-2 py-1 text-center border rounded text-sm font-semibold mx-auto block"
-                                    />
-                                    {isFlavorAttr && (
-                                      <div className="mt-1.5">
-                                        <Select
-                                          value={flavorDescriptorMap.get(sample.id) || ''}
-                                          onValueChange={(val) => {
-                                            const newMap = new Map(flavorDescriptorMap)
-                                            newMap.set(sample.id, val)
-                                            setFlavorDescriptorMap(newMap)
+                                            if (/^\d*\.?\d*$/.test(inputVal)) {
+                                              // Store raw text so "4." displays correctly while typing
+                                              setRawInputMap(prev => new Map(prev).set(key, inputVal))
+                                              const v = parseFloat(inputVal)
+                                              if (!isNaN(v) && v >= 0 && v <= scale.max) {
+                                                updateAttribute(sample.id, attribute, v)
+                                              }
+                                            }
                                           }}
-                                        >
-                                          <SelectTrigger className="w-full h-7 text-xs">
-                                            <SelectValue placeholder="Descriptor..." />
-                                          </SelectTrigger>
-                                          <SelectContent>
-                                            {['Strong Rio', 'Rio', 'Rioy/Rio', 'Rioy', 'Hardish', 'Hard', 'Softish', 'Soft', 'S. Soft', 'Special'].map(desc => (
-                                              <SelectItem key={desc} value={desc}>{desc}</SelectItem>
-                                            ))}
-                                          </SelectContent>
-                                        </Select>
+                                          onBlur={() => {
+                                            const key = `${sample.id}:${attribute}`
+                                            const raw = rawInputMap.get(key) ?? (hasValue ? String(value) : '')
+                                            // Clear raw input tracking
+                                            setRawInputMap(prev => { const m = new Map(prev); m.delete(key); return m })
+                                            if (raw === '' || raw === '.') {
+                                              updateAttribute(sample.id, attribute, null)
+                                              return
+                                            }
+                                            const v = parseFloat(raw)
+                                            if (isNaN(v)) {
+                                              updateAttribute(sample.id, attribute, null)
+                                              return
+                                            }
+                                            const clamped = Math.min(Math.max(v, scale.min), scale.max)
+                                            const rounded = roundToIncrement(clamped, increment)
+                                            const final = Math.min(Math.max(rounded, scale.min), scale.max)
+                                            const clean = Math.round(final * 10000) / 10000
+                                            updateAttribute(sample.id, attribute, clean)
+                                          }}
+                                          className="w-[64px] px-2 py-1 text-center border rounded text-sm font-semibold"
+                                        />
+                                        {isFlavorAttr && (
+                                          <Select
+                                            value={flavorDescriptorMap.get(sample.id) || ''}
+                                            onValueChange={(val) => {
+                                              const newMap = new Map(flavorDescriptorMap)
+                                              newMap.set(sample.id, val)
+                                              setFlavorDescriptorMap(newMap)
+                                            }}
+                                          >
+                                            <SelectTrigger className="w-[110px] h-8 text-xs">
+                                              <SelectValue placeholder="Descriptor..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {['Strong Rio', 'Rio', 'Rioy/Rio', 'Rioy', 'Hardish', 'Hard', 'Softish', 'Soft', 'S. Soft', 'Special'].map(desc => (
+                                                <SelectItem key={desc} value={desc}>{desc}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
+                                    </td>
+                                  </tr>
                                 )
                               }
 
-                              // Wording scale - input + dropdown, no +/- buttons
                               if (scale.type === 'wording' && scale.options) {
                                 const sortedOptions = [...scale.options].sort((a, b) => a.display_order - b.display_order)
                                 const selectedOption = sortedOptions.find(o => o.value === value)
@@ -1655,100 +1655,104 @@ function CuppingPageContent() {
                                 const maxVal = Math.max(...sortedOptions.map(o => o.value))
 
                                 return (
-                                  <div key={attribute} className={`border rounded-lg p-2.5 ${hasValue && !isWithinSpec ? 'border-destructive/50' : 'border-border'}`}>
-                                    <div className="flex items-baseline justify-between mb-1">
-                                      <span className={`text-xs font-medium ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}>
+                                  <tr key={attribute} className="h-10">
+                                    <td className="pr-4 py-1">
+                                      <span className={`text-sm font-medium whitespace-nowrap ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}>
                                         {attribute}
                                       </span>
                                       {validationDisplay && (
-                                        <span className="text-[10px] text-muted-foreground">
+                                        <span className="text-[10px] text-muted-foreground ml-1.5">
                                           {validationDisplay}
                                         </span>
                                       )}
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <input
-                                        type="text"
-                                        inputMode="numeric"
-                                        value={hasValue ? String(value) : ''}
-                                        onFocus={(e) => {
-                                          e.target.select()
-                                        }}
-                                        onChange={(e) => {
-                                          const inputVal = e.target.value
-                                          if (inputVal === '') {
-                                            updateAttribute(sample.id, attribute, null)
-                                            return
-                                          }
-                                          const v = parseInt(inputVal, 10)
-                                          if (!isNaN(v) && v >= minVal && v <= maxVal) {
-                                            updateAttribute(sample.id, attribute, v)
-                                          }
-                                        }}
-                                        onBlur={(e) => {
-                                          const raw = e.target.value
-                                          if (raw === '') {
-                                            updateAttribute(sample.id, attribute, null)
-                                            return
-                                          }
-                                          const v = parseInt(raw, 10)
-                                          if (isNaN(v)) {
-                                            updateAttribute(sample.id, attribute, null)
-                                          } else if (v < minVal) {
-                                            updateAttribute(sample.id, attribute, minVal)
-                                          } else if (v > maxVal) {
-                                            updateAttribute(sample.id, attribute, maxVal)
-                                          }
-                                        }}
-                                        className="w-[48px] max-w-[48px] px-1 py-1 text-center border rounded text-sm font-semibold"
-                                      />
-                                      <Select
-                                        value={selectedOption?.label || ''}
-                                        onValueChange={(label) => {
-                                          const option = scale.options.find(o => o.label === label)
-                                          if (option) {
-                                            updateAttribute(sample.id, attribute, option.value)
-                                          }
-                                        }}
-                                      >
-                                        <SelectTrigger className="flex-1 h-7 text-xs">
-                                          <SelectValue placeholder="Select..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {sortedOptions.map((option) => (
-                                            <SelectItem key={option.label} value={option.label}>
-                                              {option.label} ({option.value})
-                                            </SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
-                                    </div>
-                                    {isFlavorAttr && (
-                                      <div className="mt-1.5">
+                                    </td>
+                                    <td className="py-1">
+                                      <div className="flex items-center gap-2">
+                                        <input
+                                          type="text"
+                                          inputMode="decimal"
+                                          value={rawInputMap.get(`${sample.id}:${attribute}`) ?? (hasValue ? String(value) : '')}
+                                          onFocus={(e) => e.target.select()}
+                                          onChange={(e) => {
+                                            const inputVal = e.target.value
+                                            const key = `${sample.id}:${attribute}`
+                                            if (inputVal === '') {
+                                              setRawInputMap(prev => { const m = new Map(prev); m.delete(key); return m })
+                                              updateAttribute(sample.id, attribute, null)
+                                              return
+                                            }
+                                            if (/^\d*\.?\d*$/.test(inputVal)) {
+                                              setRawInputMap(prev => new Map(prev).set(key, inputVal))
+                                              const v = parseFloat(inputVal)
+                                              if (!isNaN(v) && v >= minVal && v <= maxVal) {
+                                                updateAttribute(sample.id, attribute, v)
+                                              }
+                                            }
+                                          }}
+                                          onBlur={() => {
+                                            const key = `${sample.id}:${attribute}`
+                                            const raw = rawInputMap.get(key) ?? (hasValue ? String(value) : '')
+                                            setRawInputMap(prev => { const m = new Map(prev); m.delete(key); return m })
+                                            if (raw === '') {
+                                              updateAttribute(sample.id, attribute, null)
+                                              return
+                                            }
+                                            const v = parseFloat(raw)
+                                            if (isNaN(v)) {
+                                              updateAttribute(sample.id, attribute, null)
+                                            } else if (v < minVal) {
+                                              updateAttribute(sample.id, attribute, minVal)
+                                            } else if (v > maxVal) {
+                                              updateAttribute(sample.id, attribute, maxVal)
+                                            }
+                                          }}
+                                          className="w-[48px] px-1 py-1 text-center border rounded text-sm font-semibold"
+                                        />
                                         <Select
-                                          value={flavorDescriptorMap.get(sample.id) || ''}
-                                          onValueChange={(val) => {
-                                            const newMap = new Map(flavorDescriptorMap)
-                                            newMap.set(sample.id, val)
-                                            setFlavorDescriptorMap(newMap)
+                                          value={selectedOption?.label || ''}
+                                          onValueChange={(label) => {
+                                            const option = scale.options.find(o => o.label === label)
+                                            if (option) {
+                                              updateAttribute(sample.id, attribute, option.value)
+                                            }
                                           }}
                                         >
-                                          <SelectTrigger className="w-full h-7 text-xs">
-                                            <SelectValue placeholder="Descriptor..." />
+                                          <SelectTrigger className="w-[110px] h-8 text-xs">
+                                            <SelectValue placeholder="Select..." />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            {['Strong Rio', 'Rio', 'Rioy/Rio', 'Rioy', 'Hardish', 'Hard', 'Softish', 'Soft', 'S. Soft', 'Special'].map(desc => (
-                                              <SelectItem key={desc} value={desc}>{desc}</SelectItem>
-                                            ))}
+                                            {sortedOptions.map((option) => (
+                                              <SelectItem key={option.label} value={option.label}>
+                                                {option.label} ({option.value})
+                                              </SelectItem>
+                                          ))}
                                           </SelectContent>
                                         </Select>
+                                        {isFlavorAttr && (
+                                          <Select
+                                            value={flavorDescriptorMap.get(sample.id) || ''}
+                                            onValueChange={(val) => {
+                                              const newMap = new Map(flavorDescriptorMap)
+                                              newMap.set(sample.id, val)
+                                              setFlavorDescriptorMap(newMap)
+                                            }}
+                                          >
+                                            <SelectTrigger className="w-[110px] h-8 text-xs">
+                                              <SelectValue placeholder="Descriptor..." />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                              {['Strong Rio', 'Rio', 'Rioy/Rio', 'Rioy', 'Hardish', 'Hard', 'Softish', 'Soft', 'S. Soft', 'Special'].map(desc => (
+                                                <SelectItem key={desc} value={desc}>{desc}</SelectItem>
+                                              ))}
+                                            </SelectContent>
+                                          </Select>
+                                        )}
                                       </div>
-                                    )}
-                                  </div>
+                                    </td>
+                                  </tr>
                                 )
                               }
 
-                              // Boolean scale with checkbox (Clean Cup, Uniformity)
                               if (scale.type === 'boolean') {
                                 const trueValue = scale.trueValue ?? 10
                                 const falseValue = scale.falseValue ?? 0
@@ -1757,167 +1761,161 @@ function CuppingPageContent() {
                                 const falseLabel = scale.falseLabel ?? 'No'
 
                                 return (
-                                  <div key={attribute} className="border rounded-lg p-2.5 border-border flex items-center gap-2">
-                                    <Checkbox
-                                      id={`${sample.id}-${attribute}`}
-                                      checked={isChecked}
-                                      onCheckedChange={(checked) => {
-                                        updateAttribute(sample.id, attribute, checked ? trueValue : falseValue)
-                                      }}
-                                      className="h-5 w-5"
-                                    />
-                                    <label
-                                      htmlFor={`${sample.id}-${attribute}`}
-                                      className={`text-xs font-medium cursor-pointer ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}
-                                    >
-                                      {attribute}
-                                      <span className={`ml-1 text-[10px] ${isChecked ? 'text-green-600' : 'text-muted-foreground'}`}>
-                                        ({isChecked ? trueLabel : falseLabel})
-                                      </span>
-                                    </label>
-                                  </div>
+                                  <tr key={attribute} className="h-10">
+                                    <td className="pr-4 py-1">
+                                      <label
+                                        htmlFor={`${sample.id}-${attribute}`}
+                                        className={`text-sm font-medium cursor-pointer ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}
+                                      >
+                                        {attribute}
+                                      </label>
+                                    </td>
+                                    <td className="py-1">
+                                      <div className="flex items-center gap-2">
+                                        <Checkbox
+                                          id={`${sample.id}-${attribute}`}
+                                          checked={isChecked}
+                                          onCheckedChange={(checked) => {
+                                            updateAttribute(sample.id, attribute, checked ? trueValue : falseValue)
+                                          }}
+                                          className="h-5 w-5"
+                                        />
+                                        <span className={`text-xs ${isChecked ? 'text-green-600' : 'text-muted-foreground'}`}>
+                                          {isChecked ? trueLabel : falseLabel}
+                                        </span>
+                                      </div>
+                                    </td>
+                                  </tr>
                                 )
                               }
 
                               return null
                             })}
-                          </div>
+                          </tbody>
+                        </table>
 
-                          {/* Spider Chart Visualization */}
-                          <div className="hidden md:block w-[420px] flex-shrink-0">
-                            {cuppingData && cuppingData.attributes.some(a => a.value !== null) ? (
-                              (() => {
-                                // Filter out boolean attributes (Clean Cup, Uniformity) from the spider chart
-                                const chartAttributes = attributes.filter(a => a.scale.type !== 'boolean')
+                        {/* Spider Chart Visualization - Outside the table, no card wrapper */}
+                        <div className="hidden md:block w-[420px] flex-shrink-0">
+                          {cuppingData && cuppingData.attributes.some(a => a.value !== null) ? (
+                            (() => {
+                              const chartAttributes = attributes.filter(a => a.scale.type !== 'boolean')
 
-                                if (chartAttributes.length === 0) return null
+                              if (chartAttributes.length === 0) return null
 
-                                // Calculate max value across all chart attributes for consistent chart scale
-                                const maxScaleValue = Math.max(
-                                  ...chartAttributes.map(({ scale }) =>
-                                    scale.type === 'numeric' ? scale.max : (scale.type === 'wording' ? Math.max(...scale.options.map(o => o.value)) : 10)
-                                  )
+                              const maxScaleValue = Math.max(
+                                ...chartAttributes.map(({ scale }) =>
+                                  scale.type === 'numeric' ? scale.max : (scale.type === 'wording' ? Math.max(...scale.options.map(o => o.value)) : 10)
                                 )
+                              )
 
-                                // Generate uniform scale ticks (0, 2, 4, 6, 8, 10...)
-                                const tickInterval = 2
-                                const numTicks = Math.ceil(maxScaleValue / tickInterval) + 1
-                                const tickVals = Array.from({ length: numTicks }, (_, i) => i * tickInterval)
+                              const tickInterval = 2
+                              const numTicks = Math.ceil(maxScaleValue / tickInterval) + 1
+                              const tickVals = Array.from({ length: numTicks }, (_, i) => i * tickInterval)
 
-                                // Prepare data for Plotly first (needed for labels)
-                                const values = chartAttributes.map(({ attribute }) => {
-                                  const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
-                                  return attrScore?.value ?? 0
-                                })
+                              const values = chartAttributes.map(({ attribute }) => {
+                                const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
+                                return attrScore?.value ?? 0
+                              })
 
-                                // Format attribute labels with scores and threshold ranges
-                                const formattedLabels = chartAttributes.map(({ attribute, validation_rule }, idx) => {
-                                  const score = values[idx]
-                                  const scoreDisplay = score > 0 ? ` ${score}` : ''
+                              const formattedLabels = chartAttributes.map(({ attribute, validation_rule }, idx) => {
+                                const score = values[idx]
+                                const scoreDisplay = score > 0 ? ` ${score}` : ''
 
-                                  // Check if attribute is out of spec
-                                  const attrData = cuppingData.attributes.find(a => a.attribute === attribute)
-                                  const isOutOfSpec = attrData?.value && validation_rule
-                                    ? !validateScoreAgainstRule(attrData.value, validation_rule).valid
-                                    : false
+                                const attrData = cuppingData.attributes.find(a => a.attribute === attribute)
+                                const isOutOfSpec = attrData?.value && validation_rule
+                                  ? !validateScoreAgainstRule(attrData.value, validation_rule).valid
+                                  : false
 
-                                  // Get theme-aware color for labels
-                                  const normalColor = theme === 'dark' ? '#ffffff' : '#000000'
-                                  const outOfSpecColor = '#ef4444' // Red for out of spec
-                                  const labelColor = isOutOfSpec ? outOfSpecColor : normalColor
+                                const normalColor = theme === 'dark' ? '#ffffff' : '#000000'
+                                const outOfSpecColor = '#ef4444'
+                                const labelColor = isOutOfSpec ? outOfSpecColor : normalColor
 
-                                  if (validation_rule && validation_rule.type === 'range' && validation_rule.max_value !== undefined) {
-                                    const center = (validation_rule.min_value + validation_rule.max_value) / 2
-                                    const tolerance = (validation_rule.max_value - validation_rule.min_value) / 2
-                                    // Format with at most 2 decimal places, removing unnecessary zeros
-                                    const centerStr = Number(center.toFixed(2)).toString()
-                                    const toleranceStr = Number(tolerance.toFixed(2)).toString()
-                                    return `<span style="color: ${labelColor}">${attribute}${scoreDisplay}<br><span style="font-size: 9px">(${centerStr} +/- ${toleranceStr})</span></span>`
-                                  }
-                                  return `<span style="color: ${labelColor}">${attribute}${scoreDisplay}</span>`
-                                })
+                                if (validation_rule && validation_rule.type === 'range' && validation_rule.max_value !== undefined) {
+                                  const center = (validation_rule.min_value + validation_rule.max_value) / 2
+                                  const tolerance = (validation_rule.max_value - validation_rule.min_value) / 2
+                                  const centerStr = Number(center.toFixed(2)).toString()
+                                  const toleranceStr = Number(tolerance.toFixed(2)).toString()
+                                  return `<span style="color: ${labelColor}">${attribute}${scoreDisplay}<br><span style="font-size: 9px">(${centerStr} +/- ${toleranceStr})</span></span>`
+                                }
+                                return `<span style="color: ${labelColor}">${attribute}${scoreDisplay}</span>`
+                              })
 
-                                // Close the polygon by adding the first value at the end
-                                const closedValues = [...values, values[0]]
-                                const closedLabels = [...formattedLabels, formattedLabels[0]]
+                              const closedValues = [...values, values[0]]
+                              const closedLabels = [...formattedLabels, formattedLabels[0]]
 
-                                // Check if all chart scores are within spec
-                                const allWithinSpec = cuppingData.attributes.every(a => {
-                                  const attr = chartAttributes.find(attr => attr.attribute === a.attribute)
-                                  if (!a.value || !attr?.validation_rule) return true
-                                  return validateScoreAgainstRule(a.value, attr.validation_rule).valid
-                                })
+                              const allWithinSpec = cuppingData.attributes.every(a => {
+                                const attr = chartAttributes.find(attr => attr.attribute === a.attribute)
+                                if (!a.value || !attr?.validation_rule) return true
+                                return validateScoreAgainstRule(a.value, attr.validation_rule).valid
+                              })
 
-                                const lineColor = allWithinSpec ? '#22c55e' : '#ef4444'
+                              const lineColor = allWithinSpec ? '#22c55e' : '#ef4444'
+                              const labelColor = theme === 'dark' ? '#ffffff' : '#000000'
+                              const tickColor = theme === 'dark' ? '#aaaaaa' : '#666666'
 
-                                // Get computed color values for theme-aware rendering
-                                const labelColor = theme === 'dark' ? '#ffffff' : '#000000'
-                                const tickColor = theme === 'dark' ? '#aaaaaa' : '#666666'
-
-                                return (
-                                  // @ts-ignore - Plotly.js types are incomplete
-                                  <Plot
-                                    key={theme}
-                                    data={[
-                                      {
-                                        type: 'scatterpolar',
-                                        r: closedValues,
-                                        theta: closedLabels,
-                                        fill: 'toself',
-                                        fillcolor: allWithinSpec ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
-                                        line: {
-                                          color: lineColor,
-                                          width: 2
-                                        },
-                                        marker: {
-                                          color: lineColor,
-                                          size: 6
-                                        }
+                              return (
+                                // @ts-ignore - Plotly.js types are incomplete
+                                <Plot
+                                  key={theme}
+                                  data={[
+                                    {
+                                      type: 'scatterpolar',
+                                      r: closedValues,
+                                      theta: closedLabels,
+                                      fill: 'toself',
+                                      fillcolor: allWithinSpec ? 'rgba(34, 197, 94, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+                                      line: {
+                                        color: lineColor,
+                                        width: 2
+                                      },
+                                      marker: {
+                                        color: lineColor,
+                                        size: 6
                                       }
-                                    ]}
-                                    layout={{
-                                      autosize: true,
-                                      height: 380,
-                                      polar: {
-                                        radialaxis: {
-                                          visible: true,
-                                          range: [0, maxScaleValue],
-                                          tickvals: tickVals,
-                                          tickfont: {
-                                            size: 10,
-                                            color: tickColor
-                                          },
-                                          gridcolor: 'rgba(128, 128, 128, 0.2)'
+                                    }
+                                  ]}
+                                  layout={{
+                                    autosize: true,
+                                    height: 380,
+                                    polar: {
+                                      radialaxis: {
+                                        visible: true,
+                                        range: [0, maxScaleValue],
+                                        tickvals: tickVals,
+                                        tickfont: {
+                                          size: 10,
+                                          color: tickColor
                                         },
-                                        angularaxis: {
-                                          tickfont: {
-                                            size: 11,
-                                            color: labelColor
-                                          }
-                                        },
-                                        bgcolor: 'transparent'
+                                        gridcolor: 'rgba(128, 128, 128, 0.2)'
                                       },
-                                      plot_bgcolor: 'transparent',
-                                      paper_bgcolor: 'transparent',
-                                      font: {
-                                        color: labelColor
+                                      angularaxis: {
+                                        tickfont: {
+                                          size: 11,
+                                          color: labelColor
+                                        }
                                       },
-                                      margin: { t: 60, r: 80, b: 60, l: 80 },
-                                      showlegend: false
-                                    }}
-                                    config={{ displayModeBar: false, responsive: true }}
-                                    className="w-full"
-                                  />
-                                )
-                              })()
-                            ) : (
-                              <div className="flex items-center justify-center h-[380px] text-xs text-muted-foreground">
-                                Start scoring to see chart
-                              </div>
-                            )}
-                          </div>
+                                      bgcolor: 'transparent'
+                                    },
+                                    plot_bgcolor: 'transparent',
+                                    paper_bgcolor: 'transparent',
+                                    font: {
+                                      color: labelColor
+                                    },
+                                    margin: { t: 60, r: 80, b: 60, l: 80 },
+                                    showlegend: false
+                                  }}
+                                  config={{ displayModeBar: false, responsive: true }}
+                                  className="w-full"
+                                />
+                              )
+                            })()
+                          ) : (
+                            <div className="flex items-center justify-center h-[380px] text-xs text-muted-foreground">
+                              Start scoring to see chart
+                            </div>
+                          )}
                         </div>
-                      </Card>
+                      </div>
 
                       {/* Defects Section */}
                       <Card className="p-6 w-fit">
