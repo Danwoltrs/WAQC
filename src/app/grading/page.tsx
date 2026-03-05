@@ -259,7 +259,7 @@ export default function GradingPage() {
     const gradingData = gradingDataMap.get(sampleId)
     const constraints = humidityConstraintsMap.get(sampleId)
 
-    if (!constraints || !gradingData || gradingData.moisture_percentage === 0) {
+    if (!constraints || !gradingData || !gradingData.moisture_percentage) {
       return { errors: [], violated: false }
     }
 
