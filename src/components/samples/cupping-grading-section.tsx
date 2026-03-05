@@ -480,7 +480,7 @@ export function CuppingGradingSection({
                     />
                   ) : (
                     <div className={`text-lg font-semibold ${!canEditCuppingGrading && sample.certificate_id ? 'text-muted-foreground' : ''}`}>
-                      {typeof value === 'number' ? value.toFixed(1) : '-'}
+                      {typeof value === 'number' && !isNaN(value) ? value.toFixed(1) : '-'}
                     </div>
                   )}
                 </div>

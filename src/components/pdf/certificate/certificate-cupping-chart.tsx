@@ -435,7 +435,7 @@ export function CertificateCuppingChart({
                         { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
                       ]}
                     >
-                      {attr.score !== null ? attr.score.toFixed(decimalPlaces) : '-'}
+                      {attr.score !== null && typeof attr.score === 'number' && !isNaN(attr.score) ? attr.score.toFixed(decimalPlaces) : '-'}
                     </Text>
 
                     <View style={chartStyles.chartSection}>

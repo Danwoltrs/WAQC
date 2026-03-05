@@ -704,7 +704,7 @@ export function CuppingValidationModal({
                                     </Button>
                                   </div>
                                 ) : (
-                                  <span>{cellValue?.toFixed(2) || 'N/A'}</span>
+                                  <span>{typeof cellValue === 'number' && !isNaN(cellValue) ? cellValue.toFixed(2) : 'N/A'}</span>
                                 )}
                               </td>
                             )

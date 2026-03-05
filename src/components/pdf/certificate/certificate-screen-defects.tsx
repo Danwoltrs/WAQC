@@ -466,7 +466,7 @@ export function CertificateScreenDefects({
           <View style={styles.summaryItem}>
             <Text style={styles.summaryLabel}>Secondary:</Text>
             <Text style={secondaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
-              {secondaryDefectsCount?.toFixed(2) ?? '0'}
+              {typeof secondaryDefectsCount === 'number' && !isNaN(secondaryDefectsCount) ? secondaryDefectsCount.toFixed(2) : '0'}
             </Text>
             {secondaryOutOfSpec && (
               <Text style={styles.summarySpecNote}>(max {maxSecondaryDefects})</Text>

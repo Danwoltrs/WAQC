@@ -12,13 +12,12 @@ import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { Slider } from '@/components/ui/slider'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, ChevronLeft, ChevronRight, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { AttributeWithScale } from '@/types/cupping-templates'
+import { AttributeWithScale, STANDARD_CUPPING_TEMPLATE } from '@/types/cupping-templates'
 import { AttributeScaleType, validateScoreAgainstRule } from '@/types/attribute-scales'
 import {
   SampleVisibilitySettings,
@@ -710,7 +709,15 @@ function CuppingPageContent() {
         console.error('Error loading existing cupping scores:', error)
       }
 
-      // No fallback - all samples must have quality template with cupping configuration
+      // Fallback to Standard template if no cupping attributes were loaded from quality spec
+      if (!attributesMap.has(sample.id) || (attributesMap.get(sample.id)?.length ?? 0) === 0) {
+        const standardAttrs: AttributeWithScale[] = STANDARD_CUPPING_TEMPLATE.attributes
+        attributesMap.set(sample.id, standardAttrs)
+        defaultCuppingData.attributes = standardAttrs.map(attr => ({
+          attribute: attr.attribute,
+          value: null
+        }))
+      }
       cuppingMap.set(sample.id, defaultCuppingData)
     } catch (error) {
       console.error('Error loading sample cupping config:', error)
@@ -730,7 +737,7 @@ function CuppingPageContent() {
     }
   }
 
-  const updateAttribute = (sampleId: string, attribute: string, value: number) => {
+  const updateAttribute = (sampleId: string, attribute: string, value: number | null) => {
     const cuppingData = cuppingDataMap.get(sampleId)
     if (!cuppingData) return
 
@@ -1527,14 +1534,14 @@ function CuppingPageContent() {
                     </Card>
                   ) : (
                     <div className="space-y-4">
-                      {/* Attributes Section - Compact with Spider Chart */}
+                      {/* Attributes Section - Compact 3-Column Grid with Spider Chart */}
                       <Card className="p-4 w-fit">
                         <div className="flex gap-6">
-                          {/* Attributes List - Two Columns */}
-                          <div className="grid grid-cols-1 xl:grid-cols-2 gap-x-8 gap-y-0.5">
+                          {/* Attributes Grid - 3 Columns */}
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                             {attributes.map(({ attribute, scale, validation_rule }) => {
                               const attrScore = cuppingData?.attributes.find(a => a.attribute === attribute)
-                              const value = attrScore?.value ?? (scale.type === 'numeric' ? scale.min : null)
+                              const value = attrScore?.value ?? null
 
                               // Check if value is within validation range
                               const hasValue = value !== null
@@ -1549,92 +1556,98 @@ function CuppingPageContent() {
                                   : `${validation_rule.min_value}-${validation_rule.max_value}`
                                 : null
 
-                              // Numeric scale with +/- buttons and input
+                              const isFlavorAttr = attribute.toLowerCase() === 'flavor' || attribute.toLowerCase() === 'flavor/bebida'
+
+                              // Get the increment for this attribute's scale
+                              const increment = scale.type === 'numeric' ? scale.increment : 1
+
+                              // Round value to nearest valid increment
+                              const roundToIncrement = (v: number, inc: number): number => {
+                                return Math.round(v / inc) * inc
+                              }
+
+                              // Numeric scale - input only, no +/- buttons
                               if (scale.type === 'numeric') {
-                                const isFlavorAttr = attribute.toLowerCase() === 'flavor' || attribute.toLowerCase() === 'flavor/bebida'
                                 return (
-                                  <div key={attribute} className="flex items-center gap-1.5">
-                                    <div className="flex items-baseline gap-1">
-                                      <span className={`text-sm font-medium ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}>
+                                  <div key={attribute} className={`border rounded-lg p-2.5 ${hasValue && !isWithinSpec ? 'border-destructive/50' : 'border-border'}`}>
+                                    <div className="flex items-baseline justify-between mb-1">
+                                      <span className={`text-xs font-medium ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}>
                                         {attribute}
                                       </span>
                                       {validationDisplay && (
                                         <span className="text-[10px] text-muted-foreground">
-                                          ({validationDisplay})
+                                          {validationDisplay}
                                         </span>
                                       )}
                                     </div>
-                                    <div className="flex items-center gap-2">
-                                      <Button
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => decrementScore(sample.id, attribute, scale)}
-                                      >
-                                        <Minus className="h-3 w-3" />
-                                      </Button>
-                                      <input
-                                        type="text"
-                                        inputMode="decimal"
-                                        value={value ?? ''}
-                                        onChange={(e) => {
-                                          const inputVal = e.target.value
-                                          // Allow empty string for deletion
-                                          if (inputVal === '' || inputVal === '-') {
-                                            return
-                                          }
-                                          // Allow partial decimal input like "0." or "7."
-                                          if (/^\d*\.?\d*$/.test(inputVal)) {
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={hasValue ? String(value) : ''}
+                                      onFocus={(e) => {
+                                        e.target.select()
+                                      }}
+                                      onChange={(e) => {
+                                        const inputVal = e.target.value
+                                        if (inputVal === '') {
+                                          updateAttribute(sample.id, attribute, null)
+                                          return
+                                        }
+                                        // Allow partial decimal input mid-typing without snapping
+                                        if (/^\d*\.?\d*$/.test(inputVal)) {
+                                          if (!inputVal.endsWith('.')) {
                                             const v = parseFloat(inputVal)
-                                            if (!isNaN(v) && v >= scale.min && v <= scale.max) {
+                                            if (!isNaN(v) && v >= 0 && v <= scale.max) {
                                               updateAttribute(sample.id, attribute, v)
                                             }
                                           }
-                                        }}
-                                        onBlur={(e) => {
-                                          // On blur, ensure we have a valid value or reset
-                                          const v = parseFloat(e.target.value)
-                                          if (isNaN(v) || v < scale.min) {
-                                            updateAttribute(sample.id, attribute, scale.min)
-                                          } else if (v > scale.max) {
-                                            updateAttribute(sample.id, attribute, scale.max)
-                                          }
-                                        }}
-                                        className="w-16 px-2 py-1 text-center border rounded text-sm font-semibold"
-                                      />
-                                      <Button
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => incrementScore(sample.id, attribute, scale)}
-                                      >
-                                        <Plus className="h-3 w-3" />
-                                      </Button>
-                                    </div>
+                                        }
+                                      }}
+                                      onBlur={(e) => {
+                                        const raw = e.target.value
+                                        if (raw === '' || raw === '.') {
+                                          updateAttribute(sample.id, attribute, null)
+                                          return
+                                        }
+                                        const v = parseFloat(raw)
+                                        if (isNaN(v)) {
+                                          updateAttribute(sample.id, attribute, null)
+                                          return
+                                        }
+                                        const clamped = Math.min(Math.max(v, scale.min), scale.max)
+                                        const rounded = roundToIncrement(clamped, increment)
+                                        const final = Math.min(Math.max(rounded, scale.min), scale.max)
+                                        const clean = Math.round(final * 10000) / 10000
+                                        updateAttribute(sample.id, attribute, clean)
+                                      }}
+                                      className="w-[60px] max-w-[60px] px-2 py-1 text-center border rounded text-sm font-semibold mx-auto block"
+                                    />
                                     {isFlavorAttr && (
-                                      <Select
-                                        value={flavorDescriptorMap.get(sample.id) || ''}
-                                        onValueChange={(val) => {
-                                          const newMap = new Map(flavorDescriptorMap)
-                                          newMap.set(sample.id, val)
-                                          setFlavorDescriptorMap(newMap)
-                                        }}
-                                      >
-                                        <SelectTrigger className="w-[130px] h-8 text-sm">
-                                          <SelectValue placeholder="Descriptor..." />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          {['Special', 'S.Soft', 'Soft', 'Softish', 'Hard', 'Hardish', 'Rioy', 'Rioy/Rio', 'Rio', 'Strong Rio'].map(desc => (
-                                            <SelectItem key={desc} value={desc}>{desc}</SelectItem>
-                                          ))}
-                                        </SelectContent>
-                                      </Select>
+                                      <div className="mt-1.5">
+                                        <Select
+                                          value={flavorDescriptorMap.get(sample.id) || ''}
+                                          onValueChange={(val) => {
+                                            const newMap = new Map(flavorDescriptorMap)
+                                            newMap.set(sample.id, val)
+                                            setFlavorDescriptorMap(newMap)
+                                          }}
+                                        >
+                                          <SelectTrigger className="w-full h-7 text-xs">
+                                            <SelectValue placeholder="Descriptor..." />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {['Strong Rio', 'Rio', 'Rioy/Rio', 'Rioy', 'Hardish', 'Hard', 'Softish', 'Soft', 'S. Soft', 'Special'].map(desc => (
+                                              <SelectItem key={desc} value={desc}>{desc}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
                                     )}
                                   </div>
                                 )
                               }
 
-                              // Wording scale with +/- buttons, text input, label, and dropdown
+                              // Wording scale - input + dropdown, no +/- buttons
                               if (scale.type === 'wording' && scale.options) {
                                 const sortedOptions = [...scale.options].sort((a, b) => a.display_order - b.display_order)
                                 const selectedOption = sortedOptions.find(o => o.value === value)
@@ -1642,77 +1655,95 @@ function CuppingPageContent() {
                                 const maxVal = Math.max(...sortedOptions.map(o => o.value))
 
                                 return (
-                                  <div key={attribute} className="flex items-center gap-1.5">
-                                    <div className="flex items-baseline gap-1">
-                                      <span className={`text-sm font-medium ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}>
+                                  <div key={attribute} className={`border rounded-lg p-2.5 ${hasValue && !isWithinSpec ? 'border-destructive/50' : 'border-border'}`}>
+                                    <div className="flex items-baseline justify-between mb-1">
+                                      <span className={`text-xs font-medium ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}>
                                         {attribute}
                                       </span>
                                       {validationDisplay && (
                                         <span className="text-[10px] text-muted-foreground">
-                                          ({validationDisplay})
+                                          {validationDisplay}
                                         </span>
                                       )}
                                     </div>
-                                    <div className="flex items-center gap-1">
-                                      <Button
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => decrementScore(sample.id, attribute, scale)}
-                                      >
-                                        <Minus className="h-3 w-3" />
-                                      </Button>
+                                    <div className="flex items-center gap-1.5">
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        value={value ?? ''}
+                                        value={hasValue ? String(value) : ''}
+                                        onFocus={(e) => {
+                                          e.target.select()
+                                        }}
                                         onChange={(e) => {
                                           const inputVal = e.target.value
-                                          if (inputVal === '') return
+                                          if (inputVal === '') {
+                                            updateAttribute(sample.id, attribute, null)
+                                            return
+                                          }
                                           const v = parseInt(inputVal, 10)
                                           if (!isNaN(v) && v >= minVal && v <= maxVal) {
                                             updateAttribute(sample.id, attribute, v)
                                           }
                                         }}
                                         onBlur={(e) => {
-                                          const v = parseInt(e.target.value, 10)
-                                          if (isNaN(v) || v < minVal) {
+                                          const raw = e.target.value
+                                          if (raw === '') {
+                                            updateAttribute(sample.id, attribute, null)
+                                            return
+                                          }
+                                          const v = parseInt(raw, 10)
+                                          if (isNaN(v)) {
+                                            updateAttribute(sample.id, attribute, null)
+                                          } else if (v < minVal) {
                                             updateAttribute(sample.id, attribute, minVal)
                                           } else if (v > maxVal) {
                                             updateAttribute(sample.id, attribute, maxVal)
                                           }
                                         }}
-                                        className="w-12 px-1 py-1 text-center border rounded text-sm font-semibold"
+                                        className="w-[48px] max-w-[48px] px-1 py-1 text-center border rounded text-sm font-semibold"
                                       />
-                                      <Button
-                                        variant="outline"
-                                        size="icon"
-                                        className="h-7 w-7"
-                                        onClick={() => incrementScore(sample.id, attribute, scale)}
+                                      <Select
+                                        value={selectedOption?.label || ''}
+                                        onValueChange={(label) => {
+                                          const option = scale.options.find(o => o.label === label)
+                                          if (option) {
+                                            updateAttribute(sample.id, attribute, option.value)
+                                          }
+                                        }}
                                       >
-                                        <Plus className="h-3 w-3" />
-                                      </Button>
+                                        <SelectTrigger className="flex-1 h-7 text-xs">
+                                          <SelectValue placeholder="Select..." />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {sortedOptions.map((option) => (
+                                            <SelectItem key={option.label} value={option.label}>
+                                              {option.label} ({option.value})
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
                                     </div>
-                                    <Select
-                                      value={selectedOption?.label}
-                                      onValueChange={(label) => {
-                                        const option = scale.options.find(o => o.label === label)
-                                        if (option) {
-                                          updateAttribute(sample.id, attribute, option.value)
-                                        }
-                                      }}
-                                    >
-                                      <SelectTrigger className="w-[130px] h-8 text-sm">
-                                        <SelectValue placeholder="Select..." />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        {sortedOptions.map((option) => (
-                                          <SelectItem key={option.label} value={option.label}>
-                                            {option.label} ({option.value})
-                                          </SelectItem>
-                                        ))}
-                                      </SelectContent>
-                                    </Select>
+                                    {isFlavorAttr && (
+                                      <div className="mt-1.5">
+                                        <Select
+                                          value={flavorDescriptorMap.get(sample.id) || ''}
+                                          onValueChange={(val) => {
+                                            const newMap = new Map(flavorDescriptorMap)
+                                            newMap.set(sample.id, val)
+                                            setFlavorDescriptorMap(newMap)
+                                          }}
+                                        >
+                                          <SelectTrigger className="w-full h-7 text-xs">
+                                            <SelectValue placeholder="Descriptor..." />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            {['Strong Rio', 'Rio', 'Rioy/Rio', 'Rioy', 'Hardish', 'Hard', 'Softish', 'Soft', 'S. Soft', 'Special'].map(desc => (
+                                              <SelectItem key={desc} value={desc}>{desc}</SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    )}
                                   </div>
                                 )
                               }
@@ -1726,7 +1757,7 @@ function CuppingPageContent() {
                                 const falseLabel = scale.falseLabel ?? 'No'
 
                                 return (
-                                  <div key={attribute} className="flex items-center gap-2">
+                                  <div key={attribute} className="border rounded-lg p-2.5 border-border flex items-center gap-2">
                                     <Checkbox
                                       id={`${sample.id}-${attribute}`}
                                       checked={isChecked}
@@ -1737,10 +1768,10 @@ function CuppingPageContent() {
                                     />
                                     <label
                                       htmlFor={`${sample.id}-${attribute}`}
-                                      className={`text-sm font-medium cursor-pointer ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}
+                                      className={`text-xs font-medium cursor-pointer ${hasValue && !isWithinSpec ? 'text-destructive' : ''}`}
                                     >
                                       {attribute}
-                                      <span className={`ml-1.5 text-xs ${isChecked ? 'text-green-600' : 'text-muted-foreground'}`}>
+                                      <span className={`ml-1 text-[10px] ${isChecked ? 'text-green-600' : 'text-muted-foreground'}`}>
                                         ({isChecked ? trueLabel : falseLabel})
                                       </span>
                                     </label>

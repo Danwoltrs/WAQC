@@ -712,7 +712,18 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 relative">
+      {/* Close button - top right */}
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="absolute top-0 right-0 h-8 w-8 z-10"
+        onClick={onCancel}
+      >
+        <X className="h-4 w-4" />
+      </Button>
+
       {error && (
         <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
           <AlertCircle className="h-4 w-4" />
@@ -2057,13 +2068,13 @@ export function TemplateBuilder({ template, onSave, onCancel }: TemplateBuilderP
         onChange={setMicroRegionConfiguration}
       />
 
-      {/* Actions */}
-      <div className="flex justify-end gap-3">
-        <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+      {/* Actions - fixed bottom-right, ghost/outline style */}
+      <div className="fixed bottom-6 right-6 flex gap-2 z-50">
+        <Button type="button" variant="ghost" size="sm" onClick={onCancel} disabled={loading}>
           Cancel
         </Button>
-        <Button type="button" onClick={handleSubmit} disabled={loading}>
-          <Save className="h-4 w-4 mr-2" />
+        <Button type="button" variant="outline" size="sm" onClick={handleSubmit} disabled={loading}>
+          <Save className="h-3.5 w-3.5 mr-1.5" />
           {loading ? 'Saving...' : 'Save Template'}
         </Button>
       </div>

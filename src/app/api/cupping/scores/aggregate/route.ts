@@ -115,10 +115,12 @@ export async function GET(request: NextRequest) {
     // This prevents old scores from removed cuppers from causing false discrepancies
     let activeSessionCupperIds: string[] | null = null
 
+    let masterCupperId: string | null = null
+
     if (sampleId) {
       const { data: activeSession } = await supabaseAdmin
         .from('cupping_sessions')
-        .select('id, cupper_ids')
+        .select('id, cupper_ids, master_cupper_id')
         .contains('sample_ids', [sampleId])
         .in('status', ['active', 'review', 'completed', 'finalized'])
         .order('created_at', { ascending: false })
@@ -127,6 +129,9 @@ export async function GET(request: NextRequest) {
 
       if (activeSession?.cupper_ids) {
         activeSessionCupperIds = activeSession.cupper_ids as string[]
+      }
+      if (activeSession?.master_cupper_id) {
+        masterCupperId = activeSession.master_cupper_id
       }
     }
 
@@ -221,8 +226,19 @@ export async function GET(request: NextRequest) {
       const outliers = detectOutliers(cupperValues, stats)
       const range = stats.max - stats.min
 
-      // Round mean to nearest 0.25 increment (standard cupping increment)
-      const finalScore = roundToNearestIncrement(stats.mean, 0.25)
+      // If a master cupper is designated, use their score as the final score
+      // Otherwise fall back to the rounded mean
+      let finalScore: number
+      if (masterCupperId) {
+        const masterScore = scores.find((s: any) => s.cupper_id === masterCupperId)
+        const masterScores = masterScore?.scores as Record<string, number> | undefined
+        const masterValue = masterScores?.[attribute]
+        finalScore = (masterValue !== undefined && masterValue !== null)
+          ? masterValue
+          : roundToNearestIncrement(stats.mean, 0.25)
+      } else {
+        finalScore = roundToNearestIncrement(stats.mean, 0.25)
+      }
 
       attributeStats[attribute] = {
         ...stats,
@@ -240,9 +256,14 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Calculate overall score (average of all attribute means)
+    // Calculate overall score
+    // If master cupper is designated, use sum of their final scores
+    // Otherwise use average of attribute means
+    const overallFinalScores = Object.values(attributeStats).map((stats) => stats.finalScore)
     const overallMeans = Object.values(attributeStats).map((stats) => stats.mean)
-    const overallStats = calculateStatistics(overallMeans)
+    const overallStats = masterCupperId
+      ? calculateStatistics(overallFinalScores)
+      : calculateStatistics(overallMeans)
 
     // Aggregate defects and check for discrepancies
     const allTaints = new Set<string>()
@@ -516,6 +537,7 @@ export async function GET(request: NextRequest) {
           defects: score.defects,
           created_at: score.created_at,
           is_own_score: isOwnScore,
+          is_master_cupper: masterCupperId ? score.cupper_id === masterCupperId : false,
         }
       } else {
         // Anonymize other cuppers' scores for regular users
@@ -536,6 +558,7 @@ export async function GET(request: NextRequest) {
       aggregated,
       individual_scores: individualScores,
       can_see_all_scores: canSeeAllScores,
+      master_cupper_id: masterCupperId,
     })
   } catch (error: any) {
     console.error('Error aggregating cupping scores:', error)

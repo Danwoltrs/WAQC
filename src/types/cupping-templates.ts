@@ -251,6 +251,39 @@ const BRAZIL_WORDING_TEMPLATE: CuppingAttributeTemplate = {
   ]
 }
 
+// Standard Template (built-in, always present, cannot be deleted)
+const STANDARD_TEMPLATE: CuppingAttributeTemplate = {
+  id: 'standard',
+  name: 'Standard',
+  description: 'Default cupping template with core attributes (1-10 scale, 0.25 increments)',
+  attributes: [
+    {
+      attribute: 'Fragrance',
+      scale: { type: 'numeric', min: 1, max: 10, increment: 0.25 }
+    },
+    {
+      attribute: 'Aroma',
+      scale: { type: 'numeric', min: 1, max: 10, increment: 0.25 }
+    },
+    {
+      attribute: 'Flavor',
+      scale: { type: 'numeric', min: 1, max: 10, increment: 0.25 }
+    },
+    {
+      attribute: 'Acidity',
+      scale: { type: 'numeric', min: 1, max: 10, increment: 0.25 }
+    },
+    {
+      attribute: 'Body',
+      scale: { type: 'numeric', min: 1, max: 10, increment: 0.25 }
+    },
+    {
+      attribute: 'Sweetness',
+      scale: { type: 'numeric', min: 1, max: 10, increment: 0.25 }
+    }
+  ]
+}
+
 // Simple 5-Point Scale Template
 const SIMPLE_5_POINT_TEMPLATE: CuppingAttributeTemplate = {
   id: 'simple-5-point',
@@ -280,7 +313,26 @@ const SIMPLE_5_POINT_TEMPLATE: CuppingAttributeTemplate = {
   ]
 }
 
+export const STANDARD_CUPPING_TEMPLATE = STANDARD_TEMPLATE
+
+// Flavor descriptor options (independent of score, stored separately)
+export const FLAVOR_DESCRIPTORS = [
+  'Strong Rio',
+  'Rio',
+  'Rioy/Rio',
+  'Rioy',
+  'Hardish',
+  'Hard',
+  'Softish',
+  'Soft',
+  'S. Soft',
+  'Special',
+] as const
+
+export type FlavorDescriptor = typeof FLAVOR_DESCRIPTORS[number]
+
 export const CUPPING_ATTRIBUTE_TEMPLATES: CuppingAttributeTemplate[] = [
+  STANDARD_TEMPLATE,
   SCA_TEMPLATE,
   COE_TEMPLATE,
   BRAZIL_TRADITIONAL_TEMPLATE,
