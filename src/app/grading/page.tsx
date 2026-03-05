@@ -259,8 +259,12 @@ export default function GradingPage() {
     const gradingData = gradingDataMap.get(sampleId)
     const constraints = humidityConstraintsMap.get(sampleId)
 
-    if (!constraints || !gradingData || !gradingData.moisture_percentage) {
+    if (!constraints || !gradingData) {
       return { errors: [], violated: false }
+    }
+
+    if (!gradingData.moisture_percentage) {
+      return { errors: ['Humidity data is required but not entered'], violated: true }
     }
 
     const errors: string[] = []
