@@ -248,6 +248,7 @@ export function OCRValidationDialog({
           className="fixed inset-0 w-full h-full max-w-none max-h-none m-0 p-0 rounded-none border-0 translate-x-0 translate-y-0 left-0 top-0 flex flex-col bg-background [&>button]:hidden"
           style={{ transform: 'none' }}
         >
+          <DialogTitle className="sr-only">Validate Cupping Scores</DialogTitle>
           {/* Header with safe area */}
           <div
             className="flex items-center justify-between px-4 py-3 border-b border-border bg-card"

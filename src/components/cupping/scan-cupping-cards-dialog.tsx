@@ -6,6 +6,7 @@ import Image from 'next/image'
 import {
   Dialog,
   DialogContent,
+  DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { X, Loader2, CheckCircle2, AlertCircle, Camera } from 'lucide-react'
@@ -303,6 +304,7 @@ export function ScanCuppingCardsDialog({
           className="fixed inset-0 w-full h-full max-w-none max-h-none m-0 p-0 rounded-none border-0 translate-x-0 translate-y-0 left-0 top-0 flex flex-col bg-black [&>button]:hidden"
           style={{ transform: 'none' }}
         >
+          <DialogTitle className="sr-only">Scan Cupping Cards</DialogTitle>
           {/* Header with safe area */}
           <div
             className="flex items-center justify-between px-4 py-3 bg-black text-white z-10"
@@ -534,7 +536,7 @@ export function ScanCuppingCardsDialog({
       <DialogContent className="sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
         <div className="space-y-4">
           <div>
-            <h2 className="text-lg font-semibold">Scan Cupping Cards</h2>
+            <DialogTitle className="text-lg font-semibold">Scan Cupping Cards</DialogTitle>
             <p className="text-sm text-muted-foreground">
               Take photos of completed cupping cards for automatic score extraction
             </p>

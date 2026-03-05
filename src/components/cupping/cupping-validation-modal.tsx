@@ -576,15 +576,15 @@ export function CuppingValidationModal({
                         <span className="text-sm font-medium">{attribute}</span>
                         {stats.hasDiscrepancy && (
                           <Badge variant="destructive" className="text-xs">
-                            ±{stats.range.toFixed(2)}
+                            ±{(stats.range ?? 0).toFixed(2)}
                           </Badge>
                         )}
                       </div>
                       <div className="text-2xl font-bold">
-                        {stats.finalScore.toFixed(2)}
+                        {(stats.finalScore ?? 0).toFixed(2)}
                       </div>
                       <div className="text-xs text-muted-foreground mt-1">
-                        Range: {stats.min.toFixed(2)} - {stats.max.toFixed(2)}
+                        Range: {(stats.min ?? 0).toFixed(2)} - {(stats.max ?? 0).toFixed(2)}
                       </div>
                       {stats.hasDiscrepancy && stats.outliers.length > 0 && (
                         <div className="text-xs text-red-600 dark:text-red-400 mt-1">
@@ -600,7 +600,7 @@ export function CuppingValidationModal({
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Overall Score</span>
                     <div className="text-2xl font-bold">
-                      {aggregated.overall_score.mean.toFixed(2)}
+                      {(aggregated.overall_score.mean ?? 0).toFixed(2)}
                     </div>
                   </div>
                 </div>
@@ -716,7 +716,7 @@ export function CuppingValidationModal({
                                 : 'bg-green-100 dark:bg-green-900'
                             }`}
                           >
-                            {stats.finalScore.toFixed(2)}
+                            {(stats.finalScore ?? 0).toFixed(2)}
                           </td>
                         </tr>
                       ))}

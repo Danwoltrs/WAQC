@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense, Component, ErrorInfo } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
@@ -2241,11 +2241,68 @@ function CuppingPageContent() {
   )
 }
 
+// ErrorBoundary to prevent white-screen crashes (e.g. null score fields)
+interface ErrorBoundaryState {
+  hasError: boolean
+  error: Error | null
+  errorInfo: ErrorInfo | null
+}
+
+class CuppingErrorBoundary extends Component<{ children: React.ReactNode }, ErrorBoundaryState> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props)
+    this.state = { hasError: false, error: null, errorInfo: null }
+  }
+
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
+    return { hasError: true, error }
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error('Cupping page error:', error, errorInfo)
+    this.setState({ errorInfo })
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-sm">
+          <div className="bg-background border rounded-lg shadow-lg p-6 max-w-lg w-full mx-4 space-y-4">
+            <div className="space-y-1">
+              <h2 className="text-base font-semibold text-destructive">Something went wrong</h2>
+              <p className="text-sm text-muted-foreground">
+                {this.state.error?.message || 'An unexpected error occurred on the cupping page.'}
+              </p>
+            </div>
+            {this.state.errorInfo?.componentStack && (
+              <details className="text-xs text-muted-foreground">
+                <summary className="cursor-pointer select-none">Component stack</summary>
+                <pre className="mt-2 whitespace-pre-wrap break-all bg-muted rounded p-2 max-h-40 overflow-y-auto">
+                  {this.state.errorInfo.componentStack}
+                </pre>
+              </details>
+            )}
+            <button
+              className="w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
+              onClick={() => window.location.reload()}
+            >
+              Reload page
+            </button>
+          </div>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 // Export with Suspense boundary for Next.js 15+
 export default function CuppingPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
-      <CuppingPageContent />
-    </Suspense>
+    <CuppingErrorBoundary>
+      <Suspense fallback={<div>Loading...</div>}>
+        <CuppingPageContent />
+      </Suspense>
+    </CuppingErrorBoundary>
   )
 }
