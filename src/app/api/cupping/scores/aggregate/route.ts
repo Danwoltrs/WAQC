@@ -227,9 +227,15 @@ export async function GET(request: NextRequest) {
     console.log(`Aggregating ${scores.length} cupping scores for sample ${sampleId || sessionId} (filtered from ${allScores.length} total)`)
 
     // Extract all unique attributes across all cuppers
+    // Filter out boolean attributes (Clean Cup, Uniform Cup) - these are never scored numerically
+    const BOOLEAN_ATTRIBUTES = ['clean cup', 'cleancup', 'clean_cup', 'uniform cup', 'uniformcup', 'uniform_cup', 'uniformity']
     const allAttributes = new Set<string>()
     scores.forEach((score: any) => {
-      Object.keys(score.scores || {}).forEach((attr) => allAttributes.add(attr))
+      Object.keys(score.scores || {}).forEach((attr) => {
+        if (!BOOLEAN_ATTRIBUTES.includes(attr.toLowerCase())) {
+          allAttributes.add(attr)
+        }
+      })
     })
 
     // Calculate statistics for each attribute

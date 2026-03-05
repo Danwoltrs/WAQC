@@ -138,7 +138,7 @@ async function downloadCertificate(sampleId: string, trackingNumber: string): Pr
     const url = window.URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = `Certificate-${trackingNumber}.pdf`
+    link.download = `${trackingNumber.replace(/\//g, '_')}.pdf`
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)

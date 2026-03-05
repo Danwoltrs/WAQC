@@ -164,6 +164,14 @@ function AttributeRow({ attribute, showRange, descriptor }: AttributeRowProps) {
   )
 }
 
+// Guard: always filter out Clean Cup / Uniform Cup from scored attributes
+// These are boolean fields and must never appear as numeric rows
+const BOOLEAN_CUP_NAMES = ['clean cup', 'cleancup', 'clean_cup', 'uniform cup', 'uniformcup', 'uniform_cup', 'uniformity']
+
+function isBooleanCupAttribute(name: string): boolean {
+  return BOOLEAN_CUP_NAMES.includes(name.toLowerCase())
+}
+
 interface CertificateCuppingProps {
   cuppingData: CuppingData | null
   hasQualityTemplate?: boolean
@@ -177,7 +185,9 @@ export function CertificateCupping({
     return null
   }
 
-  const { attributes, overallScore, comments, isSpecialty, taints, faults, flavorDescriptor } = cuppingData
+  const { overallScore, comments, isSpecialty, taints, faults, flavorDescriptor } = cuppingData
+  // Belt and suspenders: filter out Clean Cup / Uniform Cup even if they leaked in
+  const attributes = cuppingData.attributes.filter(attr => !isBooleanCupAttribute(attr.name))
   const showRanges = hasQualityTemplate
 
   // Check if taints or faults have values

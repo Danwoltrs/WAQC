@@ -68,20 +68,26 @@ export function CertificatePageClient({
       })
     : null
 
+  // Guard: filter out Clean Cup / Uniform Cup from scored attributes (they are boolean, not numeric)
+  const BOOLEAN_CUP_NAMES = ['clean cup', 'cleancup', 'clean_cup', 'uniform cup', 'uniformcup', 'uniform_cup', 'uniformity']
+  const filteredCuppingAttributes = cuppingAttributes.filter(
+    a => !BOOLEAN_CUP_NAMES.includes(a.attribute.toLowerCase())
+  )
+
   // Determine radar chart scale from attribute values
-  const maxValue = cuppingAttributes.length > 0
-    ? Math.ceil(Math.max(...cuppingAttributes.map(a => a.value)))
+  const maxValue = filteredCuppingAttributes.length > 0
+    ? Math.ceil(Math.max(...filteredCuppingAttributes.map(a => a.value)))
     : 10
 
   // Determine consistent decimal places: if any score has decimals, all use the same precision
-  const maxDecimals = cuppingAttributes.reduce((max, a) => {
+  const maxDecimals = filteredCuppingAttributes.reduce((max, a) => {
     const str = String(a.value)
     const dec = str.includes('.') ? str.split('.')[1].length : 0
     return Math.max(max, dec)
   }, 0)
 
   // Build display labels: "Attr (min-max) score"
-  const radarData = cuppingAttributes.map(a => {
+  const radarData = filteredCuppingAttributes.map(a => {
     let limitsStr = ''
     if (a.min != null && a.max != null) {
       const mid = (a.min + a.max) / 2
@@ -251,7 +257,7 @@ export function CertificatePageClient({
             )}
 
             {/* Spider/Radar Chart for Cupping Attributes */}
-            {cuppingAttributes.length > 0 && (
+            {filteredCuppingAttributes.length > 0 && (
               <>
                 <div className="border-t border-black/[0.06] dark:border-white/[0.08] my-4" />
                 <div className="mb-4">

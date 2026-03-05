@@ -370,6 +370,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   let cuppingAttributeValidations: Record<string, { min?: number; max?: number }> | undefined
   // Store scale info for each attribute (from template)
   let cuppingAttributeScales: Record<string, { min: number; max: number }> | undefined
+  // Store increment per attribute for proper rounding (avoids non-increment scores)
+  let cuppingAttributeIncrements: Record<string, number> | undefined
   if (sample.quality_spec_id) {
     const { data: spec } = await supabase
       .from('client_qualities')
@@ -407,6 +409,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
           min?: number
           max?: number
           type?: string
+          increment?: number
         }
       }
       const templateData = spec.template as {
@@ -454,6 +457,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       if (templateParams?.cupping_attributes && Array.isArray(templateParams.cupping_attributes)) {
         cuppingAttributeValidations = {}
         cuppingAttributeScales = {}
+        cuppingAttributeIncrements = {}
         let hasAnyValidation = false
         for (const attr of templateParams.cupping_attributes) {
           // Extract validation rules
@@ -471,6 +475,10 @@ export async function getCertificateData(sampleId: string, contractId?: string):
             cuppingAttributeScales[attr.attribute] = {
               min: attr.scale?.min ?? defaultScaleMin,
               max: attr.scale?.max ?? defaultScaleMax,
+            }
+            // Extract increment for rounding averaged scores
+            if (attr.scale?.increment) {
+              cuppingAttributeIncrements[attr.attribute] = attr.scale.increment
             }
           }
         }
@@ -635,7 +643,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       cuppingAttributeScales,
       qualityAssessment?.clean_cup ?? null,
       qualityAssessment?.uniform_cup ?? null,
-      masterCupperId
+      masterCupperId,
+      cuppingAttributeIncrements
     )
   }
 
@@ -1126,7 +1135,8 @@ function processCuppingScores(
   attributeScales?: CuppingAttributeScales,
   persistedCleanCup?: boolean | null,
   persistedUniformCup?: boolean | null,
-  masterCupperId?: string | null
+  masterCupperId?: string | null,
+  attributeIncrements?: Record<string, number>
 ): CuppingData {
   // Cast to allow cupper_id access
   const scoresWithCupper = cuppingScores as Array<{ scores: unknown; notes: string | null; defects?: unknown; cupper_id?: string | null }>
@@ -1258,9 +1268,23 @@ function processCuppingScores(
     }
   }
 
+  // Helper to round to nearest increment
+  const roundToIncrement = (value: number, increment: number): number => {
+    return Math.round(value / increment) * increment
+  }
+
   for (const attr of sortedAttrs) {
     const scores = attributeScores[attr]
     let finalValue: number
+
+    // Look up increment for this attribute (case-insensitive)
+    let increment: number | undefined
+    if (attributeIncrements) {
+      increment = attributeIncrements[attr] ??
+        Object.entries(attributeIncrements).find(
+          ([key]) => key.toLowerCase() === attr.toLowerCase()
+        )?.[1]
+    }
 
     if (masterScoreMap) {
       // Master cupper exists: use their score directly (no averaging)
@@ -1268,12 +1292,18 @@ function processCuppingScores(
       if (masterVal !== undefined && masterVal !== null && typeof masterVal === 'number') {
         finalValue = masterVal
       } else {
-        // Master cupper didn't score this attribute; fall back to mean
+        // Master cupper didn't score this attribute; fall back to mean, rounded to increment
         finalValue = scores.reduce((a, b) => a + b, 0) / scores.length
+        if (increment) {
+          finalValue = roundToIncrement(finalValue, increment)
+        }
       }
     } else {
-      // No master cupper: use mean
+      // No master cupper: use mean, rounded to nearest valid increment
       finalValue = scores.reduce((a, b) => a + b, 0) / scores.length
+      if (increment) {
+        finalValue = roundToIncrement(finalValue, increment)
+      }
     }
 
     // Look up validation for this attribute (case-insensitive match)
