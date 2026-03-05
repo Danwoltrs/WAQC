@@ -163,7 +163,22 @@ export function useNotifications(options?: { unreadOnly?: boolean; limit?: numbe
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [profile?.id, authLoading]) // Only re-run when profile ID or auth loading state changes
 
-  const unreadCount = notifications.filter(n => !n.read).length
+  // Only count unread notifications from the last 30 days for the badge
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const unreadCount = notifications.filter(
+    n => !n.read && new Date(n.created_at) > thirtyDaysAgo
+  ).length
+
+  const markAllAsSeen = useCallback(async () => {
+    const unreadIds = notifications.filter(n => !n.read).map(n => n.id)
+    if (unreadIds.length === 0) return
+    try {
+      await markAsRead(unreadIds)
+    } catch (err) {
+      console.error('Error marking all as seen:', err)
+    }
+  }, [notifications, markAsRead])
 
   return {
     notifications,
@@ -171,6 +186,7 @@ export function useNotifications(options?: { unreadOnly?: boolean; limit?: numbe
     error,
     unreadCount,
     markAsRead,
+    markAllAsSeen,
     createNotification,
     refetch: fetchNotifications
   }
@@ -195,7 +211,14 @@ export function useActivityFeed(options?: { limit?: number; entityType?: string 
       if (options?.limit) params.append('limit', options.limit.toString())
       if (options?.entityType) params.append('entity_type', options.entityType)
 
-      const response = await fetch(`/api/activity-feed?${params.toString()}`)
+      // Add a 5-second timeout so the UI doesn't hang forever
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+      const response = await fetch(`/api/activity-feed?${params.toString()}`, {
+        signal: controller.signal
+      })
+      clearTimeout(timeoutId)
 
       if (!response.ok) {
         // Silently fail for 401/403 errors (user might not have access yet)
@@ -211,9 +234,14 @@ export function useActivityFeed(options?: { limit?: number; entityType?: string 
       setActivities(data.activities || [])
       setError(null)
     } catch (err) {
-      console.error('Error fetching activity feed:', err)
-      setError(err instanceof Error ? err.message : 'Failed to fetch activity feed')
-      setActivities([]) // Set empty array on error
+      // On abort (timeout) or any error, show empty state instead of loading forever
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        console.warn('Activity feed fetch timed out after 5s')
+      } else {
+        console.error('Error fetching activity feed:', err)
+      }
+      setError(null) // Don't show error, just show empty state
+      setActivities([])
     } finally {
       setLoading(false)
     }

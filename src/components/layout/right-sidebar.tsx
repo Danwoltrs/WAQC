@@ -1,5 +1,6 @@
 'use client'
 
+import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Bell, Calendar, Clock, AlertCircle, CheckCircle, XCircle, X, AlertTriangle, Info } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -58,8 +59,23 @@ const formatTimeAgo = (date: Date) => {
 
 export function RightSidebar({ onClose }: RightSidebarProps) {
   const router = useRouter()
-  const { notifications, unreadCount, markAsRead, loading: notificationsLoading } = useNotifications({ limit: 10 })
+  const { notifications, unreadCount, markAsRead, markAllAsSeen, loading: notificationsLoading } = useNotifications({ limit: 50 })
   const { activities, loading: activitiesLoading } = useActivityFeed({ limit: 10 })
+
+  // Mark all as seen when the sidebar opens (clears the badge)
+  useEffect(() => {
+    if (!notificationsLoading && unreadCount > 0) {
+      markAllAsSeen()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [notificationsLoading])
+
+  // Filter out notifications older than 30 days
+  const thirtyDaysAgo = new Date()
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30)
+  const recentNotifications = notifications.filter(
+    n => new Date(n.created_at) > thirtyDaysAgo
+  )
 
   const handleNotificationClick = async (notificationId: string, link?: string | null) => {
     try {
@@ -117,12 +133,12 @@ export function RightSidebar({ onClose }: RightSidebarProps) {
             <div className="text-center text-sm text-muted-foreground py-4">
               Loading notifications...
             </div>
-          ) : notifications.length === 0 ? (
+          ) : recentNotifications.length === 0 ? (
             <div className="text-center text-sm text-muted-foreground py-4">
-              No notifications
+              No new notifications
             </div>
           ) : (
-            notifications.slice(0, 10).map((notification) => (
+            recentNotifications.slice(0, 10).map((notification) => (
               <div
                 key={notification.id}
                 onClick={() => handleNotificationClick(notification.id, notification.link)}

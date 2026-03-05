@@ -175,32 +175,49 @@ export async function getPendingSamplesForLaboratory(
 }
 
 /**
- * Get count of pending samples for grading (green bean assessment)
- * Samples are considered pending for grading if:
- * 1. They are in 'analysis' workflow stage
- * 2. They don't have a completed green_bean_data assessment
+ * Get count of pending samples for grading assigned to a specific cupper.
+ * Only counts samples where:
+ * 1. The cupper is assigned via cupping_sessions.cupper_ids
+ * 2. The session is active or review
+ * 3. The sample is in 'analysis' or 'review' workflow stage
+ * 4. The sample doesn't have completed green_bean_data
  *
  * @param supabase - Supabase client instance
- * @param laboratoryId - Laboratory ID (optional, filters by lab)
- * @returns Count of pending samples for grading
+ * @param cupperId - Profile ID of the cupper
+ * @returns Count of pending grading samples for this cupper
  */
-export async function getPendingSamplesForGrading(
+export async function getPendingGradingSamplesForCupper(
   supabase: SupabaseClient,
-  laboratoryId?: string
+  cupperId: string
 ): Promise<number> {
   try {
-    // Get samples in 'analysis' stage
-    let query = supabase
-      .from('samples')
-      .select('id')
-      .eq('workflow_stage', 'analysis')
-      .is('deleted_at', null)
+    // Step 1: Find cupping sessions where this cupper is assigned
+    const { data: sessions, error: sessionsError } = await supabase
+      .from('cupping_sessions')
+      .select('id, sample_ids')
+      .in('status', ['active', 'review'])
+      .filter('cupper_ids', 'cs', JSON.stringify([cupperId]))
 
-    if (laboratoryId) {
-      query = query.eq('laboratory_id', laboratoryId)
+    if (sessionsError || !sessions || sessions.length === 0) {
+      return 0
     }
 
-    const { data: samples, error: samplesError } = await query
+    // Step 2: Collect unique sample IDs
+    const allSampleIds = Array.from(new Set(
+      sessions.flatMap(s => (s.sample_ids as string[]) || [])
+    ))
+
+    if (allSampleIds.length === 0) {
+      return 0
+    }
+
+    // Step 3: Get samples in analysis/review stage
+    const { data: samples, error: samplesError } = await supabase
+      .from('samples')
+      .select('id')
+      .in('id', allSampleIds)
+      .in('workflow_stage', ['analysis', 'review'])
+      .is('deleted_at', null)
 
     if (samplesError || !samples || samples.length === 0) {
       return 0
@@ -208,23 +225,20 @@ export async function getPendingSamplesForGrading(
 
     const sampleIds = samples.map(s => s.id)
 
-    // Get samples that have completed grading (green_bean_data has defect_count or total_defects)
+    // Step 4: Find which have completed grading
     const { data: gradedSamples, error: gradedError } = await supabase
       .from('quality_assessments')
       .select('sample_id, green_bean_data')
       .in('sample_id', sampleIds)
 
     if (gradedError) {
-      console.error('Error fetching quality_assessments:', gradedError)
-      return samples.length // Return all as pending if we can't check
+      return sampleIds.length
     }
 
-    // Filter to find samples with completed grading
     const gradedSampleIds = new Set(
       (gradedSamples || [])
         .filter(qa => {
           const data = qa.green_bean_data as any
-          // Consider graded if has defect_count, total_defects, or screen_size data
           return data && (
             data.defect_count !== undefined ||
             data.total_defects !== undefined ||
@@ -235,12 +249,9 @@ export async function getPendingSamplesForGrading(
         .map(qa => qa.sample_id)
     )
 
-    // Count samples without completed grading
-    const pendingCount = sampleIds.filter(id => !gradedSampleIds.has(id)).length
-
-    return pendingCount
+    return sampleIds.filter(id => !gradedSampleIds.has(id)).length
   } catch (error) {
-    console.error('Error in getPendingSamplesForGrading:', error)
+    console.error('Error in getPendingGradingSamplesForCupper:', error)
     return 0
   }
 }

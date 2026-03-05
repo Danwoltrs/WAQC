@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
@@ -28,19 +28,23 @@ import {
   Building2,
   Building,
   Globe,
-  Check
+  Check,
+  PanelLeftClose,
+  PanelLeft,
+  ChevronsLeftRight
 } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
 import { Grading } from '@/components/icons/grading'
-import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import { useAuth } from '@/components/providers/auth-provider'
 import { useSampleIntake } from '@/components/samples/sample-intake-provider'
 import { hasPermission } from '@/lib/auth'
 import { cn } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
-import { getPendingSamplesForCupper, getPendingSamplesForGrading } from '@/lib/queries/cupping-assignments'
+import { getPendingSamplesForCupper, getPendingGradingSamplesForCupper } from '@/lib/queries/cupping-assignments'
+
+export type SidebarMode = 'expanded' | 'collapsed' | 'hover'
 
 interface NavItem {
   title: string
@@ -166,11 +170,14 @@ const managementNav: NavItem[] = [
 ]
 
 interface LeftSidebarProps {
-  isOpen?: boolean
-  onToggle?: () => void
+  isExpanded: boolean
+  sidebarMode: SidebarMode
+  onModeChange: (mode: SidebarMode) => void
+  onHoverEnter?: () => void
+  onHoverLeave?: () => void
 }
 
-export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
+export function LeftSidebar({ isExpanded, sidebarMode, onModeChange, onHoverEnter, onHoverLeave }: LeftSidebarProps) {
   const pathname = usePathname()
   const { permissions, profile } = useAuth()
   const { openIntakeDialog } = useSampleIntake()
@@ -178,12 +185,9 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
   const [pendingSamplesCount, setPendingSamplesCount] = useState<number>(0)
   const [pendingGradingSamplesCount, setPendingGradingSamplesCount] = useState<number>(0)
   const [expandedMenus, setExpandedMenus] = useState<Set<string>>(new Set(['/']))
-  const [hoverTimeoutId, setHoverTimeoutId] = useState<NodeJS.Timeout | null>(null)
-  const [currentLanguage, setCurrentLanguage] = useState('EN')
-  const [languageMenuOpen, setLanguageMenuOpen] = useState(false)
   const [mounted, setMounted] = useState(false)
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
-  // Prevent hydration mismatch by only rendering permission-filtered content after mount
   useEffect(() => {
     setMounted(true)
   }, [])
@@ -226,20 +230,15 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
 
     fetchPendingRequests()
 
-    // Set up real-time subscription for access requests
     const channel = supabase
       .channel('access_requests_changes')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'access_requests' },
-        () => {
-          fetchPendingRequests()
-        }
+        () => { fetchPendingRequests() }
       )
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(channel)
-    }
+    return () => { supabase.removeChannel(channel) }
   }, [profile, permissions])
 
   // Fetch pending cupping samples count for logged-in cupper
@@ -259,43 +258,34 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
 
     fetchPendingSamples()
 
-    // Set up real-time subscription for cupping sessions and scores
     const sessionsChannel = supabase
       .channel('cupping_changes')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'cupping_sessions' },
-        () => {
-          fetchPendingSamples()
-        }
+        () => { fetchPendingSamples() }
       )
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'cupping_scores' },
-        () => {
-          fetchPendingSamples()
-        }
+        () => { fetchPendingSamples() }
       )
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'samples' },
-        () => {
-          fetchPendingSamples()
-        }
+        () => { fetchPendingSamples() }
       )
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(sessionsChannel)
-    }
+    return () => { supabase.removeChannel(sessionsChannel) }
   }, [profile, permissions])
 
-  // Fetch pending grading samples count
+  // Fetch pending grading samples count for logged-in cupper
   useEffect(() => {
     const fetchPendingGradingSamples = async () => {
-      if (!profile?.laboratory_id || !hasPermission(permissions, 'conduct_assessments')) {
+      if (!profile?.id || !hasPermission(permissions, 'conduct_assessments')) {
         return
       }
 
       try {
-        const count = await getPendingSamplesForGrading(supabase, profile.laboratory_id)
+        const count = await getPendingGradingSamplesForCupper(supabase, profile.id)
         setPendingGradingSamplesCount(count)
       } catch (error) {
         console.error('Error fetching pending grading samples count:', error)
@@ -304,39 +294,29 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
 
     fetchPendingGradingSamples()
 
-    // Set up real-time subscription for quality_assessments and samples
     const gradingChannel = supabase
       .channel('grading_changes')
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'quality_assessments' },
-        () => {
-          fetchPendingGradingSamples()
-        }
+        () => { fetchPendingGradingSamples() }
       )
       .on('postgres_changes',
         { event: '*', schema: 'public', table: 'samples' },
-        () => {
-          fetchPendingGradingSamples()
-        }
+        () => { fetchPendingGradingSamples() }
       )
       .subscribe()
 
-    return () => {
-      supabase.removeChannel(gradingChannel)
-    }
+    return () => { supabase.removeChannel(gradingChannel) }
   }, [profile, permissions])
 
   const filterNavByPermissions = (nav: NavItem[]) => {
-    // During SSR/before mount, show all items to prevent hydration mismatch
     if (!mounted) return nav
     return nav.filter(item => !item.permission || hasPermission(permissions, item.permission))
   }
 
   const isActive = (href?: string) => {
     if (!href) return false
-    if (href === '/') {
-      return pathname === '/'
-    }
+    if (href === '/') return pathname === '/'
     return pathname.startsWith(href)
   }
 
@@ -357,7 +337,6 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
     return submenu.some(item => item.href && isActive(item.href))
   }
 
-  // Add badge to nav items
   const getNavItemWithBadge = (item: NavItem): NavItem => {
     if (item.href === '/users' && pendingRequestsCount > 0) {
       return { ...item, badge: String(pendingRequestsCount) }
@@ -371,192 +350,228 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
     return item
   }
 
-  // Auto-collapse sidebar when clicking on any link
-  const handleLinkClick = () => {
-    if (isOpen && onToggle) {
-      onToggle()
+  // Cycle through modes: expanded -> collapsed -> hover -> expanded
+  const cycleSidebarMode = () => {
+    const modes: SidebarMode[] = ['expanded', 'collapsed', 'hover']
+    const currentIndex = modes.indexOf(sidebarMode)
+    const nextMode = modes[(currentIndex + 1) % modes.length]
+    onModeChange(nextMode)
+  }
+
+  const getModeIcon = () => {
+    switch (sidebarMode) {
+      case 'expanded': return PanelLeftClose
+      case 'collapsed': return PanelLeft
+      case 'hover': return ChevronsLeftRight
     }
   }
 
-  // Auto-expand on mouse enter
+  const getModeTooltip = () => {
+    switch (sidebarMode) {
+      case 'expanded': return 'Collapse sidebar'
+      case 'collapsed': return 'Expand on hover'
+      case 'hover': return 'Expand sidebar'
+    }
+  }
+
   const handleMouseEnter = () => {
-    // Clear any pending collapse timeout
-    if (hoverTimeoutId) {
-      clearTimeout(hoverTimeoutId)
-      setHoverTimeoutId(null)
+    if (hoverTimeoutRef.current) {
+      clearTimeout(hoverTimeoutRef.current)
+      hoverTimeoutRef.current = null
     }
-
-    // Expand sidebar if it's collapsed
-    if (!isOpen && onToggle) {
-      onToggle()
-    }
+    onHoverEnter?.()
   }
 
-  // Auto-collapse on mouse leave with delay
   const handleMouseLeave = () => {
-    // Add a small delay before collapsing to prevent flickering
-    const timeoutId = setTimeout(() => {
-      if (isOpen && onToggle) {
-        onToggle()
-      }
-    }, 300) // 300ms delay
-
-    setHoverTimeoutId(timeoutId)
+    hoverTimeoutRef.current = setTimeout(() => {
+      onHoverLeave?.()
+    }, 300)
   }
 
-  // Cleanup timeout on unmount
   useEffect(() => {
     return () => {
-      if (hoverTimeoutId) {
-        clearTimeout(hoverTimeoutId)
-      }
+      if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current)
     }
-  }, [hoverTimeoutId])
+  }, [])
+
+  // Collapsed icon width for centering (w-14 = 56px)
+  const COLLAPSED_WIDTH = 'w-14'
+
+  const renderNavItem = (item: NavItem) => {
+    const itemWithBadge = getNavItemWithBadge(item)
+    const Icon = itemWithBadge.icon
+    const active = isActive(itemWithBadge.href)
+    const hasSubmenu = itemWithBadge.submenu && itemWithBadge.submenu.length > 0
+    const submenuExpanded = itemWithBadge.href ? expandedMenus.has(itemWithBadge.href) : false
+    const submenuActive = isSubmenuActive(itemWithBadge.submenu)
+    const filteredSubmenu = hasSubmenu
+      ? (mounted
+          ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
+          : itemWithBadge.submenu!)
+      : []
+
+    return (
+      <div key={itemWithBadge.href || itemWithBadge.title}>
+        {hasSubmenu && filteredSubmenu.length > 0 ? (
+          <div
+            className={cn(
+              'flex items-center text-sm font-medium rounded-xl transition-all',
+              active || submenuActive
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+              !isExpanded ? 'justify-center' : 'px-3 py-2 gap-3'
+            )}
+          >
+            {itemWithBadge.href ? (
+              <Link
+                href={itemWithBadge.href}
+                className={cn(
+                  'flex items-center flex-1 min-w-0',
+                  isExpanded ? 'gap-3' : 'justify-center py-2'
+                )}
+                title={!isExpanded ? itemWithBadge.title : undefined}
+              >
+                <div className={cn(
+                  'flex items-center justify-center flex-shrink-0',
+                  !isExpanded && 'w-14 h-8'
+                )}>
+                  <div className="relative">
+                    <Icon className="h-4 w-4" />
+                    {!isExpanded && itemWithBadge.badge && (
+                      <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
+                    )}
+                  </div>
+                </div>
+                {isExpanded && <span className="truncate">{itemWithBadge.title}</span>}
+              </Link>
+            ) : (
+              <div className={cn(
+                'flex items-center flex-1 min-w-0',
+                isExpanded ? 'gap-3' : 'justify-center py-2'
+              )}>
+                <div className={cn(
+                  'flex items-center justify-center flex-shrink-0',
+                  !isExpanded && 'w-14 h-8'
+                )}>
+                  <Icon className="h-4 w-4" />
+                </div>
+                {isExpanded && <span className="truncate">{itemWithBadge.title}</span>}
+              </div>
+            )}
+            {isExpanded && itemWithBadge.href && (
+              <button
+                onClick={() => toggleSubmenu(itemWithBadge.href!)}
+                className="p-1 hover:bg-accent/50 rounded transition-colors"
+              >
+                {submenuExpanded ? (
+                  <ChevronUp className="h-4 w-4 flex-shrink-0" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                )}
+              </button>
+            )}
+          </div>
+        ) : itemWithBadge.href ? (
+          <Link
+            href={itemWithBadge.href}
+            title={!isExpanded ? itemWithBadge.title : undefined}
+            className={cn(
+              'flex items-center text-sm font-medium rounded-xl transition-all',
+              active
+                ? 'bg-accent text-accent-foreground'
+                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+              isExpanded ? 'gap-3 px-3 py-2' : 'justify-center py-2'
+            )}
+          >
+            <div className={cn(
+              'flex items-center justify-center flex-shrink-0',
+              !isExpanded && 'w-14 h-8'
+            )}>
+              <div className="relative">
+                <Icon className="h-4 w-4" />
+                {!isExpanded && itemWithBadge.badge && (
+                  <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
+                )}
+              </div>
+            </div>
+            {isExpanded && (
+              <>
+                <span className="truncate">{itemWithBadge.title}</span>
+                {itemWithBadge.badge && (
+                  <span className="ml-auto text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">
+                    {itemWithBadge.badge}
+                  </span>
+                )}
+              </>
+            )}
+          </Link>
+        ) : null}
+
+        {/* Submenu items */}
+        {hasSubmenu && submenuExpanded && isExpanded && filteredSubmenu.length > 0 && (
+          <div className="ml-4 mt-1 space-y-1 border-l-2 border-border pl-2">
+            {filteredSubmenu.map((subItem) => {
+              const SubIcon = subItem.icon
+              const subActive = subItem.href ? isActive(subItem.href) : false
+              const key = subItem.href || subItem.title
+
+              if (subItem.onClick) {
+                return (
+                  <button
+                    key={key}
+                    onClick={subItem.onClick}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all w-full text-left',
+                      subActive
+                        ? 'bg-accent text-accent-foreground'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                    )}
+                  >
+                    <SubIcon className="h-4 w-4 flex-shrink-0" />
+                    <span className="truncate">{subItem.title}</span>
+                  </button>
+                )
+              }
+
+              return (
+                <Link
+                  key={key}
+                  href={subItem.href!}
+                  className={cn(
+                    'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
+                    subActive
+                      ? 'bg-accent text-accent-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                  )}
+                >
+                  <SubIcon className="h-4 w-4 flex-shrink-0" />
+                  <span className="truncate">{subItem.title}</span>
+                </Link>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const ModeIcon = getModeIcon()
 
   return (
     <aside
       className={cn(
-        'h-full border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300',
-        isOpen ? 'w-64' : 'w-16'
+        'h-full border-r border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 transition-all duration-300 overflow-hidden',
+        isExpanded ? 'w-64' : 'w-14'
       )}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
+      onMouseEnter={sidebarMode === 'hover' ? handleMouseEnter : undefined}
+      onMouseLeave={sidebarMode === 'hover' ? handleMouseLeave : undefined}
     >
       <div className="flex flex-col h-full">
         {/* Navigation */}
-        <nav className="flex-1 space-y-1 p-2 pt-4">
+        <nav className="flex-1 space-y-1 p-1 pt-4 overflow-y-auto overflow-x-hidden">
           {/* Main Navigation */}
           <div className="space-y-1">
-            {filterNavByPermissions(navigation).map((item) => {
-              const itemWithBadge = getNavItemWithBadge(item)
-              const Icon = itemWithBadge.icon
-              const active = isActive(itemWithBadge.href)
-              const hasSubmenu = itemWithBadge.submenu && itemWithBadge.submenu.length > 0
-              const submenuExpanded = itemWithBadge.href ? expandedMenus.has(itemWithBadge.href) : false
-              const submenuActive = isSubmenuActive(itemWithBadge.submenu)
-              const filteredSubmenu = hasSubmenu
-                ? (mounted
-                    ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
-                    : itemWithBadge.submenu!)
-                : []
-
-              return (
-                <div key={itemWithBadge.href || itemWithBadge.title}>
-                  {/* Main nav item */}
-                  {hasSubmenu && filteredSubmenu.length > 0 ? (
-                    <div
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                        active || submenuActive
-                          ? 'bg-accent text-accent-foreground'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                      )}
-                    >
-                      {itemWithBadge.href ? (
-                        <Link href={itemWithBadge.href} className="flex items-center gap-3 flex-1 min-w-0" onClick={handleLinkClick}>
-                          <Icon className="h-4 w-4 flex-shrink-0" />
-                          {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
-                        </Link>
-                      ) : (
-                        <div className="flex items-center gap-3 flex-1 min-w-0">
-                          <Icon className="h-4 w-4 flex-shrink-0" />
-                          {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
-                        </div>
-                      )}
-                      {isOpen && itemWithBadge.href && (
-                        <button
-                          onClick={() => toggleSubmenu(itemWithBadge.href!)}
-                          className="p-1 hover:bg-accent/50 rounded transition-colors"
-                        >
-                          {submenuExpanded ? (
-                            <ChevronUp className="h-4 w-4 flex-shrink-0" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4 flex-shrink-0" />
-                          )}
-                        </button>
-                      )}
-                    </div>
-                  ) : itemWithBadge.href ? (
-                    <Link
-                      href={itemWithBadge.href}
-                      onClick={handleLinkClick}
-                      className={cn(
-                        'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                        active
-                          ? 'bg-accent text-accent-foreground'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-                        !isOpen && 'justify-center'
-                      )}
-                    >
-                      <div className="relative">
-                        <Icon className="h-4 w-4 flex-shrink-0" />
-                        {!isOpen && itemWithBadge.badge && (
-                          <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
-                        )}
-                      </div>
-                      {isOpen && (
-                        <>
-                          <span className="truncate">{itemWithBadge.title}</span>
-                          {itemWithBadge.badge && (
-                            <span className="ml-auto text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">
-                              {itemWithBadge.badge}
-                            </span>
-                          )}
-                        </>
-                      )}
-                    </Link>
-                  ) : null}
-
-                  {/* Submenu items */}
-                  {hasSubmenu && submenuExpanded && isOpen && filteredSubmenu.length > 0 && (
-                    <div className="ml-4 mt-1 space-y-1 border-l-2 border-border pl-2">
-                      {filteredSubmenu.map((subItem) => {
-                        const SubIcon = subItem.icon
-                        const subActive = subItem.href ? isActive(subItem.href) : false
-                        const key = subItem.href || subItem.title
-
-                        // If onClick is provided, render as button
-                        if (subItem.onClick) {
-                          return (
-                            <button
-                              key={key}
-                              onClick={subItem.onClick}
-                              className={cn(
-                                'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all w-full text-left',
-                                subActive
-                                  ? 'bg-accent text-accent-foreground'
-                                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                              )}
-                            >
-                              <SubIcon className="h-4 w-4 flex-shrink-0" />
-                              <span className="truncate">{subItem.title}</span>
-                            </button>
-                          )
-                        }
-
-                        // Otherwise render as link
-                        return (
-                          <Link
-                            key={key}
-                            href={subItem.href!}
-                            onClick={handleLinkClick}
-                            className={cn(
-                              'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                              subActive
-                                ? 'bg-accent text-accent-foreground'
-                                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                            )}
-                          >
-                            <SubIcon className="h-4 w-4 flex-shrink-0" />
-                            <span className="truncate">{subItem.title}</span>
-                          </Link>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+            {filterNavByPermissions(navigation).map(renderNavItem)}
           </div>
 
           {/* Management Section */}
@@ -564,224 +579,66 @@ export function LeftSidebar({ isOpen = true, onToggle }: LeftSidebarProps) {
             <>
               <Separator className="my-4" />
               <div className="space-y-1">
-                {isOpen && (
+                {isExpanded && (
                   <h3 className="px-3 py-2 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     Management
                   </h3>
                 )}
-                {filterNavByPermissions(managementNav).map((item) => {
-                  const itemWithBadge = getNavItemWithBadge(item)
-                  const Icon = itemWithBadge.icon
-                  const active = isActive(itemWithBadge.href)
-                  const hasSubmenu = itemWithBadge.submenu && itemWithBadge.submenu.length > 0
-                  const submenuExpanded = itemWithBadge.href ? expandedMenus.has(itemWithBadge.href) : false
-                  const submenuActive = isSubmenuActive(itemWithBadge.submenu)
-                  const filteredSubmenu = hasSubmenu
-                    ? (mounted
-                        ? itemWithBadge.submenu!.filter(subItem => !subItem.permission || hasPermission(permissions, subItem.permission))
-                        : itemWithBadge.submenu!)
-                    : []
-
-                  return (
-                    <div key={itemWithBadge.href || itemWithBadge.title}>
-                      {/* Main nav item */}
-                      {hasSubmenu && filteredSubmenu.length > 0 ? (
-                        <div
-                          className={cn(
-                            'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                            active || submenuActive
-                              ? 'bg-accent text-accent-foreground'
-                              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                          )}
-                        >
-                          {itemWithBadge.href ? (
-                            <Link href={itemWithBadge.href} className="flex items-center gap-3 flex-1 min-w-0" onClick={handleLinkClick}>
-                              <div className="relative">
-                                <Icon className="h-4 w-4 flex-shrink-0" />
-                                {!isOpen && itemWithBadge.badge && (
-                                  <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
-                                )}
-                              </div>
-                              {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
-                            </Link>
-                          ) : (
-                            <div className="flex items-center gap-3 flex-1 min-w-0">
-                              <div className="relative">
-                                <Icon className="h-4 w-4 flex-shrink-0" />
-                                {!isOpen && itemWithBadge.badge && (
-                                  <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
-                                )}
-                              </div>
-                              {isOpen && <span className="truncate">{itemWithBadge.title}</span>}
-                            </div>
-                          )}
-                          {isOpen && itemWithBadge.href && (
-                            <button
-                              onClick={() => toggleSubmenu(itemWithBadge.href!)}
-                              className="p-1 hover:bg-accent/50 rounded transition-colors"
-                            >
-                              {submenuExpanded ? (
-                                <ChevronUp className="h-4 w-4 flex-shrink-0" />
-                              ) : (
-                                <ChevronDown className="h-4 w-4 flex-shrink-0" />
-                              )}
-                            </button>
-                          )}
-                        </div>
-                      ) : itemWithBadge.href ? (
-                        <Link
-                          href={itemWithBadge.href}
-                          onClick={handleLinkClick}
-                          className={cn(
-                            'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                            active
-                              ? 'bg-accent text-accent-foreground'
-                              : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-                            !isOpen && 'justify-center'
-                          )}
-                        >
-                          <div className="relative">
-                            <Icon className="h-4 w-4 flex-shrink-0" />
-                            {!isOpen && itemWithBadge.badge && (
-                              <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-500 rounded-full" />
-                            )}
-                          </div>
-                          {isOpen && (
-                            <>
-                              <span className="truncate">{itemWithBadge.title}</span>
-                              {itemWithBadge.badge && (
-                                <span className="ml-auto text-xs bg-red-500 text-white px-1.5 py-0.5 rounded-full font-semibold">
-                                  {itemWithBadge.badge}
-                                </span>
-                              )}
-                            </>
-                          )}
-                        </Link>
-                      ) : null}
-
-                      {/* Submenu items */}
-                      {hasSubmenu && submenuExpanded && isOpen && filteredSubmenu.length > 0 && (
-                        <div className="ml-4 mt-1 space-y-1 border-l-2 border-border pl-2">
-                          {filteredSubmenu.map((subItem) => {
-                            const SubIcon = subItem.icon
-                            const subActive = subItem.href ? isActive(subItem.href) : false
-                            const key = subItem.href || subItem.title
-
-                            // If onClick is provided, render as button
-                            if (subItem.onClick) {
-                              return (
-                                <button
-                                  key={key}
-                                  onClick={subItem.onClick}
-                                  className={cn(
-                                    'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all w-full text-left',
-                                    subActive
-                                      ? 'bg-accent text-accent-foreground'
-                                      : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                                  )}
-                                >
-                                  <SubIcon className="h-4 w-4 flex-shrink-0" />
-                                  <span className="truncate">{subItem.title}</span>
-                                </button>
-                              )
-                            }
-
-                            // Otherwise render as link
-                            return (
-                              <Link
-                                key={key}
-                                href={subItem.href!}
-                                onClick={handleLinkClick}
-                                className={cn(
-                                  'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-                                  subActive
-                                    ? 'bg-accent text-accent-foreground'
-                                    : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                                )}
-                              >
-                                <SubIcon className="h-4 w-4 flex-shrink-0" />
-                                <span className="truncate">{subItem.title}</span>
-                              </Link>
-                            )
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
+                {filterNavByPermissions(managementNav).map(renderNavItem)}
               </div>
             </>
           )}
         </nav>
 
-        {/* Language Selector - Only visible on mobile (when sidebar is overlay) */}
-        <div className="p-2 border-t border-border lg:hidden">
+        {/* Sidebar Mode Toggle */}
+        <div className="border-t border-border p-1">
+          <button
+            onClick={cycleSidebarMode}
+            title={getModeTooltip()}
+            className={cn(
+              'flex items-center text-sm font-medium rounded-xl transition-all w-full text-muted-foreground hover:text-foreground hover:bg-accent/50',
+              isExpanded ? 'gap-3 px-3 py-2' : 'justify-center py-2'
+            )}
+          >
+            <div className={cn(
+              'flex items-center justify-center flex-shrink-0',
+              !isExpanded && 'w-14 h-8'
+            )}>
+              <ModeIcon className="h-4 w-4" />
+            </div>
+            {isExpanded && (
+              <span className="truncate text-xs">
+                {sidebarMode === 'expanded' ? 'Collapse' : sidebarMode === 'collapsed' ? 'Expand on hover' : 'Expand'}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Language Selector - Only visible on mobile */}
+        <div className="p-1 border-t border-border lg:hidden">
           <div className="relative">
             <button
-              onClick={() => setLanguageMenuOpen(!languageMenuOpen)}
               className={cn(
-                'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all w-full',
-                'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+                'flex items-center text-sm font-medium rounded-xl transition-all w-full',
+                'text-muted-foreground hover:text-foreground hover:bg-accent/50',
+                isExpanded ? 'gap-3 px-3 py-2' : 'justify-center py-2'
               )}
             >
-              <Globe className="h-4 w-4 flex-shrink-0" />
-              {isOpen && (
+              <div className={cn(
+                'flex items-center justify-center flex-shrink-0',
+                !isExpanded && 'w-14 h-8'
+              )}>
+                <Globe className="h-4 w-4" />
+              </div>
+              {isExpanded && (
                 <>
                   <span className="truncate">Language</span>
-                  <span className="ml-auto text-xs bg-accent px-2 py-0.5 rounded">{currentLanguage}</span>
+                  <span className="ml-auto text-xs bg-accent px-2 py-0.5 rounded">EN</span>
                 </>
               )}
             </button>
-
-            {/* Language options dropdown */}
-            {languageMenuOpen && isOpen && (
-              <div className="absolute bottom-full left-0 right-0 mb-1 bg-popover border border-border rounded-xl shadow-lg overflow-hidden z-50">
-                {[
-                  { code: 'EN', label: 'English' },
-                  { code: 'PT', label: 'Português' },
-                  { code: 'ES', label: 'Español' },
-                ].map((lang) => (
-                  <button
-                    key={lang.code}
-                    onClick={() => {
-                      setCurrentLanguage(lang.code)
-                      setLanguageMenuOpen(false)
-                      console.log(`Language changed to: ${lang.code}`)
-                    }}
-                    className={cn(
-                      'flex items-center gap-3 px-3 py-2 text-sm w-full text-left transition-colors',
-                      currentLanguage === lang.code
-                        ? 'bg-accent text-accent-foreground'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
-                    )}
-                  >
-                    <span className="flex-1">{lang.label} ({lang.code})</span>
-                    {currentLanguage === lang.code && (
-                      <Check className="h-4 w-4 flex-shrink-0" />
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
           </div>
         </div>
-
-        {/* Settings - Temporarily disabled until page is created */}
-        {/* <div className="p-2 border-t border-border">
-          <Link
-            href="/settings"
-            className={cn(
-              'flex items-center gap-3 px-3 py-2 text-sm font-medium rounded-xl transition-all',
-              isActive('/settings')
-                ? 'bg-accent text-accent-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-              !isOpen && 'justify-center'
-            )}
-          >
-            <Settings className="h-4 w-4 flex-shrink-0" />
-            {isOpen && <span>Settings</span>}
-          </Link>
-        </div> */}
       </div>
     </aside>
   )
