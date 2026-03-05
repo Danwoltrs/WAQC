@@ -47,7 +47,7 @@ export async function GET(
     // Get personnel for this lab
     const { data: personnel, error: personnelError } = await supabase
       .from('profiles')
-      .select('id, email, full_name, qc_role, is_active, created_at')
+      .select('id, email, full_name, qc_role, created_at')
       .eq('laboratory_id', id)
       .order('full_name')
 
