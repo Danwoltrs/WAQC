@@ -153,6 +153,7 @@ export function QualityCertificate({
         <CertificateQualityDescription
           qualityDescription={qualitySpec?.description || null}
           certifications={sample.certifications}
+          cropYear={sample.crop_year}
         />
 
         {/* 5. Physical Properties - Green Bean + Roast */}

@@ -205,11 +205,6 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
     items.push({ label: 'Ship', value: shipmentMonth })
   }
 
-  // Crop year
-  if (cropYear) {
-    items.push({ label: 'Crop', value: cropYear })
-  }
-
   // Micro-origin
   if (microOrigin) {
     items.push({ label: 'Region', value: microOrigin })

@@ -79,25 +79,36 @@ function formatCertification(cert: string): string {
 export interface CertificateQualityDescriptionProps {
   qualityDescription: string | null
   certifications?: string[] | null
+  cropYear?: string | null
 }
 
 export function CertificateQualityDescription({
   qualityDescription,
   certifications,
+  cropYear,
 }: CertificateQualityDescriptionProps) {
   const hasCertifications = certifications && certifications.length > 0
 
+  // Build the full quality line with crop year appended
+  const fullQualityDescription = qualityDescription && cropYear
+    ? `${qualityDescription}, Crop ${cropYear}`
+    : qualityDescription && !cropYear
+    ? qualityDescription
+    : cropYear
+    ? `Crop ${cropYear}`
+    : null
+
   // If neither description nor certifications, don't render
-  if (!qualityDescription && !hasCertifications) {
+  if (!fullQualityDescription && !hasCertifications) {
     return null
   }
 
   return (
     <View style={descStyles.container}>
-      {qualityDescription && (
+      {fullQualityDescription && (
         <>
           <Text style={descStyles.sectionLabel}>Quality:</Text>
-          <Text style={descStyles.descriptionText}>{qualityDescription}</Text>
+          <Text style={descStyles.descriptionText}>{fullQualityDescription}</Text>
         </>
       )}
 
