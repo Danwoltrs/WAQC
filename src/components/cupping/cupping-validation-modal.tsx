@@ -246,7 +246,7 @@ export function CuppingValidationModal({
         // Initialize final scores from the aggregated finalScore values
         const initScores: Record<string, number> = {}
         for (const [attr, stats] of Object.entries(data.aggregated.attributes as Record<string, AttributeStats>)) {
-          initScores[attr] = stats.finalScore
+          initScores[attr] = stats.finalScore ?? 0
         }
         setFinalScores(initScores)
 
@@ -626,12 +626,12 @@ export function CuppingValidationModal({
                             </td>
                             {isMultiCupper && (
                               <td className="text-center p-2 text-sm text-muted-foreground">
-                                {stats.mean.toFixed(2)}
+                                {(stats.mean ?? 0).toFixed(2)}
                               </td>
                             )}
                             {isMultiCupper && (
                               <td className="text-center p-2 text-sm text-muted-foreground">
-                                {stats.min.toFixed(2)} - {stats.max.toFixed(2)}
+                                {(stats.min ?? 0).toFixed(2)} - {(stats.max ?? 0).toFixed(2)}
                               </td>
                             )}
                             <td className="text-center p-2">
@@ -645,7 +645,7 @@ export function CuppingValidationModal({
                                   className="w-20 h-8 text-center text-sm font-bold mx-auto border-amber-400 bg-amber-50 dark:bg-amber-950"
                                 />
                               ) : (
-                                <span className="font-bold text-lg">{currentFinal.toFixed(2)}</span>
+                                <span className="font-bold text-lg">{(currentFinal ?? 0).toFixed(2)}</span>
                               )}
                             </td>
                             <td className="text-center p-2 text-xs text-muted-foreground">
@@ -658,9 +658,9 @@ export function CuppingValidationModal({
                     <tfoot>
                       <tr className="border-t-2">
                         <td className="p-2 font-bold">Overall</td>
-                        {isMultiCupper && <td className="text-center p-2 text-sm text-muted-foreground">{aggregated.overall_score.mean.toFixed(2)}</td>}
+                        {isMultiCupper && <td className="text-center p-2 text-sm text-muted-foreground">{(aggregated.overall_score.mean ?? 0).toFixed(2)}</td>}
                         {isMultiCupper && <td />}
-                        <td className="text-center p-2 font-bold text-lg">{overallFinalScore.toFixed(2)}</td>
+                        <td className="text-center p-2 font-bold text-lg">{(overallFinalScore ?? 0).toFixed(2)}</td>
                         <td />
                       </tr>
                     </tfoot>
@@ -721,7 +721,7 @@ export function CuppingValidationModal({
                           <td className={`text-center p-2 font-bold ${
                             stats.hasDiscrepancy ? 'bg-red-100 dark:bg-red-900' : 'bg-green-100 dark:bg-green-900'
                           }`}>
-                            {(finalScores[attribute] ?? stats.finalScore).toFixed(2)}
+                            {((finalScores[attribute] ?? stats.finalScore) ?? 0).toFixed(2)}
                           </td>
                         </tr>
                       ))}
