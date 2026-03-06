@@ -107,6 +107,25 @@ const RHOMBUS_SIZE = 4
 const TICK_HEIGHT = 5
 const SPEC_TICK_HEIGHT = 9
 
+/** Round a value to the nearest 0.25 for display */
+function roundToQuarter(value: number): number {
+  return Math.round(value * 4) / 4
+}
+
+/** Generate 5 visually clean tick values for a given scale range */
+function getFixedTicks(min: number, max: number): number[] {
+  // For common ranges, use hand-picked nice values
+  if (min === 0 && max === 10) return [0, 2.5, 5, 7.5, 10]
+  if (min === 1 && max === 10) return [1, 2.5, 5, 7.5, 10]
+  if (min === 0 && max === 7) return [0, 1.75, 3.5, 5.25, 7]
+  if (min === 1 && max === 7) return [1, 2.5, 4, 5.5, 7]
+  if (min === 0 && max === 8) return [0, 2, 4, 6, 8]
+  if (min === 1 && max === 8) return [1, 2.75, 4.5, 6.25, 8]
+  // Fallback: 5 evenly spaced values rounded to nearest 0.25
+  const step = (max - min) / 4
+  return [0, 1, 2, 3, 4].map(i => roundToQuarter(min + i * step))
+}
+
 interface ValidationRule {
   type: 'minimum' | 'range'
   min_value: number
@@ -139,8 +158,9 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax }: ScaleChartPro
   // All charts use full width regardless of scale range
   const barWidth = MAX_BAR_WIDTH
 
-  // Calculate score position
-  const scorePos = score !== null ? ((score - scaleMin) / range) * barWidth : null
+  // Calculate score position using rounded display value
+  const roundedScore = score !== null ? roundToQuarter(score) : null
+  const scorePos = roundedScore !== null ? ((roundedScore - scaleMin) / range) * barWidth : null
 
   // Calculate spec range positions
   let specMinValue = scaleMin
@@ -168,16 +188,8 @@ function ScaleChart({ score, validationRule, scaleMin, scaleMax }: ScaleChartPro
       : true
   )
 
-  // Generate grid values dynamically based on actual scale range
-  // Create 5 evenly spaced values from scaleMin to scaleMax
-  const gridCount = 5
-  const gridStep = range / (gridCount - 1)
-  const gridValues: number[] = []
-  for (let i = 0; i < gridCount; i++) {
-    const val = scaleMin + (i * gridStep)
-    // Round to avoid floating point issues (e.g., 2.5 instead of 2.4999999)
-    gridValues.push(Math.round(val * 10) / 10)
-  }
+  // Use fixed visually clean tick values
+  const gridValues = getFixedTicks(scaleMin, scaleMax)
   const gridPositions = gridValues.map(v => ((v - scaleMin) / range) * barWidth)
 
   // SVG height - fixed to match row height
@@ -362,14 +374,8 @@ export function CertificateCuppingChart({
           // All groups use the same bar width (100%) for visual consistency
           const headerBarWidth = MAX_BAR_WIDTH
 
-          // Generate grid values for this group's header
-          const gridCount = 5
-          const gridStep = groupRange / (gridCount - 1)
-          const headerGridValues: number[] = []
-          for (let i = 0; i < gridCount; i++) {
-            const val = group.scaleMin + (i * gridStep)
-            headerGridValues.push(Math.round(val * 10) / 10)
-          }
+          // Use fixed visually clean tick values for this group's header
+          const headerGridValues = getFixedTicks(group.scaleMin, group.scaleMax)
           const headerGridPositions = headerGridValues.map(
             v => ((v - group.scaleMin) / groupRange) * headerBarWidth
           )
@@ -435,7 +441,7 @@ export function CertificateCuppingChart({
                         { color: attr.score !== null && !isInSpec ? COLORS.outOfSpec : COLORS.dark },
                       ]}
                     >
-                      {attr.score !== null && typeof attr.score === 'number' && !isNaN(attr.score) ? attr.score.toFixed(decimalPlaces) : '-'}
+                      {attr.score !== null && typeof attr.score === 'number' && !isNaN(attr.score) ? roundToQuarter(attr.score).toFixed(decimalPlaces) : '-'}
                     </Text>
 
                     <View style={chartStyles.chartSection}>
