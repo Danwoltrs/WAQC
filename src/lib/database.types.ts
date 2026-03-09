@@ -7136,6 +7136,7 @@ export type Database = {
           container_nr: string | null
           contract_number: string | null
           created_at: string | null
+          crop_year: string | null
           deleted_at: string | null
           deleted_by: string | null
           destination: string | null
@@ -7198,6 +7199,7 @@ export type Database = {
           container_nr?: string | null
           contract_number?: string | null
           created_at?: string | null
+          crop_year?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           destination?: string | null
@@ -7260,6 +7262,7 @@ export type Database = {
           container_nr?: string | null
           contract_number?: string | null
           created_at?: string | null
+          crop_year?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           destination?: string | null
