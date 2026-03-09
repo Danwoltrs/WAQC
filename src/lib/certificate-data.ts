@@ -234,7 +234,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       importer_is_qc_client,
       end_client_contract_nr,
       supplier_contract_nr,
-      supplier
+      supplier,
+      crop_year
     `)
     .eq('id', sampleId)
     .single()
@@ -812,7 +813,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       // (override route updates certificate but sample update may fail due to RLS)
       status: resolveStatus(sample.status, certificate, contractOverride?.certificateData),
       certifications: null, // Certifications not yet stored on samples
-      crop_year: (sample as any).crop_year ?? null,
+      crop_year: sample.crop_year ?? null,
     },
     supplyChain: {
       supplier: supplierEntity,
