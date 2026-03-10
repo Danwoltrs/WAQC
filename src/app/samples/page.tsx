@@ -1563,7 +1563,7 @@ export default function SamplesPage() {
                           {(() => {
                             // Use workflow_stage as primary indicator: 'received' = not yet assigned
                             const sampleHasCuppers = sample.workflow_stage !== 'received' && sample.workflow_stage !== undefined
-                            const hasCuppers = selectedSamples.size > 1 ? cuppersAssigned : sampleHasCuppers
+                            const hasCuppers = selectedSamples.size > 1 ? (cuppersAssigned || selectedHaveCuppers) : sampleHasCuppers
                             const singleAssignment = sampleCupperMap[sample.id]
                             const cupperNames = selectedSamples.size > 1
                               ? assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')
