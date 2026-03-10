@@ -19,11 +19,11 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ cuppers: [] })
     }
 
-    // Find active cupping sessions that contain any of the selected samples
+    // Find cupping sessions that contain any of the selected samples
     const { data: sessions, error: sessionsError } = await supabase
       .from('cupping_sessions')
       .select('id, cupper_ids, sample_ids, status')
-      .eq('status', 'active')
+      .in('status', ['active', 'review', 'completed', 'finalized'])
       .order('created_at', { ascending: false })
 
     if (sessionsError || !sessions || sessions.length === 0) {

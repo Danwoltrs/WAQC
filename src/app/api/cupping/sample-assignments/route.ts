@@ -21,11 +21,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ assignments: {} })
     }
 
-    // Fetch all active cupping sessions
+    // Fetch cupping sessions (any non-cancelled status means cuppers are assigned)
     const { data: sessions, error: sessionsError } = await supabase
       .from('cupping_sessions')
       .select('id, cupper_ids, sample_ids, status')
-      .eq('status', 'active')
+      .in('status', ['active', 'review', 'completed', 'finalized'])
       .order('created_at', { ascending: false })
 
     if (sessionsError || !sessions || sessions.length === 0) {
