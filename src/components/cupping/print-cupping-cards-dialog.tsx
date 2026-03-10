@@ -119,14 +119,23 @@ export function PrintCuppingCardsDialog({
     setVisibility(updated)
   }
 
+  // Locally resolved cuppers (fetched from session if not passed as prop)
+  const [resolvedCuppers, setResolvedCuppers] = useState<Cupper[]>([])
+  const effectiveCuppers = assignedCuppers.length > 0 ? assignedCuppers : resolvedCuppers
+
   // Load full sample data with relations when dialog opens
   useEffect(() => {
     if (open && samples.length > 0 && fullSamples.length === 0) {
       loadFullSampleData()
+      // If no cuppers were passed, try to fetch them from the cupping session
+      if (assignedCuppers.length === 0) {
+        fetchCuppersFromSession()
+      }
     } else if (!open) {
       // Reset states when dialog closes
       setCardData(null)
       setFullSamples([])
+      setResolvedCuppers([])
       setIsReadyForDownload(false)
     }
   }, [open, samples.length])
@@ -160,6 +169,23 @@ export function PrintCuppingCardsDialog({
       setFullSamples(samples)
     } finally {
       setLoading(false)
+    }
+  }
+
+  // Fetch cuppers from the cupping session for these samples
+  const fetchCuppersFromSession = async () => {
+    try {
+      const params = new URLSearchParams()
+      samples.forEach(s => params.append('sample_ids', s.id))
+      const response = await fetch(`/api/cupping/session-cuppers?${params}`)
+      if (response.ok) {
+        const data = await response.json()
+        if (data.cuppers && data.cuppers.length > 0) {
+          setResolvedCuppers(data.cuppers)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching cuppers from session:', error)
     }
   }
 
@@ -330,8 +356,8 @@ export function PrintCuppingCardsDialog({
             template_scale_info:
               customParams.scale_info || templateParams.scale_info || '1-8, 0.25',
             attributes,
-            num_cuppers: assignedCuppers.length > 0 ? assignedCuppers.length : parseInt(numCuppers),
-            cuppers: assignedCuppers.length > 0 ? assignedCuppers.map(c => c.full_name.split(' ')[0]) : undefined,
+            num_cuppers: effectiveCuppers.length > 0 ? effectiveCuppers.length : parseInt(numCuppers),
+            cuppers: effectiveCuppers.length > 0 ? effectiveCuppers.map(c => c.full_name.split(' ')[0]) : undefined,
             qr_code: qrCodeDataUrl,
             // logo_url: '/logo.png', // Add if you have a logo
           }
@@ -531,7 +557,7 @@ export function PrintCuppingCardsDialog({
           </div>
 
           {/* Number of Cuppers - Only show if no cuppers are assigned */}
-          {assignedCuppers.length === 0 && (
+          {effectiveCuppers.length === 0 && (
             <div className="space-y-2">
               <Label htmlFor="num-cuppers">Number of Cuppers (Rows on card)</Label>
               <Select value={numCuppers} onValueChange={setNumCuppers} disabled={isReadyForDownload}>
@@ -551,14 +577,14 @@ export function PrintCuppingCardsDialog({
           )}
 
           {/* Show assigned cuppers summary */}
-          {assignedCuppers.length > 0 && (
+          {effectiveCuppers.length > 0 && (
             <div className="space-y-2">
               <Label className="text-sm font-semibold">
-                Assigned Cuppers: {assignedCuppers.length}
+                Assigned Cuppers: {effectiveCuppers.length}
               </Label>
               <div className="rounded-md border p-3 text-sm">
                 <div className="flex flex-wrap gap-2">
-                  {assignedCuppers.map((cupper, index) => (
+                  {effectiveCuppers.map((cupper, index) => (
                     <span
                       key={cupper.id}
                       className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary"
