@@ -217,6 +217,12 @@ export default function SamplesPage() {
   const [existingCupperIds, setExistingCupperIds] = useState<string[]>([])
   const [loadingCupperAssignments, setLoadingCupperAssignments] = useState(false)
 
+  // Per-sample cupper assignment map (loaded for all visible samples)
+  const [sampleCupperMap, setSampleCupperMap] = useState<Record<string, {
+    cuppers: Array<{ id: string; full_name: string; email: string }>
+    session_id: string
+  }>>({})
+
   // Unique values for filters
   const [origins, setOrigins] = useState<string[]>([])
   const [qualities, setQualities] = useState<string[]>([])
@@ -350,6 +356,9 @@ export default function SamplesPage() {
 
         setSamples(filtered)
 
+        // Load cupper assignments for all visible samples
+        loadSampleCupperMap(filtered.map((s: Sample) => s.id))
+
         // Extract unique origins and qualities for filters
         const uniqueOrigins = [...new Set(data.samples.map((s: Sample) => s.origin).filter(Boolean))]
         const uniqueQualities = [...new Set(data.samples.map((s: Sample) => s.quality_name).filter(Boolean))]
@@ -362,6 +371,26 @@ export default function SamplesPage() {
       console.error('Error loading samples:', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const loadSampleCupperMap = async (sampleIds: string[]) => {
+    if (sampleIds.length === 0) {
+      setSampleCupperMap({})
+      return
+    }
+    try {
+      const response = await fetch('/api/cupping/sample-assignments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sample_ids: sampleIds }),
+      })
+      if (response.ok) {
+        const data = await response.json()
+        setSampleCupperMap(data.assignments || {})
+      }
+    } catch (error) {
+      console.error('Error loading sample cupper map:', error)
     }
   }
 
@@ -553,6 +582,33 @@ export default function SamplesPage() {
     setShowAssignCuppersDialog(true)
   }
 
+  const handleSingleSampleAssign = (sample: Sample) => {
+    // Select just this sample and open the assign dialog
+    setSelectedSamples(new Set([sample.id]))
+    setSelectedQrCodes(new Set([sample.id]))
+    const assignment = sampleCupperMap[sample.id]
+    if (assignment) {
+      setExistingCupperIds(assignment.cuppers.map(c => c.id))
+      setAssignedCuppers(assignment.cuppers)
+      setCuppersAssigned(true)
+    } else {
+      setExistingCupperIds([])
+      setAssignedCuppers([])
+      setCuppersAssigned(false)
+    }
+    setShowAssignCuppersDialog(true)
+  }
+
+  const handleSingleSampleReprintCards = (sample: Sample) => {
+    const assignment = sampleCupperMap[sample.id]
+    if (!assignment) return
+    setSelectedSamples(new Set([sample.id]))
+    setSelectedQrCodes(new Set([sample.id]))
+    setAssignedCuppers(assignment.cuppers)
+    setCuppersAssigned(true)
+    setShowCuppingCardsDialog(true)
+  }
+
   const handleCuppersAssigned = async (cupperIds: string[], cuppers: Array<{ id: string; full_name: string; email: string }>) => {
     setAssignedCuppers(cuppers)
     setCuppersAssigned(true)
@@ -583,6 +639,17 @@ export default function SamplesPage() {
       console.error('Error sending cupper assignment notifications:', error)
       // Don't block the workflow if notifications fail
     }
+
+    // Update the per-sample cupper map for the assigned samples
+    const sampleIdsForMap = Array.from(selectedSamples)
+    const updatedMap = { ...sampleCupperMap }
+    for (const sampleId of sampleIdsForMap) {
+      updatedMap[sampleId] = {
+        cuppers: cuppers,
+        session_id: '', // Will be refreshed on next load
+      }
+    }
+    setSampleCupperMap(updatedMap)
 
     // Automatically open print cupping cards dialog
     setShowCuppingCardsDialog(true)
@@ -977,7 +1044,7 @@ export default function SamplesPage() {
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
                         <FileText className="h-4 w-4 mr-2" />
-                        Print Cupping Cards
+                        Reprint Cupping Cards
                       </DropdownMenuItem>
                       <DropdownMenuItem onClick={handleBulkPrintQRTable}>
                         <QrCode className="h-4 w-4 mr-2" />
@@ -1491,21 +1558,40 @@ export default function SamplesPage() {
                             Select All Uncertified
                           </ContextMenuItem>
                           <ContextMenuSeparator />
-                          <ContextMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
-                            <Users className="h-4 w-4 mr-2" />
-                            Assign Cuppers
-                          </ContextMenuItem>
-                          {hasCertifiedSelected && (
-                            <div className="px-2 pb-1 text-xs text-destructive">
-                              Certified/rejected sample selected
-                            </div>
-                          )}
-                          {cuppersAssigned && (
-                            <ContextMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
-                              <FileText className="h-4 w-4 mr-2" />
-                              Print Cupping Cards
-                            </ContextMenuItem>
-                          )}
+                          {(() => {
+                            const singleAssignment = selectedSamples.size <= 1 ? sampleCupperMap[sample.id] : null
+                            const hasCuppers = selectedSamples.size > 1 ? cuppersAssigned : !!singleAssignment
+                            const cupperNames = selectedSamples.size > 1
+                              ? assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')
+                              : singleAssignment?.cuppers.map(c => c.full_name?.split(' ')[0]).join(', ')
+                            return (
+                              <>
+                                <ContextMenuItem
+                                  onClick={() => selectedSamples.size > 1 ? handleBulkAssign() : handleSingleSampleAssign(sample)}
+                                  disabled={hasCertifiedSelected}
+                                >
+                                  <Users className="h-4 w-4 mr-2" />
+                                  {hasCuppers
+                                    ? `Edit Cuppers (${cupperNames})`
+                                    : 'Assign Cuppers'}
+                                </ContextMenuItem>
+                                {hasCertifiedSelected && (
+                                  <div className="px-2 pb-1 text-xs text-destructive">
+                                    Certified/rejected sample selected
+                                  </div>
+                                )}
+                                {hasCuppers && (
+                                  <ContextMenuItem
+                                    onClick={() => selectedSamples.size > 1 ? handleBulkPrintCuppingCards() : handleSingleSampleReprintCards(sample)}
+                                    disabled={hasCertifiedSelected}
+                                  >
+                                    <FileText className="h-4 w-4 mr-2" />
+                                    Reprint Cupping Cards
+                                  </ContextMenuItem>
+                                )}
+                              </>
+                            )
+                          })()}
                           <ContextMenuSeparator />
                           <ContextMenuItem onClick={handleBulkExport}>
                             <Download className="h-4 w-4 mr-2" />
@@ -1752,7 +1838,9 @@ export default function SamplesPage() {
               <ContextMenuSeparator />
               <ContextMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
                 <Users className="h-4 w-4 mr-2" />
-                Assign Cuppers
+                {cuppersAssigned
+                  ? `Edit Cuppers (${assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')})`
+                  : 'Assign Cuppers'}
               </ContextMenuItem>
               {hasCertifiedSelected && (
                 <div className="px-2 pb-1 text-xs text-destructive">
@@ -1762,7 +1850,7 @@ export default function SamplesPage() {
               {cuppersAssigned && (
                 <ContextMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
                   <FileText className="h-4 w-4 mr-2" />
-                  Print Cupping Cards
+                  Reprint Cupping Cards
                 </ContextMenuItem>
               )}
               <ContextMenuSeparator />
