@@ -297,6 +297,20 @@ export function PrintCuppingCardsDialog({
             errorCorrectionLevel: 'H',  // Highest error correction (30% damage tolerance)
           })
 
+          // Find sub-contracts for this sample
+          const sampleSubContracts = subContracts.filter(sc => sc.sample_id === sample.id)
+          const subContractNrs = sampleSubContracts
+            .map(sc => sc.wolthers_contract_nr)
+            .filter((nr): nr is string => !!nr && nr !== sample.wolthers_contract_nr)
+
+          // Format print date as DD MMM YYYY
+          const now = new Date()
+          const printDate = now.toLocaleDateString('en-GB', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          }).toUpperCase()
+
           const cardData = {
             sample_id: sample.id,
             sample_number: sample.tracking_number,
@@ -305,6 +319,8 @@ export function PrintCuppingCardsDialog({
             ico_number: sample.ico_number,
             container_nr: sample.container_nr,
             wolthers_contract_nr: sample.wolthers_contract_nr,
+            sub_contract_nrs: subContractNrs.length > 0 ? subContractNrs : undefined,
+            print_date: printDate,
             exporter_sample_number: sample.exporter_sample_number,
             quality_name: sample.quality_spec?.custom_name || template?.name,
             buyer_name: sample.client?.fantasy_name || sample.client?.company,

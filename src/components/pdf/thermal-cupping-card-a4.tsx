@@ -136,8 +136,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   contractNr: {
-    fontSize: 6,
+    fontSize: 8,
     fontWeight: 'bold',
+  },
+  printDate: {
+    fontSize: 8,
+    fontWeight: 'bold',
+    marginTop: '1pt',
   },
   sampleNumber: {
     fontSize: 7,
@@ -276,6 +281,8 @@ export const ThermalCuppingCardA4Document: React.FC<
       ico_number: card.ico_number ? String(card.ico_number) : undefined,
       container_nr: card.container_nr ? String(card.container_nr) : undefined,
       wolthers_contract_nr: card.wolthers_contract_nr ? String(card.wolthers_contract_nr) : undefined,
+      sub_contract_nrs: Array.isArray(card.sub_contract_nrs) ? card.sub_contract_nrs.map(String) : undefined,
+      print_date: card.print_date ? String(card.print_date) : undefined,
       exporter_sample_number: card.exporter_sample_number ? String(card.exporter_sample_number) : undefined,
       quality_name: card.quality_name ? String(card.quality_name) : undefined,
       buyer_name: card.buyer_name ? String(card.buyer_name) : undefined,
@@ -317,9 +324,29 @@ export const ThermalCuppingCardA4Document: React.FC<
                   <View style={styles.headerInfo}>
                     <View style={styles.headerTopRow}>
                       <Text style={styles.companyName}>WOLTHERS & ASSOCIATES</Text>
-                      {card.wolthers_contract_nr && (
-                        <Text style={styles.contractNr}>{card.wolthers_contract_nr}</Text>
-                      )}
+                      <View style={{ alignItems: 'flex-end' }}>
+                        {(() => {
+                          const allContracts = [
+                            card.wolthers_contract_nr,
+                            ...(card.sub_contract_nrs || [])
+                          ].filter(Boolean) as string[]
+                          if (allContracts.length === 0) return null
+                          if (allContracts.length <= 3) {
+                            return allContracts.map((nr, i) => (
+                              <Text key={i} style={styles.contractNr}>{nr}</Text>
+                            ))
+                          }
+                          return (
+                            <>
+                              <Text style={styles.contractNr}>{allContracts.length} contracts:</Text>
+                              <Text style={styles.contractNr}>{allContracts[0]} - {allContracts[allContracts.length - 1]}</Text>
+                            </>
+                          )
+                        })()}
+                        {card.print_date && (
+                          <Text style={styles.printDate}>{card.print_date}</Text>
+                        )}
+                      </View>
                     </View>
                     {/* Sample Type and Identifier */}
                     <Text style={styles.sampleNumber}>
