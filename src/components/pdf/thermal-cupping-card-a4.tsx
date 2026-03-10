@@ -81,6 +81,9 @@ const CUT_BORDER = '2pt solid #000000'
 const INNER_BORDER = '0.5pt solid #000000'
 const INNER_BORDER_LIGHT = '0.5pt solid #CCCCCC'
 
+// A4 = 842pt tall. 4 rows = 210.5pt each. 2 columns = 50% width each.
+const CARD_HEIGHT = '210.5pt'
+
 const styles = StyleSheet.create({
   page: {
     flexDirection: 'row',
@@ -91,16 +94,20 @@ const styles = StyleSheet.create({
   },
   cardContainer: {
     width: '50%',
+    height: CARD_HEIGHT,
     position: 'relative',
   },
   card: {
     border: CUT_BORDER,
     fontSize: 6,
+    height: '100%',
+    flexDirection: 'column',
   },
   header: {
     flexDirection: 'row',
     borderBottom: INNER_BORDER,
     padding: '2pt',
+    position: 'relative',
   },
   qrSection: {
     width: '50pt',
@@ -125,24 +132,30 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'column',
   },
-  headerTopRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    marginBottom: '1pt',
-  },
   companyName: {
     fontSize: 6,
     fontWeight: 'bold',
+    marginBottom: '1pt',
+  },
+  contractBlock: {
+    position: 'absolute',
+    top: '2pt',
+    right: '2pt',
+    alignItems: 'flex-end',
   },
   contractNr: {
     fontSize: 8,
     fontWeight: 'bold',
   },
+  printDateRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    paddingRight: '2pt',
+    paddingBottom: '1pt',
+  },
   printDate: {
     fontSize: 8,
     fontWeight: 'bold',
-    marginTop: '1pt',
   },
   sampleNumber: {
     fontSize: 7,
@@ -158,6 +171,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   tableSection: {
+    flex: 1,
     borderBottom: INNER_BORDER,
   },
   tableHeader: {
@@ -188,7 +202,7 @@ const styles = StyleSheet.create({
   tableRow: {
     flexDirection: 'row',
     borderBottom: INNER_BORDER_LIGHT,
-    minHeight: '18pt',
+    flex: 1,
   },
   cupperCell: {
     width: '60pt',
@@ -322,32 +336,29 @@ export const ThermalCuppingCardA4Document: React.FC<
                     <Image src={card.qr_code} style={styles.qrCode} />
                   </View>
                   <View style={styles.headerInfo}>
-                    <View style={styles.headerTopRow}>
-                      <Text style={styles.companyName}>WOLTHERS & ASSOCIATES</Text>
-                      <View style={{ alignItems: 'flex-end' }}>
-                        {(() => {
-                          const allContracts = [
-                            card.wolthers_contract_nr,
-                            ...(card.sub_contract_nrs || [])
-                          ].filter(Boolean) as string[]
-                          if (allContracts.length === 0) return null
-                          if (allContracts.length <= 3) {
-                            return allContracts.map((nr, i) => (
-                              <Text key={i} style={styles.contractNr}>{nr}</Text>
-                            ))
-                          }
-                          return (
-                            <>
-                              <Text style={styles.contractNr}>{allContracts.length} contracts:</Text>
-                              <Text style={styles.contractNr}>{allContracts[0]} - {allContracts[allContracts.length - 1]}</Text>
-                            </>
-                          )
-                        })()}
-                        {card.print_date && (
-                          <Text style={styles.printDate}>{card.print_date}</Text>
-                        )}
-                      </View>
+                    {/* Contract numbers positioned absolutely so they don't push left column down */}
+                    <View style={styles.contractBlock}>
+                      {(() => {
+                        const allContracts = [
+                          card.wolthers_contract_nr,
+                          ...(card.sub_contract_nrs || [])
+                        ].filter(Boolean) as string[]
+                        if (allContracts.length === 0) return null
+                        if (allContracts.length <= 3) {
+                          return allContracts.map((nr, i) => (
+                            <Text key={i} style={styles.contractNr}>{nr}</Text>
+                          ))
+                        }
+                        return (
+                          <>
+                            <Text style={styles.contractNr}>{allContracts.length} contracts:</Text>
+                            <Text style={styles.contractNr}>{allContracts[0]} - {allContracts[allContracts.length - 1]}</Text>
+                          </>
+                        )
+                      })()}
                     </View>
+                    {/* Left column: company name + sample info (independent of right column) */}
+                    <Text style={styles.companyName}>WOLTHERS & ASSOCIATES</Text>
                     {/* Sample Type and Identifier */}
                     <Text style={styles.sampleNumber}>
                       <Text style={{ fontWeight: 'bold' }}>
@@ -382,6 +393,13 @@ export const ThermalCuppingCardA4Document: React.FC<
                     )}
                   </View>
                 </View>
+
+                {/* Print date row - sits between header and table */}
+                {card.print_date && (
+                  <View style={styles.printDateRow}>
+                    <Text style={styles.printDate}>{card.print_date}</Text>
+                  </View>
+                )}
 
                 {/* Attribute Table */}
                 <View style={styles.tableSection}>

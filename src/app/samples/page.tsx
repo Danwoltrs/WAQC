@@ -566,6 +566,19 @@ export default function SamplesPage() {
 
   const handleBulkPrintCuppingCards = () => {
     if (selectedSamples.size === 0) return
+    // Collect unique cuppers from all selected samples via sampleCupperMap
+    const cupperMap = new Map<string, { id: string; full_name: string; email: string }>()
+    for (const sampleId of selectedSamples) {
+      const assignment = sampleCupperMap[sampleId]
+      if (assignment?.cuppers) {
+        assignment.cuppers.forEach(c => cupperMap.set(c.id, c))
+      }
+    }
+    const allCuppers = Array.from(cupperMap.values())
+    if (allCuppers.length > 0) {
+      setAssignedCuppers(allCuppers)
+      setCuppersAssigned(true)
+    }
     setShowCuppingCardsDialog(true)
   }
 
@@ -600,12 +613,14 @@ export default function SamplesPage() {
   }
 
   const handleSingleSampleReprintCards = (sample: Sample) => {
-    const assignment = sampleCupperMap[sample.id]
-    if (!assignment) return
     setSelectedSamples(new Set([sample.id]))
     setSelectedQrCodes(new Set([sample.id]))
-    setAssignedCuppers(assignment.cuppers)
-    setCuppersAssigned(true)
+    const assignment = sampleCupperMap[sample.id]
+    if (assignment?.cuppers && assignment.cuppers.length > 0) {
+      setAssignedCuppers(assignment.cuppers)
+      setCuppersAssigned(true)
+    }
+    // Always open dialog - it will fetch cuppers from session as fallback
     setShowCuppingCardsDialog(true)
   }
 
