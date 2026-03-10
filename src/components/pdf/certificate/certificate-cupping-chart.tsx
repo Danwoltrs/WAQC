@@ -307,6 +307,7 @@ export interface CertificateCuppingChartProps {
   // Spec limits
   maxTaints?: number
   maxFaults?: number
+  compact?: boolean
 }
 
 export function CertificateCuppingChart({
@@ -321,6 +322,7 @@ export function CertificateCuppingChart({
   uniformCup,
   maxTaints,
   maxFaults,
+  compact,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
     return null
@@ -366,7 +368,7 @@ export function CertificateCuppingChart({
   const faultsOutOfSpec = maxFaults !== undefined && faults != null && faults > maxFaults
 
   return (
-    <View style={chartStyles.container}>
+    <View style={[chartStyles.container, compact && { marginTop: 30 - 25 }]}>
       {/* Attributes section (left) */}
       <View style={chartStyles.attributesSection}>
         {scaleGroups.map((group, groupIdx) => {

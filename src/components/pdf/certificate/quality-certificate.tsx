@@ -105,6 +105,9 @@ export function QualityCertificate({
     scaleMax: attr.scaleMax ?? 10,
   })) || []
 
+  // When 10+ cupping attributes, reduce spacing to keep everything on one page
+  const compact = cuppingAttributes.length >= 10
+
   return (
     <Document>
       <Page size="A4" style={pageStyles.page}>
@@ -154,6 +157,7 @@ export function QualityCertificate({
           qualityDescription={qualitySpec?.description || null}
           certifications={sample.certifications}
           cropYear={sample.crop_year}
+          compact={compact}
         />
 
         {/* 5. Physical Properties - Green Bean + Roast */}
@@ -196,6 +200,7 @@ export function QualityCertificate({
           uniformCup={cuppingData?.uniformCup}
           maxTaints={specLimits?.max_taints}
           maxFaults={specLimits?.max_faults}
+          compact={compact}
         />
 
         {/* 8. Cup Status Row - Removed as now integrated into cupping chart */}

@@ -80,12 +80,14 @@ export interface CertificateQualityDescriptionProps {
   qualityDescription: string | null
   certifications?: string[] | null
   cropYear?: string | null
+  compact?: boolean
 }
 
 export function CertificateQualityDescription({
   qualityDescription,
   certifications,
   cropYear,
+  compact,
 }: CertificateQualityDescriptionProps) {
   const hasCertifications = certifications && certifications.length > 0
 
@@ -104,7 +106,7 @@ export function CertificateQualityDescription({
   }
 
   return (
-    <View style={descStyles.container}>
+    <View style={[descStyles.container, compact && { marginBottom: 42 - 25 }]}>
       {fullQualityDescription && (
         <>
           <Text style={descStyles.sectionLabel}>Quality:</Text>
