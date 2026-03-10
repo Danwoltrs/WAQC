@@ -999,6 +999,8 @@ export default function SamplesPage() {
   }
 
   const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && (s.workflow_stage === 'certified' || s.workflow_stage === 'rejected'))
+  // Check if any selected sample already has cuppers (workflow moved past 'received')
+  const selectedHaveCuppers = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && s.workflow_stage && s.workflow_stage !== 'received')
 
   return (
     <>
@@ -1028,8 +1030,8 @@ export default function SamplesPage() {
                   {/* Cupper Assignment - Priority Action */}
                   <DropdownMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
                     <Users className="h-4 w-4 mr-2" />
-                    {cuppersAssigned
-                      ? `Manage Cuppers (${assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')})`
+                    {(cuppersAssigned || selectedHaveCuppers)
+                      ? `Assigned Cuppers${assignedCuppers.length > 0 ? ` (${assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')})` : ''}`
                       : 'Assign Cuppers'}
                   </DropdownMenuItem>
                   {hasCertifiedSelected && (
@@ -1039,7 +1041,7 @@ export default function SamplesPage() {
                   )}
 
                   {/* Print Actions - Only shown after cuppers assigned */}
-                  {cuppersAssigned && (
+                  {(cuppersAssigned || selectedHaveCuppers) && (
                     <>
                       <DropdownMenuSeparator />
                       <DropdownMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
@@ -1559,8 +1561,10 @@ export default function SamplesPage() {
                           </ContextMenuItem>
                           <ContextMenuSeparator />
                           {(() => {
-                            const singleAssignment = selectedSamples.size <= 1 ? sampleCupperMap[sample.id] : null
-                            const hasCuppers = selectedSamples.size > 1 ? cuppersAssigned : !!singleAssignment
+                            // Use workflow_stage as primary indicator: 'received' = not yet assigned
+                            const sampleHasCuppers = sample.workflow_stage !== 'received' && sample.workflow_stage !== undefined
+                            const hasCuppers = selectedSamples.size > 1 ? cuppersAssigned : sampleHasCuppers
+                            const singleAssignment = sampleCupperMap[sample.id]
                             const cupperNames = selectedSamples.size > 1
                               ? assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')
                               : singleAssignment?.cuppers.map(c => c.full_name?.split(' ')[0]).join(', ')
@@ -1572,7 +1576,7 @@ export default function SamplesPage() {
                                 >
                                   <Users className="h-4 w-4 mr-2" />
                                   {hasCuppers
-                                    ? `Edit Cuppers (${cupperNames})`
+                                    ? `Assigned Cuppers${cupperNames ? ` (${cupperNames})` : ''}`
                                     : 'Assign Cuppers'}
                                 </ContextMenuItem>
                                 {hasCertifiedSelected && (
@@ -1838,8 +1842,8 @@ export default function SamplesPage() {
               <ContextMenuSeparator />
               <ContextMenuItem onClick={handleBulkAssign} disabled={hasCertifiedSelected}>
                 <Users className="h-4 w-4 mr-2" />
-                {cuppersAssigned
-                  ? `Edit Cuppers (${assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')})`
+                {(cuppersAssigned || selectedHaveCuppers)
+                  ? `Assigned Cuppers${assignedCuppers.length > 0 ? ` (${assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')})` : ''}`
                   : 'Assign Cuppers'}
               </ContextMenuItem>
               {hasCertifiedSelected && (
@@ -1847,7 +1851,7 @@ export default function SamplesPage() {
                   Certified/rejected sample selected
                 </div>
               )}
-              {cuppersAssigned && (
+              {(cuppersAssigned || selectedHaveCuppers) && (
                 <ContextMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
                   <FileText className="h-4 w-4 mr-2" />
                   Reprint Cupping Cards
