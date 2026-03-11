@@ -24,6 +24,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import {
   Plus,
   Edit,
   Trash2,
@@ -75,6 +80,113 @@ const UNIT_OPTIONS = [
   { value: 'per_pound', label: 'c/lb' },
   { value: 'per_sample', label: '/sample' },
 ]
+
+function FeePopover({
+  quality,
+  defaultFeePrice,
+  defaultFeeCurrency,
+  defaultFeeUnit,
+  onUpdate,
+}: {
+  quality: ClientQuality
+  defaultFeePrice?: number | null
+  defaultFeeCurrency?: string | null
+  defaultFeeUnit?: string | null
+  onUpdate: (id: string, field: string, value: any) => void
+}) {
+  const price = quality.fee_price ?? defaultFeePrice
+  const currency = quality.fee_currency || defaultFeeCurrency || 'USD'
+  const unit = quality.fee_unit || defaultFeeUnit || 'per_pound'
+  const isOverridden = quality.fee_price !== null || quality.fee_currency !== null || quality.fee_unit !== null
+
+  const unitLabel = unit === 'per_sample' ? '/sample' : 'c/lb'
+  const displayText = price != null ? `${price} ${currency} ${unitLabel}` : '-'
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button
+          className={`text-xs px-2 py-1 rounded-md border transition-colors hover:bg-accent ${
+            isOverridden ? 'border-primary/30 bg-primary/5 font-medium' : 'border-transparent'
+          }`}
+        >
+          {displayText}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-3" align="center">
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">Fee Override</p>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Price</Label>
+            <Input
+              type="number"
+              step="0.01"
+              min={0}
+              defaultValue={price ?? ''}
+              placeholder="Client default"
+              className="h-8 text-xs"
+              onBlur={(e) => {
+                const val = e.target.value ? parseFloat(e.target.value) : null
+                if (val !== quality.fee_price) {
+                  onUpdate(quality.id, 'fee_price', val)
+                }
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+              }}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Currency</Label>
+            <Select
+              value={currency}
+              onValueChange={(value) => onUpdate(quality.id, 'fee_currency', value)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CURRENCY_OPTIONS.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1.5">
+            <Label className="text-xs">Unit</Label>
+            <Select
+              value={unit}
+              onValueChange={(value) => onUpdate(quality.id, 'fee_unit', value)}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {UNIT_OPTIONS.map((u) => (
+                  <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {isOverridden && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="w-full text-xs h-7 text-muted-foreground"
+              onClick={() => {
+                onUpdate(quality.id, 'fee_price', null)
+                onUpdate(quality.id, 'fee_currency', null)
+                onUpdate(quality.id, 'fee_unit', null)
+              }}
+            >
+              Reset to client default
+            </Button>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 export function ClientQualityManager({ clientId, clientName, defaultFeePrice, defaultFeeCurrency, defaultFeeUnit }: ClientQualityManagerProps) {
   const [clientQualities, setClientQualities] = useState<ClientQuality[]>([])
@@ -384,8 +496,6 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                   <th className="text-left py-2 pr-3 font-medium">Template</th>
                   <th className="text-center py-2 pr-3 font-medium">Cups</th>
                   <th className="text-center py-2 pr-3 font-medium">Fee</th>
-                  <th className="text-center py-2 pr-3 font-medium">Currency</th>
-                  <th className="text-center py-2 pr-3 font-medium">Unit</th>
                   <th className="text-center py-2 pr-3 font-medium">Active</th>
                   <th className="text-right py-2 font-medium">Actions</th>
                 </tr>
@@ -434,56 +544,13 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                       />
                     </td>
                     <td className="py-2 pr-3 text-center">
-                      <Input
-                        type="number"
-                        step="0.01"
-                        min={0}
-                        value={quality.fee_price ?? defaultFeePrice ?? ''}
-                        onChange={() => {}}
-                        onBlur={(e) => {
-                          const val = e.target.value ? parseFloat(e.target.value) : null
-                          const current = quality.fee_price ?? defaultFeePrice ?? null
-                          if (val !== current) {
-                            handleInlineUpdate(quality.id, 'fee_price', val)
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                        }}
-                        className="w-16 h-7 text-center text-xs mx-auto"
-                        defaultValue={quality.fee_price ?? defaultFeePrice ?? ''}
-                        placeholder="-"
+                      <FeePopover
+                        quality={quality}
+                        defaultFeePrice={defaultFeePrice}
+                        defaultFeeCurrency={defaultFeeCurrency}
+                        defaultFeeUnit={defaultFeeUnit}
+                        onUpdate={handleInlineUpdate}
                       />
-                    </td>
-                    <td className="py-2 pr-3 text-center">
-                      <Select
-                        value={quality.fee_currency || defaultFeeCurrency || 'USD'}
-                        onValueChange={(value) => handleInlineUpdate(quality.id, 'fee_currency', value)}
-                      >
-                        <SelectTrigger className="w-[72px] h-7 text-xs mx-auto">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {CURRENCY_OPTIONS.map((c) => (
-                            <SelectItem key={c} value={c}>{c}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </td>
-                    <td className="py-2 pr-3 text-center">
-                      <Select
-                        value={quality.fee_unit || defaultFeeUnit || 'per_pound'}
-                        onValueChange={(value) => handleInlineUpdate(quality.id, 'fee_unit', value)}
-                      >
-                        <SelectTrigger className="w-[80px] h-7 text-xs mx-auto">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {UNIT_OPTIONS.map((u) => (
-                            <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
                     </td>
                     <td className="py-2 pr-3 text-center">
                       <Switch
