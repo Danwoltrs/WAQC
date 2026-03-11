@@ -106,7 +106,7 @@ export function CertificateQualityDescription({
   }
 
   return (
-    <View style={[descStyles.container, compact && { marginBottom: 42 - 25 }]}>
+    <View style={[descStyles.container, compact ? { marginBottom: 42 - 25 } : {}]}>
       {fullQualityDescription && (
         <>
           <Text style={descStyles.sectionLabel}>Quality:</Text>

@@ -368,7 +368,7 @@ export function CertificateCuppingChart({
   const faultsOutOfSpec = maxFaults !== undefined && faults != null && faults > maxFaults
 
   return (
-    <View style={[chartStyles.container, compact && { marginTop: 30 - 25 }]}>
+    <View style={[chartStyles.container, compact ? { marginTop: 30 - 25 } : {}]}>
       {/* Attributes section (left) */}
       <View style={chartStyles.attributesSection}>
         {scaleGroups.map((group, groupIdx) => {
