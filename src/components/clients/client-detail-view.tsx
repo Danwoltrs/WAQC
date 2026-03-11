@@ -249,7 +249,13 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
         </TabsContent>
 
         <TabsContent value="specs" className="space-y-4">
-          <ClientQualityManager clientId={client.id} clientName={client.fantasy_name || client.company} />
+          <ClientQualityManager
+            clientId={client.id}
+            clientName={client.fantasy_name || client.company}
+            defaultFeePrice={client.pricing_model === 'per_pound' ? client.price_per_pound_cents : client.pricing_model === 'per_sample' ? client.price_per_sample : null}
+            defaultFeeCurrency={client.currency || 'USD'}
+            defaultFeeUnit={client.pricing_model === 'complimentary' ? null : (client.pricing_model || 'per_pound')}
+          />
         </TabsContent>
 
         <TabsContent value="metrics" className="space-y-4">

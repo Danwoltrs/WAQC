@@ -34,6 +34,9 @@ import { Switch } from '@/components/ui/switch'
 interface ClientQualityManagerProps {
   clientId: string
   clientName: string
+  defaultFeePrice?: number | null
+  defaultFeeCurrency?: string | null
+  defaultFeeUnit?: string | null
 }
 
 interface ClientQuality {
@@ -46,6 +49,9 @@ interface ClientQuality {
   cups_per_sample: number | null
   is_active: boolean
   notes: string | null
+  fee_price: number | null
+  fee_currency: string | null
+  fee_unit: string | null
   custom_parameters: any
   created_at: string
   updated_at: string
@@ -64,7 +70,13 @@ interface QualityTemplate {
   is_active: boolean
 }
 
-export function ClientQualityManager({ clientId, clientName }: ClientQualityManagerProps) {
+const CURRENCY_OPTIONS = ['USD', 'EUR', 'BRL', 'GBP']
+const UNIT_OPTIONS = [
+  { value: 'per_pound', label: 'c/lb' },
+  { value: 'per_sample', label: '/sample' },
+]
+
+export function ClientQualityManager({ clientId, clientName, defaultFeePrice, defaultFeeCurrency, defaultFeeUnit }: ClientQualityManagerProps) {
   const [clientQualities, setClientQualities] = useState<ClientQuality[]>([])
   const [templates, setTemplates] = useState<QualityTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -371,6 +383,9 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                   <th className="text-left py-2 pr-3 font-medium">Code</th>
                   <th className="text-left py-2 pr-3 font-medium">Template</th>
                   <th className="text-center py-2 pr-3 font-medium">Cups</th>
+                  <th className="text-center py-2 pr-3 font-medium">Fee</th>
+                  <th className="text-center py-2 pr-3 font-medium">Currency</th>
+                  <th className="text-center py-2 pr-3 font-medium">Unit</th>
                   <th className="text-center py-2 pr-3 font-medium">Active</th>
                   <th className="text-right py-2 font-medium">Actions</th>
                 </tr>
@@ -417,6 +432,58 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                         className="w-14 h-7 text-center text-xs mx-auto"
                         defaultValue={quality.cups_per_sample ?? 5}
                       />
+                    </td>
+                    <td className="py-2 pr-3 text-center">
+                      <Input
+                        type="number"
+                        step="0.01"
+                        min={0}
+                        value={quality.fee_price ?? defaultFeePrice ?? ''}
+                        onChange={() => {}}
+                        onBlur={(e) => {
+                          const val = e.target.value ? parseFloat(e.target.value) : null
+                          const current = quality.fee_price ?? defaultFeePrice ?? null
+                          if (val !== current) {
+                            handleInlineUpdate(quality.id, 'fee_price', val)
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                        }}
+                        className="w-16 h-7 text-center text-xs mx-auto"
+                        defaultValue={quality.fee_price ?? defaultFeePrice ?? ''}
+                        placeholder="-"
+                      />
+                    </td>
+                    <td className="py-2 pr-3 text-center">
+                      <Select
+                        value={quality.fee_currency || defaultFeeCurrency || 'USD'}
+                        onValueChange={(value) => handleInlineUpdate(quality.id, 'fee_currency', value)}
+                      >
+                        <SelectTrigger className="w-[72px] h-7 text-xs mx-auto">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CURRENCY_OPTIONS.map((c) => (
+                            <SelectItem key={c} value={c}>{c}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </td>
+                    <td className="py-2 pr-3 text-center">
+                      <Select
+                        value={quality.fee_unit || defaultFeeUnit || 'per_pound'}
+                        onValueChange={(value) => handleInlineUpdate(quality.id, 'fee_unit', value)}
+                      >
+                        <SelectTrigger className="w-[80px] h-7 text-xs mx-auto">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {UNIT_OPTIONS.map((u) => (
+                            <SelectItem key={u.value} value={u.value}>{u.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </td>
                     <td className="py-2 pr-3 text-center">
                       <Switch

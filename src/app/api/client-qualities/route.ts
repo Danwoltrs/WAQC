@@ -129,7 +129,10 @@ export async function POST(request: NextRequest) {
       code_position: body.code_position || 'suffix',
       cups_per_sample: body.cups_per_sample || 10,
       is_active: body.is_active !== undefined ? body.is_active : true,
-      notes: body.notes || null
+      notes: body.notes || null,
+      fee_price: body.fee_price ?? null,
+      fee_currency: body.fee_currency || null,
+      fee_unit: body.fee_unit || null
     }
 
     // Insert client quality assignment
