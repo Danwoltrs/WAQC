@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Save, X, Search, Building2, MapPin, Mail, Phone, AlertCircle, Plus, Trash2, Layers, FileText, Eye, Upload, ImageIcon } from 'lucide-react'
 import { Database, supabase } from '@/lib/supabase'
@@ -37,13 +38,11 @@ interface OriginPricing {
 
 const CLIENT_TYPE_OPTIONS = [
   { value: 'producer', label: 'Producer' },
-  { value: 'producer_exporter', label: 'Producer/Exporter' },
   { value: 'cooperative', label: 'Cooperative' },
   { value: 'exporter', label: 'Exporter' },
   { value: 'importer_buyer', label: 'Importer' },
   { value: 'roaster', label: 'Roaster' },
   { value: 'final_buyer', label: 'Final Importer' },
-  { value: 'roaster_final_buyer', label: 'Roaster/Final Importer' },
   { value: 'end_client', label: 'End Client' },
 ]
 
@@ -284,7 +283,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
     zip_code: '',
     client_types: [],
     is_qc_client: false,
-    pricing_model: 'per_sample',
+    pricing_model: 'per_pound',
     price_per_sample: undefined,
     price_per_pound_cents: undefined,
     currency: 'USD',
@@ -298,7 +297,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
     certificate_validity_months: 6,
   })
 
-  const [selectedClientType, setSelectedClientType] = useState<string>('')
+  const [selectedClientTypes, setSelectedClientTypes] = useState<string[]>([])
   const [useOriginPricing, setUseOriginPricing] = useState(false)
   const [originPricingList, setOriginPricingList] = useState<OriginPricing[]>([])
   const [loadingOriginPricing, setLoadingOriginPricing] = useState(false)
@@ -334,7 +333,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
       // For create mode, set initial state immediately
       initialDataRef.current = JSON.stringify({
         formData,
-        clientType: selectedClientType,
+        clientTypes: selectedClientTypes,
         useOriginPricing,
         logoUrl,
         certificatePattern,
@@ -350,14 +349,14 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
 
     const currentState = JSON.stringify({
       formData,
-      clientType: selectedClientType,
+      clientTypes: selectedClientTypes,
       useOriginPricing,
       logoUrl,
       certificatePattern,
     })
 
     setHasUnsavedChanges(currentState !== initialDataRef.current)
-  }, [formData, selectedClientType, useOriginPricing, logoUrl, certificatePattern])
+  }, [formData, selectedClientTypes, useOriginPricing, logoUrl, certificatePattern])
 
   // Warn user before leaving page with unsaved changes
   useEffect(() => {
@@ -389,7 +388,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
 
       if (response.ok) {
         setFormData(data.client)
-        setSelectedClientType(data.client.client_types?.[0] || '')
+        setSelectedClientTypes(data.client.client_types || [])
         setUseOriginPricing(data.client.has_origin_pricing || false)
 
         // Load logo URL if it exists
@@ -411,7 +410,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
         setTimeout(() => {
           initialDataRef.current = JSON.stringify({
             formData: data.client,
-            clientType: data.client.client_types?.[0] || '',
+            clientTypes: data.client.client_types || [],
             useOriginPricing: data.client.has_origin_pricing || false,
             logoUrl: data.client.logo_url || null,
             certificatePattern: data.client.certificate_pattern || DEFAULT_CERTIFICATE_PATTERN,
@@ -569,7 +568,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
       ...originPricingList,
       {
         origin: '',
-        pricing_model: 'per_sample',
+        pricing_model: 'per_pound',
         currency: formData.currency || 'USD',
         is_active: true,
       },
@@ -645,7 +644,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
     try {
       const payload = {
         ...formData,
-        client_types: selectedClientType ? [selectedClientType] : [],
+        client_types: selectedClientTypes,
         // Ensure numeric fields are numbers or null
         price_per_sample: formData.price_per_sample ? Number(formData.price_per_sample) : null,
         price_per_pound_cents: formData.price_per_pound_cents ? Number(formData.price_per_pound_cents) : null,
@@ -919,39 +918,46 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4 border-t">
-                <div className="space-y-2">
-                  <Label htmlFor="client_type">Client Type</Label>
-                  <Select
-                    value={selectedClientType}
-                    onValueChange={(value) => setSelectedClientType(value)}
-                  >
-                    <SelectTrigger id="client_type">
-                      <SelectValue placeholder="Select client type" />
-                    </SelectTrigger>
-                    <SelectContent>
+              <div className="pt-4 border-t space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Client Roles</Label>
+                    <div className="grid grid-cols-2 gap-2">
                       {CLIENT_TYPE_OPTIONS.map((type) => (
-                        <SelectItem key={type.value} value={type.value}>
-                          {type.label}
-                        </SelectItem>
+                        <div key={type.value} className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`client_type_${type.value}`}
+                            checked={selectedClientTypes.includes(type.value)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedClientTypes([...selectedClientTypes, type.value])
+                              } else {
+                                setSelectedClientTypes(selectedClientTypes.filter(t => t !== type.value))
+                              }
+                            }}
+                          />
+                          <Label htmlFor={`client_type_${type.value}`} className="font-normal cursor-pointer text-sm">
+                            {type.label}
+                          </Label>
+                        </div>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                    </div>
+                  </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="is_qc_client_basic">Quality Control Client</Label>
-                  <div className="flex items-center space-x-3 h-10 px-3 border rounded-md">
-                    <Checkbox
-                      id="is_qc_client_basic"
-                      checked={formData.is_qc_client || false}
-                      onCheckedChange={(checked) =>
-                        setFormData({ ...formData, is_qc_client: checked as boolean })
-                      }
-                    />
-                    <Label htmlFor="is_qc_client_basic" className="font-normal cursor-pointer">
-                      Hired us for QC services
-                    </Label>
+                  <div className="space-y-2">
+                    <Label htmlFor="is_qc_client_basic">Quality Control Client</Label>
+                    <div className="flex items-center space-x-3 h-10 px-3 border rounded-md">
+                      <Checkbox
+                        id="is_qc_client_basic"
+                        checked={formData.is_qc_client || false}
+                        onCheckedChange={(checked) =>
+                          setFormData({ ...formData, is_qc_client: checked as boolean })
+                        }
+                      />
+                      <Label htmlFor="is_qc_client_basic" className="font-normal cursor-pointer">
+                        Hired us for QC services
+                      </Label>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -986,7 +992,7 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                           <div className="space-y-2">
                             <Label htmlFor="pricing_model">Pricing Model</Label>
                             <Select
-                              value={formData.pricing_model || 'per_sample'}
+                              value={formData.pricing_model || 'per_pound'}
                               onValueChange={(value: 'per_sample' | 'per_pound' | 'complimentary') =>
                                 setFormData({ ...formData, pricing_model: value })
                               }
@@ -995,8 +1001,8 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
+                                <SelectItem value="per_pound">USD c/lb</SelectItem>
                                 <SelectItem value="per_sample">Per Sample</SelectItem>
-                                <SelectItem value="per_pound">Per Pound (¢/lb)</SelectItem>
                                 <SelectItem value="complimentary">Complimentary</SelectItem>
                               </SelectContent>
                             </Select>
@@ -1206,8 +1212,8 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
                                               <SelectValue />
                                             </SelectTrigger>
                                             <SelectContent>
+                                              <SelectItem value="per_pound">USD c/lb</SelectItem>
                                               <SelectItem value="per_sample">Per Sample</SelectItem>
-                                              <SelectItem value="per_pound">Per Pound (¢/lb)</SelectItem>
                                               <SelectItem value="complimentary">Complimentary</SelectItem>
                                             </SelectContent>
                                           </Select>
@@ -1755,21 +1761,13 @@ export function ClientForm({ clientId, mode }: ClientFormProps) {
 
             <div className="space-y-2">
               <Label htmlFor="country">Country</Label>
-              <Select
+              <SearchableSelect
+                options={COUNTRY_OPTIONS.map(c => ({ value: c, label: c }))}
                 value={formData.country || ''}
                 onValueChange={(value) => setFormData({ ...formData, country: value })}
-              >
-                <SelectTrigger id="country">
-                  <SelectValue placeholder="Select country" />
-                </SelectTrigger>
-                <SelectContent>
-                  {COUNTRY_OPTIONS.map((country) => (
-                    <SelectItem key={country} value={country}>
-                      {country}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                placeholder="Select country"
+                searchPlaceholder="Search countries..."
+              />
             </div>
           </div>
         </CardContent>

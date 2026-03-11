@@ -517,7 +517,7 @@ export default function CertificatesPage() {
 
   return (
     <MainLayout>
-      <div className="p-6 space-y-4 max-w-[1400px]">
+      <div className="p-6 space-y-4">
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">

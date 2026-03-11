@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Smartphone, Camera, ChevronsUpDown, X } from 'lucide-react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { ClientAutoDetection } from '@/components/clients/client-auto-detection'
@@ -692,49 +693,19 @@ export function BasicInfoStep({
                 QC Client
               </Label>
             </div>
-            <Select
-              value={formData.importer === '' ? 'custom' : mergedImporterOptions.find(opt => opt.name === formData.importer) ? formData.importer : 'custom'}
-              onValueChange={(value) => {
-                if (value === 'new') {
-                  setCreateClientType('importer')
-                  setShowCreateClientDialog(true)
-                } else if (value !== 'custom') {
-                  updateFormData('importer', value)
-                }
+            <SearchableSelect
+              options={mergedImporterOptions.map(o => ({ value: o.name, label: o.name }))}
+              value={formData.importer || ''}
+              onValueChange={(value) => updateFormData('importer', value)}
+              placeholder={(formData.sample_type === 'pss' || formData.sample_type === 'ss') ? 'Select importer (required)' : 'Select importer'}
+              searchPlaceholder="Search importers..."
+              allowCreate
+              onCreateNew={() => {
+                setCreateClientType('importer')
+                setShowCreateClientDialog(true)
               }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder={(formData.sample_type === 'pss' || formData.sample_type === 'ss') ? 'Select importer (required)' : 'Select existing or type new'} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="custom">Type custom name...</SelectItem>
-                <SelectItem value="new">+ Create New Importer</SelectItem>
-                {mergedImporterOptions.length > 0 ? (
-                  <>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                      {formData.importer_is_qc_client ? 'QC Clients & Importers' : 'Importers'}
-                    </div>
-                    {mergedImporterOptions.map((option) => (
-                      <SelectItem key={option.id} value={option.name}>
-                        {option.name}
-                      </SelectItem>
-                    ))}
-                  </>
-                ) : (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    No importers registered
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
-            {(formData.importer === '' || !mergedImporterOptions.find(opt => opt.name === formData.importer)) && (
-              <Input
-                id="importer"
-                value={formData.importer}
-                onChange={(e) => updateFormData('importer', e.target.value)}
-                placeholder="Enter importer name"
-              />
-            )}
+              createLabel="+ Create New Importer"
+            />
             {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && (
               <p className="text-xs text-muted-foreground">
                 {formData.importer_is_qc_client
@@ -750,28 +721,13 @@ export function BasicInfoStep({
               <Label htmlFor="qc_client">
                 QC Client {(formData.sample_type === 'pss' || formData.sample_type === 'ss') && '*'}
               </Label>
-              <Select
-                value={formData.qc_client || 'none'}
-                onValueChange={(value) => {
-                  if (value === 'none') {
-                    updateFormData('qc_client', '')
-                  } else {
-                    updateFormData('qc_client', value)
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select QC client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Select QC client...</SelectItem>
-                  {qcClients.map((client) => (
-                    <SelectItem key={client.id} value={client.fantasy_name || client.company}>
-                      {client.fantasy_name || client.company}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={qcClients.map(c => ({ value: c.fantasy_name || c.company, label: c.fantasy_name || c.company }))}
+                value={formData.qc_client || ''}
+                onValueChange={(value) => updateFormData('qc_client', value)}
+                placeholder="Select QC client"
+                searchPlaceholder="Search QC clients..."
+              />
               <p className="text-xs text-muted-foreground">
                 The client who commissioned the quality control
               </p>
@@ -796,43 +752,19 @@ export function BasicInfoStep({
           {/* Roaster (right) - database dropdown only */}
           <div className="space-y-2">
             <Label htmlFor="roaster">Roaster (Optional)</Label>
-            <Select
+            <SearchableSelect
+              options={roasters.map(r => ({ value: r.fantasy_name || r.company, label: r.fantasy_name || r.company }))}
               value={formData.roaster || ''}
-              onValueChange={(value) => {
-                if (value === 'new') {
-                  setCreateClientType('roaster')
-                  setShowCreateClientDialog(true)
-                } else if (value === 'none') {
-                  updateFormData('roaster', '')
-                } else {
-                  updateFormData('roaster', value)
-                }
+              onValueChange={(value) => updateFormData('roaster', value)}
+              placeholder="Select roaster"
+              searchPlaceholder="Search roasters..."
+              allowCreate
+              onCreateNew={() => {
+                setCreateClientType('roaster')
+                setShowCreateClientDialog(true)
               }}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select roaster" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">No roaster</SelectItem>
-                <SelectItem value="new">+ Create New Roaster</SelectItem>
-                {roasters.length > 0 ? (
-                  <>
-                    <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-                      Roasters
-                    </div>
-                    {roasters.map((client) => (
-                      <SelectItem key={client.id} value={client.fantasy_name || client.company}>
-                        {client.fantasy_name || client.company}
-                      </SelectItem>
-                    ))}
-                  </>
-                ) : (
-                  <div className="px-2 py-1.5 text-xs text-muted-foreground">
-                    No roasters registered
-                  </div>
-                )}
-              </SelectContent>
-            </Select>
+              createLabel="+ Create New Roaster"
+            />
           </div>
         </div>
 

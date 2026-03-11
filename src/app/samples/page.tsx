@@ -1022,7 +1022,7 @@ export default function SamplesPage() {
     <MainLayout>
       <ContextMenu>
         <ContextMenuTrigger asChild>
-      <div className="p-6 space-y-6 max-w-[1800px]">
+      <div className="p-6 space-y-6">
         {/* Header - Sticky on desktop */}
         <div className="sticky top-0 z-10 bg-background pb-4 -mx-6 px-6 pt-6 border-b md:border-0">
           <div className="flex items-center justify-between">

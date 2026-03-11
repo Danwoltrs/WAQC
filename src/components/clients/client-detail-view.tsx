@@ -206,29 +206,28 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
         </CardContent>
       </Card>
 
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatsCard
-          title="Total Samples"
-          value={sampleMetrics.total}
-          icon={<Package className="h-4 w-4" />}
-        />
-        <StatsCard
-          title="Approved"
-          value={sampleMetrics.approved}
-          icon={<CheckCircle2 className="h-4 w-4" />}
-          valueColor="text-green-600 dark:text-green-400"
-        />
-        <StatsCard
-          title="Quality Specs"
-          value={qualitySpecs.length}
-          icon={<FileText className="h-4 w-4" />}
-        />
-        <StatsCard
-          title="Certificates"
-          value={certificatesCount}
-          icon={<TrendingUp className="h-4 w-4" />}
-        />
+      {/* Compact Stats Row */}
+      <div className="flex items-center gap-6 px-4 py-2 rounded-lg border bg-card text-sm">
+        <div className="flex items-center gap-2">
+          <Package className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">Samples</span>
+          <span className="font-semibold">{sampleMetrics.total}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
+          <span className="text-muted-foreground">Approved</span>
+          <span className="font-semibold text-green-600 dark:text-green-400">{sampleMetrics.approved}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">Quality Specs</span>
+          <span className="font-semibold">{qualitySpecs.length}</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
+          <span className="text-muted-foreground">Certificates</span>
+          <span className="font-semibold">{certificatesCount}</span>
+        </div>
       </div>
 
       {/* Tabbed Content */}

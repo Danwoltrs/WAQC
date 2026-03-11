@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronDown } from 'lucide-react'
 import { CreateClientDialog } from './create-client-dialog'
@@ -212,30 +213,19 @@ export function SupplyChainStep({
               </Label>
             </div>
           </div>
-          <Select
-            value={formData.seller || 'none'}
-            onValueChange={(value) => {
-              if (value === 'new') {
-                setCreateClientType('exporter')
-                setShowCreateClientDialog(true)
-              } else if (value === 'none') {
-                updateFormData('seller', '')
-              } else {
-                updateFormData('seller', value)
-              }
+          <SearchableSelect
+            options={sellerOptions.map(o => ({ value: o.name, label: o.name }))}
+            value={formData.seller || ''}
+            onValueChange={(value) => updateFormData('seller', value)}
+            placeholder="Select seller"
+            searchPlaceholder="Search sellers..."
+            className="h-9"
+            allowCreate
+            onCreateNew={() => {
+              setCreateClientType('exporter')
+              setShowCreateClientDialog(true)
             }}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Select seller" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Select...</SelectItem>
-              <SelectItem value="new">+ Create New</SelectItem>
-              {sellerOptions.map((option) => (
-                <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1.5 block">Contract Ref.</Label>
@@ -271,30 +261,19 @@ export function SupplyChainStep({
         <div className="grid grid-cols-[180px_160px_140px] gap-3 items-end">
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">Shipper *</Label>
-            <Select
-              value={formData.shipper || 'none'}
-              onValueChange={(value) => {
-                if (value === 'new') {
-                  setCreateClientType('exporter')
-                  setShowCreateClientDialog(true)
-                } else if (value === 'none') {
-                  updateFormData('shipper', '')
-                } else {
-                  updateFormData('shipper', value)
-                }
+            <SearchableSelect
+              options={sellerOptions.map(o => ({ value: o.name, label: o.name }))}
+              value={formData.shipper || ''}
+              onValueChange={(value) => updateFormData('shipper', value)}
+              placeholder="Select shipper"
+              searchPlaceholder="Search shippers..."
+              className="h-9"
+              allowCreate
+              onCreateNew={() => {
+                setCreateClientType('exporter')
+                setShowCreateClientDialog(true)
               }}
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Select shipper" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="none">Select...</SelectItem>
-                <SelectItem value="new">+ Create New</SelectItem>
-                {sellerOptions.map((option) => (
-                  <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            />
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
@@ -335,30 +314,19 @@ export function SupplyChainStep({
               </Label>
             </div>
           </div>
-          <Select
-            value={formData.importer || 'none'}
-            onValueChange={(value) => {
-              if (value === 'new') {
-                setCreateClientType('importer')
-                setShowCreateClientDialog(true)
-              } else if (value === 'none') {
-                updateFormData('importer', '')
-              } else {
-                updateFormData('importer', value)
-              }
+          <SearchableSelect
+            options={mergedImporterOptions.map(o => ({ value: o.name, label: o.name }))}
+            value={formData.importer || ''}
+            onValueChange={(value) => updateFormData('importer', value)}
+            placeholder="Select importer"
+            searchPlaceholder="Search importers..."
+            className="h-9"
+            allowCreate
+            onCreateNew={() => {
+              setCreateClientType('importer')
+              setShowCreateClientDialog(true)
             }}
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Select importer" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="none">Select...</SelectItem>
-              <SelectItem value="new">+ Create New</SelectItem>
-              {mergedImporterOptions.map((option) => (
-                <SelectItem key={option.id} value={option.name}>{option.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          />
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
@@ -375,28 +343,14 @@ export function SupplyChainStep({
           <>
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block">QC Client</Label>
-              <Select
-                value={formData.qc_client || 'none'}
-                onValueChange={(value) => {
-                  if (value === 'none') {
-                    updateFormData('qc_client', '')
-                  } else {
-                    updateFormData('qc_client', value)
-                  }
-                }}
-              >
-                <SelectTrigger className="h-9">
-                  <SelectValue placeholder="Select QC client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Select...</SelectItem>
-                  {qcClientOptions.map((client) => (
-                    <SelectItem key={client.id} value={client.fantasy_name!}>
-                      {client.fantasy_name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <SearchableSelect
+                options={qcClientOptions.map(c => ({ value: c.fantasy_name!, label: c.fantasy_name! }))}
+                value={formData.qc_client || ''}
+                onValueChange={(value) => updateFormData('qc_client', value)}
+                placeholder="Select QC client"
+                searchPlaceholder="Search QC clients..."
+                className="h-9"
+              />
             </div>
             <div>
               <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
@@ -458,32 +412,19 @@ export function SupplyChainStep({
             <div className="grid grid-cols-[180px_160px_180px_160px] gap-3 items-end">
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster</Label>
-                <Select
-                  value={formData.roaster || 'none'}
-                  onValueChange={(value) => {
-                    if (value === 'new') {
-                      setCreateClientType('roaster')
-                      setShowCreateClientDialog(true)
-                    } else if (value === 'none') {
-                      updateFormData('roaster', '')
-                    } else {
-                      updateFormData('roaster', value)
-                    }
+                <SearchableSelect
+                  options={roasterOptions.map(r => ({ value: r.name, label: r.name }))}
+                  value={formData.roaster || ''}
+                  onValueChange={(value) => updateFormData('roaster', value)}
+                  placeholder="Select roaster"
+                  searchPlaceholder="Search roasters..."
+                  className="h-9"
+                  allowCreate
+                  onCreateNew={() => {
+                    setCreateClientType('roaster')
+                    setShowCreateClientDialog(true)
                   }}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select roaster" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Select...</SelectItem>
-                    <SelectItem value="new">+ Create New</SelectItem>
-                    {roasterOptions.map((roaster) => (
-                      <SelectItem key={roaster.id} value={roaster.name}>
-                        {roaster.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
@@ -496,28 +437,14 @@ export function SupplyChainStep({
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">End Client</Label>
-                <Select
-                  value={formData.end_client || 'none'}
-                  onValueChange={(value) => {
-                    if (value === 'none') {
-                      updateFormData('end_client', '')
-                    } else {
-                      updateFormData('end_client', value)
-                    }
-                  }}
-                >
-                  <SelectTrigger className="h-9">
-                    <SelectValue placeholder="Select end client" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Select...</SelectItem>
-                    {qcClients.map((client) => (
-                      <SelectItem key={client.id} value={client.fantasy_name || client.company}>
-                        {client.fantasy_name || client.company}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <SearchableSelect
+                  options={qcClients.map(c => ({ value: c.fantasy_name || c.company, label: c.fantasy_name || c.company }))}
+                  value={formData.end_client || ''}
+                  onValueChange={(value) => updateFormData('end_client', value)}
+                  placeholder="Select end client"
+                  searchPlaceholder="Search end clients..."
+                  className="h-9"
+                />
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>

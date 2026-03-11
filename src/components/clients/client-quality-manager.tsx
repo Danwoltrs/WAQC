@@ -27,13 +27,8 @@ import {
   Plus,
   Edit,
   Trash2,
-  Check,
-  X,
   FileText,
-  Eye,
-  EyeOff
 } from 'lucide-react'
-import { format } from 'date-fns'
 import { Switch } from '@/components/ui/switch'
 
 interface ClientQualityManagerProps {
@@ -47,6 +42,8 @@ interface ClientQuality {
   template_id: string
   origin: string | null
   custom_name: string | null
+  quality_code: string | null
+  cups_per_sample: number | null
   is_active: boolean
   notes: string | null
   custom_parameters: any
@@ -78,6 +75,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
     template_id: '',
     custom_name: '',
     quality_code: '',
+    cups_per_sample: 5,
     notes: '',
     is_active: true
   })
@@ -123,7 +121,8 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
       setFormData({
         template_id: quality.template_id,
         custom_name: quality.custom_name || '',
-        quality_code: (quality as any).quality_code || '',
+        quality_code: quality.quality_code || '',
+        cups_per_sample: quality.cups_per_sample ?? 5,
         notes: quality.notes || '',
         is_active: quality.is_active
       })
@@ -133,6 +132,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
         template_id: '',
         custom_name: '',
         quality_code: '',
+        cups_per_sample: 5,
         notes: '',
         is_active: true
       })
@@ -147,12 +147,12 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
         template_id: formData.template_id,
         custom_name: formData.custom_name || null,
         quality_code: formData.quality_code || null,
+        cups_per_sample: formData.cups_per_sample,
         notes: formData.notes || null,
         is_active: formData.is_active
       }
 
       if (editingQuality) {
-        // Update existing
         const response = await fetch(`/api/client-qualities/${editingQuality.id}`, {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -160,7 +160,6 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
         })
         if (!response.ok) throw new Error('Failed to update quality assignment')
       } else {
-        // Create new
         const response = await fetch('/api/client-qualities', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -192,7 +191,6 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
 
       const result = await response.json()
 
-      // Show appropriate message based on whether it was deleted or deactivated
       if (result.deactivated) {
         alert(result.message || 'Quality specification has been deactivated')
       }
@@ -204,18 +202,17 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
     }
   }
 
-  async function toggleActive(quality: ClientQuality) {
+  async function handleInlineUpdate(qualityId: string, field: string, value: any) {
     try {
-      const response = await fetch(`/api/client-qualities/${quality.id}`, {
+      const response = await fetch(`/api/client-qualities/${qualityId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ is_active: !quality.is_active })
+        body: JSON.stringify({ [field]: value })
       })
-      if (!response.ok) throw new Error('Failed to update quality assignment')
+      if (!response.ok) throw new Error('Failed to update')
       fetchClientQualities()
     } catch (err) {
-      console.error('Error toggling quality assignment:', err)
-      alert('Failed to update quality assignment. Please try again.')
+      console.error('Error updating quality:', err)
     }
   }
 
@@ -241,22 +238,22 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Quality Specifications</CardTitle>
-            <CardDescription>
-              Manage quality templates assigned to {clientName}
+            <CardTitle className="text-base">Quality Specifications</CardTitle>
+            <CardDescription className="text-xs">
+              Quality templates assigned to {clientName}
             </CardDescription>
           </div>
           <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={() => handleOpenDialog()}>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Quality Spec
+              <Button size="sm" onClick={() => handleOpenDialog()}>
+                <Plus className="h-4 w-4 mr-1" />
+                Add
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-lg">
               <DialogHeader>
                 <DialogTitle>
                   {editingQuality ? 'Edit' : 'Add'} Quality Specification
@@ -264,7 +261,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                 <DialogDescription>
                   {editingQuality
                     ? 'Update the quality specification details'
-                    : 'Assign a quality template to this client with a custom name'}
+                    : 'Assign a quality template to this client'}
                 </DialogDescription>
               </DialogHeader>
 
@@ -287,12 +284,9 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                       ))}
                     </SelectContent>
                   </Select>
-                  <p className="text-sm text-muted-foreground">
-                    The base quality template to use
-                  </p>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
+                <div className="grid grid-cols-4 gap-3">
                   <div className="col-span-2 space-y-2">
                     <Label htmlFor="custom_name">Custom Name</Label>
                     <Input
@@ -301,13 +295,10 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                       onChange={(e) => setFormData({ ...formData, custom_name: e.target.value })}
                       placeholder="e.g., Alfenas Dulce"
                     />
-                    <p className="text-sm text-muted-foreground">
-                      Give this quality spec a custom name for this client
-                    </p>
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="quality_code">Quality Code</Label>
+                    <Label htmlFor="quality_code">Code</Label>
                     <Input
                       id="quality_code"
                       value={formData.quality_code}
@@ -316,20 +307,30 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                       maxLength={4}
                       className="text-center font-mono"
                     />
-                    <p className="text-sm text-muted-foreground">
-                      2-4 letters
-                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="cups_per_sample">Cups</Label>
+                    <Input
+                      id="cups_per_sample"
+                      type="number"
+                      min={1}
+                      max={20}
+                      value={formData.cups_per_sample}
+                      onChange={(e) => setFormData({ ...formData, cups_per_sample: parseInt(e.target.value) || 5 })}
+                      className="text-center"
+                    />
                   </div>
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="notes">Internal Notes (Optional)</Label>
+                  <Label htmlFor="notes">Notes (Optional)</Label>
                   <Textarea
                     id="notes"
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Add any internal notes about this quality spec"
-                    rows={3}
+                    placeholder="Internal notes about this quality spec"
+                    rows={2}
                   />
                 </div>
 
@@ -348,7 +349,7 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
                   Cancel
                 </Button>
                 <Button onClick={handleSubmit} disabled={!formData.template_id}>
-                  {editingQuality ? 'Update' : 'Create'} Specification
+                  {editingQuality ? 'Update' : 'Create'}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -357,75 +358,97 @@ export function ClientQualityManager({ clientId, clientName }: ClientQualityMana
       </CardHeader>
       <CardContent>
         {clientQualities.length === 0 ? (
-          <div className="py-12 text-center text-muted-foreground">
-            <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
-            <p>No quality specifications assigned to this client</p>
-            <p className="text-sm mt-2">Click &ldquo;Add Quality Spec&rdquo; to get started</p>
+          <div className="py-8 text-center text-muted-foreground">
+            <FileText className="h-8 w-8 mx-auto mb-3 opacity-50" />
+            <p className="text-sm">No quality specifications assigned</p>
           </div>
         ) : (
-          <div className="space-y-3">
-            {clientQualities.map((quality) => (
-              <div
-                key={quality.id}
-                className="flex items-center justify-between p-4 rounded-lg border hover:bg-accent/50 transition-colors"
-              >
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1">
-                    <p className="font-medium truncate">
-                      {quality.custom_name || quality.template.name}
-                    </p>
-                    {quality.custom_name && (
-                      <Badge variant="secondary" className="text-xs">
-                        Custom Name
-                      </Badge>
-                    )}
-                    {!quality.is_active && (
-                      <Badge variant="outline" className="text-xs">
-                        Inactive
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                    <span>Template: {quality.template.name} (v{quality.template.version})</span>
-                    <span>•</span>
-                    <span>Created {format(new Date(quality.created_at), 'MMM d, yyyy')}</span>
-                  </div>
-                  {quality.notes && (
-                    <p className="text-sm text-muted-foreground mt-1 line-clamp-1">
-                      {quality.notes}
-                    </p>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 ml-4">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => toggleActive(quality)}
-                    title={quality.is_active ? 'Deactivate' : 'Activate'}
-                  >
-                    {quality.is_active ? (
-                      <Eye className="h-4 w-4" />
-                    ) : (
-                      <EyeOff className="h-4 w-4" />
-                    )}
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleOpenDialog(quality)}
-                  >
-                    <Edit className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => handleDelete(quality.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            ))}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b text-muted-foreground">
+                  <th className="text-left py-2 pr-3 font-medium">Quality Name</th>
+                  <th className="text-left py-2 pr-3 font-medium">Code</th>
+                  <th className="text-left py-2 pr-3 font-medium">Template</th>
+                  <th className="text-center py-2 pr-3 font-medium">Cups</th>
+                  <th className="text-center py-2 pr-3 font-medium">Active</th>
+                  <th className="text-right py-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {clientQualities.map((quality) => (
+                  <tr key={quality.id} className="border-b last:border-0 hover:bg-accent/50">
+                    <td className="py-2 pr-3">
+                      <span className="font-medium">
+                        {quality.custom_name || quality.template.name}
+                      </span>
+                      {!quality.is_active && (
+                        <Badge variant="outline" className="text-xs ml-2">Inactive</Badge>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3">
+                      {quality.quality_code ? (
+                        <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+                          {quality.quality_code}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )}
+                    </td>
+                    <td className="py-2 pr-3 text-muted-foreground">
+                      {quality.template.name} v{quality.template.version}
+                    </td>
+                    <td className="py-2 pr-3 text-center">
+                      <Input
+                        type="number"
+                        min={1}
+                        max={20}
+                        value={quality.cups_per_sample ?? 5}
+                        onChange={() => {}}
+                        onBlur={(e) => {
+                          const val = parseInt(e.target.value)
+                          if (val >= 1 && val <= 20 && val !== quality.cups_per_sample) {
+                            handleInlineUpdate(quality.id, 'cups_per_sample', val)
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                        }}
+                        className="w-14 h-7 text-center text-xs mx-auto"
+                        defaultValue={quality.cups_per_sample ?? 5}
+                      />
+                    </td>
+                    <td className="py-2 pr-3 text-center">
+                      <Switch
+                        checked={quality.is_active}
+                        onCheckedChange={() => handleInlineUpdate(quality.id, 'is_active', !quality.is_active)}
+                        className="mx-auto"
+                      />
+                    </td>
+                    <td className="py-2 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => handleOpenDialog(quality)}
+                        >
+                          <Edit className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => handleDelete(quality.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </CardContent>
