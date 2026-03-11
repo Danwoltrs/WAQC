@@ -381,37 +381,44 @@ function SamplesTab({ samples }: { samples: any[] }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Sample History</CardTitle>
-        <CardDescription>Recent samples from this client (up to 50)</CardDescription>
+        <CardTitle className="text-base">Sample History</CardTitle>
+        <CardDescription className="text-xs">Recent samples from this client (up to 50)</CardDescription>
       </CardHeader>
       <CardContent>
-        <div className="space-y-2">
-          {samples.map((sample) => (
-            <div
-              key={sample.id}
-              className="flex items-center justify-between p-3 rounded-lg border hover:bg-accent transition-colors"
-            >
-              <div className="flex-1 min-w-0">
-                <p className="font-medium truncate">{sample.tracking_number}</p>
-                <p className="text-sm text-muted-foreground">{sample.origin}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground">
-                  {format(new Date(sample.created_at), 'MMM d, yyyy')}
-                </span>
-                <Badge
-                  variant="outline"
-                  className="capitalize"
-                  style={{
-                    backgroundColor: `${STATUS_COLORS[sample.status as keyof typeof STATUS_COLORS]}20`,
-                    borderColor: STATUS_COLORS[sample.status as keyof typeof STATUS_COLORS],
-                  }}
-                >
-                  {sample.status.replace('_', ' ')}
-                </Badge>
-              </div>
-            </div>
-          ))}
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b text-muted-foreground">
+                <th className="text-left py-2 pr-3 font-medium">Tracking Number</th>
+                <th className="text-left py-2 pr-3 font-medium">Origin</th>
+                <th className="text-left py-2 pr-3 font-medium">Date</th>
+                <th className="text-right py-2 font-medium">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {samples.map((sample) => (
+                <tr key={sample.id} className="border-b last:border-0 hover:bg-accent/50">
+                  <td className="py-2 pr-3 font-medium">{sample.tracking_number}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">{sample.origin || '-'}</td>
+                  <td className="py-2 pr-3 text-muted-foreground">
+                    {format(new Date(sample.created_at), 'MMM d, yyyy')}
+                  </td>
+                  <td className="py-2 text-right">
+                    <Badge
+                      variant="outline"
+                      className="capitalize"
+                      style={{
+                        backgroundColor: `${STATUS_COLORS[sample.status as keyof typeof STATUS_COLORS]}20`,
+                        borderColor: STATUS_COLORS[sample.status as keyof typeof STATUS_COLORS],
+                      }}
+                    >
+                      {sample.status.replace('_', ' ')}
+                    </Badge>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       </CardContent>
     </Card>
