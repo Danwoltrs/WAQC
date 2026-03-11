@@ -1,11 +1,11 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
-import { Input } from '@/components/ui/input'
+// Input import removed - using native inputs for consistent cupping-style styling
 import { Label } from '@/components/ui/label'
 import { Badge } from '@/components/ui/badge'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Save, Eye, EyeOff, Camera } from 'lucide-react'
+import { Save, Eye, EyeOff, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
 import { DefectPhotoUpload } from '@/components/grading/defect-photo-upload'
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
 import {
@@ -180,6 +180,33 @@ export default function GradingPage() {
 
   // Raw decimal input strings (to allow typing "0." without it being parsed to "0")
   const [rawInputsMap, setRawInputsMap] = useState<Map<string, { density?: string; moisture?: string }>>(new Map())
+
+  // Tab scroll state
+  const tabsScrollRef = useRef<HTMLDivElement>(null)
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(false)
+
+  const updateScrollButtons = useCallback(() => {
+    const el = tabsScrollRef.current
+    if (!el) return
+    setCanScrollLeft(el.scrollLeft > 0)
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
+  }, [])
+
+  const scrollTabs = useCallback((direction: 'left' | 'right') => {
+    const el = tabsScrollRef.current
+    if (!el) return
+    el.scrollBy({ left: direction === 'left' ? -200 : 200, behavior: 'smooth' })
+  }, [])
+
+  useEffect(() => {
+    updateScrollButtons()
+    const el = tabsScrollRef.current
+    if (!el) return
+    const observer = new ResizeObserver(updateScrollButtons)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [samples, updateScrollButtons])
 
   // Watch for theme changes
   useEffect(() => {
@@ -1194,63 +1221,78 @@ export default function GradingPage() {
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
         <div className="border-b bg-card sticky top-0 z-50">
           <div className="flex items-center justify-between">
-            <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start">
-              {samples.map((sample, index) => {
-                const isActive = sample.id === activeSampleId
-                const gradingData = gradingDataMap.get(sample.id)
+            <div className="flex items-center flex-1 min-w-0">
+              {canScrollLeft && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-14 w-8 shrink-0 rounded-none border-r"
+                  onClick={() => scrollTabs('left')}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              )}
+              <div
+                ref={tabsScrollRef}
+                className="overflow-x-auto flex-1 scrollbar-hide"
+                onScroll={updateScrollButtons}
+              >
+                <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start w-max">
+                  {samples.map((sample, index) => {
+                    const isActive = sample.id === activeSampleId
+                    const gradingData = gradingDataMap.get(sample.id)
 
-                // Check if sample has been graded (has any data entered)
-                const hasData = gradingData && (
-                  Object.values(gradingData.defect_counts).some(count => count > 0) ||
-                  Object.values(gradingData.screen_sizes).some(grams => grams > 0) ||
-                  gradingData.moisture_percentage > 0 ||
-                  gradingData.green_aspect ||
-                  gradingData.roast_aspect
-                )
+                    const hasData = gradingData && (
+                      Object.values(gradingData.defect_counts).some(count => count > 0) ||
+                      Object.values(gradingData.screen_sizes).some(grams => grams > 0) ||
+                      gradingData.moisture_percentage > 0 ||
+                      gradingData.green_aspect ||
+                      gradingData.roast_aspect
+                    )
 
-                // Determine background color:
-                // - Yellow if active (regardless of whether it has data)
-                // - Red if inactive and has data and failed
-                // - Green if inactive and has data and passed
-                // - No background if inactive and no data
-                let bgColor = ''
-                if (isActive) {
-                  bgColor = 'bg-yellow-500/20'
-                } else if (hasData) {
-                  const compliance = getComplianceStatus(sample.id)
-                  if (compliance.status === 'fail') {
-                    bgColor = 'bg-red-500/20'
-                  } else if (compliance.status === 'pass') {
-                    bgColor = 'bg-green-500/20'
-                  }
-                }
+                    let bgColor = ''
+                    if (isActive) {
+                      bgColor = 'bg-yellow-500/20'
+                    } else if (hasData) {
+                      const compliance = getComplianceStatus(sample.id)
+                      if (compliance.status === 'fail') {
+                        bgColor = 'bg-red-500/20'
+                      } else if (compliance.status === 'pass') {
+                        bgColor = 'bg-green-500/20'
+                      }
+                    }
 
-                return (
-                  <div key={sample.id} className={`flex items-center ${bgColor}`}>
-                    {/* Separator before tab (except first) */}
-                    {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
-                    <TabsTrigger
-                      value={sample.id}
-                      className={`rounded-none border-b-2 border-transparent data-[state=active]:border-b-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
-                    >
-                      <div className="flex flex-col items-start gap-0.5">
-                        <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                        <span className="text-xs text-muted-foreground">
-                          {sample.sample_type === 'ss' && sample.container_nr
-                            ? sample.container_nr
-                            : <span className="capitalize">{sample.sample_type || 'sample'}</span>}
-                        </span>
+                    return (
+                      <div key={sample.id} className={`flex items-center ${bgColor}`}>
+                        {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
+                        <TabsTrigger
+                          value={sample.id}
+                          className={`rounded-none border-b-2 border-transparent data-[state=active]:border-b-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
+                        >
+                          <div className="flex flex-col items-start gap-0.5">
+                            <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
+                            <span className="text-xs text-muted-foreground">
+                              {sample.sample_type === 'ss' && sample.container_nr
+                                ? sample.container_nr
+                                : <span className="capitalize">{sample.sample_type || 'sample'}</span>}
+                            </span>
+                          </div>
+                        </TabsTrigger>
                       </div>
-                    </TabsTrigger>
-                  </div>
-                )
-              })}
-            </TabsList>
-            <div className="pr-6">
-              <Button onClick={handleSaveCurrent} disabled={saving} size="default">
-                <Save className="h-4 w-4 mr-2" />
-                {saving ? 'Saving...' : 'Save Current Sample'}
-              </Button>
+                    )
+                  })}
+                </TabsList>
+              </div>
+              {canScrollRight && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-14 w-8 shrink-0 rounded-none border-l"
+                  onClick={() => scrollTabs('right')}
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              )}
             </div>
           </div>
         </div>
@@ -1376,6 +1418,12 @@ export default function GradingPage() {
                       </Button>
                     )}
                   </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button onClick={handleSaveCurrent} disabled={saving} size="sm">
+                      <Save className="h-3.5 w-3.5 mr-1.5" />
+                      {saving ? 'Saving...' : 'Save'}
+                    </Button>
+                  </div>
                 </div>
               </div>
 
@@ -1427,19 +1475,20 @@ export default function GradingPage() {
                               const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
 
                               return (
-                                <div key={screen.screen_size} className="grid grid-cols-[70px_80px_45px] gap-1.5 items-center">
-                                  <Label className="text-sm">{formatScreenLabel(screen.screen_size)}</Label>
-                                  <Input
+                                <div key={screen.screen_size} className="grid grid-cols-[70px_64px_45px] gap-2 items-center">
+                                  <Label className="text-sm font-medium">{formatScreenLabel(screen.screen_size)}</Label>
+                                  <input
                                     type="number"
                                     min="0"
                                     step="1"
                                     value={gramsValue}
+                                    onFocus={(e) => e.target.select()}
                                     onChange={(e) => {
                                       const val = e.target.value
                                       handleScreenSizeChange(sample.id, screen.screen_size, val === '' ? 0 : (parseFloat(val) || 0))
                                     }}
-                                    className="h-8 text-sm w-full"
-                                    placeholder="grams"
+                                    className="w-[64px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    placeholder="g"
                                   />
                                   <div className={`text-xs ${isViolated ? 'text-red-600 dark:text-red-400 font-bold' : 'text-muted-foreground'}`}>
                                     {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
@@ -1564,210 +1613,109 @@ export default function GradingPage() {
                         const sampleGreenOptions = greenAspectOptionsMap.get(sample.id) || []
                         const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
                         const hasAspects = sampleGreenOptions.length > 0 || sampleRoastOptions.length > 0
-                        const shouldSplit = screens.length > 10
                         const showQuakers = sample.quality_spec?.template?.parameters?.require_quaker_count === true || sample.quality_spec?.template?.parameters?.max_quakers != null || sample.sample_type === 'type'
                         const humidityComp = getHumidityCompliance(sample.id)
 
                         return (
-                          <div className="mt-4 pt-4 border-t space-y-2">
-                            {/* When 2 columns (>10 screens): show Quakers and Humidity side by side */}
-                            {shouldSplit && showQuakers ? (
-                              <div className="flex gap-4">
-                                {/* Quakers */}
+                          <div className="mt-4 pt-4 border-t space-y-3">
+                            {/* Quakers, Humidity, Density - Always on same row */}
+                            <div className="flex flex-wrap gap-5 items-center">
+                              {showQuakers && (
                                 <div className="flex items-center gap-2">
-                                  <Label className="text-sm w-20">Quakers</Label>
-                                  <Input
+                                  <Label className="text-sm font-medium whitespace-nowrap">Quakers</Label>
+                                  <input
                                     type="number"
                                     min="0"
                                     step="1"
                                     value={gradingData?.quakers_count || ''}
+                                    onFocus={(e) => e.target.select()}
                                     onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                                    className="h-8 text-sm w-16 text-center"
+                                    className="w-[64px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                   />
                                 </div>
+                              )}
 
-                                {/* Humidity and Density side by side */}
-                                <div className="flex gap-4">
-                                  {/* Humidity */}
-                                  <div className="flex items-center gap-2">
-                                    <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
-                                      Humidity (%)
-                                    </Label>
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage ? String(gradingData.moisture_percentage) : '')}
-                                      onChange={(e) => {
-                                        const val = e.target.value
-                                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          const newRaw = new Map(rawInputsMap)
-                                          newRaw.set(sample.id, { ...newRaw.get(sample.id), moisture: val })
-                                          setRawInputsMap(newRaw)
-                                          if (!val.endsWith('.') && val !== '') {
-                                            const num = parseFloat(val)
-                                            if (!isNaN(num) && num >= 0 && num <= 100) {
-                                              handleFieldChange(sample.id, 'moisture_percentage', num)
-                                            }
-                                          } else if (val === '') {
-                                            handleFieldChange(sample.id, 'moisture_percentage', 0)
-                                          }
+                              {/* Humidity */}
+                              <div className="flex items-center gap-2">
+                                <Label className={`text-sm font-medium whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
+                                  Humidity (%)
+                                </Label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage ? String(gradingData.moisture_percentage) : '')}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                      const newRaw = new Map(rawInputsMap)
+                                      newRaw.set(sample.id, { ...newRaw.get(sample.id), moisture: val })
+                                      setRawInputsMap(newRaw)
+                                      if (!val.endsWith('.') && val !== '') {
+                                        const num = parseFloat(val)
+                                        if (!isNaN(num) && num >= 0 && num <= 100) {
+                                          handleFieldChange(sample.id, 'moisture_percentage', num)
                                         }
-                                      }}
-                                      onBlur={() => {
-                                        const newRaw = new Map(rawInputsMap)
-                                        const current = newRaw.get(sample.id)
-                                        if (current) {
-                                          delete current.moisture
-                                          if (!current.density) newRaw.delete(sample.id)
-                                          else newRaw.set(sample.id, current)
-                                          setRawInputsMap(newRaw)
-                                        }
-                                      }}
-                                      className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400 font-bold' : ''}`}
-                                    />
-                                  </div>
-
-                                  {/* Density */}
-                                  <div className="flex items-center gap-2">
-                                    <Label className="text-sm whitespace-nowrap">
-                                      Density (G/L)
-                                    </Label>
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density ? String(gradingData.density) : '')}
-                                      onChange={(e) => {
-                                        const val = e.target.value
-                                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          const newRaw = new Map(rawInputsMap)
-                                          newRaw.set(sample.id, { ...newRaw.get(sample.id), density: val })
-                                          setRawInputsMap(newRaw)
-                                          if (!val.endsWith('.') && val !== '') {
-                                            const num = parseFloat(val)
-                                            if (!isNaN(num) && num >= 0) {
-                                              handleFieldChange(sample.id, 'density', num)
-                                            }
-                                          } else if (val === '') {
-                                            handleFieldChange(sample.id, 'density', 0)
-                                          }
-                                        }
-                                      }}
-                                      onBlur={() => {
-                                        const newRaw = new Map(rawInputsMap)
-                                        const current = newRaw.get(sample.id)
-                                        if (current) {
-                                          delete current.density
-                                          if (!current.moisture) newRaw.delete(sample.id)
-                                          else newRaw.set(sample.id, current)
-                                          setRawInputsMap(newRaw)
-                                        }
-                                      }}
-                                      placeholder="0.700"
-                                      className="h-8 text-sm w-16 text-center"
-                                    />
-                                  </div>
-                                </div>
+                                      } else if (val === '') {
+                                        handleFieldChange(sample.id, 'moisture_percentage', 0)
+                                      }
+                                    }
+                                  }}
+                                  onBlur={() => {
+                                    const newRaw = new Map(rawInputsMap)
+                                    const current = newRaw.get(sample.id)
+                                    if (current) {
+                                      delete current.moisture
+                                      if (!current.density) newRaw.delete(sample.id)
+                                      else newRaw.set(sample.id, current)
+                                      setRawInputsMap(newRaw)
+                                    }
+                                  }}
+                                  className={`w-[64px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400' : ''}`}
+                                />
                               </div>
-                            ) : (
-                              <>
-                                {/* When 1 column or no quakers: show stacked */}
-                                {showQuakers && (
-                                  <div className="flex items-center gap-2">
-                                    <Label className="text-sm w-20">Quakers</Label>
-                                    <Input
-                                      type="number"
-                                      min="0"
-                                      step="1"
-                                      value={gradingData?.quakers_count ?? ''}
-                                      onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                                      className="h-8 text-sm w-16 text-center"
-                                    />
-                                  </div>
-                                )}
 
-                                {/* Humidity and Density side by side */}
-                                <div className="flex gap-4">
-                                  {/* Humidity */}
-                                  <div className="flex items-center gap-2">
-                                    <Label className={`text-sm whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
-                                      Humidity (%)
-                                    </Label>
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.moisture ?? (gradingData?.moisture_percentage ? String(gradingData.moisture_percentage) : '')}
-                                      onChange={(e) => {
-                                        const val = e.target.value
-                                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          const newRaw = new Map(rawInputsMap)
-                                          newRaw.set(sample.id, { ...newRaw.get(sample.id), moisture: val })
-                                          setRawInputsMap(newRaw)
-                                          if (!val.endsWith('.') && val !== '') {
-                                            const num = parseFloat(val)
-                                            if (!isNaN(num) && num >= 0 && num <= 100) {
-                                              handleFieldChange(sample.id, 'moisture_percentage', num)
-                                            }
-                                          } else if (val === '') {
-                                            handleFieldChange(sample.id, 'moisture_percentage', 0)
-                                          }
+                              {/* Density */}
+                              <div className="flex items-center gap-2">
+                                <Label className="text-sm font-medium whitespace-nowrap">
+                                  Density (G/L)
+                                </Label>
+                                <input
+                                  type="text"
+                                  inputMode="decimal"
+                                  value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density ? String(gradingData.density) : '')}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    if (val === '' || /^\d*\.?\d*$/.test(val)) {
+                                      const newRaw = new Map(rawInputsMap)
+                                      newRaw.set(sample.id, { ...newRaw.get(sample.id), density: val })
+                                      setRawInputsMap(newRaw)
+                                      if (!val.endsWith('.') && val !== '') {
+                                        const num = parseFloat(val)
+                                        if (!isNaN(num) && num >= 0) {
+                                          handleFieldChange(sample.id, 'density', num)
                                         }
-                                      }}
-                                      onBlur={() => {
-                                        const newRaw = new Map(rawInputsMap)
-                                        const current = newRaw.get(sample.id)
-                                        if (current) {
-                                          delete current.moisture
-                                          if (!current.density) newRaw.delete(sample.id)
-                                          else newRaw.set(sample.id, current)
-                                          setRawInputsMap(newRaw)
-                                        }
-                                      }}
-                                      className={`h-8 text-sm w-16 text-center ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400 font-bold' : ''}`}
-                                    />
-                                  </div>
-
-                                  {/* Density */}
-                                  <div className="flex items-center gap-2">
-                                    <Label className="text-sm whitespace-nowrap">
-                                      Density (G/L)
-                                    </Label>
-                                    <Input
-                                      type="text"
-                                      inputMode="decimal"
-                                      value={rawInputsMap.get(sample.id)?.density ?? (gradingData?.density ? String(gradingData.density) : '')}
-                                      onChange={(e) => {
-                                        const val = e.target.value
-                                        if (val === '' || /^\d*\.?\d*$/.test(val)) {
-                                          const newRaw = new Map(rawInputsMap)
-                                          newRaw.set(sample.id, { ...newRaw.get(sample.id), density: val })
-                                          setRawInputsMap(newRaw)
-                                          if (!val.endsWith('.') && val !== '') {
-                                            const num = parseFloat(val)
-                                            if (!isNaN(num) && num >= 0) {
-                                              handleFieldChange(sample.id, 'density', num)
-                                            }
-                                          } else if (val === '') {
-                                            handleFieldChange(sample.id, 'density', 0)
-                                          }
-                                        }
-                                      }}
-                                      onBlur={() => {
-                                        const newRaw = new Map(rawInputsMap)
-                                        const current = newRaw.get(sample.id)
-                                        if (current) {
-                                          delete current.density
-                                          if (!current.moisture) newRaw.delete(sample.id)
-                                          else newRaw.set(sample.id, current)
-                                          setRawInputsMap(newRaw)
-                                        }
-                                      }}
-                                      placeholder="0.700"
-                                      className="h-8 text-sm w-16 text-center"
-                                    />
-                                  </div>
-                                </div>
-                              </>
-                            )}
+                                      } else if (val === '') {
+                                        handleFieldChange(sample.id, 'density', 0)
+                                      }
+                                    }
+                                  }}
+                                  onBlur={() => {
+                                    const newRaw = new Map(rawInputsMap)
+                                    const current = newRaw.get(sample.id)
+                                    if (current) {
+                                      delete current.density
+                                      if (!current.moisture) newRaw.delete(sample.id)
+                                      else newRaw.set(sample.id, current)
+                                      setRawInputsMap(newRaw)
+                                    }
+                                  }}
+                                  placeholder="0.700"
+                                  className="w-[72px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background"
+                                />
+                              </div>
+                            </div>
 
                             {/* Green and Roast Aspects - Always Side by Side */}
                             {hasAspects && (() => {
@@ -1930,12 +1878,13 @@ export default function GradingPage() {
                                       {defect.name}
                                       <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
                                     </Label>
-                                    <Input
+                                    <input
                                       type="number"
                                       min="0"
                                       value={gradingData?.defect_counts[defect.name] ?? ''}
+                                      onFocus={(e) => e.target.select()}
                                       onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
-                                      className="h-8 text-sm w-14 text-center"
+                                      className="w-[56px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                       placeholder="0"
                                     />
                                     <span className="text-xs text-muted-foreground whitespace-nowrap">= {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}</span>
@@ -1961,12 +1910,13 @@ export default function GradingPage() {
                                       {defect.name}
                                       <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
                                     </Label>
-                                    <Input
+                                    <input
                                       type="number"
                                       min="0"
                                       value={gradingData?.defect_counts[defect.name] ?? ''}
+                                      onFocus={(e) => e.target.select()}
                                       onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
-                                      className="h-8 text-sm w-14 text-center"
+                                      className="w-[56px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                       placeholder="0"
                                     />
                                     <span className="text-xs text-muted-foreground whitespace-nowrap">= {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}</span>
@@ -2005,10 +1955,10 @@ export default function GradingPage() {
                   </Card>
 
                   {/* Defect Photos */}
-                  <Card className="w-full lg:w-64 self-start">
-                    <CardContent className="pt-4">
-                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-                        <Camera className="h-4 w-4" />
+                  <Card className="w-full lg:w-48 self-start">
+                    <CardContent className="pt-3 pb-3 px-3">
+                      <h3 className="text-xs font-semibold mb-2 flex items-center gap-1.5 text-muted-foreground">
+                        <Camera className="h-3.5 w-3.5" />
                         Defect Photos
                       </h3>
                       <DefectPhotoUpload

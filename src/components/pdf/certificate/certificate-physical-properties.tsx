@@ -91,7 +91,9 @@ function PropertyItem({ label, value, unit, small, outOfSpec, specNote, integer 
 
   const formatValue = (v: string | number) => {
     if (typeof v !== 'number') return v
-    return integer ? String(Math.round(v)) : v.toFixed(1)
+    if (integer) return String(Math.round(v))
+    // Use 3 decimals for density-range values (< 2), 1 decimal for others
+    return v < 2 ? v.toFixed(3) : v.toFixed(1)
   }
 
   return (

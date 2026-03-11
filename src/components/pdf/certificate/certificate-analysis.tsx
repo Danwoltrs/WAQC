@@ -224,7 +224,7 @@ export function CertificateAnalysis({ greenBean, greenAspect, roastAnalysis }: C
             <View style={analysisStyles.propertyItem}>
               <Text style={analysisStyles.propertyLabel}>Density:</Text>
               <Text style={analysisStyles.propertyValue}>
-                {greenBean?.density ? `${greenBean.density.toFixed(2)} g/mL` : '-'}
+                {greenBean?.density ? `${greenBean.density.toFixed(3)} g/mL` : '-'}
               </Text>
             </View>
 

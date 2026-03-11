@@ -689,7 +689,7 @@ export function CuppingGradingSection({
                         className="h-7 text-sm mt-1"
                       />
                     ) : (
-                      <div className={`text-sm font-medium ${lockedStyle}`}>{gb.density || '-'}</div>
+                      <div className={`text-sm font-medium ${lockedStyle}`}>{gb.density ? gb.density.toFixed(3) : '-'}</div>
                     )}
                   </div>
                   {(showQuakers || quakers != null) && (
