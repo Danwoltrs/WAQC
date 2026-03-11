@@ -90,10 +90,10 @@ export async function POST(
 
     const body = await request.json()
 
-    // Fetch mother sample to get tracking number generation params
+    // Fetch mother sample to get tracking number format
     const { data: sample, error: sampleError } = await supabase
       .from('samples')
-      .select('id, client_id, laboratory_id, origin, quality_spec_id, sample_type')
+      .select('id, tracking_number, client_id, laboratory_id, origin, quality_spec_id, sample_type')
       .eq('id', sampleId)
       .single()
 
@@ -101,43 +101,38 @@ export async function POST(
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Generate tracking number using mother sample's params
-    // The RPC only checks `samples` table, so we also check `sample_contracts` for conflicts
-    // and increment the numeric part if needed.
-    const { data: rpcTrackingNumber, error: trackingError } = await supabase
-      .rpc('generate_tracking_number', {
-        p_client_id: sample.client_id,
-        p_laboratory_id: sample.laboratory_id,
-        p_origin: sample.origin,
-        p_quality_template_id: sample.quality_spec_id,
-        p_is_rejected: false,
-        p_sample_type: sample.sample_type || 'pss'
-      } as any)
-
-    if (trackingError || !rpcTrackingNumber) {
-      console.error('Error generating tracking number for sub-contract:', trackingError)
-      return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
+    if (!sample.tracking_number) {
+      return NextResponse.json({ error: 'Mother sample has no tracking number' }, { status: 400 })
     }
 
-    // Parse tracking number format: "BD1-890231/26" → prefix="BD1", num=890231, suffix="26"
-    const tnStr = String(rpcTrackingNumber)
-    const slashIdx = tnStr.lastIndexOf('/')
-    const tnSuffix = slashIdx >= 0 ? tnStr.substring(slashIdx + 1) : ''
-    const tnLeft = slashIdx >= 0 ? tnStr.substring(0, slashIdx) : tnStr
+    // Parse the mother sample's tracking number to derive the format for sub-contracts.
+    // Sub-contracts share the same prefix (quality+origin code) and suffix (year).
+    // Format: "AD1-890239/26" → prefix="AD1", num=890239, suffix="26"
+    const motherTN = sample.tracking_number as string
+    const slashIdx = motherTN.lastIndexOf('/')
+    const tnSuffix = slashIdx >= 0 ? motherTN.substring(slashIdx + 1) : ''
+    const tnLeft = slashIdx >= 0 ? motherTN.substring(0, slashIdx) : motherTN
     const dashIdx = tnLeft.lastIndexOf('-')
     const tnPrefix = dashIdx >= 0 ? tnLeft.substring(0, dashIdx) : ''
     const tnNumStr = dashIdx >= 0 ? tnLeft.substring(dashIdx + 1) : tnLeft
     const tnNumLen = tnNumStr.length
 
-    // The sequence number is per QC client (client_id), shared across ALL prefixes/suffixes.
-    // Find the highest existing number for this client in both samples and sample_contracts.
+    // The sequence number is per client + per lab, shared across ALL quality prefixes.
+    // Find the highest existing number in both samples and sample_contracts for this client+lab.
     const clientId = sample.client_id as string
+    const laboratoryId = sample.laboratory_id as string | null
 
-    // 1. All tracking numbers from samples for this QC client (including soft-deleted)
-    const { data: clientSamples } = await supabase
+    // 1. All tracking numbers from samples for this QC client + lab
+    let samplesQuery = supabase
       .from('samples')
       .select('id, tracking_number')
       .eq('client_id', clientId)
+
+    if (laboratoryId) {
+      samplesQuery = samplesQuery.eq('laboratory_id', laboratoryId)
+    }
+
+    const { data: clientSamples } = await samplesQuery
 
     const sampleTrackingNumbers = (clientSamples || []).map((s: any) => s.tracking_number)
     const clientSampleIds = (clientSamples || []).map((s: any) => s.id)
@@ -158,7 +153,9 @@ export async function POST(
       }
     }
 
-    // 3. Find the max sequence number across all tracking numbers
+    // 3. Find the max sequence number across all tracking numbers.
+    // Extract the sequence number as the last group of digits before the slash.
+    // This correctly handles prefixes with digits (e.g., "AD1-890239/26" → 890239).
     let maxNum = parseInt(tnNumStr) || 0
     for (const ecStr of [...sampleTrackingNumbers, ...contractTrackingNumbers]) {
       if (!ecStr) continue
