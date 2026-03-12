@@ -1,0 +1,155 @@
+name: Weekly Code Review
+
+on:
+  schedule:
+    # Every Monday at 9:07 AM UTC (6:07 AM BRT)
+    - cron: '7 9 * * 1'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 50
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run TypeScript type check
+        id: typecheck
+        continue-on-error: true
+        run: |
+          npx tsc --noEmit 2>&1 | head -100 > /tmp/typecheck.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Run ESLint
+        id: lint
+        continue-on-error: true
+        run: |
+          npx next lint 2>&1 | head -100 > /tmp/lint.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Run build check
+        id: build
+        continue-on-error: true
+        run: |
+          npx next build 2>&1 | tail -50 > /tmp/build.txt
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Scan for common issues
+        run: |
+          cat > /tmp/scan.txt << 'SCANEOF'
+          == Dead Code / Unused Imports ==
+          SCANEOF
+
+          echo "Files with potential console.log left in:" >> /tmp/scan.txt
+          grep -rn "console\.log" src/app/ src/components/ --include="*.tsx" --include="*.ts" -l 2>/dev/null | head -20 >> /tmp/scan.txt || echo "None found" >> /tmp/scan.txt
+
+          echo "" >> /tmp/scan.txt
+          echo "== Potential Security Issues ==" >> /tmp/scan.txt
+          grep -rn "password\s*=\s*['\"]" src/ --include="*.ts" --include="*.tsx" -l 2>/dev/null | head -10 >> /tmp/scan.txt || echo "No hardcoded passwords found" >> /tmp/scan.txt
+          grep -rn "api_key\s*=\s*['\"]" src/ --include="*.ts" --include="*.tsx" -l 2>/dev/null | head -10 >> /tmp/scan.txt || echo "No hardcoded API keys found" >> /tmp/scan.txt
+
+          echo "" >> /tmp/scan.txt
+          echo "== Large Files (>500 lines) ==" >> /tmp/scan.txt
+          find src/ -name "*.tsx" -o -name "*.ts" | xargs wc -l 2>/dev/null | sort -rn | head -20 >> /tmp/scan.txt
+
+          echo "" >> /tmp/scan.txt
+          echo "== TODO/FIXME/HACK markers ==" >> /tmp/scan.txt
+          grep -rn "TODO\|FIXME\|HACK\|XXX" src/ --include="*.ts" --include="*.tsx" 2>/dev/null | head -30 >> /tmp/scan.txt || echo "None found" >> /tmp/scan.txt
+
+      - name: Get recent changes summary
+        run: |
+          echo "== Recent Commits (last 2 weeks) ==" > /tmp/changes.txt
+          git log --oneline --since="2 weeks ago" >> /tmp/changes.txt 2>/dev/null || echo "No recent commits" >> /tmp/changes.txt
+
+          echo "" >> /tmp/changes.txt
+          echo "== Files Changed Most Often (last 2 weeks) ==" >> /tmp/changes.txt
+          git log --since="2 weeks ago" --name-only --pretty=format: | sort | uniq -c | sort -rn | head -15 >> /tmp/changes.txt 2>/dev/null
+
+      - name: Create GitHub Issue with report
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+
+            const typecheck = fs.readFileSync('/tmp/typecheck.txt', 'utf8').trim();
+            const lint = fs.readFileSync('/tmp/lint.txt', 'utf8').trim();
+            const build = fs.readFileSync('/tmp/build.txt', 'utf8').trim();
+            const scan = fs.readFileSync('/tmp/scan.txt', 'utf8').trim();
+            const changes = fs.readFileSync('/tmp/changes.txt', 'utf8').trim();
+
+            const typecheckOk = '${{ steps.typecheck.outputs.exit_code }}' === '0';
+            const lintOk = '${{ steps.lint.outputs.exit_code }}' === '0';
+            const buildOk = '${{ steps.build.outputs.exit_code }}' === '0';
+
+            const status = (ok) => ok ? 'PASS' : 'FAIL';
+            const icon = (ok) => ok ? 'white_check_mark' : 'x';
+
+            const date = new Date().toISOString().split('T')[0];
+
+            const body = `## Weekly Code Review - ${date}
+
+            ### Health Summary
+
+            | Check | Status |
+            |-------|--------|
+            | TypeScript | :${icon(typecheckOk)}: ${status(typecheckOk)} |
+            | ESLint | :${icon(lintOk)}: ${status(lintOk)} |
+            | Build | :${icon(buildOk)}: ${status(buildOk)} |
+
+            ### TypeScript Check
+            \`\`\`
+            ${typecheck.substring(0, 3000) || 'No issues'}
+            \`\`\`
+
+            ### ESLint
+            \`\`\`
+            ${lint.substring(0, 3000) || 'No issues'}
+            \`\`\`
+
+            ### Build Output
+            \`\`\`
+            ${build.substring(0, 2000)}
+            \`\`\`
+
+            ### Code Scan
+            \`\`\`
+            ${scan.substring(0, 3000)}
+            \`\`\`
+
+            ### Recent Activity
+            \`\`\`
+            ${changes.substring(0, 2000)}
+            \`\`\`
+
+            ---
+            *Automated weekly review by GitHub Actions*
+            `;
+
+            const hasFailures = !typecheckOk || !lintOk || !buildOk;
+            const title = hasFailures
+              ? `[Code Review] ${date} - Issues Found`
+              : `[Code Review] ${date} - All Checks Passing`;
+
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['automated-review', 'code-quality']
+            });
