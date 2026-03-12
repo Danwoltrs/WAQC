@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -15,7 +15,7 @@ import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Checkbox } from '@/components/ui/checkbox'
-import { AlertCircle, Loader2, Settings2 } from 'lucide-react'
+import { AlertCircle, Database, Loader2, Search, Settings2 } from 'lucide-react'
 import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import { QcConfigPanel, QcConfigData } from './qc-config-panel'
 
@@ -85,6 +85,43 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
   })
   const [isQcClient, setIsQcClient] = useState(defaultRole === 'qc_client')
 
+  // Legacy import
+  const [showLegacySearch, setShowLegacySearch] = useState(false)
+  const [legacyQuery, setLegacyQuery] = useState('')
+  const [legacyResults, setLegacyResults] = useState<any[]>([])
+  const [legacySearching, setLegacySearching] = useState(false)
+
+  const searchLegacy = useCallback(async (query: string) => {
+    if (query.trim().length < 2) {
+      setLegacyResults([])
+      return
+    }
+    setLegacySearching(true)
+    try {
+      const res = await fetch(`/api/clients/search?q=${encodeURIComponent(query)}&limit=10`)
+      const data = await res.json()
+      if (res.ok) setLegacyResults(data.results || [])
+    } catch { /* ignore */ }
+    finally { setLegacySearching(false) }
+  }, [])
+
+  useEffect(() => {
+    if (!showLegacySearch) return
+    const timer = setTimeout(() => searchLegacy(legacyQuery), 300)
+    return () => clearTimeout(timer)
+  }, [legacyQuery, showLegacySearch, searchLegacy])
+
+  const handleImportLegacy = (result: any) => {
+    setCompany(result.name || '')
+    setFantasyName(result.fantasy_name || '')
+    setEmail(result.email || '')
+    setPhone(result.phone || '')
+    setCountry(result.country || '')
+    setShowLegacySearch(false)
+    setLegacyQuery('')
+    setLegacyResults([])
+  }
+
   // QC Config panel
   const [showQcConfig, setShowQcConfig] = useState(false)
   const [qcConfig, setQcConfig] = useState<QcConfigData>({
@@ -117,6 +154,9 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
     })
     setIsQcClient(defaultRole === 'qc_client')
     setError(null)
+    setShowLegacySearch(false)
+    setLegacyQuery('')
+    setLegacyResults([])
     setQcConfig({
       certificatePattern: DEFAULT_CERTIFICATE_PATTERN,
       certificateValidityEnabled: false,
@@ -283,6 +323,63 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
                 {error}
               </div>
             )}
+
+            {/* Legacy Import */}
+            <div>
+              <button
+                type="button"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setShowLegacySearch(!showLegacySearch)}
+              >
+                <Database className="h-3 w-3" />
+                Import from legacy database
+              </button>
+              {showLegacySearch && (
+                <div className="mt-1.5 space-y-1.5">
+                  <div className="relative">
+                    <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      value={legacyQuery}
+                      onChange={(e) => setLegacyQuery(e.target.value)}
+                      placeholder="Search by name, company..."
+                      className="h-7 text-xs pl-7 rounded-none"
+                      autoFocus
+                    />
+                  </div>
+                  {legacySearching && (
+                    <p className="text-xs text-muted-foreground px-1">Searching...</p>
+                  )}
+                  {legacyResults.length > 0 && (
+                    <div className="border max-h-[140px] overflow-y-auto">
+                      {legacyResults.map((r: any) => (
+                        <button
+                          key={r.id}
+                          type="button"
+                          className="w-full text-left px-2 py-1.5 text-xs hover:bg-accent flex items-center justify-between gap-2"
+                          onClick={() => handleImportLegacy(r)}
+                        >
+                          <div className="min-w-0">
+                            <span className="font-medium truncate block">{r.name}</span>
+                            {r.country && (
+                              <span className="text-muted-foreground">{r.country}</span>
+                            )}
+                          </div>
+                          {r.can_import && (
+                            <span className="text-[10px] text-blue-600 dark:text-blue-400 shrink-0">Legacy</span>
+                          )}
+                          {r.is_qc_client && (
+                            <span className="text-[10px] text-green-600 dark:text-green-400 shrink-0">QC Client</span>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {!legacySearching && legacyQuery.length >= 2 && legacyResults.length === 0 && (
+                    <p className="text-xs text-muted-foreground px-1">No results found</p>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* Row 1: Company + Fantasy Name */}
             <div className="grid grid-cols-2 gap-2">

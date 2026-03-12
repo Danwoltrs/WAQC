@@ -18,6 +18,7 @@ import {
   Plus, Search, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye, Upload, Pencil
 } from 'lucide-react'
 import Link from 'next/link'
+import { AddClientModal } from '@/components/clients/add-client-modal'
 import { Switch } from '@/components/ui/switch'
 import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
 import { BulkOperationsDialog } from '@/components/clients/bulk-operations-dialog'
@@ -96,6 +97,9 @@ export default function ClientsPage() {
 
   // Bulk operations state
   const [bulkOperationsDialogOpen, setBulkOperationsDialogOpen] = useState(false)
+
+  // Add client modal
+  const [addClientModalOpen, setAddClientModalOpen] = useState(false)
 
   useEffect(() => {
     loadClients()
@@ -366,12 +370,10 @@ export default function ClientsPage() {
               <Upload className="h-4 w-4 mr-2" />
               Import/Export
             </Button>
-            <Link href="/clients/new">
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Add Client
-              </Button>
-            </Link>
+            <Button onClick={() => setAddClientModalOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              Add Client
+            </Button>
           </div>
         </div>
 
@@ -403,12 +405,10 @@ export default function ClientsPage() {
               <p className="text-muted-foreground mb-4">
                 {searchQuery ? 'Try adjusting your search criteria' : 'Get started by adding your first client'}
               </p>
-              <Link href="/clients/new">
-                <Button>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Add Client
-                </Button>
-              </Link>
+              <Button onClick={() => setAddClientModalOpen(true)}>
+                <Plus className="h-4 w-4 mr-2" />
+                Add Client
+              </Button>
             </CardContent>
           </Card>
         ) : (
@@ -712,6 +712,15 @@ export default function ClientsPage() {
           open={bulkOperationsDialogOpen}
           onOpenChange={setBulkOperationsDialogOpen}
           onSuccess={loadClients}
+        />
+
+        {/* Add Client Modal */}
+        <AddClientModal
+          open={addClientModalOpen}
+          onOpenChange={setAddClientModalOpen}
+          onSuccess={() => {
+            loadClients()
+          }}
         />
       </div>
     </MainLayout>

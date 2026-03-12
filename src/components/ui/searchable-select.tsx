@@ -103,23 +103,23 @@ export function SearchableSelect({
                 </CommandItem>
               ))}
             </CommandGroup>
-            {allowCreate && onCreateNew && (
-              <>
-                <CommandSeparator />
-                <CommandGroup>
-                  <CommandItem
-                    onSelect={() => {
-                      setOpen(false)
-                      onCreateNew()
-                    }}
-                  >
-                    <Plus className="mr-2 h-4 w-4" />
-                    {createLabel}
-                  </CommandItem>
-                </CommandGroup>
-              </>
-            )}
           </CommandList>
+          {allowCreate && onCreateNew && (
+            <div className="border-t p-1">
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm hover:bg-accent hover:text-accent-foreground cursor-pointer"
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  setOpen(false)
+                  onCreateNew()
+                }}
+              >
+                <Plus className="h-4 w-4" />
+                {createLabel}
+              </button>
+            </div>
+          )}
         </Command>
       </PopoverContent>
     </Popover>
