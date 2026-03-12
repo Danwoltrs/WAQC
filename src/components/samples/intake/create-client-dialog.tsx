@@ -16,23 +16,38 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Checkbox } from '@/components/ui/checkbox'
 import { AlertCircle, Loader2 } from 'lucide-react'
 
+export type CreateClientType = 'exporter' | 'importer' | 'roaster' | 'end_client' | 'qc_client'
+
 interface CreateClientDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
-  clientType: 'exporter' | 'importer' | 'roaster'
+  clientType: CreateClientType
   onSuccess: (clientName: string, entityId?: string) => void
 }
 
-const CLIENT_TYPE_LABELS = {
-  exporter: 'Exporter',
+const CLIENT_TYPE_LABELS: Record<CreateClientType, string> = {
+  exporter: 'Seller',
   importer: 'Importer',
-  roaster: 'Roaster'
+  roaster: 'Roaster',
+  end_client: 'End Client',
+  qc_client: 'QC Client',
 }
 
-const CLIENT_TYPE_DB_VALUES = {
-  exporter: ['exporter', 'producer_exporter'],
+// Maps dialog type to client_types array values for the clients table
+const CLIENT_ROLES_MAP: Record<CreateClientType, string[]> = {
+  exporter: ['exporter'],
   importer: ['importer_buyer'],
-  roaster: ['roaster', 'roaster_final_buyer']
+  roaster: ['roaster'],
+  end_client: ['end_client'],
+  qc_client: [],
+}
+
+// Types that create in dedicated party tables vs the clients table
+const PARTY_TABLE_TYPES: CreateClientType[] = ['exporter', 'importer', 'roaster']
+
+const CLIENT_TYPE_DB_VALUES: Record<string, string[]> = {
+  exporter: ['exporter', 'producer_exporter'],
+  roaster: ['roaster', 'roaster_final_buyer'],
 }
 
 export function CreateClientDialog({
@@ -49,7 +64,7 @@ export function CreateClientDialog({
   const [email, setEmail] = useState('')
   const [phone, setPhone] = useState('')
   const [country, setCountry] = useState('')
-  const [selectedType, setSelectedType] = useState(CLIENT_TYPE_DB_VALUES[clientType][0])
+  const [selectedType, setSelectedType] = useState(CLIENT_TYPE_DB_VALUES[clientType]?.[0] || '')
 
   const resetForm = () => {
     setCompany('')
@@ -57,9 +72,11 @@ export function CreateClientDialog({
     setEmail('')
     setPhone('')
     setCountry('')
-    setSelectedType(CLIENT_TYPE_DB_VALUES[clientType][0])
+    setSelectedType(CLIENT_TYPE_DB_VALUES[clientType]?.[0] || '')
     setError(null)
   }
+
+  const isPartyTableType = PARTY_TABLE_TYPES.includes(clientType)
 
   const handleSubmit = async () => {
     if (!company) {
@@ -71,44 +88,75 @@ export function CreateClientDialog({
     setError(null)
 
     try {
-      // Determine API endpoint based on client type
-      const apiEndpoint = clientType === 'exporter' ? '/api/exporters' :
-                         clientType === 'importer' ? '/api/importers' :
-                         '/api/roasters'
+      if (isPartyTableType) {
+        // Create in party table (exporters/importers/roasters)
+        const apiEndpoint = clientType === 'exporter' ? '/api/exporters' :
+                           clientType === 'importer' ? '/api/importers' :
+                           '/api/roasters'
 
-      const response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: company,
-          country: country || null,
-          region: null,
-          contact_email: email || null,
-          contact_phone: phone || null,
-          notes: fantasyName ? `Brand name: ${fantasyName}` : null
+        const response = await fetch(apiEndpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: company,
+            country: country || null,
+            region: null,
+            contact_email: email || null,
+            contact_phone: phone || null,
+            notes: fantasyName ? `Brand name: ${fantasyName}` : null
+          })
         })
-      })
 
-      const data = await response.json()
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || `Failed to create ${clientType}`)
+        }
 
-      if (!response.ok) {
-        throw new Error(data.error || `Failed to create ${clientType}`)
+        resetForm()
+        const entityKey = clientType === 'exporter' ? 'exporter' :
+                         clientType === 'importer' ? 'importer' :
+                         'roaster'
+        onSuccess(data[entityKey]?.name || company, data[entityKey]?.id)
+        onOpenChange(false)
+      } else {
+        // Create in clients table (end_client, qc_client)
+        const clientRoles = CLIENT_ROLES_MAP[clientType]
+        const isQcClient = clientType === 'qc_client'
+
+        const response = await fetch('/api/clients', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: fantasyName || company, // contact name
+            company: company,
+            fantasy_name: fantasyName || company,
+            email: email || null,
+            phone: phone || null,
+            country: country || null,
+            client_types: clientRoles,
+            is_qc_client: isQcClient,
+          })
+        })
+
+        const data = await response.json()
+        if (!response.ok) {
+          throw new Error(data.error || data.message || `Failed to create ${CLIENT_TYPE_LABELS[clientType]}`)
+        }
+
+        resetForm()
+        const name = data.client?.fantasy_name || data.client?.company || company
+        onSuccess(name, data.client?.id)
+        onOpenChange(false)
       }
-
-      // Reset form and notify parent with the created entity's name and ID
-      resetForm()
-      const entityKey = clientType === 'exporter' ? 'exporter' :
-                       clientType === 'importer' ? 'importer' :
-                       'roaster'
-      onSuccess(data[entityKey]?.name || company, data[entityKey]?.id)
-      onOpenChange(false)
     } catch (err: any) {
       console.error(`Error creating ${clientType}:`, err)
-      setError(err.message || `Failed to create ${clientType}`)
+      setError(err.message || `Failed to create ${CLIENT_TYPE_LABELS[clientType]}`)
     } finally {
       setLoading(false)
     }
   }
+
+  const hasSubTypes = CLIENT_TYPE_DB_VALUES[clientType]?.length > 1
 
   return (
     <Dialog open={open} onOpenChange={(open) => {
@@ -154,7 +202,7 @@ export function CreateClientDialog({
             </p>
           </div>
 
-          {CLIENT_TYPE_DB_VALUES[clientType].length > 1 && (
+          {hasSubTypes && (
             <div className="space-y-2">
               <Label htmlFor="client_type">Client Type</Label>
               <Select

@@ -464,7 +464,7 @@ export function CuppingGradingSection({
             <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
               {Object.entries(cuppingScores).map(([key, value]) => (
                 <div key={key} className="text-center p-2 bg-muted/30 rounded-lg">
-                  <div className="text-xs text-muted-foreground mb-1">{key}</div>
+                  <div className="text-xs text-muted-foreground mb-1">{key.replace(/_/g, ' ')}</div>
                   {isEditingCuppingGrading ? (
                     <Input
                       type="number"

@@ -302,22 +302,28 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
   const loadExporters = async () => {
     try {
-      const response = await fetch('/api/exporters')
-      if (response.ok) {
-        const data = await response.json()
-        const exportersList = data.exporters || []
-        // Deduplicate by name (case-insensitive)
-        const seen = new Set<string>()
-        const unique = exportersList.filter((exp: any) => {
-          const key = exp.name.toLowerCase()
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-        setExporters(unique as unknown as Exporter[])
-      } else {
-        console.error('Failed to load exporters:', response.status)
-      }
+      // Fetch from exporters table AND clients with exporter role
+      const [exportersRes, clientsRes] = await Promise.all([
+        fetch('/api/exporters'),
+        fetch('/api/clients?client_types=exporter,producer_exporter&is_active=true&limit=500'),
+      ])
+      const exportersList = exportersRes.ok ? (await exportersRes.json()).exporters || [] : []
+      const clientsList = clientsRes.ok ? (await clientsRes.json()).clients || [] : []
+
+      // Merge: exporters table entries + clients with exporter role
+      const merged = [
+        ...exportersList.map((e: any) => ({ id: e.id, name: e.name, country: e.country })),
+        ...clientsList.map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country })),
+      ]
+      // Deduplicate by name (case-insensitive)
+      const seen = new Set<string>()
+      const unique = merged.filter((exp: any) => {
+        const key = exp.name?.toLowerCase()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      setExporters(unique as unknown as Exporter[])
     } catch (error) {
       console.error('Error loading exporters:', error)
     }
@@ -325,22 +331,28 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
   const loadImporters = async () => {
     try {
-      const response = await fetch('/api/importers')
-      if (response.ok) {
-        const data = await response.json()
-        const importersList = data.importers || []
-        // Deduplicate by name (case-insensitive)
-        const seen = new Set<string>()
-        const unique = importersList.filter((imp: any) => {
-          const key = imp.name.toLowerCase()
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-        setImporters(unique as unknown as Importer[])
-      } else {
-        console.error('Failed to load importers:', response.status)
-      }
+      // Fetch from importers table AND clients with importer_buyer role
+      const [importersRes, clientsRes] = await Promise.all([
+        fetch('/api/importers'),
+        fetch('/api/clients?client_types=importer_buyer&is_active=true&limit=500'),
+      ])
+      const importersList = importersRes.ok ? (await importersRes.json()).importers || [] : []
+      const clientsList = clientsRes.ok ? (await clientsRes.json()).clients || [] : []
+
+      // Merge: importers table entries + clients with importer_buyer role
+      const merged = [
+        ...importersList.map((i: any) => ({ id: i.id, name: i.name, country: i.country, client_id: i.client_id })),
+        ...clientsList.map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country, client_id: c.id })),
+      ]
+      // Deduplicate by name (case-insensitive)
+      const seen = new Set<string>()
+      const unique = merged.filter((imp: any) => {
+        const key = imp.name?.toLowerCase()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      setImporters(unique as unknown as Importer[])
     } catch (error) {
       console.error('Error loading importers:', error)
     }
@@ -348,22 +360,28 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
   const loadRoasters = async () => {
     try {
-      const response = await fetch('/api/roasters')
-      if (response.ok) {
-        const data = await response.json()
-        const roastersList = data.roasters || []
-        // Deduplicate by name (case-insensitive)
-        const seen = new Set<string>()
-        const unique = roastersList.filter((r: any) => {
-          const key = r.name.toLowerCase()
-          if (seen.has(key)) return false
-          seen.add(key)
-          return true
-        })
-        setRoasters(unique as unknown as Roaster[])
-      } else {
-        console.error('Failed to load roasters:', response.status)
-      }
+      // Fetch from roasters table AND clients with roaster role
+      const [roastersRes, clientsRes] = await Promise.all([
+        fetch('/api/roasters'),
+        fetch('/api/clients?client_types=roaster,roaster_final_buyer&is_active=true&limit=500'),
+      ])
+      const roastersList = roastersRes.ok ? (await roastersRes.json()).roasters || [] : []
+      const clientsList = clientsRes.ok ? (await clientsRes.json()).clients || [] : []
+
+      // Merge: roasters table entries + clients with roaster role
+      const merged = [
+        ...roastersList.map((r: any) => ({ id: r.id, name: r.name, country: r.country })),
+        ...clientsList.map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country })),
+      ]
+      // Deduplicate by name (case-insensitive)
+      const seen = new Set<string>()
+      const unique = merged.filter((r: any) => {
+        const key = r.name?.toLowerCase()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      setRoasters(unique as unknown as Roaster[])
     } catch (error) {
       console.error('Error loading roasters:', error)
     }
@@ -865,6 +883,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               importers={importers}
               roasters={roasters}
               qcClients={qcClients}
+              onEntityCreated={(type) => {
+                if (type === 'exporter') loadExporters()
+                else if (type === 'importer') loadImporters()
+                else if (type === 'roaster') loadRoasters()
+                else if (type === 'end_client' || type === 'qc_client') loadQcClients()
+              }}
             />
           )}
 

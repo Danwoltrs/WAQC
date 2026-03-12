@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronDown } from 'lucide-react'
-import { CreateClientDialog } from './create-client-dialog'
+import { CreateClientDialog, CreateClientType } from './create-client-dialog'
 import { StepComponentProps } from './types'
 
 export function SupplyChainStep({
@@ -18,10 +18,11 @@ export function SupplyChainStep({
   importers = [],
   roasters = [],
   qcClients = [],
-  approvedPSSSamples = []
+  approvedPSSSamples = [],
+  onEntityCreated
 }: StepComponentProps) {
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
-  const [createClientType, setCreateClientType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
+  const [createClientType, setCreateClientType] = useState<CreateClientType>('exporter')
   const [showMore, setShowMore] = useState(
     !!(formData.supplier || formData.roaster || formData.end_client)
   )
@@ -221,6 +222,7 @@ export function SupplyChainStep({
             searchPlaceholder="Search sellers..."
             className="h-9"
             allowCreate
+            createLabel="+ New Seller"
             onCreateNew={() => {
               setCreateClientType('exporter')
               setShowCreateClientDialog(true)
@@ -269,6 +271,7 @@ export function SupplyChainStep({
               searchPlaceholder="Search shippers..."
               className="h-9"
               allowCreate
+              createLabel="+ New Shipper"
               onCreateNew={() => {
                 setCreateClientType('exporter')
                 setShowCreateClientDialog(true)
@@ -322,6 +325,7 @@ export function SupplyChainStep({
             searchPlaceholder="Search importers..."
             className="h-9"
             allowCreate
+            createLabel="+ New Importer"
             onCreateNew={() => {
               setCreateClientType('importer')
               setShowCreateClientDialog(true)
@@ -350,6 +354,12 @@ export function SupplyChainStep({
                 placeholder="Select QC client"
                 searchPlaceholder="Search QC clients..."
                 className="h-9"
+                allowCreate
+                createLabel="+ New QC Client"
+                onCreateNew={() => {
+                  setCreateClientType('qc_client')
+                  setShowCreateClientDialog(true)
+                }}
               />
             </div>
             <div>
@@ -420,6 +430,7 @@ export function SupplyChainStep({
                   searchPlaceholder="Search roasters..."
                   className="h-9"
                   allowCreate
+                  createLabel="+ New Roaster"
                   onCreateNew={() => {
                     setCreateClientType('roaster')
                     setShowCreateClientDialog(true)
@@ -444,6 +455,12 @@ export function SupplyChainStep({
                   placeholder="Select end client"
                   searchPlaceholder="Search end clients..."
                   className="h-9"
+                  allowCreate
+                  createLabel="+ New End Client"
+                  onCreateNew={() => {
+                    setCreateClientType('end_client')
+                    setShowCreateClientDialog(true)
+                  }}
                 />
               </div>
               <div>
@@ -471,7 +488,13 @@ export function SupplyChainStep({
             updateFormData('importer', clientName)
           } else if (createClientType === 'roaster') {
             updateFormData('roaster', clientName)
+          } else if (createClientType === 'end_client') {
+            updateFormData('end_client', clientName)
+          } else if (createClientType === 'qc_client') {
+            updateFormData('qc_client', clientName)
           }
+          // Trigger entity list reload so the new entity appears in the dropdown
+          onEntityCreated?.(createClientType as any)
         }}
       />
     </div>

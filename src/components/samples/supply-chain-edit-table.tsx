@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Building2, Edit, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { CreateClientDialog } from '@/components/samples/intake/create-client-dialog'
+import { CreateClientDialog, CreateClientType } from '@/components/samples/intake/create-client-dialog'
 
 interface Entity {
   id: string
@@ -68,7 +68,7 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
 
   // Create dialog state
   const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [createDialogType, setCreateDialogType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
+  const [createDialogType, setCreateDialogType] = useState<CreateClientType>('exporter')
   const [pendingEntityField, setPendingEntityField] = useState<string>('')
 
   // Load entities when entering edit mode
@@ -81,20 +81,48 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
   const loadEntities = async () => {
     setLoadingEntities(true)
     try {
-      const [exportersRes, importersRes, roastersRes, clientsRes, qcClientsRes] = await Promise.all([
+      const [exportersRes, importersRes, roastersRes, clientsRes, qcClientsRes,
+             exporterClientsRes, importerClientsRes, roasterClientsRes, endClientClientsRes] = await Promise.all([
         fetch('/api/exporters').then(r => r.json()),
         fetch('/api/importers').then(r => r.json()),
         fetch('/api/roasters').then(r => r.json()),
-        fetch('/api/clients?limit=200').then(r => r.json()),
-        fetch('/api/clients?is_qc_client=true&limit=200').then(r => r.json()),
+        fetch('/api/clients?limit=500').then(r => r.json()),
+        fetch('/api/clients?is_qc_client=true&limit=500').then(r => r.json()),
+        // Also fetch clients by role for merging into party dropdowns
+        fetch('/api/clients?client_types=exporter,producer_exporter&is_active=true&limit=500').then(r => r.json()),
+        fetch('/api/clients?client_types=importer_buyer&is_active=true&limit=500').then(r => r.json()),
+        fetch('/api/clients?client_types=roaster,roaster_final_buyer&is_active=true&limit=500').then(r => r.json()),
+        fetch('/api/clients?client_types=end_client&is_active=true&limit=500').then(r => r.json()),
       ])
-      setExporters(dedup(exportersRes.exporters || []))
-      setImporters(dedup(importersRes.importers || []))
-      setRoasters(dedup(roastersRes.roasters || []))
-      setClients((clientsRes.clients || []).map((c: any) => ({
+
+      // Merge exporters table + clients with exporter role
+      const mergedExporters = [
+        ...(exportersRes.exporters || []),
+        ...(exporterClientsRes.clients || []).map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country })),
+      ]
+      setExporters(dedup(mergedExporters))
+
+      // Merge importers table + clients with importer_buyer role
+      const mergedImporters = [
+        ...(importersRes.importers || []),
+        ...(importerClientsRes.clients || []).map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country })),
+      ]
+      setImporters(dedup(mergedImporters))
+
+      // Merge roasters table + clients with roaster role
+      const mergedRoasters = [
+        ...(roastersRes.roasters || []),
+        ...(roasterClientsRes.clients || []).map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country })),
+      ]
+      setRoasters(dedup(mergedRoasters))
+
+      // End clients: merge all clients + clients with end_client role
+      const allClients = (clientsRes.clients || []).map((c: any) => ({
         id: c.id, name: c.fantasy_name || c.company, company: c.company,
         fantasy_name: c.fantasy_name, country: c.country, is_qc_client: c.is_qc_client
-      })))
+      }))
+      setClients(allClients)
+
       setQcClients((qcClientsRes.clients || []).map((c: any) => ({
         id: c.id, name: c.fantasy_name || c.company, company: c.company,
         fantasy_name: c.fantasy_name, country: c.country, is_qc_client: c.is_qc_client
@@ -123,6 +151,10 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
         setCreateDialogType('importer')
       } else if (idField === 'roaster_id') {
         setCreateDialogType('roaster')
+      } else if (idField === 'end_client_id') {
+        setCreateDialogType('end_client')
+      } else if (idField === 'client_id') {
+        setCreateDialogType('qc_client')
       }
       setPendingEntityField(idField)
       setShowCreateDialog(true)
@@ -272,6 +304,9 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
                       {client.name}{client.country ? ` (${client.country})` : ''}
                     </SelectItem>
                   ))}
+                  <SelectItem value="__create_new__" className="text-primary font-medium">
+                    + Create New
+                  </SelectItem>
                 </SelectContent>
               </Select>
             )

@@ -110,4 +110,5 @@ export interface StepComponentProps {
   qcClients?: Client[] // Clients where is_qc_client = true
   error?: string | null
   isGlobalUser?: boolean // True if user is global_admin or global_cupper_admin
+  onEntityCreated?: (type: 'exporter' | 'importer' | 'roaster' | 'end_client' | 'qc_client') => void // Callback to refresh entity lists after creation
 }
