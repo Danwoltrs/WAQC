@@ -85,6 +85,18 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
   })
   const [isQcClient, setIsQcClient] = useState(defaultRole === 'qc_client')
 
+  // Sync selectedRoles and isQcClient when defaultRole changes (modal stays mounted)
+  useEffect(() => {
+    if (!defaultRole) {
+      setSelectedRoles([])
+      setIsQcClient(false)
+      return
+    }
+    const mapped = ROLE_TO_CLIENT_TYPE[defaultRole]
+    setSelectedRoles(mapped ? [mapped] : [])
+    setIsQcClient(defaultRole === 'qc_client')
+  }, [defaultRole])
+
   // Legacy import
   const [showLegacySearch, setShowLegacySearch] = useState(false)
   const [legacyQuery, setLegacyQuery] = useState('')
