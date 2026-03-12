@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Building2, Edit, Loader2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { CreateClientDialog, CreateClientType } from '@/components/samples/intake/create-client-dialog'
+import { AddClientModal, AddClientRole } from '@/components/clients/add-client-modal'
 
 interface Entity {
   id: string
@@ -68,7 +68,7 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
 
   // Create dialog state
   const [showCreateDialog, setShowCreateDialog] = useState(false)
-  const [createDialogType, setCreateDialogType] = useState<CreateClientType>('exporter')
+  const [createDialogType, setCreateDialogType] = useState<AddClientRole>('exporter')
   const [pendingEntityField, setPendingEntityField] = useState<string>('')
 
   // Load entities when entering edit mode
@@ -464,10 +464,10 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
       </div>
 
       {/* Create Entity Dialog */}
-      <CreateClientDialog
+      <AddClientModal
         open={showCreateDialog}
         onOpenChange={setShowCreateDialog}
-        clientType={createDialogType}
+        defaultRole={createDialogType}
         onSuccess={handleCreateSuccess}
       />
     </>

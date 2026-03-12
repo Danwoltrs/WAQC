@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronDown } from 'lucide-react'
-import { CreateClientDialog, CreateClientType } from './create-client-dialog'
+import { AddClientModal, AddClientRole } from '@/components/clients/add-client-modal'
 import { StepComponentProps } from './types'
 
 export function SupplyChainStep({
@@ -22,7 +22,7 @@ export function SupplyChainStep({
   onEntityCreated
 }: StepComponentProps) {
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
-  const [createClientType, setCreateClientType] = useState<CreateClientType>('exporter')
+  const [createClientRole, setCreateClientRole] = useState<AddClientRole>('exporter')
   const [showMore, setShowMore] = useState(
     !!(formData.supplier || formData.roaster || formData.end_client)
   )
@@ -224,7 +224,7 @@ export function SupplyChainStep({
             allowCreate
             createLabel="+ New Seller"
             onCreateNew={() => {
-              setCreateClientType('exporter')
+              setCreateClientRole('exporter')
               setShowCreateClientDialog(true)
             }}
           />
@@ -273,7 +273,7 @@ export function SupplyChainStep({
               allowCreate
               createLabel="+ New Shipper"
               onCreateNew={() => {
-                setCreateClientType('exporter')
+                setCreateClientRole('exporter')
                 setShowCreateClientDialog(true)
               }}
             />
@@ -327,7 +327,7 @@ export function SupplyChainStep({
             allowCreate
             createLabel="+ New Importer"
             onCreateNew={() => {
-              setCreateClientType('importer')
+              setCreateClientRole('importer')
               setShowCreateClientDialog(true)
             }}
           />
@@ -357,7 +357,7 @@ export function SupplyChainStep({
                 allowCreate
                 createLabel="+ New QC Client"
                 onCreateNew={() => {
-                  setCreateClientType('qc_client')
+                  setCreateClientRole('qc_client')
                   setShowCreateClientDialog(true)
                 }}
               />
@@ -432,7 +432,7 @@ export function SupplyChainStep({
                   allowCreate
                   createLabel="+ New Roaster"
                   onCreateNew={() => {
-                    setCreateClientType('roaster')
+                    setCreateClientRole('roaster')
                     setShowCreateClientDialog(true)
                   }}
                 />
@@ -458,7 +458,7 @@ export function SupplyChainStep({
                   allowCreate
                   createLabel="+ New End Client"
                   onCreateNew={() => {
-                    setCreateClientType('end_client')
+                    setCreateClientRole('end_client')
                     setShowCreateClientDialog(true)
                   }}
                 />
@@ -477,24 +477,24 @@ export function SupplyChainStep({
         )}
       </div>
 
-      <CreateClientDialog
+      <AddClientModal
         open={showCreateClientDialog}
         onOpenChange={setShowCreateClientDialog}
-        clientType={createClientType}
+        defaultRole={createClientRole}
         onSuccess={(clientName) => {
-          if (createClientType === 'exporter') {
+          if (createClientRole === 'exporter') {
             updateFormData('seller', clientName)
-          } else if (createClientType === 'importer') {
+          } else if (createClientRole === 'importer') {
             updateFormData('importer', clientName)
-          } else if (createClientType === 'roaster') {
+          } else if (createClientRole === 'roaster') {
             updateFormData('roaster', clientName)
-          } else if (createClientType === 'end_client') {
+          } else if (createClientRole === 'end_client') {
             updateFormData('end_client', clientName)
-          } else if (createClientType === 'qc_client') {
+          } else if (createClientRole === 'qc_client') {
             updateFormData('qc_client', clientName)
           }
           // Trigger entity list reload so the new entity appears in the dropdown
-          onEntityCreated?.(createClientType as any)
+          onEntityCreated?.(createClientRole as any)
         }}
       />
     </div>

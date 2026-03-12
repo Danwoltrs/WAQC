@@ -13,7 +13,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { ClientAutoDetection } from '@/components/clients/client-auto-detection'
 import { LinkQualityTemplateDialog } from './link-quality-template-dialog'
-import { CreateClientDialog } from './create-client-dialog'
+import { AddClientModal, AddClientRole } from '@/components/clients/add-client-modal'
 import { StepComponentProps } from './types'
 import { ORIGINS, PROCESSING_METHODS, MICRO_ORIGINS } from './constants'
 
@@ -35,7 +35,7 @@ export function BasicInfoStep({
   const [showLinkTemplateDialog, setShowLinkTemplateDialog] = useState(false)
   const [selectedImporterClient, setSelectedImporterClient] = useState<any>(null)
   const [showCreateClientDialog, setShowCreateClientDialog] = useState(false)
-  const [createClientType, setCreateClientType] = useState<'exporter' | 'importer' | 'roaster'>('exporter')
+  const [createClientRole, setCreateClientRole] = useState<AddClientRole>('exporter')
   const [microOriginOpen, setMicroOriginOpen] = useState(false)
 
   // Merged list of importers and QC clients for the importer dropdown when importer_is_qc_client is true
@@ -573,7 +573,7 @@ export function BasicInfoStep({
               value={formData.seller === '' ? 'custom' : exporters.find((exp: any) => exp.name === formData.seller) ? formData.seller : 'custom'}
               onValueChange={(value) => {
                 if (value === 'new') {
-                  setCreateClientType('exporter')
+                  setCreateClientRole('exporter')
                   setShowCreateClientDialog(true)
                 } else if (value !== 'custom') {
                   updateFormData('seller', value)
@@ -625,7 +625,7 @@ export function BasicInfoStep({
                 value={formData.shipper === '' ? 'custom' : exporters.find((exp: any) => exp.name === formData.shipper) ? formData.shipper : 'custom'}
                 onValueChange={(value) => {
                   if (value === 'new') {
-                    setCreateClientType('exporter')
+                    setCreateClientRole('exporter')
                     setShowCreateClientDialog(true)
                   } else if (value !== 'custom') {
                     updateFormData('shipper', value)
@@ -701,7 +701,7 @@ export function BasicInfoStep({
               searchPlaceholder="Search importers..."
               allowCreate
               onCreateNew={() => {
-                setCreateClientType('importer')
+                setCreateClientRole('importer')
                 setShowCreateClientDialog(true)
               }}
               createLabel="+ Create New Importer"
@@ -727,6 +727,12 @@ export function BasicInfoStep({
                 onValueChange={(value) => updateFormData('qc_client', value)}
                 placeholder="Select QC client"
                 searchPlaceholder="Search QC clients..."
+                allowCreate
+                createLabel="+ Create New QC Client"
+                onCreateNew={() => {
+                  setCreateClientRole('qc_client')
+                  setShowCreateClientDialog(true)
+                }}
               />
               <p className="text-xs text-muted-foreground">
                 The client who commissioned the quality control
@@ -760,7 +766,7 @@ export function BasicInfoStep({
               searchPlaceholder="Search roasters..."
               allowCreate
               onCreateNew={() => {
-                setCreateClientType('roaster')
+                setCreateClientRole('roaster')
                 setShowCreateClientDialog(true)
               }}
               createLabel="+ Create New Roaster"
@@ -837,21 +843,20 @@ export function BasicInfoStep({
         />
       )}
 
-      {/* Create Client Dialog */}
-      <CreateClientDialog
+      {/* Create Client Modal */}
+      <AddClientModal
         open={showCreateClientDialog}
         onOpenChange={setShowCreateClientDialog}
-        clientType={createClientType}
+        defaultRole={createClientRole}
         onSuccess={(clientName) => {
-          // Update the appropriate field based on client type
-          if (createClientType === 'exporter') {
-            // When creating from Seller field, update seller; from Shipper field, update shipper
-            // For now, default to seller since that's the primary use case
+          if (createClientRole === 'exporter') {
             updateFormData('seller', clientName)
-          } else if (createClientType === 'importer') {
+          } else if (createClientRole === 'importer') {
             updateFormData('importer', clientName)
-          } else if (createClientType === 'roaster') {
+          } else if (createClientRole === 'roaster') {
             updateFormData('roaster', clientName)
+          } else if (createClientRole === 'qc_client') {
+            updateFormData('qc_client', clientName)
           }
         }}
       />
