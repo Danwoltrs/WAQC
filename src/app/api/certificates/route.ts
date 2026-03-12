@@ -20,6 +20,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search')
     const status = searchParams.get('status')
     const clientId = searchParams.get('client_id')
+    const sampleId = searchParams.get('sample_id')
     const dateFrom = searchParams.get('date_from')
     const dateTo = searchParams.get('date_to')
     const sortBy = searchParams.get('sort_by') || 'created_at'
@@ -92,6 +93,10 @@ export async function GET(request: NextRequest) {
       `)
 
     // Apply filters
+    if (sampleId) {
+      query = query.eq('sample_id', sampleId)
+    }
+
     if (status) {
       query = query.eq('status', status as 'draft' | 'issued' | 'revoked')
     }

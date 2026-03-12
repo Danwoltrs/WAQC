@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     // Get certificate records to find sample IDs (include pdf_url for caching)
     const { data: certificates, error: certError } = await supabase
       .from('certificates')
-      .select('id, certificate_number, sample_id, pdf_url')
+      .select('id, certificate_number, sample_id, sample_contract_id, pdf_url')
       .in('id', certificateIds)
 
     if (certError || !certificates) {
@@ -81,8 +81,8 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // Get certificate data
-        const certificateData = await getCertificateData(cert.sample_id)
+        // Get certificate data (pass contract_id for sub-contract certificates)
+        const certificateData = await getCertificateData(cert.sample_id, cert.sample_contract_id || undefined)
         if (!certificateData) continue
 
         // Load client logo if available
@@ -128,8 +128,8 @@ export async function POST(request: NextRequest) {
         uploadCertificatePdf(supabase, cert.sample_id, cert.id, Buffer.from(pdfBuffer))
           .catch((err) => console.error('[BulkDownload] Cache upload failed:', err))
 
-        // Add to ZIP with certificate number as filename
-        const filename = `${cert.certificate_number}.pdf`
+        // Add to ZIP with sanitized certificate number as filename
+        const filename = sanitizeFilename(cert.certificate_number) + '.pdf'
         zip.file(filename, pdfBuffer)
       } catch (pdfError) {
         console.error(`Error generating PDF for certificate ${cert.id}:`, pdfError)

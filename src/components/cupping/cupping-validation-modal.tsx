@@ -125,8 +125,8 @@ function snapToIncrement(value: number, increment: number): number {
   return Math.round(value / increment) * increment
 }
 
-// Helper function to download certificate PDF
-async function downloadCertificate(sampleId: string, trackingNumber: string): Promise<boolean> {
+// Helper function to download a single certificate PDF
+async function downloadSingleCertificate(sampleId: string, trackingNumber: string): Promise<boolean> {
   try {
     const response = await fetch(`/api/samples/${sampleId}/certificate`)
 
@@ -148,6 +148,60 @@ async function downloadCertificate(sampleId: string, trackingNumber: string): Pr
   } catch (error) {
     console.error('Error downloading certificate:', error)
     return false
+  }
+}
+
+// Helper function to download ALL certificates (mother + sub-contracts) for a sample
+async function downloadAllCertificates(sampleId: string, trackingNumber: string): Promise<{ success: boolean; count: number }> {
+  try {
+    // Fetch all certificate IDs for this sample (mother + sub-contracts)
+    const certsResponse = await fetch(`/api/certificates?sample_id=${sampleId}`)
+    if (!certsResponse.ok) {
+      // Fallback to single download
+      const success = await downloadSingleCertificate(sampleId, trackingNumber)
+      return { success, count: success ? 1 : 0 }
+    }
+
+    const certsData = await certsResponse.json()
+    const certificateIds: string[] = (certsData.certificates || []).map((c: { id: string }) => c.id)
+
+    if (certificateIds.length === 0) {
+      // No certificates found, try single download as fallback
+      const success = await downloadSingleCertificate(sampleId, trackingNumber)
+      return { success, count: success ? 1 : 0 }
+    }
+
+    if (certificateIds.length === 1) {
+      // Only one certificate (no sub-contracts), download directly
+      const success = await downloadSingleCertificate(sampleId, trackingNumber)
+      return { success, count: success ? 1 : 0 }
+    }
+
+    // Multiple certificates — use bulk download (ZIP)
+    const bulkResponse = await fetch('/api/certificates/bulk-download', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ certificateIds }),
+    })
+
+    if (!bulkResponse.ok) {
+      throw new Error('Failed to generate bulk certificates')
+    }
+
+    const blob = await bulkResponse.blob()
+    const url = window.URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${trackingNumber.replace(/\//g, '_')}-certificates.zip`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    window.URL.revokeObjectURL(url)
+
+    return { success: true, count: certificateIds.length }
+  } catch (error) {
+    console.error('Error downloading certificates:', error)
+    return { success: false, count: 0 }
   }
 }
 
@@ -444,15 +498,17 @@ export function CuppingValidationModal({
         }, 500)
       }
 
-      // Auto-download certificate
+      // Auto-download all certificates (mother + sub-contracts)
       if (!isPending && sampleId) {
         const trackingNumber = sampleTrackingNumber || aggregated?.sample_tracking_number || 'unknown'
-        const downloadSuccess = await downloadCertificate(sampleId, trackingNumber)
+        const { success: downloadSuccess, count } = await downloadAllCertificates(sampleId, trackingNumber)
 
         if (downloadSuccess) {
           toast({
-            title: 'Certificate Downloaded',
-            description: `Certificate for ${trackingNumber} has been downloaded.`,
+            title: count > 1 ? 'Certificates Downloaded' : 'Certificate Downloaded',
+            description: count > 1
+              ? `${count} certificates for ${trackingNumber} have been downloaded as a ZIP.`
+              : `Certificate for ${trackingNumber} has been downloaded.`,
           })
         } else {
           toast({
