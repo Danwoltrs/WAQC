@@ -13,10 +13,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { AlertCircle, Database, Loader2, Search, Settings2 } from 'lucide-react'
-import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
+import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import { QcConfigPanel, QcConfigData } from './qc-config-panel'
 
 /** All roles that can trigger this modal */
@@ -202,7 +201,7 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
         fantasy_name: fantasyName || company,
         email: email || null,
         phone: phone || null,
-        country: country || null,
+        country: country && country !== '__none__' ? country : null,
         vat_number: vatNumber || null,
         client_types: selectedRoles,
         is_qc_client: isQcClient,
@@ -244,7 +243,7 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: company,
-              country: country || null,
+              country: country && country !== '__none__' ? country : null,
               contact_email: email || null,
               contact_phone: phone || null,
               notes: fantasyName ? `Brand name: ${fantasyName}` : null,
@@ -259,7 +258,7 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: company,
-              country: country || null,
+              country: country && country !== '__none__' ? country : null,
               contact_email: email || null,
               contact_phone: phone || null,
             }),
@@ -273,7 +272,7 @@ export function AddClientModal({ open, onOpenChange, defaultRole, onSuccess }: A
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               name: company,
-              country: country || null,
+              country: country && country !== '__none__' ? country : null,
               contact_email: email || null,
               contact_phone: phone || null,
               notes: fantasyName ? `Brand name: ${fantasyName}` : null,
