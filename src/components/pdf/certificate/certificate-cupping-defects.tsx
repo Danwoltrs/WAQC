@@ -95,20 +95,10 @@ const sectionStyles = StyleSheet.create({
     paddingHorizontal: 2,
     backgroundColor: ALT_ROW_BG,
   },
-  defectNameContainer: {
+  defectNameText: {
     flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'baseline',
-  },
-  defectName: {
     fontSize: 8,
     color: COLORS.dark,
-  },
-  defectWeight: {
-    fontSize: 6,
-    color: '#9CA3AF',
-    marginLeft: 1,
   },
   defectCount: {
     width: 28,
@@ -185,7 +175,7 @@ function DefectColumn({
       <View style={sectionStyles.defectTitleRow}>
         <Text style={sectionStyles.defectTypeTitle}>{title}</Text>
         <Text style={sectionStyles.defectTitleScore}>
-          {` \u2014 ${fmtNum(total)} pts`}
+          {` \u2014 ${fmtNum(total)}`}
         </Text>
       </View>
       {/* Header row — only Cnt and FD */}
@@ -196,12 +186,12 @@ function DefectColumn({
       </View>
       {defects.map((defect, index) => {
         const isAlt = index % 2 === 1
+        const nameWithCoeff = defect.weight !== 1
+          ? `${defect.name} (${defect.weight})`
+          : defect.name
         return (
           <View key={index} style={isAlt ? sectionStyles.defectRowAlt : sectionStyles.defectRow}>
-            <View style={sectionStyles.defectNameContainer}>
-              <Text style={sectionStyles.defectName}>{defect.name}</Text>
-              <Text style={sectionStyles.defectWeight}> ({defect.weight})</Text>
-            </View>
+            <Text style={sectionStyles.defectNameText}>{nameWithCoeff}</Text>
             <Text style={sectionStyles.defectCount}>{defect.rawCount}</Text>
             <Text style={sectionStyles.defectFD}>{fmtNum(defect.weightedCount)}</Text>
           </View>

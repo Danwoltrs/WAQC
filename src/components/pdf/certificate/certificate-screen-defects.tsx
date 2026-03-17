@@ -77,6 +77,11 @@ const styles = StyleSheet.create({
   defectColumn: {
     flex: 1,
   },
+  // Narrow primary column — content-sized
+  defectColumnPrimary: {
+    flexShrink: 0,
+    minWidth: 100,
+  },
   columnSeparator: {
     width: 0.5,
     backgroundColor: COLORS.border,
@@ -84,7 +89,7 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     minHeight: 20,
   },
-  // Section heading with inline score: "PRIMARY — 4 pts"
+  // Section heading with inline score: "PRIMARY — 4"
   defectColumnTitleRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -98,21 +103,21 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   defectColumnScore: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.muted,
     marginLeft: 4,
   },
   defectColumnScoreOutOfSpec: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.outOfSpec,
     marginLeft: 4,
   },
   defectSpecNote: {
-    fontSize: 5,
+    fontSize: 6,
     color: COLORS.outOfSpec,
-    marginLeft: 2,
+    marginLeft: 3,
   },
   // Header row — only QTY and DEF
   defectHeaderRow: {
@@ -156,20 +161,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     backgroundColor: ALT_ROW_BG,
   },
-  defectNameContainer: {
+  defectNameText: {
     flex: 1,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'baseline',
-  },
-  defectName: {
     fontSize: 8,
     color: COLORS.dark,
-  },
-  defectWeight: {
-    fontSize: 6,
-    color: '#9CA3AF',
-    marginLeft: 1,
   },
   defectQty: {
     width: 30,
@@ -349,20 +344,22 @@ function DefectColumnContent({
   score,
   maxScore,
   outOfSpec,
+  columnStyle,
 }: {
   title: string
   defects: Defect[]
   score: number
   maxScore?: number
   outOfSpec: boolean
+  columnStyle?: any
 }) {
   return (
-    <View style={styles.defectColumn}>
-      {/* Heading with inline score */}
+    <View style={columnStyle || styles.defectColumn}>
+      {/* Heading with inline score: "PRIMARY — 4" or "PRIMARY — 4 (max 1)" */}
       <View style={styles.defectColumnTitleRow}>
         <Text style={styles.defectColumnTitle}>{title}</Text>
         <Text style={outOfSpec ? styles.defectColumnScoreOutOfSpec : styles.defectColumnScore}>
-          {` \u2014 ${fmtNum(score)} pts`}
+          {` \u2014 ${fmtNum(score)}`}
         </Text>
         {outOfSpec && maxScore !== undefined && (
           <Text style={styles.defectSpecNote}>(max {maxScore})</Text>
@@ -378,14 +375,13 @@ function DefectColumnContent({
         const weight = defect.weight ?? 1
         const weighted = Math.round((defect.count * weight) * 100) / 100
         const isAlt = index % 2 === 1
+        // Render name + coefficient as single Text so they never wrap apart
+        const nameWithCoeff = weight !== 1
+          ? `${defect.name} (${weight})`
+          : defect.name
         return (
           <View key={index} style={isAlt ? styles.defectRowAlt : styles.defectRow}>
-            <View style={styles.defectNameContainer}>
-              <Text style={styles.defectName}>{defect.name}</Text>
-              {weight !== 1 && (
-                <Text style={styles.defectWeight}> ({weight})</Text>
-              )}
-            </View>
+            <Text style={styles.defectNameText}>{nameWithCoeff}</Text>
             <Text style={styles.defectQty}>{defect.count}</Text>
             <Text style={styles.defectDef}>{weighted}</Text>
           </View>
@@ -474,6 +470,7 @@ export function CertificateScreenDefects({
                 score={primaryVal}
                 maxScore={maxPrimaryDefects}
                 outOfSpec={primaryOutOfSpec}
+                columnStyle={styles.defectColumnPrimary}
               />
               <View style={styles.columnSeparator} />
               <DefectColumnContent
