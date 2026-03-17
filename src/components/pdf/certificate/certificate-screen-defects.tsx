@@ -407,6 +407,16 @@ export function CertificateScreenDefects({
   const secondaryVal = secondaryDefectsCount ?? 0
   const primaryOutOfSpec = maxPrimaryDefects !== undefined && primaryVal > maxPrimaryDefects
   const secondaryOutOfSpec = maxSecondaryDefects !== undefined && secondaryVal > maxSecondaryDefects
+
+  // Estimate single-column width from longest defect name
+  // ~4.2px per char at 8pt Inter + coefficient text + 30+30 for QTY/DEF + padding
+  const allDefectNames = [...primaryDefects, ...secondaryDefects].map(d => {
+    const w = d.weight ?? 1
+    return w !== 1 ? `${d.name} (${w})` : d.name
+  })
+  const longestName = allDefectNames.reduce((a, b) => a.length > b.length ? a : b, '')
+  const estimatedNameWidth = longestName.length * 4.2
+  const singleColumnWidth = Math.min(Math.max(estimatedNameWidth + 30 + 30 + 20, 160), 320)
   const totalOutOfSpec = maxTotalDefects !== undefined && totalDefects > maxTotalDefects
 
   const hasPrimary = primaryDefects.length > 0
@@ -437,9 +447,8 @@ export function CertificateScreenDefects({
 
       {/* Defects Section */}
       <View style={styles.defectsSection}>
-        {/* Summary line: Primary: 4 (max 1) | Secondary: 29.50 | Total: 33.50 (max 33) */}
+        {/* Summary line: No primary defects | Secondary: 7.50 | Total: 7.50 */}
         <View style={styles.summaryRow}>
-          {/* Primary segment */}
           <Text style={primaryOutOfSpec ? styles.summaryTextOutOfSpec : styles.summaryText}>
             {hasPrimary ? `Primary: ` : 'No primary defects'}
           </Text>
@@ -454,7 +463,6 @@ export function CertificateScreenDefects({
             </>
           )}
           <Text style={styles.summarySeparator}>|</Text>
-          {/* Secondary segment */}
           <Text style={secondaryOutOfSpec ? styles.summaryTextOutOfSpec : styles.summaryText}>
             Secondary:{' '}
           </Text>
@@ -465,7 +473,6 @@ export function CertificateScreenDefects({
             <Text style={styles.summarySpecNote}>(max {maxSecondaryDefects})</Text>
           )}
           <Text style={styles.summarySeparator}>|</Text>
-          {/* Total segment */}
           <Text style={totalOutOfSpec ? styles.summaryTextOutOfSpec : styles.summaryText}>
             Total:{' '}
           </Text>
@@ -477,8 +484,8 @@ export function CertificateScreenDefects({
           )}
         </View>
 
-        {/* Defect columns — single column 65%, two columns 85% */}
-        <View style={[styles.defectsColumnsContainer, { width: hasPrimary && hasSecondary ? '85%' : '65%' }]}>
+        {/* Defect columns — two columns: 85%, single column: sized to content */}
+        <View style={[styles.defectsColumnsContainer, { width: hasPrimary && hasSecondary ? '85%' : singleColumnWidth }]}>
           {hasPrimary && hasSecondary && (
             <>
               <DefectColumnContent
