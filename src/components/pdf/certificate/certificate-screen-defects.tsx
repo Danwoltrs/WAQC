@@ -80,14 +80,13 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     minHeight: 20,
   },
-  // Section heading — just "PRIMARY" or "SECONDARY"
+  // Column title — inline with QTY/DEF header
   defectColumnTitle: {
-    fontSize: 8,
+    fontSize: 6,
     fontWeight: 600,
     color: COLORS.muted,
     textTransform: 'uppercase',
     letterSpacing: 0.2,
-    marginBottom: 3,
   },
   // Header row — only QTY and DEF
   defectHeaderRow: {
@@ -312,9 +311,9 @@ function DefectColumnContent({
   const style = columnWidth ? { width: columnWidth } : {}
   return (
     <View style={style}>
-      <Text style={styles.defectColumnTitle}>{title}</Text>
-      {/* Header row — QTY and DEF */}
+      {/* Header row — TITLE + QTY + DEF on same line */}
       <View style={styles.defectHeaderRow}>
+        <Text style={styles.defectColumnTitle}>{title}</Text>
         <View style={styles.defectHeaderSpacer} />
         <Text style={styles.defectHeaderQty}>Qty</Text>
         <Text style={styles.defectHeaderDef}>Def</Text>
