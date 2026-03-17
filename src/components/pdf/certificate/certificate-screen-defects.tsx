@@ -164,6 +164,7 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 8,
     color: COLORS.dark,
+    marginRight: 4,
   },
   defectQty: {
     width: 30,
@@ -178,33 +179,41 @@ const styles = StyleSheet.create({
     color: COLORS.dark,
     textAlign: 'right',
   },
-  noPrimaryLabel: {
-    fontSize: 8,
-    fontWeight: 600,
-    color: COLORS.muted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.2,
-    marginBottom: 4,
-  },
-  // Total defects heading above the columns
-  totalDefectsHeading: {
+  // Summary row: "Primary: 4 (max 1) | Secondary: 29.50 | Total: 33.50 (max 33)"
+  summaryRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
     marginBottom: 6,
+    gap: 6,
   },
-  totalDefectsLabel: {
-    fontSize: 8,
+  summaryText: {
+    fontSize: 7,
     fontWeight: 600,
     color: COLORS.muted,
-    textTransform: 'uppercase',
-    letterSpacing: 0.2,
   },
-  totalDefectsLabelOutOfSpec: {
-    fontSize: 8,
+  summaryTextOutOfSpec: {
+    fontSize: 7,
     fontWeight: 600,
     color: COLORS.outOfSpec,
-    textTransform: 'uppercase',
-    letterSpacing: 0.2,
+  },
+  summaryValue: {
+    fontSize: 7,
+    fontWeight: 700,
+    color: COLORS.dark,
+  },
+  summaryValueOutOfSpec: {
+    fontSize: 7,
+    fontWeight: 700,
+    color: COLORS.outOfSpec,
+  },
+  summarySeparator: {
+    fontSize: 7,
+    color: COLORS.borderLight,
+  },
+  summarySpecNote: {
+    fontSize: 5,
+    color: COLORS.outOfSpec,
+    marginLeft: 2,
   },
 })
 
@@ -428,22 +437,48 @@ export function CertificateScreenDefects({
 
       {/* Defects Section */}
       <View style={styles.defectsSection}>
-        {!hasPrimary && hasSecondary && (
-          <Text style={styles.noPrimaryLabel}>No primary defects</Text>
-        )}
-
-        {/* Total defects heading */}
-        <View style={styles.totalDefectsHeading}>
-          <Text style={totalOutOfSpec ? styles.totalDefectsLabelOutOfSpec : styles.totalDefectsLabel}>
-            Total Defects {`\u2014 ${fmtNum(totalDefects)}`}
+        {/* Summary line: Primary: 4 (max 1) | Secondary: 29.50 | Total: 33.50 (max 33) */}
+        <View style={styles.summaryRow}>
+          {/* Primary segment */}
+          <Text style={primaryOutOfSpec ? styles.summaryTextOutOfSpec : styles.summaryText}>
+            {hasPrimary ? `Primary: ` : 'No primary defects'}
+          </Text>
+          {hasPrimary && (
+            <>
+              <Text style={primaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+                {fmtNum(primaryVal)}
+              </Text>
+              {primaryOutOfSpec && maxPrimaryDefects !== undefined && (
+                <Text style={styles.summarySpecNote}>(max {maxPrimaryDefects})</Text>
+              )}
+            </>
+          )}
+          <Text style={styles.summarySeparator}>|</Text>
+          {/* Secondary segment */}
+          <Text style={secondaryOutOfSpec ? styles.summaryTextOutOfSpec : styles.summaryText}>
+            Secondary:{' '}
+          </Text>
+          <Text style={secondaryOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+            {fmtNum(secondaryVal)}
+          </Text>
+          {secondaryOutOfSpec && maxSecondaryDefects !== undefined && (
+            <Text style={styles.summarySpecNote}>(max {maxSecondaryDefects})</Text>
+          )}
+          <Text style={styles.summarySeparator}>|</Text>
+          {/* Total segment */}
+          <Text style={totalOutOfSpec ? styles.summaryTextOutOfSpec : styles.summaryText}>
+            Total:{' '}
+          </Text>
+          <Text style={totalOutOfSpec ? styles.summaryValueOutOfSpec : styles.summaryValue}>
+            {fmtNum(totalDefects)}
           </Text>
           {totalOutOfSpec && maxTotalDefects !== undefined && (
-            <Text style={styles.defectSpecNote}>(max {maxTotalDefects})</Text>
+            <Text style={styles.summarySpecNote}>(max {maxTotalDefects})</Text>
           )}
         </View>
 
-        {/* Defect columns — width adapts: single column compact, two columns wider */}
-        <View style={[styles.defectsColumnsContainer, { width: hasPrimary && hasSecondary ? '80%' : '100%' }]}>
+        {/* Defect columns — single column 65%, two columns 85% */}
+        <View style={[styles.defectsColumnsContainer, { width: hasPrimary && hasSecondary ? '85%' : '65%' }]}>
           {hasPrimary && hasSecondary && (
             <>
               <DefectColumnContent
