@@ -198,7 +198,6 @@ const styles = StyleSheet.create({
     fontSize: 7,
     color: COLORS.muted,
     marginBottom: 4,
-    fontStyle: 'italic',
   },
 })
 
