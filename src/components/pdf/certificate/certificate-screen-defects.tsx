@@ -68,11 +68,10 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 6,
   },
-  // Use most of available width, leave some right margin
+  // Base container for defect columns — width set inline based on column count
   defectsColumnsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    width: '80%',
   },
   defectColumn: {
     flex: 1,
@@ -187,9 +186,8 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     marginBottom: 4,
   },
-  // Compact total row — match columns width
+  // Compact total row — width set inline to match columns
   totalRow: {
-    width: '80%',
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'baseline',
@@ -460,8 +458,8 @@ export function CertificateScreenDefects({
           <Text style={styles.noPrimaryLabel}>No primary defects</Text>
         )}
 
-        {/* Defect columns — constrained to 55% */}
-        <View style={styles.defectsColumnsContainer}>
+        {/* Defect columns — width adapts: single column compact, two columns wider */}
+        <View style={[styles.defectsColumnsContainer, { width: hasPrimary && hasSecondary ? '80%' : '50%' }]}>
           {hasPrimary && hasSecondary && (
             <>
               <DefectColumnContent
@@ -502,8 +500,8 @@ export function CertificateScreenDefects({
           )}
         </View>
 
-        {/* Compact total row: Primary: 4 (max 1) | Secondary: 29.50 | Total: 33.50 (max 33) */}
-        <View style={styles.totalRow}>
+        {/* Compact total row — matches columns width */}
+        <View style={[styles.totalRow, { width: hasPrimary && hasSecondary ? '80%' : '50%' }]}>
           {hasPrimary && (
             <>
               <View style={styles.totalSegment}>
