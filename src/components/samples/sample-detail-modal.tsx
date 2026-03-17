@@ -837,15 +837,14 @@ export function SampleDetailModal({
                           <label className="text-sm text-muted-foreground">Quality</label>
                           {isEditMode ? (
                             <Select
-                              value={formData.quality_spec_id || sample.quality_spec_id || '__none__'}
-                              onValueChange={(v) => handleFormChange('quality_spec_id', v === '__none__' ? null : v)}
+                              value={formData.quality_spec_id || sample.quality_spec_id || ''}
+                              onValueChange={(v) => handleFormChange('quality_spec_id', v)}
                               disabled={loadingQualities}
                             >
                               <SelectTrigger className="h-8 text-sm mt-1">
                                 <SelectValue placeholder={loadingQualities ? 'Loading...' : 'Select quality...'} />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="__none__">- None -</SelectItem>
                                 {qualityOptions.map((q) => (
                                   <SelectItem key={q.id} value={q.id}>
                                     {q.custom_name}{q.quality_code ? ` (${q.quality_code})` : ''}
