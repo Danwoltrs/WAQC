@@ -6,7 +6,7 @@
  * Supports out-of-spec highlighting (red+bold) with limit notes
  *
  * Layout rules:
- * - When no primary defects: collapse primary column, show "No primary defects found" label,
+ * - When no primary defects: collapse primary column, show "No primary defects" label,
  *   give secondary full width
  * - Defect name column is flexible with word-wrap; QTY and DEF are fixed narrow columns
  * - Minimum font size 8pt for defect data, weight coefficients in smaller subscript
@@ -195,8 +195,11 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   noPrimaryLabel: {
-    fontSize: 7,
+    fontSize: 8,
+    fontWeight: 600,
     color: COLORS.muted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
     marginBottom: 4,
   },
 })
@@ -445,7 +448,7 @@ export function CertificateScreenDefects({
       <View style={styles.defectsSection}>
         {/* When no primary defects: show muted label and give secondary full width */}
         {!hasPrimary && hasSecondary && (
-          <Text style={styles.noPrimaryLabel}>No primary defects found</Text>
+          <Text style={styles.noPrimaryLabel}>No primary defects</Text>
         )}
 
         {/* Defect columns */}

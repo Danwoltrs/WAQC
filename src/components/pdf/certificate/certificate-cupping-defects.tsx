@@ -4,7 +4,7 @@
  * Defects displayed as compact columns: Name (wt), Count, FD
  *
  * Layout rules:
- * - When no primary defects: collapse primary column, show "No primary defects found" label,
+ * - When no primary defects: collapse primary column, show "No primary defects" label,
  *   give secondary full width
  * - Defect name column is flexible with word-wrap; Cnt and FD are fixed narrow columns (28px)
  * - Minimum font size 8pt for defect data, weight coefficients in smaller subscript (6pt)
@@ -161,8 +161,10 @@ const sectionStyles = StyleSheet.create({
     color: COLORS.mutedLight,
   },
   noPrimaryLabel: {
-    fontSize: 7,
+    fontSize: 8,
+    fontWeight: 600,
     color: COLORS.muted,
+    textTransform: 'uppercase',
     marginBottom: 4,
   },
 })
@@ -246,7 +248,7 @@ function DefectsList({ defects }: DefectsListProps) {
 
       {/* When no primary defects: show muted label and give secondary full width */}
       {!hasPrimary && hasSecondary && (
-        <Text style={sectionStyles.noPrimaryLabel}>No primary defects found</Text>
+        <Text style={sectionStyles.noPrimaryLabel}>No primary defects</Text>
       )}
 
       {/* Defects Columns */}
