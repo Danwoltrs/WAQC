@@ -348,8 +348,9 @@ export async function POST(request: NextRequest) {
       // Check if certificate already exists
       const { data: existingCert } = await supabaseAdmin
         .from('certificates')
-        .select('id, certificate_number')
+        .select('id, certificate_number, is_rejected, compliance_violations, revision_number, approved')
         .eq('sample_id', sample_id)
+        .is('sample_contract_id', null)
         .single()
 
       if (!existingCert) {
@@ -416,15 +417,56 @@ export async function POST(request: NextRequest) {
           certificate = newCert
         }
       } else {
-        // Update existing certificate if decision changed
-        // Keep the already-assigned certificate number — only update rejection status and violations
+        // Re-certification: certificate already exists — track what changed
+        const previousIsRejected = existingCert.is_rejected ?? false
+        const previousViolations = (existingCert.compliance_violations as string[] | null) || []
+        const newIsRejected = decision === 'rejected'
+        const newViolations = complianceResult.violations
+
+        // Build human-readable changes description
+        const changes: string[] = []
+        if (previousIsRejected !== newIsRejected) {
+          changes.push(
+            previousIsRejected
+              ? 'Decision changed from REJECTED to APPROVED'
+              : 'Decision changed from APPROVED to REJECTED'
+          )
+        }
+        // Compare violations
+        const addedViolations = newViolations.filter(v => !previousViolations.includes(v))
+        const removedViolations = previousViolations.filter(v => !newViolations.includes(v))
+        if (addedViolations.length > 0) {
+          changes.push(`New violations: ${addedViolations.join('; ')}`)
+        }
+        if (removedViolations.length > 0) {
+          changes.push(`Resolved violations: ${removedViolations.join('; ')}`)
+        }
+        if (changes.length === 0) {
+          changes.push('Re-certified with no changes to decision or violations')
+        }
+
+        const changesDescription = changes.join('. ')
+        const newRevisionNumber = (existingCert.revision_number ?? 0) + 1
+
+        // Save version history before updating
+        await supabaseAdmin
+          .from('certificate_versions')
+          .insert({
+            certificate_id: existingCert.id,
+            version_number: existingCert.revision_number ?? 0,
+            changes_description: changesDescription,
+            created_by: user.id,
+          })
+
+        // Update existing certificate — keep the already-assigned certificate number
         const { data: updatedCert, error: updateCertError } = await supabaseAdmin
           .from('certificates')
           .update({
-            is_rejected: decision === 'rejected',
-            compliance_violations: complianceResult.violations.length > 0
-              ? complianceResult.violations
-              : null,
+            is_rejected: newIsRejected,
+            approved: !newIsRejected,
+            compliance_violations: newViolations.length > 0 ? newViolations : null,
+            revision_number: newRevisionNumber,
+            override_comment: `Re-certified (rev ${newRevisionNumber}): ${changesDescription}`,
             updated_at: new Date().toISOString()
           })
           .eq('id', existingCert.id)
