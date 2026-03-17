@@ -68,11 +68,10 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingVertical: 6,
   },
-  // Constrain to ~55% width
+  // Fill available width within defects section
   defectsColumnsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    width: '55%',
   },
   defectColumn: {
     flex: 1,
@@ -189,7 +188,6 @@ const styles = StyleSheet.create({
   },
   // Compact total row — spans full defects width
   totalRow: {
-    width: '55%',
     flexDirection: 'row',
     justifyContent: 'flex-end',
     alignItems: 'baseline',
