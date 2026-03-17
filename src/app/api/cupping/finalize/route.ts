@@ -26,7 +26,7 @@ const supabaseAdmin = createSupabaseClient(
  * 1. Auto-determine approval/rejection based on quality specs (or use manual decision)
  * 2. Update session status to 'completed'
  * 3. Update sample workflow_stage to 'certified' or 'rejected'
- * 4. Create certificate record with tracking_number (R- prefix if rejected)
+ * 4. Create certificate record with generated certificate number (per-client atomic sequence)
  *
  * Body: {
  *   session_id: string,
@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     // Exclude soft-deleted samples
     const { data: sample, error: sampleError } = await supabaseAdmin
       .from('samples')
-      .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id')
+      .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id, origin')
       .eq('id', sample_id)
       .is('deleted_at', null)
       .single()
@@ -362,10 +362,24 @@ export async function POST(request: NextRequest) {
           }, { status: 400 })
         }
 
-        // Certificate number uses tracking_number (R- prefix for rejected)
-        const certificateNumber = decision === 'rejected'
-          ? `R-${sample.tracking_number}`
-          : sample.tracking_number
+        // Generate certificate number using atomic per-client sequence
+        const { data: generatedCertNum, error: certNumError } = await supabaseAdmin
+          .rpc('generate_certificate_number', {
+            p_client_id: sample.client_id,
+            p_origin: sample.origin || null,
+            p_quality_spec_id: sample.quality_spec_id || null,
+            p_is_rejected: decision === 'rejected',
+          })
+
+        if (certNumError || !generatedCertNum) {
+          console.error('Error generating certificate number:', certNumError)
+          return NextResponse.json({
+            error: 'Failed to generate certificate number',
+            details: certNumError?.message || 'No certificate number returned'
+          }, { status: 500 })
+        }
+
+        const certificateNumber = generatedCertNum as string
 
         // Get client info for issued_to
         const { data: client } = await supabaseAdmin
@@ -403,12 +417,10 @@ export async function POST(request: NextRequest) {
         }
       } else {
         // Update existing certificate if decision changed
+        // Keep the already-assigned certificate number — only update rejection status and violations
         const { data: updatedCert, error: updateCertError } = await supabaseAdmin
           .from('certificates')
           .update({
-            certificate_number: decision === 'rejected'
-              ? `R-${sample.tracking_number}`
-              : sample.tracking_number,
             is_rejected: decision === 'rejected',
             compliance_violations: complianceResult.violations.length > 0
               ? complianceResult.violations
@@ -454,9 +466,22 @@ export async function POST(request: NextRequest) {
               .maybeSingle()
 
             if (!existingSubCert) {
-              const subCertNumber = decision === 'rejected'
-                ? `R-${sc.tracking_number}`
-                : sc.tracking_number
+              // Generate certificate number for sub-contract using its own client's sequence
+              const subClientId = sc.client_id || sample.client_id
+              const { data: subCertNum, error: subCertNumError } = await supabaseAdmin
+                .rpc('generate_certificate_number', {
+                  p_client_id: subClientId,
+                  p_origin: sample.origin || null,
+                  p_quality_spec_id: sample.quality_spec_id || null,
+                  p_is_rejected: decision === 'rejected',
+                })
+
+              if (subCertNumError || !subCertNum) {
+                console.error('Error generating sub-contract certificate number:', subCertNumError)
+                continue // Skip this sub-contract but don't fail the whole request
+              }
+
+              const subCertNumber = subCertNum as string
 
               // Get sub-contract's QC client name (or fall back to mother's)
               let subIssuedTo = motherIssuedTo

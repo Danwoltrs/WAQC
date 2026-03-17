@@ -213,7 +213,7 @@ export async function POST(
         workflow_stage,
         status,
         quality_spec_id,
-        client:clients!samples_client_id_fkey(id, name, company)
+        client:clients!samples_client_id_fkey(id, name, company, fantasy_name)
       `)
       .eq('id', id)
       .single()
@@ -297,7 +297,7 @@ export async function POST(
       await createSubContractCertificates(supabase, id, {
         ...existingCert,
         issued_by: existingCert.issued_by || user.id,
-      }, user.id)
+      }, user.id, sample.origin, sample.quality_spec_id)
 
       return NextResponse.json({
         message: 'Certificate already exists',
@@ -305,16 +305,34 @@ export async function POST(
       })
     }
 
-    // Certificate number = tracking number (same identifier throughout the sample lifecycle)
-    // Rejected samples get R- prefix
-    let certificateNumber = sample.tracking_number
-    if (isRejected) {
-      certificateNumber = `R-${certificateNumber}`
+    // Generate certificate number using atomic per-client sequence
+    if (!sample.client_id) {
+      return NextResponse.json({
+        error: 'Cannot generate certificate - sample has no client assigned'
+      }, { status: 400 })
     }
 
+    const { data: generatedCertNum, error: certNumError } = await supabase
+      .rpc('generate_certificate_number', {
+        p_client_id: sample.client_id,
+        p_origin: sample.origin || undefined,
+        p_quality_spec_id: sample.quality_spec_id || undefined,
+        p_is_rejected: isRejected,
+      })
+
+    if (certNumError || !generatedCertNum) {
+      console.error('Error generating certificate number:', certNumError)
+      return NextResponse.json({
+        error: 'Failed to generate certificate number',
+        details: certNumError?.message || 'No certificate number returned'
+      }, { status: 500 })
+    }
+
+    const certificateNumber = generatedCertNum as string
+
     // Get client name for issued_to (required field)
-    const clientData = sample.client as { name?: string; company?: string } | null
-    const issuedTo = clientData?.company || clientData?.name || 'Unknown Client'
+    const clientData = sample.client as { name?: string; company?: string; fantasy_name?: string } | null
+    const issuedTo = clientData?.fantasy_name || clientData?.company || clientData?.name || 'Unknown Client'
 
     // Create certificate record
     // valid_from is today, valid_until is 1 year from now
@@ -352,7 +370,7 @@ export async function POST(
       valid_from: validFrom.toISOString(),
       valid_until: validUntil.toISOString(),
       is_rejected: isRejected,
-    }, user.id)
+    }, user.id, sample.origin, sample.quality_spec_id)
 
     return NextResponse.json({
       message: 'Certificate created',
@@ -372,7 +390,9 @@ async function createSubContractCertificates(
   supabase: any,
   sampleId: string,
   motherCert: { id?: string; issued_by: string; valid_from: string; valid_until: string; is_rejected: boolean | null },
-  userId: string
+  userId: string,
+  sampleOrigin?: string | null,
+  sampleQualitySpecId?: string | null,
 ) {
   try {
     const { data: subContracts } = await supabase
@@ -403,9 +423,23 @@ async function createSubContractCertificates(
 
       if (!existingSubCert) {
         const isRejected = motherCert.is_rejected ?? false
-        const subCertNumber = isRejected
-          ? `R-${sc.tracking_number}`
-          : sc.tracking_number
+        const subClientId = sc.client_id || sample?.client_id
+
+        // Generate certificate number for sub-contract using its own client's sequence
+        const { data: subCertNum, error: subCertNumError } = await supabase
+          .rpc('generate_certificate_number', {
+            p_client_id: subClientId,
+            p_origin: sampleOrigin || null,
+            p_quality_spec_id: sampleQualitySpecId || null,
+            p_is_rejected: isRejected,
+          })
+
+        if (subCertNumError || !subCertNum) {
+          console.error('Error generating sub-contract certificate number:', subCertNumError)
+          continue // Skip this sub-contract but don't fail
+        }
+
+        const subCertNumber = subCertNum as string
 
         // Get sub-contract's QC client name (or fall back to mother's)
         let subIssuedTo = motherIssuedTo

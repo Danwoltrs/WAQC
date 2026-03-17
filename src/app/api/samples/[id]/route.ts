@@ -379,7 +379,7 @@ export async function DELETE(
     // Check if sample exists and is not already deleted
     const { data: existingSample, error: fetchError } = await supabase
       .from('samples')
-      .select('id, tracking_number, deleted_at')
+      .select('id, tracking_number, deleted_at, workflow_stage')
       .eq('id', id)
       .single()
 
@@ -391,6 +391,14 @@ export async function DELETE(
       return NextResponse.json({
         error: 'Sample already deleted',
         deleted_at: existingSample.deleted_at
+      }, { status: 400 })
+    }
+
+    // Certified/rejected samples cannot be deleted — they hold a permanent certificate number.
+    // They can only be archived or voided. Gaps in certificate sequences are acceptable.
+    if (existingSample.workflow_stage === 'certified' || existingSample.workflow_stage === 'rejected') {
+      return NextResponse.json({
+        error: 'Cannot delete a certified sample. Certified samples can only be archived or voided. The certificate number is permanently retired.'
       }, { status: 400 })
     }
 
