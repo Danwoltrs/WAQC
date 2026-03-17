@@ -443,7 +443,7 @@ export function CertificateScreenDefects({
         </View>
 
         {/* Defect columns — width adapts: single column compact, two columns wider */}
-        <View style={[styles.defectsColumnsContainer, { width: hasPrimary && hasSecondary ? '80%' : '50%' }]}>
+        <View style={[styles.defectsColumnsContainer, { width: hasPrimary && hasSecondary ? '80%' : '100%' }]}>
           {hasPrimary && hasSecondary && (
             <>
               <DefectColumnContent
