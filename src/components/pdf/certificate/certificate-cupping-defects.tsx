@@ -1,8 +1,8 @@
 /**
  * Certificate cupping and defects combined section
  * Layout: Two separate bordered boxes - Cupping (left) | Defects (right)
- * Defects: menu-style layout with leader dots, alternating rows,
- *   clean totals block, no "Defect"/"Name" column header
+ * Defects: totals in section headings, compact total row,
+ *   alternating row bg (#fafafa), no leader dots
  */
 
 import React from 'react'
@@ -11,11 +11,9 @@ import { COLORS } from './certificate-styles'
 import { CertificateCupping } from './certificate-cupping'
 import type { CuppingData, GreenBeanAnalysis } from '@/lib/certificate-data'
 
-const LEADER_DOTS = ' . . . . . . . . . . . . . . . . . . . . '
-const ALT_ROW_BG = '#f9f9f9'
+const ALT_ROW_BG = '#fafafa'
 
 const sectionStyles = StyleSheet.create({
-  // Two-box layout container
   twoBoxLayout: {
     flexDirection: 'row',
     gap: 8,
@@ -42,14 +40,25 @@ const sectionStyles = StyleSheet.create({
   defectTypeColumn: {
     flex: 1,
   },
+  // Section heading with inline score
+  defectTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 4,
+  },
   defectTypeTitle: {
     fontSize: 8,
     fontWeight: 600,
     color: COLORS.muted,
     textTransform: 'uppercase',
-    marginBottom: 4,
   },
-  // Header row — only Cnt and FD labels, no "Name" column header
+  defectTitleScore: {
+    fontSize: 7,
+    fontWeight: 600,
+    color: COLORS.muted,
+    marginLeft: 4,
+  },
+  // Header row — only Cnt and FD
   defectHeaderRow: {
     flexDirection: 'row',
     marginBottom: 2,
@@ -72,7 +81,7 @@ const sectionStyles = StyleSheet.create({
     color: COLORS.muted,
     textAlign: 'right',
   },
-  // Defect data rows with leader dots
+  // Defect data rows
   defectRow: {
     flexDirection: 'row',
     alignItems: 'baseline',
@@ -86,6 +95,12 @@ const sectionStyles = StyleSheet.create({
     paddingHorizontal: 2,
     backgroundColor: ALT_ROW_BG,
   },
+  defectNameContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+  },
   defectName: {
     fontSize: 8,
     color: COLORS.dark,
@@ -94,13 +109,6 @@ const sectionStyles = StyleSheet.create({
     fontSize: 6,
     color: '#9CA3AF',
     marginLeft: 1,
-  },
-  leaderDots: {
-    flex: 1,
-    fontSize: 6,
-    color: '#D1D5DB',
-    overflow: 'hidden',
-    marginHorizontal: 2,
   },
   defectCount: {
     width: 28,
@@ -115,26 +123,23 @@ const sectionStyles = StyleSheet.create({
     color: COLORS.dark,
     textAlign: 'right',
   },
-  // Totals block — right-aligned, separated by border
-  totalsBlock: {
-    marginTop: 6,
-    paddingTop: 4,
+  // Compact total row
+  totalRow: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'baseline',
+    marginTop: 4,
+    paddingTop: 3,
     borderTopWidth: 0.5,
     borderTopColor: COLORS.border,
-    alignItems: 'flex-end',
   },
-  totalsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 1,
-  },
-  totalsLabel: {
+  totalLabel: {
     fontSize: 8,
     fontWeight: 600,
-    color: COLORS.muted,
-    marginRight: 6,
+    color: COLORS.dark,
+    marginRight: 4,
   },
-  totalsValue: {
+  totalValue: {
     fontSize: 9,
     fontWeight: 700,
     color: COLORS.dark,
@@ -156,24 +161,34 @@ interface DefectsListProps {
   defects: GreenBeanAnalysis['defects']
 }
 
+/** Format number: integer as-is, decimal to 1 place */
+function fmtNum(n: number): string {
+  if (Number.isInteger(n)) return n.toString()
+  return n.toFixed(1)
+}
+
 /**
- * Render a single defect column with menu-style layout
+ * Render a defect column with heading score and rows
  */
 function DefectColumn({
   title,
   defects,
   total,
-  formatNum,
 }: {
   title: string
   defects: Array<{ name: string; rawCount: number; weight: number; weightedCount: number }>
   total: number
-  formatNum: (n: number) => string
 }) {
   return (
     <View style={sectionStyles.defectTypeColumn}>
-      <Text style={sectionStyles.defectTypeTitle}>{title}</Text>
-      {/* Header row — only Cnt and FD, no "Name" */}
+      {/* Heading with inline score */}
+      <View style={sectionStyles.defectTitleRow}>
+        <Text style={sectionStyles.defectTypeTitle}>{title}</Text>
+        <Text style={sectionStyles.defectTitleScore}>
+          {` \u2014 ${fmtNum(total)} pts`}
+        </Text>
+      </View>
+      {/* Header row — only Cnt and FD */}
       <View style={sectionStyles.defectHeaderRow}>
         <View style={sectionStyles.defectHeaderSpacer} />
         <Text style={sectionStyles.defectCountHeader}>Cnt</Text>
@@ -183,11 +198,12 @@ function DefectColumn({
         const isAlt = index % 2 === 1
         return (
           <View key={index} style={isAlt ? sectionStyles.defectRowAlt : sectionStyles.defectRow}>
-            <Text style={sectionStyles.defectName}>{defect.name}</Text>
-            <Text style={sectionStyles.defectWeight}> ({defect.weight})</Text>
-            <Text style={sectionStyles.leaderDots}>{LEADER_DOTS}</Text>
+            <View style={sectionStyles.defectNameContainer}>
+              <Text style={sectionStyles.defectName}>{defect.name}</Text>
+              <Text style={sectionStyles.defectWeight}> ({defect.weight})</Text>
+            </View>
             <Text style={sectionStyles.defectCount}>{defect.rawCount}</Text>
-            <Text style={sectionStyles.defectFD}>{formatNum(defect.weightedCount)}</Text>
+            <Text style={sectionStyles.defectFD}>{fmtNum(defect.weightedCount)}</Text>
           </View>
         )
       })}
@@ -202,79 +218,37 @@ function DefectsList({ defects }: DefectsListProps) {
   const totalSecondary = defects?.total_secondary || 0
   const grandTotal = totalPrimary + totalSecondary
 
-  const formatNum = (n: number) => {
-    if (Number.isInteger(n)) return n.toString()
-    return n.toFixed(1)
-  }
-
   const hasPrimary = primaryDefects.length > 0
   const hasSecondary = secondaryDefects.length > 0
-  const showBothTotals = hasPrimary && hasSecondary
 
   return (
     <View>
-      {/* When no primary defects: show muted label */}
       {!hasPrimary && hasSecondary && (
         <Text style={sectionStyles.noPrimaryLabel}>No primary defects</Text>
       )}
 
-      {/* Defects Columns */}
       <View style={sectionStyles.defectsRow}>
         {hasPrimary && hasSecondary && (
           <>
-            <DefectColumn
-              title="Primary"
-              defects={primaryDefects}
-              total={totalPrimary}
-              formatNum={formatNum}
-            />
-            <DefectColumn
-              title="Secondary"
-              defects={secondaryDefects}
-              total={totalSecondary}
-              formatNum={formatNum}
-            />
+            <DefectColumn title="Primary" defects={primaryDefects} total={totalPrimary} />
+            <DefectColumn title="Secondary" defects={secondaryDefects} total={totalSecondary} />
           </>
         )}
         {hasPrimary && !hasSecondary && (
-          <DefectColumn
-            title="Primary"
-            defects={primaryDefects}
-            total={totalPrimary}
-            formatNum={formatNum}
-          />
+          <DefectColumn title="Primary" defects={primaryDefects} total={totalPrimary} />
         )}
         {!hasPrimary && hasSecondary && (
-          <DefectColumn
-            title="Secondary"
-            defects={secondaryDefects}
-            total={totalSecondary}
-            formatNum={formatNum}
-          />
+          <DefectColumn title="Secondary" defects={secondaryDefects} total={totalSecondary} />
         )}
         {!hasPrimary && !hasSecondary && (
           <Text style={sectionStyles.emptyText}>No defects recorded</Text>
         )}
       </View>
 
-      {/* Totals block — clean, right-aligned */}
-      <View style={sectionStyles.totalsBlock}>
-        {showBothTotals && (
-          <>
-            <View style={sectionStyles.totalsRow}>
-              <Text style={sectionStyles.totalsLabel}>Primary:</Text>
-              <Text style={sectionStyles.totalsValue}>{formatNum(totalPrimary)}</Text>
-            </View>
-            <View style={sectionStyles.totalsRow}>
-              <Text style={sectionStyles.totalsLabel}>Secondary:</Text>
-              <Text style={sectionStyles.totalsValue}>{formatNum(totalSecondary)}</Text>
-            </View>
-          </>
-        )}
-        <View style={sectionStyles.totalsRow}>
-          <Text style={sectionStyles.totalsLabel}>Total defects:</Text>
-          <Text style={sectionStyles.totalsValue}>{formatNum(grandTotal)}</Text>
-        </View>
+      {/* Compact total row */}
+      <View style={sectionStyles.totalRow}>
+        <Text style={sectionStyles.totalLabel}>Total:</Text>
+        <Text style={sectionStyles.totalValue}>{fmtNum(grandTotal)}</Text>
       </View>
     </View>
   )

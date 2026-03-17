@@ -2,9 +2,8 @@
  * Certificate screen distribution and defects section
  * Two separate sections: Screen | Defects
  * Screen: sorted largest to smallest with pan always last
- * Defects: menu-style layout with leader dots, constrained width (~60%),
- *   alternating row backgrounds, clean totals block
- * Supports out-of-spec highlighting (red+bold) with limit notes
+ * Defects: constrained width (~55%), totals in section headings,
+ *   compact total row, alternating row bg (#fafafa)
  */
 
 import React from 'react'
@@ -12,10 +11,7 @@ import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
 import type { ScreenSizeLimit } from '@/lib/certificate-data'
 
-/** Generate leader dots string to fill space */
-const LEADER_DOTS = ' . . . . . . . . . . . . . . . . . . . . '
-
-const ALT_ROW_BG = '#f9f9f9'
+const ALT_ROW_BG = '#fafafa'
 
 const styles = StyleSheet.create({
   container: {
@@ -24,7 +20,6 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     gap: 10,
   },
-  // Screen section styles
   screenSection: {
     width: 100,
     padding: 6,
@@ -68,16 +63,16 @@ const styles = StyleSheet.create({
     color: COLORS.outOfSpec,
     marginLeft: 2,
   },
-  // Defects section styles
+  // Defects section
   defectsSection: {
     flex: 1,
     paddingVertical: 6,
   },
-  // Constrain defect table to ~60% width
+  // Constrain to ~55% width
   defectsColumnsContainer: {
     flexDirection: 'row',
     alignItems: 'flex-start',
-    maxWidth: '65%',
+    width: '55%',
   },
   defectColumn: {
     flex: 1,
@@ -89,15 +84,37 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
     minHeight: 20,
   },
+  // Section heading with inline score: "PRIMARY — 4 pts"
+  defectColumnTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    marginBottom: 3,
+  },
   defectColumnTitle: {
     fontSize: 8,
     fontWeight: 600,
     color: COLORS.muted,
     textTransform: 'uppercase',
     letterSpacing: 0.2,
-    marginBottom: 3,
   },
-  // Header row — no "Defect" label, only QTY and DEF on the right
+  defectColumnScore: {
+    fontSize: 7,
+    fontWeight: 600,
+    color: COLORS.muted,
+    marginLeft: 4,
+  },
+  defectColumnScoreOutOfSpec: {
+    fontSize: 7,
+    fontWeight: 600,
+    color: COLORS.outOfSpec,
+    marginLeft: 4,
+  },
+  defectSpecNote: {
+    fontSize: 5,
+    color: COLORS.outOfSpec,
+    marginLeft: 2,
+  },
+  // Header row — only QTY and DEF
   defectHeaderRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -110,7 +127,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   defectHeaderQty: {
-    width: 32,
+    width: 30,
     fontSize: 6,
     fontWeight: 600,
     color: COLORS.muted,
@@ -118,7 +135,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   defectHeaderDef: {
-    width: 32,
+    width: 30,
     fontSize: 6,
     fontWeight: 600,
     color: COLORS.muted,
@@ -139,6 +156,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
     backgroundColor: ALT_ROW_BG,
   },
+  defectNameContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+  },
   defectName: {
     fontSize: 8,
     color: COLORS.dark,
@@ -148,22 +171,15 @@ const styles = StyleSheet.create({
     color: '#9CA3AF',
     marginLeft: 1,
   },
-  leaderDots: {
-    flex: 1,
-    fontSize: 6,
-    color: '#D1D5DB',
-    overflow: 'hidden',
-    marginHorizontal: 2,
-  },
   defectQty: {
-    width: 32,
+    width: 30,
     fontSize: 8,
     fontWeight: 600,
     color: COLORS.dark,
     textAlign: 'right',
   },
   defectDef: {
-    width: 32,
+    width: 30,
     fontSize: 8,
     color: COLORS.dark,
     textAlign: 'right',
@@ -176,37 +192,34 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     marginBottom: 4,
   },
-  // Totals block — right-aligned, separated by border
-  totalsBlock: {
-    maxWidth: '65%',
-    marginTop: 6,
-    paddingTop: 4,
+  // Compact total row
+  totalRow: {
+    width: '55%',
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'baseline',
+    marginTop: 4,
+    paddingTop: 3,
     borderTopWidth: 0.5,
     borderTopColor: COLORS.borderLight,
-    alignItems: 'flex-end',
   },
-  totalsRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 1,
-  },
-  totalsLabel: {
+  totalLabel: {
     fontSize: 8,
     fontWeight: 600,
-    color: COLORS.muted,
-    marginRight: 6,
+    color: COLORS.dark,
+    marginRight: 4,
   },
-  totalsValue: {
+  totalValue: {
     fontSize: 9,
     fontWeight: 700,
     color: COLORS.dark,
   },
-  totalsValueOutOfSpec: {
+  totalValueOutOfSpec: {
     fontSize: 9,
     fontWeight: 700,
     color: COLORS.outOfSpec,
   },
-  totalsSpecNote: {
+  totalSpecNote: {
     fontSize: 5,
     color: COLORS.outOfSpec,
     marginLeft: 2,
@@ -232,7 +245,6 @@ export interface CertificateScreenDefectsProps {
   primaryDefectsCount?: number | null
   secondaryDefectsCount?: number | null
   totalDefectsWeight?: number | null
-  // Spec limits
   screenConstraints?: ScreenSizeLimit[]
   maxPrimaryDefects?: number
   maxSecondaryDefects?: number
@@ -307,21 +319,41 @@ function checkScreenSpec(
   return { outOfSpec: false, note: '' }
 }
 
+/** Format number: integer as-is, decimal to 2 places */
+function fmtNum(n: number): string {
+  if (Number.isInteger(n)) return n.toString()
+  return n.toFixed(2)
+}
+
 /**
- * Render a single defect column with menu-style layout:
- * Name (coeff) ......... QTY  DEF
+ * Render a defect column: heading with score, rows with name + qty + def
  */
 function DefectColumnContent({
   title,
   defects,
+  score,
+  maxScore,
+  outOfSpec,
 }: {
   title: string
   defects: Defect[]
+  score: number
+  maxScore?: number
+  outOfSpec: boolean
 }) {
   return (
     <View style={styles.defectColumn}>
-      <Text style={styles.defectColumnTitle}>{title}</Text>
-      {/* Header row — only QTY and DEF labels, no "Defect" */}
+      {/* Heading with inline score */}
+      <View style={styles.defectColumnTitleRow}>
+        <Text style={styles.defectColumnTitle}>{title}</Text>
+        <Text style={outOfSpec ? styles.defectColumnScoreOutOfSpec : styles.defectColumnScore}>
+          {` \u2014 ${fmtNum(score)} pts`}
+        </Text>
+        {outOfSpec && maxScore !== undefined && (
+          <Text style={styles.defectSpecNote}>(max {maxScore})</Text>
+        )}
+      </View>
+      {/* Header row — only QTY and DEF */}
       <View style={styles.defectHeaderRow}>
         <View style={styles.defectHeaderSpacer} />
         <Text style={styles.defectHeaderQty}>Qty</Text>
@@ -333,11 +365,12 @@ function DefectColumnContent({
         const isAlt = index % 2 === 1
         return (
           <View key={index} style={isAlt ? styles.defectRowAlt : styles.defectRow}>
-            <Text style={styles.defectName}>{defect.name}</Text>
-            {weight !== 1 && (
-              <Text style={styles.defectWeight}> ({weight})</Text>
-            )}
-            <Text style={styles.leaderDots}>{LEADER_DOTS}</Text>
+            <View style={styles.defectNameContainer}>
+              <Text style={styles.defectName}>{defect.name}</Text>
+              {weight !== 1 && (
+                <Text style={styles.defectWeight}> ({weight})</Text>
+              )}
+            </View>
             <Text style={styles.defectQty}>{defect.count}</Text>
             <Text style={styles.defectDef}>{weighted}</Text>
           </View>
@@ -386,11 +419,10 @@ export function CertificateScreenDefects({
 
   const hasPrimary = primaryDefects.length > 0
   const hasSecondary = secondaryDefects.length > 0
-  const showBothTotals = hasPrimary && hasSecondary
 
   return (
     <View style={styles.container}>
-      {/* Screen Distribution Section */}
+      {/* Screen Distribution */}
       {hasScreenData && (
         <View style={styles.screenSection}>
           <Text style={styles.screenTitle}>Screen</Text>
@@ -409,9 +441,7 @@ export function CertificateScreenDefects({
         </View>
       )}
 
-      {hasScreenData && (
-        <View style={styles.screenDefectsSeparator} />
-      )}
+      {hasScreenData && <View style={styles.screenDefectsSeparator} />}
 
       {/* Defects Section */}
       <View style={styles.defectsSection}>
@@ -419,56 +449,56 @@ export function CertificateScreenDefects({
           <Text style={styles.noPrimaryLabel}>No primary defects</Text>
         )}
 
-        {/* Defect columns — constrained to ~60% width */}
+        {/* Defect columns — constrained to 55% */}
         <View style={styles.defectsColumnsContainer}>
           {hasPrimary && hasSecondary && (
             <>
-              <DefectColumnContent title="Primary" defects={primaryDefects} />
+              <DefectColumnContent
+                title="Primary"
+                defects={primaryDefects}
+                score={primaryVal}
+                maxScore={maxPrimaryDefects}
+                outOfSpec={primaryOutOfSpec}
+              />
               <View style={styles.columnSeparator} />
-              <DefectColumnContent title="Secondary" defects={secondaryDefects} />
+              <DefectColumnContent
+                title="Secondary"
+                defects={secondaryDefects}
+                score={secondaryVal}
+                maxScore={maxSecondaryDefects}
+                outOfSpec={secondaryOutOfSpec}
+              />
             </>
           )}
           {hasPrimary && !hasSecondary && (
-            <DefectColumnContent title="Primary" defects={primaryDefects} />
+            <DefectColumnContent
+              title="Primary"
+              defects={primaryDefects}
+              score={primaryVal}
+              maxScore={maxPrimaryDefects}
+              outOfSpec={primaryOutOfSpec}
+            />
           )}
           {!hasPrimary && hasSecondary && (
-            <DefectColumnContent title="Secondary" defects={secondaryDefects} />
+            <DefectColumnContent
+              title="Secondary"
+              defects={secondaryDefects}
+              score={secondaryVal}
+              maxScore={maxSecondaryDefects}
+              outOfSpec={secondaryOutOfSpec}
+            />
           )}
         </View>
 
-        {/* Totals block — clean, right-aligned */}
-        <View style={styles.totalsBlock}>
-          {showBothTotals && (
-            <>
-              <View style={styles.totalsRow}>
-                <Text style={styles.totalsLabel}>Primary:</Text>
-                <Text style={primaryOutOfSpec ? styles.totalsValueOutOfSpec : styles.totalsValue}>
-                  {primaryVal}
-                </Text>
-                {primaryOutOfSpec && (
-                  <Text style={styles.totalsSpecNote}>(max {maxPrimaryDefects})</Text>
-                )}
-              </View>
-              <View style={styles.totalsRow}>
-                <Text style={styles.totalsLabel}>Secondary:</Text>
-                <Text style={secondaryOutOfSpec ? styles.totalsValueOutOfSpec : styles.totalsValue}>
-                  {typeof secondaryVal === 'number' && !isNaN(secondaryVal) ? secondaryVal.toFixed(2) : '0'}
-                </Text>
-                {secondaryOutOfSpec && (
-                  <Text style={styles.totalsSpecNote}>(max {maxSecondaryDefects})</Text>
-                )}
-              </View>
-            </>
+        {/* Compact total row */}
+        <View style={styles.totalRow}>
+          <Text style={styles.totalLabel}>Total:</Text>
+          <Text style={totalOutOfSpec ? styles.totalValueOutOfSpec : styles.totalValue}>
+            {fmtNum(totalDefects)}
+          </Text>
+          {totalOutOfSpec && maxTotalDefects !== undefined && (
+            <Text style={styles.totalSpecNote}>(max {maxTotalDefects})</Text>
           )}
-          <View style={styles.totalsRow}>
-            <Text style={styles.totalsLabel}>Total defects:</Text>
-            <Text style={totalOutOfSpec ? styles.totalsValueOutOfSpec : styles.totalsValue}>
-              {totalDefects.toFixed(2)}
-            </Text>
-            {totalOutOfSpec && (
-              <Text style={styles.totalsSpecNote}>(max {maxTotalDefects})</Text>
-            )}
-          </View>
         </View>
       </View>
     </View>
