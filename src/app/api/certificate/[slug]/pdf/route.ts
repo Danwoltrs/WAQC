@@ -84,8 +84,9 @@ export async function GET(
     }
     const pdfFilename = sanitizeFilename(certificate.certificate_number) + '.pdf'
 
-    // Try cached PDF first
-    if (certificate.pdf_url) {
+    // Try cached PDF first (skip with ?nocache=1)
+    const skipCache = request.nextUrl.searchParams.get('nocache') === '1'
+    if (!skipCache && certificate.pdf_url) {
       const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
       if (cachedBuffer) {
         return new NextResponse(new Uint8Array(cachedBuffer), {

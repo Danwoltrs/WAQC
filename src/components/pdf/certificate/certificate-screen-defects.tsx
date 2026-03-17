@@ -192,7 +192,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     marginBottom: 4,
   },
-  // Compact total row
+  // Compact total row — spans full defects width
   totalRow: {
     width: '55%',
     flexDirection: 'row',
@@ -202,20 +202,31 @@ const styles = StyleSheet.create({
     paddingTop: 3,
     borderTopWidth: 0.5,
     borderTopColor: COLORS.borderLight,
+    gap: 6,
+  },
+  totalSegment: {
+    flexDirection: 'row',
+    alignItems: 'baseline',
   },
   totalLabel: {
-    fontSize: 8,
+    fontSize: 7,
     fontWeight: 600,
-    color: COLORS.dark,
-    marginRight: 4,
+    color: COLORS.muted,
+    marginRight: 2,
+  },
+  totalLabelOutOfSpec: {
+    fontSize: 7,
+    fontWeight: 600,
+    color: COLORS.outOfSpec,
+    marginRight: 2,
   },
   totalValue: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: 700,
     color: COLORS.dark,
   },
   totalValueOutOfSpec: {
-    fontSize: 9,
+    fontSize: 8,
     fontWeight: 700,
     color: COLORS.outOfSpec,
   },
@@ -223,6 +234,10 @@ const styles = StyleSheet.create({
     fontSize: 5,
     color: COLORS.outOfSpec,
     marginLeft: 2,
+  },
+  totalSeparator: {
+    fontSize: 7,
+    color: COLORS.borderLight,
   },
 })
 
@@ -490,15 +505,51 @@ export function CertificateScreenDefects({
           )}
         </View>
 
-        {/* Compact total row */}
+        {/* Compact total row: Primary: 4 (max 1) | Secondary: 29.50 | Total: 33.50 (max 33) */}
         <View style={styles.totalRow}>
-          <Text style={styles.totalLabel}>Total:</Text>
-          <Text style={totalOutOfSpec ? styles.totalValueOutOfSpec : styles.totalValue}>
-            {fmtNum(totalDefects)}
-          </Text>
-          {totalOutOfSpec && maxTotalDefects !== undefined && (
-            <Text style={styles.totalSpecNote}>(max {maxTotalDefects})</Text>
+          {hasPrimary && (
+            <>
+              <View style={styles.totalSegment}>
+                <Text style={primaryOutOfSpec ? styles.totalLabelOutOfSpec : styles.totalLabel}>
+                  Primary:
+                </Text>
+                <Text style={primaryOutOfSpec ? styles.totalValueOutOfSpec : styles.totalValue}>
+                  {fmtNum(primaryVal)}
+                </Text>
+                {primaryOutOfSpec && maxPrimaryDefects !== undefined && (
+                  <Text style={styles.totalSpecNote}>(max {maxPrimaryDefects})</Text>
+                )}
+              </View>
+              <Text style={styles.totalSeparator}>|</Text>
+            </>
           )}
+          {hasSecondary && (
+            <>
+              <View style={styles.totalSegment}>
+                <Text style={secondaryOutOfSpec ? styles.totalLabelOutOfSpec : styles.totalLabel}>
+                  Secondary:
+                </Text>
+                <Text style={secondaryOutOfSpec ? styles.totalValueOutOfSpec : styles.totalValue}>
+                  {fmtNum(secondaryVal)}
+                </Text>
+                {secondaryOutOfSpec && maxSecondaryDefects !== undefined && (
+                  <Text style={styles.totalSpecNote}>(max {maxSecondaryDefects})</Text>
+                )}
+              </View>
+              <Text style={styles.totalSeparator}>|</Text>
+            </>
+          )}
+          <View style={styles.totalSegment}>
+            <Text style={totalOutOfSpec ? styles.totalLabelOutOfSpec : styles.totalLabel}>
+              Total:
+            </Text>
+            <Text style={totalOutOfSpec ? styles.totalValueOutOfSpec : styles.totalValue}>
+              {fmtNum(totalDefects)}
+            </Text>
+            {totalOutOfSpec && maxTotalDefects !== undefined && (
+              <Text style={styles.totalSpecNote}>(max {maxTotalDefects})</Text>
+            )}
+          </View>
         </View>
       </View>
     </View>
