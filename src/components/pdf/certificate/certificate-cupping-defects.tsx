@@ -2,6 +2,14 @@
  * Certificate cupping and defects combined section
  * Layout: Two separate bordered boxes - Cupping (left) | Defects (right)
  * Defects displayed as compact columns: Name (wt), Count, FD
+ *
+ * Layout rules:
+ * - When no primary defects: collapse primary column, show "No primary defects found" label,
+ *   give secondary full width
+ * - Defect name column is flexible with word-wrap; Cnt and FD are fixed narrow columns (28px)
+ * - Minimum font size 8pt for defect data, weight coefficients in smaller subscript (6pt)
+ * - Total row is visually distinct with top border and semi-bold text
+ * - Numbers right-aligned in their columns
  */
 
 import React from 'react'
@@ -84,41 +92,46 @@ const sectionStyles = StyleSheet.create({
     color: COLORS.muted,
   },
   defectCountHeader: {
-    width: 20,
+    width: 28,
     fontSize: 7,
     color: COLORS.muted,
     textAlign: 'right',
   },
   defectFDHeader: {
-    width: 24,
+    width: 28,
     fontSize: 7,
     color: COLORS.muted,
     textAlign: 'right',
   },
-  // Defect data rows - aligned columns, no wrapping
+  // Defect data rows - flex name column, fixed count/FD columns
   defectRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 1,
   },
-  defectName: {
+  defectNameContainer: {
     flex: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'baseline',
+  },
+  defectName: {
     fontSize: 8,
     color: COLORS.dark,
-    flexDirection: 'row',
   },
   defectWeight: {
-    fontSize: 7,
+    fontSize: 6,
     color: COLORS.muted,
+    marginLeft: 1,
   },
   defectCount: {
-    width: 20,
+    width: 28,
     fontSize: 8,
     color: COLORS.dark,
     textAlign: 'right',
   },
   defectFD: {
-    width: 24,
+    width: 28,
     fontSize: 8,
     fontWeight: 600,
     color: COLORS.dark,
@@ -147,10 +160,56 @@ const sectionStyles = StyleSheet.create({
     fontSize: 8,
     color: COLORS.mutedLight,
   },
+  noPrimaryLabel: {
+    fontSize: 7,
+    color: COLORS.muted,
+    marginBottom: 4,
+    fontStyle: 'italic',
+  },
 })
 
 interface DefectsListProps {
   defects: GreenBeanAnalysis['defects']
+}
+
+/**
+ * Render a single defect column (Primary or Secondary)
+ */
+function DefectColumn({
+  title,
+  defects,
+  total,
+  formatNum,
+}: {
+  title: string
+  defects: Array<{ name: string; rawCount: number; weight: number; weightedCount: number }>
+  total: number
+  formatNum: (n: number) => string
+}) {
+  return (
+    <View style={sectionStyles.defectTypeColumn}>
+      <Text style={sectionStyles.defectTypeTitle}>{title}</Text>
+      <View style={sectionStyles.defectHeaderRow}>
+        <Text style={sectionStyles.defectNameHeader}>Name</Text>
+        <Text style={sectionStyles.defectCountHeader}>Cnt</Text>
+        <Text style={sectionStyles.defectFDHeader}>FD</Text>
+      </View>
+      {defects.map((defect, index) => (
+        <View key={index} style={sectionStyles.defectRow}>
+          <View style={sectionStyles.defectNameContainer}>
+            <Text style={sectionStyles.defectName}>{defect.name}</Text>
+            <Text style={sectionStyles.defectWeight}> ({defect.weight})</Text>
+          </View>
+          <Text style={sectionStyles.defectCount}>{defect.rawCount}</Text>
+          <Text style={sectionStyles.defectFD}>{formatNum(defect.weightedCount)}</Text>
+        </View>
+      ))}
+      <View style={sectionStyles.defectTotal}>
+        <Text style={sectionStyles.totalLabel}>Total:</Text>
+        <Text style={sectionStyles.totalValue}>{formatNum(total)}</Text>
+      </View>
+    </View>
+  )
 }
 
 function DefectsList({ defects }: DefectsListProps) {
@@ -165,6 +224,9 @@ function DefectsList({ defects }: DefectsListProps) {
     if (Number.isInteger(n)) return n.toString()
     return n.toFixed(1)
   }
+
+  const hasPrimary = primaryDefects.length > 0
+  const hasSecondary = secondaryDefects.length > 0
 
   return (
     <View>
@@ -183,67 +245,55 @@ function DefectsList({ defects }: DefectsListProps) {
         </Text>
       </View>
 
+      {/* When no primary defects: show muted label and give secondary full width */}
+      {!hasPrimary && hasSecondary && (
+        <Text style={sectionStyles.noPrimaryLabel}>No primary defects found</Text>
+      )}
+
       {/* Defects Columns */}
       <View style={sectionStyles.defectsRow}>
-        {/* Primary Defects Column */}
-        <View style={sectionStyles.defectTypeColumn}>
-          <Text style={sectionStyles.defectTypeTitle}>Primary</Text>
-          {/* Column headers */}
-          <View style={sectionStyles.defectHeaderRow}>
-            <Text style={sectionStyles.defectNameHeader}>Name</Text>
-            <Text style={sectionStyles.defectCountHeader}>Cnt</Text>
-            <Text style={sectionStyles.defectFDHeader}>FD</Text>
-          </View>
-          {primaryDefects.length === 0 ? (
-            <Text style={sectionStyles.emptyText}>None</Text>
-          ) : (
-            <>
-              {primaryDefects.map((defect, index) => (
-                <View key={index} style={sectionStyles.defectRow}>
-                  <Text style={sectionStyles.defectName}>
-                    {defect.name} <Text style={sectionStyles.defectWeight}>({defect.weight})</Text>
-                  </Text>
-                  <Text style={sectionStyles.defectCount}>{defect.rawCount}</Text>
-                  <Text style={sectionStyles.defectFD}>{formatNum(defect.weightedCount)}</Text>
-                </View>
-              ))}
-            </>
-          )}
-          <View style={sectionStyles.defectTotal}>
-            <Text style={sectionStyles.totalLabel}>Total:</Text>
-            <Text style={sectionStyles.totalValue}>{formatNum(totalPrimary)}</Text>
-          </View>
-        </View>
+        {/* Two-column layout only when both have entries */}
+        {hasPrimary && hasSecondary && (
+          <>
+            <DefectColumn
+              title="Primary"
+              defects={primaryDefects}
+              total={totalPrimary}
+              formatNum={formatNum}
+            />
+            <DefectColumn
+              title="Secondary"
+              defects={secondaryDefects}
+              total={totalSecondary}
+              formatNum={formatNum}
+            />
+          </>
+        )}
 
-        {/* Secondary Defects Column */}
-        <View style={sectionStyles.defectTypeColumn}>
-          <Text style={sectionStyles.defectTypeTitle}>Secondary</Text>
-          {/* Column headers */}
-          <View style={sectionStyles.defectHeaderRow}>
-            <Text style={sectionStyles.defectNameHeader}>Name</Text>
-            <Text style={sectionStyles.defectCountHeader}>Cnt</Text>
-            <Text style={sectionStyles.defectFDHeader}>FD</Text>
-          </View>
-          {secondaryDefects.length === 0 ? (
-            <Text style={sectionStyles.emptyText}>None</Text>
-          ) : (
-            <>
-              {secondaryDefects.map((defect, index) => (
-                <View key={index} style={sectionStyles.defectRow}>
-                  <Text style={sectionStyles.defectName}>
-                    {defect.name} <Text style={sectionStyles.defectWeight}>({defect.weight})</Text>
-                  </Text>
-                  <Text style={sectionStyles.defectCount}>{defect.rawCount}</Text>
-                  <Text style={sectionStyles.defectFD}>{formatNum(defect.weightedCount)}</Text>
-                </View>
-              ))}
-            </>
-          )}
-          <View style={sectionStyles.defectTotal}>
-            <Text style={sectionStyles.totalLabel}>Total:</Text>
-            <Text style={sectionStyles.totalValue}>{formatNum(totalSecondary)}</Text>
-          </View>
-        </View>
+        {/* Only primary */}
+        {hasPrimary && !hasSecondary && (
+          <DefectColumn
+            title="Primary"
+            defects={primaryDefects}
+            total={totalPrimary}
+            formatNum={formatNum}
+          />
+        )}
+
+        {/* Only secondary (primary collapsed) — full width */}
+        {!hasPrimary && hasSecondary && (
+          <DefectColumn
+            title="Secondary"
+            defects={secondaryDefects}
+            total={totalSecondary}
+            formatNum={formatNum}
+          />
+        )}
+
+        {/* Neither */}
+        {!hasPrimary && !hasSecondary && (
+          <Text style={sectionStyles.emptyText}>No defects recorded</Text>
+        )}
       </View>
     </View>
   )

@@ -4,6 +4,14 @@
  * Screen: sorted largest to smallest with pan always last
  * Defects: summary row on top, two columns (Primary | Secondary) with dotted lines to counts
  * Supports out-of-spec highlighting (red+bold) with limit notes
+ *
+ * Layout rules:
+ * - When no primary defects: collapse primary column, show "No primary defects found" label,
+ *   give secondary full width
+ * - Defect name column is flexible with word-wrap; QTY and DEF are fixed narrow columns
+ * - Minimum font size 8pt for defect data, weight coefficients in smaller subscript
+ * - Total row is visually distinct with top border and semi-bold text
+ * - Numbers right-aligned in their columns
  */
 
 import React from 'react'
@@ -80,7 +88,7 @@ const styles = StyleSheet.create({
     marginRight: 16,
   },
   summaryLabel: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.muted,
     marginRight: 4,
@@ -105,7 +113,7 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
   },
   defectColumn: {
-    width: 140,
+    flex: 1,
   },
   defectHeaderRow: {
     flexDirection: 'row',
@@ -123,7 +131,7 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
   },
   defectHeaderQty: {
-    width: 22,
+    width: 28,
     fontSize: 6,
     fontWeight: 600,
     color: COLORS.muted,
@@ -146,7 +154,7 @@ const styles = StyleSheet.create({
     minHeight: 20,
   },
   defectColumnTitle: {
-    fontSize: 7,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.muted,
     textTransform: 'uppercase',
@@ -155,39 +163,42 @@ const styles = StyleSheet.create({
   },
   defectRow: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     paddingVertical: 1,
   },
   defectNameContainer: {
     flex: 1,
     flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'baseline',
   },
   defectName: {
-    fontSize: 7,
+    fontSize: 8,
     color: COLORS.dark,
   },
   defectWeight: {
-    fontSize: 5,
+    fontSize: 6,
     color: COLORS.muted,
     marginLeft: 1,
   },
   defectQty: {
-    width: 22,
-    fontSize: 7,
+    width: 28,
+    fontSize: 8,
     fontWeight: 600,
     color: COLORS.dark,
     textAlign: 'right',
   },
   defectDef: {
     width: 28,
-    fontSize: 7,
+    fontSize: 8,
     color: COLORS.dark,
     textAlign: 'right',
   },
-  noData: {
+  noPrimaryLabel: {
     fontSize: 7,
     color: COLORS.muted,
+    marginBottom: 4,
+    fontStyle: 'italic',
   },
 })
 
@@ -320,6 +331,44 @@ function checkScreenSpec(
   return { outOfSpec: false, note: '' }
 }
 
+/**
+ * Render a single defect column (Primary or Secondary)
+ */
+function DefectColumnContent({
+  title,
+  defects,
+}: {
+  title: string
+  defects: Defect[]
+}) {
+  return (
+    <View style={styles.defectColumn}>
+      <Text style={styles.defectColumnTitle}>{title}</Text>
+      <View style={styles.defectHeaderRow}>
+        <Text style={styles.defectHeaderName}>Defect</Text>
+        <Text style={styles.defectHeaderQty}>Qty</Text>
+        <Text style={styles.defectHeaderDef}>Def</Text>
+      </View>
+      {defects.map((defect, index) => {
+        const weight = defect.weight ?? 1
+        const weighted = Math.round((defect.count * weight) * 100) / 100
+        return (
+          <View key={index} style={styles.defectRow}>
+            <View style={styles.defectNameContainer}>
+              <Text style={styles.defectName}>{defect.name}</Text>
+              {weight !== 1 && (
+                <Text style={styles.defectWeight}> ({weight})</Text>
+              )}
+            </View>
+            <Text style={styles.defectQty}>{defect.count}</Text>
+            <Text style={styles.defectDef}>{weighted}</Text>
+          </View>
+        )
+      })}
+    </View>
+  )
+}
+
 export function CertificateScreenDefects({
   screenSizes,
   defects,
@@ -364,6 +413,9 @@ export function CertificateScreenDefects({
   const secondaryOutOfSpec = maxSecondaryDefects !== undefined && secondaryVal > maxSecondaryDefects
   const totalOutOfSpec = maxTotalDefects !== undefined && totalDefects > maxTotalDefects
 
+  const hasPrimary = primaryDefects.length > 0
+  const hasSecondary = secondaryDefects.length > 0
+
   return (
     <View style={styles.container}>
       {/* Screen Distribution Section */}
@@ -390,65 +442,32 @@ export function CertificateScreenDefects({
         <View style={styles.screenDefectsSeparator} />
       )}
 
-      {/* Defects Section - always show Primary */}
+      {/* Defects Section */}
       <View style={styles.defectsSection}>
+        {/* When no primary defects: show muted label and give secondary full width */}
+        {!hasPrimary && hasSecondary && (
+          <Text style={styles.noPrimaryLabel}>No primary defects found</Text>
+        )}
+
         {/* Defect columns */}
         <View style={styles.defectsColumnsContainer}>
-          {/* Primary Defects Column — always shown */}
-          <View style={styles.defectColumn}>
-            <Text style={styles.defectColumnTitle}>Primary</Text>
-            <View style={styles.defectHeaderRow}>
-              <Text style={styles.defectHeaderName}>Defect</Text>
-              <Text style={styles.defectHeaderQty}>Qty</Text>
-              <Text style={styles.defectHeaderDef}>Def</Text>
-            </View>
-            {primaryDefects.length > 0 ? (
-              primaryDefects.map((defect, index) => {
-                const weight = defect.weight ?? 1
-                const weighted = Math.round((defect.count * weight) * 100) / 100
-                return (
-                  <View key={index} style={styles.defectRow}>
-                    <View style={styles.defectNameContainer}>
-                      <Text style={styles.defectName}>{defect.name}</Text>
-                      {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
-                    </View>
-                    <Text style={styles.defectQty}>{defect.count}</Text>
-                    <Text style={styles.defectDef}>{weighted}</Text>
-                  </View>
-                )
-              })
-            ) : (
-              <Text style={styles.noData}>None</Text>
-            )}
-          </View>
-
-          {/* Vertical separator + Secondary — only when secondary has data */}
-          {secondaryDefects.length > 0 && (
+          {/* Two-column layout only when both have entries */}
+          {hasPrimary && hasSecondary && (
             <>
+              <DefectColumnContent title="Primary" defects={primaryDefects} />
               <View style={styles.columnSeparator} />
-              <View style={styles.defectColumn}>
-                <Text style={styles.defectColumnTitle}>Secondary</Text>
-                <View style={styles.defectHeaderRow}>
-                  <Text style={styles.defectHeaderName}>Defect</Text>
-                  <Text style={styles.defectHeaderQty}>Qty</Text>
-                  <Text style={styles.defectHeaderDef}>Def</Text>
-                </View>
-                {secondaryDefects.map((defect, index) => {
-                  const weight = defect.weight ?? 1
-                  const weighted = Math.round((defect.count * weight) * 100) / 100
-                  return (
-                    <View key={index} style={styles.defectRow}>
-                      <View style={styles.defectNameContainer}>
-                        <Text style={styles.defectName}>{defect.name}</Text>
-                        {weight !== 1 && <Text style={styles.defectWeight}>({weight})</Text>}
-                      </View>
-                      <Text style={styles.defectQty}>{defect.count}</Text>
-                      <Text style={styles.defectDef}>{weighted}</Text>
-                    </View>
-                  )
-                })}
-              </View>
+              <DefectColumnContent title="Secondary" defects={secondaryDefects} />
             </>
+          )}
+
+          {/* Only primary */}
+          {hasPrimary && !hasSecondary && (
+            <DefectColumnContent title="Primary" defects={primaryDefects} />
+          )}
+
+          {/* Only secondary (primary collapsed) — full width */}
+          {!hasPrimary && hasSecondary && (
+            <DefectColumnContent title="Secondary" defects={secondaryDefects} />
           )}
         </View>
 

@@ -237,7 +237,8 @@ export async function PATCH(
       'importer_is_qc_client',
       'end_client_id',
       'end_client_contract_nr',
-      'supplier_contract_nr'
+      'supplier_contract_nr',
+      'quality_name'
     ]
 
     for (const field of allowedFields) {
@@ -289,6 +290,44 @@ export async function PATCH(
     const hasCertFieldChange = certFields.some((f) => body[f] !== undefined)
     if (hasCertFieldChange) {
       invalidateCertificatePdf(supabase, id).catch(() => {})
+    }
+
+    // Re-evaluate certificate when quality_spec_id changes
+    if (body.quality_spec_id !== undefined) {
+      try {
+        const { data: cert } = await supabase
+          .from('certificates')
+          .select('id, approved, is_rejected, status')
+          .eq('sample_id', id)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        if (cert) {
+          if (cert.approved && !cert.is_rejected) {
+            // Approved cert with changed quality → mark rejected for re-evaluation
+            await supabase
+              .from('certificates')
+              .update({
+                is_rejected: true,
+                approved: false,
+                override_comment: 'Quality spec changed, re-evaluation required',
+              })
+              .eq('id', cert.id)
+          } else if (cert.is_rejected) {
+            // Already rejected cert with changed quality → flag for re-review
+            await supabase
+              .from('certificates')
+              .update({
+                override_comment: 'Quality spec changed, re-review recommended',
+              })
+              .eq('id', cert.id)
+          }
+        }
+      } catch (certError) {
+        console.error('Error re-evaluating certificate after quality change:', certError)
+        // Non-blocking: sample update still succeeded
+      }
     }
 
     return NextResponse.json({ sample })

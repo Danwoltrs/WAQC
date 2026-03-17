@@ -34,9 +34,10 @@ const defectStyles = StyleSheet.create({
     marginBottom: 4,
   },
   defectName: {
-    width: 100,
+    width: 110,
     fontSize: 8,
     color: COLORS.dark,
+    flexWrap: 'wrap',
   },
   barContainer: {
     flex: 1,

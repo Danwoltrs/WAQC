@@ -162,6 +162,10 @@ export function SampleDetailModal({
     roaster: true
   })
 
+  // Quality spec options for dropdown
+  const [qualityOptions, setQualityOptions] = useState<Array<{ id: string; custom_name: string; quality_code: string | null }>>([])
+  const [loadingQualities, setLoadingQualities] = useState(false)
+
   // QR Code modal state
   const [showQrModal, setShowQrModal] = useState(false)
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null)
@@ -238,6 +242,27 @@ export function SampleDetailModal({
     }
   }
 
+  const loadQualityOptions = async (clientId: string) => {
+    try {
+      setLoadingQualities(true)
+      const res = await fetch(`/api/client-qualities?client_id=${clientId}&is_active=true`)
+      if (res.ok) {
+        const data = await res.json()
+        setQualityOptions(
+          (data.client_qualities || []).map((q: any) => ({
+            id: q.id,
+            custom_name: q.custom_name || q.template?.name || 'Unnamed',
+            quality_code: q.quality_code,
+          }))
+        )
+      }
+    } catch (error) {
+      console.error('Error loading quality options:', error)
+    } finally {
+      setLoadingQualities(false)
+    }
+  }
+
   const handleEnterEditMode = () => {
     if (!sample) return
     setFormData({
@@ -259,6 +284,7 @@ export function SampleDetailModal({
       processing_method: sample.processing_method,
       micro_origin: sample.micro_origin,
       storage_position: sample.storage_position,
+      quality_spec_id: sample.quality_spec_id,
       ...(sample.seller_id ? { seller_id: sample.seller_id } : {}),
       ...(sample.exporter_id ? { exporter_id: sample.exporter_id } : {}),
       ...(sample.importer_id ? { importer_id: sample.importer_id } : {}),
@@ -267,6 +293,10 @@ export function SampleDetailModal({
       ...(sample.client_id ? { client_id: sample.client_id } : {}),
     })
     setIsEditMode(true)
+    // Load quality options for the client
+    if (sample.client_id) {
+      loadQualityOptions(sample.client_id)
+    }
   }
 
   const handleCancelEdit = () => {
@@ -279,10 +309,20 @@ export function SampleDetailModal({
 
     try {
       setSaving(true)
+      // If quality_spec_id changed, also update quality_name
+      const saveData: Record<string, any> = { ...formData }
+      if (saveData.quality_spec_id && saveData.quality_spec_id !== sample.quality_spec_id) {
+        const selectedQuality = qualityOptions.find(q => q.id === saveData.quality_spec_id)
+        if (selectedQuality) {
+          saveData.quality_name = selectedQuality.custom_name
+        }
+      } else if (saveData.quality_spec_id === null && sample.quality_spec_id) {
+        saveData.quality_name = null
+      }
       const response = await fetch(`/api/samples/${sample.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData)
+        body: JSON.stringify(saveData)
       })
 
       if (!response.ok) {
@@ -795,7 +835,27 @@ export function SampleDetailModal({
                         </div>
                         <div>
                           <label className="text-sm text-muted-foreground">Quality</label>
-                          <div className="text-sm font-medium mt-1">{sample.quality_name || '-'}</div>
+                          {isEditMode ? (
+                            <Select
+                              value={formData.quality_spec_id || sample.quality_spec_id || '__none__'}
+                              onValueChange={(v) => handleFormChange('quality_spec_id', v === '__none__' ? null : v)}
+                              disabled={loadingQualities}
+                            >
+                              <SelectTrigger className="h-8 text-sm mt-1">
+                                <SelectValue placeholder={loadingQualities ? 'Loading...' : 'Select quality...'} />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="__none__">- None -</SelectItem>
+                                {qualityOptions.map((q) => (
+                                  <SelectItem key={q.id} value={q.id}>
+                                    {q.custom_name}{q.quality_code ? ` (${q.quality_code})` : ''}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          ) : (
+                            <div className="text-sm font-medium mt-1">{sample.quality_name || '-'}</div>
+                          )}
                         </div>
                         <div>
                           <label className="text-sm text-muted-foreground">Processing</label>
