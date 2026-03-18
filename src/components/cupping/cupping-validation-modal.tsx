@@ -547,25 +547,8 @@ export function CuppingValidationModal({
   // Calculate overall final score
   const overallFinalScore = Object.values(finalScores).reduce((sum, v) => sum + v, 0)
 
-  if (loading) {
-    return (
-      <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Score Validation</DialogTitle>
-            <DialogDescription>Loading scores...</DialogDescription>
-          </DialogHeader>
-          <div className="flex items-center justify-center p-8">
-            <Loader2 className="h-8 w-8 animate-spin" />
-          </div>
-        </DialogContent>
-      </Dialog>
-    )
-  }
-
-  // Quick-action helpers for master cupper
+  // Quick-action helpers for master cupper (must be before early returns for hook rules)
   const applyKeepMine = useCallback((attribute: string) => {
-    // Find the current user's (master cupper's) score for this attribute
     const myScore = individualScores.find(s => s.is_master_cupper || s.is_own_score)
     if (!myScore) return
     const value = myScore.scores[attribute]
@@ -636,6 +619,22 @@ export function CuppingValidationModal({
     }
     setFinalScores(prev => ({ ...prev, ...newScores }))
   }, [individualScores, aggregated])
+
+  if (loading) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Score Validation</DialogTitle>
+            <DialogDescription>Loading scores...</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center p-8">
+            <Loader2 className="h-8 w-8 animate-spin" />
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
 
   if (!aggregated || individualScores.length === 0) {
     return (
