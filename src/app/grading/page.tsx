@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
@@ -16,9 +16,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { Save, Eye, EyeOff, Camera, ChevronLeft, ChevronRight } from 'lucide-react'
-import { DefectPhotoUpload } from '@/components/grading/defect-photo-upload'
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts'
+import { Save, Eye, EyeOff, ImageIcon } from 'lucide-react'
+import { SampleTabsNavigation, SampleTabItem } from '@/components/samples/sample-tabs-navigation'
 import {
   DefectConfig,
   DefectThresholds,
@@ -47,13 +46,10 @@ import {
 import { useToast } from '@/hooks/use-toast'
 
 // Chart colors from design system
-const CHART_COLORS = ['#556b2f', '#a9a454', '#efe4d4', '#b07946', '#445763', '#151618']
+// Chart colors kept for potential future use
+// const CHART_COLORS = ['#556b2f', '#a9a454', '#efe4d4', '#b07946', '#445763', '#151618']
 
 // Helper function to check if dark mode is active
-function isDarkMode(): boolean {
-  if (typeof window === 'undefined') return false
-  return document.documentElement.classList.contains('dark')
-}
 
 interface Sample {
   id: string
@@ -139,7 +135,6 @@ export default function GradingPage() {
   } | null>(null)
 
   // Theme tracking for chart re-rendering
-  const [theme, setTheme] = useState<'light' | 'dark'>(() => isDarkMode() ? 'dark' : 'light')
 
   // Visibility settings using shared utility
   const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
@@ -160,7 +155,7 @@ export default function GradingPage() {
   const [humidityConstraintsMap, setHumidityConstraintsMap] = useState<Map<string, { min?: number; max?: number }>>(new Map())
 
   // Mobile view toggle for grading page
-  const [mobileView, setMobileView] = useState<'screen' | 'grading'>('screen')
+  // Mobile view toggle removed - desktop-only layout
 
   // Green/Roast aspect constraints per sample (either rejectable values or minimum acceptable level)
   const [greenAspectConstraintsMap, setGreenAspectConstraintsMap] = useState<Map<string, string[] | { min_value: number; min_label: string }>>(new Map())
@@ -181,46 +176,7 @@ export default function GradingPage() {
   // Raw decimal input strings (to allow typing "0." without it being parsed to "0")
   const [rawInputsMap, setRawInputsMap] = useState<Map<string, { density?: string; moisture?: string }>>(new Map())
 
-  // Tab scroll state
-  const tabsScrollRef = useRef<HTMLDivElement>(null)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(false)
-
-  const updateScrollButtons = useCallback(() => {
-    const el = tabsScrollRef.current
-    if (!el) return
-    setCanScrollLeft(el.scrollLeft > 0)
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
-  }, [])
-
-  const scrollTabs = useCallback((direction: 'left' | 'right') => {
-    const el = tabsScrollRef.current
-    if (!el) return
-    el.scrollBy({ left: direction === 'left' ? -200 : 200, behavior: 'smooth' })
-  }, [])
-
-  useEffect(() => {
-    updateScrollButtons()
-    const el = tabsScrollRef.current
-    if (!el) return
-    const observer = new ResizeObserver(updateScrollButtons)
-    observer.observe(el)
-    return () => observer.disconnect()
-  }, [samples, updateScrollButtons])
-
-  // Watch for theme changes
-  useEffect(() => {
-    const observer = new MutationObserver(() => {
-      setTheme(isDarkMode() ? 'dark' : 'light')
-    })
-
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ['class']
-    })
-
-    return () => observer.disconnect()
-  }, [])
+  // Build sample tab items for the shared navigation component
 
   useEffect(() => {
     loadSamples()
@@ -414,6 +370,37 @@ export default function GradingPage() {
       }
     }
   }
+
+  // Build sample tab items for the shared navigation component
+  const sampleTabItems: SampleTabItem[] = useMemo(() => {
+    return samples.map(sample => {
+      const gradingData = gradingDataMap.get(sample.id)
+      const hasScreenData = gradingData && Object.values(gradingData.screen_sizes).some(g => g > 0)
+      const hasDefectData = gradingData && Object.values(gradingData.defect_counts).some(c => c > 0)
+      const hasOtherData = gradingData && (gradingData.moisture_percentage > 0 || gradingData.green_aspect || gradingData.roast_aspect)
+      const hasAnyData = hasScreenData || hasDefectData || hasOtherData
+      const hasBothSections = (hasScreenData || hasOtherData) && hasDefectData
+
+      let status: SampleTabItem['status'] = 'none'
+      if (hasAnyData) {
+        if (!hasBothSections) {
+          status = 'in-progress'
+        } else {
+          const compliance = getComplianceStatus(sample.id)
+          status = compliance.status === 'fail' ? 'fail' : 'pass'
+        }
+      }
+
+      return {
+        id: sample.id,
+        label: getSampleTabLabel(sample),
+        sublabel: sample.sample_type === 'ss' && sample.container_nr
+          ? sample.container_nr
+          : sample.sample_type || 'sample',
+        status,
+      }
+    })
+  }, [samples, gradingDataMap, getComplianceStatus])
 
   // Calculate percentages from gram inputs
   const calculatePercentages = (screenSizesGrams: { [key: string]: number }): { [key: string]: number } => {
@@ -1062,6 +1049,28 @@ export default function GradingPage() {
     setDefectPhotosMap(new Map(defectPhotosMap.set(sampleId, photos)))
   }
 
+  const handlePhotoUpload = async (sampleId: string, file: File) => {
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+      toast({ title: 'Invalid file type', description: 'Only JPEG, PNG, and WebP are allowed.', variant: 'destructive' })
+      return
+    }
+    try {
+      const formData = new FormData()
+      formData.append('file', file, file.name)
+      const response = await fetch(`/api/samples/${sampleId}/photos`, { method: 'POST', body: formData })
+      if (!response.ok) {
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Upload failed')
+      }
+      const data = await response.json()
+      const existing = defectPhotosMap.get(sampleId) || []
+      handlePhotosChange(sampleId, [...existing, data.photo])
+      toast({ title: 'Photo uploaded', description: 'Sample photo has been saved successfully.' })
+    } catch (error: any) {
+      toast({ title: 'Upload failed', description: error.message || 'Failed to upload photo.', variant: 'destructive' })
+    }
+  }
+
   const handleSaveCurrent = async () => {
     if (!activeSampleId) return
 
@@ -1134,42 +1143,6 @@ export default function GradingPage() {
     }
   }
 
-  // Extract only screen size percentages for memoization dependency
-  // This prevents chart re-render when defects, humidity, or aspects change
-  const screenPercentagesKey = useMemo(() => {
-    return samples.map(sample => {
-      const gradingData = gradingDataMap.get(sample.id)
-      if (!gradingData) return `${sample.id}:empty`
-      return `${sample.id}:${JSON.stringify(gradingData.screen_sizes_percentages)}`
-    }).join('|')
-  }, [samples, gradingDataMap])
-
-  // Memoize chart data for all samples at component level to prevent unnecessary re-renders
-  // Must be called before early returns to maintain consistent hook order
-  // Only recalculates when screen size values actually change (not when defects/humidity/aspects change)
-  const allChartDataMap = useMemo(() => {
-    const chartDataMap = new Map<string, Array<{name: string; value: number}>>()
-
-    samples.forEach(sample => {
-      const gradingData = gradingDataMap.get(sample.id)
-      const screens = screenConstraintsMap.get(sample.id) || []
-
-      if (gradingData) {
-        const chartData = screens
-          .filter(screen => (gradingData.screen_sizes_percentages[screen.screen_size] || 0) > 0)
-          .map((screen) => ({
-            name: formatScreenLabel(screen.screen_size),
-            value: gradingData.screen_sizes_percentages[screen.screen_size] || 0
-          }))
-
-        chartDataMap.set(sample.id, chartData)
-      } else {
-        chartDataMap.set(sample.id, [])
-      }
-    })
-
-    return chartDataMap
-  }, [samples, screenPercentagesKey, screenConstraintsMap])
 
   if (loading) {
     return (
@@ -1217,85 +1190,13 @@ export default function GradingPage() {
   return (
     <MainLayout>
       <div className="h-full bg-background">
-      {/* Tabs with Save Button */}
+      {/* Tabs with Sample Navigation */}
       <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
-        <div className="border-b bg-card sticky top-0 z-50">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center flex-1 min-w-0">
-              {canScrollLeft && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-14 w-8 shrink-0 rounded-none border-r"
-                  onClick={() => scrollTabs('left')}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-              )}
-              <div
-                ref={tabsScrollRef}
-                className="overflow-x-auto flex-1 scrollbar-hide"
-                onScroll={updateScrollButtons}
-              >
-                <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start w-max">
-                  {samples.map((sample, index) => {
-                    const isActive = sample.id === activeSampleId
-                    const gradingData = gradingDataMap.get(sample.id)
-
-                    const hasData = gradingData && (
-                      Object.values(gradingData.defect_counts).some(count => count > 0) ||
-                      Object.values(gradingData.screen_sizes).some(grams => grams > 0) ||
-                      gradingData.moisture_percentage > 0 ||
-                      gradingData.green_aspect ||
-                      gradingData.roast_aspect
-                    )
-
-                    let bgColor = ''
-                    if (isActive) {
-                      bgColor = 'bg-yellow-500/20'
-                    } else if (hasData) {
-                      const compliance = getComplianceStatus(sample.id)
-                      if (compliance.status === 'fail') {
-                        bgColor = 'bg-red-500/20'
-                      } else if (compliance.status === 'pass') {
-                        bgColor = 'bg-green-500/20'
-                      }
-                    }
-
-                    return (
-                      <div key={sample.id} className={`flex items-center ${bgColor}`}>
-                        {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
-                        <TabsTrigger
-                          value={sample.id}
-                          className={`rounded-none border-b-2 border-transparent data-[state=active]:border-b-primary data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
-                        >
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {sample.sample_type === 'ss' && sample.container_nr
-                                ? sample.container_nr
-                                : <span className="capitalize">{sample.sample_type || 'sample'}</span>}
-                            </span>
-                          </div>
-                        </TabsTrigger>
-                      </div>
-                    )
-                  })}
-                </TabsList>
-              </div>
-              {canScrollRight && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-14 w-8 shrink-0 rounded-none border-l"
-                  onClick={() => scrollTabs('right')}
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              )}
-            </div>
-          </div>
-        </div>
+        <SampleTabsNavigation
+          samples={sampleTabItems}
+          activeSampleId={activeSampleId}
+          onSampleChange={setActiveSampleId}
+        />
 
         {samples.map(sample => {
           const gradingData = gradingDataMap.get(sample.id)
@@ -1304,9 +1205,6 @@ export default function GradingPage() {
           const primaries = getDefectsByCategory(defects, 'primary')
           const secondaries = getDefectsByCategory(defects, 'secondary')
           const clientQuality = clientQualityMap.get(sample.id)
-
-          // Get pre-calculated chart data from top-level memoized map
-          const chartData = allChartDataMap.get(sample.id) || []
 
           return (
             <TabsContent key={sample.id} value={sample.id} className="m-0">
@@ -1418,10 +1316,35 @@ export default function GradingPage() {
                       </Button>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Button onClick={handleSaveCurrent} disabled={saving} size="sm">
-                      <Save className="h-3.5 w-3.5 mr-1.5" />
-                      {saving ? 'Saving...' : 'Save'}
+                  <div className="flex items-center gap-3 shrink-0">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={() => {
+                        const input = document.createElement('input')
+                        input.type = 'file'
+                        input.accept = 'image/*'
+                        input.capture = 'environment'
+                        input.onchange = (e) => {
+                          const file = (e.target as HTMLInputElement).files?.[0]
+                          if (file) handlePhotoUpload(sample.id, file)
+                        }
+                        input.click()
+                      }}
+                      title="Upload sample photo"
+                    >
+                      <ImageIcon className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      onClick={handleSaveCurrent}
+                      disabled={saving}
+                      title={saving ? 'Saving...' : 'Save'}
+                    >
+                      <Save className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -1429,187 +1352,105 @@ export default function GradingPage() {
 
               {/* Grading Content */}
               <div className="p-6">
-                {/* Screen Size Distribution + Defects (Responsive: Vertical on small screens, Horizontal on large) */}
                 <div className="flex flex-col lg:flex-row gap-6 items-start">
-                  {/* Screen Size Distribution - Compact Card */}
+                  {/* Screen Size Distribution - Clean Table */}
                   <Card className="w-full lg:w-fit self-start">
                     <CardContent className="pt-4 pb-4 px-4">
-                      {/* Mobile Toggle Buttons */}
-                      <div className="md:hidden flex gap-2 mb-4">
-                        <Button
-                          variant={mobileView === 'screen' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setMobileView('screen')}
-                          className="flex-1"
-                        >
-                          Screen
-                        </Button>
-                        <Button
-                          variant={mobileView === 'grading' ? 'default' : 'outline'}
-                          size="sm"
-                          onClick={() => setMobileView('grading')}
-                          className="flex-1"
-                        >
-                          Grading
-                        </Button>
-                      </div>
+                      <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
+                      {(() => {
+                        const screenComp = getScreenSizeCompliance(sample.id)
+                        const totalScreens = screens.length
+                        const shouldSplit = totalScreens > 10
+                        const midpoint = shouldSplit ? Math.ceil(totalScreens / 2) : totalScreens
+                        const firstColumn = screens.slice(0, midpoint)
+                        const secondColumn = shouldSplit ? screens.slice(midpoint) : []
 
-                      {/* Screen Section */}
-                      <div className={mobileView === 'screen' ? 'block' : 'hidden md:block'}>
-                        <h3 className="text-sm font-semibold mb-3">Screen Size Distribution</h3>
-                      <div className="flex gap-2">
-                        {/* Screen Size Inputs - Split into 2 columns if > 10 screens */}
-                        <div className="flex-1">
-                          {(() => {
-                            const screenComp = getScreenSizeCompliance(sample.id)
-                            const totalScreens = screens.length
-                            const shouldSplit = totalScreens > 10
-                            const midpoint = shouldSplit ? Math.ceil(totalScreens / 2) : totalScreens
-                            const firstColumn = screens.slice(0, midpoint)
-                            const secondColumn = shouldSplit ? screens.slice(midpoint) : []
+                        const renderScreenRow = (screen: ScreenSizeConstraint, rowIndex: number) => {
+                          const rawGrams = gradingData?.screen_sizes[screen.screen_size]
+                          const gramsValue = rawGrams !== undefined ? rawGrams : ''
+                          const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
+                          const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
+                          const isEven = rowIndex % 2 === 0
 
-                            const renderScreenRow = (screen: ScreenSizeConstraint) => {
-                              const rawGrams = gradingData?.screen_sizes[screen.screen_size]
-                              const gramsValue = rawGrams !== undefined ? rawGrams : ''
-                              const percentage = gradingData?.screen_sizes_percentages[screen.screen_size] || 0
-                              const isViolated = screenComp.violatedScreens.includes(screen.screen_size)
-
-                              return (
-                                <div key={screen.screen_size} className="grid grid-cols-[70px_64px_45px] gap-2 items-center">
-                                  <Label className="text-sm font-medium">{formatScreenLabel(screen.screen_size)}</Label>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="1"
-                                    value={gramsValue}
-                                    onFocus={(e) => e.target.select()}
-                                    onChange={(e) => {
-                                      const val = e.target.value
-                                      handleScreenSizeChange(sample.id, screen.screen_size, val === '' ? 0 : (parseFloat(val) || 0))
-                                    }}
-                                    className="w-[64px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                    placeholder="g"
-                                  />
-                                  <div className={`text-xs ${isViolated ? 'text-red-600 dark:text-red-400 font-bold' : 'text-muted-foreground'}`}>
-                                    {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
-                                  </div>
-                                </div>
-                              )
-                            }
-
-                            return (
-                              <>
-                                <div className={`flex ${shouldSplit ? 'gap-2' : ''}`}>
-                                  {/* First Column */}
-                                  <div className="space-y-1.5 flex-1">
-                                    {firstColumn.map(renderScreenRow)}
-                                  </div>
-
-                                  {/* Second Column (if needed) */}
-                                  {shouldSplit && (
-                                    <div className="space-y-1.5 flex-1">
-                                      {secondColumn.map(renderScreenRow)}
-                                    </div>
-                                  )}
-                                </div>
-
-                                {/* Total Row */}
-                                <div className="grid grid-cols-[70px_60px_45px] gap-1.5 items-center pt-2 mt-2 border-t">
-                                  <Label className="text-sm font-semibold">Total</Label>
-                                  <div className="text-sm font-semibold">
-                                    {Object.values(gradingData?.screen_sizes || {}).reduce((sum, val) => sum + val, 0)}g
-                                  </div>
-                                  <div className="text-xs text-muted-foreground font-semibold">
-                                    100%
-                                  </div>
-                                </div>
-                              </>
-                            )
-                          })()}
-                        </div>
-
-                        {/* Pie Chart - Hidden for type samples or when more than 6 screens */}
-                        {chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6 && (
-                          <div className="hidden md:block w-[180px] flex-shrink-0">
-                            <ResponsiveContainer width="100%" height={140}>
-                              <PieChart key={theme}>
-                                <Pie
-                                  data={chartData}
-                                  cx="50%"
-                                  cy="50%"
-                                  innerRadius={20}
-                                  outerRadius={30}
-                                  paddingAngle={2}
-                                  dataKey="value"
-                                  label={(props: any) => {
-                                    const isDarkMode = document.documentElement.classList.contains('dark')
-                                    const textColor = isDarkMode ? '#ffffff' : '#000000'
-                                    const textAnchor = props.x > props.cx ? 'start' : 'end'
-                                    return (
-                                      <g>
-                                        <text
-                                          x={props.x}
-                                          y={props.y - 6}
-                                          fill={textColor}
-                                          textAnchor={textAnchor}
-                                          dominantBaseline="central"
-                                          fontSize="10px"
-                                          fontWeight="500"
-                                        >
-                                          {props.name}
-                                        </text>
-                                        <text
-                                          x={props.x}
-                                          y={props.y + 6}
-                                          fill={textColor}
-                                          textAnchor={textAnchor}
-                                          dominantBaseline="central"
-                                          fontSize="10px"
-                                          fontWeight="500"
-                                        >
-                                          {`${props.value.toFixed(1)}%`}
-                                        </text>
-                                      </g>
-                                    )
+                          return (
+                            <tr key={screen.screen_size} className={isEven ? 'bg-muted/30' : ''}>
+                              <td className="py-1.5 px-3 text-sm font-medium whitespace-nowrap">{formatScreenLabel(screen.screen_size)}</td>
+                              <td className="py-1 px-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  value={gramsValue}
+                                  onFocus={(e) => e.target.select()}
+                                  onChange={(e) => {
+                                    const val = e.target.value
+                                    handleScreenSizeChange(sample.id, screen.screen_size, val === '' ? 0 : (parseFloat(val) || 0))
                                   }}
-                                  labelLine={{
-                                    stroke: document.documentElement.classList.contains('dark')
-                                      ? '#666666'
-                                      : '#999999',
-                                    strokeWidth: 1
-                                  }}
-                                >
-                                  {chartData.map((entry, index) => (
-                                    <Cell
-                                      key={`cell-${index}`}
-                                      fill={CHART_COLORS[index % CHART_COLORS.length]}
-                                      stroke="hsl(var(--background))"
-                                      strokeWidth={2}
-                                    />
-                                  ))}
-                                </Pie>
-                                <Tooltip
-                                  contentStyle={{
-                                    backgroundColor: 'hsl(var(--popover))',
-                                    border: '1px solid hsl(var(--border))',
-                                    borderRadius: '8px',
-                                    fontSize: '12px'
-                                  }}
-                                  formatter={(value: number) => `${value.toFixed(1)}%`}
+                                  className="w-[60px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                  placeholder="g"
                                 />
-                              </PieChart>
-                            </ResponsiveContainer>
-                          </div>
-                        )}
-                      </div>
-                      </div>
-                      {/* End Screen Section */}
+                              </td>
+                              <td className={`py-1.5 px-2 text-xs text-right ${isViolated ? 'text-red-600 dark:text-red-400 font-bold' : 'text-muted-foreground'}`}>
+                                {percentage > 0 ? `${percentage.toFixed(1)}%` : ''}
+                              </td>
+                            </tr>
+                          )
+                        }
 
-                      {/* Grading Section */}
-                      <div className={mobileView === 'grading' ? 'block' : 'hidden md:block'}>
-                        {/* Quakers, Humidity, Green Aspect, Roast Aspect */}
-                        {(() => {
-                        const hasChart = chartData.length > 0 && sample.sample_type !== 'type' && screens.length <= 6
+                        return (
+                          <div className={`flex ${shouldSplit ? 'gap-4' : ''}`}>
+                            <table className="border-collapse">
+                              <thead>
+                                <tr className="border-b">
+                                  <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-left uppercase">Screen</th>
+                                  <th className="py-1.5 px-1 text-xs font-semibold text-muted-foreground text-center uppercase">Grams</th>
+                                  <th className="py-1.5 px-2 text-xs font-semibold text-muted-foreground text-right uppercase">%</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {firstColumn.map((screen, i) => renderScreenRow(screen, i))}
+                              </tbody>
+                              {!shouldSplit && (
+                                <tfoot>
+                                  <tr className="border-t">
+                                    <td className="py-1.5 px-3 text-sm font-semibold">Total</td>
+                                    <td className="py-1.5 px-1 text-sm font-semibold text-center">
+                                      {Object.values(gradingData?.screen_sizes || {}).reduce((sum, val) => sum + val, 0)}g
+                                    </td>
+                                    <td className="py-1.5 px-2 text-xs text-muted-foreground font-semibold text-right">100%</td>
+                                  </tr>
+                                </tfoot>
+                              )}
+                            </table>
+                            {shouldSplit && (
+                              <table className="border-collapse">
+                                <thead>
+                                  <tr className="border-b">
+                                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-left uppercase">Screen</th>
+                                    <th className="py-1.5 px-1 text-xs font-semibold text-muted-foreground text-center uppercase">Grams</th>
+                                    <th className="py-1.5 px-2 text-xs font-semibold text-muted-foreground text-right uppercase">%</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {secondColumn.map((screen, i) => renderScreenRow(screen, i))}
+                                </tbody>
+                                <tfoot>
+                                  <tr className="border-t">
+                                    <td className="py-1.5 px-3 text-sm font-semibold">Total</td>
+                                    <td className="py-1.5 px-1 text-sm font-semibold text-center">
+                                      {Object.values(gradingData?.screen_sizes || {}).reduce((sum, val) => sum + val, 0)}g
+                                    </td>
+                                    <td className="py-1.5 px-2 text-xs text-muted-foreground font-semibold text-right">100%</td>
+                                  </tr>
+                                </tfoot>
+                              </table>
+                            )}
+                          </div>
+                        )
+                      })()}
+
+                      {/* Quakers, Humidity, Density, Aspects */}
+                      {(() => {
                         const sampleGreenOptions = greenAspectOptionsMap.get(sample.id) || []
                         const sampleRoastOptions = roastAspectOptionsMap.get(sample.id) || []
                         const hasAspects = sampleGreenOptions.length > 0 || sampleRoastOptions.length > 0
@@ -1618,7 +1459,6 @@ export default function GradingPage() {
 
                         return (
                           <div className="mt-4 pt-4 border-t space-y-3">
-                            {/* Quakers, Humidity, Density - Always on same row */}
                             <div className="flex flex-wrap gap-5 items-center">
                               {showQuakers && (
                                 <div className="flex items-center gap-2">
@@ -1630,12 +1470,10 @@ export default function GradingPage() {
                                     value={gradingData?.quakers_count || ''}
                                     onFocus={(e) => e.target.select()}
                                     onChange={(e) => handleFieldChange(sample.id, 'quakers_count', parseInt(e.target.value) || 0)}
-                                    className="w-[64px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                    className="w-[60px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                                   />
                                 </div>
                               )}
-
-                              {/* Humidity */}
                               <div className="flex items-center gap-2">
                                 <Label className={`text-sm font-medium whitespace-nowrap ${humidityComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                   Humidity (%)
@@ -1671,15 +1509,11 @@ export default function GradingPage() {
                                       setRawInputsMap(newRaw)
                                     }
                                   }}
-                                  className={`w-[64px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400' : ''}`}
+                                  className={`w-[60px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background ${humidityComp.violated ? 'border-red-500 text-red-600 dark:text-red-400' : ''}`}
                                 />
                               </div>
-
-                              {/* Density */}
                               <div className="flex items-center gap-2">
-                                <Label className="text-sm font-medium whitespace-nowrap">
-                                  Density (G/L)
-                                </Label>
+                                <Label className="text-sm font-medium whitespace-nowrap">Density (G/L)</Label>
                                 <input
                                   type="text"
                                   inputMode="decimal"
@@ -1712,60 +1546,40 @@ export default function GradingPage() {
                                     }
                                   }}
                                   placeholder="0.700"
-                                  className="w-[72px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background"
+                                  className="w-[68px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background"
                                 />
                               </div>
                             </div>
-
-                            {/* Green and Roast Aspects - Always Side by Side */}
                             {hasAspects && (() => {
                               const greenComp = getGreenAspectCompliance(sample.id)
                               const roastComp = getRoastAspectCompliance(sample.id)
-
                               return (
                                 <div className="flex gap-4">
-                                  {/* Green Aspect */}
                                   {sampleGreenOptions.length > 0 && (
                                     <div className="flex flex-col gap-1.5">
-                                      <Label className={`text-sm ${greenComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
-                                        Green Aspect
-                                      </Label>
-                                      <Select
-                                        value={gradingData?.green_aspect || ''}
-                                        onValueChange={(value) => handleAspectChange(sample.id, 'green_aspect', value)}
-                                      >
+                                      <Label className={`text-sm ${greenComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>Green Aspect</Label>
+                                      <Select value={gradingData?.green_aspect || ''} onValueChange={(value) => handleAspectChange(sample.id, 'green_aspect', value)}>
                                         <SelectTrigger className={`w-[180px] h-8 text-sm ${greenComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                           <SelectValue placeholder="Select..." />
                                         </SelectTrigger>
                                         <SelectContent>
                                           {sampleGreenOptions.map((option) => (
-                                            <SelectItem key={option.label} value={option.label}>
-                                              {option.label}
-                                            </SelectItem>
+                                            <SelectItem key={option.label} value={option.label}>{option.label}</SelectItem>
                                           ))}
                                         </SelectContent>
                                       </Select>
                                     </div>
                                   )}
-
-                                  {/* Roast Aspect */}
                                   {sampleRoastOptions.length > 0 && (
                                     <div className="flex flex-col gap-1.5">
-                                      <Label className={`text-sm ${roastComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
-                                        Roast Aspect
-                                      </Label>
-                                      <Select
-                                        value={gradingData?.roast_aspect || ''}
-                                        onValueChange={(value) => handleAspectChange(sample.id, 'roast_aspect', value)}
-                                      >
+                                      <Label className={`text-sm ${roastComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>Roast Aspect</Label>
+                                      <Select value={gradingData?.roast_aspect || ''} onValueChange={(value) => handleAspectChange(sample.id, 'roast_aspect', value)}>
                                         <SelectTrigger className={`w-[180px] h-8 text-sm ${roastComp.violated ? 'text-red-600 dark:text-red-400 font-bold' : ''}`}>
                                           <SelectValue placeholder="Select..." />
                                         </SelectTrigger>
                                         <SelectContent>
                                           {sampleRoastOptions.map((option) => (
-                                            <SelectItem key={option.label} value={option.label}>
-                                              {option.label}
-                                            </SelectItem>
+                                            <SelectItem key={option.label} value={option.label}>{option.label}</SelectItem>
                                           ))}
                                         </SelectContent>
                                       </Select>
@@ -1777,196 +1591,159 @@ export default function GradingPage() {
                           </div>
                         )
                       })()}
-                      </div>
-                      {/* End Grading Section */}
 
-                      {/* Compliance Violation Messages at Bottom of Card - Only for screen/humidity/aspect */}
+                      {/* Screen/Humidity/Aspect Compliance Errors */}
                       {(() => {
-                        // Check if any data has been entered
                         const hasData = gradingData && (
                           Object.values(gradingData.screen_sizes).some(grams => grams > 0) ||
                           gradingData.moisture_percentage > 0 ||
                           gradingData.green_aspect ||
                           gradingData.roast_aspect
                         )
-
                         if (!hasData) return null
-
-                        const screenComp = getScreenSizeCompliance(sample.id)
-                        const humidityComp = getHumidityCompliance(sample.id)
-                        const greenComp = getGreenAspectCompliance(sample.id)
-                        const roastComp = getRoastAspectCompliance(sample.id)
-
                         const allErrors = [
-                          ...screenComp.errors,
-                          ...humidityComp.errors,
-                          ...greenComp.errors,
-                          ...roastComp.errors
+                          ...getScreenSizeCompliance(sample.id).errors,
+                          ...getHumidityCompliance(sample.id).errors,
+                          ...getGreenAspectCompliance(sample.id).errors,
+                          ...getRoastAspectCompliance(sample.id).errors
                         ]
-
-                        if (allErrors.length > 0) {
-                          return (
-                            <div className="mt-3 pt-3 border-t space-y-1">
-                              {allErrors.map((error, index) => (
-                                <div key={index} className="text-xs text-red-600 dark:text-red-400 font-medium">
-                                  {error}
-                                </div>
-                              ))}
-                            </div>
-                          )
-                        }
-                        return null
+                        if (allErrors.length === 0) return null
+                        return (
+                          <div className="mt-3 pt-3 border-t space-y-1">
+                            {allErrors.map((error, index) => (
+                              <div key={index} className="text-xs text-red-600 dark:text-red-400 font-medium">{error}</div>
+                            ))}
+                          </div>
+                        )
                       })()}
                     </CardContent>
                   </Card>
 
-                  {/* Defects */}
-                  <Card className="w-full lg:w-fit self-start">
-                    <CardContent className="pt-4">
+                  {/* Defects - Clean Table */}
+                  <Card className="flex-1 self-start">
+                    <CardContent className="pt-4 pb-4 px-4">
                       {primaries.length === 0 && secondaries.length === 0 ? (
                         <div className="text-center py-8 text-muted-foreground text-sm">
                           No defects configured for this sample&apos;s quality template.
                         </div>
                       ) : (
-                        <div>
+                        <>
+                          {/* Defect Totals Header */}
                           <div className="flex items-center mb-3 gap-4 text-sm">
                             {(() => {
                               const compliance = getComplianceStatus(sample.id)
                               const primaryColor = compliance.status === 'fail' && compliance.errors.some(e => e.toLowerCase().includes('primary'))
-                                ? 'text-red-600 dark:text-red-400'
-                                : ''
+                                ? 'text-red-600 dark:text-red-400' : ''
                               const secondaryColor = compliance.status === 'fail' && compliance.errors.some(e => e.toLowerCase().includes('secondary'))
-                                ? 'text-red-600 dark:text-red-400'
-                                : ''
+                                ? 'text-red-600 dark:text-red-400' : ''
                               const totalColor = compliance.status === 'fail' && compliance.errors.some(e => e.toLowerCase().includes('total'))
-                                ? 'text-red-600 dark:text-red-400'
-                                : ''
-
+                                ? 'text-red-600 dark:text-red-400' : ''
                               return (
                                 <>
                                   <div>
                                     <span className="text-muted-foreground">Primary: </span>
-                                    <span className={`font-semibold ${primaryColor}`}>
-                                      {gradingData?.defects_primary.toFixed(2) || '0.00'}
-                                    </span>
+                                    <span className={`font-semibold ${primaryColor}`}>{gradingData?.defects_primary.toFixed(2) || '0.00'}</span>
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Secondary: </span>
-                                    <span className={`font-semibold ${secondaryColor}`}>
-                                      {gradingData?.defects_secondary.toFixed(2) || '0.00'}
-                                    </span>
+                                    <span className={`font-semibold ${secondaryColor}`}>{gradingData?.defects_secondary.toFixed(2) || '0.00'}</span>
                                   </div>
                                   <div>
                                     <span className="text-muted-foreground">Total: </span>
-                                    <span className={`font-semibold ${totalColor}`}>
-                                      {gradingData?.defects_total.toFixed(2) || '0.00'}
-                                    </span>
+                                    <span className={`font-semibold ${totalColor}`}>{gradingData?.defects_total.toFixed(2) || '0.00'}</span>
                                   </div>
                                 </>
                               )
                             })()}
                           </div>
-                        <div className="flex gap-6">
-                          {/* Primary Defects Section */}
-                          {primaries.length > 0 && (
-                            <div>
-                              <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Primary</h4>
-                              <div className="space-y-1.5">
-                                {primaries.map((defect, index) => (
-                                  <div key={defect.name} className="flex items-center gap-1.5">
-                                    <Label className="text-sm w-[140px]">
-                                      {defect.name}
-                                      <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
-                                    </Label>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={gradingData?.defect_counts[defect.name] ?? ''}
-                                      onFocus={(e) => e.target.select()}
-                                      onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
-                                      className="w-[56px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                      placeholder="0"
-                                    />
-                                    <span className="text-xs text-muted-foreground whitespace-nowrap">= {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
 
-                          {/* Vertical Separator */}
-                          {primaries.length > 0 && secondaries.length > 0 && (
-                            <div className="w-px bg-border" />
-                          )}
+                          {/* Side-by-side Primary + Secondary Tables */}
+                          <div className="flex gap-6">
+                            {primaries.length > 0 && (
+                              <table className="border-collapse">
+                                <thead>
+                                  <tr className="border-b">
+                                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-left uppercase" colSpan={2}>Primary</th>
+                                    <th className="py-1.5 px-2 text-xs font-semibold text-muted-foreground text-center uppercase">QTY</th>
+                                    <th className="py-1.5 px-2 text-xs font-semibold text-muted-foreground text-right uppercase">DEF</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {primaries.map((defect, index) => (
+                                    <tr key={defect.name} className={index % 2 === 0 ? 'bg-muted/30' : ''}>
+                                      <td className="py-1.5 px-3 text-sm max-w-[200px]">{defect.name}</td>
+                                      <td className="py-1.5 px-1 text-[10px] text-muted-foreground whitespace-nowrap">(x{defect.weight})</td>
+                                      <td className="py-1 px-2">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={gradingData?.defect_counts[defect.name] ?? ''}
+                                          onFocus={(e) => e.target.select()}
+                                          onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
+                                          className="w-[56px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          placeholder="0"
+                                        />
+                                      </td>
+                                      <td className="py-1.5 px-2 text-xs text-muted-foreground text-right whitespace-nowrap">
+                                        = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
 
-                          {/* Secondary Defects Section */}
-                          {secondaries.length > 0 && (
-                            <div>
-                              <h4 className="text-xs font-semibold text-muted-foreground mb-2 uppercase">Secondary</h4>
-                              <div className="space-y-1.5">
-                                {secondaries.map((defect, index) => (
-                                  <div key={defect.name} className="flex items-center gap-1.5">
-                                    <Label className="text-sm w-[160px]" title={defect.name}>
-                                      {defect.name}
-                                      <span className="text-[10px] text-muted-foreground ml-1">(x{defect.weight})</span>
-                                    </Label>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      value={gradingData?.defect_counts[defect.name] ?? ''}
-                                      onFocus={(e) => e.target.select()}
-                                      onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
-                                      className="w-[56px] px-2 py-1.5 text-center border rounded-md text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                      placeholder="0"
-                                    />
-                                    <span className="text-xs text-muted-foreground whitespace-nowrap">= {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                        </div>
+                            {secondaries.length > 0 && (
+                              <table className="border-collapse">
+                                <thead>
+                                  <tr className="border-b">
+                                    <th className="py-1.5 px-3 text-xs font-semibold text-muted-foreground text-left uppercase" colSpan={2}>Secondary</th>
+                                    <th className="py-1.5 px-2 text-xs font-semibold text-muted-foreground text-center uppercase">QTY</th>
+                                    <th className="py-1.5 px-2 text-xs font-semibold text-muted-foreground text-right uppercase">DEF</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {secondaries.map((defect, index) => (
+                                    <tr key={defect.name} className={index % 2 === 0 ? 'bg-muted/30' : ''}>
+                                      <td className="py-1.5 px-3 text-sm max-w-[220px]">{defect.name}</td>
+                                      <td className="py-1.5 px-1 text-[10px] text-muted-foreground whitespace-nowrap">(x{defect.weight})</td>
+                                      <td className="py-1 px-2">
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          value={gradingData?.defect_counts[defect.name] ?? ''}
+                                          onFocus={(e) => e.target.select()}
+                                          onChange={(e) => handleDefectCountChange(sample.id, defect.name, parseInt(e.target.value) || 0)}
+                                          className="w-[56px] px-2 py-1 text-center border border-border text-sm font-semibold bg-background [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          placeholder="0"
+                                        />
+                                      </td>
+                                      <td className="py-1.5 px-2 text-xs text-muted-foreground text-right whitespace-nowrap">
+                                        = {((gradingData?.defect_counts[defect.name] || 0) * defect.weight).toFixed(2)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        </>
                       )}
 
-                      {/* Compliance Violation Messages - Only defect-related warnings */}
+                      {/* Defect Compliance Errors */}
                       {(() => {
-                        // Check if any defect data has been entered
                         const hasDefectData = gradingData && Object.values(gradingData.defect_counts).some(count => count > 0)
-
                         if (!hasDefectData) return null
-
                         const defectComp = getDefectCompliance(sample.id)
-
-                        if (defectComp.errors.length > 0) {
-                          return (
-                            <div className="mt-3 pt-3 border-t space-y-1">
-                              {defectComp.errors.map((error, index) => (
-                                <div key={index} className="text-xs text-red-600 dark:text-red-400 font-medium">
-                                  {error}
-                                </div>
-                              ))}
-                            </div>
-                          )
-                        }
-                        return null
+                        if (defectComp.errors.length === 0) return null
+                        return (
+                          <div className="mt-3 pt-3 border-t space-y-1">
+                            {defectComp.errors.map((error, index) => (
+                              <div key={index} className="text-xs text-red-600 dark:text-red-400 font-medium">{error}</div>
+                            ))}
+                          </div>
+                        )
                       })()}
-                    </CardContent>
-                  </Card>
-
-                  {/* Defect Photos */}
-                  <Card className="w-full lg:w-48 self-start">
-                    <CardContent className="pt-3 pb-3 px-3">
-                      <h3 className="text-xs font-semibold mb-2 flex items-center gap-1.5 text-muted-foreground">
-                        <Camera className="h-3.5 w-3.5" />
-                        Defect Photos
-                      </h3>
-                      <DefectPhotoUpload
-                        sampleId={sample.id}
-                        photos={defectPhotosMap.get(sample.id) || []}
-                        onPhotosChange={(photos) => handlePhotosChange(sample.id, photos)}
-                        disabled={saving}
-                      />
                     </CardContent>
                   </Card>
                 </div>

@@ -6,6 +6,7 @@ import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
+import { generateQRCode } from '@/lib/qr-code'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -143,11 +144,34 @@ export async function GET(
       }
     }
 
+    // Generate sample photo QR code if photos exist
+    let samplePhotoQrBase64: string | undefined
+    let samplePhotoUrl: string | undefined
+    try {
+      const { data: assessment } = await supabase
+        .from('quality_assessments')
+        .select('defect_photos')
+        .eq('sample_id', sample.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+
+      if (assessment?.defect_photos && Array.isArray(assessment.defect_photos) && assessment.defect_photos.length > 0) {
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
+        samplePhotoUrl = `${baseUrl}/sample-photo/${slug}`
+        samplePhotoQrBase64 = await generateQRCode(samplePhotoUrl, { width: 150, margin: 1 })
+      }
+    } catch (err) {
+      console.error('Error generating sample photo QR:', err)
+    }
+
     const certificateElement = React.createElement(QualityCertificate, {
       data: certificateData,
       wolthersLogoBase64,
       clientLogoBase64,
       flagBase64,
+      samplePhotoQrBase64,
+      samplePhotoUrl,
     })
     const pdfBuffer = await renderToBuffer(certificateElement as any)
 

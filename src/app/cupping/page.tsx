@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback, Suspense, Component, ErrorInfo } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, Suspense, Component, ErrorInfo } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { MainLayout } from '@/components/layout/main-layout'
@@ -15,7 +15,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, ChevronLeft, ChevronRight, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
+import { Save, Eye, EyeOff, Coffee, Minus, Plus, X, ChevronDown, BarChart3, Camera, FileDown, Pencil, Check } from 'lucide-react'
+import { SampleTabsNavigation, SampleTabItem } from '@/components/samples/sample-tabs-navigation'
 import { useToast } from '@/hooks/use-toast'
 import { AttributeWithScale, STANDARD_CUPPING_TEMPLATE } from '@/types/cupping-templates'
 import { AttributeScaleType, validateScoreAgainstRule } from '@/types/attribute-scales'
@@ -192,39 +193,6 @@ function CuppingPageContent() {
   const [rawInputMap, setRawInputMap] = useState<Map<string, string>>(new Map())
 
   // Sample tab scrolling
-  const tabsScrollRef = useRef<HTMLDivElement>(null)
-  const [canScrollLeft, setCanScrollLeft] = useState(false)
-  const [canScrollRight, setCanScrollRight] = useState(false)
-
-  const updateScrollButtons = useCallback(() => {
-    const el = tabsScrollRef.current
-    if (!el) return
-    setCanScrollLeft(el.scrollLeft > 0)
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1)
-  }, [])
-
-  const scrollTabs = useCallback((direction: 'left' | 'right') => {
-    const el = tabsScrollRef.current
-    if (!el) return
-    const amount = direction === 'left' ? -200 : 200
-    el.scrollBy({ left: amount, behavior: 'smooth' })
-    setTimeout(updateScrollButtons, 300)
-  }, [updateScrollButtons])
-
-  // Scroll active tab into view when it changes
-  useEffect(() => {
-    if (!activeSampleId || !tabsScrollRef.current) return
-    const activeTab = tabsScrollRef.current.querySelector(`[data-sample-id="${activeSampleId}"]`)
-    if (activeTab) {
-      activeTab.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' })
-      setTimeout(updateScrollButtons, 300)
-    }
-  }, [activeSampleId, updateScrollButtons])
-
-  // Update scroll buttons when samples change
-  useEffect(() => {
-    setTimeout(updateScrollButtons, 100)
-  }, [samples, updateScrollButtons])
 
   // Client quality per sample
   const [clientQualityMap, setClientQualityMap] = useState<Map<string, ClientQuality>>(new Map())
@@ -425,6 +393,40 @@ function CuppingPageContent() {
       return { status: 'fail', errors: allErrors }
     }
   }
+
+  // Build sample tab items for the shared navigation component
+  const cuppingSampleTabItems: SampleTabItem[] = useMemo(() => {
+    return samples.map(sample => {
+      const cuppingData = cuppingDataMap.get(sample.id)
+      const hasData = cuppingData && (
+        cuppingData.attributes.some(a => a.value !== null) ||
+        cuppingData.defects.length > 0
+      )
+
+      let status: SampleTabItem['status'] = 'none'
+      if (hasData && sample.sample_type !== 'type') {
+        const compliance = getCuppingComplianceStatus(sample.id)
+        if (compliance.status === 'fail') {
+          status = 'fail'
+        } else if (compliance.status === 'pass') {
+          status = 'pass'
+        } else {
+          status = 'in-progress'
+        }
+      } else if (hasData && sample.sample_type === 'type') {
+        status = 'in-progress'
+      }
+
+      return {
+        id: sample.id,
+        label: getSampleTabLabel(sample),
+        sublabel: sample.sample_type === 'ss' && sample.container_nr
+          ? sample.container_nr
+          : sample.sample_type || 'sample',
+        status,
+      }
+    })
+  }, [samples, cuppingDataMap, getCuppingComplianceStatus])
 
   useEffect(() => {
     loadSamples()
@@ -1321,82 +1323,11 @@ function CuppingPageContent() {
           <TabsContent value="cupping" className="m-0 flex-1">
             {/* Sample Tabs */}
             <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full h-full flex flex-col">
-          <div className="border-b bg-card sticky top-0 z-50 flex items-center">
-            {canScrollLeft && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-14 w-8 shrink-0 rounded-none border-r"
-                onClick={() => scrollTabs('left')}
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-            )}
-            <div
-              ref={tabsScrollRef}
-              className="overflow-x-auto flex-1 scrollbar-hide"
-              onScroll={updateScrollButtons}
-            >
-              <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start w-max">
-                {samples.map((sample, index) => {
-                    const isActive = sample.id === activeSampleId
-                    const cuppingData = cuppingDataMap.get(sample.id)
-
-                    // Determine background color based on status
-                    let bgColor = ''
-
-                    if (isActive) {
-                      // Active tabs: yellow for PSS/SS, blue for type samples
-                      bgColor = sample.sample_type === 'type' ? 'bg-blue-500/20' : 'bg-yellow-500/20'
-                    } else {
-                      // Non-active tabs: check if they have data and compliance status
-                      const hasData = cuppingData && (
-                        cuppingData.attributes.some(a => a.value !== null) ||
-                        cuppingData.defects.length > 0
-                      )
-
-                      if (hasData && sample.sample_type !== 'type') {
-                        const compliance = getCuppingComplianceStatus(sample.id)
-                        if (compliance.status === 'fail') {
-                          bgColor = 'bg-red-500/20'
-                        } else if (compliance.status === 'pass') {
-                          bgColor = 'bg-green-500/20'
-                        }
-                      }
-                    }
-
-                    return (
-                      <div key={sample.id} data-sample-id={sample.id} className={`flex items-center ${bgColor}`}>
-                        {index > 0 && <div className="h-8 w-px bg-border/60 mx-1" />}
-                        <TabsTrigger
-                          value={sample.id}
-                          className={`rounded-none border-transparent data-[state=active]:bg-transparent hover:bg-accent/50 transition-colors py-3 ${index === 0 ? 'pl-6 pr-4' : 'px-4'}`}
-                        >
-                          <div className="flex flex-col items-start gap-0.5">
-                            <span className="font-medium text-sm">{getSampleTabLabel(sample)}</span>
-                            <span className="text-xs text-muted-foreground">
-                              {sample.sample_type === 'ss' && sample.container_nr
-                                ? sample.container_nr
-                                : <span className="capitalize">{sample.sample_type || 'sample'}</span>}
-                            </span>
-                          </div>
-                        </TabsTrigger>
-                      </div>
-                    )
-                  })}
-              </TabsList>
-            </div>
-            {canScrollRight && (
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-14 w-8 shrink-0 rounded-none border-l"
-                onClick={() => scrollTabs('right')}
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            )}
-          </div>
+          <SampleTabsNavigation
+            samples={cuppingSampleTabItems}
+            activeSampleId={activeSampleId}
+            onSampleChange={setActiveSampleId}
+          />
 
           {samples.map(sample => {
             const cuppingData = cuppingDataMap.get(sample.id)

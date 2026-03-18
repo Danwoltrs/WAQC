@@ -5,7 +5,7 @@
  */
 
 import React from 'react'
-import { Document, Page, StyleSheet } from '@react-pdf/renderer'
+import { Document, Page, View, Image, Text, Link, StyleSheet } from '@react-pdf/renderer'
 import { CertificateHeader } from './certificate-header'
 import { CertificateSupplyChainRow } from './certificate-supply-chain-row'
 import { CertificateSampleDetails } from './certificate-sample-details'
@@ -29,11 +29,33 @@ const pageStyles = StyleSheet.create({
   },
 })
 
+const qrStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  qrImage: {
+    width: 70,
+    height: 70,
+  },
+  label: {
+    fontSize: 7,
+    color: '#666666',
+    marginRight: 6,
+    textAlign: 'right',
+  },
+})
+
 export interface QualityCertificateProps {
   data: CertificateData
   wolthersLogoBase64?: string
   clientLogoBase64?: string
   flagBase64?: string
+  samplePhotoQrBase64?: string
+  samplePhotoUrl?: string
 }
 
 export function QualityCertificate({
@@ -41,6 +63,8 @@ export function QualityCertificate({
   wolthersLogoBase64,
   clientLogoBase64,
   flagBase64,
+  samplePhotoQrBase64,
+  samplePhotoUrl,
 }: QualityCertificateProps) {
   const {
     sample,
@@ -205,6 +229,16 @@ export function QualityCertificate({
 
         {/* 8. Cup Status Row - Removed as now integrated into cupping chart */}
         {/* Clean/Uniform Cup and Taints/Faults are now shown in the cupping chart */}
+
+        {/* 8b. Sample Photo QR Code - only if photo exists */}
+        {samplePhotoQrBase64 && samplePhotoUrl && (
+          <View style={qrStyles.container}>
+            <Text style={qrStyles.label}>View sample photo</Text>
+            <Link src={samplePhotoUrl}>
+              <Image style={qrStyles.qrImage} src={samplePhotoQrBase64} />
+            </Link>
+          </View>
+        )}
 
         {/* 9. Notes section */}
         <CertificateComments
