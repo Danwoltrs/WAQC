@@ -85,23 +85,6 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Validate quality_code uniqueness for this client if provided
-    if (body.quality_code) {
-      const { data: existingCode } = await supabase
-        .from('client_qualities')
-        .select('id')
-        .eq('client_id', body.client_id)
-        .eq('quality_code', body.quality_code)
-        .eq('is_active', true)
-        .single()
-
-      if (existingCode) {
-        return NextResponse.json({
-          error: `Quality code "${body.quality_code}" is already in use for this client`
-        }, { status: 400 })
-      }
-    }
-
     // Validate custom_name uniqueness for this client if provided
     if (body.custom_name) {
       const { data: existingName } = await supabase
@@ -119,6 +102,24 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Auto-populate description from template if not provided
+    let description: string | null = null
+    if (body.description) {
+      description = typeof body.description === 'string'
+        ? body.description.replace(/\.+$/, '')
+        : body.description
+    } else {
+      const { data: template } = await supabase
+        .from('quality_templates')
+        .select('description')
+        .eq('id', body.template_id)
+        .single()
+
+      if (template?.description) {
+        description = template.description.replace(/\.+$/, '')
+      }
+    }
+
     // Prepare client quality data
     const clientQualityData: any = {
       client_id: body.client_id,
@@ -132,7 +133,8 @@ export async function POST(request: NextRequest) {
       notes: body.notes || null,
       fee_price: body.fee_price ?? null,
       fee_currency: body.fee_currency || null,
-      fee_unit: body.fee_unit || null
+      fee_unit: body.fee_unit || null,
+      description
     }
 
     // Insert client quality assignment

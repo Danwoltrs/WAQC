@@ -245,6 +245,26 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
               />
             </div>
 
+            {/* Multi-Origin Pricing */}
+            {pricingModel !== 'complimentary' && (
+              <div className="pt-2 border-t space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                    <Layers className="h-3 w-3" />
+                    Multi-Origin Pricing
+                  </div>
+                  <Switch
+                    checked={false}
+                    disabled
+                    className="scale-75"
+                  />
+                </div>
+                <p className="text-[10px] text-muted-foreground">
+                  Configure origin-specific pricing tiers (available in full edit mode)
+                </p>
+              </div>
+            )}
+
             {/* Company Logo */}
             <div className="pt-2 border-t space-y-2">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
@@ -454,6 +474,16 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
               </div>
               <p className="text-[10px] text-muted-foreground">
                 Example with quality &quot;AD&quot; and origin &quot;BR&quot;
+              </p>
+            </div>
+
+            {/* Lab-Specific Sequences */}
+            <div className="space-y-1 pt-2 border-t">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                Lab Sequences
+              </div>
+              <p className="text-[10px] text-muted-foreground">
+                Lab-specific starting sequences (available in full edit mode)
               </p>
             </div>
           </div>

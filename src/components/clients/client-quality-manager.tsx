@@ -35,6 +35,7 @@ import {
   FileText,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import { TemplateViewDialog } from '@/components/quality/template-view-dialog'
 
 interface ClientQualityManagerProps {
   clientId: string
@@ -42,6 +43,7 @@ interface ClientQualityManagerProps {
   defaultFeePrice?: number | null
   defaultFeeCurrency?: string | null
   defaultFeeUnit?: string | null
+  hasQualityCode?: boolean
 }
 
 interface ClientQuality {
@@ -53,6 +55,7 @@ interface ClientQuality {
   quality_code: string | null
   cups_per_sample: number | null
   is_active: boolean
+  description: string | null
   notes: string | null
   fee_price: number | null
   fee_currency: string | null
@@ -80,6 +83,61 @@ const UNIT_OPTIONS = [
   { value: 'per_pound', label: 'c/lb' },
   { value: 'per_sample', label: '/sample' },
 ]
+
+function generateCodeSuggestion(name: string): string {
+  return name
+    .split(/\s+/)
+    .filter(word => !/^\d/.test(word))
+    .map(word => word[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 4)
+}
+
+function DescriptionPopover({
+  quality,
+  onUpdate,
+}: {
+  quality: ClientQuality
+  onUpdate: (id: string, field: string, value: any) => void
+}) {
+  const [value, setValue] = useState(quality.description || '')
+  const [open, setOpen] = useState(false)
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button className="text-left text-xs text-muted-foreground max-w-[200px] truncate block hover:text-foreground transition-colors">
+          {quality.description || <span className="italic">No description</span>}
+        </button>
+      </PopoverTrigger>
+      <PopoverContent className="w-80 p-3" align="start">
+        <div className="space-y-2">
+          <Label className="text-xs font-medium">Description</Label>
+          <Textarea
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            rows={4}
+            className="text-xs"
+            placeholder="Coffee description for certificates..."
+          />
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button size="sm" className="h-7 text-xs" onClick={() => {
+              const cleaned = value.replace(/\.+$/, '')
+              onUpdate(quality.id, 'description', cleaned || null)
+              setOpen(false)
+            }}>
+              Save
+            </Button>
+          </div>
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
 
 function FeePopover({
   quality,
@@ -188,7 +246,7 @@ function FeePopover({
   )
 }
 
-export function ClientQualityManager({ clientId, clientName, defaultFeePrice, defaultFeeCurrency, defaultFeeUnit }: ClientQualityManagerProps) {
+export function ClientQualityManager({ clientId, clientName, defaultFeePrice, defaultFeeCurrency, defaultFeeUnit, hasQualityCode }: ClientQualityManagerProps) {
   const [clientQualities, setClientQualities] = useState<ClientQuality[]>([])
   const [templates, setTemplates] = useState<QualityTemplate[]>([])
   const [loading, setLoading] = useState(true)
@@ -201,14 +259,36 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
     quality_code: '',
     cups_per_sample: 5,
     notes: '',
+    description: '',
     is_active: true
   })
+  const [viewingTemplateId, setViewingTemplateId] = useState<string | null>(null)
+  const [viewingTemplate, setViewingTemplate] = useState<any>(null)
 
   useEffect(() => {
     fetchClientQualities()
     fetchTemplates()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientId])
+
+  useEffect(() => {
+    if (!viewingTemplateId) {
+      setViewingTemplate(null)
+      return
+    }
+    async function fetchTemplate() {
+      try {
+        const response = await fetch(`/api/quality-templates/${viewingTemplateId}`)
+        if (!response.ok) throw new Error('Failed to fetch template')
+        const data = await response.json()
+        setViewingTemplate(data.template || data)
+      } catch (err) {
+        console.error('Error fetching template:', err)
+        setViewingTemplateId(null)
+      }
+    }
+    fetchTemplate()
+  }, [viewingTemplateId])
 
   async function fetchClientQualities() {
     try {
@@ -247,6 +327,7 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
         custom_name: quality.custom_name || '',
         quality_code: quality.quality_code || '',
         cups_per_sample: quality.cups_per_sample ?? 5,
+        description: quality.description || '',
         notes: quality.notes || '',
         is_active: quality.is_active
       })
@@ -257,6 +338,7 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
         custom_name: '',
         quality_code: '',
         cups_per_sample: 5,
+        description: '',
         notes: '',
         is_active: true
       })
@@ -266,12 +348,14 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
 
   async function handleSubmit() {
     try {
+      const descriptionCleaned = formData.description ? formData.description.replace(/\.+$/, '') : null
       const payload = {
         client_id: clientId,
         template_id: formData.template_id,
         custom_name: formData.custom_name || null,
         quality_code: formData.quality_code || null,
         cups_per_sample: formData.cups_per_sample,
+        description: descriptionCleaned,
         notes: formData.notes || null,
         is_active: formData.is_active
       }
@@ -361,6 +445,7 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
   }
 
   return (
+    <>
     <Card>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
@@ -394,7 +479,17 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                   <Label htmlFor="template">Quality Template</Label>
                   <Select
                     value={formData.template_id}
-                    onValueChange={(value) => setFormData({ ...formData, template_id: value })}
+                    onValueChange={(value) => {
+                      const selectedTemplate = templates.find(t => t.id === value)
+                      setFormData({
+                        ...formData,
+                        template_id: value,
+                        ...(selectedTemplate && !editingQuality ? {
+                          description: selectedTemplate.description || '',
+                          quality_code: formData.quality_code || generateCodeSuggestion(formData.custom_name || selectedTemplate.name),
+                        } : {}),
+                      })
+                    }}
                     disabled={!!editingQuality}
                   >
                     <SelectTrigger id="template">
@@ -448,6 +543,17 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="description">Description</Label>
+                  <Textarea
+                    id="description"
+                    value={formData.description}
+                    onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                    placeholder="Coffee description for certificates..."
+                    rows={3}
+                  />
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="notes">Notes (Optional)</Label>
                   <Textarea
                     id="notes"
@@ -492,8 +598,10 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
               <thead>
                 <tr className="border-b text-muted-foreground">
                   <th className="text-left py-2 pr-3 font-medium">Quality Name</th>
-                  <th className="text-left py-2 pr-3 font-medium">Code</th>
-                  <th className="text-left py-2 pr-3 font-medium">Template</th>
+                  {hasQualityCode && (
+                    <th className="text-left py-2 pr-3 font-medium">Code</th>
+                  )}
+                  <th className="text-left py-2 pr-3 font-medium">Description</th>
                   <th className="text-center py-2 pr-3 font-medium">Cups</th>
                   <th className="text-center py-2 pr-3 font-medium">Fee</th>
                   <th className="text-center py-2 pr-3 font-medium">Active</th>
@@ -504,24 +612,29 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                 {clientQualities.map((quality) => (
                   <tr key={quality.id} className="border-b last:border-0 hover:bg-accent/50">
                     <td className="py-2 pr-3">
-                      <span className="font-medium">
+                      <button
+                        className="font-medium text-left hover:underline hover:text-primary transition-colors"
+                        onClick={() => setViewingTemplateId(quality.template_id)}
+                      >
                         {quality.custom_name || quality.template.name}
-                      </span>
+                      </button>
                       {!quality.is_active && (
                         <Badge variant="outline" className="text-xs ml-2">Inactive</Badge>
                       )}
                     </td>
+                    {hasQualityCode && (
+                      <td className="py-2 pr-3">
+                        {quality.quality_code ? (
+                          <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
+                            {quality.quality_code}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">-</span>
+                        )}
+                      </td>
+                    )}
                     <td className="py-2 pr-3">
-                      {quality.quality_code ? (
-                        <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">
-                          {quality.quality_code}
-                        </span>
-                      ) : (
-                        <span className="text-muted-foreground">-</span>
-                      )}
-                    </td>
-                    <td className="py-2 pr-3 text-muted-foreground">
-                      {quality.template.name} v{quality.template.version}
+                      <DescriptionPopover quality={quality} onUpdate={handleInlineUpdate} />
                     </td>
                     <td className="py-2 pr-3 text-center">
                       <Input
@@ -587,5 +700,28 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
         )}
       </CardContent>
     </Card>
+
+    {viewingTemplateId && viewingTemplate && (
+      <TemplateViewDialog
+        template={viewingTemplate}
+        open={!!viewingTemplateId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setViewingTemplateId(null)
+            setViewingTemplate(null)
+          }
+        }}
+        onSave={async (templateData: any) => {
+          const response = await fetch(`/api/quality-templates/${viewingTemplateId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(templateData),
+          })
+          if (!response.ok) throw new Error('Failed to save template')
+        }}
+        onTemplateUpdated={() => fetchClientQualities()}
+      />
+    )}
+    </>
   )
 }

@@ -83,32 +83,18 @@ export async function PATCH(
       return NextResponse.json({ error: 'Invalid client quality record' }, { status: 400 })
     }
 
-    // Validate quality_code uniqueness if being updated
-    if (body.quality_code && body.quality_code !== existing.quality_code) {
-      const { data: existingCode } = await supabase
-        .from('client_qualities')
-        .select('id')
-        .eq('client_id', existing.client_id)
-        .eq('quality_code', body.quality_code)
-        .eq('is_active', true)
-        .neq('id', id)
-        .single()
-
-      if (existingCode) {
-        return NextResponse.json({
-          error: `Quality code "${body.quality_code}" is already in use for this client`
-        }, { status: 400 })
-      }
-    }
-
     // Prepare update data
     const updateData: any = {}
-    const allowedFields = ['template_id', 'custom_parameters', 'custom_name', 'quality_code', 'code_position', 'is_active', 'notes', 'fee_price', 'fee_currency', 'fee_unit']
+    const allowedFields = ['template_id', 'custom_parameters', 'custom_name', 'quality_code', 'code_position', 'is_active', 'notes', 'fee_price', 'fee_currency', 'fee_unit', 'cups_per_sample', 'description']
 
     for (const field of allowedFields) {
       if (body[field] !== undefined) {
         updateData[field] = body[field]
       }
+    }
+
+    if (updateData.description && typeof updateData.description === 'string') {
+      updateData.description = updateData.description.replace(/\.+$/, '')
     }
 
     // Update client quality

@@ -1,10 +1,13 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Input } from '@/components/ui/input'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Label } from '@/components/ui/label'
 import {
   Building2,
   Mail,
@@ -14,18 +17,17 @@ import {
   FileText,
   TrendingUp,
   CheckCircle2,
-  XCircle,
-  Clock,
   Package,
   Pencil,
+  X,
 } from 'lucide-react'
 import { format } from 'date-fns'
-import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { BarChart, Bar, PieChart, Pie, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, Legend } from 'recharts'
 import { ClientQualityManager } from './client-quality-manager'
-import { ClientAnalyticsDashboard } from './client-analytics-dashboard'
-import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN, generateCertificatePreview } from '@/types/certificate-pattern'
+import { ClientMetricsTab } from './client-metrics-tab'
+import { QcConfigPanel } from './qc-config-panel'
+import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 
 interface ClientDetailViewProps {
   clientId: string
@@ -54,43 +56,124 @@ const STATUS_COLORS = {
   rejected: '#ef4444',
 }
 
-const CHART_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899']
+const CLIENT_ROLE_OPTIONS = [
+  'producer', 'cooperative', 'exporter', 'importer',
+  'roaster', 'final_importer', 'end_client',
+]
 
 export function ClientDetailView({ clientId }: ClientDetailViewProps) {
+  const searchParams = useSearchParams()
   const [data, setData] = useState<ClientData | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [isEditing, setIsEditing] = useState(searchParams?.get('edit') === 'true')
+  const [qcDialogOpen, setQcDialogOpen] = useState(false)
+  const [editFormData, setEditFormData] = useState<any>(null)
+  const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    async function fetchClientData() {
-      setLoading(true)
-      setError(null)
-
-      try {
-        const response = await fetch(`/api/clients/${clientId}`)
-
-        if (!response.ok) {
-          throw new Error('Failed to fetch client data')
-        }
-
-        const clientData = await response.json()
-        setData(clientData)
-      } catch (err) {
-        console.error('Error fetching client:', err)
-        setError('Failed to load client data')
-      } finally {
-        setLoading(false)
-      }
-    }
-
-    if (clientId) {
-      fetchClientData()
+  const fetchClientData = useCallback(async () => {
+    setLoading(true)
+    setError(null)
+    try {
+      const response = await fetch(`/api/clients/${clientId}`)
+      if (!response.ok) throw new Error('Failed to fetch client data')
+      const clientData = await response.json()
+      setData(clientData)
+    } catch (err) {
+      console.error('Error fetching client:', err)
+      setError('Failed to load client data')
+    } finally {
+      setLoading(false)
     }
   }, [clientId])
 
-  if (loading) {
-    return <ClientDetailSkeleton />
+  useEffect(() => {
+    if (clientId) fetchClientData()
+  }, [clientId, fetchClientData])
+
+  function handleEnterEditMode() {
+    if (!data) return
+    const { client } = data
+    setEditFormData({
+      name: client.name || '',
+      company: client.company || '',
+      fantasy_name: client.fantasy_name || '',
+      email: client.email || '',
+      phone: client.phone || '',
+      vat_number: client.vat_number || '',
+      address: client.address || '',
+      zip_code: client.zip_code || '',
+      city: client.city || '',
+      state: client.state || '',
+      country: client.country || '',
+      client_types: client.client_types || [],
+    })
+    setIsEditing(true)
   }
+
+  function handleCancelEdit() {
+    setIsEditing(false)
+    setEditFormData(null)
+  }
+
+  async function handleSaveEdit() {
+    setSaving(true)
+    try {
+      const response = await fetch(`/api/clients/${data!.client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editFormData),
+      })
+      if (!response.ok) throw new Error('Failed to save')
+      setIsEditing(false)
+      setEditFormData(null)
+      await fetchClientData()
+    } catch (err) {
+      console.error('Error saving client:', err)
+      alert('Failed to save changes')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  async function handleQcConfigSave(configData: any) {
+    try {
+      const response = await fetch(`/api/clients/${data!.client.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          certificate_pattern: configData.certificatePattern,
+          certificate_validity_months: configData.certificateValidityEnabled ? configData.certificateValidityMonths : null,
+          pricing_model: configData.pricingModel,
+          price_per_sample: configData.pricePerSample,
+          price_per_pound_cents: configData.pricePerPoundCents,
+          currency: configData.currency,
+          billing_basis: configData.billingBasis,
+          payment_terms: configData.paymentTerms,
+          fee_payer: configData.feePayer,
+          billing_notes: configData.billingNotes,
+          is_qc_client: true,
+        }),
+      })
+      if (!response.ok) throw new Error('Failed to save QC config')
+      setQcDialogOpen(false)
+      await fetchClientData()
+    } catch (err) {
+      console.error('Error saving QC config:', err)
+      alert('Failed to save QC configuration')
+    }
+  }
+
+  function toggleRole(role: string) {
+    if (!editFormData) return
+    const current = editFormData.client_types || []
+    const updated = current.includes(role)
+      ? current.filter((r: string) => r !== role)
+      : [...current, role]
+    setEditFormData({ ...editFormData, client_types: updated })
+  }
+
+  if (loading) return <ClientDetailSkeleton />
 
   if (error || !data) {
     return (
@@ -104,14 +187,40 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
 
   const { client, samples, sampleMetrics, qualitySpecs, certificatesCount } = data
 
+  function getQcBadgeLabel() {
+    if (!client.is_qc_client) return 'Not a QC Client'
+    if (client.pricing_model === 'complimentary') return 'QC Client · Complimentary'
+    if (client.price_per_pound_cents) {
+      return `QC Client · ${client.price_per_pound_cents} ${client.currency || 'USD'} c/lb`
+    }
+    if (client.price_per_sample) {
+      return `QC Client · ${client.price_per_sample} ${client.currency || 'USD'}/sample`
+    }
+    return 'QC Client'
+  }
+
   return (
     <div className="space-y-6">
+      {/* Save/Cancel Bar for Edit Mode */}
+      {isEditing && (
+        <div className="sticky top-0 z-50 flex items-center justify-between px-4 py-2 bg-background border-b shadow-sm rounded-lg">
+          <span className="text-sm font-medium">Editing client information</span>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={handleCancelEdit} disabled={saving}>
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSaveEdit} disabled={saving}>
+              {saving ? 'Saving...' : 'Save Changes'}
+            </Button>
+          </div>
+        </div>
+      )}
+
       {/* Header Card */}
       <Card>
         <CardHeader>
           <div className="flex items-start justify-between">
             <div className="flex items-center gap-5">
-              {/* Company Logo */}
               {client.logo_url && (
                 <>
                   <div className="h-[60px] flex items-center justify-center flex-shrink-0">
@@ -125,14 +234,42 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
                 </>
               )}
               <div>
-                <CardTitle className="text-2xl">{client.fantasy_name || client.company}</CardTitle>
-                <CardDescription className="text-base mt-1">{client.name}</CardDescription>
+                {isEditing ? (
+                  <div className="space-y-2">
+                    <Input
+                      value={editFormData?.fantasy_name || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, fantasy_name: e.target.value })}
+                      className="text-2xl font-semibold h-auto py-1 px-2"
+                      placeholder="Fantasy Name"
+                    />
+                    <Input
+                      value={editFormData?.company || ''}
+                      onChange={(e) => setEditFormData({ ...editFormData, company: e.target.value })}
+                      className="text-base h-auto py-1 px-2"
+                      placeholder="Company Name"
+                    />
+                  </div>
+                ) : (
+                  <>
+                    <CardTitle className="text-2xl">{client.fantasy_name || client.company}</CardTitle>
+                    <CardDescription className="text-base mt-1">{client.name}</CardDescription>
+                  </>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {client.is_qc_client && (
-                <Badge variant="default">QC Client</Badge>
-              )}
+              {/* Interactive QC Badge */}
+              <button
+                onClick={() => setQcDialogOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors hover:opacity-80 cursor-pointer border"
+                style={{
+                  backgroundColor: client.is_qc_client ? 'hsl(var(--primary))' : undefined,
+                  color: client.is_qc_client ? 'hsl(var(--primary-foreground))' : undefined,
+                }}
+              >
+                {getQcBadgeLabel()}
+              </button>
+
               {client.qc_enabled ? (
                 <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300">
                   Active
@@ -142,67 +279,157 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
                   Inactive
                 </Badge>
               )}
-              <Link href={`/clients/${client.id}/edit`}>
-                <Button variant="outline" size="sm">
+
+              {!isEditing && (
+                <Button variant="outline" size="sm" onClick={handleEnterEditMode}>
                   <Pencil className="h-4 w-4 mr-2" />
                   Edit
                 </Button>
-              </Link>
+              )}
             </div>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Contact Info */}
-            <div className="space-y-2">
-              {client.email && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span className="truncate">{client.email}</span>
+          {isEditing ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Contact Name</Label>
+                  <Input
+                    value={editFormData?.name || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
+                    placeholder="Contact Name"
+                  />
                 </div>
-              )}
-              {client.phone && (
-                <div className="flex items-center gap-2 text-sm">
-                  <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                  <span>{client.phone}</span>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Email</Label>
+                  <Input
+                    value={editFormData?.email || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
+                    placeholder="Email"
+                  />
                 </div>
-              )}
-            </div>
-
-            {/* Address */}
-            {(client.address || client.city || client.country) && (
-              <div className="flex items-start gap-2 text-sm">
-                <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                <span className="flex-1">
-                  {[client.address, client.city, client.state, client.country]
-                    .filter(Boolean)
-                    .join(', ')}
-                </span>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Phone</Label>
+                  <Input
+                    value={editFormData?.phone || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
+                    placeholder="Phone"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">VAT/CNPJ</Label>
+                  <Input
+                    value={editFormData?.vat_number || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, vat_number: e.target.value })}
+                    placeholder="VAT/CNPJ Number"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Address</Label>
+                  <Input
+                    value={editFormData?.address || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
+                    placeholder="Street Address"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">ZIP/CEP</Label>
+                  <Input
+                    value={editFormData?.zip_code || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, zip_code: e.target.value })}
+                    placeholder="ZIP/CEP Code"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">City</Label>
+                  <Input
+                    value={editFormData?.city || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
+                    placeholder="City"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">State/Province</Label>
+                  <Input
+                    value={editFormData?.state || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, state: e.target.value })}
+                    placeholder="State/Province"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Country</Label>
+                  <Input
+                    value={editFormData?.country || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, country: e.target.value })}
+                    placeholder="Country"
+                  />
+                </div>
               </div>
-            )}
-
-            {/* Client Type */}
-            {client.client_types && client.client_types.length > 0 && (
-              <div className="flex items-start gap-2 text-sm">
-                <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                <div className="flex flex-wrap gap-1">
-                  {client.client_types.map((type: string) => (
-                    <Badge key={type} variant="secondary" className="text-xs">
-                      {type}
-                    </Badge>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground">Client Roles</Label>
+                <div className="flex flex-wrap gap-4">
+                  {CLIENT_ROLE_OPTIONS.map((role) => (
+                    <div key={role} className="flex items-center gap-2">
+                      <Checkbox
+                        id={`role-${role}`}
+                        checked={(editFormData?.client_types || []).includes(role)}
+                        onCheckedChange={() => toggleRole(role)}
+                      />
+                      <Label htmlFor={`role-${role}`} className="text-sm capitalize">
+                        {role.replace('_', ' ')}
+                      </Label>
+                    </div>
                   ))}
                 </div>
               </div>
-            )}
-
-            {/* Created Date */}
-            <div className="flex items-center gap-2 text-sm">
-              <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-              <span>
-                Joined {format(new Date(client.created_at), 'MMM d, yyyy')}
-              </span>
             </div>
-          </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="space-y-2">
+                {client.email && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span className="truncate">{client.email}</span>
+                  </div>
+                )}
+                {client.phone && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    <span>{client.phone}</span>
+                  </div>
+                )}
+              </div>
+              {(client.address || client.city || client.country) && (
+                <div className="flex items-start gap-2 text-sm">
+                  <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <span className="flex-1">
+                    {[client.address, client.city, client.state, client.country]
+                      .filter(Boolean)
+                      .join(', ')}
+                  </span>
+                </div>
+              )}
+              {client.client_types && client.client_types.length > 0 && (
+                <div className="flex items-start gap-2 text-sm">
+                  <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
+                  <div className="flex flex-wrap gap-1">
+                    {client.client_types.map((type: string) => (
+                      <Badge key={type} variant="secondary" className="text-xs">
+                        {type}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center gap-2 text-sm">
+                <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                <span>
+                  Joined {format(new Date(client.created_at), 'MMM d, yyyy')}
+                </span>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
@@ -231,22 +458,12 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
       </div>
 
       {/* Tabbed Content */}
-      <Tabs defaultValue="overview" className="w-full">
-        <TabsList className="grid w-full grid-cols-5">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="samples">Samples</TabsTrigger>
+      <Tabs defaultValue="specs" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
           <TabsTrigger value="specs">Quality Specs</TabsTrigger>
-          <TabsTrigger value="metrics">Basic Metrics</TabsTrigger>
-          <TabsTrigger value="analytics">Analytics</TabsTrigger>
+          <TabsTrigger value="samples">Samples</TabsTrigger>
+          <TabsTrigger value="metrics">Metrics</TabsTrigger>
         </TabsList>
-
-        <TabsContent value="overview" className="space-y-4">
-          <OverviewTab client={client} />
-        </TabsContent>
-
-        <TabsContent value="samples" className="space-y-4">
-          <SamplesTab samples={samples} />
-        </TabsContent>
 
         <TabsContent value="specs" className="space-y-4">
           <ClientQualityManager
@@ -255,115 +472,46 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
             defaultFeePrice={client.pricing_model === 'per_pound' ? client.price_per_pound_cents : client.pricing_model === 'per_sample' ? client.price_per_sample : null}
             defaultFeeCurrency={client.currency || 'USD'}
             defaultFeeUnit={client.pricing_model === 'complimentary' ? null : (client.pricing_model || 'per_pound')}
+            hasQualityCode={client.certificate_pattern?.has_quality_code || false}
           />
+        </TabsContent>
+
+        <TabsContent value="samples" className="space-y-4">
+          <SamplesTab samples={samples} />
         </TabsContent>
 
         <TabsContent value="metrics" className="space-y-4">
-          <MetricsTab sampleMetrics={sampleMetrics} samples={samples} />
-        </TabsContent>
-
-        <TabsContent value="analytics" className="space-y-4">
-          <ClientAnalyticsDashboard clientId={client.id} clientName={client.fantasy_name || client.company} />
+          <ClientMetricsTab
+            clientId={client.id}
+            clientName={client.fantasy_name || client.company}
+            sampleMetrics={sampleMetrics}
+            samples={samples}
+          />
         </TabsContent>
       </Tabs>
+
+      {/* QC Config Dialog */}
+      <QcConfigPanel
+        open={qcDialogOpen}
+        onOpenChange={setQcDialogOpen}
+        data={{
+          certificatePattern: client.certificate_pattern || DEFAULT_CERTIFICATE_PATTERN,
+          certificateValidityEnabled: !!client.certificate_validity_months,
+          certificateValidityMonths: client.certificate_validity_months || 6,
+          pricingModel: client.pricing_model || 'per_pound',
+          pricePerSample: client.price_per_sample,
+          pricePerPoundCents: client.price_per_pound_cents,
+          currency: client.currency || 'USD',
+          billingBasis: client.billing_basis || 'approved_only',
+          paymentTerms: client.payment_terms || '',
+          feePayer: client.fee_payer || 'client_pays',
+          billingNotes: client.billing_notes || '',
+          logoUrl: client.logo_url,
+        }}
+        onSave={handleQcConfigSave}
+        clientId={client.id}
+      />
     </div>
-  )
-}
-
-function StatsCard({ title, value, icon, valueColor = 'text-foreground' }: any) {
-  return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className={`text-2xl font-semibold mt-1 ${valueColor}`}>{value}</p>
-          </div>
-          <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-            {icon}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  )
-}
-
-function OverviewTab({ client }: { client: any }) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Client Information</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <InfoField label="Company" value={client.company} />
-          <InfoField label="Fantasy Name" value={client.fantasy_name} />
-          <InfoField label="Email" value={client.email} />
-          <InfoField label="Phone" value={client.phone} />
-          <InfoField
-            label="Address"
-            value={[client.address, client.city, client.state, client.country]
-              .filter(Boolean)
-              .join(', ')}
-          />
-          <InfoField
-            label="Pricing Model"
-            value={client.pricing_model?.replace('_', ' ').toUpperCase()}
-          />
-          {client.pricing_model === 'per_sample' && (
-            <InfoField
-              label="Price per Sample"
-              value={`${client.currency || 'USD'} ${client.price_per_sample || 0}`}
-            />
-          )}
-          {client.pricing_model === 'per_pound' && (
-            <InfoField
-              label="Price per Pound"
-              value={`${client.currency || 'USD'} ${((client.price_per_pound_cents || 0) / 100).toFixed(2)}`}
-            />
-          )}
-          <InfoField label="Fee Payer" value={client.fee_payer?.replace('_', ' ')} />
-          <InfoField label="Payment Terms" value={client.payment_terms} />
-        </div>
-
-        {/* Certificate Pattern Section */}
-        {client.certificate_pattern && (
-          <div className="mt-6 pt-6 border-t">
-            <h3 className="text-sm font-semibold mb-3">Certificate Number Pattern</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <p className="text-sm text-muted-foreground">Preview</p>
-                <p className="font-mono text-lg font-semibold mt-1">
-                  {generateCertificatePreview(
-                    client.certificate_pattern as CertificatePattern,
-                    client.certificate_pattern.has_quality_code ? 'QC' : undefined,
-                    client.certificate_pattern.has_origin_code ? 'BR' : undefined
-                  )}
-                </p>
-              </div>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <InfoField
-                  label="Origin Code"
-                  value={client.certificate_pattern.has_origin_code ? `Yes (${client.certificate_pattern.origin_position})` : 'No'}
-                />
-                <InfoField
-                  label="Quality Code"
-                  value={client.certificate_pattern.has_quality_code ? `Yes (${client.certificate_pattern.quality_position})` : 'No'}
-                />
-                <InfoField
-                  label="Sequence Padding"
-                  value={String(client.certificate_pattern.sequence_padding || 6)}
-                />
-                <InfoField
-                  label="Year Format"
-                  value={client.certificate_pattern.year_format || 'YY'}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-      </CardContent>
-    </Card>
   )
 }
 
@@ -425,136 +573,6 @@ function SamplesTab({ samples }: { samples: any[] }) {
   )
 }
 
-function QualitySpecsTab({ specs }: { specs: any[] }) {
-  if (specs.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-12 text-center text-muted-foreground">
-          No quality specifications assigned to this client
-        </CardContent>
-      </Card>
-    )
-  }
-
-  return (
-    <div className="grid gap-4">
-      {specs.map((spec) => (
-        <Card key={spec.id}>
-          <CardHeader>
-            <div className="flex items-start justify-between">
-              <div>
-                <CardTitle className="text-lg">{spec.template?.name || 'Custom Specification'}</CardTitle>
-                {spec.template?.description && (
-                  <CardDescription className="mt-1">{spec.template.description}</CardDescription>
-                )}
-              </div>
-              {spec.origin && (
-                <Badge variant="secondary">{spec.origin}</Badge>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              Created {format(new Date(spec.created_at), 'MMMM d, yyyy')}
-            </p>
-          </CardContent>
-        </Card>
-      ))}
-    </div>
-  )
-}
-
-function MetricsTab({ sampleMetrics, samples }: { sampleMetrics: any; samples: any[] }) {
-  // Prepare pie chart data
-  const pieData = [
-    { name: 'Approved', value: sampleMetrics.approved, color: '#10b981' },
-    { name: 'Rejected', value: sampleMetrics.rejected, color: '#ef4444' },
-    { name: 'Under Review', value: sampleMetrics.under_review, color: '#f59e0b' },
-    { name: 'In Progress', value: sampleMetrics.in_progress, color: '#3b82f6' },
-    { name: 'Received', value: sampleMetrics.received, color: '#94a3b8' },
-  ].filter(item => item.value > 0)
-
-  // Prepare bar chart data - samples by origin
-  const samplesByOrigin = samples.reduce((acc: any, sample) => {
-    const origin = sample.origin || 'Unknown'
-    acc[origin] = (acc[origin] || 0) + 1
-    return acc
-  }, {})
-
-  const barData = Object.entries(samplesByOrigin)
-    .map(([origin, count]) => ({ origin, count }))
-    .sort((a: any, b: any) => b.count - a.count)
-    .slice(0, 10)
-
-  return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      {/* Sample Status Distribution */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Sample Status Distribution</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {pieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
-                <Pie
-                  data={pieData}
-                  cx="50%"
-                  cy="50%"
-                  labelLine={false}
-                  label={({ name, percent }: any) => `${name} ${(percent * 100).toFixed(0)}%`}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  dataKey="value"
-                >
-                  {pieData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-center text-muted-foreground py-12">No sample data available</p>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Samples by Origin */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Samples by Origin</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {barData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={barData}>
-                <XAxis dataKey="origin" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="count" fill="#3b82f6" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <p className="text-center text-muted-foreground py-12">No origin data available</p>
-          )}
-        </CardContent>
-      </Card>
-    </div>
-  )
-}
-
-function InfoField({ label, value }: { label: string; value?: string | null }) {
-  if (!value) return null
-
-  return (
-    <div>
-      <p className="text-sm text-muted-foreground">{label}</p>
-      <p className="font-medium mt-1">{value}</p>
-    </div>
-  )
-}
-
 function ClientDetailSkeleton() {
   return (
     <div className="space-y-6">
@@ -571,17 +589,7 @@ function ClientDetailSkeleton() {
           </div>
         </CardContent>
       </Card>
-
-      <div className="grid grid-cols-4 gap-4">
-        {[...Array(4)].map((_, i) => (
-          <Card key={i}>
-            <CardContent className="pt-6">
-              <Skeleton className="h-16" />
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
+      <Skeleton className="h-10 w-full" />
       <Skeleton className="h-96" />
     </div>
   )
