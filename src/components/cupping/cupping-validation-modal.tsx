@@ -12,7 +12,6 @@ import {
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
@@ -564,6 +563,80 @@ export function CuppingValidationModal({
     )
   }
 
+  // Quick-action helpers for master cupper
+  const applyKeepMine = useCallback((attribute: string) => {
+    // Find the current user's (master cupper's) score for this attribute
+    const myScore = individualScores.find(s => s.is_master_cupper || s.is_own_score)
+    if (!myScore) return
+    const value = myScore.scores[attribute]
+    if (typeof value !== 'number' || isNaN(value)) return
+    const increment = aggregated?.attributes[attribute]?.increment || 0.25
+    setFinalScores(prev => ({ ...prev, [attribute]: snapToIncrement(value, increment) }))
+  }, [individualScores, aggregated])
+
+  const applyAverage = useCallback((attribute: string) => {
+    const increment = aggregated?.attributes[attribute]?.increment || 0.25
+    const values = individualScores
+      .map(s => s.scores[attribute])
+      .filter((v): v is number => typeof v === 'number' && !isNaN(v))
+    if (values.length === 0) return
+    const avg = values.reduce((a, b) => a + b, 0) / values.length
+    setFinalScores(prev => ({ ...prev, [attribute]: snapToIncrement(avg, increment) }))
+  }, [individualScores, aggregated])
+
+  const applyMatchOther = useCallback((attribute: string, cupperIndex: number) => {
+    const score = individualScores[cupperIndex]
+    if (!score) return
+    const value = score.scores[attribute]
+    if (typeof value !== 'number' || isNaN(value)) return
+    const increment = aggregated?.attributes[attribute]?.increment || 0.25
+    setFinalScores(prev => ({ ...prev, [attribute]: snapToIncrement(value, increment) }))
+  }, [individualScores, aggregated])
+
+  // Bulk actions: apply to all attributes at once
+  const applyKeepMineAll = useCallback(() => {
+    if (!aggregated) return
+    const myScore = individualScores.find(s => s.is_master_cupper || s.is_own_score)
+    if (!myScore) return
+    const newScores: Record<string, number> = {}
+    for (const [attr, stats] of Object.entries(aggregated.attributes)) {
+      const value = myScore.scores[attr]
+      if (typeof value === 'number' && !isNaN(value)) {
+        newScores[attr] = snapToIncrement(value, stats.increment || 0.25)
+      }
+    }
+    setFinalScores(prev => ({ ...prev, ...newScores }))
+  }, [individualScores, aggregated])
+
+  const applyAverageAll = useCallback(() => {
+    if (!aggregated) return
+    const newScores: Record<string, number> = {}
+    for (const [attr, stats] of Object.entries(aggregated.attributes)) {
+      const values = individualScores
+        .map(s => s.scores[attr])
+        .filter((v): v is number => typeof v === 'number' && !isNaN(v))
+      if (values.length > 0) {
+        const avg = values.reduce((a, b) => a + b, 0) / values.length
+        newScores[attr] = snapToIncrement(avg, stats.increment || 0.25)
+      }
+    }
+    setFinalScores(prev => ({ ...prev, ...newScores }))
+  }, [individualScores, aggregated])
+
+  const applyMatchOtherAll = useCallback((cupperIndex: number) => {
+    if (!aggregated) return
+    const score = individualScores[cupperIndex]
+    if (!score) return
+    const newScores: Record<string, number> = {}
+    for (const [attr, stats] of Object.entries(aggregated.attributes)) {
+      const value = score.scores[attr]
+      if (typeof value === 'number' && !isNaN(value)) {
+        newScores[attr] = snapToIncrement(value, stats.increment || 0.25)
+      }
+    }
+    setFinalScores(prev => ({ ...prev, ...newScores }))
+  }, [individualScores, aggregated])
+
   if (!aggregated || individualScores.length === 0) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -582,9 +655,14 @@ export function CuppingValidationModal({
   const isMultiCupper = individualScores.length > 1
   const editable = canEditFinals()
 
+  // Identify the "other" cuppers (not master/self) for match buttons
+  const otherCuppers = individualScores
+    .map((s, i) => ({ ...s, index: i }))
+    .filter(s => !s.is_master_cupper && !s.is_own_score)
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             Score Validation
@@ -606,312 +684,318 @@ export function CuppingValidationModal({
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="final-scores" className="w-full">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="final-scores">Final Scores</TabsTrigger>
-            <TabsTrigger value="comparison">Cupper Reference</TabsTrigger>
-            <TabsTrigger value="defects">Defects</TabsTrigger>
-          </TabsList>
+        <div className="space-y-4">
+          {/* Discrepancy alert */}
+          {aggregated.hasDiscrepancies && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertTitle>Score Discrepancies Detected</AlertTitle>
+              <AlertDescription>
+                <ul className="list-disc list-inside mt-2 space-y-1">
+                  {aggregated.discrepancy_flags.map((flag, index) => (
+                    <li key={index} className="text-sm">{flag}</li>
+                  ))}
+                </ul>
+              </AlertDescription>
+            </Alert>
+          )}
 
-          {/* Final Scores Tab - Master cupper sets final values */}
-          <TabsContent value="final-scores" className="space-y-4">
-            {aggregated.hasDiscrepancies && (
-              <Alert variant="destructive">
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Score Discrepancies Detected</AlertTitle>
-                <AlertDescription>
-                  <ul className="list-disc list-inside mt-2 space-y-1">
-                    {aggregated.discrepancy_flags.map((flag, index) => (
-                      <li key={index} className="text-sm">{flag}</li>
-                    ))}
-                  </ul>
-                </AlertDescription>
-              </Alert>
-            )}
+          {/* Bulk actions */}
+          {isMultiCupper && editable && (
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-medium text-muted-foreground">Apply to all:</span>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={applyKeepMineAll}
+              >
+                Keep My Scores
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-7 text-xs"
+                onClick={applyAverageAll}
+              >
+                Average All
+              </Button>
+              {otherCuppers.map((cupper) => (
+                <Button
+                  key={cupper.cupper_id || cupper.index}
+                  variant="outline"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={() => applyMatchOtherAll(cupper.index)}
+                >
+                  Match {cupper.cupper_name}
+                </Button>
+              ))}
+            </div>
+          )}
 
-            {isMultiCupper && editable && (
-              <Alert>
-                <AlertCircle className="h-4 w-4" />
-                <AlertTitle>Master Cupper Decision Required</AlertTitle>
-                <AlertDescription className="text-sm">
-                  Review each cupper&apos;s scores in the Cupper Reference tab, then set the final score for each attribute below.
-                  Values snap to the quality spec increment on blur.
-                </AlertDescription>
-              </Alert>
-            )}
+          {/* Unified scores table: all cuppers + final score + actions */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center justify-between">
+                <span>Cupping Scores</span>
+                {!editable && (
+                  <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
+                    <Lock className="h-3 w-3" /> Read-only
+                  </span>
+                )}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b">
+                      <th className="text-left p-2 font-semibold">Attribute</th>
+                      {individualScores.map((score) => (
+                        <th key={score.cupper_id || score.score_id} className="text-center p-2 font-semibold text-sm">
+                          <span className="flex flex-col items-center gap-0.5">
+                            <span>{score.cupper_name}</span>
+                            <span className="flex items-center gap-1">
+                              {score.is_own_score && <span className="text-xs text-muted-foreground">(You)</span>}
+                              {score.is_master_cupper && <Badge className="text-[10px] bg-amber-600 px-1 py-0">Master</Badge>}
+                            </span>
+                          </span>
+                        </th>
+                      ))}
+                      <th className="text-center p-2 font-semibold">
+                        <span className={editable ? 'text-amber-600' : ''}>Final</span>
+                      </th>
+                      {isMultiCupper && editable && (
+                        <th className="text-center p-2 font-semibold text-xs text-muted-foreground">Action</th>
+                      )}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {Object.entries(aggregated.attributes).map(([attribute, stats]) => {
+                      const increment = stats.increment || 0.25
+                      const currentFinal = finalScores[attribute] ?? stats.finalScore
 
+                      return (
+                        <tr key={attribute} className={`border-b ${stats.hasDiscrepancy ? 'bg-red-50 dark:bg-red-950' : ''}`}>
+                          <td className="p-2 font-medium whitespace-nowrap">
+                            {attribute}
+                            {stats.hasDiscrepancy && (
+                              <Badge variant="destructive" className="ml-2 text-[10px] px-1 py-0">
+                                Discrepancy
+                              </Badge>
+                            )}
+                          </td>
+                          {individualScores.map((score) => {
+                            const scoreKey = score.cupper_id || score.score_id || ''
+                            const cellValue = score.scores[attribute]
+                            const isSelected = typeof cellValue === 'number' && !isNaN(cellValue) &&
+                              Math.abs(cellValue - currentFinal) < 0.001
+
+                            return (
+                              <td
+                                key={`${attribute}-${scoreKey}`}
+                                className={`text-center p-2 text-sm ${
+                                  stats.hasDiscrepancy && !isSelected ? 'text-muted-foreground' : ''
+                                } ${isSelected ? 'font-semibold' : ''}`}
+                              >
+                                {typeof cellValue === 'number' && !isNaN(cellValue) ? cellValue.toFixed(2) : 'N/A'}
+                              </td>
+                            )
+                          })}
+                          <td className="text-center p-2">
+                            {editable ? (
+                              <Input
+                                type="number"
+                                step={increment}
+                                value={currentFinal}
+                                onChange={(e) => updateFinalScore(attribute, e.target.value)}
+                                onBlur={() => snapFinalScore(attribute)}
+                                className="w-20 h-8 text-center text-sm font-bold mx-auto border-amber-400 bg-amber-50 dark:bg-amber-950"
+                              />
+                            ) : (
+                              <span className="font-bold text-lg">{(currentFinal ?? 0).toFixed(2)}</span>
+                            )}
+                          </td>
+                          {isMultiCupper && editable && (
+                            <td className="text-center p-2">
+                              <div className="flex items-center justify-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-2 text-[10px]"
+                                  title="Keep my score"
+                                  onClick={() => applyKeepMine(attribute)}
+                                >
+                                  Mine
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-6 px-2 text-[10px]"
+                                  title="Average of all cuppers (rounded to increment)"
+                                  onClick={() => applyAverage(attribute)}
+                                >
+                                  Avg
+                                </Button>
+                                {otherCuppers.map((cupper) => (
+                                  <Button
+                                    key={cupper.cupper_id || cupper.index}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 px-2 text-[10px]"
+                                    title={`Match ${cupper.cupper_name}'s score`}
+                                    onClick={() => applyMatchOther(attribute, cupper.index)}
+                                  >
+                                    {cupper.cupper_name.split(' ')[0]}
+                                  </Button>
+                                ))}
+                              </div>
+                            </td>
+                          )}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2">
+                      <td className="p-2 font-bold">Overall</td>
+                      {individualScores.map((score) => {
+                        const total = Object.entries(aggregated.attributes).reduce((sum, [attr]) => {
+                          const v = score.scores[attr]
+                          return sum + (typeof v === 'number' && !isNaN(v) ? v : 0)
+                        }, 0)
+                        return (
+                          <td key={score.cupper_id || score.score_id} className="text-center p-2 text-sm font-semibold text-muted-foreground">
+                            {total.toFixed(2)}
+                          </td>
+                        )
+                      })}
+                      <td className="text-center p-2 font-bold text-lg">{(overallFinalScore ?? 0).toFixed(2)}</td>
+                      {isMultiCupper && editable && <td />}
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Defects section (inline, not a separate tab) */}
+          {consolidatedDefects.length > 0 && (
             <Card>
-              <CardHeader>
+              <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between">
-                  <span>Final Scores{editable ? ' (Editable)' : ''}</span>
-                  {!editable && (
-                    <span className="text-xs font-normal text-muted-foreground flex items-center gap-1">
-                      <Lock className="h-3 w-3" /> Read-only
+                  <span>Defects</span>
+                  {editable && (
+                    <span className="text-xs font-normal text-muted-foreground">
+                      Cups = MAX across cuppers. Adjust as needed.
                     </span>
                   )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2 font-semibold">Attribute</th>
-                        {isMultiCupper && <th className="text-center p-2 font-semibold text-muted-foreground text-xs">Mean</th>}
-                        {isMultiCupper && <th className="text-center p-2 font-semibold text-muted-foreground text-xs">Range</th>}
-                        <th className="text-center p-2 font-semibold">
-                          <span className={editable ? 'text-amber-600' : ''}>Final Score</span>
-                        </th>
-                        <th className="text-center p-2 font-semibold text-muted-foreground text-xs">Increment</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(aggregated.attributes).map(([attribute, stats]) => {
-                        const increment = stats.increment || 0.25
-                        const currentFinal = finalScores[attribute] ?? stats.finalScore
+                <div className="space-y-4">
+                  {consolidatedDefects.map((defect) => {
+                    const finalDef = finalDefects[defect.name]
+                    const cupperEntries = Object.entries(defect.per_cupper)
 
-                        return (
-                          <tr key={attribute} className={`border-b ${stats.hasDiscrepancy ? 'bg-red-50 dark:bg-red-950' : ''}`}>
-                            <td className="p-2 font-medium">
-                              {attribute}
-                              {stats.hasDiscrepancy && (
-                                <Badge variant="destructive" className="ml-2 text-xs">
-                                  Discrepancy
-                                </Badge>
-                              )}
-                            </td>
-                            {isMultiCupper && (
-                              <td className="text-center p-2 text-sm text-muted-foreground">
-                                {(stats.mean ?? 0).toFixed(2)}
-                              </td>
-                            )}
-                            {isMultiCupper && (
-                              <td className="text-center p-2 text-sm text-muted-foreground">
-                                {(stats.min ?? 0).toFixed(2)} - {(stats.max ?? 0).toFixed(2)}
-                              </td>
-                            )}
-                            <td className="text-center p-2">
-                              {editable ? (
-                                <Input
-                                  type="number"
-                                  step={increment}
-                                  value={currentFinal}
-                                  onChange={(e) => updateFinalScore(attribute, e.target.value)}
-                                  onBlur={() => snapFinalScore(attribute)}
-                                  className="w-20 h-8 text-center text-sm font-bold mx-auto border-amber-400 bg-amber-50 dark:bg-amber-950"
-                                />
-                              ) : (
-                                <span className="font-bold text-lg">{(currentFinal ?? 0).toFixed(2)}</span>
-                              )}
-                            </td>
-                            <td className="text-center p-2 text-xs text-muted-foreground">
-                              {increment}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t-2">
-                        <td className="p-2 font-bold">Overall</td>
-                        {isMultiCupper && <td className="text-center p-2 text-sm text-muted-foreground">{(aggregated.overall_score.mean ?? 0).toFixed(2)}</td>}
-                        {isMultiCupper && <td />}
-                        <td className="text-center p-2 font-bold text-lg">{(overallFinalScore ?? 0).toFixed(2)}</td>
-                        <td />
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Cupper Comparison Tab - Reference only */}
-          <TabsContent value="comparison" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle>
-                  <span>Cupper Score Reference</span>
-                  <span className="text-xs font-normal text-muted-foreground ml-2">
-                    (Reference only - set final scores in the Final Scores tab)
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="overflow-x-auto">
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="border-b">
-                        <th className="text-left p-2 font-semibold">Attribute</th>
-                        {individualScores.map((score) => (
-                          <th key={score.cupper_id || score.score_id} className="text-center p-2 font-semibold">
-                            <span className="flex flex-col items-center gap-0.5">
-                              <span>{score.cupper_name}</span>
-                              {score.is_own_score && <span className="text-xs text-muted-foreground">(You)</span>}
-                              {score.is_master_cupper && <Badge className="text-xs bg-amber-600">Master</Badge>}
-                            </span>
-                          </th>
-                        ))}
-                        <th className="text-center p-2 font-semibold text-amber-600">Final</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {Object.entries(aggregated.attributes).map(([attribute, stats]) => (
-                        <tr key={attribute} className="border-b">
-                          <td className="p-2 font-medium">{attribute}</td>
-                          {individualScores.map((score) => {
-                            const scoreKey = score.cupper_id || score.score_id || ''
-                            const cellValue = score.scores[attribute]
-
-                            return (
-                              <td
-                                key={`${attribute}-${scoreKey}`}
-                                className={`text-center p-2 ${
-                                  stats.hasDiscrepancy ? 'bg-red-50 dark:bg-red-950' : ''
-                                }`}
-                              >
-                                <span>{typeof cellValue === 'number' && !isNaN(cellValue) ? cellValue.toFixed(2) : 'N/A'}</span>
-                              </td>
-                            )
-                          })}
-                          <td className={`text-center p-2 font-bold ${
-                            stats.hasDiscrepancy ? 'bg-red-100 dark:bg-red-900' : 'bg-green-100 dark:bg-green-900'
-                          }`}>
-                            {((finalScores[attribute] ?? stats.finalScore) ?? 0).toFixed(2)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-
-          {/* Defects Tab - Consolidated with master cupper overrides */}
-          <TabsContent value="defects" className="space-y-4">
-            {consolidatedDefects.length > 0 ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    <span>Defect Validation</span>
-                    {editable && (
-                      <span className="text-xs font-normal text-muted-foreground">
-                        Cups = MAX across cuppers. Adjust as needed.
-                      </span>
-                    )}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {consolidatedDefects.map((defect) => {
-                      const finalDef = finalDefects[defect.name]
-                      const cupperEntries = Object.entries(defect.per_cupper)
-
-                      return (
-                        <div
-                          key={defect.name}
-                          className="p-4 rounded-lg border border-border"
-                        >
-                          <div className="flex items-center justify-between mb-3">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{defect.name}</span>
-                              <Badge variant={defect.type === 'fault' ? 'destructive' : 'secondary'}>
-                                {finalDef?.type || defect.type}
-                              </Badge>
-                            </div>
-                            <Badge variant="outline">
-                              {cupperEntries.length}/{individualScores.length} cupper{cupperEntries.length !== 1 ? 's' : ''}
+                    return (
+                      <div
+                        key={defect.name}
+                        className="p-4 rounded-lg border border-border"
+                      >
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium">{defect.name}</span>
+                            <Badge variant={defect.type === 'fault' ? 'destructive' : 'secondary'}>
+                              {finalDef?.type || defect.type}
                             </Badge>
                           </div>
+                          <Badge variant="outline">
+                            {cupperEntries.length}/{individualScores.length} cupper{cupperEntries.length !== 1 ? 's' : ''}
+                          </Badge>
+                        </div>
 
-                          {/* Per-cupper reference */}
-                          <div className="text-xs text-muted-foreground mb-3 space-y-1">
-                            {cupperEntries.map(([cupperName, data]) => (
-                              <div key={cupperName} className="flex items-center gap-2">
-                                <span className="font-medium">{cupperName}:</span>
-                                <span>{data.cups} cup{data.cups !== 1 ? 's' : ''}</span>
-                                {data.intensity > 0 && <span>- intensity {data.intensity}</span>}
-                              </div>
-                            ))}
+                        {/* Per-cupper reference */}
+                        <div className="text-xs text-muted-foreground mb-3 space-y-1">
+                          {cupperEntries.map(([cupperName, data]) => (
+                            <div key={cupperName} className="flex items-center gap-2">
+                              <span className="font-medium">{cupperName}:</span>
+                              <span>{data.cups} cup{data.cups !== 1 ? 's' : ''}</span>
+                              {data.intensity > 0 && <span>- intensity {data.intensity}</span>}
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Master cupper final decision */}
+                        <div className={`grid grid-cols-3 gap-3 pt-3 border-t ${editable ? 'bg-amber-50 dark:bg-amber-950 -mx-4 -mb-4 px-4 pb-4 rounded-b-lg' : ''}`}>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground block mb-1">
+                              Final Cups
+                            </label>
+                            {editable ? (
+                              <Input
+                                type="number"
+                                min={0}
+                                value={finalDef?.cups ?? defect.consolidated_cups}
+                                onChange={(e) => updateFinalDefect(defect.name, 'cups', e.target.value)}
+                                className="h-8 text-sm border-amber-400"
+                              />
+                            ) : (
+                              <span className="font-bold">{finalDef?.cups ?? defect.consolidated_cups}</span>
+                            )}
                           </div>
-
-                          {/* Master cupper final decision */}
-                          <div className={`grid grid-cols-3 gap-3 pt-3 border-t ${editable ? 'bg-amber-50 dark:bg-amber-950 -mx-4 -mb-4 px-4 pb-4 rounded-b-lg' : ''}`}>
-                            <div>
-                              <label className="text-xs font-medium text-muted-foreground block mb-1">
-                                Final Cups
-                              </label>
-                              {editable ? (
-                                <Input
-                                  type="number"
-                                  min={0}
-                                  value={finalDef?.cups ?? defect.consolidated_cups}
-                                  onChange={(e) => updateFinalDefect(defect.name, 'cups', e.target.value)}
-                                  className="h-8 text-sm border-amber-400"
-                                />
-                              ) : (
-                                <span className="font-bold">{finalDef?.cups ?? defect.consolidated_cups}</span>
-                              )}
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-muted-foreground block mb-1">
-                                Final Intensity
-                              </label>
-                              {editable ? (
-                                <Input
-                                  type="number"
-                                  step="0.25"
-                                  min={0}
-                                  value={finalDef?.intensity ?? defect.consolidated_intensity}
-                                  onChange={(e) => updateFinalDefect(defect.name, 'intensity', e.target.value)}
-                                  onBlur={() => {
-                                    const val = finalDef?.intensity ?? defect.consolidated_intensity
-                                    updateFinalDefect(defect.name, 'intensity', snapToIncrement(val, 0.25))
-                                  }}
-                                  className="h-8 text-sm border-amber-400"
-                                />
-                              ) : (
-                                <span className="font-bold">{finalDef?.intensity ?? defect.consolidated_intensity}</span>
-                              )}
-                            </div>
-                            <div>
-                              <label className="text-xs font-medium text-muted-foreground block mb-1">
-                                Type
-                              </label>
-                              {editable ? (
-                                <Select
-                                  value={finalDef?.type || defect.type}
-                                  onValueChange={(v) => updateFinalDefect(defect.name, 'type', v)}
-                                >
-                                  <SelectTrigger className="h-8 text-sm border-amber-400">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="taint">Taint</SelectItem>
-                                    <SelectItem value="fault">Fault</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              ) : (
-                                <span className="font-bold capitalize">{finalDef?.type || defect.type}</span>
-                              )}
-                            </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground block mb-1">
+                              Final Intensity
+                            </label>
+                            {editable ? (
+                              <Input
+                                type="number"
+                                step="0.25"
+                                min={0}
+                                value={finalDef?.intensity ?? defect.consolidated_intensity}
+                                onChange={(e) => updateFinalDefect(defect.name, 'intensity', e.target.value)}
+                                onBlur={() => {
+                                  const val = finalDef?.intensity ?? defect.consolidated_intensity
+                                  updateFinalDefect(defect.name, 'intensity', snapToIncrement(val, 0.25))
+                                }}
+                                className="h-8 text-sm border-amber-400"
+                              />
+                            ) : (
+                              <span className="font-bold">{finalDef?.intensity ?? defect.consolidated_intensity}</span>
+                            )}
+                          </div>
+                          <div>
+                            <label className="text-xs font-medium text-muted-foreground block mb-1">
+                              Type
+                            </label>
+                            {editable ? (
+                              <Select
+                                value={finalDef?.type || defect.type}
+                                onValueChange={(v) => updateFinalDefect(defect.name, 'type', v)}
+                              >
+                                <SelectTrigger className="h-8 text-sm border-amber-400">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="taint">Taint</SelectItem>
+                                  <SelectItem value="fault">Fault</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            ) : (
+                              <span className="font-bold capitalize">{finalDef?.type || defect.type}</span>
+                            )}
                           </div>
                         </div>
-                      )
-                    })}
-                  </div>
-                </CardContent>
-              </Card>
-            ) : (
-              <Card>
-                <CardContent className="py-8 text-center text-muted-foreground">
-                  No defects detected by any cupper
-                </CardContent>
-              </Card>
-            )}
-          </TabsContent>
-        </Tabs>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </div>
 
         <DialogFooter className="flex-col sm:flex-row gap-2">
           {permissions && !permissions.can_validate && (
