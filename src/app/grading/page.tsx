@@ -393,7 +393,14 @@ export default function GradingPage() {
 
       return {
         id: sample.id,
-        label: getSampleTabLabel(sample),
+        label: (() => {
+          switch (sample.sample_type) {
+            case 'pss': return sample.exporter_sample_number || sample.tracking_number
+            case 'ss': return sample.ico_number || sample.container_nr || sample.tracking_number
+            case 'type': return sample.tracking_number
+            default: return sample.tracking_number
+          }
+        })(),
         sublabel: sample.sample_type === 'ss' && sample.container_nr
           ? sample.container_nr
           : sample.sample_type || 'sample',
@@ -978,18 +985,6 @@ export default function GradingPage() {
     }
   }
 
-  const getSampleTabLabel = (sample: Sample): string => {
-    switch (sample.sample_type) {
-      case 'pss':
-        return sample.exporter_sample_number || sample.tracking_number
-      case 'ss':
-        return sample.ico_number || sample.container_nr || sample.tracking_number
-      case 'type':
-        return sample.tracking_number
-      default:
-        return sample.tracking_number
-    }
-  }
 
   // Format screen size label (e.g., "18" -> "Scr. 18", "Pan" -> "Pan")
   const formatScreenLabel = (screenSize: string): string => {

@@ -419,7 +419,14 @@ function CuppingPageContent() {
 
       return {
         id: sample.id,
-        label: getSampleTabLabel(sample),
+        label: (() => {
+          switch (sample.sample_type) {
+            case 'pss': return sample.exporter_sample_number || sample.tracking_number
+            case 'ss': return sample.ico_number || sample.container_nr || sample.tracking_number
+            case 'type': return sample.tracking_number
+            default: return sample.tracking_number
+          }
+        })(),
         sublabel: sample.sample_type === 'ss' && sample.container_nr
           ? sample.container_nr
           : sample.sample_type || 'sample',
@@ -729,18 +736,6 @@ function CuppingPageContent() {
     }
   }
 
-  const getSampleTabLabel = (sample: Sample): string => {
-    switch (sample.sample_type) {
-      case 'pss':
-        return sample.exporter_sample_number || sample.tracking_number
-      case 'ss':
-        return sample.ico_number || sample.container_nr || sample.tracking_number
-      case 'type':
-        return sample.tracking_number
-      default:
-        return sample.tracking_number
-    }
-  }
 
   const updateAttribute = (sampleId: string, attribute: string, value: number | null) => {
     const cuppingData = cuppingDataMap.get(sampleId)
