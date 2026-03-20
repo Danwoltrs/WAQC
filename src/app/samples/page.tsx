@@ -1400,11 +1400,15 @@ export default function SamplesPage() {
                                     {sample.exporter_sample_number}
                                   </div>
                                 )}
-                                {sample.sample_type === 'ss' && sample.container_nr && (
+                                {sample.container_nr ? (
                                   <div className="text-xs text-muted-foreground mt-0.5">
                                     {sample.container_nr}
                                   </div>
-                                )}
+                                ) : sample.ico_number ? (
+                                  <div className="text-xs text-muted-foreground mt-0.5">
+                                    {sample.ico_number}
+                                  </div>
+                                ) : null}
                               </td>
                             )}
                             {columnVisibility.origin && (
