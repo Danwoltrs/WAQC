@@ -1167,7 +1167,7 @@ export default function GradingPage() {
     <MainLayout>
       <div className="h-full flex flex-col overflow-hidden bg-background">
       {/* Tabs with Sample Navigation */}
-      <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full flex flex-col flex-1 overflow-hidden">
+      <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full flex flex-col min-h-0 flex-1">
         <SampleTabsNavigation
           samples={sampleTabItems}
           activeSampleId={activeSampleId}
@@ -1183,7 +1183,7 @@ export default function GradingPage() {
           const clientQuality = clientQualityMap.get(sample.id)
 
           return (
-            <TabsContent key={sample.id} value={sample.id} className="m-0 flex-1 flex flex-col overflow-hidden">
+            <TabsContent key={sample.id} value={sample.id} className="m-0 flex-1 flex flex-col min-h-0">
               {/* Sample Info Bar with Visibility Toggles */}
               <div className="border-b bg-card/50 px-6 py-3 shrink-0">
                 <div className="flex items-center justify-between">
@@ -1327,7 +1327,7 @@ export default function GradingPage() {
               </div>
 
               {/* Grading Content */}
-              <div className="p-6 flex-1 overflow-y-auto">
+              <div className="p-6 flex-1 overflow-y-auto scrollbar-hide">
                 <div className="flex flex-col lg:flex-row gap-6 items-start">
                   {/* Screen Size Distribution - Clean Table */}
                   <Card className="w-full lg:w-fit self-start">
