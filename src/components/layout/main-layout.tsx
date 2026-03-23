@@ -102,7 +102,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         {/* Main Content */}
         <main className="flex-1 overflow-hidden flex flex-col">
           <div className="flex-1 overflow-auto">
-            <div className="max-w-[1400px] mx-auto h-full">
+            <div className="max-w-[1400px] mx-auto">
               {children}
             </div>
           </div>
