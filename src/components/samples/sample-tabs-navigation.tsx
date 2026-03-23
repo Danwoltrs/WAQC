@@ -85,7 +85,7 @@ export function SampleTabsNavigation({
   }, [samples, updateScrollState])
 
   return (
-    <div className="border-b bg-card sticky top-0 z-50">
+    <div className="border-b bg-card sticky top-0 z-50 shrink-0">
       <div className="flex items-center">
         {/* Left arrow - always rendered when tabs overflow, disabled when at start */}
         {showArrows && (
@@ -103,7 +103,7 @@ export function SampleTabsNavigation({
         {/* Scrollable tabs container with thin scrollbar */}
         <div
           ref={scrollRef}
-          className="overflow-x-auto flex-1 sample-tabs-scroll"
+          className="overflow-x-auto overflow-y-hidden flex-1 sample-tabs-scroll"
           onScroll={updateScrollState}
         >
           <TabsList className="h-14 bg-transparent border-b-0 rounded-none flex-nowrap justify-start w-max">

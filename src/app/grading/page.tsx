@@ -466,14 +466,13 @@ export default function GradingPage() {
             const newRoastAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
             const newDefectPhotosMap = new Map<string, DefectPhoto[]>()
 
-            for (const sample of detailsData.samples) {
-              console.log(`[LOAD] Processing sample: ${sample.tracking_number} (ID: ${sample.id})`)
-
+            // Load all samples in parallel (fixes N+1 sequential fetch pattern)
+            await Promise.all(detailsData.samples.map(async (sample: Sample) => {
               // Initialize grading data with defaults
               const defaultGradingData: GradingData = {
                 sample_id: sample.id,
-                screen_sizes: {}, // Grams
-                screen_sizes_percentages: {}, // Calculated percentages
+                screen_sizes: {},
+                screen_sizes_percentages: {},
                 moisture_percentage: 0,
                 quakers_count: 0,
                 defect_counts: {},
@@ -482,76 +481,58 @@ export default function GradingPage() {
                 defects_total: 0
               }
 
-              // Try to load existing quality assessment data
-              try {
-                console.log(`[QA LOAD] Fetching quality assessment for sample ${sample.id}`)
-                const qaResponse = await fetch(`/api/samples/${sample.id}/quality-assessment`)
-                console.log(`[QA LOAD] Response status: ${qaResponse.status}`)
-                if (qaResponse.ok) {
-                  const qaData = await qaResponse.json()
-                  console.log(`[QA LOAD] Loaded assessment:`, qaData)
+              // Load quality assessment and photos in parallel for this sample
+              const [qaResult, photosResult] = await Promise.allSettled([
+                fetch(`/api/samples/${sample.id}/quality-assessment`).then(r => r.ok ? r.json() : null),
+                fetch(`/api/samples/${sample.id}/photos`).then(r => r.ok ? r.json() : null),
+              ])
 
-                  if (qaData.assessment) {
-                    const greenBeanData = qaData.assessment.green_bean_data as any
-                    const roastData = qaData.assessment.roast_data as any
+              // Process quality assessment data
+              if (qaResult.status === 'fulfilled' && qaResult.value?.assessment) {
+                const greenBeanData = qaResult.value.assessment.green_bean_data as any
+                const roastData = qaResult.value.assessment.roast_data as any
 
-                    // Populate with existing green bean data
-                    if (greenBeanData) {
-                      if (greenBeanData.screen_sizes) {
-                        defaultGradingData.screen_sizes = greenBeanData.screen_sizes
-                        defaultGradingData.screen_sizes_percentages = calculatePercentages(greenBeanData.screen_sizes)
-                      }
-                      if (greenBeanData.moisture_percentage != null) {
-                        defaultGradingData.moisture_percentage = greenBeanData.moisture_percentage
-                      }
-                      if (greenBeanData.density != null) {
-                        defaultGradingData.density = greenBeanData.density
-                      }
-                      if (greenBeanData.quakers != null) {
-                        defaultGradingData.quakers_count = greenBeanData.quakers
-                      }
-                      if (greenBeanData.green_aspect) {
-                        defaultGradingData.green_aspect = greenBeanData.green_aspect
-                      }
-                      if (greenBeanData.defects) {
-                        if (greenBeanData.defects.counts) {
-                          defaultGradingData.defect_counts = greenBeanData.defects.counts
-                        }
-                        if (greenBeanData.defects.primary != null) {
-                          defaultGradingData.defects_primary = greenBeanData.defects.primary
-                        }
-                        if (greenBeanData.defects.secondary != null) {
-                          defaultGradingData.defects_secondary = greenBeanData.defects.secondary
-                        }
-                        if (greenBeanData.defects.total != null) {
-                          defaultGradingData.defects_total = greenBeanData.defects.total
-                        }
-                      }
+                if (greenBeanData) {
+                  if (greenBeanData.screen_sizes) {
+                    defaultGradingData.screen_sizes = greenBeanData.screen_sizes
+                    defaultGradingData.screen_sizes_percentages = calculatePercentages(greenBeanData.screen_sizes)
+                  }
+                  if (greenBeanData.moisture_percentage != null) {
+                    defaultGradingData.moisture_percentage = greenBeanData.moisture_percentage
+                  }
+                  if (greenBeanData.density != null) {
+                    defaultGradingData.density = greenBeanData.density
+                  }
+                  if (greenBeanData.quakers != null) {
+                    defaultGradingData.quakers_count = greenBeanData.quakers
+                  }
+                  if (greenBeanData.green_aspect) {
+                    defaultGradingData.green_aspect = greenBeanData.green_aspect
+                  }
+                  if (greenBeanData.defects) {
+                    if (greenBeanData.defects.counts) {
+                      defaultGradingData.defect_counts = greenBeanData.defects.counts
                     }
-
-                    // Populate with existing roast data
-                    if (roastData) {
-                      if (roastData.roast_aspect) {
-                        defaultGradingData.roast_aspect = roastData.roast_aspect
-                      }
+                    if (greenBeanData.defects.primary != null) {
+                      defaultGradingData.defects_primary = greenBeanData.defects.primary
+                    }
+                    if (greenBeanData.defects.secondary != null) {
+                      defaultGradingData.defects_secondary = greenBeanData.defects.secondary
+                    }
+                    if (greenBeanData.defects.total != null) {
+                      defaultGradingData.defects_total = greenBeanData.defects.total
                     }
                   }
                 }
-              } catch (error) {
-                console.error(`Error loading quality assessment for sample ${sample.id}:`, error)
+
+                if (roastData?.roast_aspect) {
+                  defaultGradingData.roast_aspect = roastData.roast_aspect
+                }
               }
 
-              // Load defect photos for this sample
-              try {
-                const photosResponse = await fetch(`/api/samples/${sample.id}/photos`)
-                if (photosResponse.ok) {
-                  const photosData = await photosResponse.json()
-                  if (photosData.photos && photosData.photos.length > 0) {
-                    newDefectPhotosMap.set(sample.id, photosData.photos)
-                  }
-                }
-              } catch (error) {
-                console.error(`Error loading photos for sample ${sample.id}:`, error)
+              // Process defect photos
+              if (photosResult.status === 'fulfilled' && photosResult.value?.photos?.length > 0) {
+                newDefectPhotosMap.set(sample.id, photosResult.value.photos)
               }
 
               newGradingMap.set(sample.id, defaultGradingData)
@@ -570,7 +551,7 @@ export default function GradingPage() {
                 newGreenAspectOptionsMap,
                 newRoastAspectOptionsMap
               )
-            }
+            }))
 
             setClientQualityMap(newClientQualityMap)
             setGradingDataMap(newGradingMap)
@@ -1184,9 +1165,9 @@ export default function GradingPage() {
 
   return (
     <MainLayout>
-      <div className="h-full bg-background">
+      <div className="h-full flex flex-col overflow-hidden bg-background">
       {/* Tabs with Sample Navigation */}
-      <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full">
+      <Tabs value={activeSampleId} onValueChange={setActiveSampleId} className="w-full flex flex-col flex-1 overflow-hidden">
         <SampleTabsNavigation
           samples={sampleTabItems}
           activeSampleId={activeSampleId}
@@ -1202,9 +1183,9 @@ export default function GradingPage() {
           const clientQuality = clientQualityMap.get(sample.id)
 
           return (
-            <TabsContent key={sample.id} value={sample.id} className="m-0">
+            <TabsContent key={sample.id} value={sample.id} className="m-0 flex-1 flex flex-col overflow-hidden">
               {/* Sample Info Bar with Visibility Toggles */}
-              <div className="border-b bg-card/50 px-6 py-3">
+              <div className="border-b bg-card/50 px-6 py-3 shrink-0">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-6 text-sm">
                     {/* Quality */}
@@ -1346,7 +1327,7 @@ export default function GradingPage() {
               </div>
 
               {/* Grading Content */}
-              <div className="p-6">
+              <div className="p-6 flex-1 overflow-y-auto">
                 <div className="flex flex-col lg:flex-row gap-6 items-start">
                   {/* Screen Size Distribution - Clean Table */}
                   <Card className="w-full lg:w-fit self-start">
