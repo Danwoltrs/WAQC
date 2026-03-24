@@ -1357,14 +1357,7 @@ function processCuppingScores(
   // For other methods, it might be an average
   const overallScore = scoreCount > 0 ? Math.round(totalScore * 100) / 100 : null
 
-  // Defect cup consolidation: use MAX across cuppers (not sum or average)
-  // When multiple cuppers report finding a defect in 1 cup, that is 1 cup - not N cups
-  const taints = taintsCounts.length > 0
-    ? Math.max(...taintsCounts)
-    : null
-  const faults = faultsCounts.length > 0
-    ? Math.max(...faultsCounts)
-    : null
+  // Defect counts are computed after master cupper filtering below
 
   // Clean Cup and Uniform Cup: prefer persisted values from quality_assessments
   // Fall back to legacy numeric score conversion for backward compat
@@ -1382,11 +1375,58 @@ function processCuppingScores(
     uniformCup = avgUniformCup >= 10
   }
 
+  // Master cupper override: when a master cupper is designated, their defects are authoritative.
+  // If the master cupper removed a taint/fault (not present in their defects), exclude it entirely.
+  let filteredTaints = allTaints
+  let filteredFaults = allFaults
+  if (masterCupperId) {
+    const masterEntry = scoresWithCupper.find(s => s.cupper_id === masterCupperId)
+    if (masterEntry) {
+      // Build master cupper's authoritative defect name sets
+      const masterTaintNames = new Set<string>()
+      const masterFaultNames = new Set<string>()
+      if (masterEntry.defects && typeof masterEntry.defects === 'object') {
+        const defects = masterEntry.defects as { taints?: unknown[]; faults?: unknown[] }
+        if (Array.isArray(defects.taints)) {
+          for (const t of defects.taints) {
+            const name = (t && typeof t === 'object') ? (t as any).name : (typeof t === 'string' ? t : null)
+            if (name) masterTaintNames.add(name)
+          }
+        }
+        if (Array.isArray(defects.faults)) {
+          for (const f of defects.faults) {
+            const name = (f && typeof f === 'object') ? (f as any).name : (typeof f === 'string' ? f : null)
+            if (name) masterFaultNames.add(name)
+          }
+        }
+      }
+      // Filter: only keep defects the master cupper also reported
+      filteredTaints = allTaints.filter(t => masterTaintNames.has(t.name))
+      filteredFaults = allFaults.filter(f => masterFaultNames.has(f.name))
+
+      // Also recalculate taint/fault counts from master cupper's defects only
+      // (overwrite the MAX-consolidated counts computed above)
+    }
+  }
+
+  // Recalculate taints/faults counts after master cupper filtering
+  // When master cupper is designated, count unique defect names from filtered list
+  // Otherwise use MAX consolidation across cuppers
+  const hasMasterOverride = masterCupperId && scoresWithCupper.find(s => s.cupper_id === masterCupperId)
+  const uniqueFilteredTaintNames = new Set(filteredTaints.map(t => t.name))
+  const uniqueFilteredFaultNames = new Set(filteredFaults.map(f => f.name))
+  const finalTaints = hasMasterOverride
+    ? (uniqueFilteredTaintNames.size > 0 ? uniqueFilteredTaintNames.size : null)
+    : (taintsCounts.length > 0 ? Math.max(...taintsCounts) : null)
+  const finalFaults = hasMasterOverride
+    ? (uniqueFilteredFaultNames.size > 0 ? uniqueFilteredFaultNames.size : null)
+    : (faultsCounts.length > 0 ? Math.max(...faultsCounts) : null)
+
   // Deduplicate taints: group by name, consolidate intensity across cuppers
   // If intensity difference ≤1, use the higher value
   // If difference >1, flag with both values (master cupper should resolve)
-  const deduplicatedTaints = deduplicateDefects(allTaints)
-  const deduplicatedFaults = deduplicateDefects(allFaults)
+  const deduplicatedTaints = deduplicateDefects(filteredTaints)
+  const deduplicatedFaults = deduplicateDefects(filteredFaults)
 
   // Flavor descriptor: use the most common descriptor across cuppers
   let flavorDescriptor: string | null = null
@@ -1403,8 +1443,8 @@ function processCuppingScores(
     overallScore,
     comments: allNotes.length > 0 ? allNotes.join(' | ') : null,
     isSpecialty,
-    taints,
-    faults,
+    taints: finalTaints,
+    faults: finalFaults,
     taintDetails: deduplicatedTaints,
     faultDetails: deduplicatedFaults,
     cleanCup,

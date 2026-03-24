@@ -132,9 +132,9 @@ export async function evaluateQualityCompliance(
     .limit(1)
     .single()
 
-  // 1. Check cupping attributes against thresholds
-  if (cuppingScores && cuppingScores.length > 0 && parameters.cupping_attributes) {
-    // Find the master cupper's session for this sample
+  // Find the master cupper for this sample's session (used across multiple checks)
+  let sessionMasterCupperId: string | null = null
+  if (cuppingScores && cuppingScores.length > 0) {
     const { data: sampleSession } = await supabase
       .from('cupping_sessions')
       .select('master_cupper_id')
@@ -144,8 +144,11 @@ export async function evaluateQualityCompliance(
       .limit(1)
       .single()
 
-    const sessionMasterCupperId = sampleSession?.master_cupper_id || null
+    sessionMasterCupperId = sampleSession?.master_cupper_id || null
+  }
 
+  // 1. Check cupping attributes against thresholds
+  if (cuppingScores && cuppingScores.length > 0 && parameters.cupping_attributes) {
     // Get final scores: use master cupper's scores if designated, otherwise mean
     const finalScores: Record<string, number> = {}
 
@@ -223,8 +226,14 @@ export async function evaluateQualityCompliance(
   }
 
   // 2. Check defect intensity levels
+  // When master cupper is designated, only check their defects (authoritative override)
   if (cuppingScores && parameters.defect_limits) {
-    for (const score of cuppingScores) {
+    // Determine which scores to check for defect intensities
+    const scoresToCheck = sessionMasterCupperId
+      ? cuppingScores.filter(s => s.cupper_id === sessionMasterCupperId)
+      : cuppingScores
+
+    for (const score of scoresToCheck) {
       if (score.defects && typeof score.defects === 'object') {
         const defects = score.defects as { taints?: Array<{ name?: string; intensity?: number }>; faults?: Array<{ name?: string; intensity?: number }> }
 
@@ -360,6 +369,7 @@ export async function evaluateQualityCompliance(
   }
 
   // 9. Check cupping taint/fault counts
+  // When master cupper is designated, use only their defects (authoritative override)
   if (cuppingScores && cuppingScores.length > 0) {
     const tfConfig = parameters.taint_fault_configuration
     const tfRules = tfConfig?.rules
@@ -367,14 +377,25 @@ export async function evaluateQualityCompliance(
     let maxTaints = 0
     let maxFaults = 0
 
-    for (const score of cuppingScores) {
-      if (score.defects && typeof score.defects === 'object') {
-        const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
-        if (Array.isArray(defects.taints)) {
-          maxTaints = Math.max(maxTaints, defects.taints.length)
-        }
-        if (Array.isArray(defects.faults)) {
-          maxFaults = Math.max(maxFaults, defects.faults.length)
+    if (sessionMasterCupperId) {
+      // Master cupper override: use only their defects
+      const masterScore = cuppingScores.find(s => s.cupper_id === sessionMasterCupperId)
+      if (masterScore?.defects && typeof masterScore.defects === 'object') {
+        const defects = masterScore.defects as { taints?: unknown[]; faults?: unknown[] }
+        maxTaints = Array.isArray(defects.taints) ? defects.taints.length : 0
+        maxFaults = Array.isArray(defects.faults) ? defects.faults.length : 0
+      }
+    } else {
+      // No master cupper: MAX consolidation across all cuppers
+      for (const score of cuppingScores) {
+        if (score.defects && typeof score.defects === 'object') {
+          const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
+          if (Array.isArray(defects.taints)) {
+            maxTaints = Math.max(maxTaints, defects.taints.length)
+          }
+          if (Array.isArray(defects.faults)) {
+            maxFaults = Math.max(maxFaults, defects.faults.length)
+          }
         }
       }
     }

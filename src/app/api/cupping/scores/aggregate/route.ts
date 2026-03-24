@@ -329,6 +329,34 @@ export async function GET(request: NextRequest) {
     const taintCups: Map<string, Map<string, number>> = new Map()
     const faultCups: Map<string, Map<string, number>> = new Map()
 
+    // Master cupper override: when a master cupper is designated, their defects are authoritative.
+    // If the master cupper removed a taint/fault (i.e. it's not in their defects), it must NOT
+    // appear in the final result — even if other cuppers reported it.
+    let masterCupperDefectNames: { taints: Set<string>; faults: Set<string> } | null = null
+    if (masterCupperId) {
+      const masterScore = scores.find((s: any) => s.cupper_id === masterCupperId)
+      if (masterScore) {
+        masterCupperDefectNames = { taints: new Set(), faults: new Set() }
+        const defects = (masterScore.defects || {}) as { taints?: any[]; faults?: any[] }
+        if (Array.isArray(defects.taints)) {
+          for (const t of defects.taints) {
+            const name = typeof t === 'string' ? t : t?.name || t?.defect_name
+            if (name && name !== '[object Object]' && name !== 'undefined') {
+              masterCupperDefectNames.taints.add(name)
+            }
+          }
+        }
+        if (Array.isArray(defects.faults)) {
+          for (const f of defects.faults) {
+            const name = typeof f === 'string' ? f : f?.name || f?.defect_name
+            if (name && name !== '[object Object]' && name !== 'undefined') {
+              masterCupperDefectNames.faults.add(name)
+            }
+          }
+        }
+      }
+    }
+
     scores.forEach((score: any) => {
       const cupperName = score.cupper?.full_name || score.cupper_id || 'Unknown'
       const defects = score.defects || {}
@@ -458,6 +486,31 @@ export async function GET(request: NextRequest) {
         })
       }
     })
+
+    // Master cupper override: filter out defects the master cupper did NOT include.
+    // When a master cupper is designated and has submitted scores, their defect list is authoritative.
+    // Any taint/fault that the master cupper removed (not present in their defects) is excluded.
+    if (masterCupperDefectNames) {
+      // Remove taints not in master cupper's list
+      for (const taintName of [...allTaints]) {
+        if (!masterCupperDefectNames.taints.has(taintName)) {
+          allTaints.delete(taintName)
+          taintLevels.delete(taintName)
+          taintCups.delete(taintName)
+          // Remove from per-cupper tracking too
+          cupperDefects.forEach((defects) => defects.taints.delete(taintName))
+        }
+      }
+      // Remove faults not in master cupper's list
+      for (const faultName of [...allFaults]) {
+        if (!masterCupperDefectNames.faults.has(faultName)) {
+          allFaults.delete(faultName)
+          faultLevels.delete(faultName)
+          faultCups.delete(faultName)
+          cupperDefects.forEach((defects) => defects.faults.delete(faultName))
+        }
+      }
+    }
 
     // Check for defect level discrepancies (0.5 threshold same as attributes)
     const defectLevelStats: DefectLevelStats[] = []

@@ -203,7 +203,7 @@ export async function POST(request: NextRequest) {
       // Count total taints and faults from assigned cuppers' scores only
       let cupScoreQuery = supabaseAdmin
         .from('cupping_scores')
-        .select('defects')
+        .select('defects, cupper_id')
         .eq('sample_id', sample_id)
 
       if (sessionCupperIds.length > 0) {
@@ -212,19 +212,34 @@ export async function POST(request: NextRequest) {
 
       const { data: allCuppingScores } = await cupScoreQuery
 
-      // Use MAX consolidation: the number of defective cups = MAX reported by any single cupper
+      // Determine master cupper for this session (authoritative defect override)
+      const masterCupperIdForSession: string | null = session.master_cupper_id || null
+
       let totalTaints = 0
       let totalFaults = 0
 
       if (allCuppingScores) {
-        for (const score of allCuppingScores) {
-          if (score.defects && typeof score.defects === 'object') {
-            const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
-            if (Array.isArray(defects.taints)) {
-              totalTaints = Math.max(totalTaints, defects.taints.length)
-            }
-            if (Array.isArray(defects.faults)) {
-              totalFaults = Math.max(totalFaults, defects.faults.length)
+        if (masterCupperIdForSession) {
+          // Master cupper override: use ONLY the master cupper's defects as authoritative
+          const masterScore = allCuppingScores.find(
+            (s: any) => s.cupper_id === masterCupperIdForSession
+          )
+          if (masterScore?.defects && typeof masterScore.defects === 'object') {
+            const defects = masterScore.defects as { taints?: unknown[]; faults?: unknown[] }
+            totalTaints = Array.isArray(defects.taints) ? defects.taints.length : 0
+            totalFaults = Array.isArray(defects.faults) ? defects.faults.length : 0
+          }
+        } else {
+          // No master cupper: use MAX consolidation across all cuppers
+          for (const score of allCuppingScores) {
+            if (score.defects && typeof score.defects === 'object') {
+              const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
+              if (Array.isArray(defects.taints)) {
+                totalTaints = Math.max(totalTaints, defects.taints.length)
+              }
+              if (Array.isArray(defects.faults)) {
+                totalFaults = Math.max(totalFaults, defects.faults.length)
+              }
             }
           }
         }
