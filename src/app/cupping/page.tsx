@@ -439,6 +439,18 @@ function CuppingPageContent() {
     loadSamples()
   }, [])
 
+  // Ctrl+S / Cmd+S keyboard shortcut to save
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        handleSaveCurrent()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeSampleId, cuppingDataMap, saving])
+
   const toggleVisibility = (key: keyof SampleVisibilitySettings) => {
     const newValue = !visibility[key]
     const updated = updateVisibilitySetting(key, newValue)
@@ -1278,10 +1290,6 @@ function CuppingPageContent() {
                   <Camera className="h-4 w-4 mr-2" />
                   Scan Cards
                 </Button>
-                <Button onClick={handleSaveCurrent} disabled={saving} size="sm">
-                  <Save className="h-4 w-4 mr-2" />
-                  {saving ? 'Saving...' : 'Save Current Sample'}
-                </Button>
                 <Button
                   onClick={handleOpenValidationModal}
                   variant="outline"
@@ -1445,6 +1453,16 @@ function CuppingPageContent() {
                       <Badge variant="secondary" className="text-xs">
                         {cups} cups
                       </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        onClick={handleSaveCurrent}
+                        disabled={saving}
+                      >
+                        <Save className="h-5 w-5" />
+                        {saving ? 'Saving...' : 'Save'}
+                      </Button>
                     </div>
                   </div>
                 </div>

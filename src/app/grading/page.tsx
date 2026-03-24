@@ -182,6 +182,18 @@ export default function GradingPage() {
     loadSamples()
   }, [])
 
+  // Ctrl+S / Cmd+S keyboard shortcut to save
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 's') {
+        e.preventDefault()
+        handleSaveCurrent()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeSampleId, gradingDataMap, saving])
+
   const toggleVisibility = (key: keyof SampleVisibilitySettings) => {
     const newValue = !visibility[key]
     const updated = updateVisibilitySetting(key, newValue)
@@ -1292,11 +1304,10 @@ export default function GradingPage() {
                       </Button>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0">
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
+                      variant="outline"
+                      size="sm"
                       onClick={() => {
                         const input = document.createElement('input')
                         input.type = 'file'
@@ -1308,19 +1319,17 @@ export default function GradingPage() {
                         }
                         input.click()
                       }}
-                      title="Upload sample photo"
                     >
-                      <ImageIcon className="h-4 w-4" />
+                      <ImageIcon className="h-5 w-5" />
+                      Upload Photo
                     </Button>
                     <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
+                      size="sm"
                       onClick={handleSaveCurrent}
                       disabled={saving}
-                      title={saving ? 'Saving...' : 'Save'}
                     >
-                      <Save className="h-4 w-4" />
+                      <Save className="h-5 w-5" />
+                      {saving ? 'Saving...' : 'Save'}
                     </Button>
                   </div>
                 </div>
