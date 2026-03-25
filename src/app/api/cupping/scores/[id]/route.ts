@@ -75,7 +75,7 @@ export async function PATCH(
 
     const { id: scoreId } = await params
     const body = await request.json()
-    const { scores, attribute, value } = body
+    const { scores, attribute, value, defects } = body
 
     // Get the score to find the session
     const { data: existingScore, error: scoreError } = await supabaseAdmin
@@ -105,25 +105,34 @@ export async function PATCH(
       return NextResponse.json({ error: canEdit.reason }, { status: 403 })
     }
 
-    // Update the score
-    let updatedScores = existingScore.scores || {}
+    // Build update payload
+    const updatePayload: Record<string, unknown> = {
+      updated_at: new Date().toISOString(),
+    }
 
+    // Update scores (attribute scores)
     if (scores) {
       // Full scores object provided
-      updatedScores = scores
+      updatePayload.scores = scores
     } else if (attribute && value !== undefined) {
       // Single attribute update
-      updatedScores[attribute] = value
-    } else {
-      return NextResponse.json({ error: 'No score data provided' }, { status: 400 })
+      const updatedScores = { ...(existingScore.scores || {}), [attribute]: value }
+      updatePayload.scores = updatedScores
+    }
+
+    // Update defects (taints/faults) — used by validation modal to save final defect decisions
+    if (defects !== undefined) {
+      updatePayload.defects = defects
+    }
+
+    // Require at least one field to update
+    if (!scores && !attribute && defects === undefined) {
+      return NextResponse.json({ error: 'No score or defect data provided' }, { status: 400 })
     }
 
     const { data: updated, error: updateError } = await supabaseAdmin
       .from('cupping_scores')
-      .update({
-        scores: updatedScores,
-        updated_at: new Date().toISOString()
-      })
+      .update(updatePayload)
       .eq('id', scoreId)
       .select()
       .single()

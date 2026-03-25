@@ -227,6 +227,14 @@ export function CuppingValidationModal({
   const [finalScores, setFinalScores] = useState<Record<string, number>>({})
   const [finalDefects, setFinalDefects] = useState<Record<string, { cups: number; intensity: number; type: 'taint' | 'fault' }>>({})
 
+  // Resolution mode toggles: independent control over attributes vs defects source
+  const [attributeMode, setAttributeMode] = useState<'master' | 'average'>('master')
+  const [defectMode, setDefectMode] = useState<'master' | 'all'>('master')
+  // Master cupper's defect names (from aggregate API) for filtering
+  const [masterDefectNames, setMasterDefectNames] = useState<{ taints: string[]; faults: string[] } | null>(null)
+  // Full consolidated defects before any filtering (always contains all cuppers' defects)
+  const [allConsolidatedDefects, setAllConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
+
   // Check if user can edit final scores (master cupper or admin)
   const canEditFinals = useCallback(() => {
     if (!permissions) return false
@@ -293,8 +301,10 @@ export function CuppingValidationModal({
       if (data.success) {
         setAggregated(data.aggregated)
         setIndividualScores(data.individual_scores)
-        setConsolidatedDefects(data.consolidated_defects || [])
+        const allDefects = (data.consolidated_defects || []) as ConsolidatedDefect[]
+        setAllConsolidatedDefects(allDefects)
         setMasterCupperId(data.master_cupper_id || null)
+        setMasterDefectNames(data.master_cupper_defect_names || null)
 
         // Initialize final scores from the aggregated finalScore values
         const initScores: Record<string, number> = {}
@@ -303,9 +313,24 @@ export function CuppingValidationModal({
         }
         setFinalScores(initScores)
 
-        // Initialize final defects from consolidated data
+        // Default resolution modes: master cupper if one is assigned, otherwise average/all
+        const hasMaster = !!data.master_cupper_id
+        setAttributeMode(hasMaster ? 'master' : 'average')
+        setDefectMode(hasMaster ? 'master' : 'all')
+
+        // Filter consolidated defects based on initial defect mode
+        const masterNames = data.master_cupper_defect_names as { taints: string[]; faults: string[] } | null
+        const filteredDefects = hasMaster && masterNames
+          ? allDefects.filter(d =>
+              (d.type === 'taint' && masterNames.taints.includes(d.name)) ||
+              (d.type === 'fault' && masterNames.faults.includes(d.name))
+            )
+          : allDefects
+        setConsolidatedDefects(filteredDefects)
+
+        // Initialize final defects from filtered consolidated data
         const initDefects: Record<string, { cups: number; intensity: number; type: 'taint' | 'fault' }> = {}
-        for (const defect of (data.consolidated_defects || []) as ConsolidatedDefect[]) {
+        for (const defect of filteredDefects) {
           initDefects[defect.name] = {
             cups: defect.consolidated_cups,
             intensity: defect.consolidated_intensity,
@@ -360,8 +385,8 @@ export function CuppingValidationModal({
     }))
   }
 
-  // Save final scores back to the master cupper's score record before finalizing
-  const saveFinalScores = async (): Promise<boolean> => {
+  // Save final scores and defects back to the master cupper's score record before finalizing
+  const saveFinalDecisions = async (): Promise<boolean> => {
     if (!masterCupperId || !sampleId) return true // No master cupper, nothing to save
 
     // Find the master cupper's score record
@@ -369,25 +394,50 @@ export function CuppingValidationModal({
     if (!masterScore?.score_id) return true
 
     try {
-      // Update each attribute on the master cupper's score
+      // Build the full final scores object
+      const fullScores: Record<string, number> = {}
       for (const [attribute, value] of Object.entries(finalScores)) {
-        const response = await fetch(`/api/cupping/scores/${masterScore.score_id}`, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ attribute, value }),
-        })
+        fullScores[attribute] = value
+      }
 
-        if (!response.ok) {
-          const data = await response.json()
-          throw new Error(data.error || `Failed to update ${attribute}`)
+      // Build the final defects object from finalDefects state
+      // This reflects the lab manager's resolution choice (Master/All Cuppers + individual removals)
+      const resolvedTaints: Array<{ name: string; intensity: number; cups_affected: number }> = []
+      const resolvedFaults: Array<{ name: string; intensity: number; cups_affected: number }> = []
+      for (const [defectName, defectData] of Object.entries(finalDefects)) {
+        const entry = {
+          name: defectName,
+          intensity: defectData.intensity,
+          cups_affected: defectData.cups,
+        }
+        if (defectData.type === 'taint') {
+          resolvedTaints.push(entry)
+        } else {
+          resolvedFaults.push(entry)
         }
       }
+
+      // Single PATCH with both scores and defects
+      const response = await fetch(`/api/cupping/scores/${masterScore.score_id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scores: fullScores,
+          defects: { taints: resolvedTaints, faults: resolvedFaults },
+        }),
+      })
+
+      if (!response.ok) {
+        const data = await response.json()
+        throw new Error(data.error || 'Failed to save final decisions')
+      }
+
       return true
     } catch (error) {
-      console.error('Error saving final scores:', error)
+      console.error('Error saving final decisions:', error)
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to save final scores',
+        description: error instanceof Error ? error.message : 'Failed to save final decisions',
         variant: 'destructive',
       })
       return false
@@ -443,9 +493,9 @@ export function CuppingValidationModal({
 
     setFinalizing(true)
     try {
-      // Save the master cupper's final scores before finalizing
+      // Save the master cupper's final scores and defects before finalizing
       if (canEditFinals()) {
-        const saved = await saveFinalScores()
+        const saved = await saveFinalDecisions()
         if (!saved) {
           setFinalizing(false)
           return
@@ -620,6 +670,51 @@ export function CuppingValidationModal({
     setFinalScores(prev => ({ ...prev, ...newScores }))
   }, [individualScores, aggregated])
 
+  // Toggle attribute resolution mode: Master Cupper vs Average
+  const handleAttributeModeChange = useCallback((mode: 'master' | 'average') => {
+    setAttributeMode(mode)
+    if (mode === 'master') {
+      applyKeepMineAll()
+    } else {
+      applyAverageAll()
+    }
+  }, [applyKeepMineAll, applyAverageAll])
+
+  // Toggle defect resolution mode: Master Cupper vs All Cuppers
+  const handleDefectModeChange = useCallback((mode: 'master' | 'all') => {
+    setDefectMode(mode)
+    let defectsToShow: ConsolidatedDefect[]
+    if (mode === 'master' && masterDefectNames) {
+      defectsToShow = allConsolidatedDefects.filter(d =>
+        (d.type === 'taint' && masterDefectNames.taints.includes(d.name)) ||
+        (d.type === 'fault' && masterDefectNames.faults.includes(d.name))
+      )
+    } else {
+      defectsToShow = allConsolidatedDefects
+    }
+    setConsolidatedDefects(defectsToShow)
+    // Rebuild final defects from the new set
+    const newFinalDefects: Record<string, { cups: number; intensity: number; type: 'taint' | 'fault' }> = {}
+    for (const defect of defectsToShow) {
+      newFinalDefects[defect.name] = {
+        cups: defect.consolidated_cups,
+        intensity: defect.consolidated_intensity,
+        type: defect.type,
+      }
+    }
+    setFinalDefects(newFinalDefects)
+  }, [allConsolidatedDefects, masterDefectNames])
+
+  // Remove a single defect from the final list
+  const removeDefect = useCallback((defectName: string) => {
+    setConsolidatedDefects(prev => prev.filter(d => d.name !== defectName))
+    setFinalDefects(prev => {
+      const next = { ...prev }
+      delete next[defectName]
+      return next
+    })
+  }, [])
+
   if (loading) {
     return (
       <Dialog open={open} onOpenChange={onOpenChange}>
@@ -699,8 +794,83 @@ export function CuppingValidationModal({
             </Alert>
           )}
 
-          {/* Bulk actions */}
-          {isMultiCupper && editable && (
+          {/* Resolution mode toggles */}
+          {isMultiCupper && editable && masterCupperId && (
+            <div className="flex items-center gap-4 flex-wrap">
+              {/* Attributes resolution toggle */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Attributes:</span>
+                <div className="inline-flex rounded-md border border-border overflow-hidden">
+                  <button
+                    className={`px-3 py-1 text-xs font-medium transition-colors ${
+                      attributeMode === 'master'
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-transparent hover:bg-muted'
+                    }`}
+                    onClick={() => handleAttributeModeChange('master')}
+                  >
+                    Master
+                  </button>
+                  <button
+                    className={`px-3 py-1 text-xs font-medium transition-colors border-l border-border ${
+                      attributeMode === 'average'
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-transparent hover:bg-muted'
+                    }`}
+                    onClick={() => handleAttributeModeChange('average')}
+                  >
+                    Average
+                  </button>
+                </div>
+              </div>
+              {/* Defects resolution toggle */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-medium text-muted-foreground">Defects:</span>
+                <div className="inline-flex rounded-md border border-border overflow-hidden">
+                  <button
+                    className={`px-3 py-1 text-xs font-medium transition-colors ${
+                      defectMode === 'master'
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-transparent hover:bg-muted'
+                    }`}
+                    onClick={() => handleDefectModeChange('master')}
+                  >
+                    Master
+                  </button>
+                  <button
+                    className={`px-3 py-1 text-xs font-medium transition-colors border-l border-border ${
+                      defectMode === 'all'
+                        ? 'bg-amber-600 text-white'
+                        : 'bg-transparent hover:bg-muted'
+                    }`}
+                    onClick={() => handleDefectModeChange('all')}
+                  >
+                    All Cuppers
+                  </button>
+                </div>
+              </div>
+              {/* Per-cupper match buttons (for attributes) */}
+              {otherCuppers.length > 0 && (
+                <div className="flex items-center gap-1">
+                  <span className="text-xs text-muted-foreground">Match:</span>
+                  {otherCuppers.map((cupper) => (
+                    <Button
+                      key={cupper.cupper_id || cupper.index}
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => applyMatchOtherAll(cupper.index)}
+                    >
+                      {cupper.cupper_name.split(' ')[0]}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Fallback bulk actions when no master cupper */}
+          {isMultiCupper && editable && !masterCupperId && (
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-medium text-muted-foreground">Apply to all:</span>
               <Button
@@ -880,20 +1050,30 @@ export function CuppingValidationModal({
           </Card>
 
           {/* Defects section (inline, not a separate tab) */}
-          {consolidatedDefects.length > 0 && (
+          {(consolidatedDefects.length > 0 || allConsolidatedDefects.length > 0) && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between">
                   <span>Defects</span>
-                  {editable && (
-                    <span className="text-xs font-normal text-muted-foreground">
-                      Cups = MAX across cuppers. Adjust as needed.
-                    </span>
-                  )}
+                  <span className="text-xs font-normal text-muted-foreground">
+                    {consolidatedDefects.length === 0
+                      ? 'No defects in current selection'
+                      : editable
+                        ? 'Cups = MAX across cuppers. Adjust as needed.'
+                        : ''}
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
+                  {consolidatedDefects.length === 0 && (
+                    <div className="text-center py-4 text-sm text-muted-foreground">
+                      No defects (taints or faults) in current selection.
+                      {defectMode === 'master' && allConsolidatedDefects.length > 0 && (
+                        <span> Switch to <button className="underline text-amber-600" onClick={() => handleDefectModeChange('all')}>All Cuppers</button> to see all reported defects.</span>
+                      )}
+                    </div>
+                  )}
                   {consolidatedDefects.map((defect) => {
                     const finalDef = finalDefects[defect.name]
                     const cupperEntries = Object.entries(defect.per_cupper)
@@ -910,9 +1090,22 @@ export function CuppingValidationModal({
                               {finalDef?.type || defect.type}
                             </Badge>
                           </div>
-                          <Badge variant="outline">
-                            {cupperEntries.length}/{individualScores.length} cupper{cupperEntries.length !== 1 ? 's' : ''}
-                          </Badge>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline">
+                              {cupperEntries.length}/{individualScores.length} cupper{cupperEntries.length !== 1 ? 's' : ''}
+                            </Badge>
+                            {editable && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                title={`Remove ${defect.name}`}
+                                onClick={() => removeDefect(defect.name)}
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
                         </div>
 
                         {/* Per-cupper reference */}

@@ -487,30 +487,11 @@ export async function GET(request: NextRequest) {
       }
     })
 
-    // Master cupper override: filter out defects the master cupper did NOT include.
-    // When a master cupper is designated and has submitted scores, their defect list is authoritative.
-    // Any taint/fault that the master cupper removed (not present in their defects) is excluded.
-    if (masterCupperDefectNames) {
-      // Remove taints not in master cupper's list
-      for (const taintName of [...allTaints]) {
-        if (!masterCupperDefectNames.taints.has(taintName)) {
-          allTaints.delete(taintName)
-          taintLevels.delete(taintName)
-          taintCups.delete(taintName)
-          // Remove from per-cupper tracking too
-          cupperDefects.forEach((defects) => defects.taints.delete(taintName))
-        }
-      }
-      // Remove faults not in master cupper's list
-      for (const faultName of [...allFaults]) {
-        if (!masterCupperDefectNames.faults.has(faultName)) {
-          allFaults.delete(faultName)
-          faultLevels.delete(faultName)
-          faultCups.delete(faultName)
-          cupperDefects.forEach((defects) => defects.faults.delete(faultName))
-        }
-      }
-    }
+    // NOTE: No automatic defect filtering here — the aggregate API returns ALL defects
+    // from all cuppers. The validation modal UI handles resolution mode (Master / All Cuppers)
+    // and saves the final decision to the master cupper's cupping_scores.defects record.
+    // Downstream consumers (certificate, compliance, finalize) read the master cupper's
+    // defects as authoritative.
 
     // Check for defect level discrepancies (0.5 threshold same as attributes)
     const defectLevelStats: DefectLevelStats[] = []
@@ -760,6 +741,13 @@ export async function GET(request: NextRequest) {
       consolidated_defects: consolidatedDefects,
       can_see_all_scores: canSeeAllScores,
       master_cupper_id: masterCupperId,
+      // Master cupper's defect names for UI toggle (Master vs All Cuppers resolution)
+      master_cupper_defect_names: masterCupperDefectNames
+        ? {
+            taints: Array.from(masterCupperDefectNames.taints),
+            faults: Array.from(masterCupperDefectNames.faults),
+          }
+        : null,
     })
   } catch (error: any) {
     console.error('Error aggregating cupping scores:', error)
