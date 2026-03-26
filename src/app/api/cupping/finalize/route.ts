@@ -474,6 +474,7 @@ export async function POST(request: NextRequest) {
           })
 
         // Update existing certificate — keep the already-assigned certificate number
+        // Clear pdf_url so the download route regenerates the PDF with current data
         const { data: updatedCert, error: updateCertError } = await supabaseAdmin
           .from('certificates')
           .update({
@@ -482,6 +483,7 @@ export async function POST(request: NextRequest) {
             compliance_violations: newViolations.length > 0 ? newViolations : null,
             revision_number: newRevisionNumber,
             override_comment: `Re-certified (rev ${newRevisionNumber}): ${changesDescription}`,
+            pdf_url: null,
             updated_at: new Date().toISOString()
           })
           .eq('id', existingCert.id)

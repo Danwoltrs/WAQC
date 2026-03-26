@@ -1049,141 +1049,142 @@ export function CuppingValidationModal({
             </CardContent>
           </Card>
 
-          {/* Defects section (inline, not a separate tab) */}
+          {/* Defects table */}
           {(consolidatedDefects.length > 0 || allConsolidatedDefects.length > 0) && (
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="flex items-center justify-between">
                   <span>Defects</span>
-                  <span className="text-xs font-normal text-muted-foreground">
-                    {consolidatedDefects.length === 0
-                      ? 'No defects in current selection'
-                      : editable
-                        ? 'Cups = MAX across cuppers. Adjust as needed.'
-                        : ''}
-                  </span>
+                  {consolidatedDefects.length === 0 && defectMode === 'master' && allConsolidatedDefects.length > 0 && (
+                    <button className="text-xs font-normal underline text-amber-600" onClick={() => handleDefectModeChange('all')}>
+                      Show all cuppers
+                    </button>
+                  )}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  {consolidatedDefects.length === 0 && (
-                    <div className="text-center py-4 text-sm text-muted-foreground">
-                      No defects (taints or faults) in current selection.
-                      {defectMode === 'master' && allConsolidatedDefects.length > 0 && (
-                        <span> Switch to <button className="underline text-amber-600" onClick={() => handleDefectModeChange('all')}>All Cuppers</button> to see all reported defects.</span>
-                      )}
-                    </div>
-                  )}
-                  {consolidatedDefects.map((defect) => {
-                    const finalDef = finalDefects[defect.name]
-                    const cupperEntries = Object.entries(defect.per_cupper)
-
-                    return (
-                      <div
-                        key={defect.name}
-                        className="p-4 rounded-lg border border-border"
-                      >
-                        <div className="flex items-center justify-between mb-3">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{defect.name}</span>
-                            <Badge variant={defect.type === 'fault' ? 'destructive' : 'secondary'}>
-                              {finalDef?.type || defect.type}
-                            </Badge>
-                          </div>
-                          <div className="flex items-center gap-2">
-                            <Badge variant="outline">
-                              {cupperEntries.length}/{individualScores.length} cupper{cupperEntries.length !== 1 ? 's' : ''}
-                            </Badge>
-                            {editable && (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
-                                title={`Remove ${defect.name}`}
-                                onClick={() => removeDefect(defect.name)}
-                              >
-                                <XCircle className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Per-cupper reference */}
-                        <div className="text-xs text-muted-foreground mb-3 space-y-1">
-                          {cupperEntries.map(([cupperName, data]) => (
-                            <div key={cupperName} className="flex items-center gap-2">
-                              <span className="font-medium">{cupperName}:</span>
-                              <span>{data.cups} cup{data.cups !== 1 ? 's' : ''}</span>
-                              {data.intensity > 0 && <span>- intensity {data.intensity}</span>}
-                            </div>
+                {consolidatedDefects.length === 0 ? (
+                  <div className="text-center py-4 text-sm text-muted-foreground">
+                    No defects in current selection.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full border-collapse">
+                      <thead>
+                        <tr className="border-b">
+                          <th className="text-left p-2 font-semibold text-sm">Defect</th>
+                          <th className="text-center p-2 font-semibold text-sm">Type</th>
+                          {individualScores.map((score) => (
+                            <th key={score.cupper_id || score.score_id} className="text-center p-2 font-semibold text-xs">
+                              <span className="flex flex-col items-center gap-0.5">
+                                <span>{score.cupper_name.split(' ')[0]}</span>
+                                {score.is_master_cupper && <Badge className="text-[10px] bg-amber-600 px-1 py-0">M</Badge>}
+                              </span>
+                            </th>
                           ))}
-                        </div>
+                          <th className="text-center p-2 font-semibold text-sm">
+                            <span className={editable ? 'text-amber-600' : ''}>Final Cups</span>
+                          </th>
+                          <th className="text-center p-2 font-semibold text-sm">
+                            <span className={editable ? 'text-amber-600' : ''}>Final Int.</span>
+                          </th>
+                          {editable && <th className="text-center p-2 font-semibold text-xs text-muted-foreground w-8" />}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {consolidatedDefects.map((defect) => {
+                          const finalDef = finalDefects[defect.name]
+                          const cupperEntries = defect.per_cupper
 
-                        {/* Master cupper final decision */}
-                        <div className={`grid grid-cols-3 gap-3 pt-3 border-t ${editable ? 'bg-amber-50 dark:bg-amber-950 -mx-4 -mb-4 px-4 pb-4 rounded-b-lg' : ''}`}>
-                          <div>
-                            <label className="text-xs font-medium text-muted-foreground block mb-1">
-                              Final Cups
-                            </label>
-                            {editable ? (
-                              <Input
-                                type="number"
-                                min={0}
-                                value={finalDef?.cups ?? defect.consolidated_cups}
-                                onChange={(e) => updateFinalDefect(defect.name, 'cups', e.target.value)}
-                                className="h-8 text-sm border-amber-400"
-                              />
-                            ) : (
-                              <span className="font-bold">{finalDef?.cups ?? defect.consolidated_cups}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-muted-foreground block mb-1">
-                              Final Intensity
-                            </label>
-                            {editable ? (
-                              <Input
-                                type="number"
-                                step="0.25"
-                                min={0}
-                                value={finalDef?.intensity ?? defect.consolidated_intensity}
-                                onChange={(e) => updateFinalDefect(defect.name, 'intensity', e.target.value)}
-                                onBlur={() => {
-                                  const val = finalDef?.intensity ?? defect.consolidated_intensity
-                                  updateFinalDefect(defect.name, 'intensity', snapToIncrement(val, 0.25))
-                                }}
-                                className="h-8 text-sm border-amber-400"
-                              />
-                            ) : (
-                              <span className="font-bold">{finalDef?.intensity ?? defect.consolidated_intensity}</span>
-                            )}
-                          </div>
-                          <div>
-                            <label className="text-xs font-medium text-muted-foreground block mb-1">
-                              Type
-                            </label>
-                            {editable ? (
-                              <Select
-                                value={finalDef?.type || defect.type}
-                                onValueChange={(v) => updateFinalDefect(defect.name, 'type', v)}
-                              >
-                                <SelectTrigger className="h-8 text-sm border-amber-400">
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="taint">Taint</SelectItem>
-                                  <SelectItem value="fault">Fault</SelectItem>
-                                </SelectContent>
-                              </Select>
-                            ) : (
-                              <span className="font-bold capitalize">{finalDef?.type || defect.type}</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
+                          return (
+                            <tr key={defect.name} className="border-b hover:bg-muted/50">
+                              <td className="p-2 font-medium text-sm whitespace-nowrap">{defect.name}</td>
+                              <td className="text-center p-2">
+                                {editable ? (
+                                  <Select
+                                    value={finalDef?.type || defect.type}
+                                    onValueChange={(v) => updateFinalDefect(defect.name, 'type', v)}
+                                  >
+                                    <SelectTrigger className="h-7 w-20 text-xs mx-auto border-amber-400">
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="taint">Taint</SelectItem>
+                                      <SelectItem value="fault">Fault</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                ) : (
+                                  <Badge variant={defect.type === 'fault' ? 'destructive' : 'secondary'} className="text-[10px]">
+                                    {finalDef?.type || defect.type}
+                                  </Badge>
+                                )}
+                              </td>
+                              {individualScores.map((score) => {
+                                const scoreKey = score.cupper_id || score.score_id || ''
+                                const cupperData = cupperEntries[score.cupper_name]
+                                return (
+                                  <td key={`${defect.name}-${scoreKey}`} className="text-center p-2 text-xs">
+                                    {cupperData ? (
+                                      <span className="text-foreground">
+                                        {cupperData.cups}c / {cupperData.intensity}
+                                      </span>
+                                    ) : (
+                                      <span className="text-muted-foreground">--</span>
+                                    )}
+                                  </td>
+                                )
+                              })}
+                              <td className="text-center p-2">
+                                {editable ? (
+                                  <Input
+                                    type="number"
+                                    min={0}
+                                    value={finalDef?.cups ?? defect.consolidated_cups}
+                                    onChange={(e) => updateFinalDefect(defect.name, 'cups', e.target.value)}
+                                    className="w-16 h-7 text-center text-xs font-bold mx-auto border-amber-400 bg-amber-50 dark:bg-amber-950"
+                                  />
+                                ) : (
+                                  <span className="font-bold">{finalDef?.cups ?? defect.consolidated_cups}</span>
+                                )}
+                              </td>
+                              <td className="text-center p-2">
+                                {editable ? (
+                                  <Input
+                                    type="number"
+                                    step="0.25"
+                                    min={0}
+                                    value={finalDef?.intensity ?? defect.consolidated_intensity}
+                                    onChange={(e) => updateFinalDefect(defect.name, 'intensity', e.target.value)}
+                                    onBlur={() => {
+                                      const val = finalDef?.intensity ?? defect.consolidated_intensity
+                                      updateFinalDefect(defect.name, 'intensity', snapToIncrement(val, 0.25))
+                                    }}
+                                    className="w-16 h-7 text-center text-xs font-bold mx-auto border-amber-400 bg-amber-50 dark:bg-amber-950"
+                                  />
+                                ) : (
+                                  <span className="font-bold">{finalDef?.intensity ?? defect.consolidated_intensity}</span>
+                                )}
+                              </td>
+                              {editable && (
+                                <td className="text-center p-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-6 w-6 p-0 text-muted-foreground hover:text-destructive"
+                                    title={`Remove ${defect.name}`}
+                                    onClick={() => removeDefect(defect.name)}
+                                  >
+                                    <XCircle className="h-3.5 w-3.5" />
+                                  </Button>
+                                </td>
+                              )}
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
