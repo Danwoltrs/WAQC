@@ -46,7 +46,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { session_id, sample_id, notes, manual_decision } = body
+    const { session_id, sample_id, notes, manual_decision, validated_by_cupper_id } = body
 
     if (!session_id || !sample_id) {
       return NextResponse.json({
@@ -198,6 +198,10 @@ export async function POST(request: NextRequest) {
       newWorkflowStage = 'review'
     }
 
+    // Determine authoritative cupper for defects (used for cup status + certificate)
+    const authoritativeCupperId: string | null =
+      session.master_cupper_id || validated_by_cupper_id || null
+
     // Auto-calculate Clean Cup and Uniform Cup from defect counts
     try {
       // Count total taints and faults from assigned cuppers' scores only
@@ -212,25 +216,22 @@ export async function POST(request: NextRequest) {
 
       const { data: allCuppingScores } = await cupScoreQuery
 
-      // Determine master cupper for this session (authoritative defect override)
-      const masterCupperIdForSession: string | null = session.master_cupper_id || null
-
       let totalTaints = 0
       let totalFaults = 0
 
       if (allCuppingScores) {
-        if (masterCupperIdForSession) {
-          // Master cupper override: use ONLY the master cupper's defects as authoritative
-          const masterScore = allCuppingScores.find(
-            (s: any) => s.cupper_id === masterCupperIdForSession
+        if (authoritativeCupperId) {
+          // Use the authoritative cupper's defects (master cupper or validator)
+          const authScore = allCuppingScores.find(
+            (s: any) => s.cupper_id === authoritativeCupperId
           )
-          if (masterScore?.defects && typeof masterScore.defects === 'object') {
-            const defects = masterScore.defects as { taints?: unknown[]; faults?: unknown[] }
+          if (authScore?.defects && typeof authScore.defects === 'object') {
+            const defects = authScore.defects as { taints?: unknown[]; faults?: unknown[] }
             totalTaints = Array.isArray(defects.taints) ? defects.taints.length : 0
             totalFaults = Array.isArray(defects.faults) ? defects.faults.length : 0
           }
         } else {
-          // No master cupper: use MAX consolidation across all cuppers
+          // No authoritative cupper: use MAX consolidation across all cuppers
           for (const score of allCuppingScores) {
             if (score.defects && typeof score.defects === 'object') {
               const defects = score.defects as { taints?: unknown[]; faults?: unknown[] }
@@ -593,6 +594,15 @@ export async function POST(request: NextRequest) {
       allFinalized = otherSamples?.every(
         (s: any) => s.workflow_stage === 'certified' || s.workflow_stage === 'rejected'
       ) || false
+    }
+
+    // If no master cupper was designated, set the validating cupper as master
+    // so that certificate-data.ts reads their resolved defects as authoritative
+    if (!session.master_cupper_id && authoritativeCupperId) {
+      await supabaseAdmin
+        .from('cupping_sessions')
+        .update({ master_cupper_id: authoritativeCupperId, updated_at: new Date().toISOString() })
+        .eq('id', session_id)
     }
 
     // Update session status if all samples are finalized

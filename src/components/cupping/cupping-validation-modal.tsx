@@ -385,13 +385,15 @@ export function CuppingValidationModal({
     }))
   }
 
-  // Save final scores and defects back to the master cupper's score record before finalizing
+  // Save final scores and defects back to the validating cupper's score record before finalizing
   const saveFinalDecisions = async (): Promise<boolean> => {
-    if (!masterCupperId || !sampleId) return true // No master cupper, nothing to save
+    if (!sampleId) return true
 
-    // Find the master cupper's score record
-    const masterScore = individualScores.find(s => s.is_master_cupper || s.cupper_id === masterCupperId)
-    if (!masterScore?.score_id) return true
+    // Find the score record to save to: master cupper if designated, otherwise the current user's own score
+    const targetScore = masterCupperId
+      ? individualScores.find(s => s.is_master_cupper || s.cupper_id === masterCupperId)
+      : individualScores.find(s => s.is_own_score)
+    if (!targetScore?.score_id) return true
 
     try {
       // Build the full final scores object
@@ -418,7 +420,7 @@ export function CuppingValidationModal({
       }
 
       // Single PATCH with both scores and defects
-      const response = await fetch(`/api/cupping/scores/${masterScore.score_id}`, {
+      const response = await fetch(`/api/cupping/scores/${targetScore.score_id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -502,6 +504,11 @@ export function CuppingValidationModal({
         }
       }
 
+      // Determine which cupper's defects are authoritative (master cupper or the validator)
+      const targetScore = masterCupperId
+        ? individualScores.find(s => s.is_master_cupper || s.cupper_id === masterCupperId)
+        : individualScores.find(s => s.is_own_score)
+
       const response = await fetch('/api/cupping/finalize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -510,6 +517,7 @@ export function CuppingValidationModal({
           sample_id: sampleId,
           manual_decision: manualDecision,
           override_discrepancies: overrideDiscrepancies,
+          validated_by_cupper_id: targetScore?.cupper_id || null,
         }),
       })
 
