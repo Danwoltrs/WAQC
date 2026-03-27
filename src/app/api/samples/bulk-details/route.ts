@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
           template_id,
           custom_name,
           custom_parameters,
+          cups_per_sample,
           template:quality_templates!client_qualities_template_id_fkey(
             id,
             name,
