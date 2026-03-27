@@ -328,8 +328,21 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     .limit(1)
     .single()
 
-  const masterCupperId: string | null = cuppingSession?.master_cupper_id || null
+  let masterCupperId: string | null = cuppingSession?.master_cupper_id || null
   const sessionCupperIds: string[] | null = (cuppingSession?.cupper_ids as string[]) || null
+
+  // If no master cupper designated on session, check if any assigned cupper has the profile flag
+  if (!masterCupperId && sessionCupperIds && sessionCupperIds.length > 0) {
+    const { data: cupperProfiles } = await supabase
+      .from('profiles')
+      .select('id, is_master_cupper')
+      .in('id', sessionCupperIds)
+      .eq('is_master_cupper', true)
+      .limit(1)
+    if (cupperProfiles && cupperProfiles.length > 0) {
+      masterCupperId = cupperProfiles[0].id
+    }
+  }
 
   // Fetch cupping scores with cupper_id for master cupper filtering
   let cuppingScores = null

@@ -133,6 +133,18 @@ export async function GET(request: NextRequest) {
       }
       if (activeSession?.master_cupper_id) {
         masterCupperId = activeSession.master_cupper_id
+      } else if (activeSessionCupperIds && activeSessionCupperIds.length > 0) {
+        // No master cupper designated on session — check if any assigned cupper
+        // has is_master_cupper=true in their profile
+        const { data: cupperProfiles } = await supabaseAdmin
+          .from('profiles')
+          .select('id, is_master_cupper')
+          .in('id', activeSessionCupperIds as string[])
+          .eq('is_master_cupper', true)
+          .limit(1)
+        if (cupperProfiles && cupperProfiles.length > 0) {
+          masterCupperId = cupperProfiles[0].id
+        }
       }
     }
 
