@@ -461,86 +461,72 @@ function CuppingPageContent() {
     try {
       setLoading(true)
       // Load samples assigned to the current user through cupping sessions
-      // This ensures only cuppers who were assigned to the session can see the samples
       const response = await fetch('/api/cupping/my-samples?include_completed=true')
       const data = await response.json()
 
       if (response.ok) {
-        // Store user profile for permission checks
         if (data.user_profile) {
           setUserProfile(data.user_profile)
         }
-
-        // Store assignment stats
         if (data.stats) {
           setAssignmentStats(data.stats)
         }
 
         if (data.samples && data.samples.length > 0) {
-          // Load full details for each sample
-          const sampleIds = data.samples.map((s: Sample) => s.id)
+          const samples: Sample[] = data.samples
+          setSamples(samples)
+          setActiveSampleId(samples[0].id)
 
-          const detailsResponse = await fetch('/api/samples/bulk-details', {
+          const sampleIds = samples.map((s: Sample) => s.id)
+
+          // Fetch all assessments + cupping scores in one bulk call (parallel with config init)
+          const bulkResponse = await fetch('/api/cupping/my-samples/bulk-data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sample_ids: sampleIds })
           })
+          const bulkData = bulkResponse.ok ? await bulkResponse.json() : { assessments: {}, cupping_scores: {} }
 
-          const detailsData = await detailsResponse.json()
+          // Initialize all maps
+          const newCuppingMap = new Map<string, CuppingData>()
+          const newAttributesMap = new Map<string, AttributeWithScale[]>()
+          const newAvailableDefectsMap = new Map<string, string[]>()
+          const newCupsPerSampleMap = new Map<string, number>()
+          const newClientQualityMap = new Map<string, ClientQuality>()
+          const newCommentsMap = new Map<string, string>()
+          const newDefectConfigsMap = new Map<string, Map<string, TaintFaultDefect>>()
+          const newFlavorDescriptorMap = new Map<string, string>()
 
-          if (detailsResponse.ok && detailsData.samples) {
-            setSamples(detailsData.samples)
-            if (detailsData.samples.length > 0) {
-              setActiveSampleId(detailsData.samples[0].id)
+          // Process all samples in parallel (no per-sample API calls needed)
+          for (const sample of samples) {
+            initSampleCuppingConfig(
+              sample,
+              bulkData.cupping_scores[sample.id] || null,
+              newCuppingMap,
+              newAttributesMap,
+              newAvailableDefectsMap,
+              newCupsPerSampleMap,
+              newClientQualityMap,
+              newDefectConfigsMap,
+              newFlavorDescriptorMap
+            )
+
+            // Extract cupping comments from bulk assessment data
+            const assessment = bulkData.assessments[sample.id]
+            if (assessment?.cupping_comments) {
+              newCommentsMap.set(sample.id, assessment.cupping_comments)
             }
-
-            // Initialize cupping data for each sample
-            const newCuppingMap = new Map<string, CuppingData>()
-            const newAttributesMap = new Map<string, AttributeWithScale[]>()
-            const newAvailableDefectsMap = new Map<string, string[]>()
-            const newCupsPerSampleMap = new Map<string, number>()
-            const newClientQualityMap = new Map<string, ClientQuality>()
-            const newCommentsMap = new Map<string, string>()
-            const newDefectConfigsMap = new Map<string, Map<string, TaintFaultDefect>>()
-            const newFlavorDescriptorMap = new Map<string, string>()
-
-            for (const sample of detailsData.samples) {
-              await loadSampleCuppingConfig(
-                sample,
-                newCuppingMap,
-                newAttributesMap,
-                newAvailableDefectsMap,
-                newCupsPerSampleMap,
-                newClientQualityMap,
-                newDefectConfigsMap,
-                newFlavorDescriptorMap
-              )
-
-              // Load existing cupping comments from quality assessment
-              try {
-                const qaRes = await fetch(`/api/samples/${sample.id}/quality-assessment`)
-                if (qaRes.ok) {
-                  const qaData = await qaRes.json()
-                  if (qaData.assessment?.cupping_comments) {
-                    newCommentsMap.set(sample.id, qaData.assessment.cupping_comments)
-                  }
-                }
-              } catch {
-                // Non-fatal: comments are optional
-              }
-            }
-
-            setCuppingDataMap(newCuppingMap)
-            setAttributesMap(newAttributesMap)
-            setAvailableDefectsMap(newAvailableDefectsMap)
-            setCupsPerSampleMap(newCupsPerSampleMap)
-            setClientQualityMap(newClientQualityMap)
-            setCuppingCommentsMap(newCommentsMap)
-            setDefectConfigsMap(newDefectConfigsMap)
-            setFlavorDescriptorMap(newFlavorDescriptorMap)
           }
+
+          setCuppingDataMap(newCuppingMap)
+          setAttributesMap(newAttributesMap)
+          setAvailableDefectsMap(newAvailableDefectsMap)
+          setCupsPerSampleMap(newCupsPerSampleMap)
+          setClientQualityMap(newClientQualityMap)
+          setCuppingCommentsMap(newCommentsMap)
+          setDefectConfigsMap(newDefectConfigsMap)
+          setFlavorDescriptorMap(newFlavorDescriptorMap)
         } else {
-          // No samples assigned - this is normal if user isn't assigned to any sessions
           setSamples([])
           console.log('No samples assigned:', data.message)
         }
@@ -552,8 +538,10 @@ function CuppingPageContent() {
     }
   }
 
-  const loadSampleCuppingConfig = async (
+  // Synchronous — uses quality_spec already on the sample object + pre-fetched cupping score
+  const initSampleCuppingConfig = (
     sample: Sample,
+    existingScore: { scores: Record<string, any>; defects: any } | null,
     cuppingMap: Map<string, CuppingData>,
     attributesMap: Map<string, AttributeWithScale[]>,
     availableDefectsMap: Map<string, string[]>,
@@ -563,174 +551,127 @@ function CuppingPageContent() {
     flavorDescMap?: Map<string, string>
   ) => {
     try {
-      // Initialize empty cupping data
       const defaultCuppingData: CuppingData = {
         sample_id: sample.id,
         attributes: [],
         defects: []
       }
 
-      // Load cups_per_sample from quality_spec
       const cupsPerSample = sample.quality_spec?.cups_per_sample || 10
       cupsMap.set(sample.id, cupsPerSample)
 
-      // For ALL samples (type, pss, ss), load from quality template
-      let attributesSet = false
-      let defectsSet = false
+      // Use quality_spec data already on the sample (from my-samples join)
+      if (sample.quality_spec) {
+        clientQualityMap.set(sample.id, sample.quality_spec as ClientQuality)
 
-      if (sample.quality_spec_id) {
-        const clientQualityResponse = await fetch(`/api/client-qualities/${sample.quality_spec_id}`)
-        const clientQualityData = await clientQualityResponse.json()
+        // Priority: custom_parameters (client-specific) > template.parameters (defaults)
+        const customParams = (sample.quality_spec as any)?.custom_parameters
+        const templateParams = (sample.quality_spec as any)?.template?.parameters
 
-        console.log('Client Quality Data for sample:', sample.tracking_number, clientQualityData)
+        // Check cupping attributes (custom first, then template)
+        const cuppingAttributes = customParams?.cupping_attributes || templateParams?.cupping_attributes
 
-        if (clientQualityResponse.ok && clientQualityData.client_quality) {
-          clientQualityMap.set(sample.id, clientQualityData.client_quality)
+        if (cuppingAttributes && Array.isArray(cuppingAttributes)) {
+          const attributes: AttributeWithScale[] = cuppingAttributes
+          attributesMap.set(sample.id, attributes)
+          defaultCuppingData.attributes = attributes.map(attr => ({
+            attribute: attr.attribute,
+            value: null
+          }))
+        }
 
-          // Extract cupping template parameters
-          // Priority: custom_parameters (client-specific) > template.parameters (defaults)
-          const customParams = clientQualityData.client_quality?.custom_parameters
-          const templateParams = clientQualityData.client_quality?.template?.parameters
+        // Check cupping defects (multiple possible locations)
+        const cuppingDefects = customParams?.defects ||
+                                customParams?.cupping_defects ||
+                                customParams?.taint_fault_configuration?.defects ||
+                                templateParams?.defects ||
+                                templateParams?.cupping_defects ||
+                                templateParams?.taint_fault_configuration?.defects
 
-          console.log('Custom params:', customParams)
-          console.log('Template params:', templateParams)
-
-          // Check cupping attributes (custom first, then template)
-          const cuppingAttributes = customParams?.cupping_attributes || templateParams?.cupping_attributes
-          console.log('Found cupping_attributes:', cuppingAttributes)
-
-          if (cuppingAttributes && Array.isArray(cuppingAttributes)) {
-            const attributes: AttributeWithScale[] = cuppingAttributes
-            attributesMap.set(sample.id, attributes)
-
-            // Initialize attribute scores
-            defaultCuppingData.attributes = attributes.map(attr => ({
-              attribute: attr.attribute,
-              value: null
-            }))
-            attributesSet = true
-          }
-
-          // Check cupping defects (multiple possible locations)
-          const cuppingDefects = customParams?.defects ||
-                                  customParams?.cupping_defects ||
-                                  customParams?.taint_fault_configuration?.defects ||
-                                  templateParams?.defects ||
-                                  templateParams?.cupping_defects ||
-                                  templateParams?.taint_fault_configuration?.defects
-          console.log('Found defects:', cuppingDefects)
-
-          if (cuppingDefects && Array.isArray(cuppingDefects)) {
-            // Extract defect names - handle both string arrays and object arrays
-            // Filter out inactive defects (where active === false)
-            const activeDefects = cuppingDefects
-              .filter((d: any) => {
-                // If it's a string, include it
-                if (typeof d === 'string') return true
-                // If it's an object, only include if active is true or undefined
-                return d.active !== false
-              })
-            const defectNames = activeDefects.map((d: any) =>
-              typeof d === 'string' ? d : d.name
-            )
-            console.log('Filtered defect names:', defectNames)
-            availableDefectsMap.set(sample.id, defectNames)
-
-            // Store full defect config objects for increment lookup
-            const configMap = new Map<string, TaintFaultDefect>()
-            activeDefects.forEach((d: any) => {
-              if (typeof d === 'object' && d.name) {
-                configMap.set(d.name, d as TaintFaultDefect)
-              }
+        if (cuppingDefects && Array.isArray(cuppingDefects)) {
+          const activeDefects = cuppingDefects
+            .filter((d: any) => {
+              if (typeof d === 'string') return true
+              return d.active !== false
             })
-            defectConfigsMap.set(sample.id, configMap)
+          const defectNames = activeDefects.map((d: any) =>
+            typeof d === 'string' ? d : d.name
+          )
+          availableDefectsMap.set(sample.id, defectNames)
 
-            defectsSet = true
-          }
+          const configMap = new Map<string, TaintFaultDefect>()
+          activeDefects.forEach((d: any) => {
+            if (typeof d === 'object' && d.name) {
+              configMap.set(d.name, d as TaintFaultDefect)
+            }
+          })
+          defectConfigsMap.set(sample.id, configMap)
         }
       }
 
-      // Load existing cupping scores from database (if any)
-      try {
-        const scoresResponse = await fetch(`/api/samples/${sample.id}/cupping-score`)
-        const scoresData = await scoresResponse.json()
+      // Apply pre-fetched cupping scores (if any)
+      if (existingScore?.scores) {
+        const userScore = existingScore
+        const scoreKeys = Object.keys(userScore.scores)
 
-        if (scoresResponse.ok && scoresData.scores && scoresData.scores.length > 0) {
-          // Find the current user's score (there should only be one per cupper)
-          const userScore = scoresData.scores[0] // For now, use the first score
+        if (defaultCuppingData.attributes.length > 0) {
+          defaultCuppingData.attributes = defaultCuppingData.attributes.map(attr => {
+            // Try exact match first
+            if (userScore.scores[attr.attribute] !== undefined) {
+              return { ...attr, value: userScore.scores[attr.attribute] }
+            }
 
-          console.log(`[LOAD] Found existing cupping score for sample ${sample.tracking_number}:`, userScore)
-          console.log(`[LOAD] Score keys:`, Object.keys(userScore.scores || {}))
-          console.log(`[LOAD] Template attributes:`, defaultCuppingData.attributes.map(a => a.attribute))
+            // Try flexible matching (case-insensitive, partial match)
+            const attrLower = attr.attribute.toLowerCase()
+            const matchingKey = scoreKeys.find(key => {
+              const keyLower = key.toLowerCase()
+              return attrLower.startsWith(keyLower) || keyLower.startsWith(attrLower) ||
+                     attrLower.includes(keyLower) || keyLower.includes(attrLower)
+            })
 
-          // Populate attributes with saved scores (with flexible matching)
-          if (userScore.scores && defaultCuppingData.attributes.length > 0) {
-            const scoreKeys = Object.keys(userScore.scores)
+            if (matchingKey) {
+              return { ...attr, value: userScore.scores[matchingKey] }
+            }
 
-            defaultCuppingData.attributes = defaultCuppingData.attributes.map(attr => {
-              // Try exact match first
-              if (userScore.scores[attr.attribute] !== undefined) {
-                return { ...attr, value: userScore.scores[attr.attribute] }
-              }
+            return { ...attr, value: null }
+          })
+        }
 
-              // Try flexible matching (case-insensitive, partial match)
-              const attrLower = attr.attribute.toLowerCase()
-              const matchingKey = scoreKeys.find(key => {
-                const keyLower = key.toLowerCase()
-                // Match "Fragrance" to "Fragrance/Aroma" or "Frag" to "Fragrance"
-                return attrLower.startsWith(keyLower) || keyLower.startsWith(attrLower) ||
-                       attrLower.includes(keyLower) || keyLower.includes(attrLower)
+        // Load flavor descriptor if saved
+        if (userScore.scores?.Flavor_descriptor && flavorDescMap) {
+          flavorDescMap.set(sample.id, userScore.scores.Flavor_descriptor)
+        }
+
+        // Populate defects from saved taints/faults
+        if (userScore.defects) {
+          const savedDefects: CuppingDefect[] = []
+
+          if (userScore.defects.taints && Array.isArray(userScore.defects.taints)) {
+            userScore.defects.taints.forEach((taint: any) => {
+              savedDefects.push({
+                id: `${Date.now()}-${Math.random()}`,
+                name: taint.name,
+                cups_affected: taint.cups_affected || 0,
+                intensity: taint.intensity || 1,
+                is_taint: true
               })
-
-              if (matchingKey) {
-                console.log(`[LOAD] Flexible match: "${attr.attribute}" matched with "${matchingKey}"`)
-                return { ...attr, value: userScore.scores[matchingKey] }
-              }
-
-              return { ...attr, value: null }
             })
           }
 
-          // Load flavor descriptor if saved
-          if (userScore.scores?.Flavor_descriptor && flavorDescMap) {
-            flavorDescMap.set(sample.id, userScore.scores.Flavor_descriptor)
+          if (userScore.defects.faults && Array.isArray(userScore.defects.faults)) {
+            userScore.defects.faults.forEach((fault: any) => {
+              savedDefects.push({
+                id: `${Date.now()}-${Math.random()}`,
+                name: fault.name,
+                cups_affected: fault.cups_affected || 0,
+                intensity: fault.intensity || 1,
+                is_taint: false
+              })
+            })
           }
 
-          // Populate defects from saved taints/faults
-          if (userScore.defects) {
-            const savedDefects: CuppingDefect[] = []
-
-            // Add taints
-            if (userScore.defects.taints && Array.isArray(userScore.defects.taints)) {
-              userScore.defects.taints.forEach((taint: any) => {
-                savedDefects.push({
-                  id: `${Date.now()}-${Math.random()}`,
-                  name: taint.name,
-                  cups_affected: taint.cups_affected || 0,
-                  intensity: taint.intensity || 1,
-                  is_taint: true
-                })
-              })
-            }
-
-            // Add faults
-            if (userScore.defects.faults && Array.isArray(userScore.defects.faults)) {
-              userScore.defects.faults.forEach((fault: any) => {
-                savedDefects.push({
-                  id: `${Date.now()}-${Math.random()}`,
-                  name: fault.name,
-                  cups_affected: fault.cups_affected || 0,
-                  intensity: fault.intensity || 1,
-                  is_taint: false
-                })
-              })
-            }
-
-            defaultCuppingData.defects = savedDefects
-          }
+          defaultCuppingData.defects = savedDefects
         }
-      } catch (error) {
-        console.error('Error loading existing cupping scores:', error)
       }
 
       // Fallback to Standard template if no cupping attributes were loaded from quality spec
@@ -744,7 +685,7 @@ function CuppingPageContent() {
       }
       cuppingMap.set(sample.id, defaultCuppingData)
     } catch (error) {
-      console.error('Error loading sample cupping config:', error)
+      console.error('Error initializing sample cupping config:', error)
     }
   }
 

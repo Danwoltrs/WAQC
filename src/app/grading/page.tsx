@@ -437,148 +437,175 @@ export default function GradingPage() {
     try {
       setLoading(true)
       // Load samples assigned to the current user through cupping sessions
-      // This ensures only cuppers who were assigned to the session can see the samples
       const response = await fetch('/api/cupping/my-samples?include_completed=true')
       const data = await response.json()
 
       if (response.ok) {
-        // Store user profile for permission checks
         if (data.user_profile) {
           setUserProfile(data.user_profile)
         }
 
         if (data.samples && data.samples.length > 0) {
-          // Load full details for each sample
-          const sampleIds = data.samples.map((s: Sample) => s.id)
+          const samples: Sample[] = data.samples
+          setSamples(samples)
+          setActiveSampleId(samples[0].id)
 
-          const detailsResponse = await fetch('/api/samples/bulk-details', {
+          const sampleIds = samples.map((s: Sample) => s.id)
+
+          // Fetch all assessments + photos in one bulk call
+          const bulkResponse = await fetch('/api/cupping/my-samples/bulk-data', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ sample_ids: sampleIds })
           })
+          const bulkData = bulkResponse.ok ? await bulkResponse.json() : { assessments: {}, defect_photos: {} }
 
-          const detailsData = await detailsResponse.json()
+          // Initialize all maps
+          const newGradingMap = new Map<string, GradingData>()
+          const newDefectConfigsMap = new Map<string, DefectConfig[]>()
+          const newDefectThresholdsMap = new Map<string, DefectThresholds>()
+          const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
+          const newHumidityConstraintsMap = new Map<string, { min?: number; max?: number }>()
+          const newGreenAspectConstraintsMap = new Map<string, string[] | { min_value: number; min_label: string }>()
+          const newRoastAspectConstraintsMap = new Map<string, string[] | { min_value: number; min_label: string }>()
+          const newClientQualityMap = new Map<string, ClientQuality>()
+          const newGreenAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
+          const newRoastAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
+          const newDefectPhotosMap = new Map<string, DefectPhoto[]>()
 
-          if (detailsResponse.ok && detailsData.samples) {
-            setSamples(detailsData.samples)
-            if (detailsData.samples.length > 0) {
-              setActiveSampleId(detailsData.samples[0].id)
+          // Collect samples that need fallback defect-definitions API call
+          const defectFallbackSamples: Sample[] = []
+
+          // Process all samples synchronously (using pre-fetched bulk data)
+          for (const sample of samples) {
+            // Initialize grading data with defaults
+            const defaultGradingData: GradingData = {
+              sample_id: sample.id,
+              screen_sizes: {},
+              screen_sizes_percentages: {},
+              moisture_percentage: 0,
+              quakers_count: 0,
+              defect_counts: {},
+              defects_primary: 0,
+              defects_secondary: 0,
+              defects_total: 0
             }
 
-            // Initialize grading data for each sample
-            const newGradingMap = new Map<string, GradingData>()
-            const newDefectConfigsMap = new Map<string, DefectConfig[]>()
-            const newDefectThresholdsMap = new Map<string, DefectThresholds>()
-            const newScreenConstraintsMap = new Map<string, ScreenSizeConstraint[]>()
-            const newHumidityConstraintsMap = new Map<string, { min?: number; max?: number }>()
-            const newGreenAspectConstraintsMap = new Map<string, string[] | { min_value: number; min_label: string }>()
-            const newRoastAspectConstraintsMap = new Map<string, string[] | { min_value: number; min_label: string }>()
-            const newClientQualityMap = new Map<string, ClientQuality>()
-            const newGreenAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
-            const newRoastAspectOptionsMap = new Map<string, Array<{label: string; value: number}>>()
-            const newDefectPhotosMap = new Map<string, DefectPhoto[]>()
+            // Process quality assessment from bulk data
+            const assessment = bulkData.assessments[sample.id]
+            if (assessment) {
+              const greenBeanData = assessment.green_bean_data as any
+              const roastData = assessment.roast_data as any
 
-            // Load all samples in parallel (fixes N+1 sequential fetch pattern)
-            await Promise.all(detailsData.samples.map(async (sample: Sample) => {
-              // Initialize grading data with defaults
-              const defaultGradingData: GradingData = {
-                sample_id: sample.id,
-                screen_sizes: {},
-                screen_sizes_percentages: {},
-                moisture_percentage: 0,
-                quakers_count: 0,
-                defect_counts: {},
-                defects_primary: 0,
-                defects_secondary: 0,
-                defects_total: 0
-              }
-
-              // Load quality assessment and photos in parallel for this sample
-              const [qaResult, photosResult] = await Promise.allSettled([
-                fetch(`/api/samples/${sample.id}/quality-assessment`).then(r => r.ok ? r.json() : null),
-                fetch(`/api/samples/${sample.id}/photos`).then(r => r.ok ? r.json() : null),
-              ])
-
-              // Process quality assessment data
-              if (qaResult.status === 'fulfilled' && qaResult.value?.assessment) {
-                const greenBeanData = qaResult.value.assessment.green_bean_data as any
-                const roastData = qaResult.value.assessment.roast_data as any
-
-                if (greenBeanData) {
-                  if (greenBeanData.screen_sizes) {
-                    defaultGradingData.screen_sizes = greenBeanData.screen_sizes
-                    defaultGradingData.screen_sizes_percentages = calculatePercentages(greenBeanData.screen_sizes)
-                  }
-                  if (greenBeanData.moisture_percentage != null) {
-                    defaultGradingData.moisture_percentage = greenBeanData.moisture_percentage
-                  }
-                  if (greenBeanData.density != null) {
-                    defaultGradingData.density = greenBeanData.density
-                  }
-                  if (greenBeanData.quakers != null) {
-                    defaultGradingData.quakers_count = greenBeanData.quakers
-                  }
-                  if (greenBeanData.green_aspect) {
-                    defaultGradingData.green_aspect = greenBeanData.green_aspect
-                  }
-                  if (greenBeanData.defects) {
-                    if (greenBeanData.defects.counts) {
-                      defaultGradingData.defect_counts = greenBeanData.defects.counts
-                    }
-                    if (greenBeanData.defects.primary != null) {
-                      defaultGradingData.defects_primary = greenBeanData.defects.primary
-                    }
-                    if (greenBeanData.defects.secondary != null) {
-                      defaultGradingData.defects_secondary = greenBeanData.defects.secondary
-                    }
-                    if (greenBeanData.defects.total != null) {
-                      defaultGradingData.defects_total = greenBeanData.defects.total
-                    }
-                  }
+              if (greenBeanData) {
+                if (greenBeanData.screen_sizes) {
+                  defaultGradingData.screen_sizes = greenBeanData.screen_sizes
+                  defaultGradingData.screen_sizes_percentages = calculatePercentages(greenBeanData.screen_sizes)
                 }
-
-                if (roastData?.roast_aspect) {
-                  defaultGradingData.roast_aspect = roastData.roast_aspect
+                if (greenBeanData.moisture_percentage != null) {
+                  defaultGradingData.moisture_percentage = greenBeanData.moisture_percentage
+                }
+                if (greenBeanData.density != null) {
+                  defaultGradingData.density = greenBeanData.density
+                }
+                if (greenBeanData.quakers != null) {
+                  defaultGradingData.quakers_count = greenBeanData.quakers
+                }
+                if (greenBeanData.green_aspect) {
+                  defaultGradingData.green_aspect = greenBeanData.green_aspect
+                }
+                if (greenBeanData.defects) {
+                  if (greenBeanData.defects.counts) {
+                    defaultGradingData.defect_counts = greenBeanData.defects.counts
+                  }
+                  if (greenBeanData.defects.primary != null) {
+                    defaultGradingData.defects_primary = greenBeanData.defects.primary
+                  }
+                  if (greenBeanData.defects.secondary != null) {
+                    defaultGradingData.defects_secondary = greenBeanData.defects.secondary
+                  }
+                  if (greenBeanData.defects.total != null) {
+                    defaultGradingData.defects_total = greenBeanData.defects.total
+                  }
                 }
               }
 
-              // Process defect photos
-              if (photosResult.status === 'fulfilled' && photosResult.value?.photos?.length > 0) {
-                newDefectPhotosMap.set(sample.id, photosResult.value.photos)
+              if (roastData?.roast_aspect) {
+                defaultGradingData.roast_aspect = roastData.roast_aspect
               }
+            }
 
-              newGradingMap.set(sample.id, defaultGradingData)
+            // Process defect photos from bulk data
+            const photoPaths = bulkData.defect_photos[sample.id]
+            if (photoPaths && photoPaths.length > 0) {
+              newDefectPhotosMap.set(sample.id, photoPaths)
+            }
 
-              // Load defect configuration and screen constraints for this sample
-              await loadSampleConfig(
-                sample,
-                newDefectConfigsMap,
-                newDefectThresholdsMap,
-                newScreenConstraintsMap,
-                newHumidityConstraintsMap,
-                newGreenAspectConstraintsMap,
-                newRoastAspectConstraintsMap,
-                newGradingMap,
-                newClientQualityMap,
-                newGreenAspectOptionsMap,
-                newRoastAspectOptionsMap
-              )
-            }))
+            newGradingMap.set(sample.id, defaultGradingData)
 
-            setClientQualityMap(newClientQualityMap)
-            setGradingDataMap(newGradingMap)
-            setDefectConfigsMap(newDefectConfigsMap)
-            setDefectThresholdsMap(newDefectThresholdsMap)
-            setScreenConstraintsMap(newScreenConstraintsMap)
-            setHumidityConstraintsMap(newHumidityConstraintsMap)
-            setGreenAspectConstraintsMap(newGreenAspectConstraintsMap)
-            setRoastAspectConstraintsMap(newRoastAspectConstraintsMap)
-            setGreenAspectOptionsMap(newGreenAspectOptionsMap)
-            setRoastAspectOptionsMap(newRoastAspectOptionsMap)
-            setDefectPhotosMap(newDefectPhotosMap)
+            // Initialize config from sample's quality_spec (synchronous, no API call)
+            const needsFallback = initSampleConfig(
+              sample,
+              newDefectConfigsMap,
+              newDefectThresholdsMap,
+              newScreenConstraintsMap,
+              newHumidityConstraintsMap,
+              newGreenAspectConstraintsMap,
+              newRoastAspectConstraintsMap,
+              newGradingMap,
+              newClientQualityMap,
+              newGreenAspectOptionsMap,
+              newRoastAspectOptionsMap
+            )
+
+            if (needsFallback) {
+              defectFallbackSamples.push(sample)
+            }
           }
+
+          // Fetch fallback defect definitions in parallel (only for samples without template defects)
+          if (defectFallbackSamples.length > 0) {
+            await Promise.all(defectFallbackSamples.map(async (sample) => {
+              try {
+                const defectsResponse = await fetch(
+                  `/api/defect-definitions?client_id=${sample.client_id}&origin=${sample.origin || ''}&is_active=true`
+                )
+                if (defectsResponse.ok) {
+                  const defectsData = await defectsResponse.json()
+                  if (defectsData.definitions) {
+                    const defectConfigs = defectsData.definitions.map((def: any, index: number) => ({
+                      name: def.name_en,
+                      weight: def.point_value,
+                      category: def.category as 'primary' | 'secondary',
+                      display_order: index,
+                      description: def.description_en
+                    }))
+                    newDefectConfigsMap.set(sample.id, defectConfigs)
+
+                    const gradingData = newGradingMap.get(sample.id)
+                    if (gradingData) {
+                      gradingData.defect_counts = { ...gradingData.defect_counts }
+                    }
+                  }
+                }
+              } catch {
+                // Non-fatal: will use empty defect list
+              }
+            }))
+          }
+
+          setClientQualityMap(newClientQualityMap)
+          setGradingDataMap(newGradingMap)
+          setDefectConfigsMap(newDefectConfigsMap)
+          setDefectThresholdsMap(newDefectThresholdsMap)
+          setScreenConstraintsMap(newScreenConstraintsMap)
+          setHumidityConstraintsMap(newHumidityConstraintsMap)
+          setGreenAspectConstraintsMap(newGreenAspectConstraintsMap)
+          setRoastAspectConstraintsMap(newRoastAspectConstraintsMap)
+          setGreenAspectOptionsMap(newGreenAspectOptionsMap)
+          setRoastAspectOptionsMap(newRoastAspectOptionsMap)
+          setDefectPhotosMap(newDefectPhotosMap)
         } else {
-          // No samples assigned - this is normal if user isn't assigned to any sessions
           setSamples([])
           console.log('No samples assigned:', data.message)
         }
@@ -590,7 +617,9 @@ export default function GradingPage() {
     }
   }
 
-  const loadSampleConfig = async (
+  // Synchronous — uses quality_spec already on the sample object (no API calls)
+  // Returns true if the sample needs a fallback defect-definitions API call
+  const initSampleConfig = (
     sample: Sample,
     defectConfigsMap: Map<string, DefectConfig[]>,
     defectThresholdsMap: Map<string, DefectThresholds>,
@@ -602,218 +631,161 @@ export default function GradingPage() {
     clientQualityMap: Map<string, ClientQuality>,
     greenAspectOptionsMap: Map<string, Array<{label: string; value: number}>>,
     roastAspectOptionsMap: Map<string, Array<{label: string; value: number}>>
-  ) => {
+  ): boolean => {
     try {
-      // Load client quality for custom name and extract template parameters
-      let templateParams: any = null
-      if (sample.quality_spec_id) {
-        const clientQualityResponse = await fetch(`/api/client-qualities/${sample.quality_spec_id}`)
-        const clientQualityData = await clientQualityResponse.json()
+      // Use quality_spec data already on the sample (from my-samples join)
+      let templateParams: any = sample.quality_spec?.template?.parameters || null
 
-        if (clientQualityResponse.ok && clientQualityData.client_quality) {
-          clientQualityMap.set(sample.id, clientQualityData.client_quality)
+      if (sample.quality_spec) {
+        clientQualityMap.set(sample.id, sample.quality_spec as ClientQuality)
 
-          // Extract template parameters from the API response
-          templateParams = clientQualityData.client_quality?.template?.parameters
+        // Extract and populate green aspect options
+        if (templateParams?.green_aspect_configuration?.wordings && Array.isArray(templateParams.green_aspect_configuration.wordings)) {
+          const greenOptions = templateParams.green_aspect_configuration.wordings.map((opt: any) => ({
+            label: opt.label || opt.name || opt,
+            value: opt.value !== undefined ? opt.value : 0
+          }))
+          greenAspectOptionsMap.set(sample.id, greenOptions)
+        }
 
-          // Extract and populate green aspect options (using "wordings" array with label and value)
-          if (templateParams?.green_aspect_configuration?.wordings && Array.isArray(templateParams.green_aspect_configuration.wordings)) {
-            const greenOptions = templateParams.green_aspect_configuration.wordings.map((opt: any) => ({
-              label: opt.label || opt.name || opt,
-              value: opt.value !== undefined ? opt.value : 0
-            }))
-            greenAspectOptionsMap.set(sample.id, greenOptions)
+        // Extract and populate roast aspect options
+        if (templateParams?.roast_aspect_configuration?.wordings && Array.isArray(templateParams.roast_aspect_configuration.wordings)) {
+          const roastOptions = templateParams.roast_aspect_configuration.wordings.map((opt: any) => ({
+            label: opt.label || opt.name || opt,
+            value: opt.value !== undefined ? opt.value : 0
+          }))
+          roastAspectOptionsMap.set(sample.id, roastOptions)
+        }
+
+        // Extract humidity constraints (moisture requirements)
+        const humidityConstraint: { min?: number; max?: number } = {}
+        if (templateParams?.moisture_requirements) {
+          if (templateParams.moisture_requirements.min !== undefined) {
+            humidityConstraint.min = templateParams.moisture_requirements.min
           }
-
-          // Extract and populate roast aspect options (using "wordings" array with label and value)
-          if (templateParams?.roast_aspect_configuration?.wordings && Array.isArray(templateParams.roast_aspect_configuration.wordings)) {
-            const roastOptions = templateParams.roast_aspect_configuration.wordings.map((opt: any) => ({
-              label: opt.label || opt.name || opt,
-              value: opt.value !== undefined ? opt.value : 0
-            }))
-            roastAspectOptionsMap.set(sample.id, roastOptions)
-          }
-
-          // Extract humidity constraints (moisture requirements)
-          const humidityConstraint: { min?: number; max?: number } = {}
-
-          // Try multiple paths for moisture constraints
-          if (templateParams?.moisture_requirements) {
-            if (templateParams.moisture_requirements.min !== undefined) {
-              humidityConstraint.min = templateParams.moisture_requirements.min
-            }
-            if (templateParams.moisture_requirements.max !== undefined) {
-              humidityConstraint.max = templateParams.moisture_requirements.max
-            }
-          }
-          // Direct moisture_min/max at template level
-          if (templateParams?.moisture_min !== undefined) {
-            humidityConstraint.min = templateParams.moisture_min
-          }
-          if (templateParams?.moisture_max !== undefined) {
-            humidityConstraint.max = templateParams.moisture_max
-          }
-
-          if (Object.keys(humidityConstraint).length > 0) {
-            humidityConstraintsMap.set(sample.id, humidityConstraint)
-          }
-
-          // Extract green aspect constraints
-          if (templateParams?.green_aspect_configuration) {
-            // Check for minimum acceptable level (check both validation.min_acceptable_value and minimum_acceptable)
-            const minAcceptableValue = templateParams.green_aspect_configuration.validation?.min_acceptable_value
-              ?? templateParams.green_aspect_configuration.minimum_acceptable
-
-            if (minAcceptableValue !== undefined) {
-              const greenOptions = greenAspectOptionsMap.get(sample.id) || []
-              const minOption = greenOptions.find(opt => opt.value === minAcceptableValue)
-
-              if (minOption) {
-                greenAspectConstraintsMap.set(sample.id, {
-                  min_value: minAcceptableValue,
-                  min_label: minOption.label
-                })
-              }
-            }
-            // Check for rejectable values array
-            else if (templateParams.green_aspect_configuration.rejectable_values && Array.isArray(templateParams.green_aspect_configuration.rejectable_values)) {
-              greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable_values)
-            } else if (templateParams.green_aspect_configuration.rejectable && Array.isArray(templateParams.green_aspect_configuration.rejectable)) {
-              greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable)
-            }
-          }
-
-          // Extract roast aspect constraints
-          if (templateParams?.roast_aspect_configuration) {
-            // Check for minimum acceptable level (check both validation.min_acceptable_value and minimum_acceptable)
-            const minAcceptableValue = templateParams.roast_aspect_configuration.validation?.min_acceptable_value
-              ?? templateParams.roast_aspect_configuration.minimum_acceptable
-
-            if (minAcceptableValue !== undefined) {
-              const roastOptions = roastAspectOptionsMap.get(sample.id) || []
-              const minOption = roastOptions.find(opt => opt.value === minAcceptableValue)
-
-              if (minOption) {
-                roastAspectConstraintsMap.set(sample.id, {
-                  min_value: minAcceptableValue,
-                  min_label: minOption.label
-                })
-              }
-            }
-            // Check for rejectable values array
-            else if (templateParams.roast_aspect_configuration.rejectable_values && Array.isArray(templateParams.roast_aspect_configuration.rejectable_values)) {
-              roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable_values)
-            } else if (templateParams.roast_aspect_configuration.rejectable && Array.isArray(templateParams.roast_aspect_configuration.rejectable)) {
-              roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable)
-            }
+          if (templateParams.moisture_requirements.max !== undefined) {
+            humidityConstraint.max = templateParams.moisture_requirements.max
           }
         }
-      }
+        if (templateParams?.moisture_min !== undefined) {
+          humidityConstraint.min = templateParams.moisture_min
+        }
+        if (templateParams?.moisture_max !== undefined) {
+          humidityConstraint.max = templateParams.moisture_max
+        }
+        if (Object.keys(humidityConstraint).length > 0) {
+          humidityConstraintsMap.set(sample.id, humidityConstraint)
+        }
 
-      // Fallback: try to get templateParams from sample object if not found in API response
-      if (!templateParams) {
-        templateParams = sample.quality_spec?.template?.parameters
+        // Extract green aspect constraints
+        if (templateParams?.green_aspect_configuration) {
+          const minAcceptableValue = templateParams.green_aspect_configuration.validation?.min_acceptable_value
+            ?? templateParams.green_aspect_configuration.minimum_acceptable
+
+          if (minAcceptableValue !== undefined) {
+            const greenOptions = greenAspectOptionsMap.get(sample.id) || []
+            const minOption = greenOptions.find(opt => opt.value === minAcceptableValue)
+            if (minOption) {
+              greenAspectConstraintsMap.set(sample.id, {
+                min_value: minAcceptableValue,
+                min_label: minOption.label
+              })
+            }
+          } else if (templateParams.green_aspect_configuration.rejectable_values && Array.isArray(templateParams.green_aspect_configuration.rejectable_values)) {
+            greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable_values)
+          } else if (templateParams.green_aspect_configuration.rejectable && Array.isArray(templateParams.green_aspect_configuration.rejectable)) {
+            greenAspectConstraintsMap.set(sample.id, templateParams.green_aspect_configuration.rejectable)
+          }
+        }
+
+        // Extract roast aspect constraints
+        if (templateParams?.roast_aspect_configuration) {
+          const minAcceptableValue = templateParams.roast_aspect_configuration.validation?.min_acceptable_value
+            ?? templateParams.roast_aspect_configuration.minimum_acceptable
+
+          if (minAcceptableValue !== undefined) {
+            const roastOptions = roastAspectOptionsMap.get(sample.id) || []
+            const minOption = roastOptions.find(opt => opt.value === minAcceptableValue)
+            if (minOption) {
+              roastAspectConstraintsMap.set(sample.id, {
+                min_value: minAcceptableValue,
+                min_label: minOption.label
+              })
+            }
+          } else if (templateParams.roast_aspect_configuration.rejectable_values && Array.isArray(templateParams.roast_aspect_configuration.rejectable_values)) {
+            roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable_values)
+          } else if (templateParams.roast_aspect_configuration.rejectable && Array.isArray(templateParams.roast_aspect_configuration.rejectable)) {
+            roastAspectConstraintsMap.set(sample.id, templateParams.roast_aspect_configuration.rejectable)
+          }
+        }
       }
 
       // For TYPE SAMPLES: Skip all template-based defect loading
-      // Type samples ALWAYS use standard SCA defects based on origin only
-      // They are offer samples for evaluation, not subject to approval/rejection
       let defectConfigs: DefectConfig[] = []
-
-      // Extract custom parameters (used for defects and thresholds)
       const customParams = sample.quality_spec?.custom_parameters
+      let needsFallback = false
 
       if (sample.sample_type !== 'type') {
         // Only load template defects for non-type samples (PSS, SS, Specialty)
-        // Try multiple possible locations for defect data
-
-        // Path 1: template.parameters.defect_configuration (GRADING DEFECTS)
         if (templateParams?.defect_configuration?.defects && Array.isArray(templateParams.defect_configuration.defects)) {
-        defectConfigs = templateParams.defect_configuration.defects.map((defect: any, index: number) => ({
-          name: defect.name || defect.name_en,
-          weight: defect.weight || defect.point_value || 1,
-          category: (defect.category || 'primary') as 'primary' | 'secondary',
-          display_order: defect.display_order ?? index,
-          description: defect.description || defect.description_en || ''
-        }))
-      }
-      // Path 2: template.parameters.defect_requirements.defects
-      else if (templateParams?.defect_requirements?.defects && Array.isArray(templateParams.defect_requirements.defects)) {
-        defectConfigs = templateParams.defect_requirements.defects.map((defect: any, index: number) => ({
-          name: defect.name || defect.name_en,
-          weight: defect.weight || defect.point_value || 1,
-          category: (defect.category || 'primary') as 'primary' | 'secondary',
-          display_order: defect.display_order ?? index,
-          description: defect.description || defect.description_en || ''
-        }))
-      }
-      // Path 3: template.parameters.defects (direct array)
-      else if (templateParams?.defects && Array.isArray(templateParams.defects)) {
-        defectConfigs = templateParams.defects.map((defect: any, index: number) => ({
-          name: defect.name || defect.name_en,
-          weight: defect.weight || defect.point_value || 1,
-          category: (defect.category || 'primary') as 'primary' | 'secondary',
-          display_order: defect.display_order ?? index,
-          description: defect.description || defect.description_en || ''
-        }))
-      }
-      // Path 4: custom_parameters.defect_requirements.defects
-      else if (customParams?.defect_requirements?.defects && Array.isArray(customParams.defect_requirements.defects)) {
-        defectConfigs = customParams.defect_requirements.defects.map((defect: any, index: number) => ({
-          name: defect.name || defect.name_en,
-          weight: defect.weight || defect.point_value || 1,
-          category: (defect.category || 'primary') as 'primary' | 'secondary',
-          display_order: defect.display_order ?? index,
-          description: defect.description || defect.description_en || ''
-        }))
-      }
-      // Path 5: custom_parameters.defects (direct array)
-      else if (customParams?.defects && Array.isArray(customParams.defects)) {
-        defectConfigs = customParams.defects.map((defect: any, index: number) => ({
-          name: defect.name || defect.name_en,
-          weight: defect.weight || defect.point_value || 1,
-          category: (defect.category || 'primary') as 'primary' | 'secondary',
-          display_order: defect.display_order ?? index,
-          description: defect.description || defect.description_en || ''
-        }))
-      }
-
-        // Fallback to loading from defect definitions API if not in template
-        if (defectConfigs.length === 0 && sample.client_id) {
-          const defectsResponse = await fetch(
-            `/api/defect-definitions?client_id=${sample.client_id}&origin=${sample.origin || ''}&is_active=true`
-          )
-          if (defectsResponse.ok) {
-            const defectsData = await defectsResponse.json()
-            if (defectsData.definitions) {
-              defectConfigs = defectsData.definitions.map((def: any, index: number) => ({
-                name: def.name_en,
-                weight: def.point_value,
-                category: def.category as 'primary' | 'secondary',
-                display_order: index,
-                description: def.description_en
-              }))
-            }
-          }
+          defectConfigs = templateParams.defect_configuration.defects.map((defect: any, index: number) => ({
+            name: defect.name || defect.name_en,
+            weight: defect.weight || defect.point_value || 1,
+            category: (defect.category || 'primary') as 'primary' | 'secondary',
+            display_order: defect.display_order ?? index,
+            description: defect.description || defect.description_en || ''
+          }))
+        } else if (templateParams?.defect_requirements?.defects && Array.isArray(templateParams.defect_requirements.defects)) {
+          defectConfigs = templateParams.defect_requirements.defects.map((defect: any, index: number) => ({
+            name: defect.name || defect.name_en,
+            weight: defect.weight || defect.point_value || 1,
+            category: (defect.category || 'primary') as 'primary' | 'secondary',
+            display_order: defect.display_order ?? index,
+            description: defect.description || defect.description_en || ''
+          }))
+        } else if (templateParams?.defects && Array.isArray(templateParams.defects)) {
+          defectConfigs = templateParams.defects.map((defect: any, index: number) => ({
+            name: defect.name || defect.name_en,
+            weight: defect.weight || defect.point_value || 1,
+            category: (defect.category || 'primary') as 'primary' | 'secondary',
+            display_order: defect.display_order ?? index,
+            description: defect.description || defect.description_en || ''
+          }))
+        } else if (customParams?.defect_requirements?.defects && Array.isArray(customParams.defect_requirements.defects)) {
+          defectConfigs = customParams.defect_requirements.defects.map((defect: any, index: number) => ({
+            name: defect.name || defect.name_en,
+            weight: defect.weight || defect.point_value || 1,
+            category: (defect.category || 'primary') as 'primary' | 'secondary',
+            display_order: defect.display_order ?? index,
+            description: defect.description || defect.description_en || ''
+          }))
+        } else if (customParams?.defects && Array.isArray(customParams.defects)) {
+          defectConfigs = customParams.defects.map((defect: any, index: number) => ({
+            name: defect.name || defect.name_en,
+            weight: defect.weight || defect.point_value || 1,
+            category: (defect.category || 'primary') as 'primary' | 'secondary',
+            display_order: defect.display_order ?? index,
+            description: defect.description || defect.description_en || ''
+          }))
         }
-      } // End of non-type sample defect loading
+
+        // Signal that we need a fallback API call for defect definitions
+        if (defectConfigs.length === 0 && sample.client_id) {
+          needsFallback = true
+        }
+      }
 
       // Set defect configs if we have any (for non-type samples)
       if (defectConfigs.length > 0) {
         defectConfigsMap.set(sample.id, defectConfigs)
-
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          // Preserve existing loaded defect counts - don't initialize to 0 so inputs show blank
-          const defectCounts: { [key: string]: number } = { ...gradingData.defect_counts }
-          gradingData.defect_counts = defectCounts
+          gradingData.defect_counts = { ...gradingData.defect_counts }
         }
       }
 
       // Load defect thresholds from quality template
       const defectThresholds: DefectThresholds = {}
-
-      // Path 1: template.parameters.defect_requirements (common location)
       if (templateParams?.defect_requirements) {
         if (templateParams.defect_requirements.max_primary !== undefined) {
           defectThresholds.max_primary = templateParams.defect_requirements.max_primary
@@ -824,22 +796,12 @@ export default function GradingPage() {
         if (templateParams.defect_requirements.max_total !== undefined) {
           defectThresholds.max_total = templateParams.defect_requirements.max_total
         }
-      }
-      // Path 2: template.parameters.defect_configuration.thresholds
-      else if (templateParams?.defect_configuration?.thresholds) {
+      } else if (templateParams?.defect_configuration?.thresholds) {
         const thresholds = templateParams.defect_configuration.thresholds
-        if (thresholds.max_primary !== undefined) {
-          defectThresholds.max_primary = thresholds.max_primary
-        }
-        if (thresholds.max_secondary !== undefined) {
-          defectThresholds.max_secondary = thresholds.max_secondary
-        }
-        if (thresholds.max_total !== undefined) {
-          defectThresholds.max_total = thresholds.max_total
-        }
-      }
-      // Path 3: custom_parameters.defect_requirements
-      else if (customParams?.defect_requirements) {
+        if (thresholds.max_primary !== undefined) defectThresholds.max_primary = thresholds.max_primary
+        if (thresholds.max_secondary !== undefined) defectThresholds.max_secondary = thresholds.max_secondary
+        if (thresholds.max_total !== undefined) defectThresholds.max_total = thresholds.max_total
+      } else if (customParams?.defect_requirements) {
         if (customParams.defect_requirements.max_primary !== undefined) {
           defectThresholds.max_primary = customParams.defect_requirements.max_primary
         }
@@ -850,17 +812,12 @@ export default function GradingPage() {
           defectThresholds.max_total = customParams.defect_requirements.max_total
         }
       }
-
-      // Store thresholds for this sample
       if (Object.keys(defectThresholds).length > 0) {
         defectThresholdsMap.set(sample.id, defectThresholds)
       }
 
       // Load screen size constraints
-      // For TYPE SAMPLES: ALWAYS use all standard screens regardless of template
-      // Ordered from largest to smallest: 19 → 18 → ... → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
       if (sample.sample_type === 'type') {
-        // Type samples show all common screen sizes including peaberries and Pan
         const allScreens: ScreenSizeConstraint[] = [
           { screen_size: '19', constraint_type: 'any', display_order: 0 },
           { screen_size: '18', constraint_type: 'any', display_order: 1 },
@@ -879,16 +836,9 @@ export default function GradingPage() {
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          // Preserve existing loaded screen sizes
-          const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
-          allScreens.forEach(screen => {
-            // Ensure the key exists in the map (preserve loaded values, leave new ones absent)
-            // Don't initialize to 0 — inputs should start blank
-          })
-          gradingData.screen_sizes = screenSizes
+          gradingData.screen_sizes = { ...gradingData.screen_sizes }
         }
 
-        // Add standard green and roast aspect options for Type samples (no constraints, just tracking)
         const standardGreenOptions = [
           { label: 'Bluish', value: 1 },
           { label: 'Bluish Green', value: 2 },
@@ -911,51 +861,29 @@ export default function GradingPage() {
         ]
         roastAspectOptionsMap.set(sample.id, standardRoastOptions)
       } else if (sample.quality_spec?.template?.parameters?.screen_size_requirements) {
-        // For non-type samples: use template screen size requirements
-        // Sort from largest to smallest: 19 → 18 → ... → 12 → Peas 11 → Peas 10 → Peas 9 → Pan
         const constraints = (sample.quality_spec.template.parameters.screen_size_requirements.constraints || []) as ScreenSizeConstraint[]
         const sortedConstraints = sortScreenSizes(constraints)
         screenConstraintsMap.set(sample.id, sortedConstraints)
 
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          // Preserve existing loaded screen sizes
-          const screenSizes: { [key: string]: number } = { ...gradingData.screen_sizes }
-          sortedConstraints.forEach((constraint: ScreenSizeConstraint) => {
-            // Ensure the key exists in the map (preserve loaded values, leave new ones absent)
-            // Don't initialize to 0 — inputs should start blank
-          })
-          gradingData.screen_sizes = screenSizes
+          gradingData.screen_sizes = { ...gradingData.screen_sizes }
         }
       }
 
-      // For ALL type samples, ALWAYS load standard SCA defects based on origin
-      // Type samples are offer samples for evaluation - they use standard classification only
-      // They do NOT follow any client quality template or approval/rejection criteria
-      console.log(`🔍 Checking sample ${sample.tracking_number}: type=${sample.sample_type}, origin=${sample.origin}`)
+      // For type samples, load standard SCA defects based on origin
       if (sample.sample_type === 'type') {
-        console.log(`📋 Loading SCA defects for TYPE sample ${sample.tracking_number} with origin ${sample.origin}`)
-
-        // Use hardcoded defect templates (same as template builder)
-        // Match by origin first, fall back to generic SCA if no match
         let defectTemplate = null
-
         if (sample.origin) {
           const originLower = sample.origin.toLowerCase()
           defectTemplate = PREDEFINED_DEFECT_TEMPLATES.find(t =>
             t.origin && t.origin.toLowerCase() === originLower
           )
         }
-
-        // Fall back to generic SCA defects if no origin-specific template found
         if (!defectTemplate) {
-          console.log(`No origin-specific defects for ${sample.origin || 'unknown'}, using generic SCA standard`)
           defectTemplate = SCA_STANDARD_DEFECTS
-        } else {
-          console.log(`Found ${defectTemplate.name} defects for origin ${sample.origin}`)
         }
 
-        // Use defects from the template
         const typeDefectConfigs = defectTemplate.configuration.defects.map(defect => ({
           name: defect.name,
           weight: defect.weight,
@@ -964,17 +892,17 @@ export default function GradingPage() {
           description: defect.description
         }))
 
-        console.log(`✅ Loaded ${typeDefectConfigs.length} defects from ${defectTemplate.name} template`)
         defectConfigsMap.set(sample.id, typeDefectConfigs)
-
         const gradingData = gradingDataMap.get(sample.id)
         if (gradingData) {
-          const defectCounts: { [key: string]: number } = { ...gradingData.defect_counts }
-          gradingData.defect_counts = defectCounts
+          gradingData.defect_counts = { ...gradingData.defect_counts }
         }
       }
+
+      return needsFallback
     } catch (error) {
-      console.error('Error loading sample config:', error)
+      console.error('Error initializing sample config:', error)
+      return false
     }
   }
 

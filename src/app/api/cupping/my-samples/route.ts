@@ -153,11 +153,22 @@ export async function GET(request: NextRequest) {
         sample_type,
         ico_number,
         container_nr,
+        wolthers_contract_nr,
+        exporter_sample_number,
+        exporter_legacy,
+        exporter_id,
+        laboratory_id,
         workflow_stage,
         status,
         quality_spec_id,
         created_at,
         client:clients!samples_client_id_fkey(id, company, fantasy_name),
+        exporter:exporters!samples_exporter_id_fkey(
+          id,
+          name,
+          client:clients(fantasy_name, company)
+        ),
+        laboratory:laboratories!samples_laboratory_id_fkey(id, name, code),
         quality_spec:client_qualities(
           id,
           custom_name,
