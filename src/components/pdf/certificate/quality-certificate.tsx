@@ -224,6 +224,7 @@ export function QualityCertificate({
           uniformCup={cuppingData?.uniformCup}
           maxTaints={specLimits?.max_taints}
           maxFaults={specLimits?.max_faults}
+          flavorDescriptor={cuppingData?.flavorDescriptor}
           compact={compact}
         />
 

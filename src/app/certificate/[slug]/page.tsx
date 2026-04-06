@@ -93,6 +93,7 @@ async function getCertificateInfo(slug: string) {
   let totalTaints = 0
   let totalFaults = 0
   const attributeScoresMap: Record<string, number[]> = {}
+  const flavorDescriptors: string[] = []
 
   if (cuppingScores) {
     for (const score of cuppingScores) {
@@ -103,7 +104,12 @@ async function getCertificateInfo(slug: string) {
       }
       // Collect attribute scores for averaging
       if (score.scores && typeof score.scores === 'object') {
-        for (const [attr, value] of Object.entries(score.scores as Record<string, unknown>)) {
+        const scores = score.scores as Record<string, unknown>
+        // Collect flavor descriptor
+        if (typeof scores.Flavor_descriptor === 'string' && scores.Flavor_descriptor) {
+          flavorDescriptors.push(scores.Flavor_descriptor)
+        }
+        for (const [attr, value] of Object.entries(scores)) {
           if (typeof value !== 'number') continue
           const lower = attr.toLowerCase()
           // Skip non-chart attributes
@@ -115,6 +121,13 @@ async function getCertificateInfo(slug: string) {
       }
     }
   }
+
+  // Pick most common flavor descriptor
+  const flavorDescriptor = flavorDescriptors.length > 0
+    ? flavorDescriptors.sort((a, b) =>
+        flavorDescriptors.filter(v => v === b).length - flavorDescriptors.filter(v => v === a).length
+      )[0]
+    : null
 
   // Build cupping attribute validation lookup from quality template
   const qualitySpec = sample.quality_spec as any
@@ -128,12 +141,19 @@ async function getCertificateInfo(slug: string) {
   } | undefined
 
   const attrLimitsMap: Record<string, { min?: number; max?: number }> = {}
+  const attrScaleMap: Record<string, { scaleMin?: number; scaleMax?: number }> = {}
   if (templateParams?.cupping_attributes) {
     for (const ca of templateParams.cupping_attributes) {
       if (ca.validation_rule) {
         attrLimitsMap[ca.attribute.toLowerCase()] = {
           min: ca.validation_rule.min_value,
           max: ca.validation_rule.max_value,
+        }
+      }
+      if (ca.scale) {
+        attrScaleMap[ca.attribute.toLowerCase()] = {
+          scaleMin: ca.scale.min,
+          scaleMax: ca.scale.max,
         }
       }
     }
@@ -149,6 +169,8 @@ async function getCertificateInfo(slug: string) {
     value: number
     min?: number
     max?: number
+    scaleMin?: number
+    scaleMax?: number
   }> = Object.entries(attributeScoresMap)
     .sort(([a], [b]) => {
       const aIdx = standardOrder.findIndex(s => a.toLowerCase().includes(s.toLowerCase()))
@@ -161,11 +183,14 @@ async function getCertificateInfo(slug: string) {
     .map(([attr, scores]) => {
       const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
       const limits = attrLimitsMap[attr.toLowerCase()]
+      const scale = attrScaleMap[attr.toLowerCase()]
       return {
         attribute: attr,
         value: avg,
         min: limits?.min,
         max: limits?.max,
+        scaleMin: scale?.scaleMin,
+        scaleMax: scale?.scaleMax,
       }
     })
 
@@ -183,6 +208,7 @@ async function getCertificateInfo(slug: string) {
     cleanCup,
     uniformCup,
     cuppingAttributes,
+    flavorDescriptor,
   }
 }
 
@@ -314,6 +340,7 @@ export default async function CertificatePage({ params }: PageProps) {
         cleanCup={null}
         uniformCup={null}
         cuppingAttributes={[]}
+        flavorDescriptor={null}
         pdfUrl=""
       />
     )
@@ -338,6 +365,7 @@ export default async function CertificatePage({ params }: PageProps) {
       cleanCup={info.cleanCup ?? null}
       uniformCup={info.uniformCup ?? null}
       cuppingAttributes={info.cuppingAttributes ?? []}
+      flavorDescriptor={info.flavorDescriptor ?? null}
       pdfUrl={pdfUrl}
     />
   )

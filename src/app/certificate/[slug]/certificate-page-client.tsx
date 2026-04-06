@@ -21,7 +21,8 @@ interface CertificatePageClientProps {
   totalFaults: number
   cleanCup: boolean | null
   uniformCup: boolean | null
-  cuppingAttributes: Array<{ attribute: string; value: number; min?: number; max?: number }>
+  cuppingAttributes: Array<{ attribute: string; value: number; min?: number; max?: number; scaleMin?: number; scaleMax?: number }>
+  flavorDescriptor: string | null
   pdfUrl: string
 }
 
@@ -40,6 +41,7 @@ export function CertificatePageClient({
   cleanCup,
   uniformCup,
   cuppingAttributes,
+  flavorDescriptor,
   pdfUrl,
 }: CertificatePageClientProps) {
   const isApproved = status === 'APPROVED'
@@ -74,9 +76,12 @@ export function CertificatePageClient({
     a => !BOOLEAN_CUP_NAMES.includes(a.attribute.toLowerCase())
   )
 
-  // Determine radar chart scale from attribute values
+  // Determine radar chart scale from spec scale (not from actual scores)
+  const minValue = filteredCuppingAttributes.length > 0
+    ? Math.min(...filteredCuppingAttributes.map(a => a.scaleMin ?? 0))
+    : 0
   const maxValue = filteredCuppingAttributes.length > 0
-    ? Math.ceil(Math.max(...filteredCuppingAttributes.map(a => a.value)))
+    ? Math.max(...filteredCuppingAttributes.map(a => a.scaleMax ?? Math.ceil(a.value)))
     : 10
 
   // Determine consistent decimal places: if any score has decimals, all use the same precision
@@ -305,9 +310,9 @@ export function CertificatePageClient({
                         />
                         <PolarRadiusAxis
                           angle={90}
-                          domain={[0, maxValue]}
+                          domain={[minValue, maxValue]}
                           tick={{ fill: 'rgba(128,128,128,0.4)', fontSize: 9 }}
-                          tickCount={5}
+                          tickCount={Math.min(maxValue - minValue + 1, 6)}
                         />
                         <Radar
                           dataKey="value"
@@ -348,6 +353,12 @@ export function CertificatePageClient({
           {/* Card bottom with rounded corners */}
           <div className="bg-white dark:bg-white/[0.04] rounded-b-[20px] px-6 pb-5 pt-0 border border-t-0 border-black/10 dark:border-white/[0.15]">
             <div className="border-t border-black/[0.06] dark:border-white/[0.08] pt-4" />
+            {flavorDescriptor && (
+              <div className="mb-3">
+                <p className="text-xs text-muted-foreground">Flavor Description</p>
+                <p className="text-sm font-medium">{flavorDescriptor}</p>
+              </div>
+            )}
             <div className="flex justify-between">
               <div>
                 <p className="text-xs text-muted-foreground">Taints</p>

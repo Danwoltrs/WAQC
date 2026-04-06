@@ -307,6 +307,7 @@ export interface CertificateCuppingChartProps {
   // Spec limits
   maxTaints?: number
   maxFaults?: number
+  flavorDescriptor?: string | null
   compact?: boolean
 }
 
@@ -322,6 +323,7 @@ export function CertificateCuppingChart({
   uniformCup,
   maxTaints,
   maxFaults,
+  flavorDescriptor,
   compact,
 }: CertificateCuppingChartProps) {
   if (!attributes || attributes.length === 0) {
@@ -535,6 +537,14 @@ export function CertificateCuppingChart({
             <Text style={{ fontSize: 7, color: COLORS.dark }}>Uniform Cup</Text>
           </View>
         </View>
+
+        {/* Flavor Descriptor */}
+        {flavorDescriptor && (
+          <View style={{ marginTop: 6, marginBottom: 2 }}>
+            <Text style={{ fontSize: 7, color: COLORS.muted, marginBottom: 1 }}>Description</Text>
+            <Text style={{ fontSize: 8, color: COLORS.dark, fontWeight: 600 }}>{flavorDescriptor}</Text>
+          </View>
+        )}
 
         {/* Row 2: Faults and Taints side by side */}
         <View style={chartStyles.faultsTaintsRow}>

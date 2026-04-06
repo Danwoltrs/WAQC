@@ -1687,15 +1687,22 @@ function CuppingPageContent() {
 
                               if (chartAttributes.length === 0) return null
 
+                              const minScaleValue = Math.min(
+                                ...chartAttributes.map(({ scale }) =>
+                                  scale.type === 'numeric' ? scale.min : (scale.type === 'wording' ? Math.min(...scale.options.map(o => o.value)) : 0)
+                                )
+                              )
+
                               const maxScaleValue = Math.max(
                                 ...chartAttributes.map(({ scale }) =>
                                   scale.type === 'numeric' ? scale.max : (scale.type === 'wording' ? Math.max(...scale.options.map(o => o.value)) : 10)
                                 )
                               )
 
-                              const tickInterval = 2
-                              const numTicks = Math.ceil(maxScaleValue / tickInterval) + 1
-                              const tickVals = Array.from({ length: numTicks }, (_, i) => i * tickInterval)
+                              const scaleRange = maxScaleValue - minScaleValue
+                              const tickInterval = scaleRange <= 5 ? 1 : 2
+                              const numTicks = Math.ceil(scaleRange / tickInterval) + 1
+                              const tickVals = Array.from({ length: numTicks }, (_, i) => minScaleValue + i * tickInterval)
 
                               const values = chartAttributes.map(({ attribute }) => {
                                 const attrScore = cuppingData.attributes.find(a => a.attribute === attribute)
@@ -1765,7 +1772,7 @@ function CuppingPageContent() {
                                     polar: {
                                       radialaxis: {
                                         visible: true,
-                                        range: [0, maxScaleValue],
+                                        range: [minScaleValue, maxScaleValue],
                                         tickvals: tickVals,
                                         tickfont: {
                                           size: 10,
