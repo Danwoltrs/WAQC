@@ -6,6 +6,7 @@ export * from './quantity-step'
 export * from './sample-details-step'
 export * from './contracts-step'
 export * from './success-view'
+export * from './contract-search-step'
 // Legacy exports (kept for backwards compatibility but not used)
 export * from './basic-info-step'
 export * from './tracking-numbers-step'
