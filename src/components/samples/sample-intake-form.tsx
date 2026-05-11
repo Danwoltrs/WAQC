@@ -107,7 +107,11 @@ const initialFormData: FormData = {
   photo_file: null,
 
   // Sub-contracts
-  contracts: []
+  contracts: [],
+
+  // Contract Search
+  selected_contract: null,
+  contract_prefilled_fields: [],
 }
 
 export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFormProps = {}) {

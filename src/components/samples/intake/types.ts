@@ -7,6 +7,20 @@ export type Exporter = Database['public']['Tables']['exporters']['Row']
 export type Importer = Database['public']['Tables']['importers']['Row']
 export type Roaster = Database['public']['Tables']['roasters']['Row']
 
+export interface SelectedContract {
+  id: string
+  contract_number: string
+  seller_name: string | null
+  buyer_name: string | null
+  shipper_name: string | null
+  end_buyer_name: string | null
+  crop: string | null
+  volume_bags: number | null
+  bag_type: string | null
+  shipment_period_start: string | null
+  quality_description: string | null
+}
+
 export interface FormData {
   // Step 1: Supply Chain (Buyer/Seller)
   seller: string // The trading company that sold the coffee (e.g., Louis Dreyfus)
@@ -63,6 +77,10 @@ export interface FormData {
 
   // Sub-contracts
   contracts: SubContractFormData[]
+
+  // Contract Search (Step 1)
+  selected_contract: SelectedContract | null
+  contract_prefilled_fields: string[]  // keys of FormData that were prefilled; cleared per-key on user edit
 }
 
 export interface SubContractFormData {
