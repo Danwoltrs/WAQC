@@ -53,10 +53,10 @@ interface SampleIntakeFormProps {
 }
 
 const initialFormData: FormData = {
-  // Step 1: Supply Chain
+  // Step 2: Supply Chain
   seller: '',
   seller_contract_nr: '',
-  exporter_sample_number: '', // Seller/exporter's sample reference (in Step 1)
+  exporter_sample_number: '', // Seller/exporter's sample reference (in Step 2)
   same_seller_shipper: true,
   shipper: '',
   shipper_contract_nr: '',
@@ -72,7 +72,7 @@ const initialFormData: FormData = {
   end_client: '',
   end_client_contract_nr: '',
 
-  // Step 2: Quality
+  // Step 3: Quality
   client_id: '',
   laboratory_id: '',
   origin: '',
@@ -92,7 +92,7 @@ const initialFormData: FormData = {
   ico_number: '',
   container_nr: '',
 
-  // Step 3: Weight
+  // Step 4: Weight
   bag_count: '',
   bag_weight_kg: '',
   bag_type: '',
@@ -101,7 +101,7 @@ const initialFormData: FormData = {
   bulk_container_count: '',
   shipment_month: '',
 
-  // Step 4: Review
+  // Step 5: Review
   arrival_date: new Date().toISOString().split('T')[0],
   notes: '',
   photo_file: null,
