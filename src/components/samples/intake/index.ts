@@ -7,6 +7,7 @@ export * from './sample-details-step'
 export * from './contracts-step'
 export * from './success-view'
 export * from './contract-search-step'
+export * from './contract-link-badge'
 // Legacy exports (kept for backwards compatibility but not used)
 export * from './basic-info-step'
 export * from './tracking-numbers-step'
