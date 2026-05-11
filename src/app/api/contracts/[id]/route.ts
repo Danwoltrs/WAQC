@@ -51,39 +51,14 @@ export async function GET(
 
     const c = contract as ContractWithParties
 
-    // Buyer / end-client → WAQC clients via clients.company_id FK.
-    // Prefer is_qc_client=true if multiple clients are linked to the same company.
-    let resolved_client_id: string | null = null
-    let importer_is_qc_client = false
-    if (c.buyer_id) {
-      const { data: clientRow } = await (supabase as any)
-        .from('clients')
-        .select('id, is_qc_client')
-        .eq('company_id', c.buyer_id)
-        .order('is_qc_client', { ascending: false })
-        .limit(1)
-        .maybeSingle()
-      if (clientRow) {
-        resolved_client_id = clientRow.id
-        importer_is_qc_client = !!clientRow.is_qc_client
-      }
-    }
+    const buyerName = (c.buyer?.fantasy_name || c.buyer?.name || '').trim() || null
+    const sellerName = (c.seller?.fantasy_name || c.seller?.name || '').trim() || null
+    const shipperName = (c.shipper?.fantasy_name || c.shipper?.name || '').trim() || null
+    const sameAsSeller = !c.shipper_id || c.shipper_id === c.seller_id
 
-    // Buyer fantasy_name → WAQC importers table (name-based fallback).
-    let resolved_importer_id: string | null = null
-    const buyerName = c.buyer?.fantasy_name || c.buyer?.name
-    if (buyerName) {
-      const { data: importerRow } = await (supabase as any)
-        .from('importers')
-        .select('id')
-        .ilike('name', `%${buyerName}%`)
-        .limit(1)
-        .maybeSingle()
-      if (importerRow) resolved_importer_id = importerRow.id
-    }
-
-    // Seller / shipper → WAQC exporters (name-based; can return multiple matches).
-    const lookupExporters = async (name: string | null | undefined): Promise<string[]> => {
+    // Helper: case-insensitive exact-name lookup on the exporters table.
+    // Returns up to 5 candidate ids so the UI can flag ambiguity.
+    const lookupExporters = async (name: string | null): Promise<string[]> => {
       if (!name) return []
       const { data } = await (supabase as any)
         .from('exporters')
@@ -92,12 +67,43 @@ export async function GET(
         .limit(5)
       return (data || []).map((r: any) => r.id)
     }
-    const sellerName = c.seller?.fantasy_name || c.seller?.name
-    const shipperName = c.shipper?.fantasy_name || c.shipper?.name
-    const sameAsSeller = !c.shipper_id || c.shipper_id === c.seller_id
 
-    const candidate_seller_exporter_ids = await lookupExporters(sellerName)
-    const candidate_shipper_exporter_ids = sameAsSeller ? [] : await lookupExporters(shipperName)
+    // The four resolution queries are independent of each other (they all derive
+    // from the already-loaded contract row), so run them in parallel to cut
+    // ~3 sequential round-trips of latency.
+    const [clientRes, importerRes, sellerIds, shipperIds] = await Promise.all([
+      // Pattern 1 — buyer → WAQC clients via clients.company_id FK.
+      // Prefer is_qc_client=true if multiple clients link to the same company.
+      c.buyer_id
+        ? (supabase as any)
+            .from('clients')
+            .select('id, is_qc_client')
+            .eq('company_id', c.buyer_id)
+            .order('is_qc_client', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      // Pattern 2a — buyer name → WAQC importers (exact case-insensitive match,
+      // mirroring the exporters strategy to avoid silent false-positive prefills).
+      buyerName
+        ? (supabase as any)
+            .from('importers')
+            .select('id')
+            .ilike('name', buyerName)
+            .limit(1)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+      // Pattern 2b — seller → exporters.
+      lookupExporters(sellerName),
+      // Pattern 2b — shipper → exporters (skipped when same as seller).
+      sameAsSeller ? Promise.resolve<string[]>([]) : lookupExporters(shipperName),
+    ])
+
+    const resolved_client_id: string | null = clientRes?.data?.id ?? null
+    const importer_is_qc_client: boolean = !!clientRes?.data?.is_qc_client
+    const resolved_importer_id: string | null = importerRes?.data?.id ?? null
+    const candidate_seller_exporter_ids: string[] = sellerIds
+    const candidate_shipper_exporter_ids: string[] = shipperIds
 
     const resolution: ContractResolution = {
       resolved_client_id,
