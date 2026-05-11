@@ -142,9 +142,15 @@ export async function PATCH(
       return NextResponse.json({ error: 'Failed to update score' }, { status: 500 })
     }
 
-    // Invalidate cached certificate PDF since cupping score changed
+    // Invalidate cached certificate PDF since cupping score changed.
+    // Awaited so the next /api/certificate/[slug]/pdf request can't beat the invalidation
+    // and serve a stale PDF that reflects the pre-edit defects.
     if (existingScore.sample_id) {
-      invalidateCertificatePdf(supabase, existingScore.sample_id).catch(() => {})
+      try {
+        await invalidateCertificatePdf(supabase, existingScore.sample_id)
+      } catch (invalidationError) {
+        console.error('[scores PATCH] Failed to invalidate certificate PDF:', invalidationError)
+      }
     }
 
     return NextResponse.json({

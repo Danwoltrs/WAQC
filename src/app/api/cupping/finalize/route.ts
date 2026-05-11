@@ -645,8 +645,14 @@ export async function POST(request: NextRequest) {
       console.error('Error logging audit:', auditError)
     }
 
-    // Invalidate cached certificate PDF since finalization changes certificate data
-    invalidateCertificatePdf(supabaseAdmin, sample_id).catch(() => {})
+    // Invalidate cached certificate PDF since finalization changes certificate data.
+    // Awaited so the response doesn't return before the cache is cleared — otherwise the
+    // client's immediate cert fetch can race the invalidation and get the pre-finalize PDF.
+    try {
+      await invalidateCertificatePdf(supabaseAdmin, sample_id)
+    } catch (invalidationError) {
+      console.error('[finalize] Failed to invalidate certificate PDF:', invalidationError)
+    }
 
     // Build response message based on completion state
     let message: string
