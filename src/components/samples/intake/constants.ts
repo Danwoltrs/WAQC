@@ -1,11 +1,12 @@
 import { Step } from './types'
 
 export const STEPS: Step[] = [
-  { id: 1, name: 'Supply chain and contract references', description: '' },
-  { id: 2, name: 'Quality, micro-origins, post harvest processes and certificates', description: '' },
-  { id: 3, name: 'Quantity and shipment', description: '' },
-  { id: 4, name: 'Sample photo and review', description: '' },
-  { id: 5, name: 'Sub-contracts', description: '' }
+  { id: 1, name: 'Contract search', description: 'Find an existing contract or skip to enter manually' },
+  { id: 2, name: 'Supply chain and contract references', description: '' },
+  { id: 3, name: 'Quality, micro-origins, post harvest processes and certificates', description: '' },
+  { id: 4, name: 'Quantity and shipment', description: '' },
+  { id: 5, name: 'Sample photo and review', description: '' },
+  { id: 6, name: 'Sub-contracts', description: '' }
 ]
 
 // Certifications available for selection

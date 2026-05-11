@@ -412,11 +412,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 1:
-        // Step 1: Supply Chain - Seller is required, shipper required only if not same as seller
+        // Step 1: Contract Search — always valid; selection is optional, skip is always allowed
+        return true
+      case 2:
+        // Step 2: Supply Chain - Seller is required, shipper required only if not same as seller
         const hasShipper = formData.same_seller_shipper || !!formData.shipper
         return !!(formData.seller && hasShipper)
-      case 2:
-        // Step 2: Quality - Sample type, origin, and laboratory required
+      case 3:
+        // Step 3: Quality - Sample type, origin, and laboratory required
         // Quality spec required for PSS/SS samples
         const baseQualityValidation = !!(
           formData.sample_type &&
@@ -432,14 +435,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         }
 
         return baseQualityValidation
-      case 3:
-        // Step 3: Weight
-        return !!(formData.bags_quantity_mt || formData.bag_count)
       case 4:
-        // Step 4: Review
-        return !!formData.arrival_date
+        // Step 4: Weight
+        return !!(formData.bags_quantity_mt || formData.bag_count)
       case 5:
-        // Step 5: Contracts - always valid (contracts are optional)
+        // Step 5: Review
+        return !!formData.arrival_date
+      case 6:
+        // Step 6: Contracts - always valid (contracts are optional)
         return true
       default:
         return false
@@ -449,7 +452,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const handleNext = () => {
     if (validateStep(currentStep)) {
       setError(null)
-      setCurrentStep(prev => Math.min(prev + 1, 5))
+      setCurrentStep(prev => Math.min(prev + 1, 6))
     } else {
       setError('Please fill in all required fields')
     }
@@ -481,9 +484,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   }
 
   const handleGoToContracts = () => {
-    if (validateStep(4)) {
+    if (validateStep(5)) {
       setError(null)
-      setCurrentStep(5)
+      setCurrentStep(6)
     } else {
       setError('Please fill in all required fields')
     }
@@ -492,7 +495,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const handleSubmit = async () => {
     console.log('[Sample Intake] handleSubmit called')
 
-    if (!validateStep(4)) {
+    if (!validateStep(5)) {
       setError('Please complete all required fields')
       return
     }
@@ -875,7 +878,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             </div>
           )}
 
-          {currentStep === 1 && (
+          {currentStep === 2 && (
             <SupplyChainStep
               formData={formData}
               updateFormData={updateFormData}
@@ -896,7 +899,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             />
           )}
 
-          {currentStep === 2 && (
+          {currentStep === 3 && (
             <QualityStep
               formData={formData}
               updateFormData={updateFormData}
@@ -910,7 +913,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             />
           )}
 
-          {currentStep === 3 && (
+          {currentStep === 4 && (
             <QuantityStep
               formData={formData}
               updateFormData={updateFormData}
@@ -921,7 +924,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             />
           )}
 
-          {currentStep === 4 && (
+          {currentStep === 5 && (
             <SampleDetailsStep
               formData={formData}
               updateFormData={updateFormData}
@@ -933,7 +936,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             />
           )}
 
-          {currentStep === 5 && (
+          {currentStep === 6 && (
             <ContractsStep
               formData={formData}
               updateFormData={updateFormData}
@@ -963,7 +966,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           </Button>
 
           <div className="flex gap-2">
-            {currentStep < 4 && (
+            {currentStep < 5 && (
               <Button
                 type="button"
                 onClick={handleNext}
@@ -974,27 +977,27 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               </Button>
             )}
 
-            {currentStep === 4 && (
+            {currentStep === 5 && (
               <>
                 <Button
                   type="button"
                   variant="outline"
                   onClick={handleGoToContracts}
-                  disabled={!validateStep(4)}
+                  disabled={!validateStep(5)}
                 >
                   + Add Sub-Contracts
                 </Button>
                 <Button
                   type="button"
                   onClick={handleSubmit}
-                  disabled={loading || !validateStep(4)}
+                  disabled={loading || !validateStep(5)}
                 >
                   {loading ? 'Creating Sample...' : 'Create Sample'}
                 </Button>
               </>
             )}
 
-            {currentStep === 5 && (
+            {currentStep === 6 && (
               <>
                 <Button
                   type="button"
