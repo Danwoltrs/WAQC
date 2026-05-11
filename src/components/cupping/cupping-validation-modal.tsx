@@ -15,7 +15,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock } from 'lucide-react'
+import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Plus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 
 interface AttributeStats {
@@ -234,6 +234,11 @@ export function CuppingValidationModal({
   const [masterDefectNames, setMasterDefectNames] = useState<{ taints: string[]; faults: string[] } | null>(null)
   // Full consolidated defects before any filtering (always contains all cuppers' defects)
   const [allConsolidatedDefects, setAllConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
+  // Defect names the validator explicitly removed via the X button.
+  // Why: mode-toggle rebuilds finalDefects from scratch, so without persisting the user's
+  // removal intent here it gets silently undone (e.g. clicking X on "Dirty" then toggling
+  // defect mode would put Dirty back in finalDefects and let it reach the certificate).
+  const [removedDefects, setRemovedDefects] = useState<Set<string>>(new Set())
 
   // Check if user can edit final scores (master cupper or admin)
   const canEditFinals = useCallback(() => {
@@ -294,6 +299,7 @@ export function CuppingValidationModal({
     if (!sampleId) return
 
     setLoading(true)
+    setRemovedDefects(new Set())
     try {
       const response = await fetch(`/api/cupping/scores/aggregate?sample_id=${sampleId}`)
       const data = await response.json()
@@ -700,6 +706,8 @@ export function CuppingValidationModal({
     } else {
       defectsToShow = allConsolidatedDefects
     }
+    // Preserve prior X-removals so mode toggle doesn't silently undo them
+    defectsToShow = defectsToShow.filter(d => !removedDefects.has(d.name))
     setConsolidatedDefects(defectsToShow)
     // Rebuild final defects from the new set
     const newFinalDefects: Record<string, { cups: number; intensity: number; type: 'taint' | 'fault' }> = {}
@@ -711,7 +719,7 @@ export function CuppingValidationModal({
       }
     }
     setFinalDefects(newFinalDefects)
-  }, [allConsolidatedDefects, masterDefectNames])
+  }, [allConsolidatedDefects, masterDefectNames, removedDefects])
 
   // Remove a single defect from the final list
   const removeDefect = useCallback((defectName: string) => {
@@ -721,7 +729,34 @@ export function CuppingValidationModal({
       delete next[defectName]
       return next
     })
+    setRemovedDefects(prev => {
+      const next = new Set(prev)
+      next.add(defectName)
+      return next
+    })
   }, [])
+
+  // Restore a previously removed defect (undo for the X button)
+  const restoreDefect = useCallback((defectName: string) => {
+    const original = allConsolidatedDefects.find(d => d.name === defectName)
+    if (!original) return
+    setRemovedDefects(prev => {
+      const next = new Set(prev)
+      next.delete(defectName)
+      return next
+    })
+    setConsolidatedDefects(prev =>
+      prev.some(d => d.name === defectName) ? prev : [...prev, original]
+    )
+    setFinalDefects(prev => ({
+      ...prev,
+      [defectName]: {
+        cups: original.consolidated_cups,
+        intensity: original.consolidated_intensity,
+        type: original.type,
+      },
+    }))
+  }, [allConsolidatedDefects])
 
   // Apply a specific cupper's defect values (cups + intensity) as the final decision
   const applyDefectFromCupper = useCallback((defectName: string, cupperName: string) => {
@@ -1010,6 +1045,25 @@ export function CuppingValidationModal({
                   </button>
                 )}
               </div>
+              {removedDefects.size > 0 && (
+                <div className="flex items-center gap-2 flex-wrap text-xs mb-2 p-2 rounded-md border border-dashed border-muted-foreground/30">
+                  <span className="text-muted-foreground">Excluded from certificate:</span>
+                  {Array.from(removedDefects).map(name => (
+                    <Badge key={name} variant="outline" className="gap-1 pr-1">
+                      <span className="line-through text-muted-foreground">{name}</span>
+                      {editable && (
+                        <button
+                          onClick={() => restoreDefect(name)}
+                          title={`Re-add ${name}`}
+                          className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded hover:bg-muted"
+                        >
+                          <Plus className="h-3 w-3" />
+                        </button>
+                      )}
+                    </Badge>
+                  ))}
+                </div>
+              )}
               {consolidatedDefects.length === 0 ? (
                 <div className="text-center py-4 text-sm text-muted-foreground">
                   No defects in current selection.
