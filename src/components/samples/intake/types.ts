@@ -80,7 +80,7 @@ export interface FormData {
 
   // Contract Search (Step 1)
   selected_contract: SelectedContract | null
-  contract_prefilled_fields: string[]  // keys of FormData that were prefilled; cleared per-key on user edit
+  contract_prefilled_fields: (keyof FormData)[]  // keys prefilled from contract; cleared per-key on user edit
 }
 
 export interface SubContractFormData {
