@@ -18,7 +18,7 @@ export interface ContractWithParties {
   status: string
   contract_date: string | null
   crop: string | null
-  volume_bags: number
+  volume_bags: number | null
   bag_type: string | null
   bag_weight_kg: number | string | null
   quality_description: string | null
@@ -55,7 +55,7 @@ export function parseBagType(input: string | null | undefined): FormData['bag_ty
   if (!input) return ''
   const v = input.toLowerCase()
   if (v.includes('jute')) return 'jute_bag'
-  if (v.includes('pp')) return 'pp_bag'
+  if (/\bpp\b/.test(v)) return 'pp_bag'
   if (v.includes('big')) return 'big_bag'
   if (v.includes('bulk')) return 'bulk'
   return ''
@@ -156,19 +156,28 @@ export function mapContractToFormData(
     set('shipment_month', c.shipment_period_start.slice(0, 7))
   }
 
-  // Certifications — pass through known values only
+  // Certifications — map short codes (as used in contracts.certifications jsonb) to
+  // WAQC's vocabulary. Key formats mirror src/components/pdf/certificate/certificate-quality-description.tsx
+  // (the existing source of truth for cert-code normalisation).
   const knownCerts = ['Rainforest Alliance', 'Fair Trade', 'FLO Fair Trade', 'Organic', 'EUDR']
   const certMap: Record<string, string> = {
-    eudr: 'EUDR',
+    ra: 'Rainforest Alliance',
+    rainforest: 'Rainforest Alliance',
+    rainforest_alliance: 'Rainforest Alliance',
     rfa: 'Rainforest Alliance',
+    ft: 'Fair Trade',
     fairtrade: 'Fair Trade',
+    fair_trade: 'Fair Trade',
     flo: 'FLO Fair Trade',
     organic: 'Organic',
+    org: 'Organic',
+    eudr: 'EUDR',
+    eu_deforestation: 'EUDR',
   }
   if (Array.isArray(c.certifications)) {
     const mapped = (c.certifications as unknown[])
       .filter((x): x is string => typeof x === 'string')
-      .map(s => certMap[s.toLowerCase()] ?? s)
+      .map(s => certMap[s.toLowerCase().replace(/[-\s]/g, '_')] ?? s)
       .filter(s => knownCerts.includes(s))
     if (mapped.length > 0) set('certifications', mapped)
   }
