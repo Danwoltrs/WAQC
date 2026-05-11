@@ -18,6 +18,8 @@ import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
+import { DuplicateCountPopover } from '@/components/samples/duplicate-count-popover'
+import { useToast } from '@/hooks/use-toast'
 import {
   Select,
   SelectContent,
@@ -201,6 +203,11 @@ export default function SamplesPage() {
   const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
   const [selectedSubContractQrCodes, setSelectedSubContractQrCodes] = useState<Set<string>>(new Set())
   const [subContractSample, setSubContractSample] = useState<Sample | null>(null)
+  // Mouse-anchored "Duplicate sample" popover state. Captures the click coords
+  // so the popover renders at the cursor; busy flag disables it during inserts.
+  const [duplicatePrompt, setDuplicatePrompt] = useState<{ sample: Sample; x: number; y: number } | null>(null)
+  const [duplicating, setDuplicating] = useState(false)
+  const { toast } = useToast()
 
   // Certificate preview modal states
   const [previewSample, setPreviewSample] = useState<Sample | null>(null)
@@ -931,26 +938,60 @@ export default function SamplesPage() {
   }
 
   // Duplicate sample (SS flow): create a new independent sample record with the same contract
-  const handleDuplicateSample = async (sample: Sample) => {
-    if (!confirm(`Duplicate sample "${sample.tracking_number}"? This will create a new independent sample record sharing the same contract.`)) {
-      return
-    }
+  // Open the mouse-anchored duplicate-count popover.
+  // Reads coords from the original ContextMenu trigger event when available
+  // (the click that opened the menu), so the popover anchors near the cursor
+  // rather than wherever the menu item happened to render.
+  const openDuplicatePrompt = (sample: Sample, event: React.MouseEvent) => {
+    setDuplicatePrompt({ sample, x: event.clientX, y: event.clientY })
+  }
+
+  const handleDuplicateSubmit = async (count: number) => {
+    const target = duplicatePrompt?.sample
+    if (!target) return
+    setDuplicating(true)
     try {
-      const res = await fetch(`/api/samples/${sample.id}/duplicate`, {
+      const res = await fetch(`/api/samples/${target.id}/duplicate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count }),
       })
+      const data = await res.json().catch(() => ({} as any))
       if (!res.ok) {
-        const err = await res.json()
-        alert(err.error || 'Failed to duplicate sample')
+        toast({
+          title: 'Duplicate failed',
+          description: data?.error || 'Failed to duplicate sample',
+          variant: 'destructive',
+        })
         return
       }
-      const data = await res.json()
-      alert(`Sample duplicated successfully: ${data.sample.tracking_number}`)
+      const created = Array.isArray(data?.samples) ? data.samples.length : 0
+      const failed = typeof data?.failed === 'number' ? data.failed : 0
+      if (failed > 0) {
+        toast({
+          title: 'Partial success',
+          description: `Created ${created} of ${count} duplicates (${failed} failed).`,
+          variant: 'destructive',
+        })
+      } else {
+        toast({
+          title: created === 1 ? 'Sample duplicated' : 'Samples duplicated',
+          description: created === 1
+            ? `New sample: ${data.samples[0]?.tracking_number}`
+            : `Created ${created} duplicates of ${target.tracking_number}.`,
+        })
+      }
+      setDuplicatePrompt(null)
       loadSamples()
     } catch (error) {
       console.error('Error duplicating sample:', error)
-      alert('Failed to duplicate sample')
+      toast({
+        title: 'Duplicate failed',
+        description: 'Failed to duplicate sample',
+        variant: 'destructive',
+      })
+    } finally {
+      setDuplicating(false)
     }
   }
 
@@ -1555,7 +1596,7 @@ export default function SamplesPage() {
                             Edit Sample
                           </ContextMenuItem>
                           {sample.sample_type === 'ss' ? (
-                            <ContextMenuItem onClick={() => handleDuplicateSample(sample)}>
+                            <ContextMenuItem onClick={e => openDuplicatePrompt(sample, e)}>
                               <Plus className="h-4 w-4 mr-2" />
                               Duplicate Sample
                             </ContextMenuItem>
@@ -1960,6 +2001,20 @@ export default function SamplesPage() {
           onOpenChange={(open) => !open && setSubContractSample(null)}
           sample={subContractSample}
           onSuccess={loadSamples}
+        />
+      )}
+
+      {/* Mouse-anchored Duplicate Sample popover */}
+      {duplicatePrompt && (
+        <DuplicateCountPopover
+          trackingNumber={duplicatePrompt.sample.tracking_number}
+          x={duplicatePrompt.x}
+          y={duplicatePrompt.y}
+          busy={duplicating}
+          onCancel={() => {
+            if (!duplicating) setDuplicatePrompt(null)
+          }}
+          onSubmit={handleDuplicateSubmit}
         />
       )}
 
