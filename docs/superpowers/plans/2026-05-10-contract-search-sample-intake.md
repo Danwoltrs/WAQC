@@ -545,11 +545,16 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ contracts: [] })
     }
 
+    // Match against contract_number OR seller_reference OR buyer_reference so the user
+    // can paste any of the three reference numbers shown on paperwork.
+    const pattern = `%${q}%`
     const { data: contracts, error } = await (supabase as any)
       .from('contracts')
       .select(`
         id,
         contract_number,
+        seller_reference,
+        buyer_reference,
         contract_date,
         crop,
         volume_bags,
@@ -560,7 +565,7 @@ export async function GET(request: NextRequest) {
         buyer:companies!contracts_buyer_id_fkey(id, fantasy_name, name)
       `)
       .eq('status', 'active')
-      .ilike('contract_number', `%${q}%`)
+      .or(`contract_number.ilike.${pattern},seller_reference.ilike.${pattern},buyer_reference.ilike.${pattern}`)
       .order('contract_date', { ascending: false, nullsFirst: false })
       .limit(limit)
 
@@ -616,6 +621,8 @@ Expected JSON:
     {
       "id": "c194398b-6452-4802-b753-416f7751c2f1",
       "contract_number": "41966/26",
+      "seller_reference": null,
+      "buyer_reference": null,
       "contract_date": "2026-05-07",
       "crop": "26/27",
       "volume_bags": 320,
@@ -853,6 +860,8 @@ import type { FormData } from './types'
 interface SearchResultRow {
   id: string
   contract_number: string
+  seller_reference: string | null
+  buyer_reference: string | null
   contract_date: string | null
   crop: string | null
   volume_bags: number | null
@@ -862,6 +871,20 @@ interface SearchResultRow {
   seller: { fantasy_name: string | null; name: string | null } | null
   buyer: { fantasy_name: string | null; name: string | null } | null
   sample_count: number
+}
+
+// Helper: which reference field matched the user's query (case-insensitive substring)?
+function matchedRef(q: string, row: SearchResultRow): { label: string; value: string } | null {
+  const needle = q.trim().toLowerCase()
+  if (!needle) return null
+  if (row.contract_number?.toLowerCase().includes(needle)) return null  // primary — no "via" hint
+  if (row.seller_reference?.toLowerCase().includes(needle)) {
+    return { label: 'seller ref', value: row.seller_reference }
+  }
+  if (row.buyer_reference?.toLowerCase().includes(needle)) {
+    return { label: 'buyer ref', value: row.buyer_reference }
+  }
+  return null
 }
 
 interface Props {
@@ -993,6 +1016,7 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
               {results.map((row) => {
                 const sellerName = row.seller?.fantasy_name || row.seller?.name || '—'
                 const buyerName = row.buyer?.fantasy_name || row.buyer?.name || '—'
+                const refHit = matchedRef(query, row)
                 return (
                   <button
                     key={row.id}
@@ -1016,6 +1040,11 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
                       {row.volume_bags ? ` · ${row.volume_bags} bags` : ''}
                       {row.bag_type ? ` · ${row.bag_type}` : ''}
                     </div>
+                    {refHit && (
+                      <div className="text-xs text-muted-foreground/80 mt-1 italic">
+                        via {refHit.label} «{refHit.value}»
+                      </div>
+                    )}
                     {row.quality_description && (
                       <div className="text-xs text-muted-foreground mt-1 truncate">
                         {row.quality_description}

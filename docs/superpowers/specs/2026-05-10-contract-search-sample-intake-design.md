@@ -34,7 +34,8 @@ The wizard becomes 6 steps:
 
 - Single search input with debounced (300 ms) typeahead against `GET /api/contracts/search?q=…`.
 - Filter: `status = 'active'`, ordered by `contract_date DESC`.
-- Result rows show: `contract_number · seller fantasy_name → buyer fantasy_name · crop · volume_bags bags · contract_date · (N sample[s] already)`.
+- Match against three columns (OR'd): `contract_number`, `seller_reference`, `buyer_reference` — so the user can paste any of the three references found on paperwork.
+- Result rows show: `contract_number · seller fantasy_name → buyer fantasy_name · crop · volume_bags bags · contract_date · (N sample[s] already)`. When the match came from `seller_reference` or `buyer_reference`, the matched value is shown in muted text below as `via seller ref «X»` or `via buyer ref «X»`.
 - Selecting a row → `GET /api/contracts/:id` → run entity resolution → prefill form fields → user can advance or stay.
 - A **"Skip — enter manually"** button advances to Step 1 with no prefill. Same outcome as hitting Next with nothing selected.
 
@@ -143,18 +144,19 @@ No FK from `exporters → companies` exists. Endpoint:
 
 - Server-only route in `src/app/api/contracts/search/route.ts`, uses `supabase-server`, respects user session.
 - Skip queries with `q.length < 2`.
-- Query:
+- Query (matches any of three reference columns):
   ```ts
   await supabaseServer
     .from('contracts')
     .select(`
-      id, contract_number, contract_date, crop, volume_bags, bag_type,
+      id, contract_number, seller_reference, buyer_reference,
+      contract_date, crop, volume_bags, bag_type,
       quality_description, shipment_period_start,
       seller:companies!contracts_seller_id_fkey(id, fantasy_name, name),
       buyer:companies!contracts_buyer_id_fkey(id, fantasy_name, name)
     `)
     .eq('status', 'active')
-    .ilike('contract_number', `%${q}%`)
+    .or(`contract_number.ilike.%${q}%,seller_reference.ilike.%${q}%,buyer_reference.ilike.%${q}%`)
     .order('contract_date', { ascending: false, nullsFirst: false })
     .limit(limit)
   ```
