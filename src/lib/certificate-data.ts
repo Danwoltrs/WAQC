@@ -386,6 +386,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   let cuppingAttributeScales: Record<string, { min: number; max: number }> | undefined
   // Store increment per attribute for proper rounding (avoids non-increment scores)
   let cuppingAttributeIncrements: Record<string, number> | undefined
+  // Authoritative attribute order, taken from the quality spec template so the certificate
+  // matches the cupping page (avoids hardcoded "Sweetness before Finish" reordering bugs).
+  let cuppingAttributeOrder: string[] | undefined
   if (sample.quality_spec_id) {
     const { data: spec } = await supabase
       .from('client_qualities')
@@ -472,6 +475,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         cuppingAttributeValidations = {}
         cuppingAttributeScales = {}
         cuppingAttributeIncrements = {}
+        cuppingAttributeOrder = templateParams.cupping_attributes
+          .map(a => a.attribute)
+          .filter((a): a is string => typeof a === 'string' && a.length > 0)
         let hasAnyValidation = false
         for (const attr of templateParams.cupping_attributes) {
           // Extract validation rules
@@ -658,7 +664,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       qualityAssessment?.clean_cup ?? null,
       qualityAssessment?.uniform_cup ?? null,
       masterCupperId,
-      cuppingAttributeIncrements
+      cuppingAttributeIncrements,
+      cuppingAttributeOrder
     )
   }
 
@@ -1150,7 +1157,8 @@ function processCuppingScores(
   persistedCleanCup?: boolean | null,
   persistedUniformCup?: boolean | null,
   masterCupperId?: string | null,
-  attributeIncrements?: Record<string, number>
+  attributeIncrements?: Record<string, number>,
+  attributeOrder?: string[]
 ): CuppingData {
   // Cast to allow cupper_id access
   const scoresWithCupper = cuppingScores as Array<{ scores: unknown; notes: string | null; defects?: unknown; cupper_id?: string | null }>
@@ -1248,9 +1256,9 @@ function processCuppingScores(
   let totalScore = 0
   let scoreCount = 0
 
-  // Standard SCA cupping attributes in order
+  // Fallback order for legacy samples that have no quality spec / template attribute list.
   // (Uniformity and Clean Cup removed - now derived from defects, not scored)
-  const standardOrder = [
+  const fallbackOrder = [
     'Fragrance/Aroma',
     'Fragrance',
     'Aroma',
@@ -1260,13 +1268,22 @@ function processCuppingScores(
     'Body',
     'Balance',
     'Sweetness',
+    'Finish',
     'Overall',
   ]
 
-  // Sort attributes by standard order
+  // Prefer the template-defined order (matches cupping page); fall back to the legacy SCA list.
+  const orderSource = attributeOrder && attributeOrder.length > 0 ? attributeOrder : fallbackOrder
+  const indexFor = (name: string): number => {
+    const lower = name.toLowerCase()
+    const exact = orderSource.findIndex(s => s.toLowerCase() === lower)
+    if (exact !== -1) return exact
+    return orderSource.findIndex(s => lower.includes(s.toLowerCase()) || s.toLowerCase().includes(lower))
+  }
+
   const sortedAttrs = Object.keys(attributeScores).sort((a, b) => {
-    const aIndex = standardOrder.findIndex((s) => a.toLowerCase().includes(s.toLowerCase()))
-    const bIndex = standardOrder.findIndex((s) => b.toLowerCase().includes(s.toLowerCase()))
+    const aIndex = indexFor(a)
+    const bIndex = indexFor(b)
     if (aIndex === -1 && bIndex === -1) return a.localeCompare(b)
     if (aIndex === -1) return 1
     if (bIndex === -1) return -1
