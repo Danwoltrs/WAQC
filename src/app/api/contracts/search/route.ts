@@ -17,7 +17,8 @@ export async function GET(request: NextRequest) {
 
     const searchParams = request.nextUrl.searchParams
     const q = (searchParams.get('q') || '').trim()
-    const limit = Math.min(parseInt(searchParams.get('limit') || '20', 10), 50)
+    const rawLimit = parseInt(searchParams.get('limit') || '20', 10)
+    const limit = Math.min(Math.max(Number.isFinite(rawLimit) ? rawLimit : 20, 1), 50)
 
     if (q.length < 2) {
       return NextResponse.json({ contracts: [] })
@@ -25,7 +26,16 @@ export async function GET(request: NextRequest) {
 
     // Match against contract_number OR seller_reference OR buyer_reference so the user
     // can paste any of the three reference numbers shown on paperwork.
-    const pattern = `%${q}%`
+    //
+    // Sanitize q before interpolating into PostgREST's `.or()` expression: strip the
+    // metacharacters PostgREST uses as filter delimiters (',', '(', ')') and the
+    // ILIKE wildcards ('%', '_') so an authenticated user can't corrupt the filter
+    // string by pasting a value containing those characters.
+    const safeQ = q.replace(/[%_(),]/g, '')
+    if (safeQ.length < 2) {
+      return NextResponse.json({ contracts: [] })
+    }
+    const pattern = `%${safeQ}%`
     const { data: contracts, error } = await (supabase as any)
       .from('contracts')
       .select(`
@@ -56,6 +66,9 @@ export async function GET(request: NextRequest) {
     const sampleCounts: Record<string, number> = {}
 
     if (ids.length > 0) {
+      // TODO: per-contract counts are computed in JS over potentially many rows.
+      // For high-volume contracts this is inefficient; consider a Postgres RPC
+      // that returns grouped counts when the typical contract grows large.
       const { data: samples, error: countErr } = await (supabase as any)
         .from('samples')
         .select('contract_id')
