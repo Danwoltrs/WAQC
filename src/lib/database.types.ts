@@ -6894,6 +6894,7 @@ export type Database = {
           supplier_contract_nr: string | null
           ico_number: string | null
           container_nr: string | null
+          contract_id: string | null
           importer_id: string | null
           importer_is_qc_client: boolean | null
           roaster_id: string | null
@@ -6918,6 +6919,7 @@ export type Database = {
           supplier_contract_nr?: string | null
           ico_number?: string | null
           container_nr?: string | null
+          contract_id?: string | null
           importer_id?: string | null
           importer_is_qc_client?: boolean | null
           roaster_id?: string | null
@@ -6942,6 +6944,7 @@ export type Database = {
           supplier_contract_nr?: string | null
           ico_number?: string | null
           container_nr?: string | null
+          contract_id?: string | null
           importer_id?: string | null
           importer_is_qc_client?: boolean | null
           roaster_id?: string | null
@@ -7134,6 +7137,7 @@ export type Database = {
           client_id: string | null
           container: string | null
           container_nr: string | null
+          contract_id: string | null
           contract_number: string | null
           created_at: string | null
           crop_year: string | null
@@ -7197,6 +7201,7 @@ export type Database = {
           client_id?: string | null
           container?: string | null
           container_nr?: string | null
+          contract_id?: string | null
           contract_number?: string | null
           created_at?: string | null
           crop_year?: string | null
@@ -7260,6 +7265,7 @@ export type Database = {
           client_id?: string | null
           container?: string | null
           container_nr?: string | null
+          contract_id?: string | null
           contract_number?: string | null
           created_at?: string | null
           crop_year?: string | null
