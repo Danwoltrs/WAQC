@@ -20,6 +20,8 @@ import {
   QuantityStep,
   SampleDetailsStep,
   ContractsStep,
+  ContractSearchStep,
+  ContractLinkBadge,
   createEmptyContract,
   SuccessView
 } from './intake'
@@ -406,7 +408,41 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   }
 
   const updateFormData = (field: keyof FormData, value: any) => {
-    setFormData(prev => ({ ...prev, [field]: value }))
+    setFormData(prev => {
+      const next: FormData = { ...prev, [field]: value }
+      // If the user edits a contract-prefilled field, it's now "theirs" — drop it
+      // from the tracking set so an Unlink won't clear it.
+      if (prev.contract_prefilled_fields.includes(field)) {
+        next.contract_prefilled_fields = prev.contract_prefilled_fields.filter(k => k !== field)
+      }
+      return next
+    })
+  }
+
+  // Apply a contract-prefilled patch and remember which keys came from it.
+  const applyContractPrefill = (patch: Partial<FormData>, prefilled: (keyof FormData)[]) => {
+    setFormData(prev => {
+      const next: FormData = { ...prev, ...patch }
+      const keys = new Set<keyof FormData>(prev.contract_prefilled_fields)
+      for (const k of prefilled) keys.add(k)
+      next.contract_prefilled_fields = Array.from(keys)
+      return next
+    })
+  }
+
+  // Unlink the current contract: clear selected_contract and reset every still-untouched
+  // prefilled field back to its initial value. User-edited fields were already removed
+  // from contract_prefilled_fields by updateFormData, so they stay.
+  const unlinkContract = () => {
+    setFormData(prev => {
+      const next: FormData = { ...prev }
+      for (const key of prev.contract_prefilled_fields) {
+        ;(next as any)[key] = (initialFormData as any)[key]
+      }
+      next.selected_contract = null
+      next.contract_prefilled_fields = []
+      return next
+    })
   }
 
   const validateStep = (step: number): boolean => {
@@ -653,6 +689,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
       const sampleData: Record<string, any> = {
         client_id: qc_client_id, // Use the resolved QC client ID
+        contract_id: formData.selected_contract?.id || undefined,
         laboratory_id: formData.laboratory_id,
         origin: formData.origin,
         micro_origin: formData.micro_origin || undefined,
@@ -876,6 +913,22 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               <AlertCircle className="h-4 w-4" />
               {error}
             </div>
+          )}
+
+          {currentStep === 1 && (
+            <ContractSearchStep
+              formData={formData}
+              applyContract={applyContractPrefill}
+              unlinkContract={unlinkContract}
+              onSkip={() => setCurrentStep(2)}
+            />
+          )}
+
+          {currentStep > 1 && formData.selected_contract && (
+            <ContractLinkBadge
+              contract={formData.selected_contract}
+              onUnlink={unlinkContract}
+            />
           )}
 
           {currentStep === 2 && (
