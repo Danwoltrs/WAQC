@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
     const { data: sessions, error: sessionsError } = await supabase
       .from('cupping_sessions')
       .select('id, cupper_ids, sample_ids, status')
-      .in('status', ['active', 'review', 'completed'])
+      .in('status', ['setup', 'active', 'review', 'completed'])
       .order('created_at', { ascending: false })
 
     if (sessionsError || !sessions || sessions.length === 0) {

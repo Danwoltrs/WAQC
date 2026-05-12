@@ -323,7 +323,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     .from('cupping_sessions')
     .select('id, cupper_ids, master_cupper_id')
     .contains('sample_ids', [sampleId])
-    .in('status', ['active', 'review', 'completed', 'finalized'])
+    .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
     .order('created_at', { ascending: false })
     .limit(1)
     .single()

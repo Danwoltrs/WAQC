@@ -215,7 +215,7 @@ async function autoCertifyIfReady(
       .from('cupping_sessions')
       .select('cupper_ids')
       .contains('sample_ids', [sampleId])
-      .in('status', ['active', 'review', 'completed', 'finalized'])
+      .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
       .order('created_at', { ascending: false })
       .limit(1)
       .single()
