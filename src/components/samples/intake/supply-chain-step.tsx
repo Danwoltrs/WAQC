@@ -9,6 +9,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { ChevronDown } from 'lucide-react'
 import { AddClientModal, AddClientRole } from '@/components/clients/add-client-modal'
 import { StepComponentProps } from './types'
+import { EntityResolutionNotice } from './entity-resolution-notice'
 
 export function SupplyChainStep({
   formData,
@@ -228,6 +229,20 @@ export function SupplyChainStep({
               setShowCreateClientDialog(true)
             }}
           />
+          {formData.contract_resolution && formData.selected_contract && (
+            <>
+              {formData.contract_resolution.seller_match_count === 0 && (
+                <EntityResolutionNotice
+                  message={`No exporter named "${formData.seller}" found in WAQC. Select an existing exporter above or create one.`}
+                />
+              )}
+              {formData.contract_resolution.multiple_seller_matches && (
+                <EntityResolutionNotice
+                  message={`${formData.contract_resolution.seller_match_count} exporters named "${formData.seller}" exist — verify the selection above is correct.`}
+                />
+              )}
+            </>
+          )}
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1.5 block">Contract Ref.</Label>
@@ -331,6 +346,11 @@ export function SupplyChainStep({
               setShowCreateClientDialog(true)
             }}
           />
+          {formData.contract_resolution && formData.selected_contract && !formData.contract_resolution.importer_resolved && (
+            <EntityResolutionNotice
+              message={`No WAQC client or importer is linked to "${formData.importer}". Select an existing one above or create new.`}
+            />
+          )}
         </div>
         <div>
           <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>

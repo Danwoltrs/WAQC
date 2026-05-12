@@ -115,8 +115,18 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
       const contract = body.contract as ContractWithParties
       const resolution = body.resolution as ContractResolution
       const { patch, prefilled } = mapContractToFormData(contract, resolution)
-      const fullPatch: Partial<FormData> = { ...patch, selected_contract: toSelectedContract(contract) }
-      applyContract(fullPatch, prefilled)
+      const fullPatch: Partial<FormData> = {
+        ...patch,
+        selected_contract: toSelectedContract(contract),
+        contract_resolution: {
+          seller_match_count: resolution.candidate_seller_exporter_ids.length,
+          shipper_match_count: resolution.candidate_shipper_exporter_ids.length,
+          multiple_seller_matches: resolution.multiple_seller_matches,
+          multiple_shipper_matches: resolution.multiple_shipper_matches,
+          importer_resolved: resolution.resolved_client_id !== null || resolution.resolved_importer_id !== null,
+        },
+      }
+      applyContract(fullPatch, [...prefilled, 'contract_resolution'])
     } catch (err: any) {
       setError(err.message || 'Failed to load contract')
     } finally {

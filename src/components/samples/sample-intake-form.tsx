@@ -114,6 +114,7 @@ const initialFormData: FormData = {
   // Contract Search
   selected_contract: null,
   contract_prefilled_fields: [],
+  contract_resolution: null,
 }
 
 export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFormProps = {}) {
@@ -444,6 +445,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         }
       }
       next.selected_contract = null
+      next.contract_resolution = null
       next.contract_prefilled_fields = []
       return next
     })

@@ -81,6 +81,13 @@ export interface FormData {
   // Contract Search (Step 1)
   selected_contract: SelectedContract | null
   contract_prefilled_fields: (keyof FormData)[]  // keys prefilled from contract; cleared per-key on user edit
+  contract_resolution: {
+    seller_match_count: number
+    shipper_match_count: number
+    multiple_seller_matches: boolean
+    multiple_shipper_matches: boolean
+    importer_resolved: boolean   // true if a WAQC client OR importer was matched for the buyer
+  } | null
 }
 
 export interface SubContractFormData {
