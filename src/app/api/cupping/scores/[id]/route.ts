@@ -123,6 +123,13 @@ export async function PATCH(
     // Update defects (taints/faults) — used by validation modal to save final defect decisions
     if (defects !== undefined) {
       updatePayload.defects = defects
+      console.log('[scores PATCH] received defects', {
+        scoreId,
+        sampleId: existingScore.sample_id,
+        cupperId: existingScore.cupper_id,
+        taints: Array.isArray((defects as any)?.taints) ? (defects as any).taints.map((t: any) => t?.name) : defects,
+        faults: Array.isArray((defects as any)?.faults) ? (defects as any).faults.map((f: any) => f?.name) : undefined,
+      })
     }
 
     // Require at least one field to update

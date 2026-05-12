@@ -298,6 +298,7 @@ export function CuppingValidationModal({
   const fetchAggregatedScores = async () => {
     if (!sampleId) return
 
+    console.log('[validation] fetchAggregatedScores', { sampleId, sessionId })
     setLoading(true)
     setRemovedDefects(new Set())
     try {
@@ -409,10 +410,14 @@ export function CuppingValidationModal({
       }
 
       // Build the final defects object from finalDefects state
-      // This reflects the lab manager's resolution choice (Master/All Cuppers + individual removals)
+      // This reflects the lab manager's resolution choice (Master/All Cuppers + individual removals).
+      // Belt-and-suspenders: anything the validator explicitly removed via the X button is
+      // skipped here even if it somehow survived in finalDefects — removedDefects is the
+      // authoritative "exclude" set.
       const resolvedTaints: Array<{ name: string; intensity: number; cups_affected: number }> = []
       const resolvedFaults: Array<{ name: string; intensity: number; cups_affected: number }> = []
       for (const [defectName, defectData] of Object.entries(finalDefects)) {
+        if (removedDefects.has(defectName)) continue
         const entry = {
           name: defectName,
           intensity: defectData.intensity,
@@ -424,6 +429,16 @@ export function CuppingValidationModal({
           resolvedFaults.push(entry)
         }
       }
+
+      console.log('[validation] saveFinalDecisions', {
+        sampleId,
+        targetScoreId: targetScore.score_id,
+        masterCupperId,
+        finalDefectKeys: Object.keys(finalDefects),
+        removedDefects: Array.from(removedDefects),
+        resolvedTaints: resolvedTaints.map(t => t.name),
+        resolvedFaults: resolvedFaults.map(f => f.name),
+      })
 
       // Single PATCH with both scores and defects
       const response = await fetch(`/api/cupping/scores/${targetScore.score_id}`, {
