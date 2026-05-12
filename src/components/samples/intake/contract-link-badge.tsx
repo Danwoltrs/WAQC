@@ -66,6 +66,7 @@ export function ContractLinkBadge({ contract, onUnlink }: Props) {
           size="sm"
           onClick={() => setConfirmOpen(true)}
           className="flex-shrink-0"
+          aria-label="Remove contract link"
         >
           <X className="h-4 w-4" />
         </Button>
