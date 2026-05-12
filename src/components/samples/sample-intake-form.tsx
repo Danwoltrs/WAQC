@@ -437,7 +437,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     setFormData(prev => {
       const next: FormData = { ...prev }
       for (const key of prev.contract_prefilled_fields) {
-        ;(next as any)[key] = (initialFormData as any)[key]
+        // Guard against stale keys restored from a localStorage session whose
+        // FormData shape has since changed.
+        if (key in initialFormData) {
+          ;(next as any)[key] = (initialFormData as any)[key]
+        }
       }
       next.selected_contract = null
       next.contract_prefilled_fields = []
@@ -906,6 +910,14 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       </HeaderWrapper>
 
       <ContentWrapper className={asDialog ? 'flex flex-col h-full' : 'flex flex-col h-full'}>
+        {/* Persistent contract link badge — outside the scroll region so it stays visible on long steps */}
+        {currentStep > 1 && formData.selected_contract && (
+          <ContractLinkBadge
+            contract={formData.selected_contract}
+            onUnlink={unlinkContract}
+          />
+        )}
+
         {/* Scrollable content area */}
         <div className="flex-1 overflow-y-auto space-y-6 pb-4">
           {error && (
@@ -921,13 +933,6 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               applyContract={applyContractPrefill}
               unlinkContract={unlinkContract}
               onSkip={() => setCurrentStep(2)}
-            />
-          )}
-
-          {currentStep > 1 && formData.selected_contract && (
-            <ContractLinkBadge
-              contract={formData.selected_contract}
-              onUnlink={unlinkContract}
             />
           )}
 
