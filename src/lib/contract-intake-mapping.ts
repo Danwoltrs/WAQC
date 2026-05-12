@@ -179,7 +179,8 @@ export function mapContractToFormData(
       .filter((x): x is string => typeof x === 'string')
       .map(s => certMap[s.toLowerCase().replace(/[-\s]/g, '_')] ?? s)
       .filter(s => knownCerts.includes(s))
-    if (mapped.length > 0) set('certifications', mapped)
+    const unique = [...new Set(mapped)]
+    if (unique.length > 0) set('certifications', unique)
   }
 
   return { patch, prefilled }

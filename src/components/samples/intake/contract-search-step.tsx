@@ -126,7 +126,7 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
           importer_resolved: resolution.resolved_client_id !== null || resolution.resolved_importer_id !== null,
         },
       }
-      applyContract(fullPatch, [...prefilled, 'contract_resolution'])
+      applyContract(fullPatch, [...prefilled, 'contract_resolution', 'selected_contract'])
     } catch (err: any) {
       setError(err.message || 'Failed to load contract')
     } finally {

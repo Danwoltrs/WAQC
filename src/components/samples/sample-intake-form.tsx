@@ -176,7 +176,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     // Don't save empty forms or when showing success view
     if (success) return
     // Don't save if form is essentially empty (just reset)
-    if (!formData.seller && !formData.importer && !formData.sample_type) return
+    if (!formData.seller && !formData.importer && !formData.sample_type && !formData.selected_contract) return
 
     const dataToSave = { ...formData, photo_file: null }
     localStorage.setItem('sample-intake-form', JSON.stringify(dataToSave))
@@ -421,12 +421,20 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   }
 
   // Apply a contract-prefilled patch and remember which keys came from it.
+  // When a contract is replaced (user picks a different one in Step 1), any field that
+  // the previous contract prefilled but the new one doesn't set is reset to its initial
+  // value so a stale value can't linger. User-edited fields aren't affected — updateFormData
+  // already removed them from contract_prefilled_fields.
   const applyContractPrefill = (patch: Partial<FormData>, prefilled: (keyof FormData)[]) => {
     setFormData(prev => {
       const next: FormData = { ...prev, ...patch }
-      const keys = new Set<keyof FormData>(prev.contract_prefilled_fields)
-      for (const k of prefilled) keys.add(k)
-      next.contract_prefilled_fields = Array.from(keys)
+      const newKeys = new Set<keyof FormData>(prefilled)
+      for (const key of prev.contract_prefilled_fields) {
+        if (!newKeys.has(key) && key in initialFormData) {
+          ;(next as any)[key] = (initialFormData as any)[key]
+        }
+      }
+      next.contract_prefilled_fields = Array.from(newKeys)
       return next
     })
   }
