@@ -292,6 +292,20 @@ export function SupplyChainStep({
                 setShowCreateClientDialog(true)
               }}
             />
+            {formData.contract_resolution && formData.selected_contract && (
+              <>
+                {formData.contract_resolution.shipper_match_count === 0 && (
+                  <EntityResolutionNotice
+                    message={`No exporter named "${formData.shipper}" found in WAQC. Select an existing exporter above or create one.`}
+                  />
+                )}
+                {formData.contract_resolution.multiple_shipper_matches && (
+                  <EntityResolutionNotice
+                    message={`${formData.contract_resolution.shipper_match_count} exporters named "${formData.shipper}" exist — verify the selection above is correct.`}
+                  />
+                )}
+              </>
+            )}
           </div>
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block invisible">Contract Ref.</Label>
