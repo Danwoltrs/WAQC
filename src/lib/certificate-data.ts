@@ -300,10 +300,11 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       : Promise.resolve({ data: null }),
   ])
 
-  // Fetch quality assessment (green bean, roast data, and cup status)
-  const { data: qualityAssessment } = await supabase
+  // Fetch quality assessment (green bean, roast data, cup status, resolved defects).
+  // Cast to `any` until the generated DB types pick up the new resolved_defects column.
+  const { data: qualityAssessment } = await (supabase as any)
     .from('quality_assessments')
-    .select('green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments')
+    .select('green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments, resolved_defects')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -665,7 +666,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       qualityAssessment?.uniform_cup ?? null,
       masterCupperId,
       cuppingAttributeIncrements,
-      cuppingAttributeOrder
+      cuppingAttributeOrder,
+      (qualityAssessment as any)?.resolved_defects ?? null
     )
   }
 
@@ -1158,7 +1160,8 @@ function processCuppingScores(
   persistedUniformCup?: boolean | null,
   masterCupperId?: string | null,
   attributeIncrements?: Record<string, number>,
-  attributeOrder?: string[]
+  attributeOrder?: string[],
+  resolvedDefects?: { taints?: unknown[]; faults?: unknown[] } | null
 ): CuppingData {
   // Cast to allow cupper_id access
   const scoresWithCupper = cuppingScores as Array<{ scores: unknown; notes: string | null; defects?: unknown; cupper_id?: string | null }>
@@ -1405,56 +1408,83 @@ function processCuppingScores(
     uniformCup = avgUniformCup >= 10
   }
 
-  // Master cupper override: when a master cupper is designated, their defects are authoritative.
-  // If the master cupper removed a taint/fault (not present in their defects), exclude it entirely.
-  let filteredTaints = allTaints
-  let filteredFaults = allFaults
-  if (masterCupperId) {
-    const masterEntry = scoresWithCupper.find(s => s.cupper_id === masterCupperId)
-    if (masterEntry) {
-      // Build master cupper's authoritative defect name sets
-      const masterTaintNames = new Set<string>()
-      const masterFaultNames = new Set<string>()
-      if (masterEntry.defects && typeof masterEntry.defects === 'object') {
-        const defects = masterEntry.defects as { taints?: unknown[]; faults?: unknown[] }
-        if (Array.isArray(defects.taints)) {
-          for (const t of defects.taints) {
-            const name = (t && typeof t === 'object') ? (t as any).name : (typeof t === 'string' ? t : null)
-            if (name) masterTaintNames.add(name)
-          }
-        }
-        if (Array.isArray(defects.faults)) {
-          for (const f of defects.faults) {
-            const name = (f && typeof f === 'object') ? (f as any).name : (typeof f === 'string' ? f : null)
-            if (name) masterFaultNames.add(name)
-          }
+  // === DEFECT SOURCE OF TRUTH ===
+  // If resolvedDefects is present (written by /api/cupping/finalize), it is the
+  // authoritative defect list — bypass all the master-cupper inference. This is
+  // the fix for the cert-shows-removed-defects bug: the validator's explicit
+  // resolution can't be silently undone by session-status filters, master-cupper
+  // detection, or cupping_scores row-visibility issues.
+  let filteredTaints: CuppingDefect[]
+  let filteredFaults: CuppingDefect[]
+  let finalTaints: number | null
+  let finalFaults: number | null
+
+  if (resolvedDefects && (Array.isArray(resolvedDefects.taints) || Array.isArray(resolvedDefects.faults))) {
+    const extract = (arr: unknown[] | undefined): CuppingDefect[] => {
+      if (!Array.isArray(arr)) return []
+      const out: CuppingDefect[] = []
+      for (const item of arr) {
+        if (!item || typeof item !== 'object') continue
+        const obj = item as { name?: string; intensity?: number; cups_affected?: number }
+        if (typeof obj.name === 'string' && obj.name.length > 0) {
+          out.push({
+            name: obj.name,
+            intensity: typeof obj.intensity === 'number' ? obj.intensity : null,
+            cups_affected: typeof obj.cups_affected === 'number' ? obj.cups_affected : null,
+          })
         }
       }
-      // Filter: only keep defects the master cupper also reported
-      filteredTaints = allTaints.filter(t => masterTaintNames.has(t.name))
-      filteredFaults = allFaults.filter(f => masterFaultNames.has(f.name))
-
-      // Also recalculate taint/fault counts from master cupper's defects only
-      // (overwrite the MAX-consolidated counts computed above)
+      return out
     }
+    filteredTaints = extract(resolvedDefects.taints)
+    filteredFaults = extract(resolvedDefects.faults)
+    const uniqTaintNames = new Set(filteredTaints.map(t => t.name))
+    const uniqFaultNames = new Set(filteredFaults.map(f => f.name))
+    finalTaints = uniqTaintNames.size > 0 ? uniqTaintNames.size : null
+    finalFaults = uniqFaultNames.size > 0 ? uniqFaultNames.size : null
+  } else {
+    // Legacy path (samples finalized before resolved_defects existed): fall back
+    // to filtering all cuppers' defects through the master cupper's defect names.
+    filteredTaints = allTaints
+    filteredFaults = allFaults
+    if (masterCupperId) {
+      const masterEntry = scoresWithCupper.find(s => s.cupper_id === masterCupperId)
+      if (masterEntry) {
+        const masterTaintNames = new Set<string>()
+        const masterFaultNames = new Set<string>()
+        if (masterEntry.defects && typeof masterEntry.defects === 'object') {
+          const defects = masterEntry.defects as { taints?: unknown[]; faults?: unknown[] }
+          if (Array.isArray(defects.taints)) {
+            for (const t of defects.taints) {
+              const name = (t && typeof t === 'object') ? (t as any).name : (typeof t === 'string' ? t : null)
+              if (name) masterTaintNames.add(name)
+            }
+          }
+          if (Array.isArray(defects.faults)) {
+            for (const f of defects.faults) {
+              const name = (f && typeof f === 'object') ? (f as any).name : (typeof f === 'string' ? f : null)
+              if (name) masterFaultNames.add(name)
+            }
+          }
+        }
+        filteredTaints = allTaints.filter(t => masterTaintNames.has(t.name))
+        filteredFaults = allFaults.filter(f => masterFaultNames.has(f.name))
+      }
+    }
+    const hasMasterOverride = masterCupperId && scoresWithCupper.find(s => s.cupper_id === masterCupperId)
+    const uniqueFilteredTaintNames = new Set(filteredTaints.map(t => t.name))
+    const uniqueFilteredFaultNames = new Set(filteredFaults.map(f => f.name))
+    finalTaints = hasMasterOverride
+      ? (uniqueFilteredTaintNames.size > 0 ? uniqueFilteredTaintNames.size : null)
+      : (taintsCounts.length > 0 ? Math.max(...taintsCounts) : null)
+    finalFaults = hasMasterOverride
+      ? (uniqueFilteredFaultNames.size > 0 ? uniqueFilteredFaultNames.size : null)
+      : (faultsCounts.length > 0 ? Math.max(...faultsCounts) : null)
   }
 
-  // Recalculate taints/faults counts after master cupper filtering
-  // When master cupper is designated, count unique defect names from filtered list
-  // Otherwise use MAX consolidation across cuppers
-  const hasMasterOverride = masterCupperId && scoresWithCupper.find(s => s.cupper_id === masterCupperId)
-  const uniqueFilteredTaintNames = new Set(filteredTaints.map(t => t.name))
-  const uniqueFilteredFaultNames = new Set(filteredFaults.map(f => f.name))
-  const finalTaints = hasMasterOverride
-    ? (uniqueFilteredTaintNames.size > 0 ? uniqueFilteredTaintNames.size : null)
-    : (taintsCounts.length > 0 ? Math.max(...taintsCounts) : null)
-  const finalFaults = hasMasterOverride
-    ? (uniqueFilteredFaultNames.size > 0 ? uniqueFilteredFaultNames.size : null)
-    : (faultsCounts.length > 0 ? Math.max(...faultsCounts) : null)
-
-  // Deduplicate taints: group by name, consolidate intensity across cuppers
-  // If intensity difference ≤1, use the higher value
-  // If difference >1, flag with both values (master cupper should resolve)
+  // Deduplicate taints/faults: group by name, consolidate intensity across entries.
+  // For resolved_defects path this is a no-op (already unique by name) but keeps
+  // the legacy path working.
   const deduplicatedTaints = deduplicateDefects(filteredTaints)
   const deduplicatedFaults = deduplicateDefects(filteredFaults)
 

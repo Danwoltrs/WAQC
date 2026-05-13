@@ -218,6 +218,10 @@ export async function POST(request: NextRequest) {
 
       let totalTaints = 0
       let totalFaults = 0
+      // The exact defect list the validator resolved. Persisted to
+      // quality_assessments.resolved_defects below so the certificate reads it
+      // directly instead of re-deriving via the master-cupper inference chain.
+      let resolvedDefects: { taints: unknown[]; faults: unknown[] } = { taints: [], faults: [] }
 
       if (allCuppingScores) {
         if (authoritativeCupperId) {
@@ -229,6 +233,10 @@ export async function POST(request: NextRequest) {
             const defects = authScore.defects as { taints?: unknown[]; faults?: unknown[] }
             totalTaints = Array.isArray(defects.taints) ? defects.taints.length : 0
             totalFaults = Array.isArray(defects.faults) ? defects.faults.length : 0
+            resolvedDefects = {
+              taints: Array.isArray(defects.taints) ? defects.taints : [],
+              faults: Array.isArray(defects.faults) ? defects.faults : [],
+            }
           }
         } else {
           // No authoritative cupper: use MAX consolidation across all cuppers
@@ -288,6 +296,9 @@ export async function POST(request: NextRequest) {
         const updateData: Record<string, unknown> = {
           clean_cup_auto: cleanCupAuto,
           uniform_cup_auto: uniformCupAuto,
+          // Always overwrite resolved_defects with the validator's resolution.
+          // This is what the certificate renders — bypasses any master-cupper inference.
+          resolved_defects: resolvedDefects,
         }
         // On first finalization, always set clean_cup/uniform_cup to auto values
         if (existingQA.clean_cup === null) {
@@ -301,6 +312,19 @@ export async function POST(request: NextRequest) {
           .from('quality_assessments')
           .update(updateData)
           .eq('id', existingQA.id)
+      } else {
+        // No existing quality_assessments row — create one so the cert has a
+        // resolved_defects source even before grading data is filled in.
+        await supabaseAdmin
+          .from('quality_assessments')
+          .insert({
+            sample_id,
+            clean_cup: cleanCupAuto,
+            uniform_cup: uniformCupAuto,
+            clean_cup_auto: cleanCupAuto,
+            uniform_cup_auto: uniformCupAuto,
+            resolved_defects: resolvedDefects,
+          })
       }
     } catch (cupStatusError) {
       console.error('Error calculating cup status:', cupStatusError)
