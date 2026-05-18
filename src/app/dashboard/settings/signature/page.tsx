@@ -210,7 +210,7 @@ export default function SignatureSettingsPage() {
                   placeholder={profile.email}
                 />
                 <p className="text-[11px] text-muted-foreground mt-1">
-                  Used for the "Teams Chat" link. Defaults to your account email.
+                  Used for the &quot;Teams Chat&quot; link. Defaults to your account email.
                 </p>
               </div>
 

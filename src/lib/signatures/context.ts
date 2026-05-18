@@ -20,7 +20,8 @@ import {
   type SignatureRenderContext,
 } from './render'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
+// SupabaseClient generic types are unwieldy across server/admin variants;
+// use a loose type here and rely on the actual runtime client at call sites.
 type AnyClient = any
 
 /**
