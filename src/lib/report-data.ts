@@ -25,6 +25,10 @@ export interface WeeklySSCertReportData {
     id: string
     name: string                  // best-available display name (fantasy_name / company / name)
     logo_url: string | null
+    /** True when the QC client itself has a roaster client_type. Used to hide
+     *  the redundant "Roasters" block on the report (the recipient IS the
+     *  roaster — listing it would be self-referential). */
+    is_roaster: boolean
   }
   period: {
     start_date: string            // ISO
@@ -60,15 +64,19 @@ export async function getWeeklySSCertReportData(
   const { clientId, startDate, endDate } = params
 
   // Resolve the client — accept any QC client, just for display.
+  // client_types is read so we can hide the redundant Roasters block when the
+  // recipient itself is a roaster (Dunkin, Blaser, etc.).
   const { data: client, error: clientError } = await supabase
     .from('clients')
-    .select('id, name, company, fantasy_name, logo_url')
+    .select('id, name, company, fantasy_name, logo_url, client_types')
     .eq('id', clientId)
     .single()
   if (clientError || !client) {
     console.error('[report-data] client not found:', clientId, clientError)
     return null
   }
+  const clientTypes = ((client as any).client_types as string[] | null) ?? []
+  const clientIsRoaster = clientTypes.some(t => typeof t === 'string' && t.toLowerCase().includes('roaster'))
 
   // Pull SS certificates created in the window for samples belonging to this
   // client. We exclude sub-contract certs (sample_contract_id IS NOT NULL)
@@ -168,6 +176,7 @@ export async function getWeeklySSCertReportData(
       id: client.id,
       name: (client as any).fantasy_name || (client as any).company || client.name,
       logo_url: (client as any).logo_url ?? null,
+      is_roaster: clientIsRoaster,
     },
     period: {
       start_date: startDate,

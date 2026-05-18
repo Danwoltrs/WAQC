@@ -19,9 +19,9 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/searchable-select'
-import { FileText, Calendar, Loader2, Send } from 'lucide-react'
+import { FileText, Calendar, Loader2, Eye } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { SendReportModal } from '@/components/reports/send-report-modal'
+import { PreviewReportModal } from '@/components/reports/preview-report-modal'
 
 export default function ReportsPage() {
   const { toast } = useToast()
@@ -35,8 +35,7 @@ export default function ReportsPage() {
   const [startDate, setStartDate] = useState<string>(defaultDates.start)
   const [endDate, setEndDate] = useState<string>(defaultDates.end)
   const [loadingClients, setLoadingClients] = useState(true)
-  const [generating, setGenerating] = useState(false)
-  const [sendModalOpen, setSendModalOpen] = useState(false)
+  const [previewOpen, setPreviewOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -71,7 +70,7 @@ export default function ReportsPage() {
     }
   }, [toast])
 
-  const handleGenerate = () => {
+  const handlePreview = () => {
     if (!clientId) {
       toast({ title: 'Pick a client', variant: 'destructive' })
       return
@@ -80,25 +79,11 @@ export default function ReportsPage() {
       toast({ title: 'Pick a date range', variant: 'destructive' })
       return
     }
-    if (startDate >= endDate) {
+    if (startDate > endDate) {
       toast({ title: 'Start date must be before end date', variant: 'destructive' })
       return
     }
-
-    setGenerating(true)
-    // Open the PDF in a new tab. We use window.open immediately (synchronously
-    // in the click handler) so Safari doesn't block it as a popup. The endpoint
-    // streams the PDF inline so it'll render in the new tab.
-    const params = new URLSearchParams({
-      client_id: clientId,
-      start_date: new Date(startDate).toISOString(),
-      // End is exclusive — bump to the day after the picked end-date so the
-      // selected end day is included in the [start, end) window.
-      end_date: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
-    })
-    const url = `/api/reports/weekly-ss?${params.toString()}`
-    window.open(url, '_blank', 'noopener,noreferrer')
-    setGenerating(false)
+    setPreviewOpen(true)
   }
 
   const presetThisWeek = () => {
@@ -192,45 +177,29 @@ export default function ReportsPage() {
               </Button>
             </div>
 
-            {/* Action buttons — Generate downloads the PDF, Send emails it
-                via Microsoft Graph on behalf of the user. */}
-            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-border/50">
+            {/* Preview opens a full-screen modal with the PDF embedded.
+                Download + Send are exposed from inside the preview so the
+                user can review the report before either action. */}
+            <div className="flex justify-end pt-2 border-t border-border/50">
               <Button
-                variant="outline"
-                onClick={() => setSendModalOpen(true)}
+                onClick={handlePreview}
                 disabled={!clientId || !startDate || !endDate}
-              >
-                <Send className="w-4 h-4 mr-2" />
-                Send by email
-              </Button>
-              <Button
-                onClick={handleGenerate}
-                disabled={generating || !clientId || !startDate || !endDate}
                 className="bg-[#556b2f] hover:bg-[#556b2f]/90"
               >
-                {generating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Generating…
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-4 h-4 mr-2" />
-                    Generate PDF
-                  </>
-                )}
+                <Eye className="w-4 h-4 mr-2" />
+                Preview report
               </Button>
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Send-by-email modal. clientId / dates are always defined at this
-          point because the trigger button is disabled until they are. */}
+      {/* Full-screen preview modal. Loads the PDF on open; exposes
+          Download + Send buttons in its header. */}
       {clientId && startDate && endDate ? (
-        <SendReportModal
-          open={sendModalOpen}
-          onOpenChange={setSendModalOpen}
+        <PreviewReportModal
+          open={previewOpen}
+          onOpenChange={setPreviewOpen}
           clientId={clientId}
           clientName={clients.find(c => c.value === clientId)?.label || 'Client'}
           startDate={startDate}

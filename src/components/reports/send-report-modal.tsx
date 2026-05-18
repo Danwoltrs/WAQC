@@ -3,19 +3,20 @@
 /**
  * Send-by-email modal for a Weekly SS report.
  *
- * Lets the user enter to/cc/bcc recipients (free-form, comma-separated),
- * optionally override the auto-generated subject + body, and dispatches to
- * /api/reports/weekly-ss/send. The server generates the PDF fresh and sends
- * it via Microsoft Graph from qualitycontrol@wolthers.com on behalf of the
- * logged-in user.
- *
- * Recipient suggestions / contact picker are deliberately out of scope for
- * v1 — the user pastes addresses. We'll add an autocomplete fed by
- * company_contacts in a follow-up once we know which contact tables the
- * client cases actually use.
+ * Behavior:
+ *   - On open: fetches /api/reports/recipients?client_id=...&report_type=weekly_ss
+ *     and pre-fills To / Cc / Bcc from whatever was sent last time. First open
+ *     for a client returns empty arrays — user pastes manually.
+ *   - Server always auto-CCs qualitycontrol@wolthers.com (the same mailbox the
+ *     email is sent FROM) so replies thread back into the QC shared inbox.
+ *     We show this in the UI as a static notice so the user knows it's there
+ *     even though they don't see it in the Cc input.
+ *   - On successful send, the server upserts the recipient set so the next
+ *     open for this client has it pre-filled — including any edits the user
+ *     made (deletes count, additions count).
  */
 
-import { useState, useMemo } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Dialog,
   DialogContent,
@@ -28,8 +29,11 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
-import { Loader2, Send, AlertCircle } from 'lucide-react'
+import { Loader2, Send, AlertCircle, Mail } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+
+const REPORT_TYPE = 'weekly_ss'
+const AUTO_CC_MAILBOX = 'qualitycontrol@wolthers.com'
 
 interface SendReportModalProps {
   open: boolean
@@ -38,15 +42,14 @@ interface SendReportModalProps {
   clientName: string
   startDate: string  // YYYY-MM-DD
   endDate: string    // YYYY-MM-DD
+  /** Called after a successful send so the parent can chain UI updates
+   *  (e.g. close the parent preview modal too). */
+  onSent?: () => void
 }
 
-// Permissive but cheap email check — the server runs the same regex; this
-// just gives users feedback before submission.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 function parseAddresses(input: string): string[] {
-  // Accept comma, semicolon, newline, or space separators — whatever the user
-  // happens to paste from Outlook / a contact list.
   return input
     .split(/[,;\n\s]+/)
     .map(s => s.trim())
@@ -65,6 +68,7 @@ export function SendReportModal({
   clientName,
   startDate,
   endDate,
+  onSent,
 }: SendReportModalProps) {
   const { toast } = useToast()
 
@@ -80,22 +84,55 @@ export function SendReportModal({
   const [subject, setSubject] = useState(defaultSubject)
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
+  const [loadingRecipients, setLoadingRecipients] = useState(false)
+  const [lastSentAt, setLastSentAt] = useState<string | null>(null)
 
-  // Resync the default subject when the modal is re-opened with new params.
-  useMemo(() => setSubject(defaultSubject), [defaultSubject])
+  // Reset subject when defaults change (different client / dates).
+  useEffect(() => {
+    setSubject(defaultSubject)
+  }, [defaultSubject])
+
+  // Load saved recipients when the modal opens for a given client.
+  useEffect(() => {
+    if (!open || !clientId) return
+    let cancelled = false
+    async function load() {
+      setLoadingRecipients(true)
+      try {
+        const params = new URLSearchParams({ client_id: clientId, report_type: REPORT_TYPE })
+        const res = await fetch(`/api/reports/recipients?${params.toString()}`)
+        if (!res.ok) return  // 401/500 -> just don't pre-fill; user types manually
+        const data = await res.json()
+        if (cancelled) return
+        // Pre-fill as comma-separated. The textarea accepts any separator on
+        // edit, but commas give the cleanest single-line read on display.
+        const toList: string[] = Array.isArray(data?.to) ? data.to : []
+        const ccList: string[] = Array.isArray(data?.cc) ? data.cc : []
+        const bccList: string[] = Array.isArray(data?.bcc) ? data.bcc : []
+        setToRaw(toList.join(', '))
+        setCcRaw(ccList.join(', '))
+        setBccRaw(bccList.join(', '))
+        setLastSentAt(data?.last_sent_at ?? null)
+      } catch {
+        // Network error — fall through to empty inputs.
+      } finally {
+        if (!cancelled) setLoadingRecipients(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [open, clientId])
 
   const toEmails = parseAddresses(toRaw)
   const ccEmails = parseAddresses(ccRaw)
   const bccEmails = parseAddresses(bccRaw)
   const invalidEmails = [...toEmails, ...ccEmails, ...bccEmails].filter(e => !EMAIL_RE.test(e))
-  const canSend = toEmails.length > 0 && invalidEmails.length === 0 && !sending
+  const canSend = toEmails.length > 0 && invalidEmails.length === 0 && !sending && !loadingRecipients
 
   const handleSend = async () => {
     if (!canSend) return
     setSending(true)
     try {
-      // Bump end-date to the day after so the server's [start, end) window
-      // includes the user-selected end day.
       const startIso = new Date(startDate).toISOString()
       const endIso = new Date(new Date(endDate).getTime() + 86400000).toISOString()
 
@@ -126,14 +163,11 @@ export function SendReportModal({
 
       toast({
         title: 'Report sent',
-        description: `Sent to ${toEmails.length} recipient${toEmails.length === 1 ? '' : 's'}`,
+        description: `Sent to ${toEmails.length} recipient${toEmails.length === 1 ? '' : 's'}${ccEmails.length ? ` · ${ccEmails.length} cc` : ''} · ${AUTO_CC_MAILBOX} cc'd`,
       })
-      // Reset and close
-      setToRaw('')
-      setCcRaw('')
-      setBccRaw('')
-      setBody('')
+      // Don't reset inputs — saved server-side, next open will pre-fill anyway.
       onOpenChange(false)
+      onSent?.()
     } catch (err) {
       console.error('[SendReportModal] send failed:', err)
       toast({
@@ -152,9 +186,17 @@ export function SendReportModal({
         <DialogHeader>
           <DialogTitle className="text-sm">Send Weekly SS Report</DialogTitle>
           <DialogDescription className="text-xs">
-            Sends from <span className="font-medium">qualitycontrol@wolthers.com</span> on behalf of
-            you. PDF is regenerated fresh from current data — the recipient sees the same file the
-            Generate button would produce.
+            Sends from <span className="font-medium">{AUTO_CC_MAILBOX}</span> on behalf of you.
+            {lastSentAt && (
+              <span className="block mt-1">
+                Recipients pre-filled from last send on{' '}
+                <span className="font-medium">
+                  {new Date(lastSentAt).toLocaleDateString('en-US', {
+                    year: 'numeric', month: 'short', day: 'numeric',
+                  })}
+                </span>.
+              </span>
+            )}
           </DialogDescription>
         </DialogHeader>
 
@@ -166,8 +208,9 @@ export function SendReportModal({
             <Textarea
               value={toRaw}
               onChange={e => setToRaw(e.target.value)}
-              placeholder="recipient@example.com, another@example.com"
+              placeholder={loadingRecipients ? 'Loading saved recipients…' : 'recipient@example.com, another@example.com'}
               rows={2}
+              disabled={loadingRecipients}
               className="font-mono text-xs"
             />
             {toEmails.length > 0 && (
@@ -185,6 +228,7 @@ export function SendReportModal({
                 onChange={e => setCcRaw(e.target.value)}
                 placeholder="optional"
                 rows={2}
+                disabled={loadingRecipients}
                 className="font-mono text-xs"
               />
             </div>
@@ -195,9 +239,21 @@ export function SendReportModal({
                 onChange={e => setBccRaw(e.target.value)}
                 placeholder="optional"
                 rows={2}
+                disabled={loadingRecipients}
                 className="font-mono text-xs"
               />
             </div>
+          </div>
+
+          {/* Static notice — the mailbox is always added server-side and
+              not editable, so showing it as part of the Cc input would
+              confuse "is it there or not?". */}
+          <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/50 rounded-md px-3 py-2">
+            <Mail className="w-3.5 h-3.5 flex-shrink-0" />
+            <span>
+              <span className="font-medium">{AUTO_CC_MAILBOX}</span> is automatically added to Cc
+              on every send.
+            </span>
           </div>
 
           <div>

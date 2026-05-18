@@ -19,8 +19,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { generateWeeklySSCertsReport } from '@/lib/reports/weekly-ss-generator'
 import { sendMail, GraphSendError } from '@/lib/graph/send'
+import { saveRecipients } from '@/app/api/reports/recipients/route'
 
 const DEFAULT_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX ?? 'qualitycontrol@wolthers.com'
+const REPORT_TYPE = 'weekly_ss'
 
 // Permissive but cheap email check — Graph rejects malformed addresses with a
 // clearer error, this just blocks obvious typos before paying for the round
@@ -113,11 +115,19 @@ export async function POST(request: NextRequest) {
       ? bodyIn
       : `Hello,\n\nPlease find attached the Weekly SS Certificates report for ${report.data.client.name} covering ${periodLabel}.\n\nBest regards,\n${senderName ?? 'Quality Control'}\nWolthers & Associates`
 
+    // Always auto-CC the mailbox so anyone monitoring qualitycontrol@'s inbox
+    // sees outgoing reports + recipient replies thread back into that mailbox.
+    // Dedup case-insensitively in case the user already added it manually.
+    const userCcLower = new Set(ccResult.emails.map(e => e.toLowerCase()))
+    const ccWithMailbox = userCcLower.has(DEFAULT_MAILBOX.toLowerCase())
+      ? ccResult.emails
+      : [...ccResult.emails, DEFAULT_MAILBOX]
+
     try {
       await sendMail({
         mailbox: DEFAULT_MAILBOX,
         to: toResult.emails,
-        cc: ccResult.emails.length > 0 ? ccResult.emails : undefined,
+        cc: ccWithMailbox,
         bcc: bccResult.emails.length > 0 ? bccResult.emails : undefined,
         subject,
         bodyText,
@@ -146,10 +156,22 @@ export async function POST(request: NextRequest) {
       throw err
     }
 
+    // Persist the recipient set the user chose — NOT the auto-CC mailbox,
+    // so it doesn't appear as a "saved" entry the user might try to remove.
+    // Non-fatal: if this fails, the email was still sent.
+    await saveRecipients(supabase, {
+      clientId: client_id,
+      reportType: REPORT_TYPE,
+      userId: user.id,
+      to: toResult.emails,
+      cc: ccResult.emails,
+      bcc: bccResult.emails,
+    })
+
     return NextResponse.json({
       success: true,
       sent_to: toResult.emails,
-      cc: ccResult.emails,
+      cc: ccWithMailbox,
       bcc: bccResult.emails,
       filename: report.filename,
       mailbox: DEFAULT_MAILBOX,

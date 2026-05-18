@@ -64,6 +64,12 @@ const styles = StyleSheet.create({
     width: '33%',
     flexDirection: 'column',
   },
+  // When the QC client is itself a roaster, the Roasters block is hidden and
+  // Importers expands to fill its space — keeps the header balanced.
+  statsColImportersWide: {
+    width: '66%',
+    flexDirection: 'column',
+  },
   statBox: {
     backgroundColor: GREEN,
     color: '#FFFFFF',
@@ -253,7 +259,10 @@ export function WeeklySSCertsReport({
           </View>
         </View>
 
-        {/* ---- Stats / Breakdown row ---- */}
+        {/* ---- Stats / Breakdown row ----
+            When the QC client is itself a roaster (Dunkin, Blaser, etc.) the
+            Roasters block is redundant — the recipient IS the roaster. Hide
+            it and expand the Importers block to fill the freed space. */}
         <View style={styles.statsRow}>
           {/* Two stacked stat boxes — bags + certificates */}
           <View style={styles.statsColLeft}>
@@ -267,28 +276,30 @@ export function WeeklySSCertsReport({
             </View>
           </View>
 
-          {/* Roasters breakdown */}
-          <View style={styles.statsColRoasters}>
-            <Text style={styles.breakdownHeader}>Roasters</Text>
-            <View style={styles.breakdownBox}>
-              {roasterDisplay.length === 0 ? (
-                <Text style={{ color: '#FFFFFF', fontSize: 9, textAlign: 'center' }}>—</Text>
-              ) : (
-                roasterDisplay.map(r => (
-                  <View key={r.name} style={styles.breakdownLine}>
-                    <Text style={styles.breakdownLineName}>{r.name}</Text>
-                    <Text style={styles.breakdownLineValue}>{formatThousands(r.bags)}</Text>
-                  </View>
-                ))
-              )}
+          {/* Roasters breakdown — omitted when the client is itself a roaster */}
+          {!data.client.is_roaster ? (
+            <View style={styles.statsColRoasters}>
+              <Text style={styles.breakdownHeader}>Roasters</Text>
+              <View style={styles.breakdownBox}>
+                {roasterDisplay.length === 0 ? (
+                  <Text style={{ color: '#FFFFFF', fontSize: 9, textAlign: 'center' }}>—</Text>
+                ) : (
+                  roasterDisplay.map(r => (
+                    <View key={r.name} style={styles.breakdownLine}>
+                      <Text style={styles.breakdownLineName}>{r.name}</Text>
+                      <Text style={styles.breakdownLineValue}>{formatThousands(r.bags)}</Text>
+                    </View>
+                  ))
+                )}
+              </View>
+              {roasterOverflow > 0 ? (
+                <Text style={styles.breakdownFooter}>+{roasterOverflow} more</Text>
+              ) : null}
             </View>
-            {roasterOverflow > 0 ? (
-              <Text style={styles.breakdownFooter}>+{roasterOverflow} more</Text>
-            ) : null}
-          </View>
+          ) : null}
 
-          {/* Importers breakdown */}
-          <View style={styles.statsColImporters}>
+          {/* Importers breakdown — widens to 66% when Roasters is hidden */}
+          <View style={data.client.is_roaster ? styles.statsColImportersWide : styles.statsColImporters}>
             <Text style={styles.breakdownHeader}>Importers</Text>
             <View style={styles.breakdownBox}>
               {importerDisplay.length === 0 ? (
