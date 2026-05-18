@@ -74,6 +74,12 @@ const getNavigation = (openIntakeDialog: () => void): NavItem[] => [
         icon: Award,
         permission: 'view_lab_dashboard',
       },
+      {
+        title: 'Reports',
+        href: '/dashboard/reports',
+        icon: FileText,
+        permission: 'view_lab_dashboard',
+      },
     ],
   },
   {
