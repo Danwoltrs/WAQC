@@ -19,7 +19,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { generateWeeklySSCertsReport } from '@/lib/reports/weekly-ss-generator'
 import { sendMail, GraphSendError } from '@/lib/graph/send'
-import { saveRecipients } from '@/app/api/reports/recipients/route'
+import { saveRecipients } from '@/lib/reports/recipients'
 import { composeBodyHtml } from '@/lib/email/compose-html'
 
 const DEFAULT_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX ?? 'qualitycontrol@wolthers.com'

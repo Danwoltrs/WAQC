@@ -15,8 +15,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-
-const VALID_REPORT_TYPES = new Set(['weekly_ss', 'biweekly', 'monthly', 'annual'])
+import { saveRecipients, VALID_REPORT_TYPES } from '@/lib/reports/recipients'
 
 export async function GET(request: NextRequest) {
   try {
@@ -102,58 +101,5 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error('Error in POST /api/reports/recipients:', err)
     return NextResponse.json({ error: 'Internal error' }, { status: 500 })
-  }
-}
-
-/**
- * Exported for re-use from the send endpoint so a successful send
- * automatically persists the recipient set without an extra round trip.
- *
- * Each call REPLACES the stored row (not append) — "saved recipients" means
- * "what we sent last time", not a cumulative log.
- */
-export async function saveRecipients(
-  supabase: any,
-  params: {
-    clientId: string
-    reportType: string
-    userId: string
-    to: string[]
-    cc: string[]
-    bcc: string[]
-  }
-): Promise<void> {
-  const dedupAndClean = (arr: string[]): string[] => {
-    const seen = new Set<string>()
-    const out: string[] = []
-    for (const raw of arr) {
-      if (typeof raw !== 'string') continue
-      const trimmed = raw.trim().toLowerCase()
-      if (!trimmed) continue
-      if (seen.has(trimmed)) continue
-      seen.add(trimmed)
-      out.push(raw.trim())
-    }
-    return out
-  }
-
-  const { error } = await supabase
-    .from('report_recipients')
-    .upsert(
-      {
-        client_id: params.clientId,
-        report_type: params.reportType,
-        to_emails: dedupAndClean(params.to),
-        cc_emails: dedupAndClean(params.cc),
-        bcc_emails: dedupAndClean(params.bcc),
-        last_sent_at: new Date().toISOString(),
-        last_sent_by: params.userId,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'client_id,report_type' }
-    )
-  if (error) {
-    console.error('[reports.recipients] upsert failed:', error)
-    // Non-fatal — the email was already sent, persistence is a nice-to-have.
   }
 }
