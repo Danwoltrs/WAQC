@@ -308,14 +308,20 @@ export async function POST(request: NextRequest) {
           updateData.uniform_cup = uniformCupAuto
         }
 
-        await supabaseAdmin
+        const { error: qaUpdateError } = await supabaseAdmin
           .from('quality_assessments')
           .update(updateData)
           .eq('id', existingQA.id)
+        if (qaUpdateError) {
+          // Surface silent failures (e.g. resolved_defects column missing if the
+          // migration isn't applied). The cert will fall back to legacy logic and
+          // exhibit the "removed taints still show" bug — log loudly so we notice.
+          console.error('[finalize] quality_assessments UPDATE failed for sample', sample_id, qaUpdateError)
+        }
       } else {
         // No existing quality_assessments row — create one so the cert has a
         // resolved_defects source even before grading data is filled in.
-        await supabaseAdmin
+        const { error: qaInsertError } = await supabaseAdmin
           .from('quality_assessments')
           .insert({
             sample_id,
@@ -325,6 +331,9 @@ export async function POST(request: NextRequest) {
             uniform_cup_auto: uniformCupAuto,
             resolved_defects: resolvedDefects,
           })
+        if (qaInsertError) {
+          console.error('[finalize] quality_assessments INSERT failed for sample', sample_id, qaInsertError)
+        }
       }
     } catch (cupStatusError) {
       console.error('Error calculating cup status:', cupStatusError)

@@ -302,13 +302,19 @@ export async function getCertificateData(sampleId: string, contractId?: string):
 
   // Fetch quality assessment (green bean, roast data, cup status, resolved defects).
   // Cast to `any` until the generated DB types pick up the new resolved_defects column.
-  const { data: qualityAssessment } = await (supabase as any)
+  // Capture error explicitly — if the resolved_defects column is missing (migration
+  // not yet applied), the whole SELECT fails silently and the cert falls back to
+  // the legacy master-cupper inference chain. Loud-fail so we notice in logs.
+  const { data: qualityAssessment, error: qaError } = await (supabase as any)
     .from('quality_assessments')
     .select('green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments, resolved_defects')
     .eq('sample_id', sampleId)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
+  if (qaError && qaError.code !== 'PGRST116') {
+    console.error('[cert-data] quality_assessments SELECT failed for', sampleId, qaError)
+  }
 
   // Fetch roast profile
   const { data: roastProfile } = await supabase
@@ -657,6 +663,17 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   // When a master cupper exists, use their scores as final (no averaging)
   let cuppingData: CuppingData | null = null
   if (cuppingScores && cuppingScores.length > 0) {
+    const resolvedDefectsForCert = (qualityAssessment as any)?.resolved_defects ?? null
+    // Diagnostic: lets us see in server logs which path the cert is taking and
+    // catch silent-fallback bugs (e.g. migration not applied → cert defaults to
+    // legacy master-cupper inference even though we thought it was fixed).
+    if (!resolvedDefectsForCert) {
+      console.log(
+        '[cert-data] sample', sampleId,
+        '- no resolved_defects (using legacy path). masterCupperId=', masterCupperId,
+        'cupperCount=', cuppingScores.length
+      )
+    }
     cuppingData = processCuppingScores(
       cuppingScores as any,
       isSpecialty,
@@ -667,7 +684,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       masterCupperId,
       cuppingAttributeIncrements,
       cuppingAttributeOrder,
-      (qualityAssessment as any)?.resolved_defects ?? null
+      resolvedDefectsForCert
     )
   }
 

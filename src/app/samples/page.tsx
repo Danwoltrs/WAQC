@@ -958,9 +958,15 @@ export default function SamplesPage() {
       })
       const data = await res.json().catch(() => ({} as any))
       if (!res.ok) {
+        // Surface the first DB error from the server's errors[] array so the
+        // toast shows the actual reason (e.g. unique constraint) instead of a
+        // generic message that hides the failure mode.
+        const firstError = Array.isArray(data?.errors) && data.errors.length > 0
+          ? data.errors[0]
+          : null
         toast({
           title: 'Duplicate failed',
-          description: data?.error || 'Failed to duplicate sample',
+          description: firstError || data?.error || 'Failed to duplicate sample',
           variant: 'destructive',
         })
         return

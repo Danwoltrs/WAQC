@@ -62,10 +62,11 @@ async function getCertificateInfo(slug: string) {
     .limit(1)
     .maybeSingle()
 
-  // Get quality assessment (green bean + cup status)
-  const { data: assessment } = await supabase
+  // Get quality assessment (green bean + cup status + resolved defects).
+  // Cast to any until the generated DB types pick up resolved_defects.
+  const { data: assessment } = await (supabase as any)
     .from('quality_assessments')
-    .select('green_bean_data, clean_cup, uniform_cup')
+    .select('green_bean_data, clean_cup, uniform_cup, resolved_defects')
     .eq('sample_id', sample.id)
     .order('created_at', { ascending: false })
     .limit(1)
@@ -87,32 +88,100 @@ async function getCertificateInfo(slug: string) {
   // Get cupping scores for taints, faults, and attribute averages
   const { data: cuppingScores } = await supabase
     .from('cupping_scores')
-    .select('scores, defects')
+    .select('scores, defects, cupper_id')
     .eq('sample_id', sample.id)
 
+  // === DEFECT RESOLUTION (mirrors src/lib/certificate-data.ts) ===
+  // The HTML cert page used to SUM all cuppers' defects — wrong, because that
+  // includes taints/faults the master cupper explicitly removed during validation.
+  // Source of truth, in order:
+  //   1. quality_assessments.resolved_defects (written by /api/cupping/finalize)
+  //   2. master cupper's cupping_scores.defects
+  //   3. fallback: max defect count across all cuppers
   let totalTaints = 0
   let totalFaults = 0
+
+  const resolvedDefects = (assessment as any)?.resolved_defects as
+    | { taints?: unknown[]; faults?: unknown[] }
+    | null
+    | undefined
+
+  if (resolvedDefects && (Array.isArray(resolvedDefects.taints) || Array.isArray(resolvedDefects.faults))) {
+    // Path 1: validator's authoritative resolution
+    const uniq = (arr: unknown[] | undefined): number => {
+      if (!Array.isArray(arr)) return 0
+      const names = new Set<string>()
+      for (const it of arr) {
+        if (it && typeof it === 'object') {
+          const name = (it as any).name
+          if (typeof name === 'string' && name.length > 0) names.add(name)
+        }
+      }
+      return names.size
+    }
+    totalTaints = uniq(resolvedDefects.taints)
+    totalFaults = uniq(resolvedDefects.faults)
+  } else if (cuppingScores && cuppingScores.length > 0) {
+    // Path 2/3: find the master cupper for this sample's session
+    let masterCupperId: string | null = null
+    const { data: sess } = await (supabase as any)
+      .from('cupping_sessions')
+      .select('cupper_ids, master_cupper_id')
+      .contains('sample_ids', [sample.id])
+      .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    if (sess?.master_cupper_id) {
+      masterCupperId = sess.master_cupper_id
+    } else if (sess?.cupper_ids && Array.isArray(sess.cupper_ids) && sess.cupper_ids.length > 0) {
+      const { data: profs } = await supabase
+        .from('profiles')
+        .select('id, is_master_cupper')
+        .in('id', sess.cupper_ids as string[])
+        .eq('is_master_cupper', true)
+        .limit(1)
+      if (profs && profs.length > 0) masterCupperId = profs[0].id
+    }
+
+    const masterScore = masterCupperId
+      ? (cuppingScores as Array<{ cupper_id: string | null; defects: unknown }>).find(
+          s => s.cupper_id === masterCupperId
+        )
+      : null
+
+    if (masterScore?.defects && typeof masterScore.defects === 'object') {
+      // Path 2: master cupper's defects are authoritative
+      const d = masterScore.defects as { taints?: unknown[]; faults?: unknown[] }
+      totalTaints = Array.isArray(d.taints) ? d.taints.length : 0
+      totalFaults = Array.isArray(d.faults) ? d.faults.length : 0
+    } else {
+      // Path 3: no master cupper — max across cuppers (not sum, which would
+      // double-count the same defect when multiple cuppers flag it).
+      for (const score of cuppingScores) {
+        if (score.defects && typeof score.defects === 'object') {
+          const d = score.defects as { taints?: unknown[]; faults?: unknown[] }
+          if (Array.isArray(d.taints)) totalTaints = Math.max(totalTaints, d.taints.length)
+          if (Array.isArray(d.faults)) totalFaults = Math.max(totalFaults, d.faults.length)
+        }
+      }
+    }
+  }
+
+  // Attribute scores + flavor descriptor collection (unaffected by defect logic)
   const attributeScoresMap: Record<string, number[]> = {}
   const flavorDescriptors: string[] = []
 
   if (cuppingScores) {
     for (const score of cuppingScores) {
-      if (score.defects && typeof score.defects === 'object') {
-        const d = score.defects as { taints?: unknown[]; faults?: unknown[] }
-        if (Array.isArray(d.taints)) totalTaints += d.taints.length
-        if (Array.isArray(d.faults)) totalFaults += d.faults.length
-      }
-      // Collect attribute scores for averaging
       if (score.scores && typeof score.scores === 'object') {
         const scores = score.scores as Record<string, unknown>
-        // Collect flavor descriptor
         if (typeof scores.Flavor_descriptor === 'string' && scores.Flavor_descriptor) {
           flavorDescriptors.push(scores.Flavor_descriptor)
         }
         for (const [attr, value] of Object.entries(scores)) {
           if (typeof value !== 'number') continue
           const lower = attr.toLowerCase()
-          // Skip non-chart attributes
           if (['taints', 'taint', 'faults', 'fault', 'clean cup', 'cleancup', 'clean_cup',
                'uniformity', 'uniform cup', 'uniformcup', 'uniform_cup'].includes(lower)) continue
           if (!attributeScoresMap[attr]) attributeScoresMap[attr] = []

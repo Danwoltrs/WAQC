@@ -158,7 +158,14 @@ async function insertOneDuplicate(
     lastTrackingNumber = trackingNumber
     console.log(`Duplicate: generated tracking number ${trackingNumber} (attempt ${attempt})`)
 
-    // Fields to copy from the source sample
+    // Fields to copy from the source sample.
+    //
+    // exporter_sample_number and container_nr are intentionally NOT copied — the
+    // unique index idx_unique_exporter_sample_container forbids two rows sharing
+    // (exporter_id, exporter_sample_number, container_nr). Copying them verbatim
+    // causes the duplicate insert to fail with 23505 on a column the retry can't
+    // resolve (the retry only re-generates tracking_number). Duplicates start
+    // without these per-shipment identifiers; user fills them in if needed.
     const duplicateData: Record<string, any> = {
       tracking_number: trackingNumber,
       client_id: source.client_id,
@@ -169,7 +176,6 @@ async function insertOneDuplicate(
       exporter_id: source.exporter_id,
       same_seller_shipper: source.same_seller_shipper,
       importer_is_qc_client: source.importer_is_qc_client,
-      exporter_sample_number: source.exporter_sample_number,
       importer_id: source.importer_id,
       roaster_id: source.roaster_id,
       end_client_id: source.end_client_id,
@@ -190,7 +196,6 @@ async function insertOneDuplicate(
       roaster_contract_nr: source.roaster_contract_nr,
       qc_client_contract_nr: source.qc_client_contract_nr,
       ico_number: source.ico_number,
-      container_nr: source.container_nr,
       bags_quantity_mt: source.bags_quantity_mt,
       bag_count: source.bag_count,
       bag_weight_kg: source.bag_weight_kg,
