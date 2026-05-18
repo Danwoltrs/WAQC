@@ -388,6 +388,9 @@ export async function POST(request: NextRequest) {
         qc_client_contract_nr: body.qc_client_contract_nr || null,
         ico_number: body.ico_number || null,
         container_nr: body.container_nr || null,
+        certifications: Array.isArray(body.certifications) && body.certifications.length > 0
+          ? body.certifications
+          : null,
         sample_type: body.sample_type || null,
         shipment_month: body.shipment_month || null,
         bags_quantity_mt: bagsQuantityMt,

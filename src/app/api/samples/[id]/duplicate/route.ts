@@ -196,6 +196,7 @@ async function insertOneDuplicate(
       roaster_contract_nr: source.roaster_contract_nr,
       qc_client_contract_nr: source.qc_client_contract_nr,
       ico_number: source.ico_number,
+      certifications: source.certifications,
       bags_quantity_mt: source.bags_quantity_mt,
       bag_count: source.bag_count,
       bag_weight_kg: source.bag_weight_kg,

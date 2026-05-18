@@ -733,6 +733,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         qc_client_contract_nr: formData.qc_client_contract_nr || undefined,
         ico_number: formData.ico_number || undefined,
         container_nr: formData.container_nr || undefined,
+        certifications: formData.certifications && formData.certifications.length > 0
+          ? formData.certifications
+          : undefined,
         bags_quantity_mt: formData.bags_quantity_mt ? parseFloat(formData.bags_quantity_mt) : undefined,
         bag_count: formData.bag_count ? parseInt(formData.bag_count) : undefined,
         bag_weight_kg: formData.bag_weight_kg ? parseFloat(formData.bag_weight_kg) : undefined,

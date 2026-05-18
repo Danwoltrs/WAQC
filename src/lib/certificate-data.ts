@@ -192,8 +192,10 @@ function resolveStatus(
 export async function getCertificateData(sampleId: string, contractId?: string): Promise<CertificateData | null> {
   const supabase = await createClient()
 
-  // Fetch sample with related data
-  const { data: sample, error: sampleError } = await supabase
+  // Fetch sample with related data.
+  // Cast to `any` until generated DB types pick up the certifications column
+  // (added in 20260518000000_add_certifications_to_samples.sql).
+  const { data: sample, error: sampleError } = await (supabase as any)
     .from('samples')
     .select(`
       id,
@@ -235,7 +237,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       end_client_contract_nr,
       supplier_contract_nr,
       supplier,
-      crop_year
+      crop_year,
+      certifications
     `)
     .eq('id', sampleId)
     .single()
@@ -851,7 +854,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       // Use certificate's is_rejected flag as authoritative source for status
       // (override route updates certificate but sample update may fail due to RLS)
       status: resolveStatus(sample.status, certificate, contractOverride?.certificateData),
-      certifications: null, // Certifications not yet stored on samples
+      // Persisted at intake via the quality-step multi-select; null when none.
+      // The cert PDF's CertificateQualityDescription handles the null case.
+      certifications: (sample as any).certifications ?? null,
       crop_year: sample.crop_year ?? null,
     },
     supplyChain: {
