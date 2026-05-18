@@ -98,6 +98,26 @@ interface CuppingData {
   defects: CuppingDefect[]
 }
 
+/**
+ * Classify a defect as taint (true) or fault (false) at the given intensity.
+ *
+ * Honors the per-defect spec:
+ *   - taint_range === null  → ALWAYS a fault (e.g. Phenol/rio, Hard/riado)
+ *   - intensity in taint_range → taint
+ *   - otherwise → fault
+ *
+ * Falls back to the legacy `intensity <= 3` heuristic only when no config
+ * is available (e.g. defect not in the active template).
+ */
+function classifyDefectAsTaint(
+  config: TaintFaultDefect | undefined,
+  intensity: number
+): boolean {
+  if (!config) return intensity <= 3
+  if (config.taint_range === null) return false
+  return intensity >= config.taint_range.min && intensity <= config.taint_range.max
+}
+
 // Helper component to handle URL search params with Suspense
 function ScanDialogTrigger({ onTrigger, loading }: { onTrigger: () => void; loading: boolean }) {
   const router = useRouter()
@@ -734,12 +754,13 @@ function CuppingPageContent() {
     const cuppingData = cuppingDataMap.get(sampleId)
     if (!cuppingData) return
 
+    const defectConfig = defectConfigsMap.get(sampleId)?.get(defectName)
     const newDefect: CuppingDefect = {
       id: `${sampleId}-${defectName}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: defectName,
       cups_affected: cups,
       intensity: intensity,
-      is_taint: intensity <= 3
+      is_taint: classifyDefectAsTaint(defectConfig, intensity)
     }
 
     cuppingData.defects.push(newDefect)
@@ -787,9 +808,11 @@ function CuppingPageContent() {
         const maxTaints = taintFaultConfig.max_taints ?? Infinity
         const maxFaults = taintFaultConfig.max_faults ?? Infinity
 
-        // Count taints and faults in the current additions
-        const taintCount = modalCupIntensities.filter(i => i <= 3).length
-        const faultCount = modalCupIntensities.filter(i => i > 3).length
+        // Count taints and faults using the per-defect spec — an "always fault"
+        // defect (taint_range=null) counts as fault no matter the intensity.
+        const defectConfigForCount = defectConfigsMap.get(sampleId)?.get(defectModalOpen)
+        const taintCount = modalCupIntensities.filter(i => classifyDefectAsTaint(defectConfigForCount, i)).length
+        const faultCount = modalCupIntensities.length - taintCount
 
         // Zero tolerance check
         if (taintCount > 0 && maxTaints === 0) {
@@ -829,9 +852,11 @@ function CuppingPageContent() {
     cuppingData.defects = cuppingData.defects.map(d => {
       if (d.id === defectId) {
         const updatedDefect = { ...d, ...updates }
-        // Auto-calculate taint/fault based on intensity (threshold = 3)
+        // Re-classify when intensity changes, using the per-defect spec.
+        // Defects with taint_range=null are always faults regardless of intensity.
         if (updates.intensity !== undefined) {
-          updatedDefect.is_taint = updates.intensity <= 3
+          const defectConfig = defectConfigsMap.get(sampleId)?.get(d.name)
+          updatedDefect.is_taint = classifyDefectAsTaint(defectConfig, updates.intensity)
         }
         return updatedDefect
       }
@@ -1835,7 +1860,11 @@ function CuppingPageContent() {
                                     const dConfig = defectConfigsMap.get(sample.id)?.get(defectName)
                                     const step = dConfig?.increment ?? 0.5
                                     const maxInt = dConfig?.max_intensity ?? 10
-                                    const taintMax = dConfig?.taint_range?.max ?? 3
+                                    // Header badge reflects the worst-case cup. An "always fault" defect
+                                    // (taint_range=null) is fault regardless of intensity.
+                                    const headerIsTaint = modalCupIntensities.every(
+                                      i => classifyDefectAsTaint(dConfig, i)
+                                    )
 
                                     return (
                                   <div className="space-y-3">
@@ -1843,10 +1872,10 @@ function CuppingPageContent() {
                                     <div className="flex items-center justify-between pb-2 border-b">
                                       <span className="text-sm font-medium">{defectName}</span>
                                       <Badge
-                                        variant={Math.max(...modalCupIntensities) <= taintMax ? 'secondary' : 'destructive'}
+                                        variant={headerIsTaint ? 'secondary' : 'destructive'}
                                         className="text-[10px] px-2 py-0.5"
                                       >
-                                        {Math.max(...modalCupIntensities) <= taintMax ? 'Taint' : 'Fault'}
+                                        {headerIsTaint ? 'Taint' : 'Fault'}
                                       </Badge>
                                     </div>
 
@@ -1895,7 +1924,7 @@ function CuppingPageContent() {
                                                 <Plus className="h-3 w-3" />
                                               </Button>
                                               <span className="text-xs text-muted-foreground ml-1">
-                                                {intensity <= taintMax ? 'Taint' : 'Fault'}
+                                                {classifyDefectAsTaint(dConfig, intensity) ? 'Taint' : 'Fault'}
                                               </span>
                                             </div>
                                             {modalCupIntensities.length > 1 && (
