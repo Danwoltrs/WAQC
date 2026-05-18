@@ -19,8 +19,9 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { SearchableSelect, type SearchableSelectOption } from '@/components/ui/searchable-select'
-import { FileText, Calendar, Loader2 } from 'lucide-react'
+import { FileText, Calendar, Loader2, Send } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { SendReportModal } from '@/components/reports/send-report-modal'
 
 export default function ReportsPage() {
   const { toast } = useToast()
@@ -35,6 +36,7 @@ export default function ReportsPage() {
   const [endDate, setEndDate] = useState<string>(defaultDates.end)
   const [loadingClients, setLoadingClients] = useState(true)
   const [generating, setGenerating] = useState(false)
+  const [sendModalOpen, setSendModalOpen] = useState(false)
 
   useEffect(() => {
     let cancelled = false
@@ -190,8 +192,17 @@ export default function ReportsPage() {
               </Button>
             </div>
 
-            {/* Generate */}
-            <div className="flex justify-end pt-2 border-t border-border/50">
+            {/* Action buttons — Generate downloads the PDF, Send emails it
+                via Microsoft Graph on behalf of the user. */}
+            <div className="flex flex-wrap justify-end gap-2 pt-2 border-t border-border/50">
+              <Button
+                variant="outline"
+                onClick={() => setSendModalOpen(true)}
+                disabled={!clientId || !startDate || !endDate}
+              >
+                <Send className="w-4 h-4 mr-2" />
+                Send by email
+              </Button>
               <Button
                 onClick={handleGenerate}
                 disabled={generating || !clientId || !startDate || !endDate}
@@ -213,6 +224,19 @@ export default function ReportsPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Send-by-email modal. clientId / dates are always defined at this
+          point because the trigger button is disabled until they are. */}
+      {clientId && startDate && endDate ? (
+        <SendReportModal
+          open={sendModalOpen}
+          onOpenChange={setSendModalOpen}
+          clientId={clientId}
+          clientName={clients.find(c => c.value === clientId)?.label || 'Client'}
+          startDate={startDate}
+          endDate={endDate}
+        />
+      ) : null}
     </MainLayout>
   )
 }
