@@ -34,11 +34,16 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
     roaster: undefined
   })
 
+  // Entities are { id, label } — id is the FK used in filter queries, label is the
+  // human name shown in the dropdown. Previously the client dropdown showed raw UUIDs
+  // because we'd pulled client_id strings off /api/samples. Now we fetch each entity
+  // table directly so the labels come from clients.fantasy_name / company / name etc.
+  type Option = { id: string; label: string }
   const [stakeholders, setStakeholders] = useState<{
-    clients: string[]
-    suppliers: string[]
-    importers: string[]
-    roasters: string[]
+    clients: Option[]
+    suppliers: Option[]
+    importers: Option[]
+    roasters: Option[]
   }>({
     clients: [],
     suppliers: [],
@@ -53,33 +58,58 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
 
   const loadStakeholders = async () => {
     try {
-      // Fetch unique values from samples - for now just get from samples directly
-      // In production, you'd want to fetch from dedicated stakeholder tables
-      const response = await fetch('/api/samples?limit=1000')
-      const data = await response.json()
+      // Pull from each entity table directly. /api/clients limits to 50 by default
+      // so we ask for a higher cap; if your QC client list grows past 500, swap to
+      // a paginated combobox.
+      const [clientsRes, exportersRes, importersRes, roastersRes] = await Promise.all([
+        fetch('/api/clients?is_qc_client=true&limit=500'),
+        fetch('/api/exporters?limit=500'),
+        fetch('/api/importers?limit=500'),
+        fetch('/api/roasters?limit=500'),
+      ])
 
-      if (response.ok) {
-        const clientIds = new Set<string>()
-        const suppliers = new Set<string>()
-        const importers = new Set<string>()
-        const roasters = new Set<string>()
+      const [clientsJson, exportersJson, importersJson, roastersJson] = await Promise.all([
+        clientsRes.ok ? clientsRes.json() : Promise.resolve({}),
+        exportersRes.ok ? exportersRes.json() : Promise.resolve({}),
+        importersRes.ok ? importersRes.json() : Promise.resolve({}),
+        roastersRes.ok ? roastersRes.json() : Promise.resolve({}),
+      ])
 
-        data.samples.forEach((sample: any) => {
-          // For clients, we'll just use IDs for now since we don't have names in the response
-          // TODO: Join with clients table to get actual names
-          if (sample.client_id) clientIds.add(sample.client_id)
-          if (sample.supplier) suppliers.add(sample.supplier)
-          if (sample.importer) importers.add(sample.importer)
-          if (sample.roaster) roasters.add(sample.roaster)
-        })
+      // /api/clients returns { clients: [...] }; entity APIs may return { exporters: [...] }
+      // or just arrays. Handle both shapes defensively.
+      const pickArr = (json: any, key: string): any[] =>
+        Array.isArray(json) ? json : Array.isArray(json?.[key]) ? json[key] : []
 
-        setStakeholders({
-          clients: Array.from(clientIds).sort(),
-          suppliers: Array.from(suppliers).sort(),
-          importers: Array.from(importers).sort(),
-          roasters: Array.from(roasters).sort()
-        })
+      const toOption = (e: any, labelKeys: string[]): Option | null => {
+        if (!e?.id) return null
+        for (const k of labelKeys) {
+          if (typeof e[k] === 'string' && e[k].trim().length > 0) {
+            return { id: e.id, label: e[k] }
+          }
+        }
+        return { id: e.id, label: e.id }
       }
+
+      const byLabel = (a: Option, b: Option) => a.label.localeCompare(b.label)
+
+      setStakeholders({
+        clients: pickArr(clientsJson, 'clients')
+          .map(c => toOption(c, ['fantasy_name', 'company', 'name']))
+          .filter((x): x is Option => x !== null)
+          .sort(byLabel),
+        suppliers: pickArr(exportersJson, 'exporters')
+          .map(e => toOption(e, ['name']))
+          .filter((x): x is Option => x !== null)
+          .sort(byLabel),
+        importers: pickArr(importersJson, 'importers')
+          .map(e => toOption(e, ['name']))
+          .filter((x): x is Option => x !== null)
+          .sort(byLabel),
+        roasters: pickArr(roastersJson, 'roasters')
+          .map(e => toOption(e, ['name']))
+          .filter((x): x is Option => x !== null)
+          .sort(byLabel),
+      })
     } catch (error) {
       console.error('Error loading stakeholders:', error)
     }
@@ -142,7 +172,7 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
             >
               <option value="">All Clients</option>
               {stakeholders.clients.map(client => (
-                <option key={client} value={client}>{client}</option>
+                <option key={client.id} value={client.id}>{client.label}</option>
               ))}
             </select>
           </div>
@@ -157,7 +187,7 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
             >
               <option value="">All Exporters</option>
               {stakeholders.suppliers.map(supplier => (
-                <option key={supplier} value={supplier}>{supplier}</option>
+                <option key={supplier.id} value={supplier.id}>{supplier.label}</option>
               ))}
             </select>
           </div>
@@ -172,7 +202,7 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
             >
               <option value="">All Importers</option>
               {stakeholders.importers.map(importer => (
-                <option key={importer} value={importer}>{importer}</option>
+                <option key={importer.id} value={importer.id}>{importer.label}</option>
               ))}
             </select>
           </div>
@@ -187,7 +217,7 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
             >
               <option value="">All Roasters</option>
               {stakeholders.roasters.map(roaster => (
-                <option key={roaster} value={roaster}>{roaster}</option>
+                <option key={roaster.id} value={roaster.id}>{roaster.label}</option>
               ))}
             </select>
           </div>

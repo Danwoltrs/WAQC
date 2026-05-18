@@ -1,10 +1,12 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
-import { Award, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { Award, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
 
 interface SupplierPerformance {
   supplier: string
@@ -30,10 +32,15 @@ interface PerformanceLeaderboardProps {
   }
 }
 
+type SortKey = 'rank' | 'supplier' | 'totalSamples' | 'pssCount' | 'ssCount' | 'approvalRate'
+type SortDir = 'asc' | 'desc'
+
 export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLeaderboardProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<SupplierPerformance[]>([])
+  const [sortKey, setSortKey] = useState<SortKey>('rank')
+  const [sortDir, setSortDir] = useState<SortDir>('asc')
   const { user, profile } = useAuth()
 
   useEffect(() => {
@@ -54,17 +61,14 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
       let endDate: string
 
       if (quarter) {
-        // Quarterly view
         const quarterStartMonth = (quarter - 1) * 3
         startDate = new Date(year, quarterStartMonth, 1).toISOString()
         endDate = new Date(year, quarterStartMonth + 3, 1).toISOString()
       } else {
-        // Yearly view
         startDate = new Date(year, 0, 1).toISOString()
         endDate = new Date(year + 1, 0, 1).toISOString()
       }
 
-      // Build query with entity joins
       let query = supabase
         .from('samples')
         .select(`
@@ -78,7 +82,6 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
         .gte('created_at', startDate)
         .lt('created_at', endDate)
 
-      // Apply stakeholder filters (using IDs now)
       if (filters?.supplier) {
         query = query.eq('seller_id', filters.supplier)
       }
@@ -92,7 +95,6 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
         query = query.eq('client_id', filters.client)
       }
 
-      // Apply lab filter based on role
       if (profile.qc_role === 'lab_personnel' ||
           profile.qc_role === 'lab_quality_manager' ||
           profile.qc_role === 'lab_finance_manager') {
@@ -102,7 +104,6 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
       }
 
       const { data: samples, error: queryError } = await query
-
       if (queryError) throw queryError
 
       // Aggregate by supplier
@@ -149,7 +150,6 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
         }
       })
 
-      // Transform to array and calculate rates
       const performanceData: SupplierPerformance[] = Array.from(supplierMap.entries())
         .map(([supplier, data]) => ({
           supplier,
@@ -167,28 +167,24 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
           ssApprovalRate: data.ssCount > 0
             ? Math.round((data.ssApproved / data.ssCount) * 100)
             : 0,
-          rank: 0 // Will be set after sorting
+          rank: 0
         }))
         .sort((a, b) => {
-          // Sort by approval rate descending, then by total samples descending
-          if (b.approvalRate !== a.approvalRate) {
-            return b.approvalRate - a.approvalRate
-          }
+          if (b.approvalRate !== a.approvalRate) return b.approvalRate - a.approvalRate
           return b.totalSamples - a.totalSamples
         })
         .map((item, index) => ({ ...item, rank: index + 1 }))
 
-      // Anonymize competitors if user is not global admin
+      // Anonymize for non-global users (keep top performer named)
       const isGlobalUser = profile.qc_role === 'global_admin' ||
                           profile.qc_role === 'global_quality_admin' ||
                           profile.qc_role === 'santos_hq_finance' ||
                           profile.qc_role === 'global_finance_admin'
 
       if (!isGlobalUser) {
-        // Anonymize all suppliers except top performer
         performanceData.forEach((supplier, index) => {
           if (index > 0) {
-            supplier.supplier = `Supplier ${String.fromCharCode(65 + index)}` // A, B, C, etc.
+            supplier.supplier = `Supplier ${String.fromCharCode(65 + index)}`
           }
         })
       }
@@ -202,37 +198,72 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
     }
   }
 
-  const getRankIcon = (rank: number) => {
-    if (rank === 1) return <Award className="h-5 w-5 text-yellow-500" />
-    if (rank === 2) return <Award className="h-5 w-5 text-gray-400" />
-    if (rank === 3) return <Award className="h-5 w-5 text-orange-600" />
-    return <span className="h-5 w-5 flex items-center justify-center text-sm font-semibold text-muted-foreground">{rank}</span>
+  // Memoized sorted view — the underlying rank still reflects approval rate ranking.
+  const sortedSuppliers = useMemo(() => {
+    const arr = [...suppliers]
+    arr.sort((a, b) => {
+      let cmp = 0
+      switch (sortKey) {
+        case 'rank': cmp = a.rank - b.rank; break
+        case 'supplier': cmp = a.supplier.localeCompare(b.supplier); break
+        case 'totalSamples': cmp = a.totalSamples - b.totalSamples; break
+        case 'pssCount': cmp = a.pssCount - b.pssCount; break
+        case 'ssCount': cmp = a.ssCount - b.ssCount; break
+        case 'approvalRate': cmp = a.approvalRate - b.approvalRate; break
+      }
+      return sortDir === 'asc' ? cmp : -cmp
+    })
+    return arr
+  }, [suppliers, sortKey, sortDir])
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    } else {
+      setSortKey(key)
+      // Default direction depends on column — descending for numeric is more useful
+      setSortDir(key === 'supplier' ? 'asc' : 'desc')
+    }
   }
 
-  const getApprovalRateColor = (rate: number) => {
-    if (rate >= 90) return 'text-green-600'
-    if (rate >= 70) return 'text-yellow-600'
-    return 'text-red-600'
+  const SortIcon = ({ k }: { k: SortKey }) => {
+    if (sortKey !== k) return <ArrowUpDown className="ml-1 h-3 w-3 opacity-40" />
+    return sortDir === 'asc'
+      ? <ArrowUp className="ml-1 h-3 w-3" />
+      : <ArrowDown className="ml-1 h-3 w-3" />
   }
 
-  const getApprovalRateBg = (rate: number) => {
-    if (rate >= 90) return 'bg-green-100 dark:bg-green-900/20'
-    if (rate >= 70) return 'bg-yellow-100 dark:bg-yellow-900/20'
-    return 'bg-red-100 dark:bg-red-900/20'
+  // Color the approval-rate bar by performance band. Uses the project palette
+  // (olive #556b2f for top, yellowish #a9a454 for mid, validation red for low).
+  const barColor = (rate: number): string => {
+    if (rate >= 90) return 'bg-[#556b2f]'
+    if (rate >= 70) return 'bg-[#a9a454]'
+    return 'bg-[#ef4444]'
+  }
+
+  const textColor = (rate: number): string => {
+    if (rate >= 90) return 'text-[#556b2f] dark:text-[#a9a454]'
+    if (rate >= 70) return 'text-[#a9a454]'
+    return 'text-[#ef4444]'
+  }
+
+  const rankBadge = (rank: number) => {
+    if (rank === 1) return <Award className="h-4 w-4 text-[#d4af37]" aria-label="1st" />
+    if (rank === 2) return <Award className="h-4 w-4 text-[#a8a8a8]" aria-label="2nd" />
+    if (rank === 3) return <Award className="h-4 w-4 text-[#b07946]" aria-label="3rd" />
+    return <span className="inline-flex w-4 justify-center text-xs font-medium text-muted-foreground">{rank}</span>
   }
 
   if (loading) {
     return (
-      <Card>
+      <Card className="rounded-[20px]">
         <CardHeader>
-          <CardTitle>Supplier Performance Rankings</CardTitle>
-          <CardDescription>
-            {quarter ? `Q${quarter} ${year}` : `${year}`} - Loading...
-          </CardDescription>
+          <CardTitle className="text-sm">Supplier Performance Rankings</CardTitle>
+          <CardDescription>{quarter ? `Q${quarter} ${year}` : `${year}`} — Loading…</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
         </CardContent>
       </Card>
@@ -241,106 +272,123 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
 
   if (error) {
     return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Supplier Performance Rankings</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <p className="text-red-500">{error}</p>
-        </CardContent>
+      <Card className="rounded-[20px]">
+        <CardHeader><CardTitle className="text-sm">Supplier Performance Rankings</CardTitle></CardHeader>
+        <CardContent><p className="text-[#ef4444] text-sm">{error}</p></CardContent>
       </Card>
     )
   }
 
   if (suppliers.length === 0) {
     return (
-      <Card>
+      <Card className="rounded-[20px]">
         <CardHeader>
-          <CardTitle>Supplier Performance Rankings</CardTitle>
-          <CardDescription>
-            {quarter ? `Q${quarter} ${year}` : `${year}`}
-          </CardDescription>
+          <CardTitle className="text-sm">Supplier Performance Rankings</CardTitle>
+          <CardDescription>{quarter ? `Q${quarter} ${year}` : `${year}`}</CardDescription>
         </CardHeader>
-        <CardContent>
-          <p className="text-muted-foreground">No supplier data available for this period.</p>
-        </CardContent>
+        <CardContent><p className="text-sm text-muted-foreground">No supplier data available for this period.</p></CardContent>
       </Card>
     )
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Supplier Performance Rankings</CardTitle>
-        <CardDescription>
-          {quarter ? `Q${quarter} ${year}` : `${year}`} - Ranked by approval rate and volume
-        </CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="space-y-3">
-          {suppliers.map((supplier) => (
-            <div
-              key={supplier.supplier}
-              className={`p-4 rounded-lg border ${getApprovalRateBg(supplier.approvalRate)} transition-all hover:shadow-md`}
-            >
-              <div className="flex items-start justify-between gap-4">
-                {/* Rank and Name */}
-                <div className="flex items-center gap-3 flex-1 min-w-0">
-                  <div className="flex-shrink-0">
-                    {getRankIcon(supplier.rank)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <h4 className="font-semibold text-base truncate">{supplier.supplier}</h4>
-                    <p className="text-sm text-muted-foreground">
-                      {supplier.totalSamples} sample{supplier.totalSamples !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                </div>
-
-                {/* Approval Rate */}
-                <div className="flex-shrink-0 text-right">
-                  <p className={`text-2xl font-bold ${getApprovalRateColor(supplier.approvalRate)}`}>
-                    {supplier.approvalRate}%
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    {supplier.approvedSamples} approved
-                  </p>
-                </div>
-              </div>
-
-              {/* PSS vs SS Breakdown */}
-              {(supplier.pssCount > 0 || supplier.ssCount > 0) && (
-                <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-2 gap-4">
-                  {/* PSS */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">PSS</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">{supplier.pssCount} samples</span>
-                      {supplier.pssCount > 0 && (
-                        <span className={`text-sm font-bold ${getApprovalRateColor(supplier.pssApprovalRate)}`}>
-                          {supplier.pssApprovalRate}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* SS */}
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground mb-1">SS</p>
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold">{supplier.ssCount} samples</span>
-                      {supplier.ssCount > 0 && (
-                        <span className={`text-sm font-bold ${getApprovalRateColor(supplier.ssApprovalRate)}`}>
-                          {supplier.ssApprovalRate}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          ))}
+    <Card className="rounded-[20px]">
+      <CardHeader className="pb-3">
+        <div className="flex items-baseline justify-between gap-4">
+          <div>
+            <CardTitle className="text-sm">Supplier Performance Rankings</CardTitle>
+            <CardDescription className="text-xs">
+              {quarter ? `Q${quarter} ${year}` : `${year}`} — Ranked by approval rate, then volume
+            </CardDescription>
+          </div>
+          <span className="text-xs text-muted-foreground">
+            {suppliers.length} supplier{suppliers.length === 1 ? '' : 's'}
+          </span>
         </div>
+      </CardHeader>
+      <CardContent className="pt-0">
+        <Table>
+          <TableHeader>
+            <TableRow className="hover:bg-transparent">
+              <TableHead className="w-10 text-xs">
+                <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs"
+                  onClick={() => toggleSort('rank')}>
+                  # <SortIcon k="rank" />
+                </Button>
+              </TableHead>
+              <TableHead className="text-xs">
+                <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs"
+                  onClick={() => toggleSort('supplier')}>
+                  Supplier <SortIcon k="supplier" />
+                </Button>
+              </TableHead>
+              <TableHead className="text-right text-xs w-20">
+                <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs"
+                  onClick={() => toggleSort('totalSamples')}>
+                  Total <SortIcon k="totalSamples" />
+                </Button>
+              </TableHead>
+              <TableHead className="text-right text-xs w-20">
+                <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs"
+                  onClick={() => toggleSort('pssCount')}>
+                  PSS <SortIcon k="pssCount" />
+                </Button>
+              </TableHead>
+              <TableHead className="text-right text-xs w-20">
+                <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs"
+                  onClick={() => toggleSort('ssCount')}>
+                  SS <SortIcon k="ssCount" />
+                </Button>
+              </TableHead>
+              <TableHead className="text-xs">
+                <Button variant="ghost" size="sm" className="-ml-2 h-7 px-2 text-xs"
+                  onClick={() => toggleSort('approvalRate')}>
+                  Approval Rate <SortIcon k="approvalRate" />
+                </Button>
+              </TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedSuppliers.map(s => (
+              <TableRow key={s.supplier} className="text-sm">
+                <TableCell className="py-2">{rankBadge(s.rank)}</TableCell>
+                <TableCell className="py-2 font-medium">{s.supplier}</TableCell>
+                <TableCell className="py-2 text-right tabular-nums">{s.totalSamples}</TableCell>
+                <TableCell className="py-2 text-right tabular-nums text-muted-foreground">
+                  {s.pssCount > 0 ? (
+                    <span title={`${s.pssApprovalRate}% approved`}>
+                      {s.pssCount}
+                      <span className="ml-1 text-[10px]">({s.pssApprovalRate}%)</span>
+                    </span>
+                  ) : '—'}
+                </TableCell>
+                <TableCell className="py-2 text-right tabular-nums text-muted-foreground">
+                  {s.ssCount > 0 ? (
+                    <span title={`${s.ssApprovalRate}% approved`}>
+                      {s.ssCount}
+                      <span className="ml-1 text-[10px]">({s.ssApprovalRate}%)</span>
+                    </span>
+                  ) : '—'}
+                </TableCell>
+                <TableCell className="py-2">
+                  <div className="flex items-center gap-3">
+                    {/* Custom progress bar — keeps the brand palette and lets us
+                        color by band without theming the shadcn Progress component. */}
+                    <div className="flex-1 h-2 rounded-full bg-black/[0.06] dark:bg-white/[0.08] overflow-hidden">
+                      <div
+                        className={`h-full rounded-full ${barColor(s.approvalRate)} transition-[width] duration-300`}
+                        style={{ width: `${s.approvalRate}%` }}
+                      />
+                    </div>
+                    <span className={`text-sm font-semibold tabular-nums w-12 text-right ${textColor(s.approvalRate)}`}>
+                      {s.approvalRate}%
+                    </span>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
       </CardContent>
     </Card>
   )
