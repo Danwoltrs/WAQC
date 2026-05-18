@@ -8,6 +8,7 @@ import {
   FlaskConical,
   Coffee,
   FileText,
+  Mail,
   Users,
   Settings,
   BarChart3,
@@ -172,6 +173,17 @@ const managementNav: NavItem[] = [
     href: '/users',
     icon: Users,
     permission: 'manage_users',
+  },
+  {
+    title: 'Settings',
+    icon: Settings,
+    submenu: [
+      {
+        title: 'Email Signature',
+        href: '/dashboard/settings/signature',
+        icon: Mail,
+      },
+    ],
   },
 ]
 

@@ -20,6 +20,7 @@ import { createClient } from '@/lib/supabase-server'
 import { generateWeeklySSCertsReport } from '@/lib/reports/weekly-ss-generator'
 import { sendMail, GraphSendError } from '@/lib/graph/send'
 import { saveRecipients } from '@/app/api/reports/recipients/route'
+import { composeBodyHtml } from '@/lib/email/compose-html'
 
 const DEFAULT_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX ?? 'qualitycontrol@wolthers.com'
 const REPORT_TYPE = 'weekly_ss'
@@ -84,16 +85,18 @@ export async function POST(request: NextRequest) {
     if (!bccResult.ok) return NextResponse.json({ error: bccResult.error }, { status: 400 })
 
     // Fetch the user's profile so we can use their name + email as the
-    // "on behalf of" sender. Falls back to the auth email if profile is
-    // missing for some reason.
-    const { data: profile } = await supabase
+    // "on behalf of" sender and append their HTML signature. Falls back
+    // to the auth email if profile is missing for some reason.
+    // Cast through any until generated DB types pick up the new signature columns.
+    const { data: profile } = await (supabase as any)
       .from('profiles')
-      .select('full_name, email')
+      .select('full_name, email, email_signature_html')
       .eq('id', user.id)
       .single()
 
     const senderEmail = profile?.email || user.email || undefined
     const senderName = profile?.full_name || senderEmail || undefined
+    const signatureHtml: string | null = profile?.email_signature_html ?? null
 
     // Generate the PDF (same code path as the download endpoint).
     const report = await generateWeeklySSCertsReport(supabase, {
@@ -123,6 +126,12 @@ export async function POST(request: NextRequest) {
       ? ccResult.emails
       : [...ccResult.emails, DEFAULT_MAILBOX]
 
+    // Compose the HTML body: cover note + the user's signature. composeBodyHtml
+    // strips the trailing "Best regards, …" from the cover note when a
+    // signature is present so the recipient doesn't see the closing twice.
+    // Falls back gracefully when the user hasn't saved a signature yet.
+    const bodyHtml = composeBodyHtml(bodyText, signatureHtml)
+
     try {
       await sendMail({
         mailbox: DEFAULT_MAILBOX,
@@ -131,6 +140,7 @@ export async function POST(request: NextRequest) {
         bcc: bccResult.emails.length > 0 ? bccResult.emails : undefined,
         subject,
         bodyText,
+        bodyHtml,
         senderEmail,
         senderName,
         attachments: [
