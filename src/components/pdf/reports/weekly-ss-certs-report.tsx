@@ -1,24 +1,32 @@
 /**
- * Weekly SS Certificates Report (client-facing PDF).
+ * Weekly SS Certificates Report — redesigned (May 2026).
  *
- * Layout follows docs/report_examples/Brazil_certs_week_9_*.pdf — a landscape
- * A4 with: country flag + Wolthers logo + client logo header, green stat boxes
- * (# of bags / # of certificates / per-roaster / per-importer), and a single
- * green-banded table listing every SS certificate in the period.
+ * Three-page A4 landscape PDF:
+ *   1. Executive Summary — KPI strip + supply-chain Sankey + sample mix donut
+ *   2. Quality breakdown — top rejection reasons + supplier scorecard
+ *   3. Certificate appendix — tight per-cert table (approved only)
  *
- * Inter font is registered globally by certificate-styles.ts; importing it for
- * the side-effect ensures Font.register runs before any rendering.
+ * The Sankey is pre-laid-out in `src/lib/report-data.ts` and rendered
+ * by the shared SankeyChart component. Mini chart primitives
+ * (KpiCard, HorizontalBarChart, DonutChart) live alongside.
+ *
+ * Inter font is registered globally by certificate-styles.ts — importing
+ * it for the side-effect ensures Font.register runs before any rendering.
  */
 
 import React from 'react'
 import { Document, Page, View, Image, Text, StyleSheet } from '@react-pdf/renderer'
 import '@/components/pdf/certificate/certificate-styles'
 import type { WeeklySSCertReportData } from '@/lib/report-data'
+import { SankeyChart } from '@/components/pdf/charts/sankey-chart'
+import { KpiCard } from '@/components/pdf/charts/kpi-card'
+import { HorizontalBarChart } from '@/components/pdf/charts/horizontal-bar-chart'
+import { DonutChart } from '@/components/pdf/charts/donut-chart'
 
-const GREEN = '#4f9b3a'        // matches the green bars in the legacy Excel report
-const GREEN_DARK = '#2f6b21'   // total row + borders
-const GRAY_BORDER = '#d9d9d9'
-const ZEBRA = '#f3f3f3'
+const GREEN = '#556b2f'
+const GREEN_DARK = '#2f6b21'
+const GRAY_BORDER = '#e3e3e3'
+const ZEBRA = '#f7f7f5'
 
 const styles = StyleSheet.create({
   page: {
@@ -31,118 +39,111 @@ const styles = StyleSheet.create({
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 18,
-    minHeight: 56,
+    marginBottom: 12,
+    minHeight: 50,
   },
   headerLeft: { width: '20%', justifyContent: 'center', alignItems: 'flex-start' },
   headerCenter: { width: '60%', justifyContent: 'center', alignItems: 'center' },
   headerRight: { width: '20%', justifyContent: 'center', alignItems: 'flex-end' },
-  flagImage: { width: 64, height: 44, objectFit: 'contain' },
-  wolthersLogo: { width: 140, height: 28, objectFit: 'contain' },
-  clientLogo: { maxWidth: 110, maxHeight: 40, objectFit: 'contain' },
-  generationDate: {
-    fontSize: 9,
-    color: '#666',
-    marginTop: 6,
-  },
-  // --- Stat blocks row ---
-  statsRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 18,
-  },
-  statsColLeft: {
-    width: '34%',
-    flexDirection: 'column',
-    gap: 6,
-  },
-  statsColRoasters: {
-    width: '33%',
-    flexDirection: 'column',
-  },
-  statsColImporters: {
-    width: '33%',
-    flexDirection: 'column',
-  },
-  // When the QC client is itself a roaster, the Roasters block is hidden and
-  // Importers expands to fill its space — keeps the header balanced.
-  statsColImportersWide: {
-    width: '66%',
-    flexDirection: 'column',
-  },
-  statBox: {
-    backgroundColor: GREEN,
-    color: '#FFFFFF',
-    paddingVertical: 14,
-    paddingHorizontal: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  statBoxLabel: {
-    color: '#FFFFFF',
-    fontSize: 10,
-    fontWeight: 600,
-  },
-  statBoxValue: {
-    color: '#FFFFFF',
-    fontSize: 18,
-    fontWeight: 700,
-  },
-  breakdownHeader: {
-    fontSize: 9,
-    color: '#444',
-    textAlign: 'center',
-    marginBottom: 4,
-  },
-  breakdownBox: {
-    backgroundColor: GREEN,
-    color: '#FFFFFF',
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-    minHeight: 60,
-    justifyContent: 'center',
-  },
-  breakdownLine: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: 2,
-  },
-  breakdownLineName: { color: '#FFFFFF', fontSize: 9 },
-  breakdownLineValue: { color: '#FFFFFF', fontSize: 11, fontWeight: 700 },
-  breakdownFooter: {
-    fontSize: 8,
-    color: '#666',
-    textAlign: 'center',
-    marginTop: 4,
-  },
-  // --- Title bar above the table ---
-  tableTitleBar: {
+  flagImage: { width: 56, height: 38, objectFit: 'contain' },
+  wolthersLogo: { width: 130, height: 26, objectFit: 'contain' },
+  clientLogo: { maxWidth: 100, maxHeight: 36, objectFit: 'contain' },
+  generationDate: { fontSize: 8, color: '#666', marginTop: 4 },
+
+  // --- Period title bar ---
+  titleBar: {
     backgroundColor: GREEN,
     color: '#FFFFFF',
     paddingVertical: 6,
     paddingHorizontal: 10,
-    textAlign: 'center',
     fontWeight: 700,
-    fontSize: 11,
-    marginBottom: 0,
+    fontSize: 10,
+    marginBottom: 12,
   },
-  // --- Table ---
-  table: {
-    borderTopWidth: 1,
-    borderTopColor: GRAY_BORDER,
-  },
-  tableHeaderRow: {
-    flexDirection: 'row',
-    backgroundColor: GREEN,
-  },
-  tableHeaderCell: {
-    color: '#FFFFFF',
+
+  // --- Section caption ---
+  sectionLabel: {
     fontSize: 9,
     fontWeight: 700,
-    paddingVertical: 6,
+    color: '#222',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 6,
+    marginTop: 4,
+  },
+
+  // --- KPI strip ---
+  kpiStrip: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+
+  // --- Page 1 split ---
+  page1Split: { flexDirection: 'row', gap: 12 },
+  sankeyPanel: { width: '68%' },
+  donutPanel: {
+    width: '32%',
+    backgroundColor: '#F9F9FA',
+    borderRadius: 10,
+    padding: 12,
+  },
+
+  // --- Page 2 split ---
+  page2Split: { flexDirection: 'row', gap: 12 },
+  page2Col: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
+  panel: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: GRAY_BORDER,
+    borderRadius: 10,
+    padding: 12,
+  },
+
+  // --- Scorecard table ---
+  scoreTable: { width: '100%' },
+  scoreHeader: {
+    flexDirection: 'row',
+    backgroundColor: '#F4F4F2',
+    paddingVertical: 5,
     paddingHorizontal: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: GRAY_BORDER,
+  },
+  scoreHeaderCell: {
+    fontSize: 7.5,
+    fontWeight: 700,
+    color: '#555',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    paddingVertical: 4,
+    paddingHorizontal: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: GRAY_BORDER,
+    alignItems: 'center',
+  },
+  scoreCell: { fontSize: 8.5, color: '#222' },
+  miniBarTrack: {
+    flex: 1,
+    height: 6,
+    backgroundColor: '#EEEEEE',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  miniBar: { height: 6, borderRadius: 3 },
+
+  // --- Cert appendix table ---
+  table: { borderTopWidth: 1, borderTopColor: GRAY_BORDER },
+  tableHeaderRow: { flexDirection: 'row', backgroundColor: GREEN },
+  tableHeaderCell: {
+    color: '#FFFFFF',
+    fontSize: 8.5,
+    fontWeight: 700,
+    paddingVertical: 6,
+    paddingHorizontal: 5,
     borderRightWidth: 1,
     borderRightColor: '#FFFFFF',
   },
@@ -152,40 +153,45 @@ const styles = StyleSheet.create({
     borderBottomColor: GRAY_BORDER,
   },
   tableCell: {
-    fontSize: 8.5,
-    paddingVertical: 4,
-    paddingHorizontal: 6,
+    fontSize: 8,
+    paddingVertical: 3,
+    paddingHorizontal: 5,
     borderRightWidth: 1,
     borderRightColor: GRAY_BORDER,
     color: '#222',
   },
-  totalRow: {
-    flexDirection: 'row',
-    backgroundColor: GREEN_DARK,
-  },
+  totalRow: { flexDirection: 'row', backgroundColor: GREEN_DARK },
   totalCell: {
     color: '#FFFFFF',
-    fontSize: 10,
+    fontSize: 9.5,
     fontWeight: 700,
-    paddingVertical: 6,
-    paddingHorizontal: 6,
+    paddingVertical: 5,
+    paddingHorizontal: 5,
     borderRightWidth: 1,
     borderRightColor: GREEN_DARK,
   },
+
+  pageFooter: {
+    position: 'absolute',
+    bottom: 12,
+    left: 24,
+    right: 24,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    fontSize: 7,
+    color: '#999',
+  },
 })
 
-// Column widths sum to 100%. Tuned to match the legacy Excel layout — wider
-// fields for exporter/importer/roaster destination since those carry the long
-// company names.
 const COLS = {
   approvalDate: '9%',
-  certificateNumber: '10%',
-  exporter: '11%',
-  importer: '13%',
+  certificateNumber: '11%',
+  exporter: '12%',
+  importer: '14%',
   importerContract: '13%',
   roasterDestination: '13%',
-  container: '11%',
-  icoMarks: '12%',
+  container: '10%',
+  icoMarks: '10%',
   bags: '8%',
 }
 
@@ -209,135 +215,300 @@ export function WeeklySSCertsReport({
     const yy = String(d.getFullYear()).slice(-2)
     return `${dd}/${mm}/${yy}`
   }
-
   const formatShortDate = (iso: string) => {
     const d = new Date(iso)
     const month = d.toLocaleString('en-US', { month: 'short' })
     return `${month} ${String(d.getDate()).padStart(2, '0')}`
   }
-
   const formatIssuedAt = (iso: string) => {
     const d = new Date(iso)
     const month = d.toLocaleString('en-US', { month: 'short' })
     return `${month} ${String(d.getDate()).padStart(2, '0')} ${d.getFullYear()}`
   }
 
-  // Period label for the green title bar. End is exclusive in our query but we
-  // display the last-included day, so subtract one day for the display label.
+  // End is exclusive in our query; display the last-included day.
   const displayEnd = new Date(new Date(data.period.end_date).getTime() - 86400000)
-  const periodLabel = `Weekly SS Certificates from ${formatShortDate(data.period.start_date)} to ${formatShortDate(displayEnd.toISOString())}`
+  const periodLabel = `Weekly SS Certificates · ${formatShortDate(data.period.start_date)} – ${formatShortDate(displayEnd.toISOString())}`
 
-  // Truncate breakdown lists so the box doesn't overflow. Show top N + "+more".
-  const MAX_BREAKDOWN_LINES = 4
-  const roasterDisplay = data.roaster_breakdown.slice(0, MAX_BREAKDOWN_LINES)
-  const roasterOverflow = data.roaster_breakdown.length - roasterDisplay.length
-  const importerDisplay = data.importer_breakdown.slice(0, MAX_BREAKDOWN_LINES)
-  const importerOverflow = data.importer_breakdown.length - importerDisplay.length
+  const approvalRate = data.totals.approval_rate
+  const rejectionRate = data.totals.evaluated_count > 0
+    ? 100 - approvalRate
+    : 0
+
+  const Header = (
+    <View style={styles.headerRow}>
+      <View style={styles.headerLeft}>
+        {flagBase64 ? <Image src={flagBase64} style={styles.flagImage} /> : null}
+      </View>
+      <View style={styles.headerCenter}>
+        {wolthersLogoBase64 ? (
+          <Image src={wolthersLogoBase64} style={styles.wolthersLogo} />
+        ) : (
+          <Text style={{ fontSize: 14, fontWeight: 700 }}>WOLTHERS ASSOCIATES</Text>
+        )}
+      </View>
+      <View style={styles.headerRight}>
+        {clientLogoBase64 ? (
+          <Image src={clientLogoBase64} style={styles.clientLogo} />
+        ) : (
+          <Text style={{ fontSize: 12, fontWeight: 700 }}>{data.client.name}</Text>
+        )}
+        <Text style={styles.generationDate}>{formatIssuedAt(data.period.issued_at)}</Text>
+      </View>
+    </View>
+  )
+
+  const Footer = (pageLabel: string) => (
+    <View style={styles.pageFooter} fixed>
+      <Text>Wolthers & Associates · Quality Control</Text>
+      <Text>{pageLabel}</Text>
+      <Text>Generated {formatIssuedAt(data.period.issued_at)}</Text>
+    </View>
+  )
 
   return (
     <Document>
+      {/* ============ Page 1 — Executive Summary ============ */}
       <Page size="A4" orientation="landscape" style={styles.page}>
-        {/* ---- Header ---- */}
-        <View style={styles.headerRow}>
-          <View style={styles.headerLeft}>
-            {flagBase64 ? <Image src={flagBase64} style={styles.flagImage} /> : null}
+        {Header}
+        <Text style={styles.titleBar}>{periodLabel}</Text>
+
+        {/* KPI strip — five hero stats. Approval rate tinted by band. */}
+        <View style={styles.kpiStrip}>
+          <KpiCard
+            label="Certificates"
+            value={data.totals.certificate_count}
+            sublabel={`${data.totals.evaluated_count} evaluated`}
+          />
+          <KpiCard
+            label="Bags shipped"
+            value={data.totals.bag_count}
+            sublabel="60 kg equivalent"
+          />
+          <KpiCard
+            label="Approval rate"
+            value={`${approvalRate}%`}
+            sublabel={`${data.totals.rejected_count} rejected`}
+            valueColor={approvalRate >= 90 ? '#556b2f' : approvalRate >= 70 ? '#a9a454' : '#ef4444'}
+          />
+          <KpiCard
+            label="Exporters"
+            value={data.totals.exporter_count}
+            sublabel="active in period"
+          />
+          <KpiCard
+            label={data.client.is_roaster ? 'Importers' : 'Roasters'}
+            value={data.client.is_roaster ? data.totals.importer_count : data.totals.roaster_count}
+            sublabel="distinct destinations"
+          />
+        </View>
+
+        {/* Sankey + sample mix donut side-by-side */}
+        <View style={styles.page1Split}>
+          <View style={styles.sankeyPanel}>
+            <Text style={styles.sectionLabel}>Supply chain flow</Text>
+            <SankeyChart layout={data.sankey} />
           </View>
-          <View style={styles.headerCenter}>
-            {wolthersLogoBase64 ? (
-              <Image src={wolthersLogoBase64} style={styles.wolthersLogo} />
-            ) : (
-              <Text style={{ fontSize: 14, fontWeight: 700 }}>WOLTHERS ASSOCIATES</Text>
-            )}
-          </View>
-          <View style={styles.headerRight}>
-            {clientLogoBase64 ? (
-              <Image src={clientLogoBase64} style={styles.clientLogo} />
-            ) : (
-              <Text style={{ fontSize: 12, fontWeight: 700 }}>{data.client.name}</Text>
-            )}
-            <Text style={styles.generationDate}>{formatIssuedAt(data.period.issued_at)}</Text>
+
+          <View style={styles.donutPanel}>
+            <Text style={styles.sectionLabel}>Sample mix</Text>
+            <DonutChart
+              slices={[
+                {
+                  label: 'Approved',
+                  value: data.totals.evaluated_count - data.totals.rejected_count,
+                  color: '#556b2f',
+                },
+                {
+                  label: 'Rejected',
+                  value: data.totals.rejected_count,
+                  color: '#ef4444',
+                },
+              ]}
+              size={120}
+              centerValue={`${approvalRate}%`}
+              centerLabel="approved"
+            />
+
+            {/* Per-destination quick read — limited to top 4 so the panel
+                doesn't overflow on busy weeks. */}
+            <View style={{ marginTop: 12 }}>
+              <Text style={[styles.sectionLabel, { marginTop: 0 }]}>
+                {data.client.is_roaster ? 'Top importers' : 'Top roasters'}
+              </Text>
+              {(data.client.is_roaster ? data.importer_breakdown : data.roaster_breakdown)
+                .slice(0, 4)
+                .map(d => (
+                  <View
+                    key={d.name}
+                    style={{
+                      flexDirection: 'row',
+                      justifyContent: 'space-between',
+                      paddingVertical: 2,
+                      borderBottomWidth: 1,
+                      borderBottomColor: '#ECECEC',
+                    }}
+                  >
+                    <Text style={{ fontSize: 8.5, color: '#222' }} wrap={false}>{d.name}</Text>
+                    <Text style={{ fontSize: 8.5, fontWeight: 700, color: '#222' }}>
+                      {d.bags.toLocaleString('en-US')}
+                    </Text>
+                  </View>
+                ))}
+            </View>
           </View>
         </View>
 
-        {/* ---- Stats / Breakdown row ----
-            When the QC client is itself a roaster (Dunkin, Blaser, etc.) the
-            Roasters block is redundant — the recipient IS the roaster. Hide
-            it and expand the Importers block to fill the freed space. */}
-        <View style={styles.statsRow}>
-          {/* Two stacked stat boxes — bags + certificates */}
-          <View style={styles.statsColLeft}>
-            <View style={styles.statBox}>
-              <Text style={styles.statBoxLabel}># of bags</Text>
-              <Text style={styles.statBoxValue}>{formatThousands(data.totals.bag_count)}</Text>
-            </View>
-            <View style={styles.statBox}>
-              <Text style={styles.statBoxLabel}># of certificates</Text>
-              <Text style={styles.statBoxValue}>{data.totals.certificate_count}</Text>
+        {Footer('Page 1 of 3 · Summary')}
+      </Page>
+
+      {/* ============ Page 2 — Quality breakdown ============ */}
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        {Header}
+        <Text style={styles.titleBar}>Quality breakdown · {formatShortDate(data.period.start_date)} – {formatShortDate(displayEnd.toISOString())}</Text>
+
+        <View style={styles.page2Split}>
+          {/* Top rejection reasons */}
+          <View style={styles.page2Col}>
+            <View style={styles.panel}>
+              <Text style={styles.sectionLabel}>Top rejection reasons</Text>
+              {data.rejection_reasons.length === 0 ? (
+                <View
+                  style={{
+                    paddingVertical: 24,
+                    alignItems: 'center',
+                    backgroundColor: '#f3f7ee',
+                    borderRadius: 8,
+                  }}
+                >
+                  <Text style={{ fontSize: 11, fontWeight: 700, color: GREEN }}>
+                    All samples approved
+                  </Text>
+                  <Text style={{ fontSize: 9, color: '#555', marginTop: 4 }}>
+                    No rejection reasons logged for this period.
+                  </Text>
+                </View>
+              ) : (
+                <HorizontalBarChart
+                  rows={data.rejection_reasons.map(r => ({
+                    label: r.category,
+                    value: r.count,
+                  }))}
+                  labelWidth={120}
+                  trackWidth={220}
+                  limit={10}
+                  chartColor="#ef4444"
+                />
+              )}
+              <Text style={{ fontSize: 7.5, color: '#888', marginTop: 8 }}>
+                Counts represent individual compliance violations — a single rejected
+                certificate may contribute to more than one row.
+              </Text>
             </View>
           </View>
 
-          {/* Roasters breakdown — omitted when the client is itself a roaster */}
-          {!data.client.is_roaster ? (
-            <View style={styles.statsColRoasters}>
-              <Text style={styles.breakdownHeader}>Roasters</Text>
-              <View style={styles.breakdownBox}>
-                {roasterDisplay.length === 0 ? (
-                  <Text style={{ color: '#FFFFFF', fontSize: 9, textAlign: 'center' }}>—</Text>
-                ) : (
-                  roasterDisplay.map(r => (
-                    <View key={r.name} style={styles.breakdownLine}>
-                      <Text style={styles.breakdownLineName}>{r.name}</Text>
-                      <Text style={styles.breakdownLineValue}>{formatThousands(r.bags)}</Text>
-                    </View>
-                  ))
-                )}
-              </View>
-              {roasterOverflow > 0 ? (
-                <Text style={styles.breakdownFooter}>+{roasterOverflow} more</Text>
-              ) : null}
-            </View>
-          ) : null}
-
-          {/* Importers breakdown — widens to 66% when Roasters is hidden */}
-          <View style={data.client.is_roaster ? styles.statsColImportersWide : styles.statsColImporters}>
-            <Text style={styles.breakdownHeader}>Importers</Text>
-            <View style={styles.breakdownBox}>
-              {importerDisplay.length === 0 ? (
-                <Text style={{ color: '#FFFFFF', fontSize: 9, textAlign: 'center' }}>—</Text>
+          {/* Supplier scorecard */}
+          <View style={styles.page2Col}>
+            <View style={styles.panel}>
+              <Text style={styles.sectionLabel}>Supplier scorecard</Text>
+              {data.supplier_scorecard.length === 0 ? (
+                <Text style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>
+                  No supplier activity in this period.
+                </Text>
               ) : (
-                importerDisplay.map(i => (
-                  <View key={i.name} style={styles.breakdownLine}>
-                    <Text style={styles.breakdownLineName}>{i.name}</Text>
-                    <Text style={styles.breakdownLineValue}>{formatThousands(i.bags)}</Text>
+                <View style={styles.scoreTable}>
+                  <View style={styles.scoreHeader}>
+                    <Text style={[styles.scoreHeaderCell, { width: '38%' }]}>Exporter</Text>
+                    <Text style={[styles.scoreHeaderCell, { width: '12%', textAlign: 'right' }]}>Samples</Text>
+                    <Text style={[styles.scoreHeaderCell, { width: '12%', textAlign: 'right' }]}>Bags</Text>
+                    <Text style={[styles.scoreHeaderCell, { width: '38%' }]}>Approval rate</Text>
                   </View>
-                ))
+                  {data.supplier_scorecard.slice(0, 12).map((s, i) => (
+                    <View
+                      key={s.exporter_name}
+                      style={[styles.scoreRow, { backgroundColor: i % 2 ? ZEBRA : '#FFFFFF' }]}
+                    >
+                      <Text style={[styles.scoreCell, { width: '38%' }]} wrap={false}>
+                        {s.exporter_name}
+                      </Text>
+                      <Text style={[styles.scoreCell, { width: '12%', textAlign: 'right' }]}>
+                        {s.total}
+                      </Text>
+                      <Text style={[styles.scoreCell, { width: '12%', textAlign: 'right' }]}>
+                        {s.bags.toLocaleString('en-US')}
+                      </Text>
+                      <View
+                        style={{
+                          width: '38%',
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          gap: 6,
+                        }}
+                      >
+                        <View style={styles.miniBarTrack}>
+                          <View
+                            style={[
+                              styles.miniBar,
+                              {
+                                width: `${s.approval_rate}%`,
+                                backgroundColor:
+                                  s.approval_rate >= 90 ? '#556b2f'
+                                  : s.approval_rate >= 70 ? '#a9a454'
+                                  : '#ef4444',
+                              },
+                            ]}
+                          />
+                        </View>
+                        <Text
+                          style={[
+                            styles.scoreCell,
+                            {
+                              width: 32,
+                              textAlign: 'right',
+                              fontWeight: 700,
+                              color: s.approval_rate >= 90 ? '#556b2f'
+                                : s.approval_rate >= 70 ? '#a9a454'
+                                : '#ef4444',
+                            },
+                          ]}
+                        >
+                          {s.approval_rate}%
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                  {data.supplier_scorecard.length > 12 && (
+                    <Text style={{ fontSize: 8, color: '#888', marginTop: 6, textAlign: 'right' }}>
+                      +{data.supplier_scorecard.length - 12} more exporters
+                    </Text>
+                  )}
+                </View>
               )}
             </View>
-            {importerOverflow > 0 ? (
-              <Text style={styles.breakdownFooter}>+{importerOverflow} more</Text>
-            ) : null}
           </View>
         </View>
 
-        {/* ---- Title bar ---- */}
-        <Text style={styles.tableTitleBar}>{periodLabel}</Text>
+        {Footer('Page 2 of 3 · Quality')}
+      </Page>
 
-        {/* ---- Table ---- */}
+      {/* ============ Page 3 — Certificate appendix ============ */}
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        {Header}
+        <Text style={styles.titleBar}>Certificate appendix · {data.totals.certificate_count} approved certificate{data.totals.certificate_count === 1 ? '' : 's'}</Text>
+
         <View style={styles.table}>
-          {/* Header */}
           <View style={styles.tableHeaderRow} fixed>
             <Text style={[styles.tableHeaderCell, { width: COLS.approvalDate }]}>Approval date</Text>
-            <Text style={[styles.tableHeaderCell, { width: COLS.certificateNumber }]}>Certificate#</Text>
+            <Text style={[styles.tableHeaderCell, { width: COLS.certificateNumber }]}>Certificate #</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.exporter }]}>Exporter</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.importer }]}>Importer</Text>
-            <Text style={[styles.tableHeaderCell, { width: COLS.importerContract }]}>Importer Contract #</Text>
-            <Text style={[styles.tableHeaderCell, { width: COLS.roasterDestination }]}>Roaster Destination</Text>
+            <Text style={[styles.tableHeaderCell, { width: COLS.importerContract }]}>Importer contract</Text>
+            <Text style={[styles.tableHeaderCell, { width: COLS.roasterDestination }]}>Roaster destination</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.container }]}>Container</Text>
-            <Text style={[styles.tableHeaderCell, { width: COLS.icoMarks }]}>Ico Marks#</Text>
+            <Text style={[styles.tableHeaderCell, { width: COLS.icoMarks }]}>ICO marks</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.bags, textAlign: 'right' }]}>Bags</Text>
           </View>
 
-          {/* Body */}
           {data.rows.length === 0 ? (
             <View style={styles.tableRow}>
               <Text style={[styles.tableCell, { width: '100%', textAlign: 'center', color: '#888' }]}>
@@ -346,7 +517,11 @@ export function WeeklySSCertsReport({
             </View>
           ) : (
             data.rows.map((r, idx) => (
-              <View key={`${r.certificate_number}-${idx}`} style={[styles.tableRow, { backgroundColor: idx % 2 === 1 ? ZEBRA : '#FFFFFF' }]}>
+              <View
+                key={`${r.certificate_number}-${idx}`}
+                style={[styles.tableRow, { backgroundColor: idx % 2 === 1 ? ZEBRA : '#FFFFFF' }]}
+                wrap={false}
+              >
                 <Text style={[styles.tableCell, { width: COLS.approvalDate }]}>{formatDate(r.approval_date)}</Text>
                 <Text style={[styles.tableCell, { width: COLS.certificateNumber }]}>{r.certificate_number}</Text>
                 <Text style={[styles.tableCell, { width: COLS.exporter }]}>{r.exporter_name || '—'}</Text>
@@ -360,11 +535,12 @@ export function WeeklySSCertsReport({
             ))
           )}
 
-          {/* Total */}
           {data.rows.length > 0 ? (
             <View style={styles.totalRow}>
               <Text style={[styles.totalCell, { width: COLS.approvalDate }]}>Total</Text>
-              <Text style={[styles.totalCell, { width: COLS.certificateNumber }]}>{data.totals.certificate_count}</Text>
+              <Text style={[styles.totalCell, { width: COLS.certificateNumber }]}>
+                {data.totals.certificate_count}
+              </Text>
               <Text style={[styles.totalCell, { width: COLS.exporter }]}></Text>
               <Text style={[styles.totalCell, { width: COLS.importer }]}></Text>
               <Text style={[styles.totalCell, { width: COLS.importerContract }]}></Text>
@@ -372,20 +548,14 @@ export function WeeklySSCertsReport({
               <Text style={[styles.totalCell, { width: COLS.container }]}></Text>
               <Text style={[styles.totalCell, { width: COLS.icoMarks }]}></Text>
               <Text style={[styles.totalCell, { width: COLS.bags, textAlign: 'right' }]}>
-                {formatThousands(data.totals.bag_count)}
+                {data.totals.bag_count.toLocaleString('en-US')}
               </Text>
             </View>
           ) : null}
         </View>
+
+        {Footer('Page 3 of 3 · Appendix')}
       </Page>
     </Document>
   )
-}
-
-// "1,356" — the legacy reports use a dot as the thousands separator but EN
-// locales read commas more naturally; we use commas. Swap to . if the user
-// wants to match the Excel exactly.
-function formatThousands(n: number): string {
-  if (typeof n !== 'number' || Number.isNaN(n)) return '—'
-  return n.toLocaleString('en-US')
 }

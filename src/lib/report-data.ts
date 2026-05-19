@@ -7,6 +7,12 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js'
+import {
+  computeSankeyLayout,
+  type SankeyInputNode,
+  type SankeyInputLink,
+  type SankeyLayoutResult,
+} from '@/lib/charts/sankey-layout'
 
 export interface WeeklySSCertRow {
   approval_date: string  // ISO date (display formatter in PDF picks d/m/yyyy)
@@ -18,44 +24,72 @@ export interface WeeklySSCertRow {
   container_nr: string | null
   ico_marks: string | null         // ICO mark numbers from sample
   bags: number | null
+  is_rejected: boolean
+}
+
+export interface RejectionReasonRow {
+  /** Human-readable category, normalized from compliance_violations text
+   *  (e.g. `Taint - Hard`, `Aroma below min`, `Fault - Phenol`). */
+  category: string
+  count: number
+}
+
+export interface SupplierScorecardRow {
+  exporter_name: string
+  total: number
+  approved: number
+  rejected: number
+  approval_rate: number  // 0-100
+  bags: number
 }
 
 export interface WeeklySSCertReportData {
   client: {
     id: string
-    name: string                  // best-available display name (fantasy_name / company / name)
+    name: string
     logo_url: string | null
-    /** True when the QC client itself has a roaster client_type. Used to hide
-     *  the redundant "Roasters" block on the report (the recipient IS the
-     *  roaster — listing it would be self-referential). */
+    /** True when the QC client itself has a roaster client_type. The
+     *  legacy "Roasters" header block hides when this is true. */
     is_roaster: boolean
   }
   period: {
-    start_date: string            // ISO
-    end_date: string              // ISO
-    issued_at: string             // ISO — generation timestamp
+    start_date: string
+    end_date: string
+    issued_at: string
   }
-  origin: string | null           // most-represented origin in the rows (drives the flag)
+  origin: string | null
   totals: {
-    certificate_count: number
-    bag_count: number
-    roaster_count: number         // distinct roasters in this batch (Unsold counted once)
-    importer_count: number        // distinct importers in this batch
+    certificate_count: number       // approved only (legacy semantics)
+    bag_count: number               // approved only
+    roaster_count: number
+    importer_count: number
+    // New: full-pipeline counts including rejections
+    evaluated_count: number         // approved + rejected
+    rejected_count: number
+    approval_rate: number           // 0-100 — approved / evaluated
+    exporter_count: number
   }
-  // For the small "Roasters" and "Importers" blocks in the header — list each
-  // distinct destination with its bag total so the user can read share at a glance.
   roaster_breakdown: Array<{ name: string; bags: number }>
   importer_breakdown: Array<{ name: string; bags: number }>
+  // New aggregates for the redesigned report
+  rejection_reasons: RejectionReasonRow[]
+  supplier_scorecard: SupplierScorecardRow[]
+  /** Pre-computed Sankey layout (Exporter → Importer → Roaster).
+   *  Sized for an A4 landscape main column (~720 × 240 px). */
+  sankey: SankeyLayoutResult
   rows: WeeklySSCertRow[]
 }
+
+const SANKEY_WIDTH = 720
+const SANKEY_HEIGHT = 240
 
 /**
  * Fetch the data for a Weekly SS Certificates report.
  *
- * Only SS samples that have a certificate dated within [start, end] are
- * included. The cert's created_at is the "approval date" we display — that's
- * when the finalize endpoint stamped the certificate, which matches how the
- * existing legacy Excel reports were structured.
+ * Pulls **all** SS certificates created in the window for this client —
+ * approved and rejected. The PDF template uses both: approved drives
+ * the cert appendix + totals, rejected drives the "why things failed"
+ * panel and the supplier-scorecard approval rate.
  */
 export async function getWeeklySSCertReportData(
   supabase: SupabaseClient,
@@ -63,9 +97,6 @@ export async function getWeeklySSCertReportData(
 ): Promise<WeeklySSCertReportData | null> {
   const { clientId, startDate, endDate } = params
 
-  // Resolve the client — accept any QC client, just for display.
-  // client_types is read so we can hide the redundant Roasters block when the
-  // recipient itself is a roaster (Dunkin, Blaser, etc.).
   const { data: client, error: clientError } = await supabase
     .from('clients')
     .select('id, name, company, fantasy_name, logo_url, client_types')
@@ -76,11 +107,12 @@ export async function getWeeklySSCertReportData(
     return null
   }
   const clientTypes = ((client as any).client_types as string[] | null) ?? []
-  const clientIsRoaster = clientTypes.some(t => typeof t === 'string' && t.toLowerCase().includes('roaster'))
+  const clientIsRoaster = clientTypes.some(
+    t => typeof t === 'string' && t.toLowerCase().includes('roaster'),
+  )
 
-  // Pull SS certificates created in the window for samples belonging to this
-  // client. We exclude sub-contract certs (sample_contract_id IS NOT NULL)
-  // because those are aggregated under their mother cert in this report.
+  // Pull every cert created in the window (approved + rejected) so we
+  // can compute approval rate, rejection reasons, and supplier perf.
   const { data: certs, error: certsError } = await supabase
     .from('certificates')
     .select(`
@@ -88,6 +120,7 @@ export async function getWeeklySSCertReportData(
       certificate_number,
       created_at,
       is_rejected,
+      compliance_violations,
       sample:samples!certificates_sample_id_fkey(
         id,
         sample_type,
@@ -114,20 +147,16 @@ export async function getWeeklySSCertReportData(
     return null
   }
 
-  // Filter to: SS sample type + matches client + approved (not rejected).
-  // Doing this in JS rather than in the query because the nested sample fields
-  // don't support easy filtering via PostgREST.
+  // Only keep SS certs for this client. Approval state stays mixed —
+  // each downstream aggregation handles it.
   const filtered = (certs || []).filter((c: any) => {
     const s = c.sample
     if (!s) return false
     if (s.client_id !== clientId) return false
     if (s.sample_type !== 'ss') return false
-    if (c.is_rejected) return false
     return true
   })
 
-  // Build display rows. Bags = bag_count if set, else equivalent_60kg_bags as
-  // a fallback (rounded). The legacy reports show whole-number bags.
   const rows: WeeklySSCertRow[] = filtered.map((c: any) => {
     const s = c.sample
     const bagsRaw = s.bag_count ?? s.equivalent_60kg_bags ?? null
@@ -138,38 +167,97 @@ export async function getWeeklySSCertReportData(
       exporter_name: s.exporter?.name ?? null,
       importer_name: s.importer?.name ?? null,
       importer_contract_nr: s.buyer_contract_nr ?? null,
-      // Roaster Destination is "Unsold" when there's no roaster_id assigned yet.
       roaster_name: s.roaster?.name ?? 'Unsold',
       container_nr: s.container_nr ?? null,
       ico_marks: s.ico_number ?? null,
       bags,
+      is_rejected: !!c.is_rejected,
     }
   })
 
-  // Aggregates for the header blocks
-  const bagCount = rows.reduce((sum, r) => sum + (r.bags ?? 0), 0)
+  const approvedRows = rows.filter(r => !r.is_rejected)
+  const rejectedRows = rows.filter(r => r.is_rejected)
+
+  // Header aggregates — match legacy report semantics (approved only).
+  const bagCount = approvedRows.reduce((sum, r) => sum + (r.bags ?? 0), 0)
   const roasterMap = new Map<string, number>()
   const importerMap = new Map<string, number>()
+  const exporterSet = new Set<string>()
   const originCounts = new Map<string, number>()
 
-  for (const r of rows) {
+  for (const r of approvedRows) {
     const roasterKey = r.roaster_name || 'Unsold'
     roasterMap.set(roasterKey, (roasterMap.get(roasterKey) ?? 0) + (r.bags ?? 0))
     if (r.importer_name) {
       importerMap.set(r.importer_name, (importerMap.get(r.importer_name) ?? 0) + (r.bags ?? 0))
     }
+    if (r.exporter_name) exporterSet.add(r.exporter_name)
   }
-  // Cast through any — the supabase generated type marks the nested sample as
-  // an array (PostgREST default for FK joins) even though sample_id is a single-
-  // value FK, so the actual runtime shape is a single object.
   for (const c of filtered as any[]) {
     const origin = c.sample?.origin
     if (origin) originCounts.set(origin, (originCounts.get(origin) ?? 0) + 1)
   }
-
-  // Most-represented origin drives the flag. If samples span multiple
-  // countries, we still pick one — multi-country reports are a future variant.
   const dominantOrigin = [...originCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+
+  const evaluatedCount = rows.length
+  const rejectedCount = rejectedRows.length
+  const approvalRate = evaluatedCount > 0
+    ? Math.round(((evaluatedCount - rejectedCount) / evaluatedCount) * 100)
+    : 0
+
+  // Rejection-reason aggregation. `compliance_violations` is a JSONB
+  // array of human-readable sentences. Bucket each into a normalized
+  // category so the bar chart shows recurring themes instead of
+  // unique full-text strings.
+  const reasonCounts = new Map<string, number>()
+  for (const c of filtered as any[]) {
+    if (!c.is_rejected) continue
+    const violations = (c.compliance_violations as string[] | null) ?? []
+    for (const v of violations) {
+      const cat = categorizeViolation(v)
+      reasonCounts.set(cat, (reasonCounts.get(cat) ?? 0) + 1)
+    }
+  }
+  const rejection_reasons: RejectionReasonRow[] = [...reasonCounts.entries()]
+    .map(([category, count]) => ({ category, count }))
+    .sort((a, b) => b.count - a.count)
+
+  // Supplier scorecard — count approved / rejected per exporter.
+  const supplierAgg = new Map<string, {
+    total: number
+    approved: number
+    rejected: number
+    bags: number
+  }>()
+  for (const r of rows) {
+    if (!r.exporter_name) continue
+    const cur = supplierAgg.get(r.exporter_name) ?? {
+      total: 0, approved: 0, rejected: 0, bags: 0,
+    }
+    cur.total += 1
+    if (r.is_rejected) cur.rejected += 1
+    else cur.approved += 1
+    cur.bags += r.bags ?? 0
+    supplierAgg.set(r.exporter_name, cur)
+  }
+  const supplier_scorecard: SupplierScorecardRow[] = [...supplierAgg.entries()]
+    .map(([exporter_name, agg]) => ({
+      exporter_name,
+      total: agg.total,
+      approved: agg.approved,
+      rejected: agg.rejected,
+      approval_rate: agg.total > 0 ? Math.round((agg.approved / agg.total) * 100) : 0,
+      bags: agg.bags,
+    }))
+    .sort((a, b) => {
+      if (b.approval_rate !== a.approval_rate) return b.approval_rate - a.approval_rate
+      return b.total - a.total
+    })
+
+  // Sankey: build (Exporter → Importer) and (Importer → Roaster) links
+  // weighted by bags. Use approved rows for volume — rejected coffee
+  // doesn't actually flow through the chain in this period.
+  const sankey = buildSupplyChainSankey(approvedRows, supplier_scorecard)
 
   return {
     client: {
@@ -185,10 +273,14 @@ export async function getWeeklySSCertReportData(
     },
     origin: dominantOrigin,
     totals: {
-      certificate_count: rows.length,
+      certificate_count: approvedRows.length,
       bag_count: bagCount,
       roaster_count: roasterMap.size,
       importer_count: importerMap.size,
+      evaluated_count: evaluatedCount,
+      rejected_count: rejectedCount,
+      approval_rate: approvalRate,
+      exporter_count: exporterSet.size,
     },
     roaster_breakdown: [...roasterMap.entries()]
       .map(([name, bags]) => ({ name, bags }))
@@ -196,6 +288,101 @@ export async function getWeeklySSCertReportData(
     importer_breakdown: [...importerMap.entries()]
       .map(([name, bags]) => ({ name, bags }))
       .sort((a, b) => b.bags - a.bags),
-    rows,
+    rejection_reasons,
+    supplier_scorecard,
+    sankey,
+    rows: approvedRows,
   }
+}
+
+/**
+ * Bucket a compliance-violation sentence into a short category label.
+ *
+ * The strings come from src/lib/compliance.ts in three known shapes:
+ *   • `Taint "Hard": Intensity 5 exceeds maximum (3)`
+ *   • `Fault "Phenol": Intensity 4 exceeds maximum (2)`
+ *   • `Aroma: 5.50 is below minimum (6.00)` / `… is above maximum (…)`
+ * Anything that doesn't match those shapes falls into `Other`.
+ */
+function categorizeViolation(v: string): string {
+  if (typeof v !== 'string') return 'Other'
+  const taint = v.match(/^Taint\s+"([^"]+)"/i)
+  if (taint) return `Taint — ${taint[1]}`
+  const fault = v.match(/^Fault\s+"([^"]+)"/i)
+  if (fault) return `Fault — ${fault[1]}`
+  const cup = v.match(/^([A-Za-z ]+):\s+[\d.]+\s+is\s+(below minimum|above maximum)/i)
+  if (cup) {
+    const attr = cup[1].trim()
+    const dir = cup[2].toLowerCase().includes('below') ? 'below min' : 'above max'
+    return `${attr} ${dir}`
+  }
+  return 'Other'
+}
+
+/**
+ * Build the supply-chain Sankey layout. Two-stage flow:
+ *   Exporter → Importer → Roaster
+ * weighted by bags. Approval-rate per node is taken from the supplier
+ * scorecard for exporter nodes; importer/roaster nodes are tinted by
+ * their weighted approval (computed from the same rows).
+ */
+function buildSupplyChainSankey(
+  approvedRows: WeeklySSCertRow[],
+  scorecard: SupplierScorecardRow[],
+): SankeyLayoutResult {
+  const nodes = new Map<string, SankeyInputNode>()
+  const linkAgg = new Map<string, { source: string; target: string; value: number }>()
+
+  // Per-node approval-rate computation needs the full (approved+rejected)
+  // counts. Exporter rates come from the scorecard; importer/roaster
+  // rates we don't have a precomputed source for, so we set them
+  // neutral. (Could compute weighted average across exporters feeding
+  // each importer, but the visual signal is dominated by exporter
+  // tinting since edges inherit source color.)
+  const exporterRate = new Map<string, number>()
+  for (const s of scorecard) exporterRate.set(s.exporter_name, s.approval_rate)
+
+  for (const r of approvedRows) {
+    const exporter = r.exporter_name?.trim() || 'Unknown exporter'
+    const importer = r.importer_name?.trim() || 'Unknown importer'
+    const roaster = r.roaster_name?.trim() || 'Unsold'
+    const bags = r.bags ?? 0
+    if (bags <= 0) continue
+
+    const ex = `exporter:${exporter}`
+    const im = `importer:${importer}`
+    const ro = `roaster:${roaster}`
+
+    if (!nodes.has(ex)) {
+      nodes.set(ex, {
+        id: ex, label: exporter, column: 0,
+        approvalRate: exporterRate.get(exporter),
+      })
+    }
+    if (!nodes.has(im)) nodes.set(im, { id: im, label: importer, column: 1 })
+    if (!nodes.has(ro)) nodes.set(ro, { id: ro, label: roaster, column: 2 })
+
+    const k1 = `${ex}|${im}`
+    const k2 = `${im}|${ro}`
+    linkAgg.set(k1, {
+      source: ex, target: im,
+      value: (linkAgg.get(k1)?.value ?? 0) + bags,
+    })
+    linkAgg.set(k2, {
+      source: im, target: ro,
+      value: (linkAgg.get(k2)?.value ?? 0) + bags,
+    })
+  }
+
+  const inputNodes = [...nodes.values()]
+  const inputLinks: SankeyInputLink[] = [...linkAgg.values()].map(l => ({
+    source: l.source,
+    target: l.target,
+    value: l.value,
+  }))
+
+  return computeSankeyLayout(inputNodes, inputLinks, {
+    width: SANKEY_WIDTH,
+    height: SANKEY_HEIGHT,
+  })
 }
