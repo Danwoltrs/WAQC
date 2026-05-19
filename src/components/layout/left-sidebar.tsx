@@ -212,18 +212,20 @@ export function LeftSidebar({ isExpanded, sidebarMode, onModeChange, onHoverEnte
 
   const navigation = getNavigation(openIntakeDialog)
 
-  // Auto-expand Dashboard submenu when on a submenu page
+  // Auto-expand Dashboard submenu when on a submenu page.
+  // `navigation` is rebuilt every render, so it can't go in the dep array —
+  // pairing it with a `new Set(prev)` setter previously caused an infinite
+  // render loop on /dashboard/* pages (each commit produced a new Set
+  // reference even though contents were identical, retriggering the effect).
   useEffect(() => {
-    const dashboardItem = navigation.find(item => item.href === '/')
-    if (dashboardItem?.submenu) {
-      const isOnSubmenuPage = dashboardItem.submenu.some(subItem =>
-        subItem.href && pathname.startsWith(subItem.href)
-      )
-      if (isOnSubmenuPage) {
-        setExpandedMenus(prev => new Set(prev).add('/'))
-      }
-    }
-  }, [pathname, navigation])
+    if (!pathname.startsWith('/dashboard/')) return
+    setExpandedMenus(prev => {
+      if (prev.has('/')) return prev
+      const next = new Set(prev)
+      next.add('/')
+      return next
+    })
+  }, [pathname])
 
   // Fetch pending access requests count
   useEffect(() => {
