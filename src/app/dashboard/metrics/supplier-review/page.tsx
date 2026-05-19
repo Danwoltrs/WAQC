@@ -8,6 +8,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Users, TrendingUp, Award, FileCheck2, Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
+import { cropYearRange } from '@/lib/crop-year'
 
 interface InsightsData {
   totalSuppliers: number
@@ -26,6 +27,7 @@ export default function SupplierReviewPage() {
     year: currentYear,
     month: null,
     quarter: currentQuarter,
+    cropYear: null,
     minBags: 0
   })
   const [insights, setInsights] = useState<InsightsData | null>(null)
@@ -48,11 +50,16 @@ export default function SupplierReviewPage() {
     try {
       setLoading(true)
 
-      // Calculate date range
+      // Calculate date range. Crop year (Sep–Aug) takes precedence over the
+      // calendar year + quarter selection when set.
       let startDate: string
       let endDate: string
 
-      if (filters.quarter) {
+      if (filters.cropYear !== null) {
+        const { start, end } = cropYearRange(filters.cropYear)
+        startDate = start.toISOString()
+        endDate = end.toISOString()
+      } else if (filters.quarter) {
         const quarterStartMonth = (filters.quarter - 1) * 3
         startDate = new Date(filters.year, quarterStartMonth, 1).toISOString()
         endDate = new Date(filters.year, quarterStartMonth + 3, 1).toISOString()
@@ -206,6 +213,7 @@ export default function SupplierReviewPage() {
         <PerformanceLeaderboard
           year={filters.year}
           quarter={filters.quarter || undefined}
+          cropYear={filters.cropYear}
           filters={filters}
         />
       </div>

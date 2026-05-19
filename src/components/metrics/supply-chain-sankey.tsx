@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { Sankey, Tooltip, ResponsiveContainer, Layer, Rectangle } from 'recharts'
+import { cropYearRange } from '@/lib/crop-year'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Loader2 } from 'lucide-react'
 import { supabase } from '@/lib/supabase'
@@ -38,6 +39,8 @@ interface SupplyChainSankeyProps {
   filters?: {
     year?: number
     month?: number | null
+    // Sep–Aug crop year start; overrides year + month when set.
+    cropYear?: number | null
     laboratoryId?: string
     minBags?: number
     client?: string
@@ -133,20 +136,25 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
         query = query.eq('client_id', filters.client)
       }
 
-      // Apply year filter
-      if (year) {
+      // Crop year overrides year + month when set (Sep–Aug window).
+      if (filters?.cropYear != null) {
+        const { start, end } = cropYearRange(filters.cropYear)
         query = query
-          .gte('created_at', `${year}-01-01`)
-          .lt('created_at', `${year + 1}-01-01`)
-      }
-
-      // Apply month filter if provided
-      if (month && month >= 1 && month <= 12) {
-        const startDate = new Date(year, month - 1, 1)
-        const endDate = new Date(year, month, 1)
-        query = query
-          .gte('created_at', startDate.toISOString())
-          .lt('created_at', endDate.toISOString())
+          .gte('created_at', start.toISOString())
+          .lt('created_at', end.toISOString())
+      } else {
+        if (year) {
+          query = query
+            .gte('created_at', `${year}-01-01`)
+            .lt('created_at', `${year + 1}-01-01`)
+        }
+        if (month && month >= 1 && month <= 12) {
+          const startDate = new Date(year, month - 1, 1)
+          const endDate = new Date(year, month, 1)
+          query = query
+            .gte('created_at', startDate.toISOString())
+            .lt('created_at', endDate.toISOString())
+        }
       }
 
       // Apply lab filter based on user role

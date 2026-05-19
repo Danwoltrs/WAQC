@@ -3,7 +3,11 @@
 import { useState, useEffect } from 'react'
 import { Card, CardContent } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
-import { Filter, Calendar } from 'lucide-react'
+import { Filter, Calendar, Sprout } from 'lucide-react'
+import {
+  getCurrentCropYearStart,
+  formatCropYear,
+} from '@/lib/crop-year'
 
 interface MetricsFiltersProps {
   onFilterChange: (filters: FilterState) => void
@@ -13,6 +17,9 @@ export interface FilterState {
   year: number
   month: number | null
   quarter: number | null
+  // Crop year start year (e.g. 2025 = "25/26"). When set, it overrides
+  // year/month/quarter for date-range computation downstream.
+  cropYear: number | null
   laboratoryId?: string
   minBags?: number
   client?: string
@@ -23,10 +30,12 @@ export interface FilterState {
 
 export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
   const currentYear = new Date().getFullYear()
+  const currentCropStart = getCurrentCropYearStart()
   const [filters, setFilters] = useState<FilterState>({
     year: currentYear,
     month: null,
     quarter: null,
+    cropYear: null,
     minBags: 0,
     client: undefined,
     supplier: undefined,
@@ -132,16 +141,24 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
   ]
 
   const handleFilterUpdate = (key: keyof FilterState, value: any) => {
-    const updated = { ...filters, [key]: value }
+    // Crop year is mutually exclusive with year/month/quarter — changing
+    // one side clears the other so the resulting query is never ambiguous.
+    let updated: FilterState = { ...filters, [key]: value }
+    if (key === 'cropYear' && value !== null) {
+      updated = { ...updated, month: null, quarter: null }
+    } else if ((key === 'year' || key === 'month' || key === 'quarter') && filters.cropYear !== null) {
+      updated = { ...updated, cropYear: null }
+    }
     setFilters(updated)
     onFilterChange(updated)
   }
 
   const resetFilters = () => {
-    const reset = {
+    const reset: FilterState = {
       year: currentYear,
       month: null,
       quarter: null,
+      cropYear: null,
       minBags: 0,
       client: undefined,
       supplier: undefined,
@@ -151,6 +168,14 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
     setFilters(reset)
     onFilterChange(reset)
   }
+
+  // Offer previous, current, and next crop year. Anything older is a
+  // dashboard noise — the legacy reports cover prior seasons.
+  const cropYearOptions = [
+    currentCropStart - 1,
+    currentCropStart,
+    currentCropStart + 1,
+  ]
 
   return (
     <Card className="mb-6">
@@ -224,14 +249,15 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
         </div>
 
         {/* Time & Volume Filters */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
           {/* Year filter */}
           <div>
             <label className="text-sm font-medium mb-2 block">Year</label>
             <select
               value={filters.year}
               onChange={(e) => handleFilterUpdate('year', parseInt(e.target.value))}
-              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+              disabled={filters.cropYear !== null}
+              className="w-full px-3 py-2 border border-border rounded-lg bg-background disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {years.map(year => (
                 <option key={year} value={year}>{year}</option>
@@ -245,7 +271,8 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
             <select
               value={filters.month || ''}
               onChange={(e) => handleFilterUpdate('month', e.target.value ? parseInt(e.target.value) : null)}
-              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+              disabled={filters.cropYear !== null}
+              className="w-full px-3 py-2 border border-border rounded-lg bg-background disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">All Year</option>
               {months.map(month => (
@@ -260,13 +287,32 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
             <select
               value={filters.quarter || ''}
               onChange={(e) => handleFilterUpdate('quarter', e.target.value ? parseInt(e.target.value) : null)}
-              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+              disabled={filters.cropYear !== null}
+              className="w-full px-3 py-2 border border-border rounded-lg bg-background disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <option value="">All Quarters</option>
               <option value="1">Q1 (Jan-Mar)</option>
               <option value="2">Q2 (Apr-Jun)</option>
               <option value="3">Q3 (Jul-Sep)</option>
               <option value="4">Q4 (Oct-Dec)</option>
+            </select>
+          </div>
+
+          {/* Crop Year filter — overrides year/month/quarter when set.
+              Coffee crop year runs Sep–Aug. */}
+          <div>
+            <label className="text-sm font-medium mb-2 block">Crop Year</label>
+            <select
+              value={filters.cropYear ?? ''}
+              onChange={(e) => handleFilterUpdate('cropYear', e.target.value ? parseInt(e.target.value) : null)}
+              className="w-full px-3 py-2 border border-border rounded-lg bg-background"
+            >
+              <option value="">Off</option>
+              {cropYearOptions.map(startYear => (
+                <option key={startYear} value={startYear}>
+                  {formatCropYear(startYear)}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -297,12 +343,17 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
         </div>
 
         {/* Quick presets */}
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           <Button
             variant="secondary"
             size="sm"
             onClick={() => {
-              const updated = { ...filters, month: new Date().getMonth() + 1 }
+              const updated = {
+                ...filters,
+                cropYear: null,
+                month: new Date().getMonth() + 1,
+                year: currentYear,
+              }
               setFilters(updated)
               onFilterChange(updated)
             }}
@@ -315,7 +366,13 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
             size="sm"
             onClick={() => {
               const currentQ = Math.floor(new Date().getMonth() / 3) + 1
-              const updated = { ...filters, quarter: currentQ, month: null }
+              const updated = {
+                ...filters,
+                cropYear: null,
+                quarter: currentQ,
+                month: null,
+                year: currentYear,
+              }
               setFilters(updated)
               onFilterChange(updated)
             }}
@@ -327,13 +384,36 @@ export function MetricsFilters({ onFilterChange }: MetricsFiltersProps) {
             variant="secondary"
             size="sm"
             onClick={() => {
-              const updated = { ...filters, month: null, quarter: null }
+              const updated = {
+                ...filters,
+                cropYear: null,
+                month: null,
+                quarter: null,
+                year: currentYear,
+              }
               setFilters(updated)
               onFilterChange(updated)
             }}
           >
             <Calendar className="h-3 w-3 mr-1" />
             Full Year
+          </Button>
+          <Button
+            variant={filters.cropYear === currentCropStart ? 'default' : 'secondary'}
+            size="sm"
+            onClick={() => {
+              const updated: FilterState = {
+                ...filters,
+                cropYear: currentCropStart,
+                month: null,
+                quarter: null,
+              }
+              setFilters(updated)
+              onFilterChange(updated)
+            }}
+          >
+            <Sprout className="h-3 w-3 mr-1" />
+            Current Crop ({formatCropYear(currentCropStart)})
           </Button>
         </div>
       </CardContent>

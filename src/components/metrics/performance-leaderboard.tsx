@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
 import { Award, ArrowUpDown, ArrowUp, ArrowDown } from 'lucide-react'
+import { cropYearRange, formatCropYear } from '@/lib/crop-year'
 
 interface SupplierPerformance {
   supplier: string
@@ -24,6 +25,8 @@ interface SupplierPerformance {
 interface PerformanceLeaderboardProps {
   year: number
   quarter?: number | null
+  // When set, overrides year + quarter and queries the Sep–Aug window.
+  cropYear?: number | null
   filters?: {
     client?: string
     supplier?: string
@@ -35,7 +38,7 @@ interface PerformanceLeaderboardProps {
 type SortKey = 'rank' | 'supplier' | 'totalSamples' | 'pssCount' | 'ssCount' | 'approvalRate'
 type SortDir = 'asc' | 'desc'
 
-export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLeaderboardProps) {
+export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: PerformanceLeaderboardProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [suppliers, setSuppliers] = useState<SupplierPerformance[]>([])
@@ -47,7 +50,7 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
     if (user && profile) {
       fetchSupplierPerformance()
     }
-  }, [user, profile, year, quarter, filters])
+  }, [user, profile, year, quarter, cropYear, filters])
 
   const fetchSupplierPerformance = async () => {
     if (!user || !profile) return
@@ -56,11 +59,16 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
       setLoading(true)
       setError(null)
 
-      // Calculate date range
+      // Calculate date range. Crop year takes precedence — when set, the
+      // calendar year + quarter are ignored.
       let startDate: string
       let endDate: string
 
-      if (quarter) {
+      if (cropYear != null) {
+        const range = cropYearRange(cropYear)
+        startDate = range.start.toISOString()
+        endDate = range.end.toISOString()
+      } else if (quarter) {
         const quarterStartMonth = (quarter - 1) * 3
         startDate = new Date(year, quarterStartMonth, 1).toISOString()
         endDate = new Date(year, quarterStartMonth + 3, 1).toISOString()
@@ -254,12 +262,16 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
     return <span className="inline-flex w-4 justify-center text-xs font-medium text-muted-foreground">{rank}</span>
   }
 
+  const periodLabel = cropYear != null
+    ? `Crop ${formatCropYear(cropYear)} (Sep–Aug)`
+    : (quarter ? `Q${quarter} ${year}` : `${year}`)
+
   if (loading) {
     return (
       <Card className="rounded-[20px]">
         <CardHeader>
           <CardTitle className="text-sm">Supplier Performance Rankings</CardTitle>
-          <CardDescription>{quarter ? `Q${quarter} ${year}` : `${year}`} — Loading…</CardDescription>
+          <CardDescription>{periodLabel} — Loading…</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="flex items-center justify-center py-8">
@@ -284,7 +296,7 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
       <Card className="rounded-[20px]">
         <CardHeader>
           <CardTitle className="text-sm">Supplier Performance Rankings</CardTitle>
-          <CardDescription>{quarter ? `Q${quarter} ${year}` : `${year}`}</CardDescription>
+          <CardDescription>{periodLabel}</CardDescription>
         </CardHeader>
         <CardContent><p className="text-sm text-muted-foreground">No supplier data available for this period.</p></CardContent>
       </Card>
@@ -298,7 +310,7 @@ export function PerformanceLeaderboard({ year, quarter, filters }: PerformanceLe
           <div>
             <CardTitle className="text-sm">Supplier Performance Rankings</CardTitle>
             <CardDescription className="text-xs">
-              {quarter ? `Q${quarter} ${year}` : `${year}`} — Ranked by approval rate, then volume
+              {periodLabel} — Ranked by approval rate, then volume
             </CardDescription>
           </div>
           <span className="text-xs text-muted-foreground">

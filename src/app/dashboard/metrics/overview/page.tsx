@@ -10,6 +10,7 @@ import { TrendingUp, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/components/providers/auth-provider'
+import { cropYearRange } from '@/lib/crop-year'
 
 interface TopPerformer {
   supplier: string
@@ -37,6 +38,7 @@ export default function OverviewDashboard() {
     year: new Date().getFullYear(),
     month: null,
     quarter: null,
+    cropYear: null,
     minBags: 0
   })
   const [topPerformers, setTopPerformers] = useState<TopPerformer[]>([])
@@ -97,20 +99,26 @@ export default function OverviewDashboard() {
         query = query.eq('client_id', filters.client)
       }
 
-      // Apply year filter
-      if (year) {
+      // Date range: crop year (Sep–Aug) overrides calendar year/month
+      // when set. Otherwise fall back to the year and optional month.
+      if (filters.cropYear !== null) {
+        const { start, end } = cropYearRange(filters.cropYear)
         query = query
-          .gte('created_at', `${year}-01-01`)
-          .lt('created_at', `${year + 1}-01-01`)
-      }
-
-      // Apply month filter if provided
-      if (month && month >= 1 && month <= 12) {
-        const startDate = new Date(year, month - 1, 1)
-        const endDate = new Date(year, month, 1)
-        query = query
-          .gte('created_at', startDate.toISOString())
-          .lt('created_at', endDate.toISOString())
+          .gte('created_at', start.toISOString())
+          .lt('created_at', end.toISOString())
+      } else {
+        if (year) {
+          query = query
+            .gte('created_at', `${year}-01-01`)
+            .lt('created_at', `${year + 1}-01-01`)
+        }
+        if (month && month >= 1 && month <= 12) {
+          const startDate = new Date(year, month - 1, 1)
+          const endDate = new Date(year, month, 1)
+          query = query
+            .gte('created_at', startDate.toISOString())
+            .lt('created_at', endDate.toISOString())
+        }
       }
 
       // Apply lab filter based on user role
@@ -321,6 +329,7 @@ export default function OverviewDashboard() {
           filters={{
             year: filters.year,
             month: filters.month,
+            cropYear: filters.cropYear,
             minBags: filters.minBags,
             client: filters.client,
             supplier: filters.supplier,
