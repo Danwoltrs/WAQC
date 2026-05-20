@@ -29,8 +29,10 @@ const styles = StyleSheet.create({
 
 interface SankeyChartProps {
   layout: SankeyLayoutResult
-  /** Column labels left → right. Default is the standard Exporter/Importer/Roaster set. */
-  columnLabels?: [string, string, string]
+  /** Column labels left → right. Length must match the highest column
+   *  index used by the layout (e.g. 4 entries for a Shipper / Seller /
+   *  Importer / Roaster chart, 2 entries for a Shipper / Seller chart). */
+  columnLabels: string[]
   /** Bold node-label text. Default true. */
   showNodeLabels?: boolean
   /** Show node values (bag totals) next to labels. Default true. */
@@ -39,7 +41,7 @@ interface SankeyChartProps {
 
 export function SankeyChart({
   layout,
-  columnLabels = ['Exporter', 'Importer', 'Roaster'],
+  columnLabels,
   showNodeLabels = true,
   showNodeValues = true,
 }: SankeyChartProps) {
@@ -58,8 +60,9 @@ export function SankeyChart({
   // Find the x-center of each column for the caption labels. Computed
   // from actual node positions so captions land above their column even
   // when one column is empty.
-  const colCenters: Array<number | null> = [null, null, null]
+  const colCenters: Array<number | null> = columnLabels.map(() => null)
   for (const n of nodes) {
+    if (n.column >= colCenters.length) continue
     const center = (n.x0 + n.x1) / 2
     if (colCenters[n.column] === null) colCenters[n.column] = center
   }
@@ -123,7 +126,7 @@ export function SankeyChart({
         {showNodeLabels && (
           <G>
             {nodes.map(n => {
-              const isLast = n.column === 2
+              const isLast = n.column === columnLabels.length - 1
               const x = isLast ? n.x0 - 4 : n.x1 + 4
               const y = (n.y0 + n.y1) / 2
               const anchor = isLast ? 'end' : 'start'

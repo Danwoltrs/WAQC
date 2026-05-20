@@ -2,16 +2,20 @@
  * Weekly SS Certificates Report — redesigned (May 2026).
  *
  * Three-page A4 landscape PDF:
- *   1. Executive Summary — KPI strip + supply-chain Sankey + sample mix donut
- *   2. Quality breakdown — top rejection reasons + supplier scorecard
+ *   1. Executive Summary — KPI strip + supply-chain Sankey (full width)
+ *   2. Quality breakdown — supplier scorecard + sample-mix donut + (conditional) rejection reasons
  *   3. Certificate appendix — tight per-cert table (approved only)
  *
- * The Sankey is pre-laid-out in `src/lib/report-data.ts` and rendered
- * by the shared SankeyChart component. Mini chart primitives
- * (KpiCard, HorizontalBarChart, DonutChart) live alongside.
+ * Sankey shape depends on the client_types of the recipient:
+ *   importer (Blaser)        → Shipper → Seller
+ *   roaster (Ahold)          → Shipper → Seller → Importer
+ *   final_buyer (Dunkin)     → Shipper → Seller → Importer → Roaster
  *
- * Inter font is registered globally by certificate-styles.ts — importing
- * it for the side-effect ensures Font.register runs before any rendering.
+ * Rejection-reasons panel is hidden when there are no rejections (or
+ * everything fell into the "Other" bucket) — keeps the page from showing
+ * an empty placeholder for healthy clients.
+ *
+ * Inter font is registered globally by certificate-styles.ts.
  */
 
 import React from 'react'
@@ -50,7 +54,6 @@ const styles = StyleSheet.create({
   clientLogo: { maxWidth: 100, maxHeight: 36, objectFit: 'contain' },
   generationDate: { fontSize: 8, color: '#666', marginTop: 4 },
 
-  // --- Period title bar ---
   titleBar: {
     backgroundColor: GREEN,
     color: '#FFFFFF',
@@ -61,7 +64,6 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 
-  // --- Section caption ---
   sectionLabel: {
     fontSize: 9,
     fontWeight: 700,
@@ -72,27 +74,37 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  // --- KPI strip ---
   kpiStrip: {
     flexDirection: 'row',
     gap: 8,
     marginBottom: 14,
   },
 
-  // --- Page 1 split ---
-  page1Split: { flexDirection: 'row', gap: 12 },
-  sankeyPanel: { width: '68%' },
+  // --- Page 1 — Sankey panel ---
+  sankeyPanel: {
+    backgroundColor: '#F9F9FA',
+    borderRadius: 10,
+    padding: 14,
+  },
+
+  // --- Page 2 layout ---
+  page2Row: { flexDirection: 'row', gap: 12, marginBottom: 12 },
+  scorecardPanel: {
+    width: '68%',
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: GRAY_BORDER,
+    borderRadius: 10,
+    padding: 12,
+  },
   donutPanel: {
     width: '32%',
     backgroundColor: '#F9F9FA',
     borderRadius: 10,
     padding: 12,
+    alignItems: 'center',
   },
-
-  // --- Page 2 split ---
-  page2Split: { flexDirection: 'row', gap: 12 },
-  page2Col: { flexGrow: 1, flexShrink: 1, flexBasis: 0 },
-  panel: {
+  rejectionPanel: {
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: GRAY_BORDER,
@@ -135,7 +147,7 @@ const styles = StyleSheet.create({
   },
   miniBar: { height: 6, borderRadius: 3 },
 
-  // --- Cert appendix table ---
+  // --- Cert appendix ---
   table: { borderTopWidth: 1, borderTopColor: GRAY_BORDER },
   tableHeaderRow: { flexDirection: 'row', backgroundColor: GREEN },
   tableHeaderCell: {
@@ -183,7 +195,10 @@ const styles = StyleSheet.create({
   },
 })
 
-const COLS = {
+// Cert-appendix column widths. The Roaster column is suppressed when
+// the client is itself a roaster (Ahold) — those bytes get redistributed
+// to wider exporter + importer columns.
+const COLS_WITH_ROASTER = {
   approvalDate: '9%',
   certificateNumber: '11%',
   exporter: '12%',
@@ -191,6 +206,16 @@ const COLS = {
   importerContract: '13%',
   roasterDestination: '13%',
   container: '10%',
+  icoMarks: '10%',
+  bags: '8%',
+}
+const COLS_NO_ROASTER = {
+  approvalDate: '10%',
+  certificateNumber: '13%',
+  exporter: '15%',
+  importer: '17%',
+  importerContract: '15%',
+  container: '12%',
   icoMarks: '10%',
   bags: '8%',
 }
@@ -226,14 +251,22 @@ export function WeeklySSCertsReport({
     return `${month} ${String(d.getDate()).padStart(2, '0')} ${d.getFullYear()}`
   }
 
-  // End is exclusive in our query; display the last-included day.
   const displayEnd = new Date(new Date(data.period.end_date).getTime() - 86400000)
   const periodLabel = `Weekly SS Certificates · ${formatShortDate(data.period.start_date)} – ${formatShortDate(displayEnd.toISOString())}`
 
   const approvalRate = data.totals.approval_rate
-  const rejectionRate = data.totals.evaluated_count > 0
-    ? 100 - approvalRate
-    : 0
+
+  // Only render the rejection-reasons panel when there's something
+  // informative to show — at least one non-Other category. A single
+  // "Other" entry is just noise (typically means a stale violation
+  // string we don't have a pattern for yet).
+  const informativeReasons = data.rejection_reasons.filter(r => r.category !== 'Other')
+  const showRejectionPanel = informativeReasons.length > 0
+
+  // Hide the Roaster column in the appendix when the client is itself
+  // a roaster (Ahold) — the column would always read "Unsold" for them.
+  const hideRoasterCol = data.client.is_roaster
+  const COLS = hideRoasterCol ? COLS_NO_ROASTER : COLS_WITH_ROASTER
 
   const Header = (
     <View style={styles.headerRow}>
@@ -273,7 +306,6 @@ export function WeeklySSCertsReport({
         {Header}
         <Text style={styles.titleBar}>{periodLabel}</Text>
 
-        {/* KPI strip — five hero stats. Approval rate tinted by band. */}
         <View style={styles.kpiStrip}>
           <KpiCard
             label="Certificates"
@@ -296,22 +328,117 @@ export function WeeklySSCertsReport({
             value={data.totals.exporter_count}
             sublabel="active in period"
           />
+          {/* Last KPI swaps between roaster + importer count based on the
+              recipient — Ahold sees importers, Dunkin sees roasters. */}
           <KpiCard
-            label={data.client.is_roaster ? 'Importers' : 'Roasters'}
-            value={data.client.is_roaster ? data.totals.importer_count : data.totals.roaster_count}
+            label={data.client.sankey_type === 'importer'
+              ? 'Shippers'
+              : data.client.sankey_type === 'roaster' ? 'Importers' : 'Roasters'}
+            value={data.client.sankey_type === 'importer'
+              ? data.totals.exporter_count
+              : data.client.sankey_type === 'roaster' ? data.totals.importer_count
+              : data.totals.roaster_count}
             sublabel="distinct destinations"
           />
         </View>
 
-        {/* Sankey + sample mix donut side-by-side */}
-        <View style={styles.page1Split}>
-          <View style={styles.sankeyPanel}>
-            <Text style={styles.sectionLabel}>Supply chain flow</Text>
-            <SankeyChart layout={data.sankey} />
+        {/* Sankey panel takes the full content width. Donut moved to page 2. */}
+        <View style={styles.sankeyPanel}>
+          <Text style={[styles.sectionLabel, { marginTop: 0 }]}>Supply chain flow</Text>
+          <SankeyChart layout={data.sankey} columnLabels={data.sankey_columns} />
+        </View>
+
+        {Footer('Page 1 of 3 · Summary')}
+      </Page>
+
+      {/* ============ Page 2 — Quality breakdown ============ */}
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        {Header}
+        <Text style={styles.titleBar}>
+          Quality breakdown · {formatShortDate(data.period.start_date)} – {formatShortDate(displayEnd.toISOString())}
+        </Text>
+
+        {/* Row 1: supplier scorecard (wide) + sample-mix donut */}
+        <View style={styles.page2Row}>
+          <View style={styles.scorecardPanel}>
+            <Text style={[styles.sectionLabel, { marginTop: 0 }]}>Supplier scorecard</Text>
+            {data.supplier_scorecard.length === 0 ? (
+              <Text style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>
+                No supplier activity in this period.
+              </Text>
+            ) : (
+              <View style={styles.scoreTable}>
+                <View style={styles.scoreHeader}>
+                  <Text style={[styles.scoreHeaderCell, { width: '42%' }]}>Shipper</Text>
+                  <Text style={[styles.scoreHeaderCell, { width: '12%', textAlign: 'right' }]}>Samples</Text>
+                  <Text style={[styles.scoreHeaderCell, { width: '14%', textAlign: 'right' }]}>Bags</Text>
+                  <Text style={[styles.scoreHeaderCell, { width: '32%' }]}>Approval rate</Text>
+                </View>
+                {data.supplier_scorecard.slice(0, 12).map((s, i) => (
+                  <View
+                    key={s.exporter_name}
+                    style={[styles.scoreRow, { backgroundColor: i % 2 ? ZEBRA : '#FFFFFF' }]}
+                  >
+                    <Text style={[styles.scoreCell, { width: '42%' }]} wrap={false}>
+                      {s.exporter_name}
+                    </Text>
+                    <Text style={[styles.scoreCell, { width: '12%', textAlign: 'right' }]}>
+                      {s.total}
+                    </Text>
+                    <Text style={[styles.scoreCell, { width: '14%', textAlign: 'right' }]}>
+                      {s.bags.toLocaleString('en-US')}
+                    </Text>
+                    <View
+                      style={{
+                        width: '32%',
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 6,
+                      }}
+                    >
+                      <View style={styles.miniBarTrack}>
+                        <View
+                          style={[
+                            styles.miniBar,
+                            {
+                              width: `${s.approval_rate}%`,
+                              backgroundColor:
+                                s.approval_rate >= 90 ? '#556b2f'
+                                : s.approval_rate >= 70 ? '#a9a454'
+                                : '#ef4444',
+                            },
+                          ]}
+                        />
+                      </View>
+                      <Text
+                        style={[
+                          styles.scoreCell,
+                          {
+                            width: 32,
+                            textAlign: 'right',
+                            fontWeight: 700,
+                            color: s.approval_rate >= 90 ? '#556b2f'
+                              : s.approval_rate >= 70 ? '#a9a454'
+                              : '#ef4444',
+                          },
+                        ]}
+                      >
+                        {s.approval_rate}%
+                      </Text>
+                    </View>
+                  </View>
+                ))}
+                {data.supplier_scorecard.length > 12 && (
+                  <Text style={{ fontSize: 8, color: '#888', marginTop: 6, textAlign: 'right' }}>
+                    +{data.supplier_scorecard.length - 12} more shippers
+                  </Text>
+                )}
+              </View>
+            )}
           </View>
 
           <View style={styles.donutPanel}>
-            <Text style={styles.sectionLabel}>Sample mix</Text>
+            <Text style={[styles.sectionLabel, { marginTop: 0, alignSelf: 'flex-start' }]}>Sample mix</Text>
             <DonutChart
               slices={[
                 {
@@ -325,18 +452,22 @@ export function WeeklySSCertsReport({
                   color: '#ef4444',
                 },
               ]}
-              size={120}
+              size={130}
               centerValue={`${approvalRate}%`}
               centerLabel="approved"
             />
 
-            {/* Per-destination quick read — limited to top 4 so the panel
-                doesn't overflow on busy weeks. */}
-            <View style={{ marginTop: 12 }}>
+            {/* Top destinations — what they look like depends on type. */}
+            <View style={{ marginTop: 14, width: '100%' }}>
               <Text style={[styles.sectionLabel, { marginTop: 0 }]}>
-                {data.client.is_roaster ? 'Top importers' : 'Top roasters'}
+                {data.client.sankey_type === 'final_buyer' ? 'Top roasters'
+                  : data.client.sankey_type === 'roaster' ? 'Top importers'
+                  : 'Top shippers'}
               </Text>
-              {(data.client.is_roaster ? data.importer_breakdown : data.roaster_breakdown)
+              {(data.client.sankey_type === 'final_buyer'
+                ? data.roaster_breakdown
+                : data.importer_breakdown
+              )
                 .slice(0, 4)
                 .map(d => (
                   <View
@@ -359,134 +490,26 @@ export function WeeklySSCertsReport({
           </View>
         </View>
 
-        {Footer('Page 1 of 3 · Summary')}
-      </Page>
-
-      {/* ============ Page 2 — Quality breakdown ============ */}
-      <Page size="A4" orientation="landscape" style={styles.page}>
-        {Header}
-        <Text style={styles.titleBar}>Quality breakdown · {formatShortDate(data.period.start_date)} – {formatShortDate(displayEnd.toISOString())}</Text>
-
-        <View style={styles.page2Split}>
-          {/* Top rejection reasons */}
-          <View style={styles.page2Col}>
-            <View style={styles.panel}>
-              <Text style={styles.sectionLabel}>Top rejection reasons</Text>
-              {data.rejection_reasons.length === 0 ? (
-                <View
-                  style={{
-                    paddingVertical: 24,
-                    alignItems: 'center',
-                    backgroundColor: '#f3f7ee',
-                    borderRadius: 8,
-                  }}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: 700, color: GREEN }}>
-                    All samples approved
-                  </Text>
-                  <Text style={{ fontSize: 9, color: '#555', marginTop: 4 }}>
-                    No rejection reasons logged for this period.
-                  </Text>
-                </View>
-              ) : (
-                <HorizontalBarChart
-                  rows={data.rejection_reasons.map(r => ({
-                    label: r.category,
-                    value: r.count,
-                  }))}
-                  labelWidth={120}
-                  trackWidth={220}
-                  limit={10}
-                  chartColor="#ef4444"
-                />
-              )}
-              <Text style={{ fontSize: 7.5, color: '#888', marginTop: 8 }}>
-                Counts represent individual compliance violations — a single rejected
-                certificate may contribute to more than one row.
-              </Text>
-            </View>
+        {/* Row 2: rejection reasons — only rendered when there are
+            informative (non-Other) buckets. Hidden entirely for clients
+            with zero rejections, which keeps the page from showing a
+            half-empty placeholder. */}
+        {showRejectionPanel && (
+          <View style={styles.rejectionPanel}>
+            <Text style={[styles.sectionLabel, { marginTop: 0 }]}>Top rejection reasons</Text>
+            <HorizontalBarChart
+              rows={informativeReasons.map(r => ({ label: r.category, value: r.count }))}
+              labelWidth={140}
+              trackWidth={420}
+              limit={10}
+              chartColor="#ef4444"
+            />
+            <Text style={{ fontSize: 7.5, color: '#888', marginTop: 8 }}>
+              Counts represent individual compliance violations — a single rejected
+              certificate may contribute to more than one row.
+            </Text>
           </View>
-
-          {/* Supplier scorecard */}
-          <View style={styles.page2Col}>
-            <View style={styles.panel}>
-              <Text style={styles.sectionLabel}>Supplier scorecard</Text>
-              {data.supplier_scorecard.length === 0 ? (
-                <Text style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>
-                  No supplier activity in this period.
-                </Text>
-              ) : (
-                <View style={styles.scoreTable}>
-                  <View style={styles.scoreHeader}>
-                    <Text style={[styles.scoreHeaderCell, { width: '38%' }]}>Exporter</Text>
-                    <Text style={[styles.scoreHeaderCell, { width: '12%', textAlign: 'right' }]}>Samples</Text>
-                    <Text style={[styles.scoreHeaderCell, { width: '12%', textAlign: 'right' }]}>Bags</Text>
-                    <Text style={[styles.scoreHeaderCell, { width: '38%' }]}>Approval rate</Text>
-                  </View>
-                  {data.supplier_scorecard.slice(0, 12).map((s, i) => (
-                    <View
-                      key={s.exporter_name}
-                      style={[styles.scoreRow, { backgroundColor: i % 2 ? ZEBRA : '#FFFFFF' }]}
-                    >
-                      <Text style={[styles.scoreCell, { width: '38%' }]} wrap={false}>
-                        {s.exporter_name}
-                      </Text>
-                      <Text style={[styles.scoreCell, { width: '12%', textAlign: 'right' }]}>
-                        {s.total}
-                      </Text>
-                      <Text style={[styles.scoreCell, { width: '12%', textAlign: 'right' }]}>
-                        {s.bags.toLocaleString('en-US')}
-                      </Text>
-                      <View
-                        style={{
-                          width: '38%',
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          gap: 6,
-                        }}
-                      >
-                        <View style={styles.miniBarTrack}>
-                          <View
-                            style={[
-                              styles.miniBar,
-                              {
-                                width: `${s.approval_rate}%`,
-                                backgroundColor:
-                                  s.approval_rate >= 90 ? '#556b2f'
-                                  : s.approval_rate >= 70 ? '#a9a454'
-                                  : '#ef4444',
-                              },
-                            ]}
-                          />
-                        </View>
-                        <Text
-                          style={[
-                            styles.scoreCell,
-                            {
-                              width: 32,
-                              textAlign: 'right',
-                              fontWeight: 700,
-                              color: s.approval_rate >= 90 ? '#556b2f'
-                                : s.approval_rate >= 70 ? '#a9a454'
-                                : '#ef4444',
-                            },
-                          ]}
-                        >
-                          {s.approval_rate}%
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                  {data.supplier_scorecard.length > 12 && (
-                    <Text style={{ fontSize: 8, color: '#888', marginTop: 6, textAlign: 'right' }}>
-                      +{data.supplier_scorecard.length - 12} more exporters
-                    </Text>
-                  )}
-                </View>
-              )}
-            </View>
-          </View>
-        </View>
+        )}
 
         {Footer('Page 2 of 3 · Quality')}
       </Page>
@@ -494,16 +517,22 @@ export function WeeklySSCertsReport({
       {/* ============ Page 3 — Certificate appendix ============ */}
       <Page size="A4" orientation="landscape" style={styles.page}>
         {Header}
-        <Text style={styles.titleBar}>Certificate appendix · {data.totals.certificate_count} approved certificate{data.totals.certificate_count === 1 ? '' : 's'}</Text>
+        <Text style={styles.titleBar}>
+          Certificate appendix · {data.totals.certificate_count} approved certificate{data.totals.certificate_count === 1 ? '' : 's'}
+        </Text>
 
         <View style={styles.table}>
           <View style={styles.tableHeaderRow} fixed>
             <Text style={[styles.tableHeaderCell, { width: COLS.approvalDate }]}>Approval date</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.certificateNumber }]}>Certificate #</Text>
-            <Text style={[styles.tableHeaderCell, { width: COLS.exporter }]}>Exporter</Text>
+            <Text style={[styles.tableHeaderCell, { width: COLS.exporter }]}>Shipper</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.importer }]}>Importer</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.importerContract }]}>Importer contract</Text>
-            <Text style={[styles.tableHeaderCell, { width: COLS.roasterDestination }]}>Roaster destination</Text>
+            {!hideRoasterCol && (
+              <Text style={[styles.tableHeaderCell, { width: (COLS as typeof COLS_WITH_ROASTER).roasterDestination }]}>
+                Roaster destination
+              </Text>
+            )}
             <Text style={[styles.tableHeaderCell, { width: COLS.container }]}>Container</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.icoMarks }]}>ICO marks</Text>
             <Text style={[styles.tableHeaderCell, { width: COLS.bags, textAlign: 'right' }]}>Bags</Text>
@@ -527,7 +556,11 @@ export function WeeklySSCertsReport({
                 <Text style={[styles.tableCell, { width: COLS.exporter }]}>{r.exporter_name || '—'}</Text>
                 <Text style={[styles.tableCell, { width: COLS.importer }]}>{r.importer_name || '—'}</Text>
                 <Text style={[styles.tableCell, { width: COLS.importerContract }]}>{r.importer_contract_nr || '—'}</Text>
-                <Text style={[styles.tableCell, { width: COLS.roasterDestination }]}>{r.roaster_name || '—'}</Text>
+                {!hideRoasterCol && (
+                  <Text style={[styles.tableCell, { width: (COLS as typeof COLS_WITH_ROASTER).roasterDestination }]}>
+                    {r.roaster_name || '—'}
+                  </Text>
+                )}
                 <Text style={[styles.tableCell, { width: COLS.container }]}>{r.container_nr || '—'}</Text>
                 <Text style={[styles.tableCell, { width: COLS.icoMarks }]}>{r.ico_marks || '—'}</Text>
                 <Text style={[styles.tableCell, { width: COLS.bags, textAlign: 'right' }]}>{r.bags ?? '—'}</Text>
@@ -544,7 +577,9 @@ export function WeeklySSCertsReport({
               <Text style={[styles.totalCell, { width: COLS.exporter }]}></Text>
               <Text style={[styles.totalCell, { width: COLS.importer }]}></Text>
               <Text style={[styles.totalCell, { width: COLS.importerContract }]}></Text>
-              <Text style={[styles.totalCell, { width: COLS.roasterDestination }]}></Text>
+              {!hideRoasterCol && (
+                <Text style={[styles.totalCell, { width: (COLS as typeof COLS_WITH_ROASTER).roasterDestination }]}></Text>
+              )}
               <Text style={[styles.totalCell, { width: COLS.container }]}></Text>
               <Text style={[styles.totalCell, { width: COLS.icoMarks }]}></Text>
               <Text style={[styles.totalCell, { width: COLS.bags, textAlign: 'right' }]}>
