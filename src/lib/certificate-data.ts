@@ -856,7 +856,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       status: resolveStatus(sample.status, certificate, contractOverride?.certificateData),
       // Persisted at intake via the quality-step multi-select; null when none.
       // The cert PDF's CertificateQualityDescription handles the null case.
-      certifications: (sample as any).certifications ?? null,
+      certifications: sample.certifications ?? null,
       crop_year: sample.crop_year ?? null,
     },
     supplyChain: {

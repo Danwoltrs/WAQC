@@ -7134,6 +7134,7 @@ export type Database = {
           calculated_lab_fee: number | null
           cards_printed_at: string | null
           certificate_generated_at: string | null
+          certifications: string[] | null
           client_id: string | null
           container: string | null
           container_nr: string | null
@@ -7198,6 +7199,7 @@ export type Database = {
           calculated_lab_fee?: number | null
           cards_printed_at?: string | null
           certificate_generated_at?: string | null
+          certifications?: string[] | null
           client_id?: string | null
           container?: string | null
           container_nr?: string | null
@@ -7262,6 +7264,7 @@ export type Database = {
           calculated_lab_fee?: number | null
           cards_printed_at?: string | null
           certificate_generated_at?: string | null
+          certifications?: string[] | null
           client_id?: string | null
           container?: string | null
           container_nr?: string | null
