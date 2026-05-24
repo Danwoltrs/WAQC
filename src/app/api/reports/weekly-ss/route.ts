@@ -61,6 +61,10 @@ export async function GET(request: NextRequest) {
     })
   } catch (error) {
     console.error('Error in GET /api/reports/weekly-ss:', error)
-    return NextResponse.json({ error: 'Failed to generate report' }, { status: 500 })
+    const message = error instanceof Error ? error.message : String(error)
+    return NextResponse.json(
+      { error: `Failed to generate report: ${message}` },
+      { status: 500 },
+    )
   }
 }
