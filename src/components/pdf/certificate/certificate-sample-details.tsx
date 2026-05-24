@@ -59,6 +59,7 @@ export interface CertificateSampleDetailsProps {
   equivalent60kgBags: number | null
   // Sample info
   sampleType: string | null
+  processingMethod?: string | null
   containerNumber?: string | null
   icoNumber: string | null
   // Region/micro-origin
@@ -156,9 +157,28 @@ function formatSampleType(sampleType: string | null): string {
   return typeMap[normalized] || sampleType
 }
 
+function formatProcessingMethod(method: string | null | undefined): string | null {
+  if (!method) return null
+  // DB stores values like 'Natural', 'Washed', etc. Sample is normalised lowercase/snake on some legacy rows.
+  const normalised = method.toLowerCase().replace(/[_\-\s]/g, '_')
+  const map: Record<string, string> = {
+    natural: 'Natural',
+    washed: 'Washed',
+    fully_washed: 'Fully Washed',
+    semi_washed: 'Semi-Washed',
+    honey: 'Honey',
+    pulped_natural: 'Pulped Natural',
+    wet_hulled: 'Wet Hulled',
+    anaerobic: 'Anaerobic',
+    carbonic_maceration: 'Carbonic Maceration',
+  }
+  return map[normalised] || method
+}
+
 export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
   const {
     sampleType,
+    processingMethod,
     containerNumber,
     icoNumber,
     microOrigin,
@@ -168,6 +188,7 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
 
   const quantity = formatQuantity(props)
   const formattedType = formatSampleType(sampleType)
+  const formattedProcess = formatProcessingMethod(processingMethod)
 
   // Build items array - only include items with values
   const items: { label: string; value: string | React.ReactNode }[] = []
@@ -190,6 +211,11 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
   // Sample type
   if (formattedType !== 'N/A') {
     items.push({ label: 'Type', value: formattedType })
+  }
+
+  // Processing method (Natural, Washed, Honey, etc.)
+  if (formattedProcess) {
+    items.push({ label: 'Process', value: formattedProcess })
   }
 
   // Container# and/or ICO#

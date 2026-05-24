@@ -162,7 +162,7 @@ export function QualityCertificate({
           hasClientLogo={!!clientLogoBase64}
         />
 
-        {/* 3. Sample Details Row - Quantity, type, container# */}
+        {/* 3. Sample Details Row - Quantity, type, process, container# */}
         <CertificateSampleDetails
           bagsQuantityMt={sample.bags_quantity_mt}
           bagType={sample.bag_type}
@@ -170,6 +170,7 @@ export function QualityCertificate({
           bagWeightKg={sample.bag_weight_kg}
           equivalent60kgBags={sample.equivalent_60kg_bags}
           sampleType={sample.sample_type}
+          processingMethod={sample.processing_method}
           containerNumber={sample.container_nr}
           icoNumber={sample.ico_number}
           microOrigin={sample.micro_origin}
