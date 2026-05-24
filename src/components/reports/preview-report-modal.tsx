@@ -125,8 +125,11 @@ export function PreviewReportModal({
       <Dialog open={open} onOpenChange={onOpenChange}>
         {/* Override default Dialog max-width — we want near-full-screen so the
             PDF preview is actually readable. */}
-        <DialogContent className="max-w-[1400px] w-[95vw] h-[92vh] p-0 gap-0 flex flex-col">
-          <DialogHeader className="px-5 py-3 border-b flex-row items-center justify-between space-y-0">
+        {/* `[&>button]:hidden` hides Radix's built-in close X (top-right of
+            DialogContent) — we render our own X inside the header row so the
+            Download / Send / Close controls all line up. */}
+        <DialogContent className="max-w-[1400px] w-[95vw] h-[92vh] p-0 gap-0 flex flex-col [&>button]:hidden">
+          <DialogHeader className="px-5 py-2 border-b flex-row items-center justify-between space-y-0">
             <div className="flex items-center gap-3">
               <DialogTitle className="text-sm">
                 Weekly SS Certificates · {clientName}
