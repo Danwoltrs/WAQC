@@ -248,29 +248,37 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     return null
   }
 
-  // Fetch client
-  let client = null
+  // Fetch client (now from companies + qc_client_settings)
+  let client: any = null
   if (sample.client_id) {
-    const { data } = await supabase
-      .from('clients')
-      .select('id, name, company, fantasy_name, logo_url, certificate_validity_enabled, certificate_validity_months, client_types, country')
+    const { data } = await (supabase as any)
+      .from('companies')
+      .select(`
+        id, name, fantasy_name, logo_url, country,
+        company_types, trading_roles,
+        qc_settings:qc_client_settings(certificate_validity_enabled, certificate_validity_months)
+      `)
       .eq('id', sample.client_id)
       .single()
-    client = data
+    if (data) {
+      const settings = Array.isArray(data.qc_settings) ? data.qc_settings[0] : data.qc_settings
+      client = {
+        ...data,
+        company: data.fantasy_name || data.name,
+        client_types: data.company_types ?? [],  // legacy alias
+        certificate_validity_enabled: settings?.certificate_validity_enabled ?? null,
+        certificate_validity_months: settings?.certificate_validity_months ?? null,
+      }
+    }
   }
 
-  // Check if client is an end_client (like Dunkin') - they shouldn't appear in supply chain
-  const isEndClient = client?.client_types?.includes('end_client') ?? false
-
-  // Check if client is an importer type (importer_buyer, importer, etc.)
-  const isImporterClient = client?.client_types?.some(t =>
-    t.includes('importer')
-  ) ?? false
-
-  // Check if client is a roaster type (roaster_final_buyer, roaster, etc.)
-  const isRoasterClient = client?.client_types?.some(t =>
-    t.includes('roaster')
-  ) ?? false
+  // Role detection — post-consolidation uses companies.company_types[] and trading_roles[].
+  // Legacy names (end_client → final_buyer; importer_buyer → buyer trading_role) are mapped per migration #2.
+  const companyTypes: string[] = client?.company_types ?? []
+  const tradingRoles: string[] = client?.trading_roles ?? []
+  const isEndClient = companyTypes.includes('final_buyer')
+  const isImporterClient = tradingRoles.includes('buyer')
+  const isRoasterClient = companyTypes.includes('roaster')
 
   // Fetch laboratory
   let laboratory = null
@@ -283,23 +291,28 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     laboratory = data
   }
 
-  // Fetch supply chain entities in parallel
-  // Seller (supplier/farm/coop) uses seller_id which references exporters table
+  // Fetch supply chain entities in parallel — all from companies post-consolidation.
+  // Each role-specific FK on samples (exporter_id, importer_id, etc.) points at companies(id).
   const [exporterResult, importerResult, roasterResult, sellerResult, endClientResult] = await Promise.all([
     sample.exporter_id
-      ? supabase.from('exporters').select('name, country').eq('id', sample.exporter_id).single()
+      ? (supabase as any).from('companies').select('name, country').eq('id', sample.exporter_id).single()
       : Promise.resolve({ data: null }),
     sample.importer_id
-      ? supabase.from('importers').select('name, country').eq('id', sample.importer_id).single()
+      ? (supabase as any).from('companies').select('name, country').eq('id', sample.importer_id).single()
       : Promise.resolve({ data: null }),
     sample.roaster_id
-      ? supabase.from('roasters').select('name, country').eq('id', sample.roaster_id).single()
+      ? (supabase as any).from('companies').select('name, country').eq('id', sample.roaster_id).single()
       : Promise.resolve({ data: null }),
     sample.seller_id
-      ? supabase.from('exporters').select('name, country').eq('id', sample.seller_id).single()
+      ? (supabase as any).from('companies').select('name, country').eq('id', sample.seller_id).single()
       : Promise.resolve({ data: null }),
     sample.end_client_id
-      ? supabase.from('clients').select('company, fantasy_name, country').eq('id', sample.end_client_id).single()
+      ? (supabase as any)
+          .from('companies')
+          .select('fantasy_name, name, country')
+          .eq('id', sample.end_client_id)
+          .single()
+          .then(({ data }: any) => ({ data: data ? { ...data, company: data.fantasy_name || data.name } : null }))
       : Promise.resolve({ data: null }),
   ])
 
@@ -759,17 +772,17 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         *,
         importer:importers(name, country),
         roaster:roasters(name, country),
-        end_client:clients!sample_contracts_end_client_id_fkey(fantasy_name, company, country),
-        qc_client:clients!sample_contracts_client_id_fkey(fantasy_name, company, country, client_types)
+        end_client:companies!sample_contracts_end_client_id_fkey(fantasy_name, name, country),
+        qc_client:companies!sample_contracts_client_id_fkey(fantasy_name, name, country, company_types, trading_roles)
       `)
       .eq('id', contractId)
       .single()
 
     if (contract) {
-      const scQcClient = contract.qc_client || client
-      const scQcClientName = scQcClient?.fantasy_name ?? scQcClient?.company ?? null
-      const scIsImporterClient = scQcClient?.client_types?.some((t: string) => t.includes('importer')) ?? false
-      const scIsRoasterClient = scQcClient?.client_types?.some((t: string) => t.includes('roaster')) ?? false
+      const scQcClient: any = contract.qc_client || client
+      const scQcClientName = scQcClient?.fantasy_name ?? scQcClient?.name ?? null
+      const scIsImporterClient = (scQcClient?.trading_roles ?? []).includes('buyer')
+      const scIsRoasterClient = (scQcClient?.company_types ?? []).includes('roaster')
 
       // Fetch sub-contract's certificate
       const { data: scCert } = await supabase

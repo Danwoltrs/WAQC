@@ -38,11 +38,11 @@ export async function GET(
     // Also fetch the mother sample's QC client name for fallback
     const { data: sample } = await (supabase as any)
       .from('samples')
-      .select('client_id, clients!samples_client_id_fkey(id, fantasy_name, company)')
+      .select('client_id, clients:companies!samples_client_id_fkey(id, fantasy_name, name)')
       .eq('id', sampleId)
       .single()
 
-    const motherQcClientName = sample?.clients?.fantasy_name || sample?.clients?.company || null
+    const motherQcClientName = sample?.clients?.fantasy_name || sample?.clients?.name || null
 
     const transformed = (contracts || []).map((c: any) => {
       const qcClientName = c.qc_client?.fantasy_name || c.qc_client?.company || motherQcClientName
@@ -260,25 +260,25 @@ export async function POST(
           ? `R-${contract.tracking_number}`
           : contract.tracking_number
 
-        // Get issued_to from mother sample's client
-        const { data: motherSample } = await supabase
+        // Get issued_to from mother sample's client (now companies)
+        const { data: motherSample } = await (supabase as any)
           .from('samples')
-          .select('client_id, clients!samples_client_id_fkey(fantasy_name, company)')
+          .select('client_id, clients:companies!samples_client_id_fkey(fantasy_name, name)')
           .eq('id', sampleId)
           .single()
 
-        const motherClient = motherSample?.clients as { fantasy_name?: string; company?: string } | null
-        let issuedTo = motherClient?.fantasy_name || motherClient?.company || 'Unknown Client'
+        const motherClient = motherSample?.clients as { fantasy_name?: string; name?: string } | null
+        let issuedTo = motherClient?.fantasy_name || motherClient?.name || 'Unknown Client'
 
         // If sub-contract has a different QC client, use that name
         if (contract.client_id && contract.client_id !== motherSample?.client_id) {
-          const { data: subClient } = await supabase
-            .from('clients')
-            .select('fantasy_name, company')
+          const { data: subClient } = await (supabase as any)
+            .from('companies')
+            .select('fantasy_name, name')
             .eq('id', contract.client_id)
             .single()
           if (subClient) {
-            issuedTo = subClient.fantasy_name || subClient.company || issuedTo
+            issuedTo = subClient.fantasy_name || subClient.name || issuedTo
           }
         }
 

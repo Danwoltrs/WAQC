@@ -26,15 +26,23 @@ export async function GET(
     const { searchParams } = new URL(request.url)
     const exportFormat = searchParams.get('format') || 'csv'
 
-    // Fetch client details
-    const { data: client, error: clientError } = await supabase
-      .from('clients')
-      .select('name, company, fantasy_name')
+    // Fetch client (now a company) details
+    const { data: companyRow, error: clientError } = await (supabase as any)
+      .from('companies')
+      .select('name, fantasy_name')
       .eq('id', id)
+      .eq('is_qc_client', true)
       .single()
 
-    if (clientError || !client) {
+    if (clientError || !companyRow) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
+    // Preserve the legacy "client" shape (company === fantasy_name fallback)
+    const client = {
+      name: companyRow.name,
+      company: companyRow.fantasy_name || companyRow.name,
+      fantasy_name: companyRow.fantasy_name,
     }
 
     // Fetch all samples with related data

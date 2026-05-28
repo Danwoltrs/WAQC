@@ -159,9 +159,9 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
 
   const loadEntityOptions = useCallback(async () => {
     const [importerRes, roasterRes, clientRes] = await Promise.all([
-      supabase.from('importers').select('id, name').order('name'),
-      supabase.from('roasters').select('id, name').order('name'),
-      supabase.from('clients').select('id, fantasy_name, company').eq('is_qc_client', true).order('fantasy_name'),
+      (supabase as any).from('companies').select('id, name').filter('trading_roles', 'cs', '["buyer"]').order('name'),
+      (supabase as any).from('companies').select('id, name').contains('company_types', ['roaster']).order('name'),
+      (supabase as any).from('companies').select('id, fantasy_name, name').eq('is_qc_client', true).order('fantasy_name'),
     ])
 
     const dedup = (items: Array<{ id: string; name: string | null }>) => {
@@ -175,9 +175,9 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
 
     setImporters(dedup((importerRes.data || []).map(i => ({ id: i.id, name: i.name }))))
     setRoasters(dedup((roasterRes.data || []).map(r => ({ id: r.id, name: r.name }))))
-    setQcClients((clientRes.data || []).map(c => ({
+    setQcClients((clientRes.data || []).map((c: any) => ({
       id: c.id,
-      name: (c.fantasy_name || c.company) as string
+      name: (c.fantasy_name || c.name) as string
     })))
   }, [supabase])
 

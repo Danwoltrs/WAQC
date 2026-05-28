@@ -16,10 +16,10 @@ export default function TestClientAnalyticsPage() {
 
   useEffect(() => {
     async function fetchClients() {
-      const { data } = await supabase
-        .from('clients')
-        .select('id, name, company')
-        .eq('qc_enabled', true)
+      const { data } = await (supabase as any)
+        .from('companies')
+        .select('id, name, fantasy_name')
+        .eq('is_qc_client', true)
         .limit(10)
 
       if (data) {
@@ -31,7 +31,7 @@ export default function TestClientAnalyticsPage() {
 
   const handleClientSelect = (client: any) => {
     setClientId(client.id)
-    setClientName(client.name || client.company)
+    setClientName(client.fantasy_name || client.name)
     setShowAnalytics(true)
   }
 
@@ -72,7 +72,7 @@ export default function TestClientAnalyticsPage() {
                   onClick={() => handleClientSelect(client)}
                   className="justify-start"
                 >
-                  {client.name || client.company}
+                  {client.fantasy_name || client.name}
                 </Button>
               ))}
             </div>

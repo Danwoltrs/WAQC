@@ -29,11 +29,12 @@ export async function GET(
     const is_active = searchParams.get('is_active')
     const search = searchParams.get('search')
 
-    // Verify client exists
-    const { data: client, error: clientError } = await supabase
-      .from('clients')
+    // Verify QC client exists
+    const { data: client, error: clientError } = await (supabase as any)
+      .from('companies')
       .select('id')
       .eq('id', clientId)
+      .eq('is_qc_client', true)
       .single()
 
     if (clientError || !client) {
@@ -132,11 +133,12 @@ export async function POST(
     const { id: clientId } = await params
     const body = await request.json()
 
-    // Verify client exists
-    const { data: client, error: clientError } = await supabase
-      .from('clients')
+    // Verify QC client exists
+    const { data: client, error: clientError } = await (supabase as any)
+      .from('companies')
       .select('id')
       .eq('id', clientId)
+      .eq('is_qc_client', true)
       .single()
 
     if (clientError || !client) {

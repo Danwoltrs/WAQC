@@ -260,14 +260,14 @@ async function autoCertifyIfReady(
       ? `R-${sample.tracking_number}`
       : sample.tracking_number
 
-    // Get client info for issued_to
-    const { data: client } = await supabaseAdmin
-      .from('clients')
-      .select('name, company, fantasy_name')
+    // Get client info for issued_to (now from companies)
+    const { data: client } = await (supabaseAdmin as any)
+      .from('companies')
+      .select('name, fantasy_name')
       .eq('id', sample.client_id)
       .single()
 
-    const issuedTo = client?.fantasy_name || client?.company || client?.name || 'Unknown Client'
+    const issuedTo = client?.fantasy_name || client?.name || 'Unknown Client'
 
     const validFrom = new Date()
     const validUntil = new Date(validFrom)
@@ -326,13 +326,13 @@ async function autoCertifyIfReady(
             // Get sub-contract's QC client name (or fall back to mother's)
             let subIssuedTo = motherIssuedTo
             if (sc.client_id && sc.client_id !== sample.client_id) {
-              const { data: subClient } = await supabaseAdmin
-                .from('clients')
-                .select('fantasy_name, company')
+              const { data: subClient } = await (supabaseAdmin as any)
+                .from('companies')
+                .select('fantasy_name, name')
                 .eq('id', sc.client_id)
                 .single()
               if (subClient) {
-                subIssuedTo = subClient.fantasy_name || subClient.company || subIssuedTo
+                subIssuedTo = subClient.fantasy_name || subClient.name || subIssuedTo
               }
             }
 

@@ -22,9 +22,19 @@ import {
   ContractsStep,
   ContractSearchStep,
   ContractLinkBadge,
+  OtherSampleDetailsStep,
   createEmptyContract,
   SuccessView
 } from './intake'
+
+const OTHER_STEPS = [
+  { id: 1, name: 'Contract search', description: 'Optional — link to an existing sys.wolthers.com contract' },
+  { id: 2, name: 'Supply chain', description: '' },
+  { id: 3, name: 'Quality, origin, certifications', description: '' },
+  { id: 4, name: 'Quantity and shipment', description: '' },
+  { id: 5, name: 'Other sample details', description: 'Sub-type, AWB, recipients' },
+  { id: 6, name: 'Photo and review', description: '' },
+]
 
 // Timeout wrapper to prevent infinite hangs on Supabase queries
 async function withTimeout<T>(
@@ -55,6 +65,13 @@ interface SampleIntakeFormProps {
 }
 
 const initialFormData: FormData = {
+  // Category — defaults to existing QC flow
+  sample_category: 'qc',
+  awb_number: '',
+  courier_name: '',
+  is_quick_look: false,
+  recipients: [],
+
   // Step 2: Supply Chain
   seller: '',
   seller_contract_nr: '',
@@ -182,11 +199,15 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     localStorage.setItem('sample-intake-form', JSON.stringify(dataToSave))
   }, [formData, success])
 
-  // Validate seller from localStorage exists in exporters list, clear if stale
+  // Validate seller from localStorage exists in exporters list, clear if stale.
+  // Skip when a contract is currently linked — contract prefill is the source of
+  // truth in that case, and the seller name may be a brand-new exporter the user
+  // is about to create (the contract API auto-creates missing exporters, so this
+  // mostly just guards against the brief race before exporters reload).
   useEffect(() => {
     if (exporters.length === 0 || !formData.seller) return
+    if (formData.selected_contract) return
 
-    // Check if seller exists in exporters list (case-insensitive)
     const sellerExists = exporters.some(
       exp => exp.name.toLowerCase() === formData.seller.toLowerCase()
     )
@@ -195,7 +216,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       console.warn('[Sample Intake] Cached seller not found in exporters list, clearing:', formData.seller)
       setFormData(prev => ({ ...prev, seller: '' }))
     }
-  }, [exporters, formData.seller])
+  }, [exporters, formData.seller, formData.selected_contract])
 
   // Client auto-detection based on importer/seller names
   // For PSS/SS samples: importer or qc_client is the client (they own quality specs)
@@ -437,6 +458,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       next.contract_prefilled_fields = Array.from(newKeys)
       return next
     })
+    // The contract API auto-creates any exporters/importers it didn't find in
+    // WAQC. Refresh the dropdown sources so the prefilled seller/shipper/importer
+    // show up as selected instead of triggering the "not found" warning.
+    loadExporters()
+    loadImporters()
   }
 
   // Unlink the current contract: clear selected_contract and reset every still-untouched
@@ -459,6 +485,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     })
   }
 
+  const isOther = formData.sample_category === 'other'
+
   const validateStep = (step: number): boolean => {
     switch (step) {
       case 1:
@@ -471,13 +499,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       case 3:
         // Step 3: Quality - Sample type, origin, and laboratory required
         // Quality spec required for PSS/SS samples
-        const baseQualityValidation = !!(
-          formData.sample_type &&
-          formData.origin &&
-          formData.laboratory_id
-        )
+        // For Other Samples, sample_type is captured in Step 5, so don't gate Step 3 on it.
+        const baseQualityValidation = isOther
+          ? !!(formData.origin && formData.laboratory_id)
+          : !!(formData.sample_type && formData.origin && formData.laboratory_id)
 
-        if (formData.sample_type === 'pss' || formData.sample_type === 'ss') {
+        if (!isOther && (formData.sample_type === 'pss' || formData.sample_type === 'ss')) {
           const hasImporterOrQcClient = formData.importer_is_qc_client
             ? !!formData.importer
             : !!(formData.importer || formData.qc_client)
@@ -489,10 +516,16 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         // Step 4: Weight
         return !!(formData.bags_quantity_mt || formData.bag_count)
       case 5:
-        // Step 5: Review
+        // Step 5: For QC = Review (arrival_date). For Other = sub-type + recipients.
+        if (isOther) {
+          return !!formData.sample_type && formData.recipients.length > 0
+        }
         return !!formData.arrival_date
       case 6:
-        // Step 6: Contracts - always valid (contracts are optional)
+        // Step 6: For QC = optional sub-contracts. For Other = Review (arrival_date).
+        if (isOther) {
+          return !!formData.arrival_date
+        }
         return true
       default:
         return false
@@ -545,8 +578,15 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const handleSubmit = async () => {
     console.log('[Sample Intake] handleSubmit called')
 
-    if (!validateStep(5)) {
+    // For QC the review lives on step 5; for Other on step 6.
+    const reviewStep = isOther ? 6 : 5
+    if (!validateStep(reviewStep)) {
       setError('Please complete all required fields')
+      return
+    }
+    // For Other Samples, also require the sub-type + recipients gate (step 5).
+    if (isOther && !validateStep(5)) {
+      setError('Pick a sample sub-type and at least one recipient')
       return
     }
 
@@ -580,7 +620,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         lookupKeys.push('seller')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('exporters').select('id, name').ilike('name', formData.seller).limit(1).maybeSingle(),
+            async () => (supabase as any).from('companies').select('id, name').or('trading_roles.cs.["seller"],company_types.cs.{exporter}').ilike('name', formData.seller).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Seller lookup timeout'
           ).catch(err => { console.error('[Seller lookup error]', err); return { data: null, error: err } })
@@ -594,7 +634,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         lookupKeys.push('shipper')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('exporters').select('id, name').ilike('name', formData.shipper).limit(1).maybeSingle(),
+            async () => (supabase as any).from('companies').select('id, name').or('trading_roles.cs.["seller"],company_types.cs.{exporter}').ilike('name', formData.shipper).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Shipper lookup timeout'
           ).catch(err => { console.error('[Shipper lookup error]', err); return { data: null, error: err } })
@@ -608,7 +648,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         // Always try importers table first (for importer_id FK)
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('importers').select('id').ilike('name', toPattern(formData.importer)).limit(1).maybeSingle(),
+            async () => (supabase as any).from('companies').select('id').filter('trading_roles', 'cs', '["buyer"]').ilike('name', toPattern(formData.importer)).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Importer lookup timeout'
           ).catch(err => { console.error('[Importer lookup error]', err); return { data: null, error: err } })
@@ -622,7 +662,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         lookupKeys.push('qc_client_fantasy')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('clients').select('id').eq('fantasy_name', qcClientSearchName).eq('is_qc_client', true).limit(1).maybeSingle(),
+            async () => (supabase as any).from('companies').select('id').eq('fantasy_name', qcClientSearchName).eq('is_qc_client', true).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'QC client fantasy lookup timeout'
           ).catch(err => { console.error('[QC client fantasy lookup error]', err); return { data: null, error: err } })
@@ -634,7 +674,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         lookupKeys.push('roaster')
         lookupPromises.push(
           withTimeout(
-            async () => supabase.from('roasters').select('id').ilike('name', formData.roaster).limit(1).maybeSingle(),
+            async () => (supabase as any).from('companies').select('id').contains('company_types', ['roaster']).ilike('name', formData.roaster).limit(1).maybeSingle(),
             LOOKUP_TIMEOUT,
             'Roaster lookup timeout'
           ).catch(err => { console.error('[Roaster lookup error]', err); return { data: null, error: err } })
@@ -647,8 +687,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         lookupKeys.push('end_client')
         lookupPromises.push(
           withTimeout(
-            async () => supabase
-              .from('clients')
+            async () => (supabase as any)
+              .from('companies')
               .select('id')
               .ilike('fantasy_name', formData.end_client.trim())
               .limit(1)
@@ -742,7 +782,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         bag_type: formData.bag_type || undefined,
         shipment_month: formData.shipment_month || undefined,
         status: 'received',
-        workflow_stage: 'received'
+        workflow_stage: 'received',
+        sample_category: formData.sample_category,
+        awb_number: formData.awb_number || undefined,
+        courier_name: formData.courier_name || undefined,
+        is_quick_look: formData.is_quick_look
       }
 
       console.log('[Sample Intake] Submitting sample with quality_name:', formData.quality_name, 'Processed:', sampleData.quality_name)
@@ -772,8 +816,31 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
       console.log('[Sample Intake] Sample created successfully:', result.sample.tracking_number)
 
-      // Create sub-contracts sequentially (to avoid tracking number race conditions)
       const createdSampleId = result.sample.id
+
+      // For Other Samples, persist the recipient list now that we have the sample id.
+      if (isOther && formData.recipients.length > 0) {
+        console.log('[Sample Intake] Creating', formData.recipients.length, 'sample recipients...')
+        try {
+          const recipResp = await fetch(`/api/samples/${createdSampleId}/recipients`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              recipients: formData.recipients.map(r => ({
+                client_id: r.client_id,
+                contact_emails: r.contact_emails,
+              })),
+            }),
+          })
+          if (!recipResp.ok) {
+            console.error('[Sample Intake] Failed to persist recipients (sample still created)')
+          }
+        } catch (recipErr) {
+          console.error('[Sample Intake] Error creating recipients:', recipErr)
+        }
+      }
+
+      // Create sub-contracts sequentially (to avoid tracking number race conditions)
       const subContractTrackingNumbers: string[] = []
 
       if (formData.contracts.length > 0) {
@@ -789,34 +856,34 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               if (sc.importer_is_qc_client) {
                 scKeys.push('sc_client')
                 scLookups.push(
-                  Promise.resolve(supabase.from('clients').select('id').eq('fantasy_name', sc.importer).eq('is_qc_client', true).limit(1).maybeSingle())
+                  Promise.resolve((supabase as any).from('companies').select('id').eq('fantasy_name', sc.importer).eq('is_qc_client', true).limit(1).maybeSingle())
                     .catch(() => ({ data: null, error: null }))
                 )
               }
               scKeys.push('sc_importer')
               scLookups.push(
-                Promise.resolve(supabase.from('importers').select('id').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
+                Promise.resolve((supabase as any).from('companies').select('id').filter('trading_roles', 'cs', '["buyer"]').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
                   .catch(() => ({ data: null, error: null }))
               )
             }
             if (sc.roaster) {
               scKeys.push('sc_roaster')
               scLookups.push(
-                Promise.resolve(supabase.from('roasters').select('id').ilike('name', sc.roaster).limit(1).maybeSingle())
+                Promise.resolve((supabase as any).from('companies').select('id').contains('company_types', ['roaster']).ilike('name', sc.roaster).limit(1).maybeSingle())
                   .catch(() => ({ data: null, error: null }))
               )
             }
             if (sc.end_client) {
               scKeys.push('sc_end_client')
               scLookups.push(
-                Promise.resolve(supabase.from('clients').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle())
+                Promise.resolve((supabase as any).from('companies').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle())
                   .catch(() => ({ data: null, error: null }))
               )
             }
             if (!sc.importer_is_qc_client && sc.qc_client) {
               scKeys.push('sc_qc_client')
               scLookups.push(
-                Promise.resolve(supabase.from('clients').select('id').eq('fantasy_name', sc.qc_client).eq('is_qc_client', true).limit(1).maybeSingle())
+                Promise.resolve((supabase as any).from('companies').select('id').eq('fantasy_name', sc.qc_client).eq('is_qc_client', true).limit(1).maybeSingle())
                   .catch(() => ({ data: null, error: null }))
               )
             }
@@ -907,8 +974,37 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     <FormWrapper className={asDialog ? '' : 'w-fit'}>
       <HeaderWrapper className={asDialog ? 'mb-4' : ''}>
         {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
+
+        {/* Category toggle — only meaningful on step 1 (before downstream fields diverge) */}
+        {currentStep === 1 && (
+          <div className="mt-3 inline-flex rounded-lg border border-input p-1 text-xs">
+            <button
+              type="button"
+              onClick={() => updateFormData('sample_category', 'qc')}
+              className={`px-3 py-1.5 rounded-md transition-colors ${
+                formData.sample_category === 'qc'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              QC Sample
+            </button>
+            <button
+              type="button"
+              onClick={() => updateFormData('sample_category', 'other')}
+              className={`px-3 py-1.5 rounded-md transition-colors ${
+                formData.sample_category === 'other'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+            >
+              Other Sample
+            </button>
+          </div>
+        )}
+
         <div className="flex gap-2 mt-4">
-          {STEPS.map((step) => (
+          {(isOther ? OTHER_STEPS : STEPS).map((step) => (
             <div
               key={step.id}
               className={`flex-1 h-2 rounded-full transition-colors ${
@@ -918,7 +1014,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           ))}
         </div>
         <div className="mt-2">
-          <p className="text-sm font-medium">Sample Intake - {STEPS[currentStep - 1].name}</p>
+          <p className="text-sm font-medium">
+            {isOther ? 'Other Sample Intake' : 'Sample Intake'} - {(isOther ? OTHER_STEPS : STEPS)[currentStep - 1].name}
+          </p>
         </div>
       </HeaderWrapper>
 
@@ -996,31 +1094,54 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           )}
 
           {currentStep === 5 && (
-            <SampleDetailsStep
-              formData={formData}
-              updateFormData={updateFormData}
-              clients={clients}
-              laboratories={laboratories}
-              filteredClients={filteredClients}
-              approvedPSSSamples={approvedPSSSamples}
-              onPhotoUpload={handlePhotoUpload}
-            />
+            isOther ? (
+              <OtherSampleDetailsStep
+                formData={formData}
+                updateFormData={updateFormData}
+                clients={clients}
+                laboratories={laboratories}
+                filteredClients={filteredClients}
+                approvedPSSSamples={approvedPSSSamples}
+              />
+            ) : (
+              <SampleDetailsStep
+                formData={formData}
+                updateFormData={updateFormData}
+                clients={clients}
+                laboratories={laboratories}
+                filteredClients={filteredClients}
+                approvedPSSSamples={approvedPSSSamples}
+                onPhotoUpload={handlePhotoUpload}
+              />
+            )
           )}
 
           {currentStep === 6 && (
-            <ContractsStep
-              formData={formData}
-              updateFormData={updateFormData}
-              clients={clients}
-              laboratories={laboratories}
-              filteredClients={filteredClients}
-              approvedPSSSamples={approvedPSSSamples}
-              importers={importers}
-              roasters={roasters}
-              qcClients={qcClients}
-              onAddContract={handleAddContract}
-              onRemoveContract={handleRemoveContract}
-            />
+            isOther ? (
+              <SampleDetailsStep
+                formData={formData}
+                updateFormData={updateFormData}
+                clients={clients}
+                laboratories={laboratories}
+                filteredClients={filteredClients}
+                approvedPSSSamples={approvedPSSSamples}
+                onPhotoUpload={handlePhotoUpload}
+              />
+            ) : (
+              <ContractsStep
+                formData={formData}
+                updateFormData={updateFormData}
+                clients={clients}
+                laboratories={laboratories}
+                filteredClients={filteredClients}
+                approvedPSSSamples={approvedPSSSamples}
+                importers={importers}
+                roasters={roasters}
+                qcClients={qcClients}
+                onAddContract={handleAddContract}
+                onRemoveContract={handleRemoveContract}
+              />
+            )
           )}
         </div>
 
@@ -1048,7 +1169,18 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               </Button>
             )}
 
-            {currentStep === 5 && (
+            {currentStep === 5 && isOther && (
+              <Button
+                type="button"
+                onClick={handleNext}
+                disabled={!validateStep(5)}
+              >
+                Next
+                <ChevronRight className="h-4 w-4 ml-1" />
+              </Button>
+            )}
+
+            {currentStep === 5 && !isOther && (
               <>
                 <Button
                   type="button"
@@ -1068,7 +1200,17 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               </>
             )}
 
-            {currentStep === 6 && (
+            {currentStep === 6 && isOther && (
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                disabled={loading || !validateStep(6)}
+              >
+                {loading ? 'Creating Sample...' : 'Create Sample'}
+              </Button>
+            )}
+
+            {currentStep === 6 && !isOther && (
               <>
                 <Button
                   type="button"

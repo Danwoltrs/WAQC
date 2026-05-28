@@ -218,14 +218,14 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        // Check for duplicate email
-        const { data: existingClient } = await supabase
-          .from('clients')
+        // Check for duplicate email (against the consolidated companies table)
+        const { data: existingCompany } = await (supabase as any)
+          .from('companies')
           .select('id')
           .eq('email', clientData.email)
-          .single()
+          .maybeSingle()
 
-        if (existingClient) {
+        if (existingCompany) {
           errors.push({
             row: rowNumber,
             field: 'email',
@@ -240,22 +240,53 @@ export async function POST(request: NextRequest) {
           clientData.is_active = true
         }
 
-        // Insert client
-        const { error: insertError } = await supabase
-          .from('clients')
-          .insert(clientData)
+        // Split the CSV row into (companies, qc_client_settings) fields and insert both
+        const { splitClientPayload } = await import('@/lib/qc-client-mapper')
+        const { companyFields, settingsFields } = splitClientPayload({
+          ...clientData,
+          is_qc_client: clientData.is_qc_client ?? true,
+        })
 
-        if (insertError) {
-          console.error('Error inserting client:', insertError)
+        const { data: createdCompany, error: insertError } = await (supabase as any)
+          .from('companies')
+          .insert({
+            ...companyFields,
+            is_active: companyFields.is_active ?? true,
+          })
+          .select('id')
+          .single()
+
+        if (insertError || !createdCompany) {
+          console.error('Error inserting company:', insertError)
           errors.push({
             row: rowNumber,
             field: 'general',
-            message: insertError.message || 'Failed to insert client'
+            message: insertError?.message || 'Failed to insert client'
           })
           failedCount++
-        } else {
-          successCount++
+          continue
         }
+
+        if (Object.keys(settingsFields).length > 0) {
+          const { error: settingsError } = await (supabase as any)
+            .from('qc_client_settings')
+            .insert({ company_id: createdCompany.id, ...settingsFields })
+
+          if (settingsError) {
+            console.error('Error inserting qc_client_settings:', settingsError)
+            // Roll back the company so we don't leave a half-created client
+            await (supabase as any).from('companies').delete().eq('id', createdCompany.id)
+            errors.push({
+              row: rowNumber,
+              field: 'general',
+              message: settingsError.message || 'Failed to insert QC settings'
+            })
+            failedCount++
+            continue
+          }
+        }
+
+        successCount++
       } catch (error: any) {
         console.error(`Error processing row ${rowNumber}:`, error)
         errors.push({

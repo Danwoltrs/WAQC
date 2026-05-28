@@ -20,16 +20,22 @@ export async function GET(
 
     const { id } = await params
 
-    // Check if client exists
-    const { data: client, error: clientError } = await supabase
-      .from('clients')
-      .select('id, name, has_origin_pricing')
+    // Check if QC client exists; read has_origin_pricing from qc_client_settings
+    const { data: company, error: companyError } = await (supabase as any)
+      .from('companies')
+      .select('id, name, qc_client_settings(has_origin_pricing)')
       .eq('id', id)
+      .eq('is_qc_client', true)
       .single()
 
-    if (clientError || !client) {
+    if (companyError || !company) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
+
+    const settings = Array.isArray(company.qc_client_settings)
+      ? company.qc_client_settings[0]
+      : company.qc_client_settings
+    const hasOriginPricing = settings?.has_origin_pricing ?? false
 
     // Fetch all origin pricing for this client
     const { data: originPricing, error } = await supabase
@@ -45,7 +51,7 @@ export async function GET(
 
     return NextResponse.json({
       client_id: id,
-      has_origin_pricing: client.has_origin_pricing,
+      has_origin_pricing: hasOriginPricing,
       origin_pricing: originPricing || [],
     })
   } catch (error) {
@@ -96,14 +102,15 @@ export async function POST(
       }, { status: 400 })
     }
 
-    // Check if client exists
-    const { data: client, error: clientError } = await supabase
-      .from('clients')
+    // Check if QC client exists
+    const { data: company, error: companyError } = await (supabase as any)
+      .from('companies')
       .select('id')
       .eq('id', id)
+      .eq('is_qc_client', true)
       .single()
 
-    if (clientError || !client) {
+    if (companyError || !company) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
@@ -132,11 +139,10 @@ export async function POST(
       }, { status: 500 })
     }
 
-    // Update client to mark it has origin pricing
-    await supabase
-      .from('clients')
-      .update({ has_origin_pricing: true })
-      .eq('id', id)
+    // Update qc_client_settings to mark this company has origin pricing
+    await (supabase as any)
+      .from('qc_client_settings')
+      .upsert({ company_id: id, has_origin_pricing: true }, { onConflict: 'company_id' })
 
     return NextResponse.json({ origin_pricing: originPricing })
   } catch (error) {

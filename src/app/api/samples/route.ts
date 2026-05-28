@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { activities } from '@/lib/notifications'
+import { sendAwbArrivalEmail } from '@/lib/email/awb-arrival'
 
 type Sample = Database['public']['Tables']['samples']['Row']
 type SampleInsert = Database['public']['Tables']['samples']['Insert']
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
     const origin = searchParams.get('origin')
     const quality_spec_id = searchParams.get('quality_spec_id')
     const sample_type = searchParams.get('sample_type')
+    const sample_category = searchParams.get('sample_category')
     const workflow_stage = searchParams.get('workflow_stage')
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
@@ -42,14 +44,15 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
-        seller:exporters!samples_seller_id_fkey(id, name, country),
-        exporter:exporters!samples_exporter_id_fkey(id, name, country),
-        importer:importers(id, name, country),
-        roaster:roasters(id, name, country),
-        qc_client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
-        end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
+        seller:companies!samples_seller_id_fkey(id, name, country),
+        exporter:companies!samples_exporter_id_fkey(id, name, country),
+        importer:companies!samples_importer_id_fkey(id, name, country),
+        roaster:companies!samples_roaster_id_fkey(id, name, country),
+        qc_client:companies!samples_client_id_fkey(id, name, fantasy_name, country, client_types:company_types),
+        end_client:companies!samples_end_client_id_fkey(id, name, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
-        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt)
+        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt),
+        sample_recipients(id, status)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -62,6 +65,7 @@ export async function GET(request: NextRequest) {
     if (origin) query = query.eq('origin', origin)
     if (quality_spec_id) query = query.eq('quality_spec_id', quality_spec_id)
     if (sample_type) query = query.eq('sample_type', sample_type as Database['public']['Enums']['sample_type_enum'])
+    if (sample_category) query = query.eq('sample_category', sample_category)
     if (workflow_stage) query = query.eq('workflow_stage', workflow_stage)
 
     const { data: samples, error } = await query
@@ -83,6 +87,7 @@ export async function GET(request: NextRequest) {
     if (origin) countQuery = countQuery.eq('origin', origin)
     if (quality_spec_id) countQuery = countQuery.eq('quality_spec_id', quality_spec_id)
     if (sample_type) countQuery = countQuery.eq('sample_type', sample_type as Database['public']['Enums']['sample_type_enum'])
+    if (sample_category) countQuery = countQuery.eq('sample_category', sample_category)
     if (workflow_stage) countQuery = countQuery.eq('workflow_stage', workflow_stage)
 
     const { count } = await countQuery
@@ -100,16 +105,16 @@ export async function GET(request: NextRequest) {
 
     const entityMaps = { importers: {} as Record<string, string>, roasters: {} as Record<string, string>, clients: {} as Record<string, string> }
     if (importerIds.length > 0) {
-      const { data } = await supabase.from('importers').select('id, name').in('id', importerIds)
+      const { data } = await (supabase as any).from('companies').select('id, name').in('id', importerIds)
       for (const r of data || []) entityMaps.importers[r.id] = r.name || ''
     }
     if (roasterIds.length > 0) {
-      const { data } = await supabase.from('roasters').select('id, name').in('id', roasterIds)
+      const { data } = await (supabase as any).from('companies').select('id, name').in('id', roasterIds)
       for (const r of data || []) entityMaps.roasters[r.id] = r.name || ''
     }
     if (clientIds.length > 0) {
-      const { data } = await supabase.from('clients').select('id, fantasy_name, company').in('id', clientIds)
-      for (const r of (data || []) as any[]) entityMaps.clients[r.id] = r.fantasy_name || r.company || ''
+      const { data } = await (supabase as any).from('companies').select('id, fantasy_name, name').in('id', clientIds)
+      for (const r of (data || []) as any[]) entityMaps.clients[r.id] = r.fantasy_name || r.name || ''
     }
 
     // Transform samples to include flattened entity names
@@ -401,7 +406,11 @@ export async function POST(request: NextRequest) {
         processing_method: body.processing_method || null,
         crop_year: body.crop_year || null,
         workflow_stage: body.workflow_stage || 'received',
-        assigned_to: body.assigned_to || null
+        assigned_to: body.assigned_to || null,
+        sample_category: body.sample_category || 'qc',
+        awb_number: body.awb_number || null,
+        courier_name: body.courier_name || null,
+        is_quick_look: body.is_quick_look ?? false
       }
 
       const { data: insertedSample, error: insertError } = await (supabase as any)
@@ -444,13 +453,13 @@ export async function POST(request: NextRequest) {
     // Get client name for activity logging (only if client_id is provided)
     let clientName = 'Unknown Client'
     if (clientId) {
-      const { data: client } = await supabase
-        .from('clients')
-        .select('company')
+      const { data: client } = await (supabase as any)
+        .from('companies')
+        .select('fantasy_name, name')
         .eq('id', clientId)
         .single()
 
-      clientName = client?.company || 'Unknown Client'
+      clientName = client?.fantasy_name || client?.name || 'Unknown Client'
     }
 
     // Log activity
@@ -460,6 +469,39 @@ export async function POST(request: NextRequest) {
       clientName,
       body.laboratory_id
     )
+
+    // AWB buyer notification (Other Samples) — fire-and-forget; never block sample creation.
+    if (sample.sample_category === 'other' && sample.awb_number && sample.end_client_id) {
+      try {
+        const { data: buyer } = await (supabase as any)
+          .from('companies')
+          .select('email, fantasy_name, name')
+          .eq('id', sample.end_client_id)
+          .single()
+
+        if (buyer?.email) {
+          const { data: senderProfile } = await supabase
+            .from('profiles')
+            .select('full_name')
+            .eq('id', user.id)
+            .single()
+
+          await sendAwbArrivalEmail({
+            trackingNumber: sample.tracking_number,
+            awbNumber: sample.awb_number,
+            courierName: sample.courier_name,
+            buyerName: buyer.fantasy_name || buyer.name || 'Buyer',
+            buyerEmail: buyer.email,
+            sampleSubType: sample.sample_type,
+            origin: sample.origin,
+            qualityName: sample.quality_name,
+            senderName: (senderProfile as any)?.full_name || null,
+          })
+        }
+      } catch (notifyErr) {
+        console.error('[Sample POST] AWB notification failed:', notifyErr)
+      }
+    }
 
     return NextResponse.json({ sample }, { status: 201 })
   } catch (error: any) {

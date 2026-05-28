@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { QC_CLIENT_SELECT, mapCompanyToClient } from '@/lib/qc-client-mapper'
 
 /**
  * GET /api/clients/export
@@ -15,16 +16,19 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Fetch all clients
-    const { data: clients, error } = await supabase
-      .from('clients')
-      .select('*')
+    // Fetch all QC clients (companies + qc_client_settings)
+    const { data: rows, error } = await (supabase as any)
+      .from('companies')
+      .select(QC_CLIENT_SELECT)
+      .eq('is_qc_client', true)
       .order('name', { ascending: true })
 
     if (error) {
       console.error('Error fetching clients:', error)
       return NextResponse.json({ error: 'Failed to fetch clients' }, { status: 500 })
     }
+
+    const clients = (rows || []).map(mapCompanyToClient).filter(Boolean) as Record<string, unknown>[]
 
     // CSV headers
     const headers = [
@@ -86,7 +90,7 @@ export async function GET() {
     const csvRows = [
       headers.join(','),
       ...clients.map(client =>
-        headers.map(header => escapeCSV(client[header as keyof typeof client])).join(',')
+        headers.map(header => escapeCSV(client[header])).join(',')
       )
     ]
 

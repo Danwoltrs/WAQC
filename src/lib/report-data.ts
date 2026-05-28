@@ -104,23 +104,23 @@ export async function getWeeklySSCertReportData(
 ): Promise<WeeklySSCertReportData | null> {
   const { clientId, startDate, endDate } = params
 
-  const { data: client, error: clientError } = await supabase
-    .from('clients')
-    .select('id, name, company, fantasy_name, logo_url, client_types')
+  const { data: client, error: clientError } = await (supabase as any)
+    .from('companies')
+    .select('id, name, fantasy_name, logo_url, company_types, trading_roles')
     .eq('id', clientId)
     .single()
   if (clientError || !client) {
     console.error('[report-data] client not found:', clientId, clientError)
     return null
   }
-  const clientTypes = ((client as any).client_types as string[] | null) ?? []
-  const clientIsRoaster = clientTypes.some(
+  // Post-consolidation: roaster lives in company_types, "importer" maps to trading_roles 'buyer'.
+  const companyTypes: string[] = client.company_types ?? []
+  const tradingRoles: string[] = client.trading_roles ?? []
+  const clientIsRoaster = companyTypes.some(
     t => typeof t === 'string' && t.toLowerCase() === 'roaster',
   )
-  const clientIsImporter = clientTypes.some(
-    t => typeof t === 'string' && t.toLowerCase().includes('importer'),
-  )
-  const clientDisplay = (client as any).fantasy_name || (client as any).company || client.name
+  const clientIsImporter = tradingRoles.includes('buyer')
+  const clientDisplay = client.fantasy_name || client.name
 
   // Sankey shape is purely a function of client_types — see ClientSankeyType.
   // Order matters: importer wins over roaster (an importer-roaster still

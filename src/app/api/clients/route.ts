@@ -1,20 +1,27 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/database.types'
 import { activities } from '@/lib/notifications'
-
-type ClientInsert = Database['public']['Tables']['clients']['Insert']
+import {
+  QC_CLIENT_SELECT,
+  mapCompanyToClient,
+  splitClientPayload,
+  fetchClientById,
+} from '@/lib/qc-client-mapper'
 
 /**
  * GET /api/clients
- * List all clients with optional filtering
- * Query params: search, limit, offset
+ * List QC clients with optional filtering.
+ *
+ * Post-consolidation: reads from companies (filtered by is_qc_client = true
+ * unless caller explicitly says otherwise) joined with qc_client_settings.
+ * The response keeps the legacy "client" shape — see qc-client-mapper.ts.
+ *
+ * Query params: search, client_types, is_active, is_qc_client, limit, offset
  */
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
 
-    // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -28,69 +35,56 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '50')
     const offset = parseInt(searchParams.get('offset') || '0')
 
-    // Parse client_types filter (comma-separated list)
-    let clientTypesFilter: string[] = []
-    if (clientTypesParam) {
-      clientTypesFilter = clientTypesParam.split(',').map(t => t.trim())
-    }
+    const clientTypesFilter = clientTypesParam
+      ? clientTypesParam.split(',').map(t => t.trim()).filter(Boolean)
+      : []
 
-    // Build query - type assertion to avoid deep instantiation issues
+    // Default to is_qc_client=true unless caller explicitly disables it,
+    // matching the legacy clients table which only held QC clients.
+    const isQcClient = isQcClientParam === null ? true : isQcClientParam === 'true'
+
     let query = (supabase as any)
-      .from('clients')
-      .select('*')
+      .from('companies')
+      .select(QC_CLIENT_SELECT)
+      .eq('is_qc_client', isQcClient)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
 
-    // Apply search filter
     if (search) {
-      query = query.or(`name.ilike.%${search}%,company.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
+      query = query.or(`name.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
     }
 
-    // Apply client_types filter (array overlap)
     if (clientTypesFilter.length > 0) {
-      query = query.overlaps('client_types', clientTypesFilter)
+      query = query.overlaps('company_types', clientTypesFilter)
     }
 
-    // Apply is_active filter
-    if (isActiveParam) {
-      const isActive = isActiveParam === 'true'
-      query = query.eq('is_active', isActive)
+    if (isActiveParam !== null) {
+      query = query.eq('is_active', isActiveParam === 'true')
     }
 
-    // Apply is_qc_client filter
-    if (isQcClientParam) {
-      const isQcClient = isQcClientParam === 'true'
-      query = query.eq('is_qc_client', isQcClient)
-    }
-
-    const { data: clients, error } = await query
+    const { data, error } = await query
 
     if (error) {
       console.error('Error fetching clients:', error)
       return NextResponse.json({ error: 'Failed to fetch clients' }, { status: 500 })
     }
 
-    // Get total count for pagination
+    const clients = (data || []).map(mapCompanyToClient).filter(Boolean)
+
+    // Pagination count — same filters as the data query
     let countQuery = (supabase as any)
-      .from('clients')
-      .select('*', { count: 'exact', head: true })
+      .from('companies')
+      .select('id', { count: 'exact', head: true })
+      .eq('is_qc_client', isQcClient)
 
     if (search) {
-      countQuery = countQuery.or(`name.ilike.%${search}%,company.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
+      countQuery = countQuery.or(`name.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
     }
-
     if (clientTypesFilter.length > 0) {
-      countQuery = countQuery.overlaps('client_types', clientTypesFilter)
+      countQuery = countQuery.overlaps('company_types', clientTypesFilter)
     }
-
-    if (isActiveParam) {
-      const isActive = isActiveParam === 'true'
-      countQuery = countQuery.eq('is_active', isActive)
-    }
-
-    if (isQcClientParam) {
-      const isQcClient = isQcClientParam === 'true'
-      countQuery = countQuery.eq('is_qc_client', isQcClient)
+    if (isActiveParam !== null) {
+      countQuery = countQuery.eq('is_active', isActiveParam === 'true')
     }
 
     const { count } = await countQuery
@@ -101,8 +95,8 @@ export async function GET(request: NextRequest) {
         total: count || 0,
         limit,
         offset,
-        hasMore: (offset + limit) < (count || 0)
-      }
+        hasMore: (offset + limit) < (count || 0),
+      },
     })
   } catch (error) {
     console.error('Error in GET /api/clients:', error)
@@ -112,13 +106,18 @@ export async function GET(request: NextRequest) {
 
 /**
  * POST /api/clients
- * Create a new client
+ * Create a new QC client.
+ *
+ * Post-consolidation:
+ *   - If a company with the same email or name already exists, surface a 409
+ *     so the caller can choose to "enable QC on this existing company" instead.
+ *   - Otherwise create the companies row, then the qc_client_settings row,
+ *     and return the joined "client" shape.
  */
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
 
-    // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -126,94 +125,85 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
 
-    // Validate required fields
     if (!body.name || !body.company) {
       return NextResponse.json({
-        error: 'Missing required fields: name, company'
+        error: 'Missing required fields: name, company',
       }, { status: 400 })
     }
 
-    // Check for duplicate clients by email
+    // Dedupe by email — match legacy behavior so callers don't double-create
     if (body.email) {
-      const { data: duplicates, error: dupError } = await (supabase as any)
-        .from('clients')
-        .select('id, name, company, email')
+      const { data: dupes } = await (supabase as any)
+        .from('companies')
+        .select('id, name, fantasy_name, email')
         .eq('email', body.email)
         .limit(1)
 
-      if (dupError) {
-        console.error('Error checking for duplicates:', dupError)
-      } else if (duplicates && duplicates.length > 0) {
+      if (dupes && dupes.length > 0) {
         return NextResponse.json({
           error: 'Duplicate client detected',
-          message: `A client with this email address already exists`,
-          existing_client: duplicates[0]
+          message: 'A company with this email address already exists',
+          existing_client: dupes[0],
         }, { status: 409 })
       }
     }
 
-    // Prepare client data
-    const clientData: ClientInsert = {
-      name: body.name,
-      company: body.company,
-      fantasy_name: body.fantasy_name || body.company,
-      address: body.address || '',
-      city: body.city,
-      state: body.state,
-      country: body.country,
-      zip_code: body.zip_code,
-      email: body.email,
-      phone: body.phone,
-      vat_number: body.vat_number,
-      client_types: body.client_types || [], // Array of client types
-      is_qc_client: body.is_qc_client !== undefined ? body.is_qc_client : true,
-      // Pricing fields
-      pricing_model: body.pricing_model || 'per_sample',
-      price_per_sample: body.price_per_sample,
-      price_per_pound_cents: body.price_per_pound_cents,
-      currency: body.currency || 'USD',
-      fee_payer: body.fee_payer || 'client_pays',
-      payment_terms: body.payment_terms,
-      billing_notes: body.billing_notes,
-      billing_basis: body.billing_basis || 'approved_only',
-      has_origin_pricing: body.has_origin_pricing || false,
-      tracking_number_format: body.tracking_number_format,
-      certificate_pattern: body.certificate_pattern, // Certificate numbering pattern
-      qc_enabled: body.qc_enabled !== undefined ? body.qc_enabled : true,
-      company_id: body.company_id, // Link to companies table if imported
-      legacy_client_id: body.legacy_client_id, // For imported clients
-      logo_url: body.logo_url, // Company logo for certificates
-    }
+    // Always treat new POSTs as QC clients (matches legacy default)
+    const payload = { ...body, is_qc_client: body.is_qc_client !== false }
+    const { companyFields, settingsFields } = splitClientPayload(payload)
 
-    // Insert client
-    const { data: client, error: insertError } = await (supabase as any)
-      .from('clients')
-      .insert(clientData)
-      .select()
+    // Insert into companies first
+    const { data: createdCompany, error: insertError } = await (supabase as any)
+      .from('companies')
+      .insert({
+        ...companyFields,
+        is_active: companyFields.is_active ?? true,
+      })
+      .select('id, name, fantasy_name')
       .single()
 
-    if (insertError) {
-      console.error('Error creating client:', insertError)
+    if (insertError || !createdCompany) {
+      console.error('Error creating company:', insertError)
       return NextResponse.json({
         error: 'Failed to create client',
-        details: insertError.message
+        details: insertError?.message,
       }, { status: 500 })
     }
 
-    // Get user's laboratory for activity logging
+    // Then insert the qc_client_settings row (only if it's actually a QC client)
+    if (payload.is_qc_client !== false) {
+      const { error: settingsError } = await (supabase as any)
+        .from('qc_client_settings')
+        .insert({
+          company_id: createdCompany.id,
+          ...settingsFields,
+        })
+
+      if (settingsError) {
+        console.error('Error creating qc_client_settings:', settingsError)
+        // Roll back the company so we don't leave a half-created client
+        await (supabase as any).from('companies').delete().eq('id', createdCompany.id)
+        return NextResponse.json({
+          error: 'Failed to create QC settings',
+          details: settingsError.message,
+        }, { status: 500 })
+      }
+    }
+
+    // Activity log
     const { data: profile } = await (supabase as any)
       .from('profiles')
       .select('laboratory_id')
       .eq('id', user.id)
       .single()
 
-    // Log activity
     await activities.clientCreated(
-      client.id,
-      client.company,
-      profile?.laboratory_id || undefined
+      createdCompany.id,
+      createdCompany.fantasy_name || createdCompany.name,
+      profile?.laboratory_id || undefined,
     )
 
+    const client = await fetchClientById(supabase, createdCompany.id)
     return NextResponse.json({ client }, { status: 201 })
   } catch (error) {
     console.error('Error in POST /api/clients:', error)

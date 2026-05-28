@@ -42,17 +42,18 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Get client info to show format being used
-    const { data: client } = await supabase
-      .from('clients')
-      .select('name, company, tracking_number_format')
+    // Get client info to show format being used (joined from companies + qc_client_settings)
+    const { data: client } = await (supabase as any)
+      .from('companies')
+      .select('name, fantasy_name, qc_settings:qc_client_settings(tracking_number_format)')
       .eq('id', client_id)
       .single()
 
+    const qcSettings = Array.isArray(client?.qc_settings) ? client.qc_settings[0] : client?.qc_settings
     return NextResponse.json({
       tracking_number: trackingNumber,
-      client: (client as any)?.company || 'Unknown',
-      format_used: (client as any)?.tracking_number_format || 'WAQC-{lab}-{year}-{seq:05d}'
+      client: client?.fantasy_name || client?.name || 'Unknown',
+      format_used: qcSettings?.tracking_number_format || 'WAQC-{lab}-{year}-{seq:05d}'
     })
   } catch (error) {
     console.error('Error in POST /api/samples/tracking-numbers:', error)

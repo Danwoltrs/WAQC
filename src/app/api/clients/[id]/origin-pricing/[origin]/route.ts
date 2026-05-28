@@ -42,11 +42,10 @@ export async function DELETE(
       .eq('client_id', id)
 
     if (!countError && count === 0) {
-      // No more origin pricing, update client flag
-      await supabase
-        .from('clients')
-        .update({ has_origin_pricing: false })
-        .eq('id', id)
+      // No more origin pricing — clear the flag in qc_client_settings
+      await (supabase as any)
+        .from('qc_client_settings')
+        .upsert({ company_id: id, has_origin_pricing: false }, { onConflict: 'company_id' })
     }
 
     return NextResponse.json({ success: true })

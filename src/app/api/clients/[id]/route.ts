@@ -1,18 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/database.types'
+import {
+  QC_CLIENT_SELECT,
+  mapCompanyToClient,
+  splitClientPayload,
+  fetchClientById,
+} from '@/lib/qc-client-mapper'
 
-type ClientUpdate = Database['public']['Tables']['clients']['Update']
-
-// Helper to check if a string is a valid UUID
 function isUUID(str: string): boolean {
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-  return uuidRegex.test(str)
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str)
 }
 
 /**
  * GET /api/clients/[id]
- * Get a single client by ID or slug
+ * Fetch one QC client (company + qc_client_settings) plus its sample/quality/cert summary.
+ *
+ * Slug-based lookup is no longer supported post-consolidation — companies has no
+ * slug column. UI links should already use UUIDs.
  */
 export async function GET(
   request: NextRequest,
@@ -21,21 +25,20 @@ export async function GET(
   try {
     const supabase = await createClient()
 
-    // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { id } = await params
+    if (!isUUID(id)) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
 
-    // Check if id is a UUID or slug and query accordingly
-    const lookupField = isUUID(id) ? 'id' : 'slug'
-
-    const { data: client, error } = await supabase
-      .from('clients')
-      .select('*')
-      .eq(lookupField, id)
+    const { data: companyRow, error } = await (supabase as any)
+      .from('companies')
+      .select(QC_CLIENT_SELECT)
+      .eq('id', id)
       .single()
 
     if (error) {
@@ -46,19 +49,19 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to fetch client' }, { status: 500 })
     }
 
-    // Fetch associated samples with recent history (use client.id not the slug param)
-    const { data: samples, error: samplesError } = await supabase
+    const client = mapCompanyToClient(companyRow)
+    if (!client) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
+    // Samples linked to this company (as the QC client)
+    const { data: samples } = await (supabase as any)
       .from('samples')
       .select('id, tracking_number, origin, status, created_at, quality_spec_id')
-      .eq('client_id', client.id)
+      .eq('client_id', id)
       .order('created_at', { ascending: false })
       .limit(50)
 
-    if (samplesError) {
-      console.error('Error fetching samples:', samplesError)
-    }
-
-    // Calculate sample metrics
     const sampleMetrics = {
       total: samples?.length || 0,
       received: samples?.filter((s: any) => s.status === 'received').length || 0,
@@ -68,8 +71,8 @@ export async function GET(
       rejected: samples?.filter((s: any) => s.status === 'rejected').length || 0,
     }
 
-    // Fetch quality specifications assigned to this client (use client.id not the slug param)
-    const { data: qualitySpecs, error: specsError } = await supabase
+    // Quality specs (client_qualities.client_id now points at companies(id) post #5)
+    const { data: qualitySpecs } = await (supabase as any)
       .from('client_qualities')
       .select(`
         id,
@@ -83,20 +86,17 @@ export async function GET(
           parameters
         )
       `)
-      .eq('client_id', client.id)
+      .eq('client_id', id)
 
-    if (specsError) {
-      console.error('Error fetching quality specs:', specsError)
-    }
-
-    // Fetch certificates count
-    const { count: certificatesCount, error: certsError } = await supabase
-      .from('certificates')
-      .select('*', { count: 'exact', head: true })
-      .in('sample_id', samples?.map((s: any) => s.id) || [])
-
-    if (certsError) {
-      console.error('Error fetching certificates count:', certsError)
+    // Certificate count via the sample list
+    const sampleIds = (samples || []).map((s: any) => s.id)
+    let certificatesCount = 0
+    if (sampleIds.length > 0) {
+      const { count } = await (supabase as any)
+        .from('certificates')
+        .select('*', { count: 'exact', head: true })
+        .in('sample_id', sampleIds)
+      certificatesCount = count || 0
     }
 
     return NextResponse.json({
@@ -104,7 +104,7 @@ export async function GET(
       samples: samples || [],
       sampleMetrics,
       qualitySpecs: qualitySpecs || [],
-      certificatesCount: certificatesCount || 0,
+      certificatesCount,
     })
   } catch (error) {
     console.error('Error in GET /api/clients/[id]:', error)
@@ -114,7 +114,11 @@ export async function GET(
 
 /**
  * PATCH /api/clients/[id]
- * Update a client by ID or slug
+ * Update a QC client. Fields are routed to companies vs qc_client_settings
+ * based on the registry in qc-client-mapper.ts.
+ *
+ * If the company doesn't yet have a qc_client_settings row (e.g. it was a
+ * trade-only company being upgraded to QC), an INSERT is performed instead.
  */
 export async function PATCH(
   request: NextRequest,
@@ -123,86 +127,65 @@ export async function PATCH(
   try {
     const supabase = await createClient()
 
-    // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { id } = await params
-    const body = await request.json()
-
-    // Check if id is a UUID or slug and query accordingly
-    const lookupField = isUUID(id) ? 'id' : 'slug'
-
-    // Check if exists
-    const { data: existing, error: fetchError } = await supabase
-      .from('clients')
-      .select('id')
-      .eq(lookupField, id)
-      .single()
-
-    if (fetchError || !existing) {
+    if (!isUUID(id)) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    // Prepare update data
-    const updateData: any = {}
-    const allowedFields = [
-      'name',
-      'company',
-      'fantasy_name',
-      'address',
-      'city',
-      'state',
-      'country',
-      'zip_code',
-      'email',
-      'phone',
-      'vat_number',
-      'client_types',
-      'is_qc_client',
-      'pricing_model',
-      'price_per_sample',
-      'price_per_pound_cents',
-      'currency',
-      'fee_payer',
-      'payment_terms',
-      'billing_notes',
-      'billing_basis',
-      'has_origin_pricing',
-      'tracking_number_format',
-      'certificate_pattern',
-      'qc_enabled',
-      'company_id',
-      'legacy_client_id',
-      'logo_url',
-      'certificate_validity_enabled',
-      'certificate_validity_months',
-    ]
+    const body = await request.json()
+    const { companyFields, settingsFields } = splitClientPayload(body)
 
-    for (const field of allowedFields) {
-      if (body[field] !== undefined) {
-        updateData[field] = body[field]
+    // Confirm the company exists
+    const { data: existing } = await (supabase as any)
+      .from('companies')
+      .select('id')
+      .eq('id', id)
+      .single()
+
+    if (!existing) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
+    // Update companies if there's anything to write
+    if (Object.keys(companyFields).length > 0) {
+      const { error: companyError } = await (supabase as any)
+        .from('companies')
+        .update(companyFields)
+        .eq('id', id)
+
+      if (companyError) {
+        console.error('Error updating company:', companyError)
+        return NextResponse.json({
+          error: 'Failed to update client',
+          details: companyError.message,
+        }, { status: 500 })
       }
     }
 
-    // Update client using the actual UUID
-    const { data: client, error: updateError } = await supabase
-      .from('clients')
-      .update(updateData)
-      .eq('id', existing.id)
-      .select()
-      .single()
+    // Upsert qc_client_settings if there's anything to write
+    if (Object.keys(settingsFields).length > 0) {
+      const { error: settingsError } = await (supabase as any)
+        .from('qc_client_settings')
+        .upsert(
+          { company_id: id, ...settingsFields },
+          { onConflict: 'company_id' }
+        )
 
-    if (updateError) {
-      console.error('Error updating client:', updateError)
-      return NextResponse.json({
-        error: 'Failed to update client',
-        details: updateError.message
-      }, { status: 500 })
+      if (settingsError) {
+        console.error('Error updating qc_client_settings:', settingsError)
+        return NextResponse.json({
+          error: 'Failed to update QC settings',
+          details: settingsError.message,
+        }, { status: 500 })
+      }
     }
 
+    const client = await fetchClientById(supabase, id)
     return NextResponse.json({ client })
   } catch (error) {
     console.error('Error in PATCH /api/clients/[id]:', error)
@@ -212,7 +195,14 @@ export async function PATCH(
 
 /**
  * DELETE /api/clients/[id]
- * Delete a client by ID or slug
+ * Remove a QC client.
+ *
+ * Behavior:
+ *   - Without ?force=true: returns linked-records counts so the UI can confirm.
+ *   - With ?force=true: nullifies sample/contract FKs, removes the qc_client_settings
+ *     row, and flips companies.is_qc_client = false. The company itself is NOT
+ *     deleted — it may still be a counterparty on other trades. To fully purge
+ *     a company, manage it on sys.wolthers.com.
  */
 export async function DELETE(
   request: NextRequest,
@@ -221,29 +211,26 @@ export async function DELETE(
   try {
     const supabase = await createClient()
 
-    // Check authentication
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
     const { id } = await params
-
-    // Check if id is a UUID or slug and query accordingly
-    const lookupField = isUUID(id) ? 'id' : 'slug'
-
-    // First lookup the client to get UUID
-    const { data: client, error: fetchError } = await supabase
-      .from('clients')
-      .select('id')
-      .eq(lookupField, id)
-      .single()
-
-    if (fetchError || !client) {
+    if (!isUUID(id)) {
       return NextResponse.json({ error: 'Client not found' }, { status: 404 })
     }
 
-    // Check for linked records and return counts
+    const { data: company } = await (supabase as any)
+      .from('companies')
+      .select('id')
+      .eq('id', id)
+      .single()
+
+    if (!company) {
+      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    }
+
     const force = request.nextUrl.searchParams.get('force') === 'true'
 
     const [
@@ -253,11 +240,11 @@ export async function DELETE(
       { count: contractEndClientCount },
       { count: qualityCount },
     ] = await Promise.all([
-      supabase.from('samples').select('*', { count: 'exact', head: true }).eq('client_id', client.id),
-      supabase.from('samples').select('*', { count: 'exact', head: true }).eq('end_client_id', client.id),
-      supabase.from('sample_contracts').select('*', { count: 'exact', head: true }).eq('client_id', client.id),
-      supabase.from('sample_contracts').select('*', { count: 'exact', head: true }).eq('end_client_id', client.id),
-      supabase.from('client_qualities').select('*', { count: 'exact', head: true }).eq('client_id', client.id),
+      (supabase as any).from('samples').select('*', { count: 'exact', head: true }).eq('client_id', id),
+      (supabase as any).from('samples').select('*', { count: 'exact', head: true }).eq('end_client_id', id),
+      (supabase as any).from('sample_contracts').select('*', { count: 'exact', head: true }).eq('client_id', id),
+      (supabase as any).from('sample_contracts').select('*', { count: 'exact', head: true }).eq('end_client_id', id),
+      (supabase as any).from('client_qualities').select('*', { count: 'exact', head: true }).eq('client_id', id),
     ])
 
     const linkedRecords = {
@@ -265,10 +252,9 @@ export async function DELETE(
       contracts: (contractClientCount || 0) + (contractEndClientCount || 0),
       qualities: qualityCount || 0,
     }
-    const hasLinkedRecords = linkedRecords.samples > 0 || linkedRecords.contracts > 0 || linkedRecords.qualities > 0
+    const hasLinked = linkedRecords.samples > 0 || linkedRecords.contracts > 0 || linkedRecords.qualities > 0
 
-    // If linked records exist and force not set, return the counts for confirmation dialog
-    if (hasLinkedRecords && !force) {
+    if (hasLinked && !force) {
       return NextResponse.json({
         error: 'confirm_delete',
         linked_records: linkedRecords,
@@ -276,39 +262,32 @@ export async function DELETE(
       }, { status: 409 })
     }
 
-    // Delete linked quality specifications first (to avoid FK violations)
     if (linkedRecords.qualities > 0) {
-      await supabase.from('client_qualities').delete().eq('client_id', client.id)
+      await (supabase as any).from('client_qualities').delete().eq('client_id', id)
     }
-
-    // Nullify FK references in samples and contracts so the client can be deleted
     if (linkedRecords.samples > 0) {
-      await supabase.from('samples').update({ client_id: null } as any).eq('client_id', client.id)
-      await supabase.from('samples').update({ end_client_id: null } as any).eq('end_client_id', client.id)
+      await (supabase as any).from('samples').update({ client_id: null }).eq('client_id', id)
+      await (supabase as any).from('samples').update({ end_client_id: null }).eq('end_client_id', id)
     }
     if (linkedRecords.contracts > 0) {
-      await supabase.from('sample_contracts').update({ client_id: null } as any).eq('client_id', client.id)
-      await supabase.from('sample_contracts').update({ end_client_id: null } as any).eq('end_client_id', client.id)
+      await (supabase as any).from('sample_contracts').update({ client_id: null }).eq('client_id', id)
+      await (supabase as any).from('sample_contracts').update({ end_client_id: null }).eq('end_client_id', id)
     }
 
-    // Delete client using actual UUID
-    const { error: deleteError } = await supabase
-      .from('clients')
-      .delete()
-      .eq('id', client.id)
+    // Remove QC enrollment: drop settings row, flip the flag.
+    // qc_client_settings has ON DELETE CASCADE on company_id, but we're not
+    // deleting the company itself.
+    await (supabase as any).from('qc_client_settings').delete().eq('company_id', id)
+    const { error: flagError } = await (supabase as any)
+      .from('companies')
+      .update({ is_qc_client: false })
+      .eq('id', id)
 
-    if (deleteError) {
-      console.error('Error deleting client:', deleteError)
-      // Provide user-friendly message for FK constraint violations
-      if (deleteError.message?.includes('foreign key') || deleteError.message?.includes('violates') || deleteError.code === '23503') {
-        return NextResponse.json({
-          error: 'Cannot delete client: it is still referenced by other records. Check samples, contracts, or certificates linked to this client.',
-          details: deleteError.message
-        }, { status: 400 })
-      }
+    if (flagError) {
+      console.error('Error removing QC client status:', flagError)
       return NextResponse.json({
-        error: 'Failed to delete client',
-        details: deleteError.message
+        error: 'Failed to remove QC client status',
+        details: flagError.message,
       }, { status: 500 })
     }
 

@@ -56,52 +56,149 @@ export async function GET(
     const shipperName = (c.shipper?.fantasy_name || c.shipper?.name || '').trim() || null
     const sameAsSeller = !c.shipper_id || c.shipper_id === c.seller_id
 
-    // Helper: case-insensitive exact-name lookup on the exporters table.
-    // Returns up to 5 candidate ids so the UI can flag ambiguity.
-    const lookupExporters = async (name: string | null): Promise<string[]> => {
+    // Escape Postgres LIKE wildcards so they can't widen the substring fallback.
+    const escapeLike = (s: string) => s.replace(/[\\%_]/g, ch => `\\${ch}`)
+
+    // Helper: try exact (ilike) first, then substring fallback (`%name%`) for
+    // cases like contract says "Cooxupé" but WAQC has "Cooperativa Cooxupé".
+    // Substring fallback requires name >= 4 chars to avoid pathological matches.
+    const lookupOrCreateExporter = async (name: string | null): Promise<string[]> => {
       if (!name) return []
-      const { data } = await (supabase as any)
-        .from('exporters')
+      // Match against companies that are sellers/exporters
+      const exporterFilter = 'trading_roles.cs.["seller"],company_types.cs.{exporter}'
+      const { data: exact } = await (supabase as any)
+        .from('companies')
         .select('id')
+        .or(exporterFilter)
         .ilike('name', name)
         .limit(5)
-      return (data || []).map((r: any) => r.id)
+      if (exact && exact.length > 0) return exact.map((r: any) => r.id)
+
+      if (name.length >= 4) {
+        const { data: sub } = await (supabase as any)
+          .from('companies')
+          .select('id')
+          .or(exporterFilter)
+          .ilike('name', `%${escapeLike(name)}%`)
+          .limit(5)
+        if (sub && sub.length > 0) return sub.map((r: any) => r.id)
+      }
+
+      // No match anywhere — auto-create a stub company tagged as exporter/seller
+      const { data: created, error: createErr } = await (supabase as any)
+        .from('companies')
+        .insert({
+          name,
+          company_types: ['exporter'],
+          trading_roles: ['seller'],
+          is_active: true,
+          is_qc_client: false,
+        })
+        .select('id')
+        .single()
+      if (createErr || !created) {
+        console.warn('[contracts/[id]] could not auto-create exporter for', name, createErr?.message)
+        return []
+      }
+      return [created.id]
     }
 
-    // The four resolution queries are independent of each other (they all derive
-    // from the already-loaded contract row), so run them in parallel to cut
-    // ~3 sequential round-trips of latency.
-    const [clientRes, importerRes, sellerIds, shipperIds] = await Promise.all([
-      // Pattern 1 — buyer → WAQC clients via clients.company_id FK.
-      // Prefer is_qc_client=true if multiple clients link to the same company.
-      c.buyer_id
-        ? (supabase as any)
-            .from('clients')
-            .select('id, is_qc_client')
-            .eq('company_id', c.buyer_id)
-            .order('is_qc_client', { ascending: false })
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      // Pattern 2a — buyer name → WAQC importers (exact case-insensitive match,
-      // mirroring the exporters strategy to avoid silent false-positive prefills).
-      buyerName
-        ? (supabase as any)
-            .from('importers')
-            .select('id')
-            .ilike('name', buyerName)
-            .limit(1)
-            .maybeSingle()
-        : Promise.resolve({ data: null }),
-      // Pattern 2b — seller → exporters.
-      lookupExporters(sellerName),
-      // Pattern 2b — shipper → exporters (skipped when same as seller).
-      sameAsSeller ? Promise.resolve<string[]>([]) : lookupExporters(shipperName),
+    // Resolve buyer → WAQC client. Two strategies:
+    //   1. clients.company_id FK (cleanest — but only set if someone manually linked the rows)
+    //   2. fallback: clients.fantasy_name / clients.company ilike buyerName
+    // When (2) succeeds, back-fill clients.company_id so future lookups skip the fallback.
+    const resolveClient = async () => {
+      // Post-consolidation: companies and "client" are the same UUID. If sys's
+      // buyer_id already exists in companies, use it directly — no fuzzy name
+      // matching needed when we have the canonical ID.
+      if (c.buyer_id) {
+        const { data } = await (supabase as any)
+          .from('companies')
+          .select('id, is_qc_client')
+          .eq('id', c.buyer_id)
+          .maybeSingle()
+        if (data) return data
+      }
+      if (!buyerName) return null
+
+      // Fallback by name — try fantasy_name then name on companies.
+      const tryMatch = async (column: 'fantasy_name' | 'name', pattern: string) => {
+        const { data } = await (supabase as any)
+          .from('companies')
+          .select('id, is_qc_client')
+          .ilike(column, pattern)
+          .order('is_qc_client', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        return data
+      }
+
+      let match = await tryMatch('fantasy_name', buyerName)
+      if (!match) match = await tryMatch('name', buyerName)
+      if (!match && buyerName.length >= 4) {
+        const wild = `%${escapeLike(buyerName)}%`
+        match = await tryMatch('fantasy_name', wild) || await tryMatch('name', wild)
+      }
+      return match
+    }
+
+    // The resolution queries are independent (derived from the contract row),
+    // so run them in parallel. Importer lookup-or-create is gated on whether
+    // the buyer turned out to be a QC client — if so, no separate importer row.
+    const [clientData, sellerIds, shipperIds] = await Promise.all([
+      resolveClient(),
+      lookupOrCreateExporter(sellerName),
+      sameAsSeller ? Promise.resolve<string[]>([]) : lookupOrCreateExporter(shipperName),
     ])
 
-    const resolved_client_id: string | null = clientRes?.data?.id ?? null
-    const importer_is_qc_client: boolean = !!clientRes?.data?.is_qc_client
-    const resolved_importer_id: string | null = importerRes?.data?.id ?? null
+    const resolved_client_id: string | null = clientData?.id ?? null
+    const importer_is_qc_client: boolean = !!clientData?.is_qc_client
+
+    // Only resolve / auto-create an importer when the buyer isn't already a QC
+    // client. Otherwise the QC client merges into the importer dropdown via the
+    // is_qc_client toggle, and creating a duplicate importer row would clutter.
+    let resolved_importer_id: string | null = null
+    if (!resolved_client_id && buyerName) {
+      const importerFilter = 'trading_roles.cs.["buyer"]'
+      const { data: exactImporter } = await (supabase as any)
+        .from('companies')
+        .select('id')
+        .filter('trading_roles', 'cs', '["buyer"]')
+        .ilike('name', buyerName)
+        .limit(1)
+        .maybeSingle()
+      if (exactImporter) {
+        resolved_importer_id = exactImporter.id
+      } else if (buyerName.length >= 4) {
+        const { data: subImporter } = await (supabase as any)
+          .from('companies')
+          .select('id')
+          .filter('trading_roles', 'cs', '["buyer"]')
+          .ilike('name', `%${escapeLike(buyerName)}%`)
+          .limit(1)
+          .maybeSingle()
+        if (subImporter) resolved_importer_id = subImporter.id
+      }
+      if (!resolved_importer_id) {
+        const { data: created, error: createErr } = await (supabase as any)
+          .from('companies')
+          .insert({
+            name: buyerName,
+            trading_roles: ['buyer'],
+            company_types: [],
+            is_active: true,
+            is_qc_client: false,
+          })
+          .select('id')
+          .single()
+        if (createErr || !created) {
+          console.warn('[contracts/[id]] could not auto-create importer for', buyerName, createErr?.message)
+        } else {
+          resolved_importer_id = created.id
+        }
+      }
+    }
+
     const candidate_seller_exporter_ids: string[] = sellerIds
     const candidate_shipper_exporter_ids: string[] = shipperIds
 

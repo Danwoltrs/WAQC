@@ -321,16 +321,16 @@ export function AddSubContractDialog({ open, onOpenChange, sample, onSuccess }: 
         if (sc.importer) {
           keys.push('importer')
           lookups.push(
-            Promise.resolve(supabase.from('importers').select('id').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
+            Promise.resolve((supabase as any).from('companies').select('id').filter('trading_roles', 'cs', '["buyer"]').ilike('name', `%${sc.importer}%`).limit(1).maybeSingle())
           )
         }
         if (sc.roaster) {
           keys.push('roaster')
-          lookups.push(Promise.resolve(supabase.from('roasters').select('id').ilike('name', sc.roaster).limit(1).maybeSingle()))
+          lookups.push(Promise.resolve((supabase as any).from('companies').select('id').contains('company_types', ['roaster']).ilike('name', sc.roaster).limit(1).maybeSingle()))
         }
         if (sc.end_client) {
           keys.push('end_client')
-          lookups.push(Promise.resolve(supabase.from('clients').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle()))
+          lookups.push(Promise.resolve((supabase as any).from('companies').select('id').ilike('fantasy_name', sc.end_client).limit(1).maybeSingle()))
         }
         const results = await Promise.all(lookups)
         const resolved: Record<string, string | undefined> = {}

@@ -444,13 +444,13 @@ async function createSubContractCertificates(
         // Get sub-contract's QC client name (or fall back to mother's)
         let subIssuedTo = motherIssuedTo
         if (sc.client_id && sc.client_id !== sample?.client_id) {
-          const { data: subClient } = await supabase
-            .from('clients')
-            .select('fantasy_name, company')
+          const { data: subClient } = await (supabase as any)
+            .from('companies')
+            .select('fantasy_name, name')
             .eq('id', sc.client_id)
             .single()
           if (subClient) {
-            subIssuedTo = subClient.fantasy_name || subClient.company || subIssuedTo
+            subIssuedTo = subClient.fantasy_name || subClient.name || subIssuedTo
           }
         }
 

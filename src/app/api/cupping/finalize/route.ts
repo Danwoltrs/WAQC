@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
     // Exclude soft-deleted samples
     const { data: sample, error: sampleError } = await supabaseAdmin
       .from('samples')
-      .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id, origin')
+      .select('id, tracking_number, client_id, workflow_stage, status, quality_spec_id, origin, sample_category')
       .eq('id', sample_id)
       .is('deleted_at', null)
       .single()
@@ -393,7 +393,11 @@ export async function POST(request: NextRequest) {
     const validUntil = new Date(validFrom)
     validUntil.setFullYear(validUntil.getFullYear() + 1)
 
-    if (hasGradingData) {
+    // Other Samples don't generate Wolthers certificates — clients approve them
+    // individually via the sample_recipients flow.
+    const skipCertificate = (sample as any).sample_category === 'other'
+
+    if (hasGradingData && !skipCertificate) {
       // Check if certificate already exists
       const { data: existingCert } = await supabaseAdmin
         .from('certificates')
@@ -431,14 +435,14 @@ export async function POST(request: NextRequest) {
 
         const certificateNumber = generatedCertNum as string
 
-        // Get client info for issued_to
-        const { data: client } = await supabaseAdmin
-          .from('clients')
-          .select('name, company, fantasy_name')
+        // Get client info for issued_to (now companies)
+        const { data: client } = await (supabaseAdmin as any)
+          .from('companies')
+          .select('name, fantasy_name')
           .eq('id', sample.client_id)
           .single()
 
-        const issuedTo = client?.fantasy_name || client?.company || client?.name || 'Unknown Client'
+        const issuedTo = client?.fantasy_name || client?.name || 'Unknown Client'
 
         // Create certificate with compliance info
         const { data: newCert, error: certError } = await supabaseAdmin
@@ -542,13 +546,13 @@ export async function POST(request: NextRequest) {
           .order('sort_order', { ascending: true })
 
         if (subContracts && subContracts.length > 0) {
-          // Get mother's client name for fallback
-          const { data: motherClient } = await supabaseAdmin
-            .from('clients')
-            .select('fantasy_name, company')
+          // Get mother's client name for fallback (now from companies)
+          const { data: motherClient } = await (supabaseAdmin as any)
+            .from('companies')
+            .select('fantasy_name, name')
             .eq('id', sample.client_id)
             .single()
-          const motherIssuedTo = motherClient?.fantasy_name || motherClient?.company || 'Unknown Client'
+          const motherIssuedTo = motherClient?.fantasy_name || motherClient?.name || 'Unknown Client'
 
           for (const sc of subContracts) {
             // Check if sub-contract certificate already exists
@@ -579,13 +583,13 @@ export async function POST(request: NextRequest) {
               // Get sub-contract's QC client name (or fall back to mother's)
               let subIssuedTo = motherIssuedTo
               if (sc.client_id && sc.client_id !== sample.client_id) {
-                const { data: subClient } = await supabaseAdmin
-                  .from('clients')
-                  .select('fantasy_name, company')
+                const { data: subClient } = await (supabaseAdmin as any)
+                  .from('companies')
+                  .select('fantasy_name, name')
                   .eq('id', sc.client_id)
                   .single()
                 if (subClient) {
-                  subIssuedTo = subClient.fantasy_name || subClient.company || subIssuedTo
+                  subIssuedTo = subClient.fantasy_name || subClient.name || subIssuedTo
                 }
               }
 

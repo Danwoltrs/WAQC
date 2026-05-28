@@ -124,18 +124,18 @@ export function CertificateEditDialog({
       setSample(sampleData)
       setFormData(sampleData)
 
-      // Load entities in parallel
+      // Load entities in parallel — all from companies, filtered by role/type
       const [exportersRes, importersRes, roastersRes, clientsRes] = await Promise.all([
-        supabase.from('exporters').select('id, name, country').order('name'),
-        supabase.from('importers').select('id, name, country').order('name'),
-        supabase.from('roasters').select('id, name, country').order('name'),
-        supabase.from('clients').select('id, fantasy_name, country').order('fantasy_name'),
+        (supabase as any).from('companies').select('id, name, country').or('trading_roles.cs.["seller"],company_types.cs.{exporter}').order('name'),
+        (supabase as any).from('companies').select('id, name, country').filter('trading_roles', 'cs', '["buyer"]').order('name'),
+        (supabase as any).from('companies').select('id, name, country').contains('company_types', ['roaster']).order('name'),
+        (supabase as any).from('companies').select('id, fantasy_name, name, country').eq('is_qc_client', true).order('fantasy_name'),
       ])
 
       setExporters(exportersRes.data || [])
       setImporters(importersRes.data || [])
       setRoasters(roastersRes.data || [])
-      setClients((clientsRes.data || []).map(c => ({ id: c.id, name: (c as any).fantasy_name || c.id, country: c.country })))
+      setClients((clientsRes.data || []).map((c: any) => ({ id: c.id, name: c.fantasy_name || c.name || c.id, country: c.country })))
     } catch (error) {
       console.error('Error loading data:', error)
       toast({

@@ -133,11 +133,11 @@ export function ClientAutoDetection({
   const findMatchingClients = async (meta: SampleMetadata): Promise<ClientMatch[]> => {
     const matches: ClientMatch[] = []
 
-    // Get all QC-enabled clients
-    const { data: clients } = await supabase
-      .from('clients')
-      .select('*')
-      .eq('qc_enabled', true)
+    // Get all QC-enabled clients (now from companies)
+    const { data: clients } = await (supabase as any)
+      .from('companies')
+      .select('id, name, fantasy_name, email, phone, country, company_types, trading_roles')
+      .eq('is_qc_client', true)
 
     if (!clients) return matches
 
