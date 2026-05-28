@@ -1,9 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { resolveSampleId } from '@/lib/sample-utils'
+import { canUserManageSample } from '@/lib/auth/sample-access'
+import { escapeHtml, isValidEmail } from '@/lib/html'
 import { Resend } from 'resend'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
+
+// Per-request cap to avoid runaway fan-out if recipients is misconfigured.
+const MAX_SENDS_PER_REQUEST = 50
 
 /**
  * POST /api/samples/[id]/send-to-recipients
@@ -13,6 +18,13 @@ const resend = new Resend(process.env.RESEND_API_KEY)
  * Updates each row's sent_at and flips the sample's status to 'sent_to_clients'.
  * No certificate PDF is generated; the email body summarizes the green analysis
  * and cupping aggregate from quality_assessments.
+ *
+ * Authorization: caller must be Wolthers staff with a sample-management role,
+ * or be bound to the sample's owning client/lab. See sample-access.ts.
+ *
+ * All DB-sourced fields are HTML-escaped before interpolation. Each recipient
+ * address is validated; addresses passed in `contact_emails` that don't pass
+ * a basic RFC 5322 shape check are dropped silently.
  */
 export async function POST(
   request: NextRequest,
@@ -29,6 +41,11 @@ export async function POST(
     const resolved = await resolveSampleId(supabase as any, id)
     if (!resolved.id) {
       return NextResponse.json({ error: resolved.error || 'Sample not found' }, { status: 404 })
+    }
+
+    const access = await canUserManageSample(supabase as any, user.id, resolved.id)
+    if (!access.allowed) {
+      return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
     const body = await request.json().catch(() => ({}))
@@ -53,7 +70,7 @@ export async function POST(
 
     let recipientQuery = (supabase as any)
       .from('sample_recipients')
-      .select('id, client_id, contact_emails, status, client:clients(id, fantasy_name, company, email)')
+      .select('id, client_id, contact_emails, status, client:companies!sample_recipients_client_id_fkey(id, fantasy_name, name, email)')
       .eq('sample_id', resolved.id)
 
     if (requestedIds && requestedIds.length > 0) {
@@ -66,12 +83,19 @@ export async function POST(
       return NextResponse.json({ error: 'No recipients found for this sample' }, { status: 400 })
     }
 
+    if (recipients.length > MAX_SENDS_PER_REQUEST) {
+      return NextResponse.json({
+        error: `Too many sends in one request (cap ${MAX_SENDS_PER_REQUEST})`,
+      }, { status: 400 })
+    }
+
     const { data: senderProfile } = await supabase
       .from('profiles')
       .select('full_name, email')
       .eq('id', user.id)
       .single()
     const senderName = (senderProfile as any)?.full_name || 'Wolthers QC'
+    const senderNameSafe = escapeHtml(senderName)
 
     const qa = Array.isArray(sample.quality_assessment)
       ? sample.quality_assessment[0]
@@ -80,42 +104,59 @@ export async function POST(
     const moisture = qa?.green_bean_data?.moisture ?? null
     const defectsTotal = qa?.green_bean_data?.defects_total ?? null
 
+    // Pre-compute escaped sample fields (same across all recipients)
+    const trackingSafe = escapeHtml(sample.tracking_number)
+    const sampleTypeSafe = sample.sample_type ? escapeHtml(String(sample.sample_type).toUpperCase()) : ''
+    const originLine = sample.origin
+      ? escapeHtml(sample.origin) + (sample.micro_origin ? ` — ${escapeHtml(sample.micro_origin)}` : '')
+      : ''
+    const qualitySafe = sample.quality_name ? escapeHtml(sample.quality_name) : ''
+    const processSafe = sample.processing_method ? escapeHtml(sample.processing_method) : ''
+    const awbLine = sample.awb_number
+      ? escapeHtml(sample.awb_number) + (sample.courier_name ? ` (${escapeHtml(sample.courier_name)})` : '')
+      : ''
+    const cuppingSafe = cuppingAvg !== null ? escapeHtml(cuppingAvg) : ''
+    const moistureSafe = moisture !== null ? escapeHtml(moisture) : ''
+    const defectsSafe = defectsTotal !== null ? escapeHtml(defectsTotal) : ''
+    const cuppingCommentsSafe = qa?.cupping_comments ? escapeHtml(qa.cupping_comments) : ''
+
     const results: Array<{ recipient_id: string; email: string | null; ok: boolean; error?: string }> = []
 
     for (const r of recipients as any[]) {
-      const overrideEmails = (r.contact_emails || []).filter(Boolean) as string[]
-      const fallbackEmail = r.client?.email || null
+      const overrideEmails = (r.contact_emails || []).filter(isValidEmail) as string[]
+      const fallbackEmail = isValidEmail(r.client?.email) ? r.client.email : null
       const toList = overrideEmails.length > 0 ? overrideEmails : (fallbackEmail ? [fallbackEmail] : [])
 
       if (toList.length === 0) {
-        results.push({ recipient_id: r.id, email: null, ok: false, error: 'No email on file for this client' })
+        results.push({ recipient_id: r.id, email: null, ok: false, error: 'No valid email on file for this client' })
         continue
       }
 
-      const recipientName = r.client?.fantasy_name || r.client?.company || 'Client'
+      const recipientName = r.client?.fantasy_name || r.client?.name || 'Client'
+      const recipientNameSafe = escapeHtml(recipientName)
       const subject = `Preliminary cupping report — sample ${sample.tracking_number}`
       const html = `
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
           <h2 style="color: #556b2f;">Preliminary cupping report</h2>
-          <p>Hello ${recipientName},</p>
-          <p>The Wolthers lab has completed a preliminary review of sample <strong>${sample.tracking_number}</strong>. Please review the summary below and let us know whether you would like to approve it.</p>
+          <p>Hello ${recipientNameSafe},</p>
+          <p>The Wolthers lab has completed a preliminary review of sample <strong>${trackingSafe}</strong>. Please review the summary below and let us know whether you would like to approve it.</p>
           <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px;">
-            ${sample.sample_type ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Sample type</td><td>${String(sample.sample_type).toUpperCase()}</td></tr>` : ''}
-            ${sample.origin ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Origin</td><td>${sample.origin}${sample.micro_origin ? ` — ${sample.micro_origin}` : ''}</td></tr>` : ''}
-            ${sample.quality_name ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Quality</td><td>${sample.quality_name}</td></tr>` : ''}
-            ${sample.processing_method ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Process</td><td>${sample.processing_method}</td></tr>` : ''}
-            ${sample.awb_number ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">AWB</td><td>${sample.awb_number}${sample.courier_name ? ` (${sample.courier_name})` : ''}</td></tr>` : ''}
-            ${cuppingAvg !== null ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Cupping score</td><td><strong>${cuppingAvg}</strong></td></tr>` : ''}
-            ${moisture !== null ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Moisture</td><td>${moisture}%</td></tr>` : ''}
-            ${defectsTotal !== null ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Defects (total)</td><td>${defectsTotal}</td></tr>` : ''}
+            ${sampleTypeSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Sample type</td><td>${sampleTypeSafe}</td></tr>` : ''}
+            ${originLine ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Origin</td><td>${originLine}</td></tr>` : ''}
+            ${qualitySafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Quality</td><td>${qualitySafe}</td></tr>` : ''}
+            ${processSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Process</td><td>${processSafe}</td></tr>` : ''}
+            ${awbLine ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">AWB</td><td>${awbLine}</td></tr>` : ''}
+            ${cuppingSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Cupping score</td><td><strong>${cuppingSafe}</strong></td></tr>` : ''}
+            ${moistureSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Moisture</td><td>${moistureSafe}%</td></tr>` : ''}
+            ${defectsSafe ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Defects (total)</td><td>${defectsSafe}</td></tr>` : ''}
             ${qa?.clean_cup !== undefined ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Clean cup</td><td>${qa.clean_cup ? 'Yes' : 'No'}</td></tr>` : ''}
             ${qa?.uniform_cup !== undefined ? `<tr><td style="color: #888; padding: 4px 12px 4px 0;">Uniform cup</td><td>${qa.uniform_cup ? 'Yes' : 'No'}</td></tr>` : ''}
           </table>
-          ${qa?.cupping_comments ? `<p><em>${qa.cupping_comments}</em></p>` : ''}
-          <p>To approve or reject this sample, please reply to this email or contact ${senderName} directly.</p>
+          ${cuppingCommentsSafe ? `<p><em>${cuppingCommentsSafe}</em></p>` : ''}
+          <p>To approve or reject this sample, please reply to this email or contact ${senderNameSafe} directly.</p>
           <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
           <p style="color: #888; font-size: 12px;">
-            Sent by ${senderName}<br />
+            Sent by ${senderNameSafe}<br />
             Wolthers Quality Control
           </p>
         </div>
