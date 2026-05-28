@@ -24,11 +24,7 @@ export async function GET(
     const qualityId = searchParams.get('quality_id')
 
     // Build query: fetch samples with seller join, filtered by client.
-    // Cast to any because the generated Database types haven't been regenerated
-    // post-consolidation — they still think the FK target is `exporters` rather
-    // than `companies`. Runtime works fine; this just silences the type checker
-    // until `supabase gen types` is run again.
-    let query = (supabase as any)
+    let query = supabase
       .from('samples')
       .select(`
         id,
@@ -53,7 +49,7 @@ export async function GET(
     // Aggregate by supplier name
     const supplierMap = new Map<string, { total: number; approved: number }>()
 
-    for (const sample of (samples as any[]) || []) {
+    for (const sample of samples || []) {
       const sellerData = sample.seller as { name: string } | null
       const name = sellerData?.name
       if (!name) continue

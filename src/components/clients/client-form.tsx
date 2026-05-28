@@ -12,14 +12,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { SearchableSelect } from '@/components/ui/searchable-select'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Loader2, Save, X, Search, Building2, MapPin, Mail, Phone, AlertCircle, Plus, Trash2, Layers, FileText, Eye, Upload, ImageIcon } from 'lucide-react'
-import { Database, supabase } from '@/lib/supabase'
+import { supabase } from '@/lib/supabase'
 import { Badge } from '@/components/ui/badge'
 import { Switch } from '@/components/ui/switch'
 import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN, generateCertificatePreview } from '@/types/certificate-pattern'
 import { ClientLabConfig } from './client-lab-config'
 
-type Client = Database['public']['Tables']['clients']['Row']
-type ClientInsert = Database['public']['Tables']['clients']['Insert']
+// Post-consolidation: the clients table was dropped. This form talks to the
+// /api/clients route, which translates the legacy clients-shape payload it
+// emits to/from the canonical companies + qc_client_settings tables via
+// mapCompanyToClient / splitClientPayload in src/lib/qc-client-mapper.ts.
+// Typing as `any` here avoids dragging the form (~1.8k lines of field-level
+// state) through a schema rewrite — the API boundary handles the impedance
+// mismatch. Worth a proper refactor when the form is next touched in earnest.
+type Client = Record<string, any>
+type ClientInsert = Record<string, any>
 
 interface ClientFormProps {
   clientId?: string

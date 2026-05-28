@@ -18,7 +18,11 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url)
     const hasOriginPricing = searchParams.get('has_origin_pricing')
 
-    let query = supabase
+    // Cast to any: the regenerated Database types describe `client_billing_summary`
+    // (a view) with enough cross-references that the typed select+filter chain
+    // overflows TS2589 "type instantiation excessively deep". The view itself is
+    // simple at runtime; we just don't need TS to walk the full graph.
+    let query = (supabase as any)
       .from('client_billing_summary')
       .select('*')
       .order('total_billable_amount', { ascending: false })
@@ -29,7 +33,7 @@ export async function GET(request: NextRequest) {
       query = query.eq('has_origin_pricing', false)
     }
 
-    const { data: clientSummaries, error } = await query
+    const { data: clientSummaries, error } = await query as { data: any[] | null; error: any }
 
     if (error) {
       console.error('Error fetching client billing summary:', error)

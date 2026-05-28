@@ -10,7 +10,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "12.2.12 (cd3cf9e)"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -350,22 +350,22 @@ export type Database = {
             foreignKeyName: "fk_activity_feed_client"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "fk_activity_feed_client"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "fk_activity_feed_client"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "fk_activity_feed_laboratory"
@@ -497,6 +497,228 @@ export type Database = {
           },
         ]
       }
+      ai_autonomy_levels: {
+        Row: {
+          action_type: string
+          autonomous_threshold: number | null
+          client_id: string
+          consecutive_approvals: number | null
+          current_level: string
+          draft_threshold: number | null
+          id: string
+          level_changed_at: string | null
+          lock_reason: string | null
+          locked_at: string | null
+          locked_by: string | null
+          manually_locked_level: string | null
+          total_approved: number | null
+          total_corrected: number | null
+          total_predictions: number | null
+          total_rejected: number | null
+          updated_at: string
+        }
+        Insert: {
+          action_type: string
+          autonomous_threshold?: number | null
+          client_id: string
+          consecutive_approvals?: number | null
+          current_level?: string
+          draft_threshold?: number | null
+          id?: string
+          level_changed_at?: string | null
+          lock_reason?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          manually_locked_level?: string | null
+          total_approved?: number | null
+          total_corrected?: number | null
+          total_predictions?: number | null
+          total_rejected?: number | null
+          updated_at?: string
+        }
+        Update: {
+          action_type?: string
+          autonomous_threshold?: number | null
+          client_id?: string
+          consecutive_approvals?: number | null
+          current_level?: string
+          draft_threshold?: number | null
+          id?: string
+          level_changed_at?: string | null
+          lock_reason?: string | null
+          locked_at?: string | null
+          locked_by?: string | null
+          manually_locked_level?: string | null
+          total_approved?: number | null
+          total_corrected?: number | null
+          total_predictions?: number | null
+          total_rejected?: number | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_autonomy_levels_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_autonomy_levels_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_autonomy_levels_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      ai_confidence_scores: {
+        Row: {
+          accuracy_pct: number | null
+          action_type: string
+          client_id: string
+          consecutive_correct: number
+          current_level: string
+          demoted_at: string | null
+          id: string
+          promoted_at: string | null
+          total_correct: number
+          total_predictions: number
+          updated_at: string
+        }
+        Insert: {
+          accuracy_pct?: number | null
+          action_type: string
+          client_id: string
+          consecutive_correct?: number
+          current_level?: string
+          demoted_at?: string | null
+          id?: string
+          promoted_at?: string | null
+          total_correct?: number
+          total_predictions?: number
+          updated_at?: string
+        }
+        Update: {
+          accuracy_pct?: number | null
+          action_type?: string
+          client_id?: string
+          consecutive_correct?: number
+          current_level?: string
+          demoted_at?: string | null
+          id?: string
+          promoted_at?: string | null
+          total_correct?: number
+          total_predictions?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_confidence_scores_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_confidence_scores_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_confidence_scores_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      ai_drafts_log: {
+        Row: {
+          classification: string | null
+          classification_confidence: number | null
+          contract_id: string
+          created_at: string
+          diff: Json | null
+          direction: string | null
+          document_ids: string[]
+          editor_user_id: string | null
+          final_sent: Json | null
+          graph_reply_to_message_id: string | null
+          id: string
+          model: string
+          original_draft: Json
+          sent_at: string | null
+          status: string
+        }
+        Insert: {
+          classification?: string | null
+          classification_confidence?: number | null
+          contract_id: string
+          created_at?: string
+          diff?: Json | null
+          direction?: string | null
+          document_ids: string[]
+          editor_user_id?: string | null
+          final_sent?: Json | null
+          graph_reply_to_message_id?: string | null
+          id?: string
+          model: string
+          original_draft: Json
+          sent_at?: string | null
+          status: string
+        }
+        Update: {
+          classification?: string | null
+          classification_confidence?: number | null
+          contract_id?: string
+          created_at?: string
+          diff?: Json | null
+          direction?: string | null
+          document_ids?: string[]
+          editor_user_id?: string | null
+          final_sent?: Json | null
+          graph_reply_to_message_id?: string | null
+          id?: string
+          model?: string
+          original_draft?: Json
+          sent_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_drafts_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_drafts_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_drafts_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       ai_itinerary_suggestions: {
         Row: {
           applied: boolean | null
@@ -562,6 +784,183 @@ export type Database = {
           },
         ]
       }
+      ai_learning_log: {
+        Row: {
+          action_type: string
+          actual_value: Json | null
+          client_id: string | null
+          confidence: number
+          consecutive_correct: number
+          created_at: string
+          email_from: string | null
+          email_message_id: string | null
+          email_message_uuid: string | null
+          email_received_at: string | null
+          email_subject: string | null
+          id: string
+          metadata: Json
+          predicted_value: Json
+          resolved_at: string | null
+          resolved_by: string | null
+          was_correct: boolean | null
+          xp_client_action: string | null
+        }
+        Insert: {
+          action_type: string
+          actual_value?: Json | null
+          client_id?: string | null
+          confidence: number
+          consecutive_correct?: number
+          created_at?: string
+          email_from?: string | null
+          email_message_id?: string | null
+          email_message_uuid?: string | null
+          email_received_at?: string | null
+          email_subject?: string | null
+          id?: string
+          metadata?: Json
+          predicted_value: Json
+          resolved_at?: string | null
+          resolved_by?: string | null
+          was_correct?: boolean | null
+          xp_client_action?: string | null
+        }
+        Update: {
+          action_type?: string
+          actual_value?: Json | null
+          client_id?: string | null
+          confidence?: number
+          consecutive_correct?: number
+          created_at?: string
+          email_from?: string | null
+          email_message_id?: string | null
+          email_message_uuid?: string | null
+          email_received_at?: string | null
+          email_subject?: string | null
+          id?: string
+          metadata?: Json
+          predicted_value?: Json
+          resolved_at?: string | null
+          resolved_by?: string | null
+          was_correct?: boolean | null
+          xp_client_action?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_learning_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_learning_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_learning_log_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "ai_learning_log_email_message_uuid_fkey"
+            columns: ["email_message_uuid"]
+            isOneToOne: false
+            referencedRelation: "email_messages"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      ai_writing_samples: {
+        Row: {
+          author_email: string | null
+          author_user_id: string | null
+          body_html: string | null
+          body_text: string | null
+          cc_emails: string[]
+          client_id: string | null
+          conversation_id: string | null
+          created_at: string
+          document_ids: string[]
+          document_type_ids: string[]
+          email_message_id: string | null
+          id: string
+          learning_log_ids: string[]
+          recipient_emails: string[]
+          sample_type: string
+          sent_at: string | null
+          source: string
+          subject: string
+        }
+        Insert: {
+          author_email?: string | null
+          author_user_id?: string | null
+          body_html?: string | null
+          body_text?: string | null
+          cc_emails?: string[]
+          client_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          document_ids?: string[]
+          document_type_ids?: string[]
+          email_message_id?: string | null
+          id?: string
+          learning_log_ids?: string[]
+          recipient_emails?: string[]
+          sample_type: string
+          sent_at?: string | null
+          source?: string
+          subject: string
+        }
+        Update: {
+          author_email?: string | null
+          author_user_id?: string | null
+          body_html?: string | null
+          body_text?: string | null
+          cc_emails?: string[]
+          client_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          document_ids?: string[]
+          document_type_ids?: string[]
+          email_message_id?: string | null
+          id?: string
+          learning_log_ids?: string[]
+          recipient_emails?: string[]
+          sample_type?: string
+          sent_at?: string | null
+          source?: string
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "ai_writing_samples_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_writing_samples_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "ai_writing_samples_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
       api_keys: {
         Row: {
           api_key: string
@@ -610,22 +1009,22 @@ export type Database = {
             foreignKeyName: "api_keys_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "api_keys_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "api_keys_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "api_keys_created_by_fkey"
@@ -635,6 +1034,159 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      app_settings: {
+        Row: {
+          description: string | null
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          description?: string | null
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value: Json
+        }
+        Update: {
+          description?: string | null
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
+      bag_markings: {
+        Row: {
+          approved_at: string | null
+          buyer_feedback: string | null
+          buyer_response_at: string | null
+          contract_id: string
+          created_at: string
+          document_id: string | null
+          exporter_notified_at: string | null
+          forwarded_to_buyer_at: string | null
+          id: string
+          last_reminder_at: string | null
+          notes: string | null
+          previous_marking_id: string | null
+          reminder_count: number | null
+          revision_number: number | null
+          status: string
+          submitted_at: string
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          buyer_feedback?: string | null
+          buyer_response_at?: string | null
+          contract_id: string
+          created_at?: string
+          document_id?: string | null
+          exporter_notified_at?: string | null
+          forwarded_to_buyer_at?: string | null
+          id?: string
+          last_reminder_at?: string | null
+          notes?: string | null
+          previous_marking_id?: string | null
+          reminder_count?: number | null
+          revision_number?: number | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          buyer_feedback?: string | null
+          buyer_response_at?: string | null
+          contract_id?: string
+          created_at?: string
+          document_id?: string | null
+          exporter_notified_at?: string | null
+          forwarded_to_buyer_at?: string | null
+          id?: string
+          last_reminder_at?: string | null
+          notes?: string | null
+          previous_marking_id?: string | null
+          reminder_count?: number | null
+          revision_number?: number | null
+          status?: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "bag_markings_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bag_markings_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bag_markings_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bag_markings_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "trade_documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "bag_markings_previous_marking_id_fkey"
+            columns: ["previous_marking_id"]
+            isOneToOne: false
+            referencedRelation: "bag_markings"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      bag_types: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          is_bulk: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+          weight_kg: number | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_bulk?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+          weight_kg?: number | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          is_bulk?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+          weight_kg?: number | null
+        }
+        Relationships: []
       }
       bag_weight_standards: {
         Row: {
@@ -666,6 +1218,51 @@ export type Database = {
           is_active?: boolean | null
           updated_at?: string | null
           weight_kg?: number
+        }
+        Relationships: []
+      }
+      certificate_definitions: {
+        Row: {
+          color: string | null
+          created_at: string | null
+          default_premium_cents_lb: number | null
+          default_premium_label: string | null
+          full_name: string
+          id: string
+          is_active: boolean | null
+          options: string[] | null
+          short_label: string | null
+          sort_order: number | null
+          tag: string
+          updated_at: string | null
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string | null
+          default_premium_cents_lb?: number | null
+          default_premium_label?: string | null
+          full_name: string
+          id?: string
+          is_active?: boolean | null
+          options?: string[] | null
+          short_label?: string | null
+          sort_order?: number | null
+          tag: string
+          updated_at?: string | null
+        }
+        Update: {
+          color?: string | null
+          created_at?: string | null
+          default_premium_cents_lb?: number | null
+          default_premium_label?: string | null
+          full_name?: string
+          id?: string
+          is_active?: boolean | null
+          options?: string[] | null
+          short_label?: string | null
+          sort_order?: number | null
+          tag?: string
+          updated_at?: string | null
         }
         Relationships: []
       }
@@ -755,22 +1352,22 @@ export type Database = {
             foreignKeyName: "certificate_number_configs_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "certificate_number_configs_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "certificate_number_configs_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "certificate_number_configs_quality_id_fkey"
@@ -849,22 +1446,22 @@ export type Database = {
             foreignKeyName: "certificate_sequences_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "certificate_sequences_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "certificate_sequences_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -909,6 +1506,36 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      certificate_types: {
+        Row: {
+          color: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
       }
       certificate_versions: {
         Row: {
@@ -1034,11 +1661,11 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "certificates_sample_id_fkey"
-            columns: ["sample_id"]
+            foreignKeyName: "certificates_sample_contract_id_fkey"
+            columns: ["sample_contract_id"]
             isOneToOne: false
-            referencedRelation: "sample_cupping_history"
-            referencedColumns: ["sample_id"]
+            referencedRelation: "sample_contracts"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "certificates_sample_id_fkey"
@@ -1092,22 +1719,22 @@ export type Database = {
             foreignKeyName: "client_certificate_settings_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: true
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_certificate_settings_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: true
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_certificate_settings_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: true
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -1144,22 +1771,22 @@ export type Database = {
             foreignKeyName: "client_laboratory_config_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_laboratory_config_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_laboratory_config_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "client_laboratory_config_laboratory_id_fkey"
@@ -1301,22 +1928,22 @@ export type Database = {
             foreignKeyName: "client_origin_pricing_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_origin_pricing_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_origin_pricing_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -1329,7 +1956,11 @@ export type Database = {
           cups_per_sample: number | null
           custom_name: string | null
           custom_parameters: Json | null
+          description: string | null
           discrepancy_threshold: number | null
+          fee_currency: string | null
+          fee_price: number | null
+          fee_unit: string | null
           id: string
           is_active: boolean | null
           notes: string | null
@@ -1347,7 +1978,11 @@ export type Database = {
           cups_per_sample?: number | null
           custom_name?: string | null
           custom_parameters?: Json | null
+          description?: string | null
           discrepancy_threshold?: number | null
+          fee_currency?: string | null
+          fee_price?: number | null
+          fee_unit?: string | null
           id?: string
           is_active?: boolean | null
           notes?: string | null
@@ -1365,7 +2000,11 @@ export type Database = {
           cups_per_sample?: number | null
           custom_name?: string | null
           custom_parameters?: Json | null
+          description?: string | null
           discrepancy_threshold?: number | null
+          fee_currency?: string | null
+          fee_price?: number | null
+          fee_unit?: string | null
           id?: string
           is_active?: boolean | null
           notes?: string | null
@@ -1380,22 +2019,22 @@ export type Database = {
             foreignKeyName: "client_qualities_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_qualities_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_qualities_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "client_qualities_template_id_fkey"
@@ -1463,22 +2102,22 @@ export type Database = {
             foreignKeyName: "client_taint_fault_customizations_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_taint_fault_customizations_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "client_taint_fault_customizations_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "client_taint_fault_customizations_created_by_fkey"
@@ -1496,154 +2135,119 @@ export type Database = {
           },
         ]
       }
-      clients: {
+      commissions: {
         Row: {
-          address: string
-          billing_basis: Database["public"]["Enums"]["billing_basis"] | null
-          billing_notes: string | null
-          certificate_config: Json | null
-          certificate_delivery_timing: string | null
-          certificate_pattern: Json | null
-          certificate_validity_enabled: boolean | null
-          certificate_validity_months: number | null
-          city: string | null
-          client_types: Database["public"]["Enums"]["client_type"][] | null
-          company: string
-          company_id: string | null
-          country: string | null
-          created_at: string | null
-          currency: string | null
-          default_quality_specs: string[] | null
-          email: string
-          fantasy_name: string | null
-          fee_payer: Database["public"]["Enums"]["fee_payer"] | null
-          has_origin_pricing: boolean | null
+          calculated_amount_confirmed: number | null
+          calculated_amount_estimated: number | null
+          co_broker_id: string | null
+          co_broker_share: number | null
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          currency: string
+          exchange_rate_at_calc: number | null
           id: string
-          is_active: boolean
-          is_qc_client: boolean | null
-          legacy_client_id: number | null
-          logo_url: string | null
-          name: string
-          notification_emails: string[] | null
-          payment_terms: string | null
-          phone: string | null
-          price_per_pound_cents: number | null
-          price_per_sample: number | null
-          pricing_model: Database["public"]["Enums"]["pricing_model"] | null
-          qc_enabled: boolean | null
-          report_branding_preference: string | null
-          slug: string | null
-          state: string | null
-          tracking_number_format: Json | null
-          updated_at: string | null
-          vat_number: string | null
-          zip_code: string | null
+          invoice_id: string | null
+          notes: string | null
+          rate: number
+          rate_unit: string
+          shipment_id: string | null
+          source: string
+          status: string
+          type: string
+          updated_at: string
         }
         Insert: {
-          address: string
-          billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
-          billing_notes?: string | null
-          certificate_config?: Json | null
-          certificate_delivery_timing?: string | null
-          certificate_pattern?: Json | null
-          certificate_validity_enabled?: boolean | null
-          certificate_validity_months?: number | null
-          city?: string | null
-          client_types?: Database["public"]["Enums"]["client_type"][] | null
-          company: string
-          company_id?: string | null
-          country?: string | null
-          created_at?: string | null
-          currency?: string | null
-          default_quality_specs?: string[] | null
-          email: string
-          fantasy_name?: string | null
-          fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
-          has_origin_pricing?: boolean | null
+          calculated_amount_confirmed?: number | null
+          calculated_amount_estimated?: number | null
+          co_broker_id?: string | null
+          co_broker_share?: number | null
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          exchange_rate_at_calc?: number | null
           id?: string
-          is_active?: boolean
-          is_qc_client?: boolean | null
-          legacy_client_id?: number | null
-          logo_url?: string | null
-          name: string
-          notification_emails?: string[] | null
-          payment_terms?: string | null
-          phone?: string | null
-          price_per_pound_cents?: number | null
-          price_per_sample?: number | null
-          pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
-          qc_enabled?: boolean | null
-          report_branding_preference?: string | null
-          slug?: string | null
-          state?: string | null
-          tracking_number_format?: Json | null
-          updated_at?: string | null
-          vat_number?: string | null
-          zip_code?: string | null
+          invoice_id?: string | null
+          notes?: string | null
+          rate: number
+          rate_unit: string
+          shipment_id?: string | null
+          source: string
+          status?: string
+          type: string
+          updated_at?: string
         }
         Update: {
-          address?: string
-          billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
-          billing_notes?: string | null
-          certificate_config?: Json | null
-          certificate_delivery_timing?: string | null
-          certificate_pattern?: Json | null
-          certificate_validity_enabled?: boolean | null
-          certificate_validity_months?: number | null
-          city?: string | null
-          client_types?: Database["public"]["Enums"]["client_type"][] | null
-          company?: string
-          company_id?: string | null
-          country?: string | null
-          created_at?: string | null
-          currency?: string | null
-          default_quality_specs?: string[] | null
-          email?: string
-          fantasy_name?: string | null
-          fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
-          has_origin_pricing?: boolean | null
+          calculated_amount_confirmed?: number | null
+          calculated_amount_estimated?: number | null
+          co_broker_id?: string | null
+          co_broker_share?: number | null
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          exchange_rate_at_calc?: number | null
           id?: string
-          is_active?: boolean
-          is_qc_client?: boolean | null
-          legacy_client_id?: number | null
-          logo_url?: string | null
-          name?: string
-          notification_emails?: string[] | null
-          payment_terms?: string | null
-          phone?: string | null
-          price_per_pound_cents?: number | null
-          price_per_sample?: number | null
-          pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
-          qc_enabled?: boolean | null
-          report_branding_preference?: string | null
-          slug?: string | null
-          state?: string | null
-          tracking_number_format?: Json | null
-          updated_at?: string | null
-          vat_number?: string | null
-          zip_code?: string | null
+          invoice_id?: string | null
+          notes?: string | null
+          rate?: number
+          rate_unit?: string
+          shipment_id?: string | null
+          source?: string
+          status?: string
+          type?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "clients_company_id_fkey"
-            columns: ["company_id"]
+            foreignKeyName: "commissions_co_broker_id_fkey"
+            columns: ["co_broker_id"]
             isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "clients_company_id_fkey"
-            columns: ["company_id"]
+            foreignKeyName: "commissions_co_broker_id_fkey"
+            columns: ["co_broker_id"]
             isOneToOne: false
             referencedRelation: "companies_with_legacy"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "clients_company_id_fkey"
-            columns: ["company_id"]
+            foreignKeyName: "commissions_co_broker_id_fkey"
+            columns: ["co_broker_id"]
             isOneToOne: false
             referencedRelation: "company_file_summaries"
             referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "commissions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commissions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "commissions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_commission_invoice"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -1653,26 +2257,63 @@ export type Database = {
           admin_approval_required: boolean | null
           annual_trip_cost: number | null
           category: Database["public"]["Enums"]["company_category"] | null
+          certifications: string[]
           city: string | null
           client_type: Database["public"]["Enums"]["client_type_enum"] | null
+          company_types: string[]
+          condition_order: Json | null
           country: string | null
           created_at: string
+          created_by: string | null
+          default_arbitration: string | null
+          default_commission_rate: number | null
+          default_commission_unit: string | null
+          default_destination_port: string | null
+          default_destination_port_ids: string[]
+          default_fixation_type: string | null
+          default_packaging: string | null
+          default_packaging_options: Json
+          default_payment_term_template_id: string | null
+          default_payment_terms: string | null
+          document_cnpj: string | null
+          document_ie: string | null
+          domains: string[]
           email: string | null
+          email_contracts: string | null
+          email_domains: string[]
+          eudr_status: string | null
           fantasy_name: string | null
+          fantasy_name_search: string | null
+          fantasy_name_unaccent: string | null
+          flo_id: string | null
+          gets_own_shipment_update: boolean
           id: string
+          is_active: boolean
+          is_qc_client: boolean
           latitude: number | null
           legacy_client_id: number | null
           logo_url: string | null
           longitude: number | null
           name: string
+          name_search: string | null
+          name_unaccent: string | null
           neighbourhood: string | null
+          notes: string | null
+          person_type: string | null
+          pf_terms: Json | null
           phone: string | null
+          phone_secondary: string | null
+          preferred_certifications: Json | null
+          pss_lead_weeks: number | null
+          receives_shipment_updates: boolean
           region: string | null
+          shipment_update_layout: string
           staff_count: number | null
           state: string | null
           street: string | null
           street_number: string | null
           subcategories: string[] | null
+          trading_roles: Json
           updated_at: string
           zip_code: string | null
         }
@@ -1681,26 +2322,63 @@ export type Database = {
           admin_approval_required?: boolean | null
           annual_trip_cost?: number | null
           category?: Database["public"]["Enums"]["company_category"] | null
+          certifications?: string[]
           city?: string | null
           client_type?: Database["public"]["Enums"]["client_type_enum"] | null
+          company_types?: string[]
+          condition_order?: Json | null
           country?: string | null
           created_at?: string
+          created_by?: string | null
+          default_arbitration?: string | null
+          default_commission_rate?: number | null
+          default_commission_unit?: string | null
+          default_destination_port?: string | null
+          default_destination_port_ids?: string[]
+          default_fixation_type?: string | null
+          default_packaging?: string | null
+          default_packaging_options?: Json
+          default_payment_term_template_id?: string | null
+          default_payment_terms?: string | null
+          document_cnpj?: string | null
+          document_ie?: string | null
+          domains?: string[]
           email?: string | null
+          email_contracts?: string | null
+          email_domains?: string[]
+          eudr_status?: string | null
           fantasy_name?: string | null
+          fantasy_name_search?: string | null
+          fantasy_name_unaccent?: string | null
+          flo_id?: string | null
+          gets_own_shipment_update?: boolean
           id?: string
+          is_active?: boolean
+          is_qc_client?: boolean
           latitude?: number | null
           legacy_client_id?: number | null
           logo_url?: string | null
           longitude?: number | null
           name: string
+          name_search?: string | null
+          name_unaccent?: string | null
           neighbourhood?: string | null
+          notes?: string | null
+          person_type?: string | null
+          pf_terms?: Json | null
           phone?: string | null
+          phone_secondary?: string | null
+          preferred_certifications?: Json | null
+          pss_lead_weeks?: number | null
+          receives_shipment_updates?: boolean
           region?: string | null
+          shipment_update_layout?: string
           staff_count?: number | null
           state?: string | null
           street?: string | null
           street_number?: string | null
           subcategories?: string[] | null
+          trading_roles?: Json
           updated_at?: string
           zip_code?: string | null
         }
@@ -1709,30 +2387,74 @@ export type Database = {
           admin_approval_required?: boolean | null
           annual_trip_cost?: number | null
           category?: Database["public"]["Enums"]["company_category"] | null
+          certifications?: string[]
           city?: string | null
           client_type?: Database["public"]["Enums"]["client_type_enum"] | null
+          company_types?: string[]
+          condition_order?: Json | null
           country?: string | null
           created_at?: string
+          created_by?: string | null
+          default_arbitration?: string | null
+          default_commission_rate?: number | null
+          default_commission_unit?: string | null
+          default_destination_port?: string | null
+          default_destination_port_ids?: string[]
+          default_fixation_type?: string | null
+          default_packaging?: string | null
+          default_packaging_options?: Json
+          default_payment_term_template_id?: string | null
+          default_payment_terms?: string | null
+          document_cnpj?: string | null
+          document_ie?: string | null
+          domains?: string[]
           email?: string | null
+          email_contracts?: string | null
+          email_domains?: string[]
+          eudr_status?: string | null
           fantasy_name?: string | null
+          fantasy_name_search?: string | null
+          fantasy_name_unaccent?: string | null
+          flo_id?: string | null
+          gets_own_shipment_update?: boolean
           id?: string
+          is_active?: boolean
+          is_qc_client?: boolean
           latitude?: number | null
           legacy_client_id?: number | null
           logo_url?: string | null
           longitude?: number | null
           name?: string
+          name_search?: string | null
+          name_unaccent?: string | null
           neighbourhood?: string | null
+          notes?: string | null
+          person_type?: string | null
+          pf_terms?: Json | null
           phone?: string | null
+          phone_secondary?: string | null
+          preferred_certifications?: Json | null
+          pss_lead_weeks?: number | null
+          receives_shipment_updates?: boolean
           region?: string | null
+          shipment_update_layout?: string
           staff_count?: number | null
           state?: string | null
           street?: string | null
           street_number?: string | null
           subcategories?: string[] | null
+          trading_roles?: Json
           updated_at?: string
           zip_code?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "companies_default_payment_term_template_id_fkey"
+            columns: ["default_payment_term_template_id"]
+            isOneToOne: false
+            referencedRelation: "condition_templates"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "companies_legacy_client_id_fkey"
             columns: ["legacy_client_id"]
@@ -1746,6 +2468,67 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "legacy_clients"
             referencedColumns: ["legacy_client_id"]
+          },
+        ]
+      }
+      company_bank_accounts: {
+        Row: {
+          account_number: string | null
+          bank_name: string | null
+          branch: string | null
+          company_id: string
+          created_at: string
+          id: string
+          is_primary: boolean | null
+          legacy_id: number | null
+          routing_code: string | null
+          updated_at: string
+        }
+        Insert: {
+          account_number?: string | null
+          bank_name?: string | null
+          branch?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean | null
+          legacy_id?: number | null
+          routing_code?: string | null
+          updated_at?: string
+        }
+        Update: {
+          account_number?: string | null
+          bank_name?: string | null
+          branch?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_primary?: boolean | null
+          legacy_id?: number | null
+          routing_code?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_bank_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_bank_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_bank_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -1998,6 +2781,82 @@ export type Database = {
           },
         ]
       }
+      company_fixation_brokers: {
+        Row: {
+          broker_id: string
+          company_id: string
+          created_by: string | null
+          first_seen_at: string
+          is_pinned: boolean
+          last_used_at: string
+          updated_at: string
+          usage_count: number
+        }
+        Insert: {
+          broker_id: string
+          company_id: string
+          created_by?: string | null
+          first_seen_at?: string
+          is_pinned?: boolean
+          last_used_at?: string
+          updated_at?: string
+          usage_count?: number
+        }
+        Update: {
+          broker_id?: string
+          company_id?: string
+          created_by?: string | null
+          first_seen_at?: string
+          is_pinned?: boolean
+          last_used_at?: string
+          updated_at?: string
+          usage_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_fixation_brokers_broker_id_fkey"
+            columns: ["broker_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_fixation_brokers_broker_id_fkey"
+            columns: ["broker_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_fixation_brokers_broker_id_fkey"
+            columns: ["broker_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "company_fixation_brokers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_fixation_brokers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_fixation_brokers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
       company_interactions: {
         Row: {
           company_id: string
@@ -2227,6 +3086,226 @@ export type Database = {
           },
         ]
       }
+      company_merges: {
+        Row: {
+          fk_counts: Json
+          id: string
+          loser_ids: string[]
+          loser_snapshots: Json
+          performed_at: string
+          performed_by: string | null
+          survivor_id: string | null
+        }
+        Insert: {
+          fk_counts: Json
+          id?: string
+          loser_ids: string[]
+          loser_snapshots: Json
+          performed_at?: string
+          performed_by?: string | null
+          survivor_id?: string | null
+        }
+        Update: {
+          fk_counts?: Json
+          id?: string
+          loser_ids?: string[]
+          loser_snapshots?: Json
+          performed_at?: string
+          performed_by?: string | null
+          survivor_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_merges_survivor_id_fkey"
+            columns: ["survivor_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_merges_survivor_id_fkey"
+            columns: ["survivor_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_merges_survivor_id_fkey"
+            columns: ["survivor_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      company_qualities: {
+        Row: {
+          company_id: string
+          contract_clause_text: string | null
+          created_at: string
+          created_by: string | null
+          end_client_id: string | null
+          full_description: string | null
+          id: string
+          inquiry_text: string | null
+          is_active: boolean
+          is_private: boolean
+          quality_id: string | null
+          short_name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          contract_clause_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          end_client_id?: string | null
+          full_description?: string | null
+          id?: string
+          inquiry_text?: string | null
+          is_active?: boolean
+          is_private?: boolean
+          quality_id?: string | null
+          short_name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          contract_clause_text?: string | null
+          created_at?: string
+          created_by?: string | null
+          end_client_id?: string | null
+          full_description?: string | null
+          id?: string
+          inquiry_text?: string | null
+          is_active?: boolean
+          is_private?: boolean
+          quality_id?: string | null
+          short_name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_qualities_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_qualities_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_qualities_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "company_qualities_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_qualities_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_qualities_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "company_qualities_quality_id_fkey"
+            columns: ["quality_id"]
+            isOneToOne: false
+            referencedRelation: "quality_master"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_recipient_memory: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          email: string
+          first_used_at: string
+          id: string
+          last_used_at: string
+          name: string | null
+          placement: string
+          purpose: string
+          updated_at: string
+          use_count: number
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          email: string
+          first_used_at?: string
+          id?: string
+          last_used_at?: string
+          name?: string | null
+          placement?: string
+          purpose: string
+          updated_at?: string
+          use_count?: number
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          email?: string
+          first_used_at?: string
+          id?: string
+          last_used_at?: string
+          name?: string | null
+          placement?: string
+          purpose?: string
+          updated_at?: string
+          use_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_recipient_memory_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_recipient_memory_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_recipient_memory_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
       company_tags: {
         Row: {
           color: string | null
@@ -2364,6 +3443,1512 @@ export type Database = {
           },
         ]
       }
+      condition_template_versions: {
+        Row: {
+          category: string
+          certificate_subtype: string | null
+          edit_reason: string | null
+          edited_at: string
+          edited_by: string | null
+          id: string
+          template_id: string
+          template_variables: Json | null
+          text: string
+          version_number: number
+        }
+        Insert: {
+          category: string
+          certificate_subtype?: string | null
+          edit_reason?: string | null
+          edited_at?: string
+          edited_by?: string | null
+          id?: string
+          template_id: string
+          template_variables?: Json | null
+          text: string
+          version_number: number
+        }
+        Update: {
+          category?: string
+          certificate_subtype?: string | null
+          edit_reason?: string | null
+          edited_at?: string
+          edited_by?: string | null
+          id?: string
+          template_id?: string
+          template_variables?: Json | null
+          text?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "condition_template_versions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "condition_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      condition_templates: {
+        Row: {
+          actionable: boolean | null
+          auto_offer: boolean
+          category: string | null
+          certificate_subtype: string | null
+          checklist_items: string[] | null
+          conditions: Json
+          created_at: string
+          created_by: string | null
+          default_checked: boolean
+          edit_count: number
+          header_template: string | null
+          id: string
+          include_on_inquiry: boolean | null
+          inquiry_text: string | null
+          is_active: boolean
+          last_used_at: string | null
+          legacy_id: number | null
+          linked_certificate: string | null
+          linked_company_id: string | null
+          linked_destination: string | null
+          linked_destinations: string[] | null
+          linked_quality_id: string | null
+          linked_route: string | null
+          managed_by: string
+          name: string | null
+          notes: string | null
+          overrides: boolean | null
+          phrase_template: string | null
+          reminder_days: number | null
+          removal_count: number
+          sets_count: number
+          sort_order: number | null
+          source_type: string | null
+          specification: string | null
+          status: string
+          template_variables: Json | null
+          text: string | null
+          trigger: string
+          type: string | null
+          updated_at: string
+          usage_count: number
+          version: number
+        }
+        Insert: {
+          actionable?: boolean | null
+          auto_offer?: boolean
+          category?: string | null
+          certificate_subtype?: string | null
+          checklist_items?: string[] | null
+          conditions?: Json
+          created_at?: string
+          created_by?: string | null
+          default_checked?: boolean
+          edit_count?: number
+          header_template?: string | null
+          id?: string
+          include_on_inquiry?: boolean | null
+          inquiry_text?: string | null
+          is_active?: boolean
+          last_used_at?: string | null
+          legacy_id?: number | null
+          linked_certificate?: string | null
+          linked_company_id?: string | null
+          linked_destination?: string | null
+          linked_destinations?: string[] | null
+          linked_quality_id?: string | null
+          linked_route?: string | null
+          managed_by?: string
+          name?: string | null
+          notes?: string | null
+          overrides?: boolean | null
+          phrase_template?: string | null
+          reminder_days?: number | null
+          removal_count?: number
+          sets_count?: number
+          sort_order?: number | null
+          source_type?: string | null
+          specification?: string | null
+          status?: string
+          template_variables?: Json | null
+          text?: string | null
+          trigger?: string
+          type?: string | null
+          updated_at?: string
+          usage_count?: number
+          version?: number
+        }
+        Update: {
+          actionable?: boolean | null
+          auto_offer?: boolean
+          category?: string | null
+          certificate_subtype?: string | null
+          checklist_items?: string[] | null
+          conditions?: Json
+          created_at?: string
+          created_by?: string | null
+          default_checked?: boolean
+          edit_count?: number
+          header_template?: string | null
+          id?: string
+          include_on_inquiry?: boolean | null
+          inquiry_text?: string | null
+          is_active?: boolean
+          last_used_at?: string | null
+          legacy_id?: number | null
+          linked_certificate?: string | null
+          linked_company_id?: string | null
+          linked_destination?: string | null
+          linked_destinations?: string[] | null
+          linked_quality_id?: string | null
+          linked_route?: string | null
+          managed_by?: string
+          name?: string | null
+          notes?: string | null
+          overrides?: boolean | null
+          phrase_template?: string | null
+          reminder_days?: number | null
+          removal_count?: number
+          sets_count?: number
+          sort_order?: number | null
+          source_type?: string | null
+          specification?: string | null
+          status?: string
+          template_variables?: Json | null
+          text?: string | null
+          trigger?: string
+          type?: string | null
+          updated_at?: string
+          usage_count?: number
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "condition_templates_linked_company_id_fkey"
+            columns: ["linked_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condition_templates_linked_company_id_fkey"
+            columns: ["linked_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condition_templates_linked_company_id_fkey"
+            columns: ["linked_company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "condition_templates_linked_quality_id_fkey"
+            columns: ["linked_quality_id"]
+            isOneToOne: false
+            referencedRelation: "quality_master"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      condition_templates_backup_2026_04_22: {
+        Row: {
+          actionable: boolean | null
+          category: string | null
+          certificate_subtype: string | null
+          conditions: Json | null
+          created_at: string | null
+          created_by: string | null
+          edit_count: number | null
+          id: string | null
+          include_on_inquiry: boolean | null
+          inquiry_text: string | null
+          is_active: boolean | null
+          last_used_at: string | null
+          legacy_id: number | null
+          linked_certificate: string | null
+          linked_company_id: string | null
+          linked_destination: string | null
+          linked_destinations: string[] | null
+          linked_quality_id: string | null
+          linked_route: string | null
+          name: string | null
+          notes: string | null
+          overrides: boolean | null
+          reminder_days: number | null
+          removal_count: number | null
+          sort_order: number | null
+          source_type: string | null
+          specification: string | null
+          status: string | null
+          template_variables: Json | null
+          text: string | null
+          trigger: string | null
+          type: string | null
+          updated_at: string | null
+          usage_count: number | null
+          version: number | null
+        }
+        Insert: {
+          actionable?: boolean | null
+          category?: string | null
+          certificate_subtype?: string | null
+          conditions?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          edit_count?: number | null
+          id?: string | null
+          include_on_inquiry?: boolean | null
+          inquiry_text?: string | null
+          is_active?: boolean | null
+          last_used_at?: string | null
+          legacy_id?: number | null
+          linked_certificate?: string | null
+          linked_company_id?: string | null
+          linked_destination?: string | null
+          linked_destinations?: string[] | null
+          linked_quality_id?: string | null
+          linked_route?: string | null
+          name?: string | null
+          notes?: string | null
+          overrides?: boolean | null
+          reminder_days?: number | null
+          removal_count?: number | null
+          sort_order?: number | null
+          source_type?: string | null
+          specification?: string | null
+          status?: string | null
+          template_variables?: Json | null
+          text?: string | null
+          trigger?: string | null
+          type?: string | null
+          updated_at?: string | null
+          usage_count?: number | null
+          version?: number | null
+        }
+        Update: {
+          actionable?: boolean | null
+          category?: string | null
+          certificate_subtype?: string | null
+          conditions?: Json | null
+          created_at?: string | null
+          created_by?: string | null
+          edit_count?: number | null
+          id?: string | null
+          include_on_inquiry?: boolean | null
+          inquiry_text?: string | null
+          is_active?: boolean | null
+          last_used_at?: string | null
+          legacy_id?: number | null
+          linked_certificate?: string | null
+          linked_company_id?: string | null
+          linked_destination?: string | null
+          linked_destinations?: string[] | null
+          linked_quality_id?: string | null
+          linked_route?: string | null
+          name?: string | null
+          notes?: string | null
+          overrides?: boolean | null
+          reminder_days?: number | null
+          removal_count?: number | null
+          sort_order?: number | null
+          source_type?: string | null
+          specification?: string | null
+          status?: string | null
+          template_variables?: Json | null
+          text?: string | null
+          trigger?: string | null
+          type?: string | null
+          updated_at?: string | null
+          usage_count?: number | null
+          version?: number | null
+        }
+        Relationships: []
+      }
+      condition_usage_log: {
+        Row: {
+          buyer_id: string
+          condition_number: number
+          condition_template_id: string
+          contract_id: string
+          created_at: string
+          destination: string | null
+          id: string
+          quality_id: string | null
+          was_kept: boolean
+        }
+        Insert: {
+          buyer_id: string
+          condition_number: number
+          condition_template_id: string
+          contract_id: string
+          created_at?: string
+          destination?: string | null
+          id?: string
+          quality_id?: string | null
+          was_kept?: boolean
+        }
+        Update: {
+          buyer_id?: string
+          condition_number?: number
+          condition_template_id?: string
+          contract_id?: string
+          created_at?: string
+          destination?: string | null
+          id?: string
+          quality_id?: string | null
+          was_kept?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "condition_usage_log_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condition_usage_log_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condition_usage_log_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "condition_usage_log_condition_template_id_fkey"
+            columns: ["condition_template_id"]
+            isOneToOne: false
+            referencedRelation: "condition_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condition_usage_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condition_usage_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condition_usage_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "condition_usage_log_quality_id_fkey"
+            columns: ["quality_id"]
+            isOneToOne: false
+            referencedRelation: "quality_master"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contacts: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string | null
+          email: string | null
+          id: string
+          is_active: boolean
+          is_group: boolean
+          is_primary: boolean | null
+          name: string
+          name_search: string | null
+          nickname: string | null
+          nickname_search: string | null
+          notes: string | null
+          phone: string | null
+          preferred_language: string | null
+          role: string | null
+          routing_purposes: string[]
+          updated_at: string
+          whatsapp: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          is_group?: boolean
+          is_primary?: boolean | null
+          name: string
+          name_search?: string | null
+          nickname?: string | null
+          nickname_search?: string | null
+          notes?: string | null
+          phone?: string | null
+          preferred_language?: string | null
+          role?: string | null
+          routing_purposes?: string[]
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean
+          is_group?: boolean
+          is_primary?: boolean | null
+          name?: string
+          name_search?: string | null
+          nickname?: string | null
+          nickname_search?: string | null
+          notes?: string | null
+          phone?: string | null
+          preferred_language?: string | null
+          role?: string | null
+          routing_purposes?: string[]
+          updated_at?: string
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      containers: {
+        Row: {
+          container_number: string
+          container_type: string | null
+          created_at: string
+          id: string
+          seal_number: string | null
+          tare_weight_kg: number | null
+          updated_at: string
+        }
+        Insert: {
+          container_number: string
+          container_type?: string | null
+          created_at?: string
+          id?: string
+          seal_number?: string | null
+          tare_weight_kg?: number | null
+          updated_at?: string
+        }
+        Update: {
+          container_number?: string
+          container_type?: string | null
+          created_at?: string
+          id?: string
+          seal_number?: string | null
+          tare_weight_kg?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      contract_assembled_conditions: {
+        Row: {
+          category: string | null
+          condition_template_id: string | null
+          contract_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          panel_key: string | null
+          sort_order: number
+          source_type: string
+          text: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string | null
+          condition_template_id?: string | null
+          contract_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          panel_key?: string | null
+          sort_order: number
+          source_type: string
+          text: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string | null
+          condition_template_id?: string | null
+          contract_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          panel_key?: string | null
+          sort_order?: number
+          source_type?: string
+          text?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_assembled_conditions_condition_template_id_fkey"
+            columns: ["condition_template_id"]
+            isOneToOne: false
+            referencedRelation: "condition_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_assembled_conditions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_assembled_conditions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_assembled_conditions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_conditions: {
+        Row: {
+          conditions: Json
+          contract_id: string
+          created_at: string
+          id: string
+          revised_at: string | null
+          revised_by: string | null
+          revision_number: number
+          source_templates: Json | null
+        }
+        Insert: {
+          conditions?: Json
+          contract_id: string
+          created_at?: string
+          id?: string
+          revised_at?: string | null
+          revised_by?: string | null
+          revision_number?: number
+          source_templates?: Json | null
+        }
+        Update: {
+          conditions?: Json
+          contract_id?: string
+          created_at?: string
+          id?: string
+          revised_at?: string | null
+          revised_by?: string | null
+          revision_number?: number
+          source_templates?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_conditions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_conditions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_conditions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_drafts: {
+        Row: {
+          buyer_id: string | null
+          buyer_name: string | null
+          created_at: string
+          created_by: string
+          id: string
+          issued_contract_id: string | null
+          owner_changed_at: string | null
+          owner_id: string
+          payload: Json
+          previous_owner_id: string | null
+          quality_summary: string | null
+          seller_id: string | null
+          seller_name: string | null
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          buyer_id?: string | null
+          buyer_name?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          issued_contract_id?: string | null
+          owner_changed_at?: string | null
+          owner_id: string
+          payload: Json
+          previous_owner_id?: string | null
+          quality_summary?: string | null
+          seller_id?: string | null
+          seller_name?: string | null
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          buyer_id?: string | null
+          buyer_name?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          issued_contract_id?: string | null
+          owner_changed_at?: string | null
+          owner_id?: string
+          payload?: Json
+          previous_owner_id?: string | null
+          quality_summary?: string | null
+          seller_id?: string | null
+          seller_name?: string | null
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_drafts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_drafts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_drafts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contract_drafts_issued_contract_id_fkey"
+            columns: ["issued_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_drafts_issued_contract_id_fkey"
+            columns: ["issued_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_drafts_issued_contract_id_fkey"
+            columns: ["issued_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_drafts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_drafts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_drafts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      contract_revisions: {
+        Row: {
+          changed_fields: string[]
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          reason: string | null
+          revision: number
+          snapshot: Json
+        }
+        Insert: {
+          changed_fields?: string[]
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          reason?: string | null
+          revision: number
+          snapshot: Json
+        }
+        Update: {
+          changed_fields?: string[]
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          reason?: string | null
+          revision?: number
+          snapshot?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_revisions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_revisions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_revisions_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_send_log: {
+        Row: {
+          body_snapshot: string
+          contract_id: string
+          error_message: string | null
+          graph_message_id: string | null
+          hide_commission_on_pdf: boolean
+          id: string
+          is_sandbox: boolean
+          pdf_storage_path: string | null
+          recipients_cc: Json
+          recipients_to: Json
+          sent_at: string
+          sent_by: string
+          side: string
+          status: string
+        }
+        Insert: {
+          body_snapshot: string
+          contract_id: string
+          error_message?: string | null
+          graph_message_id?: string | null
+          hide_commission_on_pdf: boolean
+          id?: string
+          is_sandbox?: boolean
+          pdf_storage_path?: string | null
+          recipients_cc?: Json
+          recipients_to?: Json
+          sent_at?: string
+          sent_by: string
+          side: string
+          status?: string
+        }
+        Update: {
+          body_snapshot?: string
+          contract_id?: string
+          error_message?: string | null
+          graph_message_id?: string | null
+          hide_commission_on_pdf?: boolean
+          id?: string
+          is_sandbox?: boolean
+          pdf_storage_path?: string | null
+          recipients_cc?: Json
+          recipients_to?: Json
+          sent_at?: string
+          sent_by?: string
+          side?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_send_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_send_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_send_log_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_splits: {
+        Row: {
+          bag_type: string | null
+          bag_weight_kg: number | null
+          buyer_subcontract_ref: string | null
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          destination_port: string | null
+          id: string
+          notes: string | null
+          repasse_contract_id: string | null
+          seller_subcontract_ref: string | null
+          updated_at: string
+          volume_bags: number
+        }
+        Insert: {
+          bag_type?: string | null
+          bag_weight_kg?: number | null
+          buyer_subcontract_ref?: string | null
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          destination_port?: string | null
+          id?: string
+          notes?: string | null
+          repasse_contract_id?: string | null
+          seller_subcontract_ref?: string | null
+          updated_at?: string
+          volume_bags: number
+        }
+        Update: {
+          bag_type?: string | null
+          bag_weight_kg?: number | null
+          buyer_subcontract_ref?: string | null
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          destination_port?: string | null
+          id?: string
+          notes?: string | null
+          repasse_contract_id?: string | null
+          seller_subcontract_ref?: string | null
+          updated_at?: string
+          volume_bags?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_splits_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_splits_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_splits_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_splits_repasse_contract_id_fkey"
+            columns: ["repasse_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_splits_repasse_contract_id_fkey"
+            columns: ["repasse_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_splits_repasse_contract_id_fkey"
+            columns: ["repasse_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contracts: {
+        Row: {
+          approved_at: string | null
+          approved_by_document_id: string | null
+          arbitration: string | null
+          average_fixed_price: number | null
+          bag_type: string | null
+          bag_weight_kg: number | null
+          bags_per_box: number | null
+          buyer_contact_id: string | null
+          buyer_id: string
+          buyer_reference: string | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cert_options: Json
+          certifications: Json | null
+          channel: string
+          commission_buyer_rate: number | null
+          commission_buyer_unit: string | null
+          commission_invoicing_entity: string
+          commission_invoicing_entity_buyer: string
+          commission_invoicing_entity_seller: string
+          commission_rate: number | null
+          commission_seller_rate: number | null
+          commission_seller_unit: string | null
+          commission_source: string | null
+          commission_splits: Json | null
+          commission_unit: string | null
+          container_group_id: string | null
+          container_leg: string | null
+          container_size: string | null
+          contract_date: string | null
+          contract_number: string
+          contract_type: string
+          created_at: string
+          created_by: string | null
+          created_in_new_system: boolean
+          crop: string | null
+          destination: string | null
+          differential_value: number | null
+          disclose_buyer_to_parent_seller: boolean
+          end_buyer_id: string | null
+          end_client_id: string | null
+          eudr_compliant: string | null
+          exchange: string | null
+          exchange_month_default: string | null
+          external_visible: boolean
+          fixation_deadline: string | null
+          fixation_limitation_days: number | null
+          fixation_notes: string | null
+          fixation_status: string | null
+          fixation_type: string | null
+          fixation_window_open_date: string | null
+          id: string
+          inquiry_id: string | null
+          internal_notes: Json | null
+          is_approved: boolean
+          is_finalized: boolean | null
+          is_urgent: boolean | null
+          last_sent_revision: number | null
+          legacy_id: number | null
+          legacy_user_id: number | null
+          notes: string | null
+          outright_price: number | null
+          outright_price_unit: string | null
+          packaging: string | null
+          parent_contract_group_id: string | null
+          parent_contract_id: string | null
+          payment_terms: string | null
+          premiums: Json
+          price_description: string | null
+          price_type: string
+          qc_provider: string | null
+          quality_description: string | null
+          quality_description_unaccent: string | null
+          quality_id: string | null
+          report_destination_text: string | null
+          report_quantity_text: string | null
+          report_type: string | null
+          revision: number
+          sample_notes: string | null
+          seller_contact_id: string | null
+          seller_id: string | null
+          seller_reference: string | null
+          shipment_description: string | null
+          shipment_period_end: string | null
+          shipment_period_start: string | null
+          shipper_id: string | null
+          sold_by_ids: string[]
+          status: string
+          string_id: string | null
+          total_lots: number | null
+          trader_id: string | null
+          updated_at: string
+          volume_bags: number
+          volume_description: string | null
+          wa_qc_approved: boolean
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by_document_id?: string | null
+          arbitration?: string | null
+          average_fixed_price?: number | null
+          bag_type?: string | null
+          bag_weight_kg?: number | null
+          bags_per_box?: number | null
+          buyer_contact_id?: string | null
+          buyer_id: string
+          buyer_reference?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cert_options?: Json
+          certifications?: Json | null
+          channel?: string
+          commission_buyer_rate?: number | null
+          commission_buyer_unit?: string | null
+          commission_invoicing_entity?: string
+          commission_invoicing_entity_buyer?: string
+          commission_invoicing_entity_seller?: string
+          commission_rate?: number | null
+          commission_seller_rate?: number | null
+          commission_seller_unit?: string | null
+          commission_source?: string | null
+          commission_splits?: Json | null
+          commission_unit?: string | null
+          container_group_id?: string | null
+          container_leg?: string | null
+          container_size?: string | null
+          contract_date?: string | null
+          contract_number: string
+          contract_type?: string
+          created_at?: string
+          created_by?: string | null
+          created_in_new_system?: boolean
+          crop?: string | null
+          destination?: string | null
+          differential_value?: number | null
+          disclose_buyer_to_parent_seller?: boolean
+          end_buyer_id?: string | null
+          end_client_id?: string | null
+          eudr_compliant?: string | null
+          exchange?: string | null
+          exchange_month_default?: string | null
+          external_visible?: boolean
+          fixation_deadline?: string | null
+          fixation_limitation_days?: number | null
+          fixation_notes?: string | null
+          fixation_status?: string | null
+          fixation_type?: string | null
+          fixation_window_open_date?: string | null
+          id?: string
+          inquiry_id?: string | null
+          internal_notes?: Json | null
+          is_approved?: boolean
+          is_finalized?: boolean | null
+          is_urgent?: boolean | null
+          last_sent_revision?: number | null
+          legacy_id?: number | null
+          legacy_user_id?: number | null
+          notes?: string | null
+          outright_price?: number | null
+          outright_price_unit?: string | null
+          packaging?: string | null
+          parent_contract_group_id?: string | null
+          parent_contract_id?: string | null
+          payment_terms?: string | null
+          premiums?: Json
+          price_description?: string | null
+          price_type: string
+          qc_provider?: string | null
+          quality_description?: string | null
+          quality_description_unaccent?: string | null
+          quality_id?: string | null
+          report_destination_text?: string | null
+          report_quantity_text?: string | null
+          report_type?: string | null
+          revision?: number
+          sample_notes?: string | null
+          seller_contact_id?: string | null
+          seller_id?: string | null
+          seller_reference?: string | null
+          shipment_description?: string | null
+          shipment_period_end?: string | null
+          shipment_period_start?: string | null
+          shipper_id?: string | null
+          sold_by_ids?: string[]
+          status?: string
+          string_id?: string | null
+          total_lots?: number | null
+          trader_id?: string | null
+          updated_at?: string
+          volume_bags: number
+          volume_description?: string | null
+          wa_qc_approved?: boolean
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by_document_id?: string | null
+          arbitration?: string | null
+          average_fixed_price?: number | null
+          bag_type?: string | null
+          bag_weight_kg?: number | null
+          bags_per_box?: number | null
+          buyer_contact_id?: string | null
+          buyer_id?: string
+          buyer_reference?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cert_options?: Json
+          certifications?: Json | null
+          channel?: string
+          commission_buyer_rate?: number | null
+          commission_buyer_unit?: string | null
+          commission_invoicing_entity?: string
+          commission_invoicing_entity_buyer?: string
+          commission_invoicing_entity_seller?: string
+          commission_rate?: number | null
+          commission_seller_rate?: number | null
+          commission_seller_unit?: string | null
+          commission_source?: string | null
+          commission_splits?: Json | null
+          commission_unit?: string | null
+          container_group_id?: string | null
+          container_leg?: string | null
+          container_size?: string | null
+          contract_date?: string | null
+          contract_number?: string
+          contract_type?: string
+          created_at?: string
+          created_by?: string | null
+          created_in_new_system?: boolean
+          crop?: string | null
+          destination?: string | null
+          differential_value?: number | null
+          disclose_buyer_to_parent_seller?: boolean
+          end_buyer_id?: string | null
+          end_client_id?: string | null
+          eudr_compliant?: string | null
+          exchange?: string | null
+          exchange_month_default?: string | null
+          external_visible?: boolean
+          fixation_deadline?: string | null
+          fixation_limitation_days?: number | null
+          fixation_notes?: string | null
+          fixation_status?: string | null
+          fixation_type?: string | null
+          fixation_window_open_date?: string | null
+          id?: string
+          inquiry_id?: string | null
+          internal_notes?: Json | null
+          is_approved?: boolean
+          is_finalized?: boolean | null
+          is_urgent?: boolean | null
+          last_sent_revision?: number | null
+          legacy_id?: number | null
+          legacy_user_id?: number | null
+          notes?: string | null
+          outright_price?: number | null
+          outright_price_unit?: string | null
+          packaging?: string | null
+          parent_contract_group_id?: string | null
+          parent_contract_id?: string | null
+          payment_terms?: string | null
+          premiums?: Json
+          price_description?: string | null
+          price_type?: string
+          qc_provider?: string | null
+          quality_description?: string | null
+          quality_description_unaccent?: string | null
+          quality_id?: string | null
+          report_destination_text?: string | null
+          report_quantity_text?: string | null
+          report_type?: string | null
+          revision?: number
+          sample_notes?: string | null
+          seller_contact_id?: string | null
+          seller_id?: string | null
+          seller_reference?: string | null
+          shipment_description?: string | null
+          shipment_period_end?: string | null
+          shipment_period_start?: string | null
+          shipper_id?: string | null
+          sold_by_ids?: string[]
+          status?: string
+          string_id?: string | null
+          total_lots?: number | null
+          trader_id?: string | null
+          updated_at?: string
+          volume_bags?: number
+          volume_description?: string | null
+          wa_qc_approved?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contracts_approved_by_document_id_fkey"
+            columns: ["approved_by_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_contact_id_fkey"
+            columns: ["buyer_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_inquiry_id_fkey"
+            columns: ["inquiry_id"]
+            isOneToOne: false
+            referencedRelation: "inquiries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_quality_id_fkey"
+            columns: ["quality_id"]
+            isOneToOne: false
+            referencedRelation: "quality_master"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_contact_id_fkey"
+            columns: ["seller_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contracts_fixation_backup_20260428: {
+        Row: {
+          fixation_status: string | null
+          fixation_type: string | null
+          id: string | null
+          price_type: string | null
+          shipment_period_start: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          fixation_status?: string | null
+          fixation_type?: string | null
+          id?: string | null
+          price_type?: string | null
+          shipment_period_start?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          fixation_status?: string | null
+          fixation_type?: string | null
+          id?: string | null
+          price_type?: string | null
+          shipment_period_start?: string | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       convention_events: {
         Row: {
           convention_id: string
@@ -2489,6 +5074,137 @@ export type Database = {
         }
         Relationships: []
       }
+      country_phyto_change_log: {
+        Row: {
+          changed_at: string
+          field_changed: string
+          id: string
+          new_value: string | null
+          previous_value: string | null
+          requirement_id: string
+        }
+        Insert: {
+          changed_at?: string
+          field_changed: string
+          id?: string
+          new_value?: string | null
+          previous_value?: string | null
+          requirement_id: string
+        }
+        Update: {
+          changed_at?: string
+          field_changed?: string
+          id?: string
+          new_value?: string | null
+          previous_value?: string | null
+          requirement_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "country_phyto_change_log_requirement_id_fkey"
+            columns: ["requirement_id"]
+            isOneToOne: false
+            referencedRelation: "country_phyto_requirements"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      country_phyto_requirements: {
+        Row: {
+          country_name_en: string | null
+          country_name_pt: string
+          created_at: string
+          declaracoes_adicionais: string | null
+          finalidade: string
+          id: string
+          last_changed_at: string
+          last_scraped_at: string
+          observacoes: string | null
+          parte_exportada: string
+          pdf_storage_path: string | null
+          produto: string
+          raw_html: string | null
+          requires_additional_declaration: boolean
+          requires_phyto: boolean
+          requisitos_gerais: string | null
+          scientific_name: string
+          source_url: string
+          tratamentos: string | null
+          updated_at: string
+        }
+        Insert: {
+          country_name_en?: string | null
+          country_name_pt: string
+          created_at?: string
+          declaracoes_adicionais?: string | null
+          finalidade?: string
+          id?: string
+          last_changed_at?: string
+          last_scraped_at?: string
+          observacoes?: string | null
+          parte_exportada?: string
+          pdf_storage_path?: string | null
+          produto?: string
+          raw_html?: string | null
+          requires_additional_declaration?: boolean
+          requires_phyto?: boolean
+          requisitos_gerais?: string | null
+          scientific_name?: string
+          source_url: string
+          tratamentos?: string | null
+          updated_at?: string
+        }
+        Update: {
+          country_name_en?: string | null
+          country_name_pt?: string
+          created_at?: string
+          declaracoes_adicionais?: string | null
+          finalidade?: string
+          id?: string
+          last_changed_at?: string
+          last_scraped_at?: string
+          observacoes?: string | null
+          parte_exportada?: string
+          pdf_storage_path?: string | null
+          produto?: string
+          raw_html?: string | null
+          requires_additional_declaration?: boolean
+          requires_phyto?: boolean
+          requisitos_gerais?: string | null
+          scientific_name?: string
+          source_url?: string
+          tratamentos?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      couriers: {
+        Row: {
+          active: boolean
+          created_at: string
+          created_by: string | null
+          id: string
+          name: string
+          tracking_url_template: string | null
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name: string
+          tracking_url_template?: string | null
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          name?: string
+          tracking_url_template?: string | null
+        }
+        Relationships: []
+      }
       cupping_attribute_definitions: {
         Row: {
           attribute_name: string
@@ -2552,22 +5268,22 @@ export type Database = {
             foreignKeyName: "cupping_attribute_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "cupping_attribute_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "cupping_attribute_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "cupping_attribute_definitions_quality_id_fkey"
@@ -2637,13 +5353,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "cupping_audit_log_sample_id_fkey"
-            columns: ["sample_id"]
-            isOneToOne: false
-            referencedRelation: "sample_cupping_history"
-            referencedColumns: ["sample_id"]
           },
           {
             foreignKeyName: "cupping_audit_log_sample_id_fkey"
@@ -2734,22 +5443,22 @@ export type Database = {
             foreignKeyName: "cupping_scale_configs_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "cupping_scale_configs_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "cupping_scale_configs_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "cupping_scale_configs_quality_id_fkey"
@@ -2812,13 +5521,6 @@ export type Database = {
             foreignKeyName: "cupping_scores_sample_id_fkey"
             columns: ["sample_id"]
             isOneToOne: false
-            referencedRelation: "sample_cupping_history"
-            referencedColumns: ["sample_id"]
-          },
-          {
-            foreignKeyName: "cupping_scores_sample_id_fkey"
-            columns: ["sample_id"]
-            isOneToOne: false
             referencedRelation: "samples"
             referencedColumns: ["id"]
           },
@@ -2854,6 +5556,7 @@ export type Database = {
           finalized_by: string | null
           id: string
           laboratory_id: string | null
+          master_cupper_id: string | null
           min_cuppers_required: number | null
           participants: string[]
           review_required: boolean | null
@@ -2881,6 +5584,7 @@ export type Database = {
           finalized_by?: string | null
           id?: string
           laboratory_id?: string | null
+          master_cupper_id?: string | null
           min_cuppers_required?: number | null
           participants: string[]
           review_required?: boolean | null
@@ -2908,6 +5612,7 @@ export type Database = {
           finalized_by?: string | null
           id?: string
           laboratory_id?: string | null
+          master_cupper_id?: string | null
           min_cuppers_required?: number | null
           participants?: string[]
           review_required?: boolean | null
@@ -2957,6 +5662,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "cupping_sessions_master_cupper_id_fkey"
+            columns: ["master_cupper_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "cupping_sessions_validated_by_fkey"
             columns: ["validated_by"]
             isOneToOne: false
@@ -2964,6 +5676,42 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      daily_summary_send_log: {
+        Row: {
+          created_at: string
+          error: string | null
+          id: string
+          is_friday: boolean
+          payload_summary: Json | null
+          recipients: Json
+          resend_id: string | null
+          send_date: string
+          status: string
+        }
+        Insert: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          is_friday: boolean
+          payload_summary?: Json | null
+          recipients: Json
+          resend_id?: string | null
+          send_date: string
+          status: string
+        }
+        Update: {
+          created_at?: string
+          error?: string | null
+          id?: string
+          is_friday?: boolean
+          payload_summary?: Json | null
+          recipients?: Json
+          resend_id?: string | null
+          send_date?: string
+          status?: string
+        }
+        Relationships: []
       }
       defect_definitions: {
         Row: {
@@ -3028,28 +5776,286 @@ export type Database = {
             foreignKeyName: "defect_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "defect_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "defect_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "defect_definitions_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      departments: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          group_email: string | null
+          id: string
+          is_active: boolean
+          modules: string[]
+          name: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          group_email?: string | null
+          id?: string
+          is_active?: boolean
+          modules?: string[]
+          name: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          group_email?: string | null
+          id?: string
+          is_active?: boolean
+          modules?: string[]
+          name?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      destination_conditions: {
+        Row: {
+          country: string
+          created_at: string | null
+          id: string
+          is_active: boolean | null
+          requires_mapa_phyto: boolean | null
+          sort_order: number | null
+          updated_at: string | null
+        }
+        Insert: {
+          country: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          requires_mapa_phyto?: boolean | null
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Update: {
+          country?: string
+          created_at?: string | null
+          id?: string
+          is_active?: boolean | null
+          requires_mapa_phyto?: boolean | null
+          sort_order?: number | null
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
+      destinations: {
+        Row: {
+          country_name: string
+          created_at: string
+          id: string
+          is_active: boolean
+          sort_order: number
+          trigger_value: string
+          updated_at: string
+        }
+        Insert: {
+          country_name: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          sort_order?: number
+          trigger_value: string
+          updated_at?: string
+        }
+        Update: {
+          country_name?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          sort_order?: number
+          trigger_value?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      document_activity_log: {
+        Row: {
+          action: string
+          actor_id: string | null
+          created_at: string
+          document_id: string
+          id: string
+          metadata: Json
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          created_at?: string
+          document_id: string
+          id?: string
+          metadata?: Json
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          created_at?: string
+          document_id?: string
+          id?: string
+          metadata?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_activity_log_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      document_annotations: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          document_id: string
+          height_pct: number | null
+          id: string
+          kind: string
+          label: string | null
+          note: string
+          page_number: number
+          resolved_at: string | null
+          resolved_by: string | null
+          width_pct: number | null
+          x_pct: number | null
+          y_pct: number | null
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          document_id: string
+          height_pct?: number | null
+          id?: string
+          kind?: string
+          label?: string | null
+          note: string
+          page_number?: number
+          resolved_at?: string | null
+          resolved_by?: string | null
+          width_pct?: number | null
+          x_pct?: number | null
+          y_pct?: number | null
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          document_id?: string
+          height_pct?: number | null
+          id?: string
+          kind?: string
+          label?: string | null
+          note?: string
+          page_number?: number
+          resolved_at?: string | null
+          resolved_by?: string | null
+          width_pct?: number | null
+          x_pct?: number | null
+          y_pct?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_annotations_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      document_contracts: {
+        Row: {
+          contract_id: string
+          created_at: string
+          document_id: string
+          id: string
+          is_primary: boolean
+          match_confidence: number | null
+          match_source: string | null
+          matched_column: string | null
+          updated_at: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          document_id: string
+          id?: string
+          is_primary?: boolean
+          match_confidence?: number | null
+          match_source?: string | null
+          matched_column?: string | null
+          updated_at?: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          document_id?: string
+          id?: string
+          is_primary?: boolean
+          match_confidence?: number | null
+          match_source?: string | null
+          matched_column?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_contracts_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
             referencedColumns: ["id"]
           },
         ]
@@ -3108,13 +6114,6 @@ export type Database = {
             referencedColumns: ["company_id"]
           },
           {
-            foreignKeyName: "document_permissions_document_id_fkey"
-            columns: ["document_id"]
-            isOneToOne: false
-            referencedRelation: "documents"
-            referencedColumns: ["id"]
-          },
-          {
             foreignKeyName: "document_permissions_granted_by_fkey"
             columns: ["granted_by"]
             isOneToOne: false
@@ -3137,168 +6136,292 @@ export type Database = {
           },
         ]
       }
-      documents: {
+      document_threads: {
         Row: {
-          access_level: string | null
-          category: string | null
-          certifications: string[] | null
-          coffee_metadata: Json | null
-          company_id: string | null
-          created_at: string | null
-          crop_numbers: string[] | null
-          crop_season: string | null
-          description: string | null
-          document_type: string | null
-          file_size: number | null
-          file_type: string
-          filename: string
-          harvest_year: number | null
+          contract_id: string
+          conversation_id: string | null
+          created_at: string
           id: string
-          is_shared: boolean | null
-          lab_id: string | null
-          meeting_id: string | null
-          original_filename: string
-          quality_grades: string[] | null
-          regions: string[] | null
-          sharing_policy: string | null
-          storage_path: string
-          suppliers: string[] | null
-          supply_info: string[] | null
-          tags: string[] | null
-          trip_id: string | null
-          updated_at: string | null
-          uploaded_by: string | null
-          urgency_level: string | null
-          visibility: string | null
+          needs_review: boolean
+          topic_cluster_id: string
+          topic_label: string
+          updated_at: string
         }
         Insert: {
-          access_level?: string | null
-          category?: string | null
-          certifications?: string[] | null
-          coffee_metadata?: Json | null
-          company_id?: string | null
-          created_at?: string | null
-          crop_numbers?: string[] | null
-          crop_season?: string | null
-          description?: string | null
-          document_type?: string | null
-          file_size?: number | null
-          file_type: string
-          filename: string
-          harvest_year?: number | null
+          contract_id: string
+          conversation_id?: string | null
+          created_at?: string
           id?: string
-          is_shared?: boolean | null
-          lab_id?: string | null
-          meeting_id?: string | null
-          original_filename: string
-          quality_grades?: string[] | null
-          regions?: string[] | null
-          sharing_policy?: string | null
-          storage_path: string
-          suppliers?: string[] | null
-          supply_info?: string[] | null
-          tags?: string[] | null
-          trip_id?: string | null
-          updated_at?: string | null
-          uploaded_by?: string | null
-          urgency_level?: string | null
-          visibility?: string | null
+          needs_review?: boolean
+          topic_cluster_id: string
+          topic_label: string
+          updated_at?: string
         }
         Update: {
-          access_level?: string | null
-          category?: string | null
-          certifications?: string[] | null
-          coffee_metadata?: Json | null
-          company_id?: string | null
-          created_at?: string | null
-          crop_numbers?: string[] | null
-          crop_season?: string | null
-          description?: string | null
-          document_type?: string | null
-          file_size?: number | null
-          file_type?: string
-          filename?: string
-          harvest_year?: number | null
+          contract_id?: string
+          conversation_id?: string | null
+          created_at?: string
           id?: string
-          is_shared?: boolean | null
-          lab_id?: string | null
-          meeting_id?: string | null
-          original_filename?: string
-          quality_grades?: string[] | null
-          regions?: string[] | null
-          sharing_policy?: string | null
-          storage_path?: string
-          suppliers?: string[] | null
-          supply_info?: string[] | null
-          tags?: string[] | null
-          trip_id?: string | null
-          updated_at?: string | null
-          uploaded_by?: string | null
-          urgency_level?: string | null
-          visibility?: string | null
+          needs_review?: boolean
+          topic_cluster_id?: string
+          topic_label?: string
+          updated_at?: string
         }
         Relationships: [
           {
-            foreignKeyName: "documents_company_id_fkey"
-            columns: ["company_id"]
+            foreignKeyName: "document_threads_contract_id_fkey"
+            columns: ["contract_id"]
             isOneToOne: false
-            referencedRelation: "companies"
+            referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "documents_company_id_fkey"
-            columns: ["company_id"]
+            foreignKeyName: "document_threads_contract_id_fkey"
+            columns: ["contract_id"]
             isOneToOne: false
-            referencedRelation: "companies_with_legacy"
+            referencedRelation: "contracts_display"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "documents_company_id_fkey"
-            columns: ["company_id"]
+            foreignKeyName: "document_threads_contract_id_fkey"
+            columns: ["contract_id"]
             isOneToOne: false
-            referencedRelation: "company_file_summaries"
-            referencedColumns: ["company_id"]
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
           },
+        ]
+      }
+      document_types: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          is_user_created: boolean
+          name: string
+          scope: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_user_created?: boolean
+          name: string
+          scope: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_user_created?: boolean
+          name?: string
+          scope?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      documents: {
+        Row: {
+          ai_confidence: number | null
+          archived_at: string | null
+          classify_log_id: string | null
+          contract_id: string | null
+          correction_last_reply_at: string | null
+          correction_request_email_id: string | null
+          correction_requested_at: string | null
+          correction_requested_by: string | null
+          correction_status: string
+          created_at: string
+          created_by: string | null
+          document_type_id: string | null
+          email_conversation_id: string | null
+          email_message_id: string | null
+          email_message_uuid: string | null
+          file_hash: string | null
+          file_name: string
+          file_size: number | null
+          forward_note: string | null
+          forwarded_at: string | null
+          forwarded_by: string | null
+          forwarded_to: string | null
+          handled_at: string | null
+          handled_by: string | null
+          id: string
+          ingestion_log_id: string | null
+          mime_type: string | null
+          pdf_is_image: boolean
+          pdf_text: string | null
+          possible_duplicate: boolean
+          rejected_at: string | null
+          rejected_by: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          shipment_id: string | null
+          side: string | null
+          source: string
+          status: string
+          storage_path: string
+          updated_at: string
+          vision_extracted: Json | null
+          vision_extracted_at: string | null
+        }
+        Insert: {
+          ai_confidence?: number | null
+          archived_at?: string | null
+          classify_log_id?: string | null
+          contract_id?: string | null
+          correction_last_reply_at?: string | null
+          correction_request_email_id?: string | null
+          correction_requested_at?: string | null
+          correction_requested_by?: string | null
+          correction_status?: string
+          created_at?: string
+          created_by?: string | null
+          document_type_id?: string | null
+          email_conversation_id?: string | null
+          email_message_id?: string | null
+          email_message_uuid?: string | null
+          file_hash?: string | null
+          file_name: string
+          file_size?: number | null
+          forward_note?: string | null
+          forwarded_at?: string | null
+          forwarded_by?: string | null
+          forwarded_to?: string | null
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          ingestion_log_id?: string | null
+          mime_type?: string | null
+          pdf_is_image?: boolean
+          pdf_text?: string | null
+          possible_duplicate?: boolean
+          rejected_at?: string | null
+          rejected_by?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          shipment_id?: string | null
+          side?: string | null
+          source?: string
+          status?: string
+          storage_path: string
+          updated_at?: string
+          vision_extracted?: Json | null
+          vision_extracted_at?: string | null
+        }
+        Update: {
+          ai_confidence?: number | null
+          archived_at?: string | null
+          classify_log_id?: string | null
+          contract_id?: string | null
+          correction_last_reply_at?: string | null
+          correction_request_email_id?: string | null
+          correction_requested_at?: string | null
+          correction_requested_by?: string | null
+          correction_status?: string
+          created_at?: string
+          created_by?: string | null
+          document_type_id?: string | null
+          email_conversation_id?: string | null
+          email_message_id?: string | null
+          email_message_uuid?: string | null
+          file_hash?: string | null
+          file_name?: string
+          file_size?: number | null
+          forward_note?: string | null
+          forwarded_at?: string | null
+          forwarded_by?: string | null
+          forwarded_to?: string | null
+          handled_at?: string | null
+          handled_by?: string | null
+          id?: string
+          ingestion_log_id?: string | null
+          mime_type?: string | null
+          pdf_is_image?: boolean
+          pdf_text?: string | null
+          possible_duplicate?: boolean
+          rejected_at?: string | null
+          rejected_by?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          shipment_id?: string | null
+          side?: string | null
+          source?: string
+          status?: string
+          storage_path?: string
+          updated_at?: string
+          vision_extracted?: Json | null
+          vision_extracted_at?: string | null
+        }
+        Relationships: [
           {
-            foreignKeyName: "documents_lab_id_fkey"
-            columns: ["lab_id"]
+            foreignKeyName: "documents_classify_log_id_fkey"
+            columns: ["classify_log_id"]
             isOneToOne: false
-            referencedRelation: "labs"
+            referencedRelation: "ai_learning_log"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "documents_meeting_id_fkey"
-            columns: ["meeting_id"]
+            foreignKeyName: "documents_contract_id_fkey"
+            columns: ["contract_id"]
             isOneToOne: false
-            referencedRelation: "meetings"
+            referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "documents_trip_id_fkey"
-            columns: ["trip_id"]
+            foreignKeyName: "documents_contract_id_fkey"
+            columns: ["contract_id"]
             isOneToOne: false
-            referencedRelation: "trip_card_data"
+            referencedRelation: "contracts_display"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "documents_trip_id_fkey"
-            columns: ["trip_id"]
+            foreignKeyName: "documents_contract_id_fkey"
+            columns: ["contract_id"]
             isOneToOne: false
-            referencedRelation: "trip_summaries"
+            referencedRelation: "contracts_with_latest_sample_status"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "documents_trip_id_fkey"
-            columns: ["trip_id"]
+            foreignKeyName: "documents_correction_request_email_id_fkey"
+            columns: ["correction_request_email_id"]
             isOneToOne: false
-            referencedRelation: "trips"
+            referencedRelation: "email_messages"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "documents_uploaded_by_fkey"
-            columns: ["uploaded_by"]
+            foreignKeyName: "documents_document_type_id_fkey"
+            columns: ["document_type_id"]
             isOneToOne: false
-            referencedRelation: "users"
+            referencedRelation: "document_types"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_email_message_uuid_fkey"
+            columns: ["email_message_uuid"]
+            isOneToOne: false
+            referencedRelation: "email_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_ingestion_log_id_fkey"
+            columns: ["ingestion_log_id"]
+            isOneToOne: false
+            referencedRelation: "ai_learning_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_shipment_id_fkey"
+            columns: ["shipment_id"]
+            isOneToOne: false
+            referencedRelation: "shipments"
             referencedColumns: ["id"]
           },
         ]
@@ -3616,6 +6739,354 @@ export type Database = {
         }
         Relationships: []
       }
+      email_log: {
+        Row: {
+          actions_taken: Json | null
+          attachment_names: Json | null
+          body_preview: string | null
+          cc_addresses: Json | null
+          classification: string | null
+          classification_confidence: number | null
+          created_at: string
+          error_message: string | null
+          extracted_data: Json | null
+          from_address: string | null
+          from_name: string | null
+          has_attachments: boolean | null
+          id: string
+          mailbox: string
+          match_confidence: number | null
+          match_method: string | null
+          matched_contract_id: string | null
+          message_id: string | null
+          processed_at: string | null
+          processing_duration_ms: number | null
+          processing_status: string
+          received_at: string
+          review_action: string | null
+          review_notes: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          subject: string | null
+          to_addresses: Json | null
+        }
+        Insert: {
+          actions_taken?: Json | null
+          attachment_names?: Json | null
+          body_preview?: string | null
+          cc_addresses?: Json | null
+          classification?: string | null
+          classification_confidence?: number | null
+          created_at?: string
+          error_message?: string | null
+          extracted_data?: Json | null
+          from_address?: string | null
+          from_name?: string | null
+          has_attachments?: boolean | null
+          id?: string
+          mailbox: string
+          match_confidence?: number | null
+          match_method?: string | null
+          matched_contract_id?: string | null
+          message_id?: string | null
+          processed_at?: string | null
+          processing_duration_ms?: number | null
+          processing_status?: string
+          received_at: string
+          review_action?: string | null
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          subject?: string | null
+          to_addresses?: Json | null
+        }
+        Update: {
+          actions_taken?: Json | null
+          attachment_names?: Json | null
+          body_preview?: string | null
+          cc_addresses?: Json | null
+          classification?: string | null
+          classification_confidence?: number | null
+          created_at?: string
+          error_message?: string | null
+          extracted_data?: Json | null
+          from_address?: string | null
+          from_name?: string | null
+          has_attachments?: boolean | null
+          id?: string
+          mailbox?: string
+          match_confidence?: number | null
+          match_method?: string | null
+          matched_contract_id?: string | null
+          message_id?: string | null
+          processed_at?: string | null
+          processing_duration_ms?: number | null
+          processing_status?: string
+          received_at?: string
+          review_action?: string | null
+          review_notes?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          subject?: string | null
+          to_addresses?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_log_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_log_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_log_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_messages: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          bcc_recipients: Json
+          body_html: string | null
+          body_preview: string | null
+          body_purged_at: string | null
+          body_text: string | null
+          body_truncated: boolean
+          buyer_id: string | null
+          cc_recipients: Json
+          contract_id: string | null
+          conversation_id: string | null
+          created_at: string
+          direction: string
+          document_thread_id: string | null
+          drafted_by: string | null
+          drafted_by_ai: boolean
+          from_email: string
+          from_name: string | null
+          graph_id: string | null
+          graph_message_id: string | null
+          id: string
+          in_reply_to_header: string | null
+          in_reply_to_id: string | null
+          internet_message_id: string | null
+          mailbox: string
+          metadata: Json
+          received_at: string | null
+          references_headers: string[] | null
+          scheduled_send_at: string | null
+          seller_id: string | null
+          send_error: string | null
+          sender_email: string | null
+          sender_side: string | null
+          sent_at: string | null
+          sent_by: string | null
+          sent_by_ai: boolean
+          status: string
+          subject: string | null
+          to_recipients: Json
+          updated_at: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          bcc_recipients?: Json
+          body_html?: string | null
+          body_preview?: string | null
+          body_purged_at?: string | null
+          body_text?: string | null
+          body_truncated?: boolean
+          buyer_id?: string | null
+          cc_recipients?: Json
+          contract_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          direction: string
+          document_thread_id?: string | null
+          drafted_by?: string | null
+          drafted_by_ai?: boolean
+          from_email: string
+          from_name?: string | null
+          graph_id?: string | null
+          graph_message_id?: string | null
+          id?: string
+          in_reply_to_header?: string | null
+          in_reply_to_id?: string | null
+          internet_message_id?: string | null
+          mailbox: string
+          metadata?: Json
+          received_at?: string | null
+          references_headers?: string[] | null
+          scheduled_send_at?: string | null
+          seller_id?: string | null
+          send_error?: string | null
+          sender_email?: string | null
+          sender_side?: string | null
+          sent_at?: string | null
+          sent_by?: string | null
+          sent_by_ai?: boolean
+          status: string
+          subject?: string | null
+          to_recipients?: Json
+          updated_at?: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          bcc_recipients?: Json
+          body_html?: string | null
+          body_preview?: string | null
+          body_purged_at?: string | null
+          body_text?: string | null
+          body_truncated?: boolean
+          buyer_id?: string | null
+          cc_recipients?: Json
+          contract_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          direction?: string
+          document_thread_id?: string | null
+          drafted_by?: string | null
+          drafted_by_ai?: boolean
+          from_email?: string
+          from_name?: string | null
+          graph_id?: string | null
+          graph_message_id?: string | null
+          id?: string
+          in_reply_to_header?: string | null
+          in_reply_to_id?: string | null
+          internet_message_id?: string | null
+          mailbox?: string
+          metadata?: Json
+          received_at?: string | null
+          references_headers?: string[] | null
+          scheduled_send_at?: string | null
+          seller_id?: string | null
+          send_error?: string | null
+          sender_email?: string | null
+          sender_side?: string | null
+          sent_at?: string | null
+          sent_by?: string | null
+          sent_by_ai?: boolean
+          status?: string
+          subject?: string | null
+          to_recipients?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_messages_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "email_messages_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_document_thread_id_fkey"
+            columns: ["document_thread_id"]
+            isOneToOne: false
+            referencedRelation: "document_threads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_messages_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      exchange_rates: {
+        Row: {
+          base_currency: string
+          fetched_at: string | null
+          id: string
+          rate: number
+          rate_date: string
+          source: string | null
+          target_currency: string
+        }
+        Insert: {
+          base_currency?: string
+          fetched_at?: string | null
+          id?: string
+          rate: number
+          rate_date: string
+          source?: string | null
+          target_currency?: string
+        }
+        Update: {
+          base_currency?: string
+          fetched_at?: string | null
+          id?: string
+          rate?: number
+          rate_date?: string
+          source?: string | null
+          target_currency?: string
+        }
+        Relationships: []
+      }
       expenses: {
         Row: {
           amount: number
@@ -3708,63 +7179,165 @@ export type Database = {
           },
         ]
       }
-      exporters: {
+      exporter_categories: {
         Row: {
-          client_id: string | null
-          contact_email: string | null
-          contact_phone: string | null
-          country: string | null
-          created_at: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
           id: string
+          is_active: boolean
           name: string
-          notes: string | null
-          updated_at: string | null
+          sort_order: number | null
+          updated_at: string
         }
         Insert: {
-          client_id?: string | null
-          contact_email?: string | null
-          contact_phone?: string | null
-          country?: string | null
-          created_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
           id?: string
+          is_active?: boolean
           name: string
-          notes?: string | null
-          updated_at?: string | null
+          sort_order?: number | null
+          updated_at?: string
         }
         Update: {
-          client_id?: string | null
-          contact_email?: string | null
-          contact_phone?: string | null
-          country?: string | null
-          created_at?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
           id?: string
+          is_active?: boolean
           name?: string
-          notes?: string | null
-          updated_at?: string | null
+          sort_order?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      exporter_category_memberships: {
+        Row: {
+          category_id: string
+          company_id: string
+          id: string
+        }
+        Insert: {
+          category_id: string
+          company_id: string
+          id?: string
+        }
+        Update: {
+          category_id?: string
+          company_id?: string
+          id?: string
         }
         Relationships: [
           {
-            foreignKeyName: "exporters_client_id_fkey"
-            columns: ["client_id"]
+            foreignKeyName: "exporter_category_memberships_category_id_fkey"
+            columns: ["category_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "exporter_categories"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "exporters_client_id_fkey"
-            columns: ["client_id"]
+            foreignKeyName: "exporter_category_memberships_company_id_fkey"
+            columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "exporters_client_id_fkey"
-            columns: ["client_id"]
+            foreignKeyName: "exporter_category_memberships_company_id_fkey"
+            columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "clients"
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exporter_category_memberships_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      exporter_template_members: {
+        Row: {
+          company_id: string
+          id: string
+          template_id: string
+        }
+        Insert: {
+          company_id: string
+          id?: string
+          template_id: string
+        }
+        Update: {
+          company_id?: string
+          id?: string
+          template_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "exporter_template_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exporter_template_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "exporter_template_members_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "exporter_template_members_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "exporter_templates"
             referencedColumns: ["id"]
           },
         ]
+      }
+      exporter_templates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          description: string | null
+          id: string
+          is_active: boolean
+          name: string
+          quality_category: string | null
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          quality_category?: string | null
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          quality_category?: string | null
+          updated_at?: string
+        }
+        Relationships: []
       }
       external_drivers: {
         Row: {
@@ -3833,6 +7406,54 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      feedback: {
+        Row: {
+          ai_category: string | null
+          ai_priority: string | null
+          body: string | null
+          created_at: string
+          id: string
+          resolution: string | null
+          status: string
+          submitted_by: string
+          title: string
+          triaged_at: string | null
+          triaged_by: string | null
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          ai_category?: string | null
+          ai_priority?: string | null
+          body?: string | null
+          created_at?: string
+          id?: string
+          resolution?: string | null
+          status?: string
+          submitted_by: string
+          title: string
+          triaged_at?: string | null
+          triaged_by?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Update: {
+          ai_category?: string | null
+          ai_priority?: string | null
+          body?: string | null
+          created_at?: string
+          id?: string
+          resolution?: string | null
+          status?: string
+          submitted_by?: string
+          title?: string
+          triaged_at?: string | null
+          triaged_by?: string | null
+          type?: string
+          updated_at?: string
+        }
+        Relationships: []
       }
       file_access_logs: {
         Row: {
@@ -4173,6 +7794,886 @@ export type Database = {
           },
         ]
       }
+      fixation_email_queue: {
+        Row: {
+          applied_fixation_group_id: string | null
+          applied_gtc_order_id: string | null
+          body_content: string | null
+          body_content_type: string | null
+          body_preview: string | null
+          cc_recipients: Json
+          classification_confidence: number | null
+          classification_log_id: string | null
+          conversation_id: string | null
+          created_at: string
+          email_message_id: string
+          execution_type: string | null
+          extracted_fields: Json | null
+          forwarded_at: string | null
+          forwarded_conversation_id: string | null
+          forwarded_message_id: string | null
+          forwarded_to_email: string | null
+          from_email: string | null
+          from_name: string | null
+          id: string
+          in_reply_to: string | null
+          intent: string | null
+          internet_message_id: string | null
+          mailbox: string
+          matched_contract_id: string | null
+          matched_ref_value: string | null
+          matched_via: string | null
+          message_references: string[]
+          received_at: string
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          status: string
+          subject: string | null
+          thread_key: string
+          thread_key_override: string | null
+          thread_key_override_set_at: string | null
+          thread_key_override_set_by: string | null
+          tie_break_reason: string | null
+          to_recipients: Json
+          updated_at: string
+        }
+        Insert: {
+          applied_fixation_group_id?: string | null
+          applied_gtc_order_id?: string | null
+          body_content?: string | null
+          body_content_type?: string | null
+          body_preview?: string | null
+          cc_recipients?: Json
+          classification_confidence?: number | null
+          classification_log_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          email_message_id: string
+          execution_type?: string | null
+          extracted_fields?: Json | null
+          forwarded_at?: string | null
+          forwarded_conversation_id?: string | null
+          forwarded_message_id?: string | null
+          forwarded_to_email?: string | null
+          from_email?: string | null
+          from_name?: string | null
+          id?: string
+          in_reply_to?: string | null
+          intent?: string | null
+          internet_message_id?: string | null
+          mailbox: string
+          matched_contract_id?: string | null
+          matched_ref_value?: string | null
+          matched_via?: string | null
+          message_references?: string[]
+          received_at: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          subject?: string | null
+          thread_key: string
+          thread_key_override?: string | null
+          thread_key_override_set_at?: string | null
+          thread_key_override_set_by?: string | null
+          tie_break_reason?: string | null
+          to_recipients?: Json
+          updated_at?: string
+        }
+        Update: {
+          applied_fixation_group_id?: string | null
+          applied_gtc_order_id?: string | null
+          body_content?: string | null
+          body_content_type?: string | null
+          body_preview?: string | null
+          cc_recipients?: Json
+          classification_confidence?: number | null
+          classification_log_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          email_message_id?: string
+          execution_type?: string | null
+          extracted_fields?: Json | null
+          forwarded_at?: string | null
+          forwarded_conversation_id?: string | null
+          forwarded_message_id?: string | null
+          forwarded_to_email?: string | null
+          from_email?: string | null
+          from_name?: string | null
+          id?: string
+          in_reply_to?: string | null
+          intent?: string | null
+          internet_message_id?: string | null
+          mailbox?: string
+          matched_contract_id?: string | null
+          matched_ref_value?: string | null
+          matched_via?: string | null
+          message_references?: string[]
+          received_at?: string
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          status?: string
+          subject?: string | null
+          thread_key?: string
+          thread_key_override?: string | null
+          thread_key_override_set_at?: string | null
+          thread_key_override_set_by?: string | null
+          tie_break_reason?: string | null
+          to_recipients?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixation_email_queue_applied_fixation_group_id_fkey"
+            columns: ["applied_fixation_group_id"]
+            isOneToOne: false
+            referencedRelation: "fixation_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_email_queue_applied_gtc_order_id_fkey"
+            columns: ["applied_gtc_order_id"]
+            isOneToOne: false
+            referencedRelation: "gtc_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_email_queue_classification_log_id_fkey"
+            columns: ["classification_log_id"]
+            isOneToOne: false
+            referencedRelation: "ai_learning_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_email_queue_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_email_queue_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_email_queue_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fixation_groups: {
+        Row: {
+          buyer_broker_id: string | null
+          buyer_pf_sent_at: string | null
+          cancel_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          fixation_date: string
+          id: string
+          instructed_by: string | null
+          instructed_by_party: string | null
+          legacy_fix_id: number | null
+          notes: string | null
+          order_type: string
+          pf_document_id: string | null
+          pf_letter_generated_at: string | null
+          pf_letter_sent_at: string | null
+          receiver_contact_id: string | null
+          requester_contact_id: string | null
+          revision: number
+          seller_broker_id: string | null
+          seller_pf_sent_at: string | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          buyer_broker_id?: string | null
+          buyer_pf_sent_at?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          fixation_date?: string
+          id?: string
+          instructed_by?: string | null
+          instructed_by_party?: string | null
+          legacy_fix_id?: number | null
+          notes?: string | null
+          order_type?: string
+          pf_document_id?: string | null
+          pf_letter_generated_at?: string | null
+          pf_letter_sent_at?: string | null
+          receiver_contact_id?: string | null
+          requester_contact_id?: string | null
+          revision?: number
+          seller_broker_id?: string | null
+          seller_pf_sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          buyer_broker_id?: string | null
+          buyer_pf_sent_at?: string | null
+          cancel_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          fixation_date?: string
+          id?: string
+          instructed_by?: string | null
+          instructed_by_party?: string | null
+          legacy_fix_id?: number | null
+          notes?: string | null
+          order_type?: string
+          pf_document_id?: string | null
+          pf_letter_generated_at?: string | null
+          pf_letter_sent_at?: string | null
+          receiver_contact_id?: string | null
+          requester_contact_id?: string | null
+          revision?: number
+          seller_broker_id?: string | null
+          seller_pf_sent_at?: string | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixation_groups_buyer_broker_id_fkey"
+            columns: ["buyer_broker_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_buyer_broker_id_fkey"
+            columns: ["buyer_broker_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_buyer_broker_id_fkey"
+            columns: ["buyer_broker_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_pf_document_id_fkey"
+            columns: ["pf_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_receiver_contact_id_fkey"
+            columns: ["receiver_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_requester_contact_id_fkey"
+            columns: ["requester_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_seller_broker_id_fkey"
+            columns: ["seller_broker_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_seller_broker_id_fkey"
+            columns: ["seller_broker_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_groups_seller_broker_id_fkey"
+            columns: ["seller_broker_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      fixation_order_types: {
+        Row: {
+          code: string
+          created_at: string
+          created_by: string | null
+          label: string
+          parameters_schema: Json
+          requires_brokers: boolean
+          requires_price: boolean
+          sort_order: number
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          created_by?: string | null
+          label: string
+          parameters_schema?: Json
+          requires_brokers?: boolean
+          requires_price?: boolean
+          sort_order?: number
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          created_by?: string | null
+          label?: string
+          parameters_schema?: Json
+          requires_brokers?: boolean
+          requires_price?: boolean
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      fixation_revisions: {
+        Row: {
+          changed_fields: string[]
+          created_at: string
+          created_by: string | null
+          fixation_group_id: string
+          id: string
+          reason: string | null
+          revision: number
+          snapshot: Json
+        }
+        Insert: {
+          changed_fields?: string[]
+          created_at?: string
+          created_by?: string | null
+          fixation_group_id: string
+          id?: string
+          reason?: string | null
+          revision: number
+          snapshot: Json
+        }
+        Update: {
+          changed_fields?: string[]
+          created_at?: string
+          created_by?: string | null
+          fixation_group_id?: string
+          id?: string
+          reason?: string | null
+          revision?: number
+          snapshot?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixation_revisions_fixation_group_id_fkey"
+            columns: ["fixation_group_id"]
+            isOneToOne: false
+            referencedRelation: "fixation_groups"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fixation_thread_messages: {
+        Row: {
+          attached_at: string
+          attached_via: string
+          queue_message_id: string
+          thread_id: string
+        }
+        Insert: {
+          attached_at?: string
+          attached_via?: string
+          queue_message_id: string
+          thread_id: string
+        }
+        Update: {
+          attached_at?: string
+          attached_via?: string
+          queue_message_id?: string
+          thread_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixation_thread_messages_queue_message_id_fkey"
+            columns: ["queue_message_id"]
+            isOneToOne: false
+            referencedRelation: "fixation_email_queue"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_thread_messages_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "fixation_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fixation_thread_state_log: {
+        Row: {
+          actor: string | null
+          created_at: string
+          from_status: string | null
+          id: string
+          reason: string | null
+          thread_id: string
+          to_status: string
+        }
+        Insert: {
+          actor?: string | null
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          reason?: string | null
+          thread_id: string
+          to_status: string
+        }
+        Update: {
+          actor?: string | null
+          created_at?: string
+          from_status?: string | null
+          id?: string
+          reason?: string | null
+          thread_id?: string
+          to_status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixation_thread_state_log_thread_id_fkey"
+            columns: ["thread_id"]
+            isOneToOne: false
+            referencedRelation: "fixation_threads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fixation_threads: {
+        Row: {
+          contract_id: string
+          created_at: string
+          id: string
+          last_intent: string | null
+          last_received_at: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          id?: string
+          last_intent?: string | null
+          last_received_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          id?: string
+          last_intent?: string | null
+          last_received_at?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixation_threads_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_threads_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixation_threads_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fixations: {
+        Row: {
+          average_price: number | null
+          buyer_confirmed_at: string | null
+          confirmation_letter_path: string | null
+          confirmed_by_trader: string | null
+          contract_differential: number | null
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          differential_direction: string | null
+          exchange: string | null
+          final_price_clb: number | null
+          final_price_per_lb: number | null
+          fixation_date: string
+          fixation_group_id: string | null
+          fixing_time: string | null
+          gtc_order_id: string | null
+          ice_execution_price: number | null
+          id: string
+          initiated_by_company: string | null
+          initiated_by_contact: string | null
+          legacy_fix_id: number | null
+          legacy_fix_item_id: number | null
+          letter_sent_to_buyer_at: string | null
+          letter_sent_to_seller_at: string | null
+          lots_fixed: number
+          notes: string | null
+          order_type: string
+          seller_confirmed_at: string | null
+          source: string | null
+          source_email_id: string | null
+          terminal_code: string | null
+          terminal_month: string | null
+          updated_at: string
+        }
+        Insert: {
+          average_price?: number | null
+          buyer_confirmed_at?: string | null
+          confirmation_letter_path?: string | null
+          confirmed_by_trader?: string | null
+          contract_differential?: number | null
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          differential_direction?: string | null
+          exchange?: string | null
+          final_price_clb?: number | null
+          final_price_per_lb?: number | null
+          fixation_date: string
+          fixation_group_id?: string | null
+          fixing_time?: string | null
+          gtc_order_id?: string | null
+          ice_execution_price?: number | null
+          id?: string
+          initiated_by_company?: string | null
+          initiated_by_contact?: string | null
+          legacy_fix_id?: number | null
+          legacy_fix_item_id?: number | null
+          letter_sent_to_buyer_at?: string | null
+          letter_sent_to_seller_at?: string | null
+          lots_fixed: number
+          notes?: string | null
+          order_type?: string
+          seller_confirmed_at?: string | null
+          source?: string | null
+          source_email_id?: string | null
+          terminal_code?: string | null
+          terminal_month?: string | null
+          updated_at?: string
+        }
+        Update: {
+          average_price?: number | null
+          buyer_confirmed_at?: string | null
+          confirmation_letter_path?: string | null
+          confirmed_by_trader?: string | null
+          contract_differential?: number | null
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          differential_direction?: string | null
+          exchange?: string | null
+          final_price_clb?: number | null
+          final_price_per_lb?: number | null
+          fixation_date?: string
+          fixation_group_id?: string | null
+          fixing_time?: string | null
+          gtc_order_id?: string | null
+          ice_execution_price?: number | null
+          id?: string
+          initiated_by_company?: string | null
+          initiated_by_contact?: string | null
+          legacy_fix_id?: number | null
+          legacy_fix_item_id?: number | null
+          letter_sent_to_buyer_at?: string | null
+          letter_sent_to_seller_at?: string | null
+          lots_fixed?: number
+          notes?: string | null
+          order_type?: string
+          seller_confirmed_at?: string | null
+          source?: string | null
+          source_email_id?: string | null
+          terminal_code?: string | null
+          terminal_month?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fixations_fixation_group_id_fkey"
+            columns: ["fixation_group_id"]
+            isOneToOne: false
+            referencedRelation: "fixation_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixings_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixings_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixings_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixings_initiated_by_company_fkey"
+            columns: ["initiated_by_company"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixings_initiated_by_company_fkey"
+            columns: ["initiated_by_company"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fixings_initiated_by_company_fkey"
+            columns: ["initiated_by_company"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "fixings_initiated_by_contact_fkey"
+            columns: ["initiated_by_contact"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_fixing_email"
+            columns: ["source_email_id"]
+            isOneToOne: false
+            referencedRelation: "email_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_fixing_gtc"
+            columns: ["gtc_order_id"]
+            isOneToOne: false
+            referencedRelation: "gtc_orders"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      gtc_orders: {
+        Row: {
+          cancel_reason: string | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cancelled_date: string | null
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          exchange: string
+          filled_at: string | null
+          filled_date: string | null
+          filled_fixing_id: string | null
+          filled_price: number | null
+          fixation_group_id: string | null
+          id: string
+          lots: number
+          modification_history: Json | null
+          notes: string | null
+          placed_by_company: string | null
+          placed_by_contact: string | null
+          placed_date: string
+          status: string
+          target_price: number
+          terminal_code: string | null
+          terminal_month: string | null
+          updated_at: string
+          valid_until: string | null
+        }
+        Insert: {
+          cancel_reason?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_date?: string | null
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          exchange?: string
+          filled_at?: string | null
+          filled_date?: string | null
+          filled_fixing_id?: string | null
+          filled_price?: number | null
+          fixation_group_id?: string | null
+          id?: string
+          lots: number
+          modification_history?: Json | null
+          notes?: string | null
+          placed_by_company?: string | null
+          placed_by_contact?: string | null
+          placed_date?: string
+          status?: string
+          target_price: number
+          terminal_code?: string | null
+          terminal_month?: string | null
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Update: {
+          cancel_reason?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cancelled_date?: string | null
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          exchange?: string
+          filled_at?: string | null
+          filled_date?: string | null
+          filled_fixing_id?: string | null
+          filled_price?: number | null
+          fixation_group_id?: string | null
+          id?: string
+          lots?: number
+          modification_history?: Json | null
+          notes?: string | null
+          placed_by_company?: string | null
+          placed_by_contact?: string | null
+          placed_date?: string
+          status?: string
+          target_price?: number
+          terminal_code?: string | null
+          terminal_month?: string | null
+          updated_at?: string
+          valid_until?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "gtc_orders_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gtc_orders_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gtc_orders_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gtc_orders_filled_fixing_id_fkey"
+            columns: ["filled_fixing_id"]
+            isOneToOne: false
+            referencedRelation: "fixations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gtc_orders_fixation_group_id_fkey"
+            columns: ["fixation_group_id"]
+            isOneToOne: false
+            referencedRelation: "fixation_groups"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gtc_orders_placed_by_company_fkey"
+            columns: ["placed_by_company"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gtc_orders_placed_by_company_fkey"
+            columns: ["placed_by_company"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "gtc_orders_placed_by_company_fkey"
+            columns: ["placed_by_company"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "gtc_orders_placed_by_contact_fkey"
+            columns: ["placed_by_contact"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       guest_invitations: {
         Row: {
           accepted_at: string | null
@@ -4284,61 +8785,501 @@ export type Database = {
           },
         ]
       }
-      importers: {
+      inbox_archive_log: {
         Row: {
-          client_id: string | null
-          contact_email: string | null
-          contact_phone: string | null
-          country: string | null
-          created_at: string | null
+          archived_at: string
+          archived_to_folder_id: string | null
+          archived_to_folder_name: string | null
+          conversation_id: string
+          document_ids: string[]
+          dry_run: boolean
+          graph_message_id: string
           id: string
-          name: string
-          notes: string | null
-          updated_at: string | null
+          mailbox: string
+          reason: Json
         }
         Insert: {
-          client_id?: string | null
-          contact_email?: string | null
-          contact_phone?: string | null
-          country?: string | null
-          created_at?: string | null
+          archived_at?: string
+          archived_to_folder_id?: string | null
+          archived_to_folder_name?: string | null
+          conversation_id: string
+          document_ids?: string[]
+          dry_run?: boolean
+          graph_message_id: string
           id?: string
-          name: string
-          notes?: string | null
-          updated_at?: string | null
+          mailbox: string
+          reason?: Json
         }
         Update: {
-          client_id?: string | null
-          contact_email?: string | null
-          contact_phone?: string | null
-          country?: string | null
-          created_at?: string | null
+          archived_at?: string
+          archived_to_folder_id?: string | null
+          archived_to_folder_name?: string | null
+          conversation_id?: string
+          document_ids?: string[]
+          dry_run?: boolean
+          graph_message_id?: string
           id?: string
-          name?: string
+          mailbox?: string
+          reason?: Json
+        }
+        Relationships: []
+      }
+      inbox_watermark: {
+        Row: {
+          last_processed_message_id: string | null
+          last_processed_received_at: string | null
+          last_processed_sent_at: string | null
+          last_run_error: string | null
+          last_run_finished_at: string | null
+          last_run_started_at: string | null
+          last_run_status: string | null
+          mailbox: string
+          messages_processed_total: number
+          updated_at: string
+        }
+        Insert: {
+          last_processed_message_id?: string | null
+          last_processed_received_at?: string | null
+          last_processed_sent_at?: string | null
+          last_run_error?: string | null
+          last_run_finished_at?: string | null
+          last_run_started_at?: string | null
+          last_run_status?: string | null
+          mailbox: string
+          messages_processed_total?: number
+          updated_at?: string
+        }
+        Update: {
+          last_processed_message_id?: string | null
+          last_processed_received_at?: string | null
+          last_processed_sent_at?: string | null
+          last_run_error?: string | null
+          last_run_finished_at?: string | null
+          last_run_started_at?: string | null
+          last_run_status?: string | null
+          mailbox?: string
+          messages_processed_total?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      inquiries: {
+        Row: {
+          bags_per_box: number | null
+          booked_contract_id: string | null
+          boxes_per_month_max: number | null
+          boxes_per_month_min: number | null
+          buyer_id: string
+          certificates: Json | null
+          contact_id: string | null
+          created_at: string
+          created_by: string | null
+          destination: string | null
+          end_buyer_id: string | null
+          exporter_template_id: string | null
+          fixation_limitation_days: number | null
+          fixation_notes: string | null
+          fixation_type: string
+          fumigation_required: boolean
+          generated_summary_text: string | null
+          id: string
+          last_offered_at: string | null
+          lost_reason: string | null
+          notes: string | null
+          offered_status: string | null
+          packaging: string | null
+          priority: string | null
+          qualities: Json | null
+          quality_description: string | null
+          quality_id: string | null
+          selected_exporter_categories: Json | null
+          shipment_half_end: string | null
+          shipment_half_start: string | null
+          shipment_period_end: string | null
+          shipment_period_start: string | null
+          status: string
+          trader_id: string
+          updated_at: string
+          volume_bags_total: number | null
+          volume_by_month: Json | null
+          volume_description: string | null
+          wa_qc_approved: boolean
+        }
+        Insert: {
+          bags_per_box?: number | null
+          booked_contract_id?: string | null
+          boxes_per_month_max?: number | null
+          boxes_per_month_min?: number | null
+          buyer_id: string
+          certificates?: Json | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          destination?: string | null
+          end_buyer_id?: string | null
+          exporter_template_id?: string | null
+          fixation_limitation_days?: number | null
+          fixation_notes?: string | null
+          fixation_type: string
+          fumigation_required?: boolean
+          generated_summary_text?: string | null
+          id?: string
+          last_offered_at?: string | null
+          lost_reason?: string | null
           notes?: string | null
-          updated_at?: string | null
+          offered_status?: string | null
+          packaging?: string | null
+          priority?: string | null
+          qualities?: Json | null
+          quality_description?: string | null
+          quality_id?: string | null
+          selected_exporter_categories?: Json | null
+          shipment_half_end?: string | null
+          shipment_half_start?: string | null
+          shipment_period_end?: string | null
+          shipment_period_start?: string | null
+          status?: string
+          trader_id: string
+          updated_at?: string
+          volume_bags_total?: number | null
+          volume_by_month?: Json | null
+          volume_description?: string | null
+          wa_qc_approved?: boolean
+        }
+        Update: {
+          bags_per_box?: number | null
+          booked_contract_id?: string | null
+          boxes_per_month_max?: number | null
+          boxes_per_month_min?: number | null
+          buyer_id?: string
+          certificates?: Json | null
+          contact_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          destination?: string | null
+          end_buyer_id?: string | null
+          exporter_template_id?: string | null
+          fixation_limitation_days?: number | null
+          fixation_notes?: string | null
+          fixation_type?: string
+          fumigation_required?: boolean
+          generated_summary_text?: string | null
+          id?: string
+          last_offered_at?: string | null
+          lost_reason?: string | null
+          notes?: string | null
+          offered_status?: string | null
+          packaging?: string | null
+          priority?: string | null
+          qualities?: Json | null
+          quality_description?: string | null
+          quality_id?: string | null
+          selected_exporter_categories?: Json | null
+          shipment_half_end?: string | null
+          shipment_half_start?: string | null
+          shipment_period_end?: string | null
+          shipment_period_start?: string | null
+          status?: string
+          trader_id?: string
+          updated_at?: string
+          volume_bags_total?: number | null
+          volume_by_month?: Json | null
+          volume_description?: string | null
+          wa_qc_approved?: boolean
         }
         Relationships: [
           {
-            foreignKeyName: "importers_client_id_fkey"
-            columns: ["client_id"]
+            foreignKeyName: "fk_inquiry_booked_contract"
+            columns: ["booked_contract_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "contracts"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "importers_client_id_fkey"
-            columns: ["client_id"]
+            foreignKeyName: "fk_inquiry_booked_contract"
+            columns: ["booked_contract_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "importers_client_id_fkey"
+            foreignKeyName: "fk_inquiry_booked_contract"
+            columns: ["booked_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiries_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiries_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiries_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "inquiries_contact_id_fkey"
+            columns: ["contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiries_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiries_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiries_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "inquiries_exporter_template_id_fkey"
+            columns: ["exporter_template_id"]
+            isOneToOne: false
+            referencedRelation: "exporter_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiries_quality_id_fkey"
+            columns: ["quality_id"]
+            isOneToOne: false
+            referencedRelation: "quality_master"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inquiry_contracts: {
+        Row: {
+          contract_id: string
+          id: string
+          inquiry_id: string
+          shipment_month: string | null
+        }
+        Insert: {
+          contract_id: string
+          id?: string
+          inquiry_id: string
+          shipment_month?: string | null
+        }
+        Update: {
+          contract_id?: string
+          id?: string
+          inquiry_id?: string
+          shipment_month?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inquiry_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiry_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiry_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiry_contracts_inquiry_id_fkey"
+            columns: ["inquiry_id"]
+            isOneToOne: false
+            referencedRelation: "inquiries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      inquiry_exporter_contacts: {
+        Row: {
+          company_id: string
+          contacted_at: string
+          contacted_by: string
+          id: string
+          inquiry_id: string
+        }
+        Insert: {
+          company_id: string
+          contacted_at?: string
+          contacted_by: string
+          id?: string
+          inquiry_id: string
+        }
+        Update: {
+          company_id?: string
+          contacted_at?: string
+          contacted_by?: string
+          id?: string
+          inquiry_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inquiry_exporter_contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiry_exporter_contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inquiry_exporter_contacts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "inquiry_exporter_contacts_inquiry_id_fkey"
+            columns: ["inquiry_id"]
+            isOneToOne: false
+            referencedRelation: "inquiries"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      invoices: {
+        Row: {
+          client_id: string
+          created_at: string
+          created_by: string | null
+          currency: string
+          due_date: string | null
+          exchange_rate_at_issue: number | null
+          file_path: string | null
+          id: string
+          invoice_number: string | null
+          issued_date: string | null
+          line_items: Json
+          nfs_number: string | null
+          nfs_required: boolean | null
+          notes: string | null
+          period_end: string | null
+          period_start: string | null
+          quickbooks_invoice_id: string | null
+          quickbooks_invoice_url: string | null
+          sent_at: string | null
+          status: string
+          subtotal: number
+          tax_withholdings: Json | null
+          total_amount: number
+          type: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          due_date?: string | null
+          exchange_rate_at_issue?: number | null
+          file_path?: string | null
+          id?: string
+          invoice_number?: string | null
+          issued_date?: string | null
+          line_items?: Json
+          nfs_number?: string | null
+          nfs_required?: boolean | null
+          notes?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          quickbooks_invoice_id?: string | null
+          quickbooks_invoice_url?: string | null
+          sent_at?: string | null
+          status?: string
+          subtotal?: number
+          tax_withholdings?: Json | null
+          total_amount?: number
+          type: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          due_date?: string | null
+          exchange_rate_at_issue?: number | null
+          file_path?: string | null
+          id?: string
+          invoice_number?: string | null
+          issued_date?: string | null
+          line_items?: Json
+          nfs_number?: string | null
+          nfs_required?: boolean | null
+          notes?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          quickbooks_invoice_id?: string | null
+          quickbooks_invoice_url?: string | null
+          sent_at?: string | null
+          status?: string
+          subtotal?: number
+          tax_withholdings?: Json | null
+          total_amount?: number
+          type?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "invoices_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invoices_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -4528,22 +9469,22 @@ export type Database = {
             foreignKeyName: "lab_pricing_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "lab_pricing_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "lab_pricing_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "lab_pricing_laboratory_id_fkey"
@@ -4625,22 +9566,22 @@ export type Database = {
             foreignKeyName: "lab_shelves_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "lab_shelves_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "lab_shelves_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "lab_shelves_laboratory_id_fkey"
@@ -4965,6 +9906,121 @@ export type Database = {
             columns: ["parent_lab_id"]
             isOneToOne: false
             referencedRelation: "labs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leave_coverage: {
+        Row: {
+          buyer_id: string
+          covered_by_user_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          leave_id: string
+          valid_from: string
+          valid_until: string
+        }
+        Insert: {
+          buyer_id: string
+          covered_by_user_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          leave_id: string
+          valid_from: string
+          valid_until: string
+        }
+        Update: {
+          buyer_id?: string
+          covered_by_user_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          leave_id?: string
+          valid_from?: string
+          valid_until?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leave_coverage_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_coverage_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "leave_coverage_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "leave_coverage_leave_id_fkey"
+            columns: ["leave_id"]
+            isOneToOne: false
+            referencedRelation: "leave_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      leave_requests: {
+        Row: {
+          approved_at: string | null
+          approved_by: string | null
+          created_at: string
+          department: string
+          end_date: string
+          id: string
+          notes: string | null
+          start_date: string
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          department: string
+          end_date: string
+          id?: string
+          notes?: string | null
+          start_date: string
+          status?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by?: string | null
+          created_at?: string
+          department?: string
+          end_date?: string
+          id?: string
+          notes?: string | null
+          start_date?: string
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "leave_requests_user_profile_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -6044,22 +11100,22 @@ export type Database = {
             foreignKeyName: "fk_notifications_client"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "fk_notifications_client"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "fk_notifications_client"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "fk_notifications_laboratory"
@@ -6080,6 +11136,334 @@ export type Database = {
             columns: ["laboratory_id"]
             isOneToOne: false
             referencedRelation: "laboratories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      offer_claims: {
+        Row: {
+          created_at: string
+          id: string
+          inquiry_id: string
+          seller_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          inquiry_id: string
+          seller_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          inquiry_id?: string
+          seller_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offer_claims_inquiry_id_fkey"
+            columns: ["inquiry_id"]
+            isOneToOne: false
+            referencedRelation: "inquiries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offer_claims_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offer_claims_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offer_claims_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      offers: {
+        Row: {
+          add_to_price_report: boolean | null
+          availability_by_month: Json | null
+          commission_rate: number | null
+          commission_unit: string | null
+          conditions: string | null
+          created_at: string
+          created_by: string | null
+          differential_c_per_lb: number | null
+          differential_unit: string
+          differential_value: number | null
+          differentials_by_quality: Json | null
+          differentials_by_terminal: Json
+          fixation_days_override: number | null
+          fixation_type_override: string | null
+          full_quantity: boolean
+          id: string
+          inquiry_id: string
+          last_contact_date: string | null
+          notes: string | null
+          pricing_mode: string
+          seller_contact_id: string | null
+          seller_id: string
+          shipment_window: string | null
+          sort_order: number | null
+          status: string | null
+          updated_at: string
+          volume_available: number | null
+        }
+        Insert: {
+          add_to_price_report?: boolean | null
+          availability_by_month?: Json | null
+          commission_rate?: number | null
+          commission_unit?: string | null
+          conditions?: string | null
+          created_at?: string
+          created_by?: string | null
+          differential_c_per_lb?: number | null
+          differential_unit?: string
+          differential_value?: number | null
+          differentials_by_quality?: Json | null
+          differentials_by_terminal?: Json
+          fixation_days_override?: number | null
+          fixation_type_override?: string | null
+          full_quantity?: boolean
+          id?: string
+          inquiry_id: string
+          last_contact_date?: string | null
+          notes?: string | null
+          pricing_mode?: string
+          seller_contact_id?: string | null
+          seller_id: string
+          shipment_window?: string | null
+          sort_order?: number | null
+          status?: string | null
+          updated_at?: string
+          volume_available?: number | null
+        }
+        Update: {
+          add_to_price_report?: boolean | null
+          availability_by_month?: Json | null
+          commission_rate?: number | null
+          commission_unit?: string | null
+          conditions?: string | null
+          created_at?: string
+          created_by?: string | null
+          differential_c_per_lb?: number | null
+          differential_unit?: string
+          differential_value?: number | null
+          differentials_by_quality?: Json | null
+          differentials_by_terminal?: Json
+          fixation_days_override?: number | null
+          fixation_type_override?: string | null
+          full_quantity?: boolean
+          id?: string
+          inquiry_id?: string
+          last_contact_date?: string | null
+          notes?: string | null
+          pricing_mode?: string
+          seller_contact_id?: string | null
+          seller_id?: string
+          shipment_window?: string | null
+          sort_order?: number | null
+          status?: string | null
+          updated_at?: string
+          volume_available?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offers_inquiry_id_fkey"
+            columns: ["inquiry_id"]
+            isOneToOne: false
+            referencedRelation: "inquiries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offers_seller_contact_id_fkey"
+            columns: ["seller_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offers_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offers_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offers_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      packaging_bag_sizes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          sort_order: number
+          value: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          sort_order?: number
+          value: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          sort_order?: number
+          value?: string
+        }
+        Relationships: []
+      }
+      packaging_liners: {
+        Row: {
+          compatible_sizes: string[] | null
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          sort_order: number
+          value: string
+        }
+        Insert: {
+          compatible_sizes?: string[] | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          sort_order?: number
+          value: string
+        }
+        Update: {
+          compatible_sizes?: string[] | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          sort_order?: number
+          value?: string
+        }
+        Relationships: []
+      }
+      payment_terms: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_global_default: boolean
+          label: string
+          sort_order: number
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_global_default?: boolean
+          label: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_global_default?: boolean
+          label?: string
+          sort_order?: number
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          bank_reference: string | null
+          created_at: string
+          created_by: string | null
+          currency: string
+          exchange_rate_at_payment: number | null
+          id: string
+          invoice_id: string
+          net_received: number | null
+          notes: string | null
+          payment_date: string
+          payment_method: string | null
+          quickbooks_payment_id: string | null
+          tax_withheld: Json | null
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          bank_reference?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          exchange_rate_at_payment?: number | null
+          id?: string
+          invoice_id: string
+          net_received?: number | null
+          notes?: string | null
+          payment_date: string
+          payment_method?: string | null
+          quickbooks_payment_id?: string | null
+          tax_withheld?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          bank_reference?: string | null
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          exchange_rate_at_payment?: number | null
+          id?: string
+          invoice_id?: string
+          net_received?: number | null
+          notes?: string | null
+          payment_date?: string
+          payment_method?: string | null
+          quickbooks_payment_id?: string | null
+          tax_withheld?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payments_invoice_id_fkey"
+            columns: ["invoice_id"]
+            isOneToOne: false
+            referencedRelation: "invoices"
             referencedColumns: ["id"]
           },
         ]
@@ -6141,22 +11525,22 @@ export type Database = {
             foreignKeyName: "performance_metrics_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "performance_metrics_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "performance_metrics_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "performance_metrics_laboratory_id_fkey"
@@ -6180,6 +11564,81 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      ports: {
+        Row: {
+          country: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          legacy_id: number | null
+          name: string
+          port_code: string | null
+        }
+        Insert: {
+          country?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          legacy_id?: number | null
+          name: string
+          port_code?: string | null
+        }
+        Update: {
+          country?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          legacy_id?: number | null
+          name?: string
+          port_code?: string | null
+        }
+        Relationships: []
+      }
+      price_reports: {
+        Row: {
+          content: Json | null
+          created_at: string
+          created_by: string | null
+          id: string
+          notes: string | null
+          published_at: string | null
+          published_by: string | null
+          report_date: string | null
+          status: string
+          title: string | null
+          updated_at: string
+          version: number | null
+        }
+        Insert: {
+          content?: Json | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          report_date?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+          version?: number | null
+        }
+        Update: {
+          content?: Json | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          notes?: string | null
+          published_at?: string | null
+          published_by?: string | null
+          report_date?: string | null
+          status?: string
+          title?: string | null
+          updated_at?: string
+          version?: number | null
+        }
+        Relationships: []
       }
       profiles: {
         Row: {
@@ -6244,22 +11703,22 @@ export type Database = {
             foreignKeyName: "profiles_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "profiles_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "profiles_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "profiles_laboratory_id_fkey"
@@ -6283,6 +11742,223 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      project_categories: {
+        Row: {
+          color: string | null
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          color?: string | null
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
+      }
+      project_members: {
+        Row: {
+          created_at: string
+          department_id: string | null
+          id: string
+          project_id: string
+          role: string
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          department_id?: string | null
+          id?: string
+          project_id: string
+          role?: string
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          department_id?: string | null
+          id?: string
+          project_id?: string
+          role?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "project_members_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "project_members_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      projects: {
+        Row: {
+          category_id: string | null
+          column_template: string
+          columns: Json
+          created_at: string
+          created_by: string
+          description: string | null
+          due_date: string | null
+          id: string
+          name: string
+          slug: string
+          status: string
+          updated_at: string
+          visibility: string
+        }
+        Insert: {
+          category_id?: string | null
+          column_template?: string
+          columns?: Json
+          created_at?: string
+          created_by: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          name: string
+          slug: string
+          status?: string
+          updated_at?: string
+          visibility?: string
+        }
+        Update: {
+          category_id?: string | null
+          column_template?: string
+          columns?: Json
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          name?: string
+          slug?: string
+          status?: string
+          updated_at?: string
+          visibility?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "projects_category_id_fkey"
+            columns: ["category_id"]
+            isOneToOne: false
+            referencedRelation: "project_categories"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      pss_requests: {
+        Row: {
+          contract_id: string
+          id: string
+          notes: string | null
+          request_method: string | null
+          requested_at: string
+          requested_by: string | null
+          sample_id: string
+        }
+        Insert: {
+          contract_id: string
+          id?: string
+          notes?: string | null
+          request_method?: string | null
+          requested_at?: string
+          requested_by?: string | null
+          sample_id: string
+        }
+        Update: {
+          contract_id?: string
+          id?: string
+          notes?: string | null
+          request_method?: string | null
+          requested_at?: string
+          requested_by?: string | null
+          sample_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "pss_requests_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pss_requests_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pss_requests_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "pss_requests_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "shipment_samples"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      push_subscriptions: {
+        Row: {
+          auth_key: string
+          created_at: string
+          endpoint: string
+          id: string
+          last_seen_at: string
+          p256dh_key: string
+          user_agent: string | null
+          user_id: string
+        }
+        Insert: {
+          auth_key: string
+          created_at?: string
+          endpoint: string
+          id?: string
+          last_seen_at?: string
+          p256dh_key: string
+          user_agent?: string | null
+          user_id: string
+        }
+        Update: {
+          auth_key?: string
+          created_at?: string
+          endpoint?: string
+          id?: string
+          last_seen_at?: string
+          p256dh_key?: string
+          user_agent?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       qc_activities: {
         Row: {
@@ -6349,6 +12025,118 @@ export type Database = {
           },
         ]
       }
+      qc_client_settings: {
+        Row: {
+          bag_weight_kg: number | null
+          billing_basis: Database["public"]["Enums"]["billing_basis"] | null
+          billing_notes: string | null
+          certificate_config: Json | null
+          certificate_delivery_timing: string | null
+          certificate_pattern: Json | null
+          company_id: string
+          created_at: string
+          currency: string | null
+          default_quality_specs: string[] | null
+          defect_photos: string[] | null
+          fee_payer: Database["public"]["Enums"]["fee_payer"] | null
+          has_origin_pricing: boolean | null
+          moisture_standard:
+            | Database["public"]["Enums"]["moisture_standard"]
+            | null
+          notification_emails: string[] | null
+          payment_terms: string | null
+          price_per_pound_cents: number | null
+          price_per_sample: number | null
+          pricing_model: Database["public"]["Enums"]["pricing_model"] | null
+          report_branding_preference: string | null
+          sample_size_grams: number | null
+          storage_layout: Json | null
+          tax_region: string | null
+          tracking_number_format: Json | null
+          updated_at: string
+        }
+        Insert: {
+          bag_weight_kg?: number | null
+          billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
+          billing_notes?: string | null
+          certificate_config?: Json | null
+          certificate_delivery_timing?: string | null
+          certificate_pattern?: Json | null
+          company_id: string
+          created_at?: string
+          currency?: string | null
+          default_quality_specs?: string[] | null
+          defect_photos?: string[] | null
+          fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
+          has_origin_pricing?: boolean | null
+          moisture_standard?:
+            | Database["public"]["Enums"]["moisture_standard"]
+            | null
+          notification_emails?: string[] | null
+          payment_terms?: string | null
+          price_per_pound_cents?: number | null
+          price_per_sample?: number | null
+          pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
+          report_branding_preference?: string | null
+          sample_size_grams?: number | null
+          storage_layout?: Json | null
+          tax_region?: string | null
+          tracking_number_format?: Json | null
+          updated_at?: string
+        }
+        Update: {
+          bag_weight_kg?: number | null
+          billing_basis?: Database["public"]["Enums"]["billing_basis"] | null
+          billing_notes?: string | null
+          certificate_config?: Json | null
+          certificate_delivery_timing?: string | null
+          certificate_pattern?: Json | null
+          company_id?: string
+          created_at?: string
+          currency?: string | null
+          default_quality_specs?: string[] | null
+          defect_photos?: string[] | null
+          fee_payer?: Database["public"]["Enums"]["fee_payer"] | null
+          has_origin_pricing?: boolean | null
+          moisture_standard?:
+            | Database["public"]["Enums"]["moisture_standard"]
+            | null
+          notification_emails?: string[] | null
+          payment_terms?: string | null
+          price_per_pound_cents?: number | null
+          price_per_sample?: number | null
+          pricing_model?: Database["public"]["Enums"]["pricing_model"] | null
+          report_branding_preference?: string | null
+          sample_size_grams?: number | null
+          storage_layout?: Json | null
+          tax_region?: string | null
+          tracking_number_format?: Json | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "qc_client_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qc_client_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "qc_client_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
       quality_assessments: {
         Row: {
           assessor_id: string | null
@@ -6368,6 +12156,7 @@ export type Database = {
           moisture_standard:
             | Database["public"]["Enums"]["moisture_standard"]
             | null
+          resolved_defects: Json | null
           roast_data: Json | null
           sample_id: string | null
           sample_size_grams: number | null
@@ -6393,6 +12182,7 @@ export type Database = {
           moisture_standard?:
             | Database["public"]["Enums"]["moisture_standard"]
             | null
+          resolved_defects?: Json | null
           roast_data?: Json | null
           sample_id?: string | null
           sample_size_grams?: number | null
@@ -6418,6 +12208,7 @@ export type Database = {
           moisture_standard?:
             | Database["public"]["Enums"]["moisture_standard"]
             | null
+          resolved_defects?: Json | null
           roast_data?: Json | null
           sample_id?: string | null
           sample_size_grams?: number | null
@@ -6437,15 +12228,133 @@ export type Database = {
             foreignKeyName: "quality_assessments_sample_id_fkey"
             columns: ["sample_id"]
             isOneToOne: false
-            referencedRelation: "sample_cupping_history"
-            referencedColumns: ["sample_id"]
-          },
-          {
-            foreignKeyName: "quality_assessments_sample_id_fkey"
-            columns: ["sample_id"]
-            isOneToOne: false
             referencedRelation: "samples"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      quality_master: {
+        Row: {
+          abbreviation: string | null
+          buyer_id: string | null
+          category: string | null
+          certification: string | null
+          certifications_default: Json | null
+          created_at: string
+          default_exporter_template_id: string | null
+          description: string | null
+          display_name: string | null
+          end_client_id: string | null
+          id: string
+          inquiry_text: string | null
+          is_active: boolean
+          legacy_id: number | null
+          main_spec: string | null
+          name: string
+          price_report_enabled: boolean
+          pss_lead_weeks: number | null
+          quality_description: string | null
+          short_name: string | null
+          updated_at: string
+          waqc_quality_profile_id: string | null
+        }
+        Insert: {
+          abbreviation?: string | null
+          buyer_id?: string | null
+          category?: string | null
+          certification?: string | null
+          certifications_default?: Json | null
+          created_at?: string
+          default_exporter_template_id?: string | null
+          description?: string | null
+          display_name?: string | null
+          end_client_id?: string | null
+          id?: string
+          inquiry_text?: string | null
+          is_active?: boolean
+          legacy_id?: number | null
+          main_spec?: string | null
+          name: string
+          price_report_enabled?: boolean
+          pss_lead_weeks?: number | null
+          quality_description?: string | null
+          short_name?: string | null
+          updated_at?: string
+          waqc_quality_profile_id?: string | null
+        }
+        Update: {
+          abbreviation?: string | null
+          buyer_id?: string | null
+          category?: string | null
+          certification?: string | null
+          certifications_default?: Json | null
+          created_at?: string
+          default_exporter_template_id?: string | null
+          description?: string | null
+          display_name?: string | null
+          end_client_id?: string | null
+          id?: string
+          inquiry_text?: string | null
+          is_active?: boolean
+          legacy_id?: number | null
+          main_spec?: string | null
+          name?: string
+          price_report_enabled?: boolean
+          pss_lead_weeks?: number | null
+          quality_description?: string | null
+          short_name?: string | null
+          updated_at?: string
+          waqc_quality_profile_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_quality_exporter_template"
+            columns: ["default_exporter_template_id"]
+            isOneToOne: false
+            referencedRelation: "exporter_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quality_master_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quality_master_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quality_master_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "quality_master_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quality_master_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "quality_master_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -6487,13 +12396,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "profiles"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "quality_overrides_sample_id_fkey"
-            columns: ["sample_id"]
-            isOneToOne: false
-            referencedRelation: "sample_cupping_history"
-            referencedColumns: ["sample_id"]
           },
           {
             foreignKeyName: "quality_overrides_sample_id_fkey"
@@ -6695,6 +12597,74 @@ export type Database = {
           },
         ]
       }
+      report_recipients: {
+        Row: {
+          bcc_emails: string[]
+          cc_emails: string[]
+          client_id: string
+          created_at: string | null
+          id: string
+          last_sent_at: string | null
+          last_sent_by: string | null
+          report_type: string
+          to_emails: string[]
+          updated_at: string | null
+        }
+        Insert: {
+          bcc_emails?: string[]
+          cc_emails?: string[]
+          client_id: string
+          created_at?: string | null
+          id?: string
+          last_sent_at?: string | null
+          last_sent_by?: string | null
+          report_type: string
+          to_emails?: string[]
+          updated_at?: string | null
+        }
+        Update: {
+          bcc_emails?: string[]
+          cc_emails?: string[]
+          client_id?: string
+          created_at?: string | null
+          id?: string
+          last_sent_at?: string | null
+          last_sent_by?: string | null
+          report_type?: string
+          to_emails?: string[]
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "report_recipients_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "report_recipients_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "report_recipients_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "report_recipients_last_sent_by_fkey"
+            columns: ["last_sent_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       roast_photos: {
         Row: {
           description: string | null
@@ -6809,153 +12779,281 @@ export type Database = {
             foreignKeyName: "roast_profiles_sample_id_fkey"
             columns: ["sample_id"]
             isOneToOne: true
-            referencedRelation: "sample_cupping_history"
-            referencedColumns: ["sample_id"]
-          },
-          {
-            foreignKeyName: "roast_profiles_sample_id_fkey"
-            columns: ["sample_id"]
-            isOneToOne: true
             referencedRelation: "samples"
             referencedColumns: ["id"]
           },
         ]
       }
-      roasters: {
+      routing_rules: {
         Row: {
-          client_id: string | null
-          contact_email: string | null
-          contact_phone: string | null
-          country: string | null
-          created_at: string | null
+          auto_send_on_complete: boolean | null
+          client_id: string
+          created_at: string
+          created_by: string | null
+          document_type: string | null
+          email_template_id: string | null
           id: string
-          name: string
           notes: string | null
-          updated_at: string | null
+          recipients: Json
+          routing_action: string
+          updated_at: string
+          verify_before_send: boolean | null
         }
         Insert: {
-          client_id?: string | null
-          contact_email?: string | null
-          contact_phone?: string | null
-          country?: string | null
-          created_at?: string | null
+          auto_send_on_complete?: boolean | null
+          client_id: string
+          created_at?: string
+          created_by?: string | null
+          document_type?: string | null
+          email_template_id?: string | null
           id?: string
-          name: string
           notes?: string | null
-          updated_at?: string | null
+          recipients?: Json
+          routing_action?: string
+          updated_at?: string
+          verify_before_send?: boolean | null
         }
         Update: {
-          client_id?: string | null
-          contact_email?: string | null
-          contact_phone?: string | null
-          country?: string | null
-          created_at?: string | null
+          auto_send_on_complete?: boolean | null
+          client_id?: string
+          created_at?: string
+          created_by?: string | null
+          document_type?: string | null
+          email_template_id?: string | null
           id?: string
-          name?: string
           notes?: string | null
-          updated_at?: string | null
+          recipients?: Json
+          routing_action?: string
+          updated_at?: string
+          verify_before_send?: boolean | null
         }
         Relationships: [
           {
-            foreignKeyName: "roasters_client_id_fkey"
+            foreignKeyName: "routing_rules_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "roasters_client_id_fkey"
+            foreignKeyName: "routing_rules_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "roasters_client_id_fkey"
+            foreignKeyName: "routing_rules_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
         ]
       }
       sample_contracts: {
         Row: {
-          id: string
-          sample_id: string
-          tracking_number: string
-          wolthers_contract_nr: string | null
-          seller_contract_nr: string | null
-          shipper_contract_nr: string | null
+          bag_count: number | null
+          bag_type: string | null
+          bag_weight_kg: number | null
+          bags_quantity_mt: number | null
           buyer_contract_nr: string | null
-          roaster_contract_nr: string | null
-          qc_client_contract_nr: string | null
-          end_client_contract_nr: string | null
-          supplier_contract_nr: string | null
-          ico_number: string | null
+          client_id: string | null
           container_nr: string | null
           contract_id: string | null
+          created_at: string
+          created_by: string | null
+          end_client_contract_nr: string | null
+          end_client_id: string | null
+          equivalent_60kg_bags: number | null
+          exporter_sample_number: string | null
+          ico_number: string | null
+          id: string
           importer_id: string | null
           importer_is_qc_client: boolean | null
+          qc_client_contract_nr: string | null
+          roaster_contract_nr: string | null
           roaster_id: string | null
-          end_client_id: string | null
-          client_id: string | null
+          sample_id: string
+          seller_contract_nr: string | null
+          shipment_month: string | null
+          shipper_contract_nr: string | null
           sort_order: number
-          created_at: string
+          supplier_contract_nr: string | null
+          tracking_number: string
           updated_at: string
-          created_by: string | null
+          wolthers_contract_nr: string | null
         }
         Insert: {
-          id?: string
-          sample_id: string
-          tracking_number: string
-          wolthers_contract_nr?: string | null
-          seller_contract_nr?: string | null
-          shipper_contract_nr?: string | null
+          bag_count?: number | null
+          bag_type?: string | null
+          bag_weight_kg?: number | null
+          bags_quantity_mt?: number | null
           buyer_contract_nr?: string | null
-          roaster_contract_nr?: string | null
-          qc_client_contract_nr?: string | null
-          end_client_contract_nr?: string | null
-          supplier_contract_nr?: string | null
-          ico_number?: string | null
+          client_id?: string | null
           container_nr?: string | null
           contract_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          end_client_contract_nr?: string | null
+          end_client_id?: string | null
+          equivalent_60kg_bags?: number | null
+          exporter_sample_number?: string | null
+          ico_number?: string | null
+          id?: string
           importer_id?: string | null
           importer_is_qc_client?: boolean | null
+          qc_client_contract_nr?: string | null
+          roaster_contract_nr?: string | null
           roaster_id?: string | null
-          end_client_id?: string | null
-          client_id?: string | null
+          sample_id: string
+          seller_contract_nr?: string | null
+          shipment_month?: string | null
+          shipper_contract_nr?: string | null
           sort_order?: number
-          created_at?: string
+          supplier_contract_nr?: string | null
+          tracking_number: string
           updated_at?: string
-          created_by?: string | null
+          wolthers_contract_nr?: string | null
         }
         Update: {
-          id?: string
-          sample_id?: string
-          tracking_number?: string
-          wolthers_contract_nr?: string | null
-          seller_contract_nr?: string | null
-          shipper_contract_nr?: string | null
+          bag_count?: number | null
+          bag_type?: string | null
+          bag_weight_kg?: number | null
+          bags_quantity_mt?: number | null
           buyer_contract_nr?: string | null
-          roaster_contract_nr?: string | null
-          qc_client_contract_nr?: string | null
-          end_client_contract_nr?: string | null
-          supplier_contract_nr?: string | null
-          ico_number?: string | null
+          client_id?: string | null
           container_nr?: string | null
           contract_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          end_client_contract_nr?: string | null
+          end_client_id?: string | null
+          equivalent_60kg_bags?: number | null
+          exporter_sample_number?: string | null
+          ico_number?: string | null
+          id?: string
           importer_id?: string | null
           importer_is_qc_client?: boolean | null
+          qc_client_contract_nr?: string | null
+          roaster_contract_nr?: string | null
           roaster_id?: string | null
-          end_client_id?: string | null
-          client_id?: string | null
+          sample_id?: string
+          seller_contract_nr?: string | null
+          shipment_month?: string | null
+          shipper_contract_nr?: string | null
           sort_order?: number
-          created_at?: string
+          supplier_contract_nr?: string | null
+          tracking_number?: string
           updated_at?: string
-          created_by?: string | null
+          wolthers_contract_nr?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "sample_contracts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_importer_id_fkey"
+            columns: ["importer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_importer_id_fkey"
+            columns: ["importer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_importer_id_fkey"
+            columns: ["importer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_roaster_id_fkey"
+            columns: ["roaster_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_roaster_id_fkey"
+            columns: ["roaster_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_contracts_roaster_id_fkey"
+            columns: ["roaster_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
           {
             foreignKeyName: "sample_contracts_sample_id_fkey"
             columns: ["sample_id"]
@@ -6963,32 +13061,292 @@ export type Database = {
             referencedRelation: "samples"
             referencedColumns: ["id"]
           },
+        ]
+      }
+      sample_digest_log: {
+        Row: {
+          buyer_id: string | null
+          buyer_name: string | null
+          created_at: string
+          error: string | null
+          id: string
+          included_row_ids: string[]
+          recipient_emails: string[]
+          run_at: string
+          sample_count: number
+          skipped_reason: string | null
+          status: string
+          subject: string | null
+        }
+        Insert: {
+          buyer_id?: string | null
+          buyer_name?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          included_row_ids?: string[]
+          recipient_emails?: string[]
+          run_at?: string
+          sample_count?: number
+          skipped_reason?: string | null
+          status: string
+          subject?: string | null
+        }
+        Update: {
+          buyer_id?: string | null
+          buyer_name?: string | null
+          created_at?: string
+          error?: string | null
+          id?: string
+          included_row_ids?: string[]
+          recipient_emails?: string[]
+          run_at?: string
+          sample_count?: number
+          skipped_reason?: string | null
+          status?: string
+          subject?: string | null
+        }
+        Relationships: [
           {
-            foreignKeyName: "sample_contracts_importer_id_fkey"
-            columns: ["importer_id"]
+            foreignKeyName: "sample_digest_log_buyer_id_fkey"
+            columns: ["buyer_id"]
             isOneToOne: false
-            referencedRelation: "importers"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "sample_contracts_roaster_id_fkey"
-            columns: ["roaster_id"]
+            foreignKeyName: "sample_digest_log_buyer_id_fkey"
+            columns: ["buyer_id"]
             isOneToOne: false
-            referencedRelation: "roasters"
+            referencedRelation: "companies_with_legacy"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "sample_contracts_end_client_id_fkey"
-            columns: ["end_client_id"]
+            foreignKeyName: "sample_digest_log_buyer_id_fkey"
+            columns: ["buyer_id"]
             isOneToOne: false
-            referencedRelation: "clients"
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      sample_email_queue: {
+        Row: {
+          applied_sample_id: string | null
+          applied_via_autonomous: boolean
+          body_content: string | null
+          body_content_type: string | null
+          body_preview: string | null
+          cc_recipients: Json
+          classification_confidence: number | null
+          classification_log_id: string | null
+          conversation_id: string | null
+          created_at: string
+          digest_sent_at: string | null
+          email_message_id: string
+          extracted_fields: Json | null
+          from_email: string | null
+          from_name: string | null
+          id: string
+          intent: string | null
+          internet_message_id: string | null
+          matched_contract_id: string | null
+          matched_ref_value: string | null
+          matched_via: string | null
+          received_at: string
+          relay_message_id: string | null
+          relay_sent_at: string | null
+          relay_sent_to: string[] | null
+          relay_skipped_reason: string | null
+          relay_subject: string | null
+          resolution_notes: string | null
+          resolved_at: string | null
+          resolved_by: string | null
+          source_mailbox: string
+          status: string
+          subject: string | null
+          to_recipients: Json
+          updated_at: string
+        }
+        Insert: {
+          applied_sample_id?: string | null
+          applied_via_autonomous?: boolean
+          body_content?: string | null
+          body_content_type?: string | null
+          body_preview?: string | null
+          cc_recipients?: Json
+          classification_confidence?: number | null
+          classification_log_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          digest_sent_at?: string | null
+          email_message_id: string
+          extracted_fields?: Json | null
+          from_email?: string | null
+          from_name?: string | null
+          id?: string
+          intent?: string | null
+          internet_message_id?: string | null
+          matched_contract_id?: string | null
+          matched_ref_value?: string | null
+          matched_via?: string | null
+          received_at: string
+          relay_message_id?: string | null
+          relay_sent_at?: string | null
+          relay_sent_to?: string[] | null
+          relay_skipped_reason?: string | null
+          relay_subject?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source_mailbox: string
+          status?: string
+          subject?: string | null
+          to_recipients?: Json
+          updated_at?: string
+        }
+        Update: {
+          applied_sample_id?: string | null
+          applied_via_autonomous?: boolean
+          body_content?: string | null
+          body_content_type?: string | null
+          body_preview?: string | null
+          cc_recipients?: Json
+          classification_confidence?: number | null
+          classification_log_id?: string | null
+          conversation_id?: string | null
+          created_at?: string
+          digest_sent_at?: string | null
+          email_message_id?: string
+          extracted_fields?: Json | null
+          from_email?: string | null
+          from_name?: string | null
+          id?: string
+          intent?: string | null
+          internet_message_id?: string | null
+          matched_contract_id?: string | null
+          matched_ref_value?: string | null
+          matched_via?: string | null
+          received_at?: string
+          relay_message_id?: string | null
+          relay_sent_at?: string | null
+          relay_sent_to?: string[] | null
+          relay_skipped_reason?: string | null
+          relay_subject?: string | null
+          resolution_notes?: string | null
+          resolved_at?: string | null
+          resolved_by?: string | null
+          source_mailbox?: string
+          status?: string
+          subject?: string | null
+          to_recipients?: Json
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sample_email_queue_classification_log_id_fkey"
+            columns: ["classification_log_id"]
+            isOneToOne: false
+            referencedRelation: "ai_learning_log"
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "sample_contracts_client_id_fkey"
+            foreignKeyName: "sample_email_queue_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_email_queue_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_email_queue_matched_contract_id_fkey"
+            columns: ["matched_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      sample_recipients: {
+        Row: {
+          client_id: string
+          comments: string | null
+          contact_emails: string[]
+          created_at: string
+          id: string
+          responded_at: string | null
+          responded_by: string | null
+          sample_id: string
+          sent_at: string | null
+          status: Database["public"]["Enums"]["sample_recipient_status"]
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          comments?: string | null
+          contact_emails?: string[]
+          created_at?: string
+          id?: string
+          responded_at?: string | null
+          responded_by?: string | null
+          sample_id: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["sample_recipient_status"]
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          comments?: string | null
+          contact_emails?: string[]
+          created_at?: string
+          id?: string
+          responded_at?: string | null
+          responded_by?: string | null
+          sample_id?: string
+          sent_at?: string | null
+          status?: Database["public"]["Enums"]["sample_recipient_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sample_recipients_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_recipients_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_recipients_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "sample_recipients_responded_by_fkey"
+            columns: ["responded_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "sample_recipients_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "samples"
             referencedColumns: ["id"]
           },
         ]
@@ -7088,13 +13446,6 @@ export type Database = {
             foreignKeyName: "sample_transfers_sample_id_fkey"
             columns: ["sample_id"]
             isOneToOne: false
-            referencedRelation: "sample_cupping_history"
-            referencedColumns: ["sample_id"]
-          },
-          {
-            foreignKeyName: "sample_transfers_sample_id_fkey"
-            columns: ["sample_id"]
-            isOneToOne: false
             referencedRelation: "samples"
             referencedColumns: ["id"]
           },
@@ -7124,6 +13475,7 @@ export type Database = {
       samples: {
         Row: {
           assigned_to: string | null
+          awb_number: string | null
           bag_count: number | null
           bag_type: Database["public"]["Enums"]["bag_type_enum"] | null
           bag_weight_kg: number | null
@@ -7140,6 +13492,7 @@ export type Database = {
           container_nr: string | null
           contract_id: string | null
           contract_number: string | null
+          courier_name: string | null
           created_at: string | null
           crop_year: string | null
           deleted_at: string | null
@@ -7159,6 +13512,7 @@ export type Database = {
           importer_id: string | null
           importer_is_qc_client: boolean | null
           importer_legacy: string | null
+          is_quick_look: boolean
           laboratory_id: string | null
           locked: boolean | null
           micro_origin: string | null
@@ -7171,6 +13525,7 @@ export type Database = {
           roaster_id: string | null
           roaster_legacy: string | null
           same_seller_shipper: boolean | null
+          sample_category: Database["public"]["Enums"]["sample_category"]
           sample_type: Database["public"]["Enums"]["sample_type_enum"] | null
           scanned_at: string | null
           seller_contract_nr: string | null
@@ -7189,6 +13544,7 @@ export type Database = {
         }
         Insert: {
           assigned_to?: string | null
+          awb_number?: string | null
           bag_count?: number | null
           bag_type?: Database["public"]["Enums"]["bag_type_enum"] | null
           bag_weight_kg?: number | null
@@ -7205,6 +13561,7 @@ export type Database = {
           container_nr?: string | null
           contract_id?: string | null
           contract_number?: string | null
+          courier_name?: string | null
           created_at?: string | null
           crop_year?: string | null
           deleted_at?: string | null
@@ -7224,6 +13581,7 @@ export type Database = {
           importer_id?: string | null
           importer_is_qc_client?: boolean | null
           importer_legacy?: string | null
+          is_quick_look?: boolean
           laboratory_id?: string | null
           locked?: boolean | null
           micro_origin?: string | null
@@ -7236,6 +13594,7 @@ export type Database = {
           roaster_id?: string | null
           roaster_legacy?: string | null
           same_seller_shipper?: boolean | null
+          sample_category?: Database["public"]["Enums"]["sample_category"]
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
           scanned_at?: string | null
           seller_contract_nr?: string | null
@@ -7254,6 +13613,7 @@ export type Database = {
         }
         Update: {
           assigned_to?: string | null
+          awb_number?: string | null
           bag_count?: number | null
           bag_type?: Database["public"]["Enums"]["bag_type_enum"] | null
           bag_weight_kg?: number | null
@@ -7270,6 +13630,7 @@ export type Database = {
           container_nr?: string | null
           contract_id?: string | null
           contract_number?: string | null
+          courier_name?: string | null
           created_at?: string | null
           crop_year?: string | null
           deleted_at?: string | null
@@ -7289,6 +13650,7 @@ export type Database = {
           importer_id?: string | null
           importer_is_qc_client?: boolean | null
           importer_legacy?: string | null
+          is_quick_look?: boolean
           laboratory_id?: string | null
           locked?: boolean | null
           micro_origin?: string | null
@@ -7301,6 +13663,7 @@ export type Database = {
           roaster_id?: string | null
           roaster_legacy?: string | null
           same_seller_shipper?: boolean | null
+          sample_category?: Database["public"]["Enums"]["sample_category"]
           sample_type?: Database["public"]["Enums"]["sample_type_enum"] | null
           scanned_at?: string | null
           seller_contract_nr?: string | null
@@ -7329,57 +13692,106 @@ export type Database = {
             foreignKeyName: "samples_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "samples_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "samples_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "samples_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "samples_end_client_id_fkey"
             columns: ["end_client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "samples_end_client_id_fkey"
             columns: ["end_client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "samples_end_client_id_fkey"
             columns: ["end_client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "samples_exporter_id_fkey"
+            columns: ["exporter_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "samples_exporter_id_fkey"
             columns: ["exporter_id"]
             isOneToOne: false
-            referencedRelation: "exporters"
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_exporter_id_fkey"
+            columns: ["exporter_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "samples_importer_id_fkey"
+            columns: ["importer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "samples_importer_id_fkey"
             columns: ["importer_id"]
             isOneToOne: false
-            referencedRelation: "importers"
+            referencedRelation: "companies_with_legacy"
             referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_importer_id_fkey"
+            columns: ["importer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "samples_laboratory_id_fkey"
@@ -7413,17 +13825,834 @@ export type Database = {
             foreignKeyName: "samples_roaster_id_fkey"
             columns: ["roaster_id"]
             isOneToOne: false
-            referencedRelation: "roasters"
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_roaster_id_fkey"
+            columns: ["roaster_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_roaster_id_fkey"
+            columns: ["roaster_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "samples_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "samples_seller_id_fkey"
             columns: ["seller_id"]
             isOneToOne: false
-            referencedRelation: "exporters"
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "samples_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      saved_views: {
+        Row: {
+          columns: string[] | null
+          created_at: string | null
+          filters: Json
+          group_by: string | null
+          id: string
+          is_default: boolean | null
+          name: string
+          scope: string
+          sort: Json | null
+          user_id: string
+        }
+        Insert: {
+          columns?: string[] | null
+          created_at?: string | null
+          filters: Json
+          group_by?: string | null
+          id?: string
+          is_default?: boolean | null
+          name: string
+          scope?: string
+          sort?: Json | null
+          user_id: string
+        }
+        Update: {
+          columns?: string[] | null
+          created_at?: string | null
+          filters?: Json
+          group_by?: string | null
+          id?: string
+          is_default?: boolean | null
+          name?: string
+          scope?: string
+          sort?: Json | null
+          user_id?: string
+        }
+        Relationships: []
+      }
+      seller_condition_learning: {
+        Row: {
+          auto_exclude: boolean
+          buyer_id: string | null
+          condition_template_id: string
+          created_at: string
+          id: string
+          last_removed_at: string | null
+          removal_count: number
+          seller_id: string
+          updated_at: string
+        }
+        Insert: {
+          auto_exclude?: boolean
+          buyer_id?: string | null
+          condition_template_id: string
+          created_at?: string
+          id?: string
+          last_removed_at?: string | null
+          removal_count?: number
+          seller_id: string
+          updated_at?: string
+        }
+        Update: {
+          auto_exclude?: boolean
+          buyer_id?: string | null
+          condition_template_id?: string
+          created_at?: string
+          id?: string
+          last_removed_at?: string | null
+          removal_count?: number
+          seller_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "seller_condition_learning_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_condition_learning_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_condition_learning_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "seller_condition_learning_condition_template_id_fkey"
+            columns: ["condition_template_id"]
+            isOneToOne: false
+            referencedRelation: "condition_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_condition_learning_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_condition_learning_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "seller_condition_learning_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      shipment_containers: {
+        Row: {
+          bags: number | null
+          container_id: string
+          created_at: string
+          gross_weight_kg: number | null
+          id: string
+          net_weight_kg: number | null
+          shipment_id: string
+        }
+        Insert: {
+          bags?: number | null
+          container_id: string
+          created_at?: string
+          gross_weight_kg?: number | null
+          id?: string
+          net_weight_kg?: number | null
+          shipment_id: string
+        }
+        Update: {
+          bags?: number | null
+          container_id?: string
+          created_at?: string
+          gross_weight_kg?: number | null
+          id?: string
+          net_weight_kg?: number | null
+          shipment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_containers_container_id_fkey"
+            columns: ["container_id"]
+            isOneToOne: false
+            referencedRelation: "containers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_containers_shipment_id_fkey"
+            columns: ["shipment_id"]
+            isOneToOne: false
+            referencedRelation: "shipments"
             referencedColumns: ["id"]
           },
         ]
+      }
+      shipment_revisions: {
+        Row: {
+          ai_confidence: number | null
+          applied_at: string
+          applied_by: string | null
+          changes: Json
+          document_id: string | null
+          id: string
+          notes: string | null
+          reverted_revision_id: string | null
+          revision_number: number
+          shipment_id: string
+          source: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          applied_at?: string
+          applied_by?: string | null
+          changes: Json
+          document_id?: string | null
+          id?: string
+          notes?: string | null
+          reverted_revision_id?: string | null
+          revision_number: number
+          shipment_id: string
+          source: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          applied_at?: string
+          applied_by?: string | null
+          changes?: Json
+          document_id?: string | null
+          id?: string
+          notes?: string | null
+          reverted_revision_id?: string | null
+          revision_number?: number
+          shipment_id?: string
+          source?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_revisions_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_revisions_reverted_revision_id_fkey"
+            columns: ["reverted_revision_id"]
+            isOneToOne: false
+            referencedRelation: "shipment_revisions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_revisions_shipment_id_fkey"
+            columns: ["shipment_id"]
+            isOneToOne: false
+            referencedRelation: "shipments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shipment_sample_status_history: {
+        Row: {
+          changed_at: string
+          changed_by: string | null
+          id: string
+          new_status: string
+          old_status: string | null
+          reason: string | null
+          sample_id: string
+        }
+        Insert: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: string
+          new_status: string
+          old_status?: string | null
+          reason?: string | null
+          sample_id: string
+        }
+        Update: {
+          changed_at?: string
+          changed_by?: string | null
+          id?: string
+          new_status?: string
+          old_status?: string | null
+          reason?: string | null
+          sample_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_sample_status_history_sample_id_fkey"
+            columns: ["sample_id"]
+            isOneToOne: false
+            referencedRelation: "shipment_samples"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shipment_samples: {
+        Row: {
+          approved_by: string | null
+          approved_date: string | null
+          bags: number | null
+          buyer_reference: string | null
+          certificate_url: string | null
+          composition: string | null
+          contract_id: string
+          courier_company: string | null
+          courier_id: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          destination: string | null
+          id: string
+          legacy_pss_id: number | null
+          notes: string | null
+          received_date: string | null
+          rejection_reason: string | null
+          sample_code: string | null
+          sample_number: number | null
+          sample_type: string
+          sent_date: string | null
+          shipment_id: string | null
+          split_id: string | null
+          status: string
+          tracking_number: string | null
+          updated_at: string
+          waqc_ref: string | null
+        }
+        Insert: {
+          approved_by?: string | null
+          approved_date?: string | null
+          bags?: number | null
+          buyer_reference?: string | null
+          certificate_url?: string | null
+          composition?: string | null
+          contract_id: string
+          courier_company?: string | null
+          courier_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          destination?: string | null
+          id?: string
+          legacy_pss_id?: number | null
+          notes?: string | null
+          received_date?: string | null
+          rejection_reason?: string | null
+          sample_code?: string | null
+          sample_number?: number | null
+          sample_type?: string
+          sent_date?: string | null
+          shipment_id?: string | null
+          split_id?: string | null
+          status?: string
+          tracking_number?: string | null
+          updated_at?: string
+          waqc_ref?: string | null
+        }
+        Update: {
+          approved_by?: string | null
+          approved_date?: string | null
+          bags?: number | null
+          buyer_reference?: string | null
+          certificate_url?: string | null
+          composition?: string | null
+          contract_id?: string
+          courier_company?: string | null
+          courier_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          destination?: string | null
+          id?: string
+          legacy_pss_id?: number | null
+          notes?: string | null
+          received_date?: string | null
+          rejection_reason?: string | null
+          sample_code?: string | null
+          sample_number?: number | null
+          sample_type?: string
+          sent_date?: string | null
+          shipment_id?: string | null
+          split_id?: string | null
+          status?: string
+          tracking_number?: string | null
+          updated_at?: string
+          waqc_ref?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_samples_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_samples_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_samples_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_samples_courier_id_fkey"
+            columns: ["courier_id"]
+            isOneToOne: false
+            referencedRelation: "couriers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_samples_split_id_fkey"
+            columns: ["split_id"]
+            isOneToOne: false
+            referencedRelation: "contract_splits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      shipment_status_log: {
+        Row: {
+          contract_notes: string | null
+          created_by: string | null
+          id: string
+          is_active: boolean | null
+          is_approved: boolean | null
+          legacy_id: number | null
+          logged_at: string
+          shipment_id: string
+          status_text: string | null
+        }
+        Insert: {
+          contract_notes?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_approved?: boolean | null
+          legacy_id?: number | null
+          logged_at?: string
+          shipment_id: string
+          status_text?: string | null
+        }
+        Update: {
+          contract_notes?: string | null
+          created_by?: string | null
+          id?: string
+          is_active?: boolean | null
+          is_approved?: boolean | null
+          legacy_id?: number | null
+          logged_at?: string
+          shipment_id?: string
+          status_text?: string | null
+        }
+        Relationships: []
+      }
+      shipment_updates: {
+        Row: {
+          client_id: string
+          content: Json | null
+          created_at: string
+          created_by: string | null
+          file_path: string | null
+          html_content: string | null
+          id: string
+          notes: string | null
+          period_end: string | null
+          period_start: string | null
+          report_type: string
+          sent_at: string | null
+          sent_to: Json | null
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          client_id: string
+          content?: Json | null
+          created_at?: string
+          created_by?: string | null
+          file_path?: string | null
+          html_content?: string | null
+          id?: string
+          notes?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          report_type: string
+          sent_at?: string | null
+          sent_to?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          client_id?: string
+          content?: Json | null
+          created_at?: string
+          created_by?: string | null
+          file_path?: string | null
+          html_content?: string | null
+          id?: string
+          notes?: string | null
+          period_end?: string | null
+          period_start?: string | null
+          report_type?: string
+          sent_at?: string | null
+          sent_to?: Json | null
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipment_updates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_updates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipment_updates_client_id_fkey"
+            columns: ["client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+        ]
+      }
+      shipments: {
+        Row: {
+          bl_date: string | null
+          bl_number: string | null
+          booking_date: string | null
+          booking_number: string | null
+          booking_status: string
+          buyer_commission_received_at: string | null
+          buyer_commission_value: number | null
+          carrier_id: string | null
+          confirmation_carrier_name: string | null
+          confirmation_source: string | null
+          container_numbers: Json | null
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          destination_port: string | null
+          eta: string | null
+          eta_actual: string | null
+          etd: string | null
+          etd_actual: string | null
+          ico_number: string | null
+          id: string
+          isf_date: string | null
+          isf_status: string | null
+          legacy_id: number | null
+          load_status: string
+          origin_port: string | null
+          pss_approved_at: string | null
+          pss_requested_at: string | null
+          pss_status: string
+          pss_waqc_sample_id: string | null
+          seller_commission_received_at: string | null
+          seller_commission_value: number | null
+          shipping_advice_sent_at: string | null
+          shipping_instructions_by: string | null
+          si_received_at: string | null
+          si_status: string
+          split_id: string | null
+          ss_approved_at: string | null
+          ss_required: boolean
+          ss_status: string
+          updated_at: string
+          vessel_name: string | null
+          volume_bags: number | null
+          voyage_number: string | null
+        }
+        Insert: {
+          bl_date?: string | null
+          bl_number?: string | null
+          booking_date?: string | null
+          booking_number?: string | null
+          booking_status?: string
+          buyer_commission_received_at?: string | null
+          buyer_commission_value?: number | null
+          carrier_id?: string | null
+          confirmation_carrier_name?: string | null
+          confirmation_source?: string | null
+          container_numbers?: Json | null
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          destination_port?: string | null
+          eta?: string | null
+          eta_actual?: string | null
+          etd?: string | null
+          etd_actual?: string | null
+          ico_number?: string | null
+          id?: string
+          isf_date?: string | null
+          isf_status?: string | null
+          legacy_id?: number | null
+          load_status?: string
+          origin_port?: string | null
+          pss_approved_at?: string | null
+          pss_requested_at?: string | null
+          pss_status?: string
+          pss_waqc_sample_id?: string | null
+          seller_commission_received_at?: string | null
+          seller_commission_value?: number | null
+          shipping_advice_sent_at?: string | null
+          shipping_instructions_by?: string | null
+          si_received_at?: string | null
+          si_status?: string
+          split_id?: string | null
+          ss_approved_at?: string | null
+          ss_required?: boolean
+          ss_status?: string
+          updated_at?: string
+          vessel_name?: string | null
+          volume_bags?: number | null
+          voyage_number?: string | null
+        }
+        Update: {
+          bl_date?: string | null
+          bl_number?: string | null
+          booking_date?: string | null
+          booking_number?: string | null
+          booking_status?: string
+          buyer_commission_received_at?: string | null
+          buyer_commission_value?: number | null
+          carrier_id?: string | null
+          confirmation_carrier_name?: string | null
+          confirmation_source?: string | null
+          container_numbers?: Json | null
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          destination_port?: string | null
+          eta?: string | null
+          eta_actual?: string | null
+          etd?: string | null
+          etd_actual?: string | null
+          ico_number?: string | null
+          id?: string
+          isf_date?: string | null
+          isf_status?: string | null
+          legacy_id?: number | null
+          load_status?: string
+          origin_port?: string | null
+          pss_approved_at?: string | null
+          pss_requested_at?: string | null
+          pss_status?: string
+          pss_waqc_sample_id?: string | null
+          seller_commission_received_at?: string | null
+          seller_commission_value?: number | null
+          shipping_advice_sent_at?: string | null
+          shipping_instructions_by?: string | null
+          si_received_at?: string | null
+          si_status?: string
+          split_id?: string | null
+          ss_approved_at?: string | null
+          ss_required?: boolean
+          ss_status?: string
+          updated_at?: string
+          vessel_name?: string | null
+          volume_bags?: number | null
+          voyage_number?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "shipments_carrier_id_fkey"
+            columns: ["carrier_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipments_carrier_id_fkey"
+            columns: ["carrier_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipments_carrier_id_fkey"
+            columns: ["carrier_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "shipments_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipments_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipments_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "shipments_split_id_fkey"
+            columns: ["split_id"]
+            isOneToOne: false
+            referencedRelation: "contract_splits"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      si_requests: {
+        Row: {
+          buyer_contact_name: string | null
+          contract_id: string
+          id: string
+          notes: string | null
+          request_method: string | null
+          requested_at: string
+          requested_by: string | null
+          shipment_id: string
+        }
+        Insert: {
+          buyer_contact_name?: string | null
+          contract_id: string
+          id?: string
+          notes?: string | null
+          request_method?: string | null
+          requested_at?: string
+          requested_by?: string | null
+          shipment_id: string
+        }
+        Update: {
+          buyer_contact_name?: string | null
+          contract_id?: string
+          id?: string
+          notes?: string | null
+          request_method?: string | null
+          requested_at?: string
+          requested_by?: string | null
+          shipment_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "si_requests_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "si_requests_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "si_requests_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      signature_logos: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          file_path: string
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          file_path: string
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          file_path?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
       }
       storage_history: {
         Row: {
@@ -7467,13 +14696,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "storage_positions"
             referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "storage_history_sample_id_fkey"
-            columns: ["sample_id"]
-            isOneToOne: false
-            referencedRelation: "sample_cupping_history"
-            referencedColumns: ["sample_id"]
           },
           {
             foreignKeyName: "storage_history_sample_id_fkey"
@@ -7538,22 +14760,22 @@ export type Database = {
             foreignKeyName: "storage_positions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "storage_positions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "storage_positions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "storage_positions_laboratory_id_fkey"
@@ -7574,13 +14796,6 @@ export type Database = {
             columns: ["laboratory_id"]
             isOneToOne: false
             referencedRelation: "laboratories"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "storage_positions_shelf_id_fkey"
-            columns: ["shelf_id"]
-            isOneToOne: false
-            referencedRelation: "client_visible_shelves"
             referencedColumns: ["id"]
           },
           {
@@ -7753,6 +14968,54 @@ export type Database = {
           },
         ]
       }
+      sync_heartbeat: {
+        Row: {
+          created_at: string
+          duration_ms: number | null
+          error_message: string | null
+          id: string
+          rows_read: number | null
+          rows_skipped: number | null
+          rows_upserted: number | null
+          run_finished_at: string | null
+          run_started_at: string
+          source: string
+          status: string
+          table_name: string
+          watermark_value: string | null
+        }
+        Insert: {
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          rows_read?: number | null
+          rows_skipped?: number | null
+          rows_upserted?: number | null
+          run_finished_at?: string | null
+          run_started_at: string
+          source: string
+          status: string
+          table_name: string
+          watermark_value?: string | null
+        }
+        Update: {
+          created_at?: string
+          duration_ms?: number | null
+          error_message?: string | null
+          id?: string
+          rows_read?: number | null
+          rows_skipped?: number | null
+          rows_upserted?: number | null
+          run_finished_at?: string | null
+          run_started_at?: string
+          source?: string
+          status?: string
+          table_name?: string
+          watermark_value?: string | null
+        }
+        Relationships: []
+      }
       taint_fault_definitions: {
         Row: {
           client_id: string | null
@@ -7831,28 +15094,192 @@ export type Database = {
             foreignKeyName: "taint_fault_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_billing_summary"
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
           {
             foreignKeyName: "taint_fault_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "taint_fault_definitions_client_id_fkey"
             columns: ["client_id"]
             isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "taint_fault_definitions_created_by_fkey"
             columns: ["created_by"]
             isOneToOne: false
             referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_activity: {
+        Row: {
+          content: string | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          task_id: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          content?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          task_id: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          content?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          task_id?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_activity_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_assignees: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_assignees_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_attachments: {
+        Row: {
+          created_at: string
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          name: string
+          task_id: string
+          type: string
+          uploaded_by: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          name: string
+          task_id: string
+          type: string
+          uploaded_by: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          name?: string
+          task_id?: string
+          type?: string
+          uploaded_by?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_attachments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          column_key: string
+          created_at: string
+          created_by: string
+          description: string | null
+          due_date: string | null
+          id: string
+          priority: string
+          project_id: string
+          reminder_sent: boolean
+          sort_order: number
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          column_key: string
+          created_at?: string
+          created_by: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          priority?: string
+          project_id: string
+          reminder_sent?: boolean
+          sort_order?: number
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          column_key?: string
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          due_date?: string | null
+          id?: string
+          priority?: string
+          project_id?: string
+          reminder_sent?: boolean
+          sort_order?: number
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "projects"
             referencedColumns: ["id"]
           },
         ]
@@ -7962,6 +15389,69 @@ export type Database = {
           },
         ]
       }
+      terminal_calendar: {
+        Row: {
+          delivery_month: string
+          exchange: string
+          first_notice_day: string
+          id: string
+          is_confirmed: boolean
+          last_trading_day: string
+          terminal_code: string
+          updated_at: string
+          updated_by: string | null
+          year: number
+        }
+        Insert: {
+          delivery_month: string
+          exchange?: string
+          first_notice_day: string
+          id?: string
+          is_confirmed?: boolean
+          last_trading_day: string
+          terminal_code: string
+          updated_at?: string
+          updated_by?: string | null
+          year: number
+        }
+        Update: {
+          delivery_month?: string
+          exchange?: string
+          first_notice_day?: string
+          id?: string
+          is_confirmed?: boolean
+          last_trading_day?: string
+          terminal_code?: string
+          updated_at?: string
+          updated_by?: string | null
+          year?: number
+        }
+        Relationships: []
+      }
+      terminal_month_mapping: {
+        Row: {
+          id: string
+          shipment_month: number
+          terminal_code: string
+          terminal_name: string
+          year_offset: number
+        }
+        Insert: {
+          id?: string
+          shipment_month: number
+          terminal_code: string
+          terminal_name: string
+          year_offset?: number
+        }
+        Update: {
+          id?: string
+          shipment_month?: number
+          terminal_code?: string
+          terminal_name?: string
+          year_offset?: number
+        }
+        Relationships: []
+      }
       third_party_lab_fees: {
         Row: {
           contract_end_date: string | null
@@ -8003,6 +15493,101 @@ export type Database = {
           updated_at?: string | null
         }
         Relationships: []
+      }
+      trade_documents: {
+        Row: {
+          contract_id: string
+          created_at: string
+          created_by: string | null
+          document_type: string
+          file_name: string | null
+          file_path: string
+          file_size: number | null
+          id: string
+          mime_type: string | null
+          notes: string | null
+          received_at: string
+          received_from: string | null
+          sent_to_client_at: string | null
+          sent_to_contacts: Json | null
+          shipment_id: string | null
+          source_email_id: string | null
+          verified: boolean | null
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          contract_id: string
+          created_at?: string
+          created_by?: string | null
+          document_type: string
+          file_name?: string | null
+          file_path: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          received_at?: string
+          received_from?: string | null
+          sent_to_client_at?: string | null
+          sent_to_contacts?: Json | null
+          shipment_id?: string | null
+          source_email_id?: string | null
+          verified?: boolean | null
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          contract_id?: string
+          created_at?: string
+          created_by?: string | null
+          document_type?: string
+          file_name?: string | null
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string | null
+          notes?: string | null
+          received_at?: string
+          received_from?: string | null
+          sent_to_client_at?: string | null
+          sent_to_contacts?: Json | null
+          shipment_id?: string | null
+          source_email_id?: string | null
+          verified?: boolean | null
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fk_trade_doc_email"
+            columns: ["source_email_id"]
+            isOneToOne: false
+            referencedRelation: "email_log"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_documents_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_documents_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "trade_documents_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       transfer_history: {
         Row: {
@@ -9122,6 +16707,62 @@ export type Database = {
           },
         ]
       }
+      user_client_assignments: {
+        Row: {
+          assigned_at: string
+          assigned_by: string | null
+          buyer_id: string
+          id: string
+          role: string
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string | null
+          buyer_id: string
+          id?: string
+          role: string
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string | null
+          buyer_id?: string
+          id?: string
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_client_assignments_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_client_assignments_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_client_assignments_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "user_client_assignments_user_profile_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "user_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_invitations: {
         Row: {
           accepted_at: string | null
@@ -9279,6 +16920,180 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_module_seen: {
+        Row: {
+          last_seen_at: string
+          module: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          last_seen_at?: string
+          module: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          last_seen_at?: string
+          module?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          avatar_url: string | null
+          color: string | null
+          created_at: string
+          department_ids: string[]
+          email: string | null
+          email_signature_compact_html: string | null
+          email_signature_html: string | null
+          full_name: string
+          group_mailboxes: string[] | null
+          id: string
+          invited_by: string | null
+          is_active: boolean
+          landing_path: string | null
+          last_sign_in_at: string | null
+          linked_company_id: string | null
+          notification_prefs: Json | null
+          onboarding_completed_at: string | null
+          permissions: string[]
+          phone: string | null
+          short_name: string | null
+          signature_logo_id: string | null
+          status: string
+          teams_email: string | null
+          title_id: string | null
+          updated_at: string
+          user_type: string
+          whatsapp: string | null
+        }
+        Insert: {
+          avatar_url?: string | null
+          color?: string | null
+          created_at?: string
+          department_ids?: string[]
+          email?: string | null
+          email_signature_compact_html?: string | null
+          email_signature_html?: string | null
+          full_name: string
+          group_mailboxes?: string[] | null
+          id: string
+          invited_by?: string | null
+          is_active?: boolean
+          landing_path?: string | null
+          last_sign_in_at?: string | null
+          linked_company_id?: string | null
+          notification_prefs?: Json | null
+          onboarding_completed_at?: string | null
+          permissions?: string[]
+          phone?: string | null
+          short_name?: string | null
+          signature_logo_id?: string | null
+          status?: string
+          teams_email?: string | null
+          title_id?: string | null
+          updated_at?: string
+          user_type?: string
+          whatsapp?: string | null
+        }
+        Update: {
+          avatar_url?: string | null
+          color?: string | null
+          created_at?: string
+          department_ids?: string[]
+          email?: string | null
+          email_signature_compact_html?: string | null
+          email_signature_html?: string | null
+          full_name?: string
+          group_mailboxes?: string[] | null
+          id?: string
+          invited_by?: string | null
+          is_active?: boolean
+          landing_path?: string | null
+          last_sign_in_at?: string | null
+          linked_company_id?: string | null
+          notification_prefs?: Json | null
+          onboarding_completed_at?: string | null
+          permissions?: string[]
+          phone?: string | null
+          short_name?: string | null
+          signature_logo_id?: string | null
+          status?: string
+          teams_email?: string | null
+          title_id?: string | null
+          updated_at?: string
+          user_type?: string
+          whatsapp?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_linked_company_id_fkey"
+            columns: ["linked_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_profiles_linked_company_id_fkey"
+            columns: ["linked_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_profiles_linked_company_id_fkey"
+            columns: ["linked_company_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "user_profiles_signature_logo_id_fkey"
+            columns: ["signature_logo_id"]
+            isOneToOne: false
+            referencedRelation: "signature_logos"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_profiles_title_id_fkey"
+            columns: ["title_id"]
+            isOneToOne: false
+            referencedRelation: "user_titles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_titles: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          is_active: boolean
+          name: string
+          sort_order: number
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          name: string
+          sort_order?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          is_active?: boolean
+          name?: string
+          sort_order?: number
+        }
+        Relationships: []
       }
       users: {
         Row: {
@@ -9896,133 +17711,6 @@ export type Database = {
           },
         ]
       }
-      client_billing_summary: {
-        Row: {
-          approved_samples: number | null
-          billing_basis: Database["public"]["Enums"]["billing_basis"] | null
-          company: string | null
-          currency: string | null
-          has_origin_pricing: boolean | null
-          id: string | null
-          in_progress_samples: number | null
-          is_qc_client: boolean | null
-          last_sample_date: string | null
-          name: string | null
-          price_per_pound_cents: number | null
-          price_per_sample: number | null
-          pricing_model: Database["public"]["Enums"]["pricing_model"] | null
-          received_samples: number | null
-          rejected_samples: number | null
-          total_billable_amount: number | null
-          total_potential_amount: number | null
-          total_samples: number | null
-        }
-        Relationships: []
-      }
-      client_origin_pricing_summary: {
-        Row: {
-          approved_count: number | null
-          billable_amount: number | null
-          client_id: string | null
-          client_name: string | null
-          company: string | null
-          currency: string | null
-          is_active: boolean | null
-          origin: string | null
-          price_per_pound_cents: number | null
-          price_per_sample: number | null
-          pricing_model: Database["public"]["Enums"]["pricing_model"] | null
-          rejected_count: number | null
-          samples_count: number | null
-        }
-        Relationships: []
-      }
-      client_search_view: {
-        Row: {
-          address: string | null
-          city: string | null
-          company_id: string | null
-          country: string | null
-          created_at: string | null
-          email: string | null
-          fantasy_name: string | null
-          legacy_client_id: number | null
-          name: string | null
-          phone: string | null
-          primary_category: string | null
-          qc_client_id: string | null
-          source_table: string | null
-          state: string | null
-          subcategories: string[] | null
-          updated_at: string | null
-        }
-        Relationships: []
-      }
-      client_visible_shelves: {
-        Row: {
-          client_id: string | null
-          client_name: string | null
-          columns: number | null
-          created_at: string | null
-          id: string | null
-          laboratory_id: string | null
-          laboratory_location: string | null
-          laboratory_name: string | null
-          naming_convention: string | null
-          rows: number | null
-          samples_per_position: number | null
-          shelf_letter: string | null
-          shelf_number: number | null
-          total_capacity: number | null
-          updated_at: string | null
-          x_position: number | null
-          y_position: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "lab_shelves_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "client_billing_summary"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "lab_shelves_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
-          },
-          {
-            foreignKeyName: "lab_shelves_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "lab_shelves_laboratory_id_fkey"
-            columns: ["laboratory_id"]
-            isOneToOne: false
-            referencedRelation: "lab_payment_summary"
-            referencedColumns: ["laboratory_id"]
-          },
-          {
-            foreignKeyName: "lab_shelves_laboratory_id_fkey"
-            columns: ["laboratory_id"]
-            isOneToOne: false
-            referencedRelation: "lab_sample_breakdown"
-            referencedColumns: ["laboratory_id"]
-          },
-          {
-            foreignKeyName: "lab_shelves_laboratory_id_fkey"
-            columns: ["laboratory_id"]
-            isOneToOne: false
-            referencedRelation: "laboratories"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       companies_with_legacy: {
         Row: {
           annual_trip_cost: number | null
@@ -10159,6 +17847,800 @@ export type Database = {
           unique_uploaders: number | null
         }
         Relationships: []
+      }
+      condition_template_usage_timeline: {
+        Row: {
+          condition_template_id: string | null
+          day: string | null
+          kept_count: number | null
+          removed_count: number | null
+          total_count: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "condition_usage_log_condition_template_id_fkey"
+            columns: ["condition_template_id"]
+            isOneToOne: false
+            referencedRelation: "condition_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_strings_v: {
+        Row: {
+          contract_ids: string[] | null
+          contract_numbers: string[] | null
+          diff_avg_weighted: number | null
+          diff_max: number | null
+          diff_min: number | null
+          fixation_summary: string | null
+          has_repasse: boolean | null
+          inquiry_id: string | null
+          leg_count: number | null
+          seller_id: string | null
+          ship_end: string | null
+          ship_start: string | null
+          spans_multiple_months: boolean | null
+          string_id: string | null
+          total_bags: number | null
+        }
+        Relationships: []
+      }
+      contracts_display: {
+        Row: {
+          approved_at: string | null
+          approved_by_document_id: string | null
+          arbitration: string | null
+          average_fixed_price: number | null
+          bag_type: string | null
+          bag_weight_kg: number | null
+          bags_per_box: number | null
+          buyer_contact_id: string | null
+          buyer_id: string | null
+          buyer_reference: string | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cert_options: Json | null
+          certifications: Json | null
+          channel: string | null
+          commission_buyer_rate: number | null
+          commission_buyer_unit: string | null
+          commission_invoicing_entity: string | null
+          commission_invoicing_entity_buyer: string | null
+          commission_invoicing_entity_seller: string | null
+          commission_rate: number | null
+          commission_seller_rate: number | null
+          commission_seller_unit: string | null
+          commission_source: string | null
+          commission_splits: Json | null
+          commission_unit: string | null
+          container_group_id: string | null
+          container_leg: string | null
+          container_size: string | null
+          contract_date: string | null
+          contract_number: string | null
+          contract_number_display: string | null
+          contract_type: string | null
+          created_at: string | null
+          created_by: string | null
+          crop: string | null
+          destination: string | null
+          differential_value: number | null
+          disclose_buyer_to_parent_seller: boolean | null
+          end_buyer_id: string | null
+          end_client_id: string | null
+          eudr_compliant: string | null
+          exchange: string | null
+          exchange_month_default: string | null
+          external_visible: boolean | null
+          fixation_deadline: string | null
+          fixation_limitation_days: number | null
+          fixation_notes: string | null
+          fixation_status: string | null
+          fixation_type: string | null
+          fixation_window_open_date: string | null
+          id: string | null
+          inquiry_id: string | null
+          internal_notes: Json | null
+          is_approved: boolean | null
+          is_finalized: boolean | null
+          legacy_id: number | null
+          legacy_user_id: number | null
+          notes: string | null
+          outright_price: number | null
+          outright_price_unit: string | null
+          packaging: string | null
+          parent_contract_group_id: string | null
+          parent_contract_id: string | null
+          payment_terms: string | null
+          premiums: Json | null
+          price_description: string | null
+          price_type: string | null
+          qc_provider: string | null
+          quality_description: string | null
+          quality_description_unaccent: string | null
+          quality_id: string | null
+          report_destination_text: string | null
+          report_quantity_text: string | null
+          report_type: string | null
+          revision: number | null
+          sample_notes: string | null
+          seller_contact_id: string | null
+          seller_id: string | null
+          seller_reference: string | null
+          shipment_description: string | null
+          shipment_period_end: string | null
+          shipment_period_start: string | null
+          shipper_id: string | null
+          sold_by_ids: string[] | null
+          status: string | null
+          string_id: string | null
+          total_lots: number | null
+          trader_id: string | null
+          updated_at: string | null
+          volume_bags: number | null
+          volume_description: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_by_document_id?: string | null
+          arbitration?: string | null
+          average_fixed_price?: number | null
+          bag_type?: string | null
+          bag_weight_kg?: number | null
+          bags_per_box?: number | null
+          buyer_contact_id?: string | null
+          buyer_id?: string | null
+          buyer_reference?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cert_options?: Json | null
+          certifications?: Json | null
+          channel?: string | null
+          commission_buyer_rate?: number | null
+          commission_buyer_unit?: string | null
+          commission_invoicing_entity?: string | null
+          commission_invoicing_entity_buyer?: string | null
+          commission_invoicing_entity_seller?: string | null
+          commission_rate?: number | null
+          commission_seller_rate?: number | null
+          commission_seller_unit?: string | null
+          commission_source?: string | null
+          commission_splits?: Json | null
+          commission_unit?: string | null
+          container_group_id?: string | null
+          container_leg?: string | null
+          container_size?: string | null
+          contract_date?: string | null
+          contract_number?: string | null
+          contract_number_display?: never
+          contract_type?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          crop?: string | null
+          destination?: string | null
+          differential_value?: number | null
+          disclose_buyer_to_parent_seller?: boolean | null
+          end_buyer_id?: string | null
+          end_client_id?: string | null
+          eudr_compliant?: string | null
+          exchange?: string | null
+          exchange_month_default?: string | null
+          external_visible?: boolean | null
+          fixation_deadline?: string | null
+          fixation_limitation_days?: number | null
+          fixation_notes?: string | null
+          fixation_status?: string | null
+          fixation_type?: string | null
+          fixation_window_open_date?: string | null
+          id?: string | null
+          inquiry_id?: string | null
+          internal_notes?: Json | null
+          is_approved?: boolean | null
+          is_finalized?: boolean | null
+          legacy_id?: number | null
+          legacy_user_id?: number | null
+          notes?: string | null
+          outright_price?: number | null
+          outright_price_unit?: string | null
+          packaging?: string | null
+          parent_contract_group_id?: string | null
+          parent_contract_id?: string | null
+          payment_terms?: string | null
+          premiums?: Json | null
+          price_description?: string | null
+          price_type?: string | null
+          qc_provider?: string | null
+          quality_description?: string | null
+          quality_description_unaccent?: string | null
+          quality_id?: string | null
+          report_destination_text?: string | null
+          report_quantity_text?: string | null
+          report_type?: string | null
+          revision?: number | null
+          sample_notes?: string | null
+          seller_contact_id?: string | null
+          seller_id?: string | null
+          seller_reference?: string | null
+          shipment_description?: string | null
+          shipment_period_end?: string | null
+          shipment_period_start?: string | null
+          shipper_id?: string | null
+          sold_by_ids?: string[] | null
+          status?: string | null
+          string_id?: string | null
+          total_lots?: number | null
+          trader_id?: string | null
+          updated_at?: string | null
+          volume_bags?: number | null
+          volume_description?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          approved_by_document_id?: string | null
+          arbitration?: string | null
+          average_fixed_price?: number | null
+          bag_type?: string | null
+          bag_weight_kg?: number | null
+          bags_per_box?: number | null
+          buyer_contact_id?: string | null
+          buyer_id?: string | null
+          buyer_reference?: string | null
+          cancellation_reason?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
+          cert_options?: Json | null
+          certifications?: Json | null
+          channel?: string | null
+          commission_buyer_rate?: number | null
+          commission_buyer_unit?: string | null
+          commission_invoicing_entity?: string | null
+          commission_invoicing_entity_buyer?: string | null
+          commission_invoicing_entity_seller?: string | null
+          commission_rate?: number | null
+          commission_seller_rate?: number | null
+          commission_seller_unit?: string | null
+          commission_source?: string | null
+          commission_splits?: Json | null
+          commission_unit?: string | null
+          container_group_id?: string | null
+          container_leg?: string | null
+          container_size?: string | null
+          contract_date?: string | null
+          contract_number?: string | null
+          contract_number_display?: never
+          contract_type?: string | null
+          created_at?: string | null
+          created_by?: string | null
+          crop?: string | null
+          destination?: string | null
+          differential_value?: number | null
+          disclose_buyer_to_parent_seller?: boolean | null
+          end_buyer_id?: string | null
+          end_client_id?: string | null
+          eudr_compliant?: string | null
+          exchange?: string | null
+          exchange_month_default?: string | null
+          external_visible?: boolean | null
+          fixation_deadline?: string | null
+          fixation_limitation_days?: number | null
+          fixation_notes?: string | null
+          fixation_status?: string | null
+          fixation_type?: string | null
+          fixation_window_open_date?: string | null
+          id?: string | null
+          inquiry_id?: string | null
+          internal_notes?: Json | null
+          is_approved?: boolean | null
+          is_finalized?: boolean | null
+          legacy_id?: number | null
+          legacy_user_id?: number | null
+          notes?: string | null
+          outright_price?: number | null
+          outright_price_unit?: string | null
+          packaging?: string | null
+          parent_contract_group_id?: string | null
+          parent_contract_id?: string | null
+          payment_terms?: string | null
+          premiums?: Json | null
+          price_description?: string | null
+          price_type?: string | null
+          qc_provider?: string | null
+          quality_description?: string | null
+          quality_description_unaccent?: string | null
+          quality_id?: string | null
+          report_destination_text?: string | null
+          report_quantity_text?: string | null
+          report_type?: string | null
+          revision?: number | null
+          sample_notes?: string | null
+          seller_contact_id?: string | null
+          seller_id?: string | null
+          seller_reference?: string | null
+          shipment_description?: string | null
+          shipment_period_end?: string | null
+          shipment_period_start?: string | null
+          shipper_id?: string | null
+          sold_by_ids?: string[] | null
+          status?: string | null
+          string_id?: string | null
+          total_lots?: number | null
+          trader_id?: string | null
+          updated_at?: string | null
+          volume_bags?: number | null
+          volume_description?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contracts_approved_by_document_id_fkey"
+            columns: ["approved_by_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_contact_id_fkey"
+            columns: ["buyer_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_inquiry_id_fkey"
+            columns: ["inquiry_id"]
+            isOneToOne: false
+            referencedRelation: "inquiries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_quality_id_fkey"
+            columns: ["quality_id"]
+            isOneToOne: false
+            referencedRelation: "quality_master"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_contact_id_fkey"
+            columns: ["seller_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contracts_with_latest_sample_status: {
+        Row: {
+          approved_at: string | null
+          approved_by_document_id: string | null
+          arbitration: string | null
+          average_fixed_price: number | null
+          bag_type: string | null
+          bag_weight_kg: number | null
+          bags_per_box: number | null
+          buyer_contact_id: string | null
+          buyer_id: string | null
+          buyer_reference: string | null
+          cancellation_reason: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
+          cert_options: Json | null
+          certifications: Json | null
+          channel: string | null
+          commission_buyer_rate: number | null
+          commission_buyer_unit: string | null
+          commission_invoicing_entity: string | null
+          commission_invoicing_entity_buyer: string | null
+          commission_invoicing_entity_seller: string | null
+          commission_rate: number | null
+          commission_seller_rate: number | null
+          commission_seller_unit: string | null
+          commission_source: string | null
+          commission_splits: Json | null
+          commission_unit: string | null
+          container_group_id: string | null
+          container_leg: string | null
+          container_size: string | null
+          contract_date: string | null
+          contract_number: string | null
+          contract_number_display: string | null
+          contract_type: string | null
+          created_at: string | null
+          created_by: string | null
+          crop: string | null
+          destination: string | null
+          differential_value: number | null
+          disclose_buyer_to_parent_seller: boolean | null
+          end_buyer_id: string | null
+          end_client_id: string | null
+          eudr_compliant: string | null
+          exchange: string | null
+          exchange_month_default: string | null
+          external_visible: boolean | null
+          fixation_deadline: string | null
+          fixation_limitation_days: number | null
+          fixation_notes: string | null
+          fixation_status: string | null
+          fixation_type: string | null
+          fixation_window_open_date: string | null
+          id: string | null
+          inquiry_id: string | null
+          internal_notes: Json | null
+          is_approved: boolean | null
+          is_finalized: boolean | null
+          latest_sample_approved_date: string | null
+          latest_sample_rejection_reason: string | null
+          latest_sample_status: string | null
+          latest_sample_type: string | null
+          legacy_id: number | null
+          legacy_user_id: number | null
+          notes: string | null
+          outright_price: number | null
+          outright_price_unit: string | null
+          packaging: string | null
+          parent_contract_group_id: string | null
+          parent_contract_id: string | null
+          payment_terms: string | null
+          premiums: Json | null
+          price_description: string | null
+          price_type: string | null
+          qc_provider: string | null
+          quality_description: string | null
+          quality_description_unaccent: string | null
+          quality_id: string | null
+          report_destination_text: string | null
+          report_quantity_text: string | null
+          report_type: string | null
+          revision: number | null
+          sample_notes: string | null
+          seller_contact_id: string | null
+          seller_id: string | null
+          seller_reference: string | null
+          shipment_description: string | null
+          shipment_period_end: string | null
+          shipment_period_start: string | null
+          shipper_id: string | null
+          sold_by_ids: string[] | null
+          status: string | null
+          string_id: string | null
+          total_lots: number | null
+          trader_id: string | null
+          updated_at: string | null
+          volume_bags: number | null
+          volume_description: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contracts_approved_by_document_id_fkey"
+            columns: ["approved_by_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_contact_id_fkey"
+            columns: ["buyer_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_buyer_id_fkey"
+            columns: ["buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_buyer_id_fkey"
+            columns: ["end_buyer_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_end_client_id_fkey"
+            columns: ["end_client_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_inquiry_id_fkey"
+            columns: ["inquiry_id"]
+            isOneToOne: false
+            referencedRelation: "inquiries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_quality_id_fkey"
+            columns: ["quality_id"]
+            isOneToOne: false
+            referencedRelation: "quality_master"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_contact_id_fkey"
+            columns: ["seller_contact_id"]
+            isOneToOne: false
+            referencedRelation: "contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_seller_id_fkey"
+            columns: ["seller_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "companies_with_legacy"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_shipper_id_fkey"
+            columns: ["shipper_id"]
+            isOneToOne: false
+            referencedRelation: "company_file_summaries"
+            referencedColumns: ["company_id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_group"
+            columns: ["parent_contract_group_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_display"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fk_contract_parent"
+            columns: ["parent_contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts_with_latest_sample_status"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       cupper_performance_stats: {
         Row: {
@@ -10382,89 +18864,6 @@ export type Database = {
             columns: ["laboratory_id"]
             isOneToOne: false
             referencedRelation: "laboratories"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      sample_cupping_history: {
-        Row: {
-          client_id: string | null
-          client_name: string | null
-          cupper_id: string | null
-          cupper_name: string | null
-          defects: Json | null
-          laboratory_id: string | null
-          notes: string | null
-          origin: string | null
-          sample_id: string | null
-          scored_at: string | null
-          scores: Json | null
-          session_date: string | null
-          session_id: string | null
-          tracking_number: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "cupping_scores_cupper_id_fkey"
-            columns: ["cupper_id"]
-            isOneToOne: false
-            referencedRelation: "profiles"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "cupping_scores_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "cupping_sessions"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "cupping_scores_session_id_fkey"
-            columns: ["session_id"]
-            isOneToOne: false
-            referencedRelation: "session_summary_stats"
-            referencedColumns: ["session_id"]
-          },
-          {
-            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
-            columns: ["laboratory_id"]
-            isOneToOne: false
-            referencedRelation: "lab_payment_summary"
-            referencedColumns: ["laboratory_id"]
-          },
-          {
-            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
-            columns: ["laboratory_id"]
-            isOneToOne: false
-            referencedRelation: "lab_sample_breakdown"
-            referencedColumns: ["laboratory_id"]
-          },
-          {
-            foreignKeyName: "cupping_sessions_laboratory_id_fkey"
-            columns: ["laboratory_id"]
-            isOneToOne: false
-            referencedRelation: "laboratories"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "samples_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "client_billing_summary"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "samples_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "client_origin_pricing_summary"
-            referencedColumns: ["client_id"]
-          },
-          {
-            foreignKeyName: "samples_client_id_fkey"
-            columns: ["client_id"]
-            isOneToOne: false
-            referencedRelation: "clients"
             referencedColumns: ["id"]
           },
         ]
@@ -10698,6 +19097,42 @@ export type Database = {
       }
     }
     Functions: {
+      _company_fk_columns: {
+        Args: never
+        Returns: {
+          column_name: string
+          schema_name: string
+          table_name: string
+        }[]
+      }
+      auto_apply_shipment_fields: {
+        Args: {
+          p_bl_date?: string
+          p_bl_number?: string
+          p_booking_number?: string
+          p_confidence: number
+          p_confirmation_source?: string
+          p_destination_port?: string
+          p_document_id: string
+          p_eta?: string
+          p_etd?: string
+          p_origin_port?: string
+          p_pss_approved_at?: string
+          p_pss_status?: string
+          p_shipment_id: string
+          p_shipping_advice_sent_at?: string
+          p_si_received_at?: string
+          p_si_status?: string
+          p_source?: string
+          p_vessel_name?: string
+          p_voyage_number?: string
+        }
+        Returns: string
+      }
+      buyer_bags_median: {
+        Args: { p_buyer_id: string; p_months?: number }
+        Returns: number
+      }
       calculate_certificate_validity: {
         Args: { issue_date: string }
         Returns: {
@@ -10780,6 +19215,32 @@ export type Database = {
         }
         Returns: boolean
       }
+      claim_contract_draft: {
+        Args: { draft_id: string }
+        Returns: {
+          buyer_id: string | null
+          buyer_name: string | null
+          created_at: string
+          created_by: string
+          id: string
+          issued_contract_id: string | null
+          owner_changed_at: string | null
+          owner_id: string
+          payload: Json
+          previous_owner_id: string | null
+          quality_summary: string | null
+          seller_id: string | null
+          seller_name: string | null
+          updated_at: string
+          updated_by: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "contract_drafts"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       cleanup_old_defect_photos: { Args: never; Returns: Json }
       cleanup_old_drafts: { Args: never; Returns: number }
       clone_quality_template: {
@@ -10794,10 +19255,21 @@ export type Database = {
         }
         Returns: string
       }
+      convert_contact_kind: {
+        Args: { p_contact_id: string; p_to_group: boolean }
+        Returns: string
+      }
       convert_legacy_tracking_format: {
         Args: { p_client_id: string }
         Returns: Json
       }
+      current_user_company_id: { Args: never; Returns: string }
+      current_user_is_external: { Args: never; Returns: boolean }
+      default_first_notice_day: {
+        Args: { delivery_month_num: number; delivery_year: number }
+        Returns: string
+      }
+      ensure_terminal_calendar_for_contracts: { Args: never; Returns: number }
       evaluate_sample_taints_faults: {
         Args: {
           p_client_id: string
@@ -10812,6 +19284,44 @@ export type Database = {
           passes_taints: boolean
           total_faults: number
           total_taints: number
+        }[]
+      }
+      exec_stats_autonomy_watch: { Args: never; Returns: number }
+      exec_stats_highlighted_contracts: {
+        Args: never
+        Returns: {
+          contract_id: string
+        }[]
+      }
+      exec_stats_main: {
+        Args: never
+        Returns: {
+          avg_conf_today: number
+          backlog: number
+          forwarded_today: number
+          last_week: number
+          mtd: number
+          oldest_pending_days: number
+          rejected_today: number
+          this_week: number
+          today_count: number
+          today_pending: number
+        }[]
+      }
+      exec_stats_types_today: {
+        Args: never
+        Returns: {
+          other_count: number
+          top5: Json
+        }[]
+      }
+      expire_leave_coverage: { Args: never; Returns: number }
+      find_archivable_conversations: {
+        Args: never
+        Returns: {
+          conversation_id: string
+          document_ids: string[]
+          graph_message_ids: string[]
         }[]
       }
       generate_certificate_number: {
@@ -10948,6 +19458,10 @@ export type Database = {
           total_trips: number
         }[]
       }
+      get_contracts_sales_dashboard: {
+        Args: { p_doughnut_mode?: string }
+        Returns: Json
+      }
       get_cupper_assigned_samples: {
         Args: { p_cupper_id: string }
         Returns: {
@@ -10960,6 +19474,10 @@ export type Database = {
       get_cupping_attribute_name: {
         Args: { p_attribute_id: string; p_language?: string }
         Returns: string
+      }
+      get_daily_summary_payload: {
+        Args: { p_send_date?: string }
+        Returns: Json
       }
       get_defect_category_name: {
         Args: {
@@ -11051,6 +19569,7 @@ export type Database = {
         }[]
       }
       get_user_company_id: { Args: { user_id: string }; Returns: string }
+      get_user_id_by_email: { Args: { p_email: string }; Returns: string }
       get_user_lab_id: { Args: { user_id: string }; Returns: string }
       get_user_laboratory: { Args: never; Returns: string }
       get_user_qc_laboratory: { Args: { user_id: string }; Returns: string }
@@ -11064,8 +19583,28 @@ export type Database = {
         Args: { user_id: string; user_types: string[] }
         Returns: boolean
       }
+      immutable_unaccent: { Args: { "": string }; Returns: string }
+      increment_fixation_broker_usage: {
+        Args: { p_broker_id: string; p_company_id: string; p_now: string }
+        Returns: undefined
+      }
+      insert_contracts_atomic: {
+        Args: { payloads: Json }
+        Returns: {
+          contract_number: string
+          id: string
+          quality_description: string
+          shipment_period_end: string
+          shipment_period_start: string
+          volume_bags: number
+        }[]
+      }
       is_admin: { Args: never; Returns: boolean }
       is_certificate_valid: { Args: { cert_id: string }; Returns: boolean }
+      is_fixation_autonomous: {
+        Args: { p_action_type: string; p_client_id: string }
+        Returns: boolean
+      }
       is_global_admin:
         | { Args: never; Returns: boolean }
         | { Args: { user_id: string }; Returns: boolean }
@@ -11073,6 +19612,15 @@ export type Database = {
       is_lab_manager: { Args: never; Returns: boolean }
       is_lab_quality_manager_user: {
         Args: { user_id: string }
+        Returns: boolean
+      }
+      is_logistics_staff: { Args: { p_user_id: string }; Returns: boolean }
+      is_on_approved_leave: {
+        Args: { p_date?: string; p_user_id: string }
+        Returns: boolean
+      }
+      is_project_member: {
+        Args: { p_project_id: string; p_user_id: string }
         Returns: boolean
       }
       is_trip_creator: {
@@ -11094,6 +19642,86 @@ export type Database = {
         Returns: string
       }
       mark_expired_invitations: { Args: never; Returns: undefined }
+      match_contracts_by_haystack: {
+        Args: { p_haystack: string; p_tokens: string[] }
+        Returns: {
+          buyer_id: string
+          buyer_name: string
+          buyer_reference: string
+          contract_id: string
+          contract_number: string
+          destination: string
+          direction: string
+          matched_column: string
+          matched_ref: string
+          seller_id: string
+          seller_name: string
+          seller_reference: string
+        }[]
+      }
+      merge_companies: {
+        Args: {
+          p_loser_ids: string[]
+          p_performed_by: string
+          p_survivor_id: string
+        }
+        Returns: Json
+      }
+      merge_legacy_addresses_into_companies: {
+        Args: { payload: Json }
+        Returns: number
+      }
+      ny_terminal_month_num: { Args: { m: string }; Returns: number }
+      parse_terminal_string: {
+        Args: { s: string }
+        Returns: {
+          delivery_month: string
+          terminal_code: string
+          year: number
+        }[]
+      }
+      preview_merge_companies: {
+        Args: { p_loser_ids: string[]; p_survivor_id: string }
+        Returns: Json
+      }
+      purge_old_email_bodies: { Args: never; Returns: undefined }
+      recompute_contract_fixation_status: {
+        Args: { p_contract_id: string }
+        Returns: undefined
+      }
+      record_human_action: {
+        Args: {
+          p_action_type: string
+          p_actual_value: Json
+          p_client_id: string
+          p_email_message_id?: string
+          p_metadata?: Json
+          p_predicted_value: Json
+          p_user_id: string
+        }
+        Returns: string
+      }
+      reserve_contract_numbers: {
+        Args: { count: number }
+        Returns: {
+          contract_number: string
+          sequence_index: number
+        }[]
+      }
+      resolve_ai_prediction: {
+        Args: {
+          p_actual_value: Json
+          p_log_id: string
+          p_resolved_by: string
+          p_was_correct: boolean
+        }
+        Returns: undefined
+      }
+      resolve_buyer_owner: { Args: { p_buyer_id: string }; Returns: string }
+      revert_shipment_revision: {
+        Args: { p_revision_id: string }
+        Returns: string
+      }
       save_trip_draft: {
         Args: {
           p_creator_id: string
@@ -11102,25 +19730,6 @@ export type Database = {
           p_trip_type: Database["public"]["Enums"]["trip_type"]
         }
         Returns: string
-      }
-      search_clients: {
-        Args: { limit_count?: number; search_term: string }
-        Returns: {
-          address: string
-          city: string
-          company_id: string
-          country: string
-          email: string
-          fantasy_name: string
-          name: string
-          phone: string
-          primary_category: string
-          qc_client_id: string
-          relevance_score: number
-          source_table: string
-          state: string
-          subcategories: string[]
-        }[]
       }
       search_company_files: {
         Args: {
@@ -11144,7 +19753,12 @@ export type Database = {
       show_limit: { Args: never; Returns: number }
       show_trgm: { Args: { "": string }; Returns: string[] }
       soft_delete_sample: { Args: { sample_id: string }; Returns: undefined }
+      subtract_business_days: {
+        Args: { d: string; n: number }
+        Returns: string
+      }
       sync_activities_from_existing_data: { Args: never; Returns: string }
+      unaccent: { Args: { "": string }; Returns: string }
       update_user_password: {
         Args: { new_password: string; user_email: string }
         Returns: {
@@ -11152,6 +19766,39 @@ export type Database = {
           id: string
           success: boolean
         }[]
+      }
+      upsert_group_inbox_contact: {
+        Args: {
+          p_company_id: string
+          p_email: string
+          p_name: string
+          p_routing_purpose: string
+          p_user_id: string
+        }
+        Returns: string
+      }
+      upsert_recipient_contacts: {
+        Args: {
+          p_contract_id: string
+          p_default_role: string
+          p_recipients: Json
+          p_routing_purpose: string
+          p_sender_user_id: string
+        }
+        Returns: Json
+      }
+      upsert_recipient_memory: {
+        Args: {
+          p_company_id: string
+          p_purpose: string
+          p_recipients: Json
+          p_sender_user_id: string
+        }
+        Returns: Json
+      }
+      user_has_module: {
+        Args: { p_module: string; p_user_id: string }
+        Returns: boolean
       }
       user_laboratory_id: { Args: never; Returns: string }
       validate_scale_config: {
@@ -11218,17 +19865,6 @@ export type Database = {
       bag_type_enum: "jute_bag" | "pp_bag" | "big_bag" | "bulk"
       billing_basis: "approved_only" | "approved_and_rejected" | "all_samples"
       certificate_status: "draft" | "issued" | "revoked"
-      client_type:
-        | "producer"
-        | "producer_exporter"
-        | "cooperative"
-        | "exporter"
-        | "importer_buyer"
-        | "roaster"
-        | "final_buyer"
-        | "roaster_final_buyer"
-        | "service_provider"
-        | "end_client"
       client_type_enum:
         | "roasters"
         | "dealers_importers"
@@ -11297,13 +19933,20 @@ export type Database = {
         | "general_notification"
       payment_schedule: "net_30" | "net_45" | "end_of_next_month"
       pricing_model: "per_sample" | "per_pound" | "complimentary"
+      sample_category: "qc" | "other"
+      sample_recipient_status:
+        | "pending"
+        | "approved"
+        | "rejected"
+        | "no_response"
       sample_status:
         | "received"
         | "in_progress"
         | "under_review"
         | "approved"
         | "rejected"
-      sample_type_enum: "pss" | "ss" | "type" | "specialty"
+        | "sent_to_clients"
+      sample_type_enum: "pss" | "ss" | "type" | "specialty" | "stocklot"
       session_status: "setup" | "active" | "completed" | "review"
       session_type:
         | "digital"
@@ -11492,18 +20135,6 @@ export const Constants = {
       bag_type_enum: ["jute_bag", "pp_bag", "big_bag", "bulk"],
       billing_basis: ["approved_only", "approved_and_rejected", "all_samples"],
       certificate_status: ["draft", "issued", "revoked"],
-      client_type: [
-        "producer",
-        "producer_exporter",
-        "cooperative",
-        "exporter",
-        "importer_buyer",
-        "roaster",
-        "final_buyer",
-        "roaster_final_buyer",
-        "service_provider",
-        "end_client",
-      ],
       client_type_enum: [
         "roasters",
         "dealers_importers",
@@ -11580,14 +20211,22 @@ export const Constants = {
       ],
       payment_schedule: ["net_30", "net_45", "end_of_next_month"],
       pricing_model: ["per_sample", "per_pound", "complimentary"],
+      sample_category: ["qc", "other"],
+      sample_recipient_status: [
+        "pending",
+        "approved",
+        "rejected",
+        "no_response",
+      ],
       sample_status: [
         "received",
         "in_progress",
         "under_review",
         "approved",
         "rejected",
+        "sent_to_clients",
       ],
-      sample_type_enum: ["pss", "ss", "type", "specialty"],
+      sample_type_enum: ["pss", "ss", "type", "specialty", "stocklot"],
       session_status: ["setup", "active", "completed", "review"],
       session_type: [
         "digital",

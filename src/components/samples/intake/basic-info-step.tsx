@@ -75,10 +75,13 @@ export function BasicInfoStep({
     }
   }, [formData.importer_is_qc_client, qcClients, importers])
 
-  // Roasters from clients table (keep existing filter for roasters since no separate roasters table)
+  // Roasters from clients list. Post-consolidation the legacy 'roaster_final_buyer'
+  // value has been split into separate 'roaster' + 'final_buyer' company_types
+  // entries (migration #2 mapping), so the substring check on 'roaster' still
+  // captures both single-purpose roasters and roaster-final-buyers.
   const roasters = useMemo(() =>
     clients.filter(c =>
-      c.client_types?.some(type =>
+      c.client_types?.some((type: string) =>
         type === 'roaster' || type === 'roaster_final_buyer'
       )
     ), [clients]

@@ -1,11 +1,18 @@
 import { Database } from '@/lib/supabase'
 
 export type SampleInsert = Database['public']['Tables']['samples']['Insert']
-export type Client = Database['public']['Tables']['clients']['Row']
 export type Laboratory = Database['public']['Tables']['laboratories']['Row']
-export type Exporter = Database['public']['Tables']['exporters']['Row']
-export type Importer = Database['public']['Tables']['importers']['Row']
-export type Roaster = Database['public']['Tables']['roasters']['Row']
+
+// Post-consolidation: the clients/exporters/importers/roasters tables were
+// dropped in favour of the canonical companies table. The intake form's
+// counterparty pickers consume API-shaped objects (mapped via the legacy
+// "clients"-shape contract in src/lib/qc-client-mapper.ts and the
+// /api/exporters|importers|roasters wrappers), so we keep these as loose
+// record shapes here rather than dragging the form through a schema rewrite.
+export type Client = Record<string, any>
+export type Exporter = Record<string, any>
+export type Importer = Record<string, any>
+export type Roaster = Record<string, any>
 
 export type SampleCategory = 'qc' | 'other'
 export type OtherSampleSubType = 'pss' | 'ss' | 'type' | 'stocklot'

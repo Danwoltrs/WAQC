@@ -30,8 +30,6 @@ type ShelfWithClient = {
   clients: {
     id: string
     name: string
-    contact_name: string | null
-    contact_email: string | null
   } | null
 }
 
@@ -78,11 +76,9 @@ export async function GET(
         y_position,
         created_at,
         updated_at,
-        clients (
+        clients:companies!lab_shelves_client_id_fkey (
           id,
-          name,
-          contact_name,
-          contact_email
+          name
         )
       `)
       .eq('id', shelfId)

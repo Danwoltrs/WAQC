@@ -1,15 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Database } from '@/lib/database.types'
 
 /**
  * GET /api/clients/search
- * Search for clients across all sources (companies, legacy_clients, QC clients)
- * Uses the database search_clients function with fuzzy matching and relevance scoring
+ *
+ * Search companies (the canonical post-consolidation counterparty table) for
+ * candidate clients. Returns both rows that are already wired up as QC clients
+ * (`is_qc_client = true`) and rows that aren't yet (so the caller can import
+ * them as a new QC client).
  *
  * Query params:
- * - q: search term (required)
- * - limit: max results (default: 50)
+ *   q     — search term (min 2 chars)
+ *   limit — max results (default 50)
+ *
+ * Pre-consolidation this route called the `search_clients()` Postgres function,
+ * which did fuzzy-match + relevance scoring across companies, legacy_clients,
+ * and the dropped clients table. Migration #6 dropped that function; this is
+ * the plain-Supabase equivalent. Relevance is set to 1.0 on every row (the UI
+ * doesn't actually consume it).
  */
 export async function GET(request: NextRequest) {
   try {
@@ -25,19 +33,28 @@ export async function GET(request: NextRequest) {
     const searchTerm = searchParams.get('q')
     const limit = parseInt(searchParams.get('limit') || '50')
 
-    // Validate search term
     if (!searchTerm || searchTerm.trim().length < 2) {
       return NextResponse.json({
         error: 'Search term must be at least 2 characters'
       }, { status: 400 })
     }
 
-    // Call the database search function
-    type SearchResults = Database['public']['Functions']['search_clients']['Returns']
-    const { data: results, error } = await supabase.rpc('search_clients', {
-      search_term: searchTerm.trim(),
-      limit_count: limit
-    }) as { data: SearchResults | null; error: any }
+    const term = searchTerm.trim()
+    // PostgREST .or() uses commas to separate filters and parens to group —
+    // for ilike we need to escape commas in user input or it'll be parsed as
+    // a filter separator. Same for parens. ASCII-only sanitization is enough
+    // for our purposes (Brazilian + Latin-American company names).
+    const safeTerm = term.replace(/[,()]/g, ' ')
+
+    const { data, error } = await (supabase as any)
+      .from('companies')
+      .select(
+        'id, name, fantasy_name, email, phone, address, city, state, country, ' +
+        'company_types, trading_roles, is_qc_client'
+      )
+      .or(`name.ilike.%${safeTerm}%,fantasy_name.ilike.%${safeTerm}%`)
+      .order('name', { ascending: true })
+      .limit(limit)
 
     if (error) {
       console.error('Error searching clients:', error)
@@ -47,32 +64,34 @@ export async function GET(request: NextRequest) {
       }, { status: 500 })
     }
 
-    // Transform results to more user-friendly format
-    const transformedResults = results?.map((result: any) => ({
-      id: result.qc_client_id || result.company_id,
-      company_id: result.company_id,
-      qc_client_id: result.qc_client_id,
-      name: result.name,
-      fantasy_name: result.fantasy_name,
-      email: result.email,
-      phone: result.phone,
-      address: result.address,
-      city: result.city,
-      state: result.state,
-      country: result.country,
-      primary_category: result.primary_category,
-      subcategories: result.subcategories,
-      source: result.source_table,
-      relevance: result.relevance_score,
-      // Indicate if this is already a QC client or needs to be imported
-      is_qc_client: result.source_table === 'clients',
-      can_import: result.source_table !== 'clients'
-    })) || []
+    const transformedResults = (data || []).map((row: any) => ({
+      id: row.id,
+      company_id: row.id,
+      qc_client_id: row.is_qc_client ? row.id : null,
+      name: row.name,
+      fantasy_name: row.fantasy_name,
+      email: row.email,
+      phone: row.phone,
+      address: row.address,
+      city: row.city,
+      state: row.state,
+      country: row.country,
+      primary_category: Array.isArray(row.company_types) && row.company_types.length > 0
+        ? row.company_types[0]
+        : null,
+      subcategories: Array.isArray(row.company_types) ? row.company_types.slice(1) : null,
+      source: 'companies',
+      // Legacy field name preserved for the existing UI that switches on it.
+      source_table: 'companies',
+      relevance: 1.0,
+      is_qc_client: row.is_qc_client === true,
+      can_import: row.is_qc_client !== true,
+    }))
 
     return NextResponse.json({
       results: transformedResults,
       count: transformedResults.length,
-      search_term: searchTerm,
+      search_term: term,
       limit
     })
   } catch (error) {

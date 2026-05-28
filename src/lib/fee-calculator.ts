@@ -5,7 +5,10 @@
 
 import { Database } from './supabase'
 
-type Client = Database['public']['Tables']['clients']['Row']
+// Pricing fields live on qc_client_settings post-consolidation. The legacy
+// `clients` table was dropped; what callers think of as "the client's billing
+// config" is now the per-company QC settings row.
+type Client = Database['public']['Tables']['qc_client_settings']['Row']
 type Sample = Database['public']['Tables']['samples']['Row']
 
 export interface FeeCalculation {

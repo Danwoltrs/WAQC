@@ -71,3 +71,6 @@ dev-debug.log
 
 # Local documents
 Documents/
+
+# Supabase CLI workspace
+supabase/.temp/
