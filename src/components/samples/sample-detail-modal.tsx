@@ -27,6 +27,7 @@ import { trackingNumberToSlug } from '@/lib/utils'
 import { MICRO_ORIGINS } from '@/components/samples/intake/constants'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { CuppingGradingSection } from '@/components/samples/cupping-grading-section'
+import { OtherSampleRecipientsPanel } from '@/components/samples/other-sample-recipients-panel'
 
 interface EditPermission {
   canEdit: boolean
@@ -97,6 +98,29 @@ interface Sample {
   certificate_number?: string | null
   certificate_status?: string | null
   certificate_created_at?: string | null
+  sample_category?: 'qc' | 'other'
+  awb_number?: string | null
+  courier_name?: string | null
+  is_quick_look?: boolean
+  sample_recipients?: Array<{
+    id: string
+    client_id: string
+    contact_emails: string[]
+    status: 'pending' | 'approved' | 'rejected' | 'no_response'
+    comments: string | null
+    sent_at: string | null
+    responded_at: string | null
+    responded_by: string | null
+    created_at: string
+    updated_at: string
+    client: {
+      id: string
+      fantasy_name: string | null
+      company: string | null
+      country: string | null
+      email: string | null
+    } | null
+  }>
 }
 
 interface Certificate {
@@ -992,6 +1016,37 @@ export function SampleDetailModal({
                     onEditClick={handleEnterEditMode}
                   />
                 </div>
+
+                {/* AWB / Courier / Quick Look summary (Other Samples only) */}
+                {sample.sample_category === 'other' && (sample.awb_number || sample.courier_name || sample.is_quick_look) && (
+                  <Card>
+                    <CardContent className="pt-4 pb-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+                        <div>
+                          <div className="text-xs text-muted-foreground">AWB</div>
+                          <div className="font-medium">{sample.awb_number || '-'}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Courier</div>
+                          <div className="font-medium">{sample.courier_name || '-'}</div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-muted-foreground">Inspection mode</div>
+                          <div className="font-medium">{sample.is_quick_look ? 'Quick look' : 'Full SCA'}</div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Recipients (Other Samples only) */}
+                {sample.sample_category === 'other' && (
+                  <OtherSampleRecipientsPanel
+                    sampleId={sample.id}
+                    recipients={(sample.sample_recipients as any) || []}
+                    onChange={() => { if (sampleId) void loadSampleDetails(sampleId) }}
+                  />
+                )}
 
                 {/* Cupping & Grading */}
                 <CuppingGradingSection

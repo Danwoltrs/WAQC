@@ -7,6 +7,15 @@ export type Exporter = Database['public']['Tables']['exporters']['Row']
 export type Importer = Database['public']['Tables']['importers']['Row']
 export type Roaster = Database['public']['Tables']['roasters']['Row']
 
+export type SampleCategory = 'qc' | 'other'
+export type OtherSampleSubType = 'pss' | 'ss' | 'type' | 'stocklot'
+
+export interface OtherSampleRecipient {
+  client_id: string
+  client_name: string
+  contact_emails: string[]
+}
+
 export interface SelectedContract {
   id: string
   contract_number: string
@@ -22,6 +31,16 @@ export interface SelectedContract {
 }
 
 export interface FormData {
+  // Category discriminator — 'qc' = Wolthers approves (existing flow);
+  // 'other' = forwarded to recipient clients for their approval.
+  sample_category: SampleCategory
+
+  // Other Samples fields (only meaningful when sample_category === 'other')
+  awb_number: string
+  courier_name: string
+  is_quick_look: boolean
+  recipients: OtherSampleRecipient[]
+
   // Step 1: Supply Chain (Buyer/Seller)
   seller: string // The trading company that sold the coffee (e.g., Louis Dreyfus)
   seller_contract_nr: string // Seller's contract reference number
@@ -47,7 +66,7 @@ export interface FormData {
   origin: string
   micro_origin: string
   processing_method: string
-  sample_type: 'pss' | 'ss' | 'type' | ''
+  sample_type: 'pss' | 'ss' | 'type' | 'stocklot' | ''
   linked_pss_sample_id: string
   quality_spec_id: string
   quality_name: string

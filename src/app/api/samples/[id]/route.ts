@@ -46,7 +46,8 @@ export async function GET(
         roaster:roasters(id, name, country),
         client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
         end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
-        certificate:certificates(id, certificate_number, status, created_at)
+        certificate:certificates(id, certificate_number, status, created_at),
+        sample_recipients(id, client_id, contact_emails, status, comments, sent_at, responded_at, responded_by, created_at, updated_at, client:clients(id, company, fantasy_name, country, email))
       `)
 
     // Query by UUID or tracking number

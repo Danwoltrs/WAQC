@@ -216,3 +216,10 @@ The primary goal is to build a robust, intuitive, and aesthetically pleasing app
 ## Task Master AI Instructions
 **Import Task Master's development workflow commands and guidelines, treat as if import is in the main CLAUDE.md file.**
 @./.taskmaster/CLAUDE.md
+
+## Vault Context
+Read these files at the start of every session:
+- ~/wolthers-vault/CLAUDE.md
+- ~/wolthers-vault/01-projects/waqc/CLAUDE.md
+- ~/wolthers-vault/01-projects/waqc/decisions.md
+- ~/wolthers-vault/00-context/stack-conventions.md

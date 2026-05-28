@@ -96,9 +96,15 @@ const getNavigation = (openIntakeDialog: () => void): NavItem[] => [
         onClick: openIntakeDialog,
       },
       {
-        title: 'View All Samples',
-        href: '/samples',
+        title: 'QC Samples',
+        href: '/samples/qc',
         icon: List,
+        permission: 'view_samples',
+      },
+      {
+        title: 'Other Samples',
+        href: '/samples/other',
+        icon: ClipboardList,
         permission: 'view_samples',
       },
       {
