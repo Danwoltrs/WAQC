@@ -56,28 +56,28 @@ export async function GET(request: NextRequest) {
           roaster_id,
           seller_id,
           quality_spec_id,
-          client:clients!samples_client_id_fkey(
+          client:companies!samples_client_id_fkey(
             id,
             name,
-            company,
+            company:name,
             fantasy_name
           ),
-          exporter:exporters!samples_exporter_id_fkey(
+          exporter:companies!samples_exporter_id_fkey(
             id,
             name,
-            contact_email
+            contact_email:email
           ),
-          importer:importers(
+          importer:companies!samples_importer_id_fkey(
             id,
             name,
-            contact_email
+            contact_email:email
           ),
-          roaster:roasters(
+          roaster:companies!samples_roaster_id_fkey(
             id,
             name,
-            contact_email
+            contact_email:email
           ),
-          seller:exporters!samples_seller_id_fkey(
+          seller:companies!samples_seller_id_fkey(
             id,
             name
           ),

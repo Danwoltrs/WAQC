@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
       .from('client_qualities')
       .select(`
         *,
-        client:clients(id, name, fantasy_name, company),
+        client:companies!client_qualities_client_id_fkey(id, name, fantasy_name, company:name),
         template:quality_templates(id, name, version)
       `)
       .order('created_at', { ascending: false })
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
       .insert(clientQualityData)
       .select(`
         *,
-        client:clients(id, name, company),
+        client:companies!client_qualities_client_id_fkey(id, name, company:name),
         template:quality_templates(id, name, version, parameters)
       `)
       .single()

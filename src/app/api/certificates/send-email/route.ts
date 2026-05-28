@@ -73,9 +73,9 @@ export async function POST(request: NextRequest) {
           id,
           tracking_number,
           origin,
-          exporter:exporters!samples_exporter_id_fkey(id, name, contact_email),
-          importer:importers(id, name, contact_email),
-          roaster:roasters(id, name, contact_email)
+          exporter:companies!samples_exporter_id_fkey(id, name, contact_email:email),
+          importer:companies!samples_importer_id_fkey(id, name, contact_email:email),
+          roaster:companies!samples_roaster_id_fkey(id, name, contact_email:email)
         )
       `)
       .in('id', certificateIds)

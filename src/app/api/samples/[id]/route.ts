@@ -33,21 +33,23 @@ export async function GET(
     const lookupByUUID = isUUID(id)
     const trackingNumber = lookupByUUID ? null : slugToTrackingNumber(id)
 
-    // Cast to any because TypeScript types don't recognize the seller FK
-    // (two FKs to exporters table: exporter_id and seller_id)
+    // All counterparty joins now resolve to the canonical `companies` table
+    // (post-consolidation, migration 20260528000004). Legacy field names are
+    // preserved via PostgREST aliases (company:name, client_types:company_types)
+    // so downstream consumers don't need to know about the rename.
     let query = (supabase as any)
       .from('samples')
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
-        seller:exporters!samples_seller_id_fkey(id, name, country),
-        exporter:exporters!samples_exporter_id_fkey(id, name, country),
-        importer:importers(id, name, country),
-        roaster:roasters(id, name, country),
-        client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
-        end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
+        seller:companies!samples_seller_id_fkey(id, name, country),
+        exporter:companies!samples_exporter_id_fkey(id, name, country),
+        importer:companies!samples_importer_id_fkey(id, name, country),
+        roaster:companies!samples_roaster_id_fkey(id, name, country),
+        client:companies!samples_client_id_fkey(id, name, company:name, fantasy_name, country, client_types:company_types),
+        end_client:companies!samples_end_client_id_fkey(id, name, company:name, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at),
-        sample_recipients(id, client_id, contact_emails, status, comments, sent_at, responded_at, responded_by, created_at, updated_at, client:clients(id, company, fantasy_name, country, email))
+        sample_recipients(id, client_id, contact_emails, status, comments, sent_at, responded_at, responded_by, created_at, updated_at, client:companies!sample_recipients_client_id_fkey(id, name, company:name, fantasy_name, country, email))
       `)
 
     // Query by UUID or tracking number
@@ -66,12 +68,12 @@ export async function GET(
         .select(`
           *,
           quality_spec:client_qualities(custom_name, quality_code),
-          seller:exporters!samples_seller_id_fkey(id, name, country),
-          exporter:exporters!samples_exporter_id_fkey(id, name, country),
-          importer:importers(id, name, country),
-          roaster:roasters(id, name, country),
-          client:clients!samples_client_id_fkey(id, company, fantasy_name, country, client_types),
-          end_client:clients!samples_end_client_id_fkey(id, company, fantasy_name, country),
+          seller:companies!samples_seller_id_fkey(id, name, country),
+          exporter:companies!samples_exporter_id_fkey(id, name, country),
+          importer:companies!samples_importer_id_fkey(id, name, country),
+          roaster:companies!samples_roaster_id_fkey(id, name, country),
+          client:companies!samples_client_id_fkey(id, name, company:name, fantasy_name, country, client_types:company_types),
+          end_client:companies!samples_end_client_id_fkey(id, name, company:name, fantasy_name, country),
           certificate:certificates(id, certificate_number, status, created_at)
         `)
         .ilike('tracking_number', trackingNumber!)

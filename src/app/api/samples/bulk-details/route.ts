@@ -45,18 +45,15 @@ export async function POST(request: NextRequest) {
         quality_spec_id,
         laboratory_id,
         created_at,
-        client:clients!samples_client_id_fkey(
-          id,
-          company,
-          fantasy_name
-        ),
-        exporter:exporters!samples_exporter_id_fkey(
+        client:companies!samples_client_id_fkey(
           id,
           name,
-          client:clients(
-            fantasy_name,
-            company
-          )
+          company:name,
+          fantasy_name
+        ),
+        exporter:companies!samples_exporter_id_fkey(
+          id,
+          name
         ),
         laboratory:laboratories!samples_laboratory_id_fkey(
           id,

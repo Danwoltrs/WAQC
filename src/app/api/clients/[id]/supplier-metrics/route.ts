@@ -29,7 +29,7 @@ export async function GET(
       .select(`
         id,
         status,
-        seller:exporters!samples_seller_id_fkey(name)
+        seller:companies!samples_seller_id_fkey(name)
       `)
       .eq('client_id', clientId)
       .not('seller_id', 'is', null)

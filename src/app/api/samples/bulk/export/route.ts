@@ -28,12 +28,12 @@ export async function POST(request: NextRequest) {
       .from('samples')
       .select(`
         *,
-        clients!samples_client_id_fkey(company, name),
+        clients:companies!samples_client_id_fkey(company:name, name),
         laboratories!samples_laboratory_id_fkey(name, location),
-        seller:exporters!samples_seller_id_fkey(name),
-        exporter:exporters!samples_exporter_id_fkey(name),
-        importer:importers(name),
-        roaster:roasters(name)
+        seller:companies!samples_seller_id_fkey(name),
+        exporter:companies!samples_exporter_id_fkey(name),
+        importer:companies!samples_importer_id_fkey(name),
+        roaster:companies!samples_roaster_id_fkey(name)
       `)
       .in('id', sample_ids)
       .order('created_at', { ascending: false })

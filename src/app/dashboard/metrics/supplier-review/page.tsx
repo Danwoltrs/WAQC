@@ -74,7 +74,7 @@ export default function SupplierReviewPage() {
           sample_type,
           status,
           created_at,
-          seller:exporters!samples_seller_id_fkey(id, name)
+          seller:companies!samples_seller_id_fkey(id, name)
         `)
         .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])

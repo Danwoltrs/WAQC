@@ -40,9 +40,9 @@ export async function POST(request: NextRequest) {
         container_nr,
         oic_number,
         client_id,
-        exporter:exporters!samples_exporter_id_fkey(name),
-        seller:exporters!samples_seller_id_fkey(name),
-        clients!samples_client_id_fkey!inner (
+        exporter:companies!samples_exporter_id_fkey(name),
+        seller:companies!samples_seller_id_fkey(name),
+        clients:companies!samples_client_id_fkey!inner (
           id,
           client_quality_names
         )

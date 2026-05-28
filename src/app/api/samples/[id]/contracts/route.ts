@@ -24,8 +24,8 @@ export async function GET(
         *,
         importer:importers(id, name, country),
         roaster:roasters(id, name, country),
-        end_client:clients!sample_contracts_end_client_id_fkey(id, company, fantasy_name, country),
-        qc_client:clients!sample_contracts_client_id_fkey(id, company, fantasy_name, country)
+        end_client:companies!sample_contracts_end_client_id_fkey(id, name, company:name, fantasy_name, country),
+        qc_client:companies!sample_contracts_client_id_fkey(id, name, company:name, fantasy_name, country)
       `)
       .eq('sample_id', sampleId)
       .order('sort_order', { ascending: true })

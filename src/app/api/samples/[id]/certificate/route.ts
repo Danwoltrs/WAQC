@@ -213,7 +213,7 @@ export async function POST(
         workflow_stage,
         status,
         quality_spec_id,
-        client:clients!samples_client_id_fkey(id, name, company, fantasy_name)
+        client:companies!samples_client_id_fkey(id, name, company:name, fantasy_name)
       `)
       .eq('id', id)
       .single()
@@ -406,7 +406,7 @@ async function createSubContractCertificates(
     // Get mother sample's client name for fallback issued_to
     const { data: sample } = await supabase
       .from('samples')
-      .select('client_id, clients!samples_client_id_fkey(fantasy_name, company)')
+      .select('client_id, clients:companies!samples_client_id_fkey(fantasy_name, company:name)')
       .eq('id', sampleId)
       .single()
 

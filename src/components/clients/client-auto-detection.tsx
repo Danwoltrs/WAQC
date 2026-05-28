@@ -158,7 +158,6 @@ export function ClientAutoDetection({
 
       const clientNames = [
         client.name,
-        client.company,
         client.fantasy_name
       ].filter(Boolean).map(name => name!.toLowerCase())
 
@@ -249,7 +248,9 @@ export function ClientAutoDetection({
         matches.push({
           id: client.id,
           name: client.name,
-          company: client.company,
+          // `company` field removed from canonical schema — keep alias for the
+          // ClientMatch interface, using the canonical name as the value.
+          company: client.name,
           fantasy_name: client.fantasy_name,
           primary_category: (client as any).primary_category || null,
           confidence: Math.min(100, confidence), // Cap at 100%
@@ -272,7 +273,7 @@ export function ClientAutoDetection({
         client_id,
         origin,
         created_at,
-        seller:exporters!samples_seller_id_fkey(name)
+        seller:companies!samples_seller_id_fkey(name)
       `)
       .not('client_id', 'is', null)
 

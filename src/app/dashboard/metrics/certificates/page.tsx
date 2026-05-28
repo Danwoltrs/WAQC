@@ -81,8 +81,8 @@ export default function CertificateStatisticsPage() {
           status,
           bags_quantity_mt,
           created_at,
-          roaster:roasters(name),
-          importer:importers(name)
+          roaster:companies!samples_roaster_id_fkey(name),
+          importer:companies!samples_importer_id_fkey(name)
         `)
         .in('status', ['approved', 'rejected'])
         .gte('created_at', start)

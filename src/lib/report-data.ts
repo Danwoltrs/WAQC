@@ -154,10 +154,10 @@ export async function getWeeklySSCertReportData(
         equivalent_60kg_bags,
         bags_quantity_mt,
         buyer_contract_nr,
-        exporter:exporters!samples_exporter_id_fkey(name),
-        seller:exporters!samples_seller_id_fkey(name),
-        importer:importers!samples_importer_id_fkey(name),
-        roaster:roasters!samples_roaster_id_fkey(name)
+        exporter:companies!samples_exporter_id_fkey(name),
+        seller:companies!samples_seller_id_fkey(name),
+        importer:companies!samples_importer_id_fkey(name),
+        roaster:companies!samples_roaster_id_fkey(name)
       )
     `)
     .is('sample_contract_id', null)

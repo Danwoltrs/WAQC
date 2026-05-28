@@ -112,9 +112,9 @@ export function SupplyChainSankey({ filters, onNodeClick }: SupplyChainSankeyPro
           status,
           created_at,
           client_id,
-          seller:exporters!samples_seller_id_fkey(name),
-          importer:importers(name),
-          roaster:roasters(name)
+          seller:companies!samples_seller_id_fkey(name),
+          importer:companies!samples_importer_id_fkey(name),
+          roaster:companies!samples_roaster_id_fkey(name)
         `)
         .not('seller_id', 'is', null)
         .not('importer_id', 'is', null)

@@ -27,7 +27,7 @@ export async function GET(
       .from('samples')
       .select(`
         *,
-        client:clients!samples_client_id_fkey(id, name, company),
+        client:companies!samples_client_id_fkey(id, name, company:name),
         quality:client_qualities(id),
         certificate:certificates(certificate_number)
       `)

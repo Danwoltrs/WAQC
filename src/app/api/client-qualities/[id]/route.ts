@@ -27,7 +27,7 @@ export async function GET(
       .from('client_qualities')
       .select(`
         *,
-        client:clients(id, name, company),
+        client:companies!client_qualities_client_id_fkey(id, name, company:name),
         template:quality_templates(id, name, version, parameters)
       `)
       .eq('id', id)
@@ -104,7 +104,7 @@ export async function PATCH(
       .eq('id', id)
       .select(`
         *,
-        client:clients(id, name, company),
+        client:companies!client_qualities_client_id_fkey(id, name, company:name),
         template:quality_templates(id, name, version, parameters)
       `)
       .single()

@@ -83,7 +83,7 @@ export function PerformanceLeaderboard({ year, quarter, cropYear, filters }: Per
           sample_type,
           status,
           created_at,
-          seller:exporters!samples_seller_id_fkey(name)
+          seller:companies!samples_seller_id_fkey(name)
         `)
         .not('seller_id', 'is', null)
         .in('status', ['approved', 'rejected'])
