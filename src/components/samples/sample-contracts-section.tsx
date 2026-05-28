@@ -173,8 +173,8 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
       }) as Array<{ id: string; name: string }>
     }
 
-    setImporters(dedup((importerRes.data || []).map(i => ({ id: i.id, name: i.name }))))
-    setRoasters(dedup((roasterRes.data || []).map(r => ({ id: r.id, name: r.name }))))
+    setImporters(dedup((importerRes.data || []).map((i: any) => ({ id: i.id, name: i.name }))))
+    setRoasters(dedup((roasterRes.data || []).map((r: any) => ({ id: r.id, name: r.name }))))
     setQcClients((clientRes.data || []).map((c: any) => ({
       id: c.id,
       name: (c.fantasy_name || c.name) as string
