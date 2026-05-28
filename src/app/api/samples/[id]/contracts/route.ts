@@ -22,8 +22,8 @@ export async function GET(
       .from('sample_contracts')
       .select(`
         *,
-        importer:importers(id, name, country),
-        roaster:roasters(id, name, country),
+        importer:companies!sample_contracts_importer_id_fkey(id, name, country),
+        roaster:companies!sample_contracts_roaster_id_fkey(id, name, country),
         end_client:companies!sample_contracts_end_client_id_fkey(id, name, company:name, fantasy_name, country),
         qc_client:companies!sample_contracts_client_id_fkey(id, name, company:name, fantasy_name, country)
       `)

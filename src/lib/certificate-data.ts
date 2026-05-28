@@ -770,8 +770,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       .from('sample_contracts')
       .select(`
         *,
-        importer:importers(name, country),
-        roaster:roasters(name, country),
+        importer:companies!sample_contracts_importer_id_fkey(name, country),
+        roaster:companies!sample_contracts_roaster_id_fkey(name, country),
         end_client:companies!sample_contracts_end_client_id_fkey(fantasy_name, name, country),
         qc_client:companies!sample_contracts_client_id_fkey(fantasy_name, name, country, company_types, trading_roles)
       `)
