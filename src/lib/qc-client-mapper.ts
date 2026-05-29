@@ -390,6 +390,21 @@ export function splitClientPayload(body: Record<string, unknown>): {
     }
   }
 
+  // certificate_pattern (set by the QC services modal) and tracking_number_format
+  // (read by generate_tracking_number(), see migration 20260528000007) carry the
+  // exact same JSONB shape — { type, pattern, separator, starting_sequence,
+  // sequence_padding, … }. The legacy split between them is a footgun: editing
+  // starting_sequence in the modal wrote certificate_pattern only, which the RPC
+  // never reads, so Blaser's "next sample" stayed at the backfilled 8900 even
+  // after the user set 1000. Mirror writes here unless the caller is explicitly
+  // passing tracking_number_format separately.
+  if (
+    settingsFields.certificate_pattern !== undefined &&
+    !('tracking_number_format' in body)
+  ) {
+    settingsFields.tracking_number_format = settingsFields.certificate_pattern
+  }
+
   return { companyFields, settingsFields }
 }
 
