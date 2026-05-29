@@ -6,6 +6,7 @@ import {
   mapCompanyToClient,
   splitClientPayload,
   fetchClientById,
+  mergeTagSets,
 } from '@/lib/qc-client-mapper'
 
 /**
@@ -66,7 +67,15 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching clients:', error)
-      return NextResponse.json({ error: 'Failed to fetch clients' }, { status: 500 })
+      // Surface the PostgREST error message so we can diagnose mismatches between
+      // the SELECT clause and the live schema (relation ambiguity, missing column,
+      // RLS rejection, etc.) without round-tripping to server logs every time.
+      return NextResponse.json({
+        error: 'Failed to fetch clients',
+        details: error.message,
+        code: error.code,
+        hint: error.hint,
+      }, { status: 500 })
     }
 
     const clients = (data || []).map(mapCompanyToClient).filter(Boolean)
@@ -131,28 +140,108 @@ export async function POST(request: NextRequest) {
       }, { status: 400 })
     }
 
-    // Dedupe by email — match legacy behavior so callers don't double-create
-    if (body.email) {
-      const { data: dupes } = await (supabase as any)
-        .from('companies')
-        .select('id, name, fantasy_name, email')
-        .eq('email', body.email)
-        .limit(1)
-
-      if (dupes && dupes.length > 0) {
-        return NextResponse.json({
-          error: 'Duplicate client detected',
-          message: 'A company with this email address already exists',
-          existing_client: dupes[0],
-        }, { status: 409 })
-      }
-    }
-
-    // Always treat new POSTs as QC clients (matches legacy default)
     const payload = { ...body, is_qc_client: body.is_qc_client !== false }
+    const wantsQc = payload.is_qc_client !== false
     const { companyFields, settingsFields } = splitClientPayload(payload)
 
-    // Insert into companies first
+    // Look for an existing company by (email, name, fantasy_name). companies is
+    // a shared table with sys.wolthers.com, so most counterparties already exist —
+    // we want to *upgrade* (merge role tags, flip is_qc_client when requested)
+    // rather than reject as a duplicate.
+    let existing: { id: string; name: string; fantasy_name: string | null; is_qc_client: boolean; company_types: string[] | null; trading_roles: string[] | null } | null = null
+
+    if (body.email) {
+      const { data: byEmail } = await (supabase as any)
+        .from('companies')
+        .select('id, name, fantasy_name, is_qc_client, company_types, trading_roles')
+        .eq('email', body.email)
+        .limit(1)
+        .maybeSingle()
+      if (byEmail) existing = byEmail
+    }
+
+    if (!existing && companyFields.name) {
+      const { data: byName } = await (supabase as any)
+        .from('companies')
+        .select('id, name, fantasy_name, is_qc_client, company_types, trading_roles')
+        .ilike('name', String(companyFields.name))
+        .limit(1)
+        .maybeSingle()
+      if (byName) existing = byName
+    }
+
+    if (existing) {
+      // If caller wants this row to be a QC client and it isn't yet, upgrade in place:
+      //   - flip is_qc_client = true
+      //   - merge any incoming role tags into the existing tag sets
+      //   - upsert a qc_client_settings row keyed on company_id
+      // If it's already a QC client, we keep returning 409 so the caller can route
+      // the user to the existing edit page instead of silently overwriting.
+      if (existing.is_qc_client && wantsQc) {
+        return NextResponse.json({
+          error: 'Duplicate client detected',
+          message: 'A QC client with this name or email already exists',
+          existing_client: existing,
+        }, { status: 409 })
+      }
+
+      const mergedCompanyTypes = mergeTagSets(
+        existing.company_types,
+        Array.isArray(companyFields.company_types) ? companyFields.company_types as string[] : null,
+      )
+      const mergedTradingRoles = mergeTagSets(
+        existing.trading_roles,
+        Array.isArray(companyFields.trading_roles) ? companyFields.trading_roles as string[] : null,
+      )
+
+      const updatePayload: Record<string, unknown> = { ...companyFields }
+      updatePayload.company_types = mergedCompanyTypes
+      updatePayload.trading_roles = mergedTradingRoles
+      if (wantsQc) updatePayload.is_qc_client = true
+      // Don't accidentally null out fields we already have — drop incoming nulls
+      // when the existing row has a value for them.
+      for (const k of Object.keys(updatePayload)) {
+        if (updatePayload[k] === null || updatePayload[k] === '') delete updatePayload[k]
+      }
+
+      const { error: upgradeError } = await (supabase as any)
+        .from('companies')
+        .update(updatePayload)
+        .eq('id', existing.id)
+
+      if (upgradeError) {
+        console.error('Error upgrading existing company:', upgradeError)
+        return NextResponse.json({
+          error: 'Failed to upgrade existing company',
+          details: upgradeError.message,
+        }, { status: 500 })
+      }
+
+      if (wantsQc) {
+        const { error: settingsError } = await (supabase as any)
+          .from('qc_client_settings')
+          .upsert({ company_id: existing.id, ...settingsFields }, { onConflict: 'company_id' })
+
+        if (settingsError) {
+          console.error('Error upserting qc_client_settings on upgrade:', settingsError)
+          return NextResponse.json({
+            error: 'Failed to attach QC settings to existing company',
+            details: settingsError.message,
+          }, { status: 500 })
+        }
+      }
+
+      const client = await fetchClientById(supabase, existing.id)
+      return NextResponse.json({
+        client,
+        upgraded: true,
+        message: wantsQc
+          ? 'Existing company upgraded to QC client'
+          : 'Existing company updated with new role tags',
+      }, { status: 200 })
+    }
+
+    // No match — insert new company.
     const { data: createdCompany, error: insertError } = await (supabase as any)
       .from('companies')
       .insert({
@@ -167,11 +256,13 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         error: 'Failed to create client',
         details: insertError?.message,
+        code: insertError?.code,
+        hint: insertError?.hint,
       }, { status: 500 })
     }
 
     // Then insert the qc_client_settings row (only if it's actually a QC client)
-    if (payload.is_qc_client !== false) {
+    if (wantsQc) {
       const { error: settingsError } = await (supabase as any)
         .from('qc_client_settings')
         .insert({

@@ -17,6 +17,9 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * The PostgREST select clause that pulls a company together with its
  * qc_client_settings row. Use as:
  *   supabase.from('companies').select(QC_CLIENT_SELECT)
+ *
+ * The embed uses the explicit FK constraint name so PostgREST doesn't get
+ * confused by parallel relations through views like companies_with_legacy.
  */
 export const QC_CLIENT_SELECT = `
   id, name, fantasy_name, email, phone,
@@ -24,7 +27,7 @@ export const QC_CLIENT_SELECT = `
   company_types, trading_roles, is_qc_client, is_active,
   legacy_client_id, logo_url, notes,
   created_at, updated_at,
-  qc_settings:qc_client_settings(
+  qc_settings:qc_client_settings!qc_client_settings_company_id_fkey(
     certificate_pattern, certificate_config,
     default_quality_specs, pricing_model, billing_basis, notification_emails,
     tracking_number_format, price_per_sample, price_per_pound_cents,
@@ -165,12 +168,76 @@ export const QC_SETTINGS_FIELDS = new Set([
 ])
 
 /**
+ * Translate legacy client_types enum values to the canonical post-consolidation
+ * pair of (company_types[], trading_roles[]). Mirrors the mapping baked into
+ * migration 20260528000002_backfill_clients_to_companies.sql.
+ *
+ * The Add Client modal still emits the old enum values (`importer_buyer`,
+ * `end_client`, `roaster_final_buyer`, etc.); converting at the API boundary
+ * means existing UI code keeps working without a flag-day rewrite.
+ */
+export function legacyClientTypeToCompanyTags(legacyTypes: string[]): {
+  company_types: string[]
+  trading_roles: string[]
+} {
+  const company_types = new Set<string>()
+  const trading_roles = new Set<string>()
+
+  for (const t of legacyTypes) {
+    switch (t) {
+      case 'producer':
+        company_types.add('farm'); trading_roles.add('seller'); break
+      case 'producer_exporter':
+        company_types.add('farm'); company_types.add('exporter'); trading_roles.add('seller'); break
+      case 'cooperative':
+        company_types.add('coop'); trading_roles.add('seller'); break
+      case 'exporter':
+        company_types.add('exporter'); trading_roles.add('seller'); break
+      case 'importer_buyer':
+      case 'importer':
+        company_types.add('trader'); trading_roles.add('buyer'); break
+      case 'roaster':
+        company_types.add('roaster'); break
+      case 'final_buyer':
+      case 'end_client':
+        company_types.add('final_buyer'); break
+      case 'roaster_final_buyer':
+        company_types.add('roaster'); company_types.add('final_buyer'); break
+      case 'service_provider':
+        // No company_type / trading_role yet — left blank.
+        break
+      default:
+        // Already a canonical value (farm, coop, trader, etc.) — pass through.
+        company_types.add(t)
+    }
+  }
+
+  return {
+    company_types: Array.from(company_types),
+    trading_roles: Array.from(trading_roles),
+  }
+}
+
+/**
+ * Merge two tag sets without dropping the existing values, returning a sorted
+ * unique union. Used when upgrading an existing company with new role tags.
+ */
+export function mergeTagSets(existing: string[] | null | undefined, incoming: string[] | null | undefined): string[] {
+  const merged = new Set<string>()
+  for (const v of existing ?? []) if (typeof v === 'string' && v) merged.add(v)
+  for (const v of incoming ?? []) if (typeof v === 'string' && v) merged.add(v)
+  return Array.from(merged).sort()
+}
+
+/**
  * Split an incoming "client" payload into (companies fields, qc_client_settings fields).
  * Legacy aliases handled:
  *   - body.company → fantasy_name (legacy clients.company column had no equivalent
  *     on companies; the modal showed fantasy_name as "Company name").
  *   - body.qc_enabled → is_qc_client (companies is the new home for this flag).
- *   - body.client_types → company_types (the legacy enum maps to companies.company_types[]).
+ *   - body.client_types → company_types + trading_roles via legacyClientTypeToCompanyTags.
+ *     The trading_roles produced by the mapping are *merged* into any trading_roles
+ *     the caller already sent, so callers can still pass explicit roles.
  * Drops body.id and body.company_id (caller controls those separately).
  */
 export function splitClientPayload(body: Record<string, unknown>): {
@@ -192,7 +259,17 @@ export function splitClientPayload(body: Record<string, unknown>): {
       continue
     }
     if (key === 'client_types') {
-      if (!('company_types' in body)) companyFields.company_types = value
+      // Legacy enum values need translating to the (company_types, trading_roles)
+      // pair on companies. Only assign when the caller hasn't explicitly sent
+      // company_types or trading_roles already.
+      const incoming = Array.isArray(value) ? value as string[] : []
+      const { company_types, trading_roles } = legacyClientTypeToCompanyTags(incoming)
+      if (!('company_types' in body)) {
+        companyFields.company_types = company_types
+      }
+      if (!('trading_roles' in body) && trading_roles.length > 0) {
+        companyFields.trading_roles = trading_roles
+      }
       continue
     }
     if (key === 'id' || key === 'company_id') continue
