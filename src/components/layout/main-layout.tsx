@@ -99,10 +99,12 @@ export function MainLayout({ children }: MainLayoutProps) {
           </>
         )}
 
-        {/* Main Content */}
+        {/* Main Content — left-aligned to the sidebar with a wide cap so content
+            doesn't sprawl on ultra-wide monitors. Pages still set their own max
+            width on top of this. */}
         <main className="flex-1 overflow-hidden flex flex-col">
           <div className="flex-1 overflow-auto">
-            <div className="max-w-[1400px] mx-auto">
+            <div className="max-w-[1400px]">
               {children}
             </div>
           </div>

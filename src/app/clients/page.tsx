@@ -15,6 +15,8 @@ import {
 import { AddClientModal } from '@/components/clients/add-client-modal'
 import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
 import { BulkOperationsDialog } from '@/components/clients/bulk-operations-dialog'
+import { QcConfigPanel, type QcConfigData } from '@/components/clients/qc-config-panel'
+import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import { cn } from '@/lib/utils'
 
 interface AssignedQuality {
@@ -95,6 +97,7 @@ export default function ClientsPage() {
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
   const [disableQcClient, setDisableQcClient] = useState<Client | null>(null)
   const [disableQcProcessing, setDisableQcProcessing] = useState(false)
+  const [qcConfigClient, setQcConfigClient] = useState<Client | null>(null)
 
   const [addClientModalOpen, setAddClientModalOpen] = useState(false)
   const [bulkOperationsDialogOpen, setBulkOperationsDialogOpen] = useState(false)
@@ -116,48 +119,66 @@ export default function ClientsPage() {
   async function loadClients() {
     try {
       setLoading(true)
-      const params = new URLSearchParams({ is_qc_client: 'all', limit: '500' })
-      if (searchQuery) params.append('search', searchQuery)
+      // Fetch in two passes so QC clients (small set, ~30) are always complete
+      // even when there are thousands of trading-only rows. The chip counts +
+      // filters run client-side from the merged result, which is why a single
+      // limited fetch was clipping QC clients beyond the most-recent window.
+      const qcParams = new URLSearchParams({ is_qc_client: 'true', limit: '500' })
+      const tradingParams = new URLSearchParams({ is_qc_client: 'false', limit: '500' })
+      if (searchQuery) {
+        qcParams.append('search', searchQuery)
+        tradingParams.append('search', searchQuery)
+      }
 
-      // `is_qc_client=all` opts the API out of the QC filter so we get both
-      // QC and trading-only rows. The chip filter / split happens client-side.
-      const response = await fetch(`/api/clients?${params}`)
-      const data = await response.json()
+      const [qcResp, tradingResp] = await Promise.all([
+        fetch(`/api/clients?${qcParams}`),
+        fetch(`/api/clients?${tradingParams}`),
+      ])
+      const qcData = await qcResp.json()
+      const tradingData = await tradingResp.json()
 
-      if (!response.ok) {
-        console.error('Failed to load clients:', data.error)
+      if (!qcResp.ok || !tradingResp.ok) {
+        console.error('Failed to load clients:', qcData?.error, tradingData?.error)
         setClients([])
         return
       }
 
-      // The list rows show a specs count, which currently lives on a sibling endpoint.
-      // Keep the per-client fetch behaviour the old page had — small list, fine for now.
-      const withQualities = await Promise.all(
-        (data.clients || []).map(async (client: Client) => {
-          try {
-            const r = await fetch(
-              `/api/client-qualities?client_id=${client.id}&is_active=true`,
-            )
-            if (!r.ok) return client
-            const j = await r.json()
-            return {
-              ...client,
-              assigned_qualities: (j.client_qualities || []).map((cq: any) => ({
-                id: cq.id,
-                custom_name: cq.custom_name || cq.template?.name_en || '',
-                quality_code: cq.quality_code,
-                cups_per_sample: cq.cups_per_sample,
-                template_id: cq.template_id,
-                template_name: cq.template?.name_en || '',
-                is_active: cq.is_active,
-              })),
+      const mergedClients: Client[] = [
+        ...(qcData.clients || []),
+        ...(tradingData.clients || []),
+      ]
+
+      // Spec count fetch — ONE batch request, then group by client_id locally.
+      // The earlier per-client fan-out fired N requests in parallel which
+      // saturated the dev server once limit was raised above ~30.
+      let qualitiesByClient: Record<string, AssignedQuality[]> = {}
+      try {
+        const r = await fetch('/api/client-qualities?is_active=true')
+        if (r.ok) {
+          const j = await r.json()
+          for (const cq of (j.client_qualities || []) as any[]) {
+            const cid = cq.client_id
+            if (!cid) continue
+            const aq: AssignedQuality = {
+              id: cq.id,
+              custom_name: cq.custom_name || cq.template?.name_en || '',
+              quality_code: cq.quality_code,
+              cups_per_sample: cq.cups_per_sample,
+              template_id: cq.template_id,
+              template_name: cq.template?.name_en || '',
+              is_active: cq.is_active,
             }
-          } catch (err) {
-            console.error(`Error fetching qualities for client ${client.id}:`, err)
-            return client
+            ;(qualitiesByClient[cid] ||= []).push(aq)
           }
-        }),
-      )
+        }
+      } catch (err) {
+        console.error('Error fetching client qualities batch:', err)
+      }
+
+      const withQualities: Client[] = mergedClients.map((client: Client) => ({
+        ...client,
+        assigned_qualities: qualitiesByClient[client.id] || [],
+      }))
       setClients(withQualities)
     } catch (err) {
       console.error('Error loading clients:', err)
@@ -259,6 +280,44 @@ export default function ClientsPage() {
       setDisableQcClient(null)
     } finally {
       setDisableQcProcessing(false)
+    }
+  }
+
+  async function handleSaveQcConfig(configData: QcConfigData) {
+    if (!qcConfigClient) return
+    try {
+      const response = await fetch(`/api/clients/${qcConfigClient.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          certificate_pattern: configData.certificatePattern,
+          certificate_validity_months: configData.certificateValidityEnabled
+            ? configData.certificateValidityMonths
+            : null,
+          pricing_model: configData.pricingModel,
+          price_per_sample: configData.pricePerSample,
+          price_per_pound_cents: configData.pricePerPoundCents,
+          currency: configData.currency,
+          billing_basis: configData.billingBasis,
+          payment_terms: configData.paymentTerms,
+          fee_payer: configData.feePayer,
+          billing_notes: configData.billingNotes,
+          // Setting pricing implies the company is a QC client even if the row
+          // was previously trading-only — this matches the spec's "+ Set pricing"
+          // intent.
+          is_qc_client: true,
+        }),
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        alert(`Failed to save QC configuration: ${err.error || response.statusText}`)
+        return
+      }
+      setQcConfigClient(null)
+      await loadClients()
+    } catch (err) {
+      console.error('Error saving QC configuration:', err)
+      alert('Failed to save QC configuration')
     }
   }
 
@@ -477,6 +536,7 @@ export default function ClientsPage() {
                   setAssignmentDialogOpen(true)
                 }}
                 onDisableQc={() => setDisableQcClient(client)}
+                onSetPricing={() => setQcConfigClient(client)}
               />
             ))}
           </div>
@@ -506,6 +566,30 @@ export default function ClientsPage() {
           onOpenChange={setAddClientModalOpen}
           onSuccess={() => loadClients()}
         />
+
+        {/* QC services configuration — opened by "+ Set pricing" on a row */}
+        {qcConfigClient && (
+          <QcConfigPanel
+            open={!!qcConfigClient}
+            onOpenChange={(open) => { if (!open) setQcConfigClient(null) }}
+            clientId={qcConfigClient.id}
+            data={{
+              certificatePattern: (qcConfigClient as any).certificate_pattern || DEFAULT_CERTIFICATE_PATTERN,
+              certificateValidityEnabled: !!(qcConfigClient as any).certificate_validity_months,
+              certificateValidityMonths: (qcConfigClient as any).certificate_validity_months || 6,
+              pricingModel: qcConfigClient.pricing_model || 'per_pound',
+              pricePerSample: qcConfigClient.price_per_sample,
+              pricePerPoundCents: qcConfigClient.price_per_pound_cents,
+              currency: qcConfigClient.currency || 'USD',
+              billingBasis: qcConfigClient.billing_basis || 'approved_only',
+              paymentTerms: (qcConfigClient as any).payment_terms || '',
+              feePayer: (qcConfigClient as any).fee_payer || 'client_pays',
+              billingNotes: (qcConfigClient as any).billing_notes || '',
+              logoUrl: (qcConfigClient as any).logo_url || null,
+            }}
+            onSave={handleSaveQcConfig}
+          />
+        )}
       </div>
     </MainLayout>
   )
@@ -545,6 +629,7 @@ function ClientRow({
   onCopyEmail,
   onAssignSpecs,
   onDisableQc,
+  onSetPricing,
 }: {
   client: Client
   copiedEmail: string | null
@@ -554,6 +639,7 @@ function ClientRow({
   onCopyEmail: () => void
   onAssignSpecs: () => void
   onDisableQc: () => void
+  onSetPricing: () => void
 }) {
   const typeLabels = formatTypeLabels(client.client_types)
   const specsCount = client.assigned_qualities?.length || 0
@@ -643,7 +729,17 @@ function ClientRow({
 
       {/* QC pricing cell */}
       <div>
-        {client.is_qc_client ? <PricingCell client={client} /> : null}
+        {client.is_qc_client ? (
+          <PricingCell client={client} onSetPricing={onSetPricing} />
+        ) : (
+          <button
+            type="button"
+            onClick={onSetPricing}
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-[11.5px] text-muted-foreground/70 hover:text-[#15663f] dark:hover:text-emerald-400"
+          >
+            + Enable QC
+          </button>
+        )}
       </div>
 
       {/* Status cell — compact switch, right-aligned to sit beside the actions */}
@@ -685,47 +781,54 @@ function ClientRow({
   )
 }
 
-function PricingCell({ client }: { client: Client }) {
-  const slug = client.slug || client.id
+function PricingCell({
+  client,
+  onSetPricing,
+}: {
+  client: Client
+  onSetPricing: () => void
+}) {
+  const editClass = 'text-left rounded-md -mx-1.5 -my-0.5 px-1.5 py-0.5 hover:bg-muted/60 transition-colors cursor-pointer'
 
   if (client.pricing_model === 'complimentary') {
     return (
-      <div>
+      <button type="button" onClick={onSetPricing} title="Edit QC pricing" className={editClass}>
         <div className="text-[13px] font-semibold tracking-[-0.01em]">Complimentary</div>
-      </div>
+      </button>
     )
   }
 
   if (client.pricing_model === 'per_sample' && client.price_per_sample) {
     return (
-      <div>
+      <button type="button" onClick={onSetPricing} title="Edit QC pricing" className={editClass}>
         <div className="text-[13px] font-semibold tracking-[-0.01em]">
           {currencySymbol(client.currency)}{client.price_per_sample.toFixed(2)}
         </div>
         <div className="text-[11px] text-muted-foreground/70 mt-px">per sample</div>
-      </div>
+      </button>
     )
   }
 
   if (client.pricing_model === 'per_pound' && client.price_per_pound_cents) {
     return (
-      <div>
+      <button type="button" onClick={onSetPricing} title="Edit QC pricing" className={editClass}>
         <div className="text-[13px] font-semibold tracking-[-0.01em]">
           {client.price_per_pound_cents.toFixed(2)}¢ / lb
         </div>
         <div className="text-[11px] text-muted-foreground/70 mt-px">
           {billingBasisLabel(client.billing_basis)}
         </div>
-      </div>
+      </button>
     )
   }
 
   return (
-    <Link
-      href={`/clients/${slug}`}
+    <button
+      type="button"
+      onClick={onSetPricing}
       className="text-[11.5px] text-muted-foreground/70 hover:text-[#15663f] dark:hover:text-emerald-400 transition-colors"
     >
       + Set pricing
-    </Link>
+    </button>
   )
 }

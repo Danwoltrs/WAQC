@@ -1,0 +1,302 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WAQC · Client detail + QC config</title>
+<style>
+  :root{
+    --green:#15663f; --green-deep:#0f5234;
+    --ink:#0d0f12; --bg:#ffffff; --page:#f6f7f8;
+    --muted:#6b7280; --faint:#9aa1ab;
+    --border:#ececee; --border-strong:#e2e3e6; --row-hover:#fafbfb;
+    --qc-bg:#e7f2ec; --qc-fg:#15663f;
+    --tag-bg:#f2f3f5; --tag-fg:#4b5563;
+    --danger:#c0392b; --radius:12px;
+    --field-h:38px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--page);color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px;margin:0 auto;padding:30px 26px 90px}
+  .back{display:inline-flex;align-items:center;gap:8px;color:var(--muted);font-size:13px;cursor:pointer;margin-bottom:18px}
+  .back svg{width:15px;height:15px}
+  .sectionlabel{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:34px 0 12px}
+  .sectionlabel:first-of-type{margin-top:0}
+
+  /* ---------- detail header ---------- */
+  .hdr{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:22px 24px}
+  .hdr-top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px}
+  .hdr h1{font-size:23px;font-weight:680;letter-spacing:-.02em;margin:0}
+  .hdr .fantasy{font-size:13px;color:var(--muted);margin-top:3px}
+  .hdr-badges{display:flex;align-items:center;gap:8px}
+  .pill{font-size:12px;font-weight:560;padding:4px 11px;border-radius:999px}
+  .pill.ink{background:var(--ink);color:#fff}
+  .pill.qc{background:var(--qc-bg);color:var(--qc-fg);font-weight:600}
+  .pill.active{background:#e7f2ec;color:var(--green);border:1px solid #d4e7dc}
+  .btn{display:inline-flex;align-items:center;gap:7px;height:36px;padding:0 14px;border-radius:9px;font-size:13px;font-weight:560;cursor:pointer;border:1px solid var(--border-strong);background:#fff;color:var(--ink)}
+  .btn svg{width:14px;height:14px}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .hdr-meta{display:flex;gap:30px;margin-top:18px;flex-wrap:wrap}
+  .meta{display:flex;align-items:center;gap:8px;font-size:13px;color:#374151}
+  .meta svg{width:15px;height:15px;color:var(--faint)}
+
+  /* stat strip */
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px}
+  .stat{background:#fff;border:1px solid var(--border);border-radius:11px;padding:15px 16px}
+  .stat .n{font-size:22px;font-weight:680;letter-spacing:-.02em}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:2px}
+  .stat .l.ok{color:var(--green)}
+
+  /* tabs */
+  .tabs{display:flex;gap:4px;background:#f0f1f3;border-radius:10px;padding:4px;margin-top:18px;width:max-content}
+  .tab{padding:7px 18px;border-radius:7px;font-size:13px;font-weight:540;color:var(--muted);cursor:pointer}
+  .tab.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+
+  /* qc services entry card */
+  .entry{margin-top:16px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:18px 22px;display:flex;align-items:center;justify-content:space-between}
+  .entry .t{font-size:14px;font-weight:580}
+  .entry .d{font-size:12.5px;color:var(--muted);margin-top:2px}
+
+  /* ---------- modal ---------- */
+  .modalcard{margin-top:14px;background:#fff;border:1px solid var(--border);border-radius:16px;box-shadow:0 24px 60px -28px rgba(0,0,0,.35);overflow:hidden;max-width:900px}
+  .modal-head{display:flex;align-items:flex-start;justify-content:space-between;padding:22px 26px 18px;border-bottom:1px solid var(--border)}
+  .modal-head h2{font-size:18px;font-weight:660;letter-spacing:-.01em;margin:0}
+  .modal-head p{font-size:13px;color:var(--muted);margin:4px 0 0}
+  .x{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--muted);cursor:pointer}
+  .x:hover{background:#f1f2f4}
+  .x svg{width:16px;height:16px}
+
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:0}
+  .col{padding:24px 26px}
+  .col+.col{border-left:1px solid var(--border)}
+  .grp{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:0 0 14px;display:flex;align-items:center;gap:7px}
+  .grp svg{width:13px;height:13px}
+  .grp.mt{margin-top:26px}
+
+  .field{margin-bottom:14px}
+  .field>label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+  .inp,.sel{height:var(--field-h);width:100%;border:1px solid var(--border-strong);border-radius:8px;padding:0 11px;font-size:13px;color:var(--ink);background:#fff;outline:none}
+  .inp:focus,.sel:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(21,102,63,.10)}
+  .sel{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%239aa1ab' stroke-width='2'><path d='M3 5l4 4 4-4'/></svg>");background-repeat:no-repeat;background-position:right 11px center}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .three{display:grid;grid-template-columns:1.4fr 1fr;gap:12px}
+  textarea.inp{height:74px;padding:9px 11px;resize:none;line-height:1.4}
+
+  /* switch row */
+  .swrow{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-top:1px solid var(--border)}
+  .swrow .t{font-size:13px;font-weight:540}
+  .swrow .d{font-size:11.5px;color:var(--muted);margin-top:1px;max-width:240px}
+  .sw{width:36px;height:21px;border-radius:999px;background:#d6d8dc;position:relative;flex:0 0 auto;cursor:pointer;transition:background .15s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;transition:left .15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .sw.on{background:var(--green)}
+  .sw.on::after{left:17px}
+
+  /* logo dropzone */
+  .drop{border:1.5px dashed var(--border-strong);border-radius:10px;padding:22px;text-align:center;color:var(--faint);font-size:12.5px;margin-top:4px}
+  .drop svg{width:22px;height:22px;display:block;margin:0 auto 6px;color:#c4c8ce}
+
+  /* cert pattern toggle chips */
+  .toggles{display:flex;gap:8px;margin-bottom:14px}
+  .tgl{flex:1;border:1px solid var(--border-strong);border-radius:9px;padding:10px 12px;cursor:pointer;background:#fff;transition:.12s;text-align:left}
+  .tgl .tt{font-size:12.5px;font-weight:560;display:flex;align-items:center;justify-content:space-between}
+  .tgl .ts{font-size:11px;color:var(--faint);margin-top:2px}
+  .tgl .box{width:16px;height:16px;border-radius:5px;border:1.5px solid var(--border-strong);display:grid;place-items:center}
+  .tgl .box svg{width:11px;height:11px;color:#fff;opacity:0}
+  .tgl.on{border-color:var(--green);background:#f3f9f5}
+  .tgl.on .box{background:var(--green);border-color:var(--green)}
+  .tgl.on .box svg{opacity:1}
+
+  /* preview */
+  .previewlabel{font-size:11px;color:var(--faint);display:flex;align-items:center;gap:6px;margin:4px 0 8px}
+  .previewlabel svg{width:13px;height:13px}
+  .preview{border:1px solid var(--border-strong);border-radius:10px;background:#fafbfb;padding:16px;text-align:center}
+  .preview .num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:21px;font-weight:600;letter-spacing:.04em}
+  .preview .num .seg-q{color:#b06a14}
+  .preview .num .seg-o{color:var(--green)}
+  .preview .num .seg-n{color:var(--ink)}
+  .preview .num .seg-muted{color:var(--faint)}
+  .preview .ex{font-size:11.5px;color:var(--faint);margin-top:7px}
+
+  /* lab sequences */
+  .lab{display:flex;align-items:center;gap:10px;padding:9px 0;border-top:1px solid var(--border)}
+  .lab .name{flex:1;font-size:13px;font-weight:520}
+  .lab .num{width:96px}
+  .lab .num input{height:32px;width:100%;border:1px solid var(--border-strong);border-radius:7px;padding:0 9px;font-size:13px;font-family:ui-monospace,monospace;text-align:right}
+  .addlab{font-size:12px;color:var(--green);font-weight:540;cursor:pointer;display:inline-flex;align-items:center;gap:5px;margin-top:10px}
+  .addlab svg{width:13px;height:13px}
+
+  /* footer */
+  .modal-foot{display:flex;justify-content:flex-end;gap:10px;padding:16px 26px;border-top:1px solid var(--border);background:#fcfcfd}
+
+  .note{font-size:12.5px;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:24px;line-height:1.6}
+  .note b{color:var(--ink)}
+</style>
+
+<div class="wrap">
+
+  <div class="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>Back to clients</div>
+
+  <!-- ============ DETAIL HEADER ============ -->
+  <div class="sectionlabel">Client detail — header</div>
+  <div class="hdr">
+    <div class="hdr-top">
+      <div>
+        <h1>Segafredo</h1>
+        <div class="fantasy">Segafredo Zanetti · France</div>
+      </div>
+      <div class="hdr-badges">
+        <span class="pill qc">QC client</span>
+        <span class="pill active">Active</span>
+        <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg>Edit</button>
+      </div>
+    </div>
+    <div class="hdr-meta">
+      <div class="meta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="m22 7-10 5L2 7"/></svg>jean-tristan.villa@segafredo.fr</div>
+      <div class="meta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-3"/></svg>Roaster</div>
+      <div class="meta"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>Joined May 28, 2026</div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="n">24</div><div class="l">Samples</div></div>
+    <div class="stat"><div class="n">18</div><div class="l ok">Approved</div></div>
+    <div class="stat"><div class="n">3</div><div class="l">Quality specs</div></div>
+    <div class="stat"><div class="n">12</div><div class="l">Certificates</div></div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab on">Quality Specs</div>
+    <div class="tab">Samples</div>
+    <div class="tab">Metrics</div>
+  </div>
+
+  <div class="entry">
+    <div>
+      <div class="t">QC services</div>
+      <div class="d">Certificate pattern, pricing &amp; billing for this client</div>
+    </div>
+    <button class="btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>Configure</button>
+  </div>
+
+  <!-- ============ QC SERVICES CONFIG MODAL ============ -->
+  <div class="sectionlabel">QC Services Configuration</div>
+  <div class="modalcard">
+    <div class="modal-head">
+      <div>
+        <h2>QC Services Configuration</h2>
+        <p>Certificate pattern, pricing &amp; billing settings</p>
+      </div>
+      <div class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></div>
+    </div>
+
+    <div class="cols">
+
+      <!-- LEFT: pricing & billing -->
+      <div class="col">
+        <p class="grp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Pricing &amp; billing</p>
+
+        <div class="two">
+          <div class="field"><label>Pricing model</label>
+            <select class="sel"><option>Per sample</option><option>Per pound (¢/lb)</option><option>Flat fee</option><option>Complimentary</option></select></div>
+          <div class="field"><label>Billing basis</label>
+            <select class="sel"><option>Approved only</option><option>All samples</option></select></div>
+        </div>
+
+        <div class="three">
+          <div class="field"><label>Price / sample</label><input class="inp" value="50.00"></div>
+          <div class="field"><label>Currency</label><select class="sel"><option>USD</option><option>EUR</option><option>BRL</option></select></div>
+        </div>
+
+        <div class="two">
+          <div class="field"><label>Payment terms</label><input class="inp" value="Net 30"></div>
+          <div class="field"><label>Who pays the fee</label><select class="sel"><option>Client pays</option><option>Supplier pays</option><option>Split</option></select></div>
+        </div>
+
+        <div class="field"><label>Billing notes</label><textarea class="inp" placeholder="Special billing instructions"></textarea></div>
+
+        <div class="swrow">
+          <div><div class="t">Multi-origin pricing</div><div class="d">Configure origin-specific pricing tiers</div></div>
+          <div class="sw" onclick="this.classList.toggle('on')"></div>
+        </div>
+
+        <p class="grp mt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>Company logo</p>
+        <div class="drop">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>
+          Drop image here, or <span style="color:var(--green);font-weight:540">browse</span><br><span style="font-size:11px">PNG recommended · max 2MB</span>
+        </div>
+      </div>
+
+      <!-- RIGHT: certificate -->
+      <div class="col">
+        <p class="grp"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>Certificate pattern</p>
+
+        <p style="font-size:12px;color:var(--muted);margin:0 0 10px">Include in the certificate number:</p>
+        <div class="toggles">
+          <button class="tgl on" data-seg="q" onclick="seg(this)">
+            <div class="tt">Quality code <span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+            <div class="ts">e.g. AD</div>
+          </button>
+          <button class="tgl on" data-seg="o" onclick="seg(this)">
+            <div class="tt">Origin code <span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></div>
+            <div class="ts">e.g. BR</div>
+          </button>
+        </div>
+
+        <div class="two">
+          <div class="field"><label>Starting number</label><input class="inp" id="start" value="1" oninput="render()"></div>
+          <div class="field"><label>Padding (digits)</label><input class="inp" id="pad" value="6" oninput="render()"></div>
+        </div>
+
+        <p class="previewlabel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>Live preview</p>
+        <div class="preview">
+          <div class="num" id="prev"></div>
+          <div class="ex" id="prevex"></div>
+        </div>
+
+        <div class="swrow" style="margin-top:18px">
+          <div><div class="t">Certificate validity period</div><div class="d">Print an expiry window on issued certificates</div></div>
+          <div class="sw" onclick="this.classList.toggle('on')"></div>
+        </div>
+
+        <p class="grp mt"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 2v6l-3 5a4 4 0 0 0 4 6h4a4 4 0 0 0 4-6l-3-5V2"/><path d="M8 2h8"/></svg>Lab sequences</p>
+        <p style="font-size:12px;color:var(--muted);margin:0 0 6px">Per-lab starting numbers. Overrides the global start for that lab.</p>
+        <div class="lab"><div class="name">Santos</div><div class="num"><input value="000001"></div></div>
+        <div class="lab"><div class="name">Buenaventura</div><div class="num"><input value="000001"></div></div>
+        <div class="lab"><div class="name">Guatemala City</div><div class="num"><input value="000001"></div></div>
+        <div class="addlab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add lab sequence</div>
+      </div>
+
+    </div>
+
+    <div class="modal-foot">
+      <button class="btn">Cancel</button>
+      <button class="btn primary">Save configuration</button>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>Nothing was removed.</b> Every option from the old modal is still here — pricing model, billing basis, price/currency/terms, who pays, billing notes, multi-origin tiers, company logo, validity period, quality &amp; origin codes, starting number, padding, the live preview, and per-lab sequences. The redesign only regroups them: <b>billing</b> on the left, <b>certificate</b> on the right, with the include-codes turned into chips that compose the preview in real time, and lab sequences shown as an editable list instead of a "full edit mode" placeholder.
+  </div>
+
+</div>
+
+<script>
+  function seg(el){ el.classList.toggle('on'); render(); }
+  function render(){
+    var q = document.querySelector('.tgl[data-seg="q"]').classList.contains('on');
+    var o = document.querySelector('.tgl[data-seg="o"]').classList.contains('on');
+    var start = parseInt(document.getElementById('start').value||'1',10);
+    var pad = Math.max(1, Math.min(10, parseInt(document.getElementById('pad').value||'6',10)));
+    var num = String(isNaN(start)?1:start).padStart(pad,'0');
+    var year = '/26';
+    var html = '';
+    if(q) html += '<span class="seg-q">AD</span><span class="seg-muted">-</span>';
+    html += '<span class="seg-n">'+num+'</span>';
+    if(o) html += '<span class="seg-muted">-</span><span class="seg-o">BR</span>';
+    html += '<span class="seg-muted">'+year+'</span>';
+    document.getElementById('prev').innerHTML = html;
+    var parts = [];
+    if(q) parts.push('quality "AD"');
+    if(o) parts.push('origin "BR"');
+    document.getElementById('prevex').textContent = parts.length ? 'Example with '+parts.join(' and ') : 'Sequential number with year suffix';
+  }
+  render();
+</script>
