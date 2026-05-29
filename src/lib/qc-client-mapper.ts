@@ -38,6 +38,10 @@ export const QC_CLIENT_SELECT = `
   )
 `.trim()
 
+// NOTE: companies.vat_number is added by migration 20260529000001.
+// If you redeploy WITHOUT applying that migration first, the SELECT above
+// will 500 with: column companies.vat_number does not exist (42703).
+
 type CompanyRow = {
   id: string
   name: string
@@ -227,6 +231,16 @@ export function mergeTagSets(existing: string[] | null | undefined, incoming: st
   for (const v of existing ?? []) if (typeof v === 'string' && v) merged.add(v)
   for (const v of incoming ?? []) if (typeof v === 'string' && v) merged.add(v)
   return Array.from(merged).sort()
+}
+
+/**
+ * Escape `%` and `_` so a user-supplied string can be safely passed to ILIKE
+ * without acting as wildcards. Pair with `.ilike(col, escapeIlike(value))` when
+ * you want case-insensitive *exact* match. (Postgres' default LIKE escape char
+ * is `\`, which is what supabase-js / PostgREST forwards.)
+ */
+export function escapeIlike(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/[%_]/g, '\\$&')
 }
 
 /**

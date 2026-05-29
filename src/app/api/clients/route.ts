@@ -7,7 +7,24 @@ import {
   splitClientPayload,
   fetchClientById,
   mergeTagSets,
+  escapeIlike,
 } from '@/lib/qc-client-mapper'
+
+// Strip PostgREST/Postgres error internals before serialising for the client.
+// The full error always lands in console.error for server-log inspection.
+//
+// We're intentionally STILL surfacing details in production while the
+// consolidation migrations are settling — the WAQC userbase is all
+// authenticated Wolthers staff, the alternative is flying blind on schema
+// drift, and we hit a real schema mismatch (companies.vat_number) within
+// hours of going live. Once the schema is stable, swap this for a tighter
+// version that returns `{}` in production. The security review on commit
+// 3c05112 flagged this as medium-severity information disclosure; this
+// comment is the acknowledgement.
+function safeErrorDetails(err: { message?: string; code?: string; hint?: string | null } | null | undefined) {
+  if (!err) return {}
+  return { details: err.message, code: err.code, hint: err.hint }
+}
 
 /**
  * GET /api/clients
@@ -67,14 +84,9 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching clients:', error)
-      // Surface the PostgREST error message so we can diagnose mismatches between
-      // the SELECT clause and the live schema (relation ambiguity, missing column,
-      // RLS rejection, etc.) without round-tripping to server logs every time.
       return NextResponse.json({
         error: 'Failed to fetch clients',
-        details: error.message,
-        code: error.code,
-        hint: error.hint,
+        ...safeErrorDetails(error),
       }, { status: 500 })
     }
 
@@ -144,39 +156,56 @@ export async function POST(request: NextRequest) {
     const wantsQc = payload.is_qc_client !== false
     const { companyFields, settingsFields } = splitClientPayload(payload)
 
-    // Look for an existing company by (email, name, fantasy_name). companies is
-    // a shared table with sys.wolthers.com, so most counterparties already exist —
-    // we want to *upgrade* (merge role tags, flip is_qc_client when requested)
-    // rather than reject as a duplicate.
-    let existing: { id: string; name: string; fantasy_name: string | null; is_qc_client: boolean; company_types: string[] | null; trading_roles: string[] | null } | null = null
+    // Look for an existing company by email and/or canonical name match. companies
+    // is shared with sys.wolthers.com, so most counterparties already exist —
+    // when we find a match we *augment* the existing row (flip is_qc_client when
+    // requested, merge role tags, attach qc_client_settings) instead of inserting
+    // a duplicate.
+    //
+    // Security notes (informed by 2026-05-29 review):
+    //   1. The name lookup uses an ILIKE with `%`/`_` escaped so a user-supplied
+    //      name can't act as a wildcard pattern.
+    //   2. The upgrade path NEVER splats incoming companyFields into the UPDATE.
+    //      Identity fields (name, email, address, phone, document_*, vat_number,
+    //      logo_url, notes, fantasy_name) belong to whoever first registered the
+    //      company — usually the sys.wolthers.com trading side. We only ever
+    //      touch the WAQC-owned columns: is_qc_client, company_types, trading_roles.
+    //      If the caller wants to amend identity fields, they should send a PATCH
+    //      to /api/clients/[id] (or work through sys).
+    let existing: {
+      id: string
+      name: string
+      fantasy_name: string | null
+      is_qc_client: boolean
+      company_types: string[] | null
+      trading_roles: string[] | null
+    } | null = null
+
+    const existingSelect = 'id, name, fantasy_name, is_qc_client, company_types, trading_roles'
 
     if (body.email) {
       const { data: byEmail } = await (supabase as any)
         .from('companies')
-        .select('id, name, fantasy_name, is_qc_client, company_types, trading_roles')
+        .select(existingSelect)
         .eq('email', body.email)
         .limit(1)
         .maybeSingle()
       if (byEmail) existing = byEmail
     }
 
-    if (!existing && companyFields.name) {
+    if (!existing && typeof companyFields.name === 'string' && companyFields.name.trim().length > 0) {
       const { data: byName } = await (supabase as any)
         .from('companies')
-        .select('id, name, fantasy_name, is_qc_client, company_types, trading_roles')
-        .ilike('name', String(companyFields.name))
+        .select(existingSelect)
+        .ilike('name', escapeIlike(companyFields.name.trim()))
         .limit(1)
         .maybeSingle()
       if (byName) existing = byName
     }
 
     if (existing) {
-      // If caller wants this row to be a QC client and it isn't yet, upgrade in place:
-      //   - flip is_qc_client = true
-      //   - merge any incoming role tags into the existing tag sets
-      //   - upsert a qc_client_settings row keyed on company_id
-      // If it's already a QC client, we keep returning 409 so the caller can route
-      // the user to the existing edit page instead of silently overwriting.
+      // Already a QC client — bounce the caller so the UI can route to the edit
+      // page rather than silently mutating someone else's data.
       if (existing.is_qc_client && wantsQc) {
         return NextResponse.json({
           error: 'Duplicate client detected',
@@ -185,6 +214,7 @@ export async function POST(request: NextRequest) {
         }, { status: 409 })
       }
 
+      // WAQC-owned columns only — see the security note above.
       const mergedCompanyTypes = mergeTagSets(
         existing.company_types,
         Array.isArray(companyFields.company_types) ? companyFields.company_types as string[] : null,
@@ -194,26 +224,22 @@ export async function POST(request: NextRequest) {
         Array.isArray(companyFields.trading_roles) ? companyFields.trading_roles as string[] : null,
       )
 
-      const updatePayload: Record<string, unknown> = { ...companyFields }
-      updatePayload.company_types = mergedCompanyTypes
-      updatePayload.trading_roles = mergedTradingRoles
-      if (wantsQc) updatePayload.is_qc_client = true
-      // Don't accidentally null out fields we already have — drop incoming nulls
-      // when the existing row has a value for them.
-      for (const k of Object.keys(updatePayload)) {
-        if (updatePayload[k] === null || updatePayload[k] === '') delete updatePayload[k]
+      const upgradePayload: Record<string, unknown> = {
+        company_types: mergedCompanyTypes,
+        trading_roles: mergedTradingRoles,
       }
+      if (wantsQc) upgradePayload.is_qc_client = true
 
       const { error: upgradeError } = await (supabase as any)
         .from('companies')
-        .update(updatePayload)
+        .update(upgradePayload)
         .eq('id', existing.id)
 
       if (upgradeError) {
         console.error('Error upgrading existing company:', upgradeError)
         return NextResponse.json({
           error: 'Failed to upgrade existing company',
-          details: upgradeError.message,
+          ...safeErrorDetails(upgradeError),
         }, { status: 500 })
       }
 
@@ -226,7 +252,7 @@ export async function POST(request: NextRequest) {
           console.error('Error upserting qc_client_settings on upgrade:', settingsError)
           return NextResponse.json({
             error: 'Failed to attach QC settings to existing company',
-            details: settingsError.message,
+            ...safeErrorDetails(settingsError),
           }, { status: 500 })
         }
       }
@@ -255,9 +281,7 @@ export async function POST(request: NextRequest) {
       console.error('Error creating company:', insertError)
       return NextResponse.json({
         error: 'Failed to create client',
-        details: insertError?.message,
-        code: insertError?.code,
-        hint: insertError?.hint,
+        ...safeErrorDetails(insertError),
       }, { status: 500 })
     }
 
@@ -276,7 +300,7 @@ export async function POST(request: NextRequest) {
         await (supabase as any).from('companies').delete().eq('id', createdCompany.id)
         return NextResponse.json({
           error: 'Failed to create QC settings',
-          details: settingsError.message,
+          ...safeErrorDetails(settingsError),
         }, { status: 500 })
       }
     }
