@@ -44,10 +44,10 @@ export async function GET(request: NextRequest) {
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
-        seller:companies!samples_seller_id_fkey(id, name, country),
-        exporter:companies!samples_exporter_id_fkey(id, name, country),
-        importer:companies!samples_importer_id_fkey(id, name, country),
-        roaster:companies!samples_roaster_id_fkey(id, name, country),
+        seller:companies!samples_seller_id_fkey(id, name, fantasy_name, country),
+        exporter:companies!samples_exporter_id_fkey(id, name, fantasy_name, country),
+        importer:companies!samples_importer_id_fkey(id, name, fantasy_name, country),
+        roaster:companies!samples_roaster_id_fkey(id, name, fantasy_name, country),
         qc_client:companies!samples_client_id_fkey(id, name, fantasy_name, country, client_types:company_types),
         end_client:companies!samples_end_client_id_fkey(id, name, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
@@ -105,12 +105,12 @@ export async function GET(request: NextRequest) {
 
     const entityMaps = { importers: {} as Record<string, string>, roasters: {} as Record<string, string>, clients: {} as Record<string, string> }
     if (importerIds.length > 0) {
-      const { data } = await (supabase as any).from('companies').select('id, name').in('id', importerIds)
-      for (const r of data || []) entityMaps.importers[r.id] = r.name || ''
+      const { data } = await (supabase as any).from('companies').select('id, name, fantasy_name').in('id', importerIds)
+      for (const r of (data || []) as any[]) entityMaps.importers[r.id] = r.fantasy_name || r.name || ''
     }
     if (roasterIds.length > 0) {
-      const { data } = await (supabase as any).from('companies').select('id, name').in('id', roasterIds)
-      for (const r of data || []) entityMaps.roasters[r.id] = r.name || ''
+      const { data } = await (supabase as any).from('companies').select('id, name, fantasy_name').in('id', roasterIds)
+      for (const r of (data || []) as any[]) entityMaps.roasters[r.id] = r.fantasy_name || r.name || ''
     }
     if (clientIds.length > 0) {
       const { data } = await (supabase as any).from('companies').select('id, fantasy_name, name').in('id', clientIds)
@@ -131,6 +131,15 @@ export async function GET(request: NextRequest) {
       const isRoasterClient = clientTypes.some((t: string) => t.includes('roaster'))
       const qcClientName = sample.qc_client?.fantasy_name || sample.qc_client?.company || null
 
+      // Prefer fantasy_name for every party column so the tracker shows
+      // "Coopervass" instead of "Cooperativa dos Cafeicultores da Zona de Três
+      // Pontas Ltda" (which wraps across 3 lines). Fall back to legal name when
+      // no fantasy is set.
+      const sellerName = sample.seller?.fantasy_name || sample.seller?.name || null
+      const exporterName = sample.exporter?.fantasy_name || sample.exporter?.name || null
+      const importerLegalName = sample.importer?.fantasy_name || sample.importer?.name || null
+      const roasterName = sample.roaster?.fantasy_name || sample.roaster?.name || null
+
       return {
         ...sample,
         // Prioritize sample's own quality_name (for type samples or custom entries),
@@ -138,16 +147,16 @@ export async function GET(request: NextRequest) {
         quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
         quality_code: sample.quality_spec?.quality_code || null,
         // Seller (farm/producer) from seller_id
-        seller_name: sample.seller?.name || null,
+        seller_name: sellerName,
         seller_country: sample.seller?.country || null,
         // Exporter/Shipper from exporter_id
-        exporter_name: sample.exporter?.name || null,
+        exporter_name: exporterName,
         exporter_country: sample.exporter?.country || null,
         // Importer: from DB, or importer_is_qc_client flag, or QC client with importer type
-        importer_name: sample.importer?.name || (sample.importer_is_qc_client ? qcClientName : null) || (isImporterClient ? qcClientName : null),
+        importer_name: importerLegalName || (sample.importer_is_qc_client ? qcClientName : null) || (isImporterClient ? qcClientName : null),
         importer_country: sample.importer?.country || (isImporterClient ? sample.qc_client?.country : null),
         // Roaster: from DB, or QC client with roaster type
-        roaster_name: sample.roaster?.name || (isRoasterClient ? qcClientName : null),
+        roaster_name: roasterName || (isRoasterClient ? qcClientName : null),
         roaster_country: sample.roaster?.country || (isRoasterClient ? sample.qc_client?.country : null),
         // QC Client (who hired Wolthers) from client_id
         qc_client_name: qcClientName,

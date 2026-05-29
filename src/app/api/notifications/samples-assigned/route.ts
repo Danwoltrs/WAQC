@@ -39,26 +39,31 @@ export async function POST(request: NextRequest) {
 
     console.log(`Creating cupping session for ${cupper_ids.length} cupper(s) and ${sample_ids.length} sample(s)`)
 
-    // Create admin client if service role key is available (for RLS bypass)
-    // Fall back to authenticated client if not available
+    // The workflow_stage update on `samples` is RLS-restricted: only users whose
+    // qc_role is lab_personnel / lab_quality_manager / global_quality_admin /
+    // global_admin AND who match the row's lab can UPDATE. When the env is
+    // missing, the update silently affects 0 rows, the cupping session row gets
+    // created, but the sample stays at "received". Hard-require the service
+    // role key so cupper assignment can't half-succeed.
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
-    let dbClient: any = supabase // Use authenticated client by default
-
-    if (serviceRoleKey) {
-      dbClient = createSupabaseClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        serviceRoleKey,
-        {
-          auth: {
-            autoRefreshToken: false,
-            persistSession: false,
-          },
-        }
-      )
-      console.log('Using admin client (service role)')
-    } else {
-      console.log('SUPABASE_SERVICE_ROLE_KEY not set - using authenticated client')
+    if (!serviceRoleKey) {
+      console.error('SUPABASE_SERVICE_ROLE_KEY missing - refusing to assign cuppers (would leave samples stuck at "received")')
+      return NextResponse.json({
+        error: 'Server misconfigured',
+        details: 'SUPABASE_SERVICE_ROLE_KEY is not set. Cupper assignment requires service-role access to advance the workflow stage. Set the env var and redeploy.',
+      }, { status: 500 })
     }
+
+    const dbClient: any = createSupabaseClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      serviceRoleKey,
+      {
+        auth: {
+          autoRefreshToken: false,
+          persistSession: false,
+        },
+      }
+    )
 
     // Track which cuppers are newly added (for notifications)
     let newCupperIds: string[] = cupper_ids
@@ -173,40 +178,58 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // CRITICAL: Move samples to 'analysis' workflow stage so they appear in /cupping page
-    console.log(`Moving ${sample_ids.length} samples to analysis stage...`)
+    // CRITICAL: Move samples to 'analysis' workflow stage so they appear in /cupping page.
+    // Skip rows already past 'received' (re-assigning cuppers to an in-progress
+    // sample shouldn't reset its stage). Anything still on 'received' must
+    // advance, otherwise the assignment half-succeeded and the user sees the
+    // sample stuck on the tracker.
+    console.log(`Advancing ${sample_ids.length} samples to analysis stage...`)
 
-    // Update samples - try without the workflow_stage filter first for broader compatibility
-    const { data: updatedSamples, error: sampleUpdateError } = await dbClient
+    const { data: receivedRows, error: receivedFetchError } = await dbClient
       .from('samples')
-      .update({
-        workflow_stage: 'analysis',
-        status: 'in_progress',
-      })
-      .in('id', sample_ids)
       .select('id, workflow_stage')
+      .in('id', sample_ids)
 
-    if (sampleUpdateError) {
-      console.error('Failed to update sample workflow_stage:', sampleUpdateError)
-      // Try alternative approach: update each sample individually
-      console.log('Trying individual sample updates...')
-      for (const sampleId of sample_ids) {
-        const { error: individualError } = await dbClient
-          .from('samples')
-          .update({
-            workflow_stage: 'analysis',
-            status: 'in_progress',
-          })
-          .eq('id', sampleId)
+    if (receivedFetchError) {
+      console.error('Failed to fetch sample workflow_stages:', receivedFetchError)
+      return NextResponse.json({
+        error: 'Failed to read sample workflow stages',
+        details: receivedFetchError.message,
+      }, { status: 500 })
+    }
 
-        if (individualError) {
-          console.error(`Failed to update sample ${sampleId}:`, individualError)
-        } else {
-          console.log(`Updated sample ${sampleId} to analysis stage`)
-        }
+    const idsToAdvance = (receivedRows || [])
+      .filter((r: any) => r.workflow_stage === 'received' || r.workflow_stage == null)
+      .map((r: any) => r.id as string)
+
+    if (idsToAdvance.length > 0) {
+      const { data: updatedSamples, error: sampleUpdateError } = await dbClient
+        .from('samples')
+        .update({ workflow_stage: 'analysis', status: 'in_progress' })
+        .in('id', idsToAdvance)
+        .select('id, workflow_stage')
+
+      if (sampleUpdateError) {
+        console.error('Failed to update sample workflow_stage:', sampleUpdateError)
+        return NextResponse.json({
+          error: 'Failed to advance sample workflow stage',
+          details: sampleUpdateError.message,
+        }, { status: 500 })
       }
+
+      const advancedCount = (updatedSamples || []).filter((s: any) => s.workflow_stage === 'analysis').length
+      if (advancedCount !== idsToAdvance.length) {
+        console.error(`Partial workflow_stage update: ${advancedCount} of ${idsToAdvance.length}`)
+        return NextResponse.json({
+          error: 'Workflow stage update partially failed',
+          details: `Expected to advance ${idsToAdvance.length} samples to analysis, only ${advancedCount} were updated.`,
+          advanced: advancedCount,
+          expected: idsToAdvance.length,
+        }, { status: 500 })
+      }
+      console.log(`Advanced ${advancedCount} samples to analysis stage`)
     } else {
-      console.log(`Successfully updated ${updatedSamples?.length || 0} samples to analysis stage`)
+      console.log('No samples needed stage advance (all already past received)')
     }
 
     // Create/update quality_assessments to mark samples ready for grading and cupping

@@ -1,0 +1,222 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WAQC · Sample Tracking redesign</title>
+<style>
+  :root{
+    --green:#15663f; --ink:#0d0f12; --bg:#fff; --page:#f6f7f8;
+    --muted:#6b7280; --faint:#9aa1ab;
+    --border:#ececee; --border-strong:#e2e3e6; --row-hover:#fafbfb;
+    --tag-bg:#f2f3f5; --tag-fg:#4b5563; --danger:#c0392b; --radius:12px;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--page);color:var(--ink);
+    font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1320px;margin:0 auto;padding:30px 22px 90px}
+
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+  .head h1{font-size:25px;font-weight:680;letter-spacing:-.02em;margin:0}
+  .btn{display:inline-flex;align-items:center;gap:7px;height:38px;padding:0 15px;border-radius:9px;font-size:13px;font-weight:560;cursor:pointer;border:1px solid var(--border-strong);background:#fff;color:var(--ink)}
+  .btn svg{width:15px;height:15px}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  /* filter panel */
+  .panel{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:16px}
+  .search{position:relative;margin-bottom:12px}
+  .search input{width:100%;height:44px;border:1px solid var(--border-strong);border-radius:10px;padding:0 14px 0 40px;font-size:14px;outline:none}
+  .search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint)}
+  .frow{display:grid;grid-template-columns:repeat(6,1fr);gap:10px;margin-bottom:12px}
+  .ctl{height:38px;border:1px solid var(--border-strong);border-radius:9px;padding:0 11px;font-size:13px;color:var(--muted);display:flex;align-items:center;justify-content:space-between;background:#fff}
+  .ctl svg{width:14px;height:14px;color:var(--faint)}
+  .stages{display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .chip{height:31px;padding:0 14px;border-radius:999px;border:1px solid var(--border-strong);background:#fff;font-size:12.5px;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center}
+  .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+  .chip.clear{border:none;color:var(--faint)}
+  .stages .right{margin-left:auto}
+
+  /* table */
+  .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .card-h{padding:15px 20px;border-bottom:1px solid var(--border);font-size:14px;font-weight:620}
+  .card-h span{color:var(--faint);font-weight:500}
+
+  .thead,.row{display:grid;
+    grid-template-columns:24px 1.55fr 48px 0.95fr 1.2fr 0.72fr 1.05fr 0.82fr 0.98fr 76px 78px;
+    align-items:center;gap:12px;padding:0 20px}
+  .thead{height:40px;background:#fcfcfd;border-bottom:1px solid var(--border)}
+  .thead span{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+  .thead .r{text-align:right}
+
+  .row{min-height:54px;border-bottom:1px solid var(--border);transition:background .12s}
+  .row:last-child{border-bottom:0}
+  .row:hover{background:var(--row-hover)}
+
+  .cb{width:16px;height:16px;border:1.5px solid var(--border-strong);border-radius:5px}
+
+  /* the emphasized reference cell — both lines single-line, no wrap */
+  .ref .cert{font-family:var(--mono);font-size:13.5px;font-weight:680;letter-spacing:-.01em;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.25}
+  .ref .sub{font-family:var(--mono);font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;display:flex;align-items:center;gap:5px}
+  .ref .sub .k{font-family:ui-sans-serif,system-ui;font-size:9px;font-weight:700;letter-spacing:.06em;color:var(--faint);background:#f2f3f5;border-radius:4px;padding:1px 4px}
+
+  .type{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--tag-fg);background:var(--tag-bg);border-radius:6px;padding:3px 0;text-align:center;width:40px}
+
+  /* every text cell: single line, ellipsis, never wraps */
+  .cell{font-size:13px;color:#374151;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .cell.name{font-weight:520;color:var(--ink)}
+  .cell .sub{font-family:var(--mono);font-size:11px;color:var(--faint);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+  .none{color:var(--faint)}
+
+  /* status + stage merged */
+  .st .pill{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:560;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .st .pill svg{width:11px;height:11px}
+  .st .pill.prog{background:#fdf3d7;color:#9a6b08}
+  .st .pill.recv{background:#e1edfb;color:#1d5fb0}
+  .st .pill.cert{background:#e7f2ec;color:var(--green)}
+  .st .stage{font-size:11px;color:var(--faint);margin-top:3px}
+
+  .created{font-size:12.5px;color:var(--muted);display:flex;align-items:center;gap:6px;white-space:nowrap}
+  .created svg{width:13px;height:13px;color:var(--faint)}
+
+  .acts{display:flex;justify-content:flex-end;align-items:center;gap:4px}
+  .view{height:30px;padding:0 12px;border:1px solid var(--border-strong);border-radius:8px;font-size:12.5px;font-weight:540;background:#fff;cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+  .view svg{width:13px;height:13px}
+  .del{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--faint);cursor:pointer;opacity:0;transition:opacity .12s}
+  .row:hover .del{opacity:1}
+  .del:hover{background:#fbecea;color:var(--danger)}
+  .del svg{width:14px;height:14px}
+
+  .note{font-size:12.5px;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:10px;padding:14px 16px;margin-top:22px;line-height:1.6}
+  .note b{color:var(--ink)}
+</style>
+
+<div class="wrap">
+
+  <div class="head">
+    <h1>Sample Tracking</h1>
+    <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>New sample</button>
+  </div>
+
+  <!-- filters -->
+  <div class="panel">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+      <input placeholder="Search by tracking, supplier, contract, ICO, container, sample nr, quality…">
+    </div>
+    <div class="frow">
+      <div class="ctl">All status <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg></div>
+      <div class="ctl">All types <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6l4 4 4-4"/></svg></div>
+      <div class="ctl none">Origin…</div>
+      <div class="ctl none">Quality…</div>
+      <div class="ctl none">mm/dd/yyyy</div>
+      <div class="ctl none">mm/dd/yyyy</div>
+    </div>
+    <div class="stages">
+      <span class="chip on">All stages</span>
+      <span class="chip">Received</span>
+      <span class="chip">Analysis</span>
+      <span class="chip">Roasting</span>
+      <span class="chip">Review</span>
+      <span class="chip">Certified</span>
+      <span class="chip">Rejected</span>
+      <span class="chip clear">Clear all</span>
+      <span class="chip right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;margin-right:6px"><path d="M4 6h16M7 12h10M10 18h4"/></svg>Columns</span>
+    </div>
+  </div>
+
+  <!-- table -->
+  <div class="card">
+    <div class="card-h">Samples <span>(5)</span></div>
+
+    <div class="thead">
+      <span></span>
+      <span>Reference</span>
+      <span>Type</span>
+      <span>Quality</span>
+      <span>Shipper</span>
+      <span>Wolthers</span>
+      <span>Importer</span>
+      <span>End client</span>
+      <span>Status</span>
+      <span>Created</span>
+      <span class="r">·</span>
+    </div>
+
+    <!-- container ref -->
+    <div class="row">
+      <div class="cb"></div>
+      <div class="ref"><div class="cert">BR-025807/26</div><div class="sub"><span class="k">CTR</span>HLXU 125.470-0</div></div>
+      <div><span class="type">SS</span></div>
+      <div class="cell name">Dunkin</div>
+      <div class="cell name">OFI</div>
+      <div class="cell none">—</div>
+      <div class="cell"><div class="name">OFI</div><div class="sub">S040447-12</div></div>
+      <div class="cell name">Dunkin</div>
+      <div class="st"><span class="pill prog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>In progress</span><div class="stage">Analysis</div></div>
+      <div class="created"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>5/29/26</div>
+      <div class="acts"><button class="view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>View</button><div class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+    <!-- ICO ref, fantasy shipper name (was a long legal name) -->
+    <div class="row">
+      <div class="cb"></div>
+      <div class="ref"><div class="cert">BR-025806/26</div><div class="sub"><span class="k">ICO</span>COEXP335</div></div>
+      <div><span class="type">PSS</span></div>
+      <div class="cell name">Dunkin</div>
+      <div class="cell name">Coopervass</div>
+      <div class="cell none">—</div>
+      <div class="cell"><div class="name">Coffee America</div></div>
+      <div class="cell name">Dunkin</div>
+      <div class="st"><span class="pill prog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>In progress</span><div class="stage">Analysis</div></div>
+      <div class="created"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>5/29/26</div>
+      <div class="acts"><button class="view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>View</button><div class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+    <div class="row">
+      <div class="cb"></div>
+      <div class="ref"><div class="cert">BR-025805/26</div><div class="sub"><span class="k">ICO</span>COEXP335</div></div>
+      <div><span class="type">PSS</span></div>
+      <div class="cell name">Dunkin</div>
+      <div class="cell name">Coopervass</div>
+      <div class="cell none">—</div>
+      <div class="cell"><div class="name">Coffee America</div></div>
+      <div class="cell name">Dunkin</div>
+      <div class="st"><span class="pill prog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>In progress</span><div class="stage">Analysis</div></div>
+      <div class="created"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>5/29/26</div>
+      <div class="acts"><button class="view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>View</button><div class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+    <div class="row">
+      <div class="cb"></div>
+      <div class="ref"><div class="cert">BR-025804/26</div><div class="sub"><span class="k">ICO</span>COEXP315</div></div>
+      <div><span class="type">PSS</span></div>
+      <div class="cell name">Dunkin</div>
+      <div class="cell name">Coopervass</div>
+      <div class="cell none">—</div>
+      <div class="cell"><div class="name">Hamburg Coffee</div></div>
+      <div class="cell name">Dunkin</div>
+      <div class="st"><span class="pill prog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>In progress</span><div class="stage">Analysis</div></div>
+      <div class="created"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>5/29/26</div>
+      <div class="acts"><button class="view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>View</button><div class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+    <!-- sample-nr ref + Wolthers contract present -->
+    <div class="row">
+      <div class="cb"></div>
+      <div class="ref"><div class="cert">BD1-008900/26</div><div class="sub"><span class="k">SMP</span>26/0352</div></div>
+      <div><span class="type">PSS</span></div>
+      <div class="cell name">Blaser Dulce 15/16</div>
+      <div class="cell name">Expocacer</div>
+      <div class="cell"><span style="font-family:var(--mono);font-size:12px">41475/26</span></div>
+      <div class="cell"><div class="name">Blaser</div><div class="sub">106274</div></div>
+      <div class="cell name">Blaser</div>
+      <div class="st"><span class="pill recv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>Received</span><div class="stage">Received</div></div>
+      <div class="created"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>5/29/26</div>
+      <div class="acts"><button class="view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg>View</button><div class="del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <b>Reference is now the anchor.</b> Cert nr sits on top in monospace bold and <b>never wraps</b>; the second line carries the other identifier — container / ICO / sample — with a tiny <b>CTR · ICO · SMP</b> tag so you know which one you're reading at a glance. Every name column (quality, shipper, importer, end client) is <b>single-line with ellipsis</b> and pulls the <b>fantasy name</b>, so no more 3-line coop names. Rows are ~54px. I merged <b>Status + Stage</b> into one column (pill + caption) to win back the width that lets everything stay on its line — shout if you'd rather keep them separate. Empty cells show a faint "—" only where a value is genuinely expected (Wolthers contract); elsewhere they stay blank.
+  </div>
+
+</div>

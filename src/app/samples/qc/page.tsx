@@ -234,9 +234,11 @@ export default function SamplesPage() {
   const [origins, setOrigins] = useState<string[]>([])
   const [qualities, setQualities] = useState<string[]>([])
 
-  // Column visibility
+  // Column visibility. v2 collapses the old `certNr` + `stage` columns into
+  // `reference` and a merged `status` so the table no longer wraps long names;
+  // the localStorage key is bumped so old stored layouts get the new defaults.
   const defaultColumnVisibility: Record<string, boolean> = {
-    certNr: true,
+    reference: true,
     origin: false,
     type: true,
     quality: true,
@@ -247,15 +249,14 @@ export default function SamplesPage() {
     roaster: false,
     endClient: true,
     status: true,
-    stage: true,
     storage: false,
     created: true,
   }
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('samplesTableColumns')
-        if (stored) return JSON.parse(stored)
+        const stored = localStorage.getItem('samplesTableColumns_v2')
+        if (stored) return { ...defaultColumnVisibility, ...JSON.parse(stored) }
       } catch {}
     }
     return defaultColumnVisibility
@@ -264,13 +265,13 @@ export default function SamplesPage() {
   const toggleColumn = (col: string) => {
     setColumnVisibility(prev => {
       const next = { ...prev, [col]: !prev[col] }
-      localStorage.setItem('samplesTableColumns', JSON.stringify(next))
+      localStorage.setItem('samplesTableColumns_v2', JSON.stringify(next))
       return next
     })
   }
 
   const columnLabels: Record<string, string> = {
-    certNr: 'Cert. Nr',
+    reference: 'Reference',
     origin: 'Origin',
     type: 'Type',
     quality: 'Quality',
@@ -281,7 +282,6 @@ export default function SamplesPage() {
     roaster: 'Roaster',
     endClient: 'End Client',
     status: 'Status',
-    stage: 'Stage',
     storage: 'Storage',
     created: 'Created',
   }
@@ -636,8 +636,11 @@ export default function SamplesPage() {
     setCuppersAssigned(true)
     console.log('Cuppers assigned:', cuppers)
 
-    // Send notifications to assigned cuppers via API
+    // Send notifications to assigned cuppers via API. This call also advances
+    // the samples' workflow_stage to 'analysis' — if it fails, the sample stays
+    // stuck at "received" on the tracker, so we surface the error loudly.
     const sampleIds = Array.from(selectedSamples)
+    let assignSucceeded = false
     try {
       const response = await fetch('/api/notifications/samples-assigned', {
         method: 'POST',
@@ -651,15 +654,30 @@ export default function SamplesPage() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('Failed to send notifications:', errorData)
+        const errorData = await response.json().catch(() => ({}))
+        console.error('Failed to assign cuppers:', errorData)
+        toast({
+          title: 'Cupper assignment failed',
+          description: errorData.details || errorData.error || 'The samples may still show as Received. Check the server logs and try again.',
+          variant: 'destructive',
+        })
       } else {
         const data = await response.json()
         console.log('Notifications sent:', data)
+        assignSucceeded = true
       }
     } catch (error) {
       console.error('Error sending cupper assignment notifications:', error)
-      // Don't block the workflow if notifications fail
+      toast({
+        title: 'Cupper assignment failed',
+        description: error instanceof Error ? error.message : 'Network error while assigning cuppers.',
+        variant: 'destructive',
+      })
+    }
+
+    if (!assignSucceeded) {
+      loadSamples()
+      return
     }
 
     // Update the per-sample cupper map for the assigned samples
@@ -1010,43 +1028,53 @@ export default function SamplesPage() {
     })
   }
 
-  const getStatusBadge = (status: string) => {
-    const statusConfig: Record<string, { variant: any; icon: any; label: string; className?: string }> = {
-      received: { variant: 'secondary', icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' },
-      in_progress: { variant: 'default', icon: AlertCircle, label: 'In Progress', className: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400' },
-      under_review: { variant: 'outline', icon: Eye, label: 'Under Review', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400' },
-      approved: { variant: 'default', icon: CheckCircle, label: 'Approved', className: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' },
-      rejected: { variant: 'destructive', icon: XCircle, label: 'Rejected', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' }
+  // Merged status pill + stage caption. Status is the coarse state shown as a
+  // colored pill (Received / In progress / Approved / Rejected / Under review);
+  // the stage sits under it as a muted caption (Analysis, Roasting, …) so they
+  // share one column.
+  const STAGE_LABELS: Record<string, string> = {
+    received: 'Received',
+    analysis: 'Analysis',
+    roasting: 'Roasting',
+    review: 'Review',
+    certified: 'Certified',
+    rejected: 'Rejected',
+  }
+
+  const renderStatusCell = (status: string, stage?: string) => {
+    const statusConfig: Record<string, { icon: any; label: string; className: string }> = {
+      received: { icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
+      in_progress: { icon: AlertCircle, label: 'In progress', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
+      under_review: { icon: Eye, label: 'Under review', className: 'bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-300' },
+      approved: { icon: CheckCircle, label: 'Approved', className: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300' },
+      rejected: { icon: XCircle, label: 'Rejected', className: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300' },
     }
-
-    const config = statusConfig[status] || { variant: 'outline', icon: AlertCircle, label: status }
+    const config = statusConfig[status] || { icon: AlertCircle, label: status, className: 'bg-muted text-muted-foreground' }
     const Icon = config.icon
-
+    const stageLabel = stage ? (STAGE_LABELS[stage] || stage) : null
     return (
-      <Badge variant={config.variant} className={`text-xs ${config.className || ''}`}>
-        <Icon className="h-3 w-3 mr-1" />
-        {config.label}
-      </Badge>
+      <div className="flex flex-col items-start gap-0.5 min-w-0">
+        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${config.className}`}>
+          <Icon className="h-3 w-3" />
+          {config.label}
+        </span>
+        {stageLabel && stageLabel !== config.label && (
+          <span className="text-[11px] text-muted-foreground leading-tight">{stageLabel}</span>
+        )}
+      </div>
     )
   }
 
-  const getWorkflowStageBadge = (stage?: string) => {
-    if (!stage) return null
-
-    const stageLabels: Record<string, string> = {
-      received: 'Received',
-      analysis: 'Analysis',
-      roasting: 'Roasting',
-      review: 'Review',
-      certified: 'Certified',
-      rejected: 'Rejected'
-    }
-
-    return (
-      <span className="text-xs text-muted-foreground">
-        {stageLabels[stage] || stage}
-      </span>
-    )
+  // Secondary identifier shown under the cert nr on the Reference cell.
+  // Priority: container > ICO > exporter sample number (confirmed with Daniel).
+  // Returns null when nothing applies so the cell stays clean.
+  const getSecondaryRef = (
+    sample: Pick<Sample, 'container_nr' | 'ico_number' | 'exporter_sample_number'>
+  ): { tag: 'CTR' | 'ICO' | 'SMP'; value: string } | null => {
+    if (sample.container_nr) return { tag: 'CTR', value: sample.container_nr }
+    if (sample.ico_number) return { tag: 'ICO', value: sample.ico_number }
+    if (sample.exporter_sample_number) return { tag: 'SMP', value: sample.exporter_sample_number }
+    return null
   }
 
   const clearFilters = () => {
@@ -1241,69 +1269,45 @@ export default function SamplesPage() {
                 />
               </div>
 
-              {/* Workflow Stage Filter */}
-              <div className="flex gap-2 flex-wrap">
-                <Button
-                  variant={workflowStageFilter === null ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter(null)}
-                  size="sm"
-                >
-                  All Stages
-                </Button>
-                <Button
-                  variant={workflowStageFilter === 'received' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('received')}
-                  size="sm"
-                >
-                  Received
-                </Button>
-                <Button
-                  variant={workflowStageFilter === 'analysis' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('analysis')}
-                  size="sm"
-                >
-                  Analysis
-                </Button>
-                <Button
-                  variant={workflowStageFilter === 'roasting' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('roasting')}
-                  size="sm"
-                >
-                  Roasting
-                </Button>
-                <Button
-                  variant={workflowStageFilter === 'review' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('review')}
-                  size="sm"
-                >
-                  Review
-                </Button>
-                <Button
-                  variant={workflowStageFilter === 'certified' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('certified')}
-                  size="sm"
-                >
-                  Certified
-                </Button>
-                <Button
-                  variant={workflowStageFilter === 'rejected' ? 'default' : 'outline'}
-                  onClick={() => setWorkflowStageFilter('rejected')}
-                  size="sm"
-                >
-                  Rejected
-                </Button>
-                <Button
-                  variant="ghost"
+              {/* Workflow stage chips — pill-styled, active chip in ink. */}
+              <div className="flex gap-1.5 items-center flex-wrap">
+                {([
+                  { value: null, label: 'All stages' },
+                  { value: 'received', label: 'Received' },
+                  { value: 'analysis', label: 'Analysis' },
+                  { value: 'roasting', label: 'Roasting' },
+                  { value: 'review', label: 'Review' },
+                  { value: 'certified', label: 'Certified' },
+                  { value: 'rejected', label: 'Rejected' },
+                ] as const).map(chip => {
+                  const active = workflowStageFilter === chip.value
+                  return (
+                    <button
+                      key={chip.label}
+                      type="button"
+                      onClick={() => setWorkflowStageFilter(chip.value)}
+                      className={`h-7 px-3 rounded-full border text-[12px] transition-colors ${
+                        active
+                          ? 'bg-foreground text-background border-foreground'
+                          : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  )
+                })}
+                <button
+                  type="button"
                   onClick={clearFilters}
-                  size="sm"
+                  className="h-7 px-2 text-[12px] text-muted-foreground/70 hover:text-foreground transition-colors"
                 >
-                  Clear All
-                </Button>
+                  Clear all
+                </button>
                 <div className="ml-auto">
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm">
-                        <Settings2 className="h-4 w-4 mr-2" />
+                      <Button variant="outline" size="sm" className="h-7 text-[12px]">
+                        <Settings2 className="h-3.5 w-3.5 mr-1.5" />
                         Columns
                       </Button>
                     </DropdownMenuTrigger>
@@ -1357,38 +1361,37 @@ export default function SamplesPage() {
             </CardHeader>
             <CardContent>
               <div className="overflow-x-auto">
-                <table className="w-full">
+                <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left py-3 px-4">
+                    <tr className="border-b border-border bg-muted/30">
+                      <th className="text-left py-2.5 px-3" style={{ width: 40 }}>
                         <Checkbox
                           checked={selectedSamples.size === samples.length && samples.length > 0}
                           onCheckedChange={handleSelectAll}
                         />
                       </th>
                       {selectedSamples.size > 0 && (
-                        <th className="text-left py-3 px-4 text-sm font-semibold">
+                        <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 44 }}>
                           <div className="flex items-center gap-1">
                             <QrCode className="h-3 w-3" />
                             QR
                           </div>
                         </th>
                       )}
-                      {columnVisibility.certNr && <th className="text-left py-3 px-4 text-sm font-semibold">Cert. Nr</th>}
-                      {columnVisibility.origin && <th className="text-left py-3 px-4 text-sm font-semibold">Origin</th>}
-                      {columnVisibility.type && <th className="text-left py-3 px-4 text-sm font-semibold">Type</th>}
-                      {columnVisibility.quality && <th className="text-left py-3 px-4 text-sm font-semibold">Quality</th>}
-                      {columnVisibility.seller && <th className="text-left py-3 px-4 text-sm font-semibold">Seller</th>}
-                      {columnVisibility.shipper && <th className="text-left py-3 px-4 text-sm font-semibold">Shipper</th>}
-                      {columnVisibility.wolthers && <th className="text-left py-3 px-4 text-sm font-semibold">Wolthers</th>}
-                      {columnVisibility.importer && <th className="text-left py-3 px-4 text-sm font-semibold">Importer</th>}
-                      {columnVisibility.roaster && <th className="text-left py-3 px-4 text-sm font-semibold">Roaster</th>}
-                      {columnVisibility.endClient && <th className="text-left py-3 px-4 text-sm font-semibold">End Client</th>}
-                      {columnVisibility.status && <th className="text-left py-3 px-4 text-sm font-semibold">Status</th>}
-                      {columnVisibility.stage && <th className="text-left py-3 px-4 text-sm font-semibold">Stage</th>}
-                      {columnVisibility.storage && <th className="text-left py-3 px-4 text-sm font-semibold">Storage</th>}
-                      {columnVisibility.created && <th className="text-left py-3 px-4 text-sm font-semibold">Created</th>}
-                      <th className="text-left py-3 px-4 text-sm font-semibold">Actions</th>
+                      {columnVisibility.reference && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 180 }}>Reference</th>}
+                      {columnVisibility.origin && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 100 }}>Origin</th>}
+                      {columnVisibility.type && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 60 }}>Type</th>}
+                      {columnVisibility.quality && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Quality</th>}
+                      {columnVisibility.seller && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Seller</th>}
+                      {columnVisibility.shipper && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Shipper</th>}
+                      {columnVisibility.wolthers && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Wolthers</th>}
+                      {columnVisibility.importer && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Importer</th>}
+                      {columnVisibility.roaster && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Roaster</th>}
+                      {columnVisibility.endClient && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">End client</th>}
+                      {columnVisibility.status && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 124 }}>Status</th>}
+                      {columnVisibility.storage && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Storage</th>}
+                      {columnVisibility.created && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Created</th>}
+                      <th className="text-right py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 116 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1400,9 +1403,9 @@ export default function SamplesPage() {
                         }
                       }}>
                         <ContextMenuTrigger asChild>
-                          <tr className="border-b border-border hover:bg-accent/50 transition-colors">
-                            <td className="py-3 px-4 align-top">
-                              <div className="flex flex-col items-center gap-1">
+                          <tr className="group border-b border-border hover:bg-accent/40 transition-colors">
+                            <td className="py-2 px-3 align-middle">
+                              <div className="flex flex-col items-center gap-0.5">
                                 <Checkbox
                                   checked={selectedSamples.has(sample.id)}
                                   onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
@@ -1422,13 +1425,10 @@ export default function SamplesPage() {
                                     }
                                   </button>
                                 )}
-                                {expandedSamples.has(sample.id) && (sample.contract_count ?? 0) > 0 && (
-                                  <div className="w-px bg-border h-2" />
-                                )}
                               </div>
                             </td>
                             {selectedSamples.size > 0 && (
-                              <td className="py-3 px-4 align-top">
+                              <td className="py-2 px-3 align-middle">
                                 {selectedSamples.has(sample.id) && (
                                   <Checkbox
                                     checked={selectedQrCodes.has(sample.id)}
@@ -1437,118 +1437,137 @@ export default function SamplesPage() {
                                 )}
                               </td>
                             )}
-                            {columnVisibility.certNr && (
-                              <td className="py-3 px-4">
-                                <button onClick={() => setDetailSampleId(sample.id)} className="font-medium hover:underline text-primary text-left">
-                                  {parseTrackingNumber(sample.tracking_number)}
-                                </button>
-                                {sample.exporter_sample_number && (
-                                  <div className="text-xs text-muted-foreground mt-0.5">
-                                    {sample.exporter_sample_number}
+                            {columnVisibility.reference && (() => {
+                              const secondary = getSecondaryRef(sample)
+                              return (
+                                <td className="py-2 px-3 align-middle">
+                                  <div className="min-w-0">
+                                    <button
+                                      onClick={() => setDetailSampleId(sample.id)}
+                                      className="block w-full text-left font-mono text-[13px] font-semibold tracking-tight text-foreground hover:underline truncate"
+                                      title={parseTrackingNumber(sample.tracking_number)}
+                                    >
+                                      {parseTrackingNumber(sample.tracking_number)}
+                                    </button>
+                                    {secondary && (
+                                      <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono truncate">
+                                        <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
+                                          {secondary.tag}
+                                        </span>
+                                        <span className="truncate">{secondary.value}</span>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                                {sample.container_nr ? (
-                                  <div className="text-xs text-muted-foreground mt-0.5">
-                                    {sample.container_nr}
-                                  </div>
-                                ) : sample.ico_number ? (
-                                  <div className="text-xs text-muted-foreground mt-0.5">
-                                    {sample.ico_number}
-                                  </div>
+                                </td>
+                              )
+                            })()}
+                            {columnVisibility.origin && (
+                              <td className="py-2 px-3 align-middle text-[13px] text-foreground/80">
+                                <div className="truncate" title={sample.origin || ''}>{sample.origin || ''}</div>
+                              </td>
+                            )}
+                            {columnVisibility.type && (
+                              <td className="py-2 px-3 align-middle">
+                                {sample.sample_type ? (
+                                  <span className="inline-flex items-center justify-center rounded-md bg-muted text-muted-foreground/90 font-mono font-semibold text-[11px] px-1.5 py-0.5">
+                                    {formatSampleType(sample.sample_type)}
+                                  </span>
                                 ) : null}
                               </td>
                             )}
-                            {columnVisibility.origin && (
-                              <td className="py-3 px-4 text-sm">{sample.origin || '-'}</td>
-                            )}
-                            {columnVisibility.type && (
-                              <td className="py-3 px-4 text-sm">
-                                <Badge variant="outline" className="text-xs">
-                                  {formatSampleType(sample.sample_type)}
-                                </Badge>
+                            {columnVisibility.quality && (
+                              <td className="py-2 px-3 align-middle text-[13px] font-medium text-foreground">
+                                <div className="truncate" title={sample.quality_name || ''}>{sample.quality_name || ''}</div>
                               </td>
                             )}
-                            {columnVisibility.quality && (
-                              <td className="py-3 px-4 text-sm">{sample.quality_name || '-'}</td>
-                            )}
                             {columnVisibility.seller && (
-                              <td className="py-3 px-4 text-sm">
-                                <div>{sample.seller_name || '-'}</div>
+                              <td className="py-2 px-3 align-middle text-[13px] text-foreground">
+                                <div className="truncate font-medium" title={sample.seller_name || ''}>{sample.seller_name || ''}</div>
                                 {sample.seller_contract_nr && (
-                                  <div className="text-xs text-muted-foreground">{sample.seller_contract_nr}</div>
+                                  <div className="truncate text-[11px] text-muted-foreground font-mono">{sample.seller_contract_nr}</div>
                                 )}
                               </td>
                             )}
                             {columnVisibility.shipper && (
-                              <td className="py-3 px-4 text-sm">
-                                <div>{sample.exporter_name || '-'}</div>
+                              <td className="py-2 px-3 align-middle text-[13px] text-foreground">
+                                <div className="truncate font-medium" title={sample.exporter_name || ''}>{sample.exporter_name || ''}</div>
                                 {sample.shipper_contract_nr && (
-                                  <div className="text-xs text-muted-foreground">{sample.shipper_contract_nr}</div>
+                                  <div className="truncate text-[11px] text-muted-foreground font-mono">{sample.shipper_contract_nr}</div>
                                 )}
                               </td>
                             )}
                             {columnVisibility.wolthers && (
-                              <td className="py-3 px-4 text-sm font-mono text-xs">{sample.wolthers_contract_nr || '-'}</td>
-                            )}
-                            {columnVisibility.importer && (
-                              <td className="py-3 px-4 text-sm">
-                                <div>{sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || '-'}</div>
-                                {sample.buyer_contract_nr && (
-                                  <div className="text-xs text-muted-foreground">{sample.buyer_contract_nr}</div>
+                              <td className="py-2 px-3 align-middle font-mono text-[12px] text-foreground/80">
+                                {sample.wolthers_contract_nr ? (
+                                  <span className="truncate" title={sample.wolthers_contract_nr}>{sample.wolthers_contract_nr}</span>
+                                ) : (
+                                  <span className="text-muted-foreground/50">—</span>
                                 )}
                               </td>
                             )}
+                            {columnVisibility.importer && (() => {
+                              const importerName = sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || ''
+                              return (
+                                <td className="py-2 px-3 align-middle text-[13px] text-foreground">
+                                  <div className="truncate font-medium" title={importerName}>{importerName}</div>
+                                  {sample.buyer_contract_nr && (
+                                    <div className="truncate text-[11px] text-muted-foreground font-mono">{sample.buyer_contract_nr}</div>
+                                  )}
+                                </td>
+                              )
+                            })()}
                             {columnVisibility.roaster && (
-                              <td className="py-3 px-4 text-sm">
-                                <div>{sample.roaster_name || '-'}</div>
+                              <td className="py-2 px-3 align-middle text-[13px] text-foreground">
+                                <div className="truncate font-medium" title={sample.roaster_name || ''}>{sample.roaster_name || ''}</div>
                                 {sample.roaster_contract_nr && (
-                                  <div className="text-xs text-muted-foreground">{sample.roaster_contract_nr}</div>
+                                  <div className="truncate text-[11px] text-muted-foreground font-mono">{sample.roaster_contract_nr}</div>
                                 )}
                               </td>
                             )}
-                            {columnVisibility.endClient && (
-                              <td className="py-3 px-4 text-sm">
-                                <div>{sample.end_client_name || sample.qc_client_name || '-'}</div>
-                                {(sample.end_client_contract_nr || sample.qc_client_contract_nr) && (
-                                  <div className="text-xs text-muted-foreground">{sample.end_client_contract_nr || sample.qc_client_contract_nr}</div>
-                                )}
-                              </td>
-                            )}
+                            {columnVisibility.endClient && (() => {
+                              const endClientName = sample.end_client_name || sample.qc_client_name || ''
+                              const endClientRef = sample.end_client_contract_nr || sample.qc_client_contract_nr
+                              return (
+                                <td className="py-2 px-3 align-middle text-[13px] text-foreground">
+                                  <div className="truncate font-medium" title={endClientName}>{endClientName}</div>
+                                  {endClientRef && (
+                                    <div className="truncate text-[11px] text-muted-foreground font-mono">{endClientRef}</div>
+                                  )}
+                                </td>
+                              )
+                            })()}
                             {columnVisibility.status && (
-                              <td className="py-3 px-4">{getStatusBadge(sample.status)}</td>
-                            )}
-                            {columnVisibility.stage && (
-                              <td className="py-3 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
+                              <td className="py-2 px-3 align-middle">
+                                {renderStatusCell(sample.status, sample.workflow_stage)}
+                              </td>
                             )}
                             {columnVisibility.storage && (
-                              <td className="py-3 px-4 text-sm">
+                              <td className="py-2 px-3 align-middle text-[13px] text-foreground/80">
                                 {sample.storage_position ? (
-                                  <div className="flex items-center gap-1">
-                                    <MapPin className="h-3 w-3" />
-                                    {sample.storage_position}
+                                  <div className="flex items-center gap-1 truncate">
+                                    <MapPin className="h-3 w-3 shrink-0" />
+                                    <span className="truncate">{sample.storage_position}</span>
                                   </div>
-                                ) : (
-                                  '-'
-                                )}
+                                ) : null}
                               </td>
                             )}
                             {columnVisibility.created && (
-                              <td className="py-3 px-4 text-sm">
-                                <div className="flex items-center gap-1">
-                                  <Calendar className="h-3 w-3" />
+                              <td className="py-2 px-3 align-middle text-[12px] text-muted-foreground">
+                                <div className="flex items-center gap-1.5 whitespace-nowrap">
+                                  <Calendar className="h-3 w-3 shrink-0 text-muted-foreground/70" />
                                   {new Date(sample.created_at).toLocaleDateString()}
                                 </div>
                               </td>
                             )}
-                            <td className="py-3 px-4">
-                              <div className="flex items-center gap-1">
+                            <td className="py-2 px-3 align-middle">
+                              <div className="flex items-center justify-end gap-0.5">
                                 {sample.certificate_id ? (
-                                  <Button variant="outline" size="sm" onClick={() => handleViewCertificate(sample)}>
+                                  <Button variant="outline" size="sm" className="h-7 px-2 text-[12px]" onClick={() => handleViewCertificate(sample)}>
                                     <Eye className="h-3 w-3 mr-1" />
                                     View
                                   </Button>
                                 ) : (
-                                  <Button variant="outline" size="sm" onClick={() => setDetailSampleId(sample.id)}>
+                                  <Button variant="outline" size="sm" className="h-7 px-2 text-[12px]" onClick={() => setDetailSampleId(sample.id)}>
                                     <Eye className="h-3 w-3 mr-1" />
                                     View
                                   </Button>
@@ -1557,9 +1576,10 @@ export default function SamplesPage() {
                                   <Button
                                     variant="ghost"
                                     size="sm"
+                                    className="h-7 w-7 p-0"
                                     onClick={() => handleDownloadCertificate(sample)}
                                     disabled={downloadingSampleId === sample.id}
-                                    title="Download Certificate"
+                                    title="Download certificate"
                                   >
                                     {downloadingSampleId === sample.id ? (
                                       <Loader2 className="h-3 w-3 animate-spin" />
@@ -1574,7 +1594,8 @@ export default function SamplesPage() {
                                     size="sm"
                                     onClick={() => handleDeleteSample(sample)}
                                     disabled={deletingId === sample.id}
-                                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                                    className="h-7 w-7 p-0 text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-opacity"
+                                    title="Delete sample"
                                   >
                                     <Trash2 className="h-3 w-3" />
                                   </Button>
@@ -1709,10 +1730,10 @@ export default function SamplesPage() {
                             return (
                               <tr
                                 key={`sc-${sc.id}`}
-                                className="border-b border-border bg-muted/40 hover:bg-muted/60 transition-colors text-xs"
+                                className="group border-b border-border bg-muted/30 hover:bg-muted/50 transition-colors"
                               >
                                 {/* Tree connector in checkbox column */}
-                                <td className="py-0 px-0 w-10">
+                                <td className="py-0 px-0 align-middle">
                                   <div className="relative flex items-center justify-center" style={{minHeight: '40px'}}>
                                     <div className="absolute left-1/2 -translate-x-1/2 top-0 w-px bg-border" style={{height: isLast ? '50%' : '100%'}} />
                                     <div className="absolute left-1/2 top-1/2 -translate-y-1/2 h-px bg-border w-3" />
@@ -1720,7 +1741,7 @@ export default function SamplesPage() {
                                 </td>
                                 {/* QR column */}
                                 {selectedSamples.size > 0 && (
-                                  <td className="py-2 px-4">
+                                  <td className="py-2 px-3 align-middle">
                                     {selectedSamples.has(sample.id) && (
                                       <Checkbox
                                         checked={selectedSubContractQrCodes.has(sc.id)}
@@ -1729,107 +1750,124 @@ export default function SamplesPage() {
                                     )}
                                   </td>
                                 )}
-                                {/* Cert Nr */}
-                                {columnVisibility.certNr && (
-                                  <td className="py-1.5 px-4">
-                                    <button onClick={() => setDetailSampleId(sample.id)} className="font-medium hover:underline text-primary text-left">
-                                      {sc.tracking_number}
-                                    </button>
-                                    {(sc.container_nr || sc.ico_number) && (
-                                      <div className="text-[10px] text-muted-foreground">
-                                        {[sc.container_nr, sc.ico_number ? `ICO: ${sc.ico_number}` : null].filter(Boolean).join(' | ')}
+                                {/* Reference (sub-contract tracking nr) */}
+                                {columnVisibility.reference && (() => {
+                                  const scSecondary = sc.container_nr
+                                    ? { tag: 'CTR', value: sc.container_nr }
+                                    : sc.ico_number
+                                      ? { tag: 'ICO', value: sc.ico_number }
+                                      : null
+                                  return (
+                                    <td className="py-2 px-3 align-middle">
+                                      <div className="min-w-0">
+                                        <button
+                                          onClick={() => setDetailSampleId(sample.id)}
+                                          className="block w-full text-left font-mono text-[12.5px] font-semibold text-foreground/85 hover:underline truncate"
+                                          title={sc.tracking_number}
+                                        >
+                                          {sc.tracking_number}
+                                        </button>
+                                        {scSecondary && (
+                                          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono truncate">
+                                            <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
+                                              {scSecondary.tag}
+                                            </span>
+                                            <span className="truncate">{scSecondary.value}</span>
+                                          </div>
+                                        )}
                                       </div>
-                                    )}
-                                  </td>
-                                )}
-                                {/* Origin - inherited */}
+                                    </td>
+                                  )
+                                })()}
                                 {columnVisibility.origin && (
-                                  <td className="py-1.5 px-4 text-muted-foreground">{sample.origin || '-'}</td>
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
+                                    <div className="truncate">{sample.origin || ''}</div>
+                                  </td>
                                 )}
-                                {/* Type - inherited */}
                                 {columnVisibility.type && (
-                                  <td className="py-1.5 px-4">
-                                    <Badge variant="outline" className="text-[10px] opacity-50">
-                                      {formatSampleType(sample.sample_type)}
-                                    </Badge>
+                                  <td className="py-2 px-3 align-middle">
+                                    {sample.sample_type ? (
+                                      <span className="inline-flex items-center justify-center rounded-md bg-muted/60 text-muted-foreground/70 font-mono font-semibold text-[10.5px] px-1.5 py-0.5">
+                                        {formatSampleType(sample.sample_type)}
+                                      </span>
+                                    ) : null}
                                   </td>
                                 )}
-                                {/* Quality - inherited */}
                                 {columnVisibility.quality && (
-                                  <td className="py-1.5 px-4 text-muted-foreground">{sample.quality_name || '-'}</td>
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
+                                    <div className="truncate">{sample.quality_name || ''}</div>
+                                  </td>
                                 )}
-                                {/* Seller - inherited */}
                                 {columnVisibility.seller && (
-                                  <td className="py-1.5 px-4 text-muted-foreground">
-                                    <div>{sample.seller_name || '-'}</div>
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
+                                    <div className="truncate">{sample.seller_name || ''}</div>
                                     {sc.supplier_contract_nr && (
-                                      <div className="text-[10px]">{sc.supplier_contract_nr}</div>
+                                      <div className="truncate text-[10.5px] font-mono">{sc.supplier_contract_nr}</div>
                                     )}
                                   </td>
                                 )}
-                                {/* Shipper - inherited */}
                                 {columnVisibility.shipper && (
-                                  <td className="py-1.5 px-4 text-muted-foreground">{sample.exporter_name || '-'}</td>
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
+                                    <div className="truncate">{sample.exporter_name || ''}</div>
+                                  </td>
                                 )}
-                                {/* Wolthers */}
                                 {columnVisibility.wolthers && (
-                                  <td className="py-1.5 px-4 font-mono">{sc.wolthers_contract_nr || '-'}</td>
+                                  <td className="py-2 px-3 align-middle font-mono text-[12px] text-foreground/75">
+                                    {sc.wolthers_contract_nr ? (
+                                      <span className="truncate" title={sc.wolthers_contract_nr}>{sc.wolthers_contract_nr}</span>
+                                    ) : (
+                                      <span className="text-muted-foreground/40">—</span>
+                                    )}
+                                  </td>
                                 )}
-                                {/* Importer */}
                                 {columnVisibility.importer && (
-                                  <td className="py-1.5 px-4">
-                                    <div>{sc.importer_name || '-'}</div>
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
+                                    <div className="truncate">{sc.importer_name || ''}</div>
                                     {sc.buyer_contract_nr && (
-                                      <div className="text-[10px] text-muted-foreground">{sc.buyer_contract_nr}</div>
+                                      <div className="truncate text-[10.5px] text-muted-foreground font-mono">{sc.buyer_contract_nr}</div>
                                     )}
                                   </td>
                                 )}
-                                {/* Roaster */}
                                 {columnVisibility.roaster && (
-                                  <td className="py-1.5 px-4">
-                                    <div>{sc.roaster_name || '-'}</div>
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
+                                    <div className="truncate">{sc.roaster_name || ''}</div>
                                     {sc.roaster_contract_nr && (
-                                      <div className="text-[10px] text-muted-foreground">{sc.roaster_contract_nr}</div>
+                                      <div className="truncate text-[10.5px] text-muted-foreground font-mono">{sc.roaster_contract_nr}</div>
                                     )}
                                   </td>
                                 )}
-                                {/* End Client */}
                                 {columnVisibility.endClient && (
-                                  <td className="py-1.5 px-4">
-                                    <div>{sc.end_client_name || sc.qc_client_name || '-'}</div>
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
+                                    <div className="truncate">{sc.end_client_name || sc.qc_client_name || ''}</div>
                                     {(sc.end_client_contract_nr || sc.qc_client_contract_nr) && (
-                                      <div className="text-[10px] text-muted-foreground">{sc.end_client_contract_nr || sc.qc_client_contract_nr}</div>
+                                      <div className="truncate text-[10.5px] text-muted-foreground font-mono">{sc.end_client_contract_nr || sc.qc_client_contract_nr}</div>
                                     )}
                                   </td>
                                 )}
-                                {/* Status - inherited */}
                                 {columnVisibility.status && (
-                                  <td className="py-1.5 px-4">{getStatusBadge(sample.status)}</td>
+                                  <td className="py-2 px-3 align-middle">
+                                    {renderStatusCell(sample.status, sample.workflow_stage)}
+                                  </td>
                                 )}
-                                {/* Stage - inherited */}
-                                {columnVisibility.stage && (
-                                  <td className="py-1.5 px-4">{getWorkflowStageBadge(sample.workflow_stage)}</td>
-                                )}
-                                {/* Storage - inherited */}
                                 {columnVisibility.storage && (
-                                  <td className="py-1.5 px-4 text-muted-foreground">{sample.storage_position || '-'}</td>
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
+                                    <div className="truncate">{sample.storage_position || ''}</div>
+                                  </td>
                                 )}
-                                {/* Created - inherited */}
                                 {columnVisibility.created && (
-                                  <td className="py-1.5 px-4 text-muted-foreground">
+                                  <td className="py-2 px-3 align-middle text-[12px] text-muted-foreground whitespace-nowrap">
                                     {new Date(sample.created_at).toLocaleDateString()}
                                   </td>
                                 )}
-                                {/* Actions */}
-                                <td className="py-1.5 px-4">
-                                  <div className="flex items-center gap-0.5">
+                                <td className="py-2 px-3 align-middle">
+                                  <div className="flex items-center justify-end gap-0.5">
                                     {sc.has_certificate ? (
-                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={() => handleViewSubContractCertificate(sample.id, sc.id)}>
+                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => handleViewSubContractCertificate(sample.id, sc.id)}>
                                         <Eye className="h-2.5 w-2.5 mr-0.5" />
                                         View
                                       </Button>
                                     ) : (
-                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={() => setDetailSampleId(sample.id)}>
+                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setDetailSampleId(sample.id)}>
                                         <Eye className="h-2.5 w-2.5 mr-0.5" />
                                         View
                                       </Button>
@@ -1841,7 +1879,7 @@ export default function SamplesPage() {
                                         className="h-6 w-6 p-0"
                                         onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
                                         disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
-                                        title="Download Certificate"
+                                        title="Download certificate"
                                       >
                                         {downloadingSampleId === `${sample.id}_${sc.id}` ? (
                                           <Loader2 className="h-2.5 w-2.5 animate-spin" />
@@ -1854,10 +1892,10 @@ export default function SamplesPage() {
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-6 w-6 p-0 text-destructive hover:text-destructive hover:bg-destructive/10"
+                                        className="h-6 w-6 p-0 text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-opacity"
                                         onClick={() => handleDeleteSubContract(sample, sc)}
                                         disabled={deletingId === sc.id}
-                                        title="Delete Sub-Contract"
+                                        title="Delete sub-contract"
                                       >
                                         {deletingId === sc.id ? (
                                           <Loader2 className="h-2.5 w-2.5 animate-spin" />
