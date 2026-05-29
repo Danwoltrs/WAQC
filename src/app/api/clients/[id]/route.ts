@@ -5,6 +5,7 @@ import {
   mapCompanyToClient,
   splitClientPayload,
   fetchClientById,
+  resolveCompanyIdFromSlug,
 } from '@/lib/qc-client-mapper'
 
 function isUUID(str: string): boolean {
@@ -30,9 +31,14 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const { id } = await params
-    if (!isUUID(id)) {
-      return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+    const { id: rawId } = await params
+    let id = rawId
+    if (!isUUID(rawId)) {
+      const resolved = await resolveCompanyIdFromSlug(supabase as any, rawId)
+      if (!resolved) {
+        return NextResponse.json({ error: 'Client not found' }, { status: 404 })
+      }
+      id = resolved
     }
 
     const { data: companyRow, error } = await (supabase as any)

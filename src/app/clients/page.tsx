@@ -1,44 +1,21 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
+import {
+  Plus, Search, Trash2, Loader2, Copy, Check, FileText, Eye, Upload, Pencil, X,
+} from 'lucide-react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table'
-import {
-  Plus, Search, Trash2, Loader2, Copy, Check, ChevronDown, ChevronRight, Layers, FileText, Eye, Upload, Pencil
-} from 'lucide-react'
-import Link from 'next/link'
-import { AddClientModal } from '@/components/clients/add-client-modal'
 import { Switch } from '@/components/ui/switch'
+import {
+  Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle,
+} from '@/components/ui/dialog'
+import { AddClientModal } from '@/components/clients/add-client-modal'
 import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
 import { BulkOperationsDialog } from '@/components/clients/bulk-operations-dialog'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-
-interface OriginPricing {
-  id: string
-  origin: string
-  pricing_model: 'per_sample' | 'per_pound' | 'complimentary'
-  price_per_sample?: number
-  price_per_pound_cents?: number
-  currency: string
-  is_active: boolean
-}
+import { cn } from '@/lib/utils'
 
 interface AssignedQuality {
   id: string
@@ -56,10 +33,6 @@ interface Client {
   name: string
   company: string
   fantasy_name?: string
-  address?: string
-  city?: string
-  state?: string
-  country?: string
   email?: string
   phone?: string
   is_active: boolean
@@ -70,90 +43,130 @@ interface Client {
   price_per_sample?: number
   price_per_pound_cents?: number
   currency?: string
-  fee_payer?: 'exporter' | 'importer' | 'roaster' | 'final_buyer' | 'client_pays'
-  payment_terms?: string
-  billing_notes?: string
-  has_origin_pricing?: boolean
   billing_basis?: 'approved_only' | 'approved_and_rejected'
   assigned_qualities?: AssignedQuality[]
+}
+
+type FilterKey = 'all' | 'qc' | 'trading' | 'inactive'
+
+const TYPE_LABEL: Record<string, string> = {
+  producer: 'Producer',
+  producer_exporter: 'Exporter',
+  cooperative: 'Cooperative',
+  exporter: 'Exporter',
+  importer_buyer: 'Trader',
+  importer: 'Trader',
+  roaster: 'Roaster',
+  roaster_final_buyer: 'Roaster',
+  final_buyer: 'Final Buyer',
+  end_client: 'Final Buyer',
+  service_provider: 'Service',
+}
+
+function formatTypeLabels(types?: string[]): string[] {
+  if (!types || types.length === 0) return []
+  const labels = types.map(t =>
+    TYPE_LABEL[t] || t.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+  )
+  return Array.from(new Set(labels))
+}
+
+function currencySymbol(code?: string): string {
+  switch ((code || 'USD').toUpperCase()) {
+    case 'EUR': return '€'
+    case 'BRL': return 'R$'
+    case 'GBP': return '£'
+    default: return '$'
+  }
+}
+
+function billingBasisLabel(b?: Client['billing_basis']): string {
+  if (b === 'approved_and_rejected') return 'all samples'
+  return 'approved only'
 }
 
 export default function ClientsPage() {
   const [clients, setClients] = useState<Client[]>([])
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
+  const [filter, setFilter] = useState<FilterKey>('all')
+
   const [togglingStatus, setTogglingStatus] = useState<string | null>(null)
   const [copiedEmail, setCopiedEmail] = useState<string | null>(null)
-  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
-  const [originPricing, setOriginPricing] = useState<Record<string, OriginPricing[]>>({})
-  const [loadingOriginPricing, setLoadingOriginPricing] = useState<Set<string>>(new Set())
+  const [disableQcClient, setDisableQcClient] = useState<Client | null>(null)
+  const [disableQcProcessing, setDisableQcProcessing] = useState(false)
 
-  // Quality assignment states
-  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
-  const [assigningClientId, setAssigningClientId] = useState<string | null>(null)
-  const [viewQualitiesDialog, setViewQualitiesDialog] = useState(false)
-  const [viewingQualities, setViewingQualities] = useState<AssignedQuality[]>([])
-  const [viewingClientName, setViewingClientName] = useState('')
-
-  // Bulk operations state
+  const [addClientModalOpen, setAddClientModalOpen] = useState(false)
   const [bulkOperationsDialogOpen, setBulkOperationsDialogOpen] = useState(false)
 
-  // Add client modal
-  const [addClientModalOpen, setAddClientModalOpen] = useState(false)
+  const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
+  const [assigningClientId, setAssigningClientId] = useState<string | null>(null)
+
+  const [deleteError, setDeleteError] = useState<string | null>(null)
+  const [deleteConfirmClient, setDeleteConfirmClient] = useState<Client | null>(null)
+  const [deleteLinkedRecords, setDeleteLinkedRecords] = useState<
+    { samples: number; contracts: number; qualities: number } | null
+  >(null)
+  const [deleteProcessing, setDeleteProcessing] = useState(false)
 
   useEffect(() => {
     loadClients()
   }, [searchQuery])
 
-  const loadClients = async () => {
+  async function loadClients() {
     try {
       setLoading(true)
-      const params = new URLSearchParams()
+      const params = new URLSearchParams({ is_qc_client: 'all', limit: '500' })
       if (searchQuery) params.append('search', searchQuery)
 
+      // `is_qc_client=all` opts the API out of the QC filter so we get both
+      // QC and trading-only rows. The chip filter / split happens client-side.
       const response = await fetch(`/api/clients?${params}`)
       const data = await response.json()
 
-      if (response.ok) {
-        // Fetch assigned qualities for each client
-        const clientsWithQualities = await Promise.all(
-          data.clients.map(async (client: Client) => {
-            try {
-              const qualitiesResponse = await fetch(`/api/client-qualities?client_id=${client.id}&is_active=true`)
-              if (qualitiesResponse.ok) {
-                const qualitiesData = await qualitiesResponse.json()
-                return {
-                  ...client,
-                  assigned_qualities: qualitiesData.client_qualities.map((cq: any) => ({
-                    id: cq.id,
-                    custom_name: cq.custom_name || cq.template?.name_en || '',
-                    quality_code: cq.quality_code,
-                    cups_per_sample: cq.cups_per_sample,
-                    template_id: cq.template_id,
-                    template_name: cq.template?.name_en || '',
-                    is_active: cq.is_active
-                  }))
-                }
-              }
-              return client
-            } catch (error) {
-              console.error(`Error fetching qualities for client ${client.id}:`, error)
-              return client
-            }
-          })
-        )
-        setClients(clientsWithQualities)
-      } else {
+      if (!response.ok) {
         console.error('Failed to load clients:', data.error)
+        setClients([])
+        return
       }
-    } catch (error) {
-      console.error('Error loading clients:', error)
+
+      // The list rows show a specs count, which currently lives on a sibling endpoint.
+      // Keep the per-client fetch behaviour the old page had — small list, fine for now.
+      const withQualities = await Promise.all(
+        (data.clients || []).map(async (client: Client) => {
+          try {
+            const r = await fetch(
+              `/api/client-qualities?client_id=${client.id}&is_active=true`,
+            )
+            if (!r.ok) return client
+            const j = await r.json()
+            return {
+              ...client,
+              assigned_qualities: (j.client_qualities || []).map((cq: any) => ({
+                id: cq.id,
+                custom_name: cq.custom_name || cq.template?.name_en || '',
+                quality_code: cq.quality_code,
+                cups_per_sample: cq.cups_per_sample,
+                template_id: cq.template_id,
+                template_name: cq.template?.name_en || '',
+                is_active: cq.is_active,
+              })),
+            }
+          } catch (err) {
+            console.error(`Error fetching qualities for client ${client.id}:`, err)
+            return client
+          }
+        }),
+      )
+      setClients(withQualities)
+    } catch (err) {
+      console.error('Error loading clients:', err)
     } finally {
       setLoading(false)
     }
   }
 
-  const handleToggleActive = async (client: Client) => {
+  async function handleToggleActive(client: Client) {
     try {
       setTogglingStatus(client.id)
       const response = await fetch(`/api/clients/${client.id}`, {
@@ -161,57 +174,47 @@ export default function ClientsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ is_active: !client.is_active }),
       })
-
       if (response.ok) {
         await loadClients()
       } else {
         const error = await response.json()
         alert(`Failed to update client status: ${error.error}`)
       }
-    } catch (error) {
-      console.error('Error toggling client status:', error)
+    } catch (err) {
+      console.error('Error toggling client status:', err)
       alert('Failed to update client status')
     } finally {
       setTogglingStatus(null)
     }
   }
 
-  const [deleteError, setDeleteError] = useState<string | null>(null)
-  const [deleteConfirmClient, setDeleteConfirmClient] = useState<Client | null>(null)
-  const [deleteLinkedRecords, setDeleteLinkedRecords] = useState<{ samples: number; contracts: number; qualities: number } | null>(null)
-  const [deleteProcessing, setDeleteProcessing] = useState(false)
-
-  const handleDelete = async (client: Client) => {
+  async function handleDelete(client: Client) {
     try {
       setDeleteError(null)
-      const response = await fetch(`/api/clients/${client.id}`, {
-        method: 'DELETE'
-      })
-
+      const response = await fetch(`/api/clients/${client.id}`, { method: 'DELETE' })
       if (response.ok) {
         await loadClients()
-      } else {
-        const data = await response.json()
-        if (data.error === 'confirm_delete' && data.linked_records) {
-          // Show confirmation dialog with linked records info
-          setDeleteConfirmClient(client)
-          setDeleteLinkedRecords(data.linked_records)
-        } else {
-          setDeleteError(data.error || 'Failed to delete client')
-        }
+        return
       }
-    } catch (error) {
-      console.error('Error deleting client:', error)
+      const data = await response.json()
+      if (data.error === 'confirm_delete' && data.linked_records) {
+        setDeleteConfirmClient(client)
+        setDeleteLinkedRecords(data.linked_records)
+      } else {
+        setDeleteError(data.error || 'Failed to delete client')
+      }
+    } catch (err) {
+      console.error('Error deleting client:', err)
       setDeleteError('Failed to delete client. Please try again.')
     }
   }
 
-  const handleConfirmForceDelete = async () => {
+  async function handleConfirmForceDelete() {
     if (!deleteConfirmClient) return
     setDeleteProcessing(true)
     try {
       const response = await fetch(`/api/clients/${deleteConfirmClient.id}?force=true`, {
-        method: 'DELETE'
+        method: 'DELETE',
       })
       if (response.ok) {
         setDeleteConfirmClient(null)
@@ -223,8 +226,8 @@ export default function ClientsPage() {
         setDeleteConfirmClient(null)
         setDeleteLinkedRecords(null)
       }
-    } catch (error) {
-      console.error('Error force-deleting client:', error)
+    } catch (err) {
+      console.error('Error force-deleting client:', err)
       setDeleteError('Failed to delete client. Please try again.')
       setDeleteConfirmClient(null)
       setDeleteLinkedRecords(null)
@@ -233,89 +236,66 @@ export default function ClientsPage() {
     }
   }
 
-  const handleCopyEmail = async (email: string) => {
+  async function handleConfirmDisableQc() {
+    if (!disableQcClient) return
+    setDisableQcProcessing(true)
+    try {
+      const response = await fetch(`/api/clients/${disableQcClient.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_qc_client: false }),
+      })
+      if (response.ok) {
+        setDisableQcClient(null)
+        await loadClients()
+      } else {
+        const data = await response.json()
+        alert(`Failed to disable QC: ${data.error || 'Unknown error'}`)
+        setDisableQcClient(null)
+      }
+    } catch (err) {
+      console.error('Error disabling QC:', err)
+      alert('Failed to disable QC')
+      setDisableQcClient(null)
+    } finally {
+      setDisableQcProcessing(false)
+    }
+  }
+
+  async function handleCopyEmail(email: string) {
     try {
       await navigator.clipboard.writeText(email)
       setCopiedEmail(email)
       setTimeout(() => setCopiedEmail(null), 2000)
-    } catch (error) {
-      console.error('Failed to copy email:', error)
+    } catch (err) {
+      console.error('Failed to copy email:', err)
     }
   }
 
-  const loadOriginPricing = async (clientId: string) => {
-    if (loadingOriginPricing.has(clientId) || originPricing[clientId]) {
-      return
+  const counts = useMemo(() => {
+    let qc = 0
+    let trading = 0
+    let inactive = 0
+    for (const c of clients) {
+      if (!c.is_active) inactive += 1
+      if (c.is_qc_client) qc += 1
+      else trading += 1
     }
+    return { all: clients.length, qc, trading, inactive }
+  }, [clients])
 
-    try {
-      setLoadingOriginPricing(prev => new Set(prev).add(clientId))
-      const response = await fetch(`/api/clients/${clientId}/origin-pricing`)
-      const data = await response.json()
-
-      if (response.ok) {
-        setOriginPricing(prev => ({
-          ...prev,
-          [clientId]: data.origin_pricing || []
-        }))
-      }
-    } catch (error) {
-      console.error('Error loading origin pricing:', error)
-    } finally {
-      setLoadingOriginPricing(prev => {
-        const next = new Set(prev)
-        next.delete(clientId)
-        return next
-      })
+  const visibleClients = useMemo(() => {
+    switch (filter) {
+      case 'qc': return clients.filter(c => c.is_qc_client)
+      case 'trading': return clients.filter(c => !c.is_qc_client)
+      case 'inactive': return clients.filter(c => !c.is_active)
+      default: return clients
     }
-  }
-
-  const toggleRow = async (clientId: string) => {
-    const newExpanded = new Set(expandedRows)
-    if (newExpanded.has(clientId)) {
-      newExpanded.delete(clientId)
-    } else {
-      newExpanded.add(clientId)
-      await loadOriginPricing(clientId)
-    }
-    setExpandedRows(newExpanded)
-  }
-
-  const formatClientTypes = (types?: string[]) => {
-    if (!types || types.length === 0) return '-'
-    return types
-      .map(type => type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()))
-      .join(', ')
-  }
-
-  const formatPricing = (client: Client) => {
-    if (!client.is_qc_client) return '-'
-    if (!client.pricing_model) return '-'
-
-    if (client.pricing_model === 'complimentary') {
-      return 'Complimentary'
-    } else if (client.pricing_model === 'per_sample' && client.price_per_sample) {
-      return `${client.currency || 'USD'} ${client.price_per_sample.toFixed(2)}/sample`
-    } else if (client.pricing_model === 'per_pound' && client.price_per_pound_cents) {
-      return `${client.price_per_pound_cents.toFixed(2)}¢/lb`
-    }
-    return '-'
-  }
-
-  const formatOriginPricing = (pricing: OriginPricing) => {
-    if (pricing.pricing_model === 'complimentary') {
-      return 'Complimentary'
-    } else if (pricing.pricing_model === 'per_sample' && pricing.price_per_sample) {
-      return `${pricing.currency} ${pricing.price_per_sample.toFixed(2)}/sample`
-    } else if (pricing.pricing_model === 'per_pound' && pricing.price_per_pound_cents) {
-      return `${pricing.price_per_pound_cents.toFixed(2)}¢/lb`
-    }
-    return '-'
-  }
+  }, [clients, filter])
 
   return (
     <MainLayout>
-      {/* Delete Error Dialog */}
+      {/* Delete error dialog */}
       <Dialog open={!!deleteError} onOpenChange={() => setDeleteError(null)}>
         <DialogContent>
           <DialogHeader>
@@ -328,11 +308,41 @@ export default function ClientsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog (linked records) */}
-      <Dialog open={!!deleteConfirmClient} onOpenChange={(open) => { if (!open) { setDeleteConfirmClient(null); setDeleteLinkedRecords(null) } }}>
+      {/* Disable QC confirmation dialog */}
+      <Dialog open={!!disableQcClient} onOpenChange={(open) => { if (!open) setDisableQcClient(null) }}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Delete Client</DialogTitle>
+            <DialogTitle>Disable QC for this client?</DialogTitle>
+            <DialogDescription>
+              &ldquo;{disableQcClient?.fantasy_name || disableQcClient?.name}&rdquo; will no longer
+              appear in the QC clients list. Their certificate pattern, pricing &amp; quality specs
+              stay saved — re-enabling QC restores them.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" onClick={() => setDisableQcClient(null)} disabled={disableQcProcessing}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={handleConfirmDisableQc} disabled={disableQcProcessing}>
+              {disableQcProcessing ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Disabling…</> : 'Disable QC'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog
+        open={!!deleteConfirmClient}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteConfirmClient(null)
+            setDeleteLinkedRecords(null)
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete client</DialogTitle>
             <DialogDescription>
               Are you sure you want to delete &ldquo;{deleteConfirmClient?.fantasy_name || deleteConfirmClient?.name}&rdquo;? This client has linked records:
             </DialogDescription>
@@ -348,381 +358,374 @@ export default function ClientsPage() {
             Linked samples and contracts will be unlinked (not deleted). Quality specifications will be removed.
           </p>
           <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => { setDeleteConfirmClient(null); setDeleteLinkedRecords(null) }}>Cancel</Button>
+            <Button
+              variant="outline"
+              onClick={() => {
+                setDeleteConfirmClient(null)
+                setDeleteLinkedRecords(null)
+              }}
+            >
+              Cancel
+            </Button>
             <Button variant="destructive" onClick={handleConfirmForceDelete} disabled={deleteProcessing}>
-              {deleteProcessing ? <><Loader2 className="h-4 w-4 mr-1 animate-spin" />Deleting...</> : 'Delete Client'}
+              {deleteProcessing ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                'Delete client'
+              )}
             </Button>
           </div>
         </DialogContent>
       </Dialog>
 
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
+      <div className="max-w-[1180px] px-6 py-8 space-y-5">
+        {/* Page heading */}
+        <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight">Clients</h1>
-            <p className="text-muted-foreground">
+            <h1 className="text-[26px] font-bold tracking-tight leading-tight">Clients</h1>
+            <p className="text-[13.5px] text-muted-foreground mt-1">
               Manage your clients and their quality specifications
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="outline" onClick={() => setBulkOperationsDialogOpen(true)}>
-              <Upload className="h-4 w-4 mr-2" />
-              Import/Export
+          <div className="flex gap-2.5">
+            <Button
+              variant="outline"
+              className="h-[38px] rounded-[9px] text-[13px] font-medium gap-1.5"
+              onClick={() => setBulkOperationsDialogOpen(true)}
+            >
+              <Upload className="h-4 w-4" />
+              Import / Export
             </Button>
-            <Button onClick={() => setAddClientModalOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Client
+            <Button
+              className="h-[38px] rounded-[9px] text-[13px] font-medium gap-1.5"
+              onClick={() => setAddClientModalOpen(true)}
+            >
+              <Plus className="h-4 w-4" />
+              Add client
             </Button>
           </div>
         </div>
 
         {/* Search */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Search clients by name, company, or fantasy name..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
-              />
-            </div>
-          </CardContent>
-        </Card>
+        <div className="relative">
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-[17px] w-[17px] text-muted-foreground/70 pointer-events-none" />
+          <Input
+            placeholder="Search by name, company, or fantasy name…"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="h-[46px] pl-11 pr-4 rounded-[11px] text-sm bg-card border-border focus-visible:ring-0 focus-visible:border-foreground/30"
+          />
+        </div>
 
-        {/* Clients Table */}
+        {/* Filter chips */}
+        <div className="flex flex-wrap gap-2">
+          <FilterChip label="All" count={counts.all} active={filter === 'all'} onClick={() => setFilter('all')} />
+          <FilterChip label="QC clients" count={counts.qc} active={filter === 'qc'} onClick={() => setFilter('qc')} />
+          <FilterChip label="Trading only" count={counts.trading} active={filter === 'trading'} onClick={() => setFilter('trading')} />
+          <FilterChip label="Inactive" count={counts.inactive} active={filter === 'inactive'} onClick={() => setFilter('inactive')} />
+        </div>
+
+        {/* Table */}
         {loading ? (
-          <div className="text-center py-12 text-muted-foreground">
-            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4" />
-            Loading clients...
+          <div className="bg-card border border-border rounded-xl py-16 text-center text-muted-foreground">
+            <Loader2 className="h-6 w-6 animate-spin mx-auto mb-3" />
+            Loading clients…
           </div>
-        ) : clients.length === 0 ? (
-          <Card>
-            <CardContent className="py-12 text-center">
-              <h3 className="text-lg font-semibold mb-2">No clients found</h3>
-              <p className="text-muted-foreground mb-4">
-                {searchQuery ? 'Try adjusting your search criteria' : 'Get started by adding your first client'}
-              </p>
+        ) : visibleClients.length === 0 ? (
+          <div className="bg-card border border-border rounded-xl py-16 text-center">
+            <h3 className="text-base font-semibold mb-1">No clients found</h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              {searchQuery
+                ? 'Try adjusting your search criteria'
+                : filter === 'all'
+                  ? 'Get started by adding your first client'
+                  : 'No clients match this filter'}
+            </p>
+            {filter === 'all' && !searchQuery && (
               <Button onClick={() => setAddClientModalOpen(true)}>
                 <Plus className="h-4 w-4 mr-2" />
-                Add Client
+                Add client
               </Button>
-            </CardContent>
-          </Card>
+            )}
+          </div>
         ) : (
-          <Card>
-            <CardContent className="p-0">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Client</TableHead>
-                    <TableHead>Assigned Qualities</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Address</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>QC / Pricing</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {clients.map((client) => {
-                    const isExpanded = expandedRows.has(client.id)
-                    const clientOriginPricing = originPricing[client.id] || []
-                    const isLoadingPricing = loadingOriginPricing.has(client.id)
-
-                    return (
-                      <>
-                        <TableRow key={client.id}>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              {client.has_origin_pricing && (
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0"
-                                  onClick={() => toggleRow(client.id)}
-                                >
-                                  {isExpanded ? (
-                                    <ChevronDown className="h-4 w-4" />
-                                  ) : (
-                                    <ChevronRight className="h-4 w-4" />
-                                  )}
-                                </Button>
-                              )}
-                              <div className="flex flex-col gap-1">
-                                <div className="flex items-center gap-2">
-                                  <Link href={`/clients/${client.slug || client.id}`} className="font-semibold hover:underline cursor-pointer">
-                                    {client.fantasy_name || client.name}
-                                  </Link>
-                                  {client.has_origin_pricing && (
-                                    <Badge variant="secondary" className="text-xs">
-                                      <Layers className="h-3 w-3 mr-1" />
-                                      Multi-Origin
-                                    </Badge>
-                                  )}
-                                </div>
-                                {client.phone && (
-                                  <span className="text-sm text-muted-foreground">{client.phone}</span>
-                                )}
-                              </div>
-                            </div>
-                          </TableCell>
-
-                          {/* Assigned Qualities */}
-                          <TableCell>
-                            <div className="space-y-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                className="h-auto p-0 text-xs hover:underline"
-                                onClick={() => {
-                                  setAssigningClientId(client.id)
-                                  setAssignmentDialogOpen(true)
-                                }}
-                              >
-                                <FileText className="h-3 w-3 mr-1" />
-                                Assign Quality
-                              </Button>
-                              {client.assigned_qualities && client.assigned_qualities.length > 0 && (
-                                <div className="space-y-1">
-                                  <div className="text-xs text-muted-foreground max-w-[180px] line-clamp-2">
-                                    {client.assigned_qualities.slice(0, 2).map((q) =>
-                                      q.quality_code ? `${q.custom_name} | ${q.quality_code}` : q.custom_name
-                                    ).join(', ')}
-                                    {client.assigned_qualities.length > 2 && '...'}
-                                  </div>
-                                  {client.assigned_qualities.length > 2 && (
-                                    <Button
-                                      variant="ghost"
-                                      size="sm"
-                                      className="h-auto p-0 text-xs hover:underline"
-                                      onClick={() => {
-                                        setViewingQualities(client.assigned_qualities || [])
-                                        setViewingClientName(client.fantasy_name || client.name)
-                                        setViewQualitiesDialog(true)
-                                      }}
-                                    >
-                                      <Eye className="h-3 w-3 mr-1" />
-                                      View all ({client.assigned_qualities.length})
-                                    </Button>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </TableCell>
-
-                          <TableCell>
-                            {client.email ? (
-                              <div className="flex items-center gap-2">
-                                <span className="text-sm truncate max-w-[200px]">{client.email}</span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-6 w-6 p-0 flex-shrink-0"
-                                  onClick={() => handleCopyEmail(client.email!)}
-                                >
-                                  {copiedEmail === client.email ? (
-                                    <Check className="h-3 w-3 text-green-600" />
-                                  ) : (
-                                    <Copy className="h-3 w-3" />
-                                  )}
-                                </Button>
-                              </div>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {(client.city || client.country) ? (
-                              <span className="text-sm">
-                                {[client.city, client.state, client.country].filter(Boolean).join(', ')}
-                              </span>
-                            ) : (
-                              <span className="text-sm text-muted-foreground">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <span className="text-sm">{formatClientTypes(client.client_types)}</span>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex flex-col gap-1">
-                              {client.is_qc_client !== false ? (
-                                <>
-                                  <Badge variant="default" className="text-xs w-fit">
-                                    QC Client
-                                  </Badge>
-                                  <span className="text-sm">
-                                    {client.has_origin_pricing ? 'See origins below' : formatPricing(client)}
-                                  </span>
-                                </>
-                              ) : (
-                                <Badge variant="outline" className="text-xs w-fit">
-                                  No QC
-                                </Badge>
-                              )}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Switch
-                                checked={client.is_active}
-                                onCheckedChange={() => handleToggleActive(client)}
-                                disabled={togglingStatus === client.id}
-                              />
-                              <span className="text-sm text-muted-foreground">
-                                {client.is_active ? 'Active' : 'Inactive'}
-                              </span>
-                            </div>
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <div className="flex items-center justify-end gap-2">
-                              <Link href={`/clients/${client.slug || client.id}`}>
-                                <Button variant="ghost" size="sm" title="View details">
-                                  <Eye className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              <Link href={`/clients/${client.id}/edit`}>
-                                <Button variant="ghost" size="sm" title="Edit client">
-                                  <Pencil className="h-4 w-4" />
-                                </Button>
-                              </Link>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleDelete(client)}
-                                className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                                title="Delete client"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-
-                        {/* Expandable Row for Origin Pricing */}
-                        {isExpanded && client.has_origin_pricing && (
-                          <TableRow key={`${client.id}-expanded`} className="bg-muted/50">
-                            <TableCell colSpan={8}>
-                              <div className="py-4 px-8">
-                                <h4 className="text-sm font-semibold mb-3">Origin-Specific Pricing</h4>
-                                {isLoadingPricing ? (
-                                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                                    <Loader2 className="h-4 w-4 animate-spin" />
-                                    Loading origin pricing...
-                                  </div>
-                                ) : clientOriginPricing.length === 0 ? (
-                                  <p className="text-sm text-muted-foreground">No origin-specific pricing configured</p>
-                                ) : (
-                                  <div className="space-y-3">
-                                    {clientOriginPricing.map((pricing, index) => (
-                                      <div key={pricing.id}>
-                                        {index > 0 && <div className="border-t border-border mb-3" />}
-                                        <div className="flex items-center justify-between">
-                                          <span className="text-sm">
-                                            <span className="font-semibold">{pricing.origin}:</span> {formatOriginPricing(pricing)}
-                                          </span>
-                                          <Badge
-                                            variant={pricing.is_active ? 'default' : 'secondary'}
-                                            className="text-xs"
-                                          >
-                                            {pricing.is_active ? 'Active' : 'Inactive'}
-                                          </Badge>
-                                        </div>
-                                      </div>
-                                    ))}
-                                  </div>
-                                )}
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        )}
-                      </>
-                    )
-                  })}
-                </TableBody>
-              </Table>
-            </CardContent>
-          </Card>
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
+            {/* Header */}
+            <div className="grid grid-cols-[2.4fr_1.6fr_2fr_1.3fr_56px_78px] items-center gap-3.5 h-[42px] px-5 border-b border-border bg-muted/30">
+              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70">Client</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70">Type</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70">Contact</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70">QC pricing</span>
+              <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-muted-foreground/70 text-right">Status</span>
+              <span aria-hidden />
+            </div>
+            {/* Rows */}
+            {visibleClients.map((client) => (
+              <ClientRow
+                key={client.id}
+                client={client}
+                copiedEmail={copiedEmail}
+                togglingStatus={togglingStatus}
+                onToggleActive={() => handleToggleActive(client)}
+                onDelete={() => handleDelete(client)}
+                onCopyEmail={() => client.email && handleCopyEmail(client.email)}
+                onAssignSpecs={() => {
+                  setAssigningClientId(client.id)
+                  setAssignmentDialogOpen(true)
+                }}
+                onDisableQc={() => setDisableQcClient(client)}
+              />
+            ))}
+          </div>
         )}
 
-        {/* Quality Assignment Dialog */}
+        {/* Quality assignment dialog */}
         {assigningClientId && (
           <QualityAssignmentDialog
             open={assignmentDialogOpen}
             onOpenChange={setAssignmentDialogOpen}
             mode="from-client"
             clientId={assigningClientId}
-            onSuccess={() => {
-              loadClients()
-            }}
+            onSuccess={() => loadClients()}
           />
         )}
 
-        {/* View All Qualities Dialog */}
-        <Dialog open={viewQualitiesDialog} onOpenChange={setViewQualitiesDialog}>
-          <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Assigned Qualities - {viewingClientName}</DialogTitle>
-              <DialogDescription>
-                All quality specifications assigned to this client
-              </DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 py-4">
-              {viewingQualities.map((quality) => (
-                <Card key={quality.id} className="hover:bg-muted/50 transition-colors">
-                  <CardContent className="p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="space-y-1 flex-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-semibold text-sm">
-                            {quality.quality_code ? `${quality.custom_name} | ${quality.quality_code}` : quality.custom_name}
-                          </h4>
-                          <Badge variant="secondary" className="text-xs">
-                            {quality.cups_per_sample || 10} cups
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-muted-foreground">
-                          Based on: {quality.template_name}
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => {
-                          window.open(`/quality/templates?view=${quality.template_id}`, '_blank')
-                        }}
-                        className="text-xs"
-                      >
-                        <Eye className="h-3 w-3 mr-1" />
-                        View Template
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Bulk Operations Dialog */}
+        {/* Bulk operations dialog */}
         <BulkOperationsDialog
           open={bulkOperationsDialogOpen}
           onOpenChange={setBulkOperationsDialogOpen}
           onSuccess={loadClients}
         />
 
-        {/* Add Client Modal */}
+        {/* Add client modal */}
         <AddClientModal
           open={addClientModalOpen}
           onOpenChange={setAddClientModalOpen}
-          onSuccess={() => {
-            loadClients()
-          }}
+          onSuccess={() => loadClients()}
         />
       </div>
     </MainLayout>
+  )
+}
+
+function FilterChip({
+  label, count, active, onClick,
+}: {
+  label: string
+  count: number
+  active: boolean
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        'h-[31px] px-3.5 rounded-full border text-[12.5px] inline-flex items-center gap-1.5 transition-colors',
+        active
+          ? 'bg-foreground text-background border-foreground'
+          : 'bg-card text-muted-foreground border-border hover:text-foreground',
+      )}
+    >
+      {label}
+      <span className="font-semibold">{count}</span>
+    </button>
+  )
+}
+
+function ClientRow({
+  client,
+  copiedEmail,
+  togglingStatus,
+  onToggleActive,
+  onDelete,
+  onCopyEmail,
+  onAssignSpecs,
+  onDisableQc,
+}: {
+  client: Client
+  copiedEmail: string | null
+  togglingStatus: string | null
+  onToggleActive: () => void
+  onDelete: () => void
+  onCopyEmail: () => void
+  onAssignSpecs: () => void
+  onDisableQc: () => void
+}) {
+  const typeLabels = formatTypeLabels(client.client_types)
+  const specsCount = client.assigned_qualities?.length || 0
+  const showSpecCount = specsCount > 0
+  const showSpecsGap = !showSpecCount && !!client.is_qc_client
+  const slug = client.slug || client.id
+
+  return (
+    <div
+      className={cn(
+        'group grid grid-cols-[2.4fr_1.6fr_2fr_1.3fr_56px_78px] items-center gap-3.5 min-h-[56px] px-5 border-b border-border last:border-b-0 transition-colors',
+        'hover:bg-muted/40',
+        !client.is_active && 'opacity-60',
+      )}
+    >
+      {/* Client cell */}
+      <div className="min-w-0">
+        <Link
+          href={`/clients/${slug}`}
+          className="block w-fit max-w-full truncate text-[14px] font-semibold tracking-[-0.01em] leading-[1.25] hover:underline"
+        >
+          {client.fantasy_name || client.name}
+        </Link>
+        {showSpecCount && (
+          <div className="flex items-center gap-1.5 mt-0.5 text-[11.5px] text-muted-foreground/80 whitespace-nowrap">
+            <FileText className="h-3 w-3 text-muted-foreground/60 shrink-0" />
+            <span>{specsCount} {specsCount === 1 ? 'spec' : 'specs'}</span>
+          </div>
+        )}
+        {showSpecsGap && (
+          <button
+            type="button"
+            onClick={onAssignSpecs}
+            className="flex w-fit items-center gap-1.5 mt-0.5 text-[11.5px] text-muted-foreground/80 hover:text-[#15663f] dark:hover:text-emerald-400 transition-colors whitespace-nowrap"
+          >
+            <span className="inline-block h-1.5 w-1.5 rounded-full bg-[#e0a83a] shrink-0" />
+            <span>No specs &mdash; assign</span>
+          </button>
+        )}
+      </div>
+
+      {/* Type cell */}
+      <div className="flex flex-wrap gap-1.5">
+        {typeLabels.map((label) => (
+          <span
+            key={label}
+            className="text-[11px] font-medium leading-5 px-2.5 py-[3px] rounded-full bg-muted text-muted-foreground"
+          >
+            {label}
+          </span>
+        ))}
+        {client.is_qc_client && (
+          <button
+            type="button"
+            onClick={onDisableQc}
+            title="Click to disable QC for this client"
+            className="group/qc text-[11px] font-semibold leading-5 px-2.5 py-[3px] rounded-full bg-[#e7f2ec] text-[#15663f] dark:bg-emerald-950/40 dark:text-emerald-300 inline-flex items-center gap-1 hover:bg-[#dcebe1] dark:hover:bg-emerald-950/60 transition-colors"
+          >
+            <span>QC</span>
+            <X className="h-3 w-3 opacity-0 group-hover/qc:opacity-100 -mr-0.5 transition-opacity" strokeWidth={2.5} />
+          </button>
+        )}
+      </div>
+
+      {/* Contact cell */}
+      <div className="min-w-0">
+        {client.email ? (
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="text-[13px] truncate text-foreground/80">{client.email}</span>
+            <button
+              type="button"
+              onClick={onCopyEmail}
+              className="opacity-0 group-hover:opacity-100 transition-opacity h-[26px] w-[26px] rounded-md inline-flex items-center justify-center text-muted-foreground/70 hover:bg-muted hover:text-foreground shrink-0"
+              title={copiedEmail === client.email ? 'Copied' : 'Copy email'}
+            >
+              {copiedEmail === client.email ? (
+                <Check className="h-3.5 w-3.5 text-[#15663f]" />
+              ) : (
+                <Copy className="h-3.5 w-3.5" />
+              )}
+            </button>
+          </div>
+        ) : (
+          <span className="text-[13px] text-muted-foreground/60">No email on file</span>
+        )}
+      </div>
+
+      {/* QC pricing cell */}
+      <div>
+        {client.is_qc_client ? <PricingCell client={client} /> : null}
+      </div>
+
+      {/* Status cell — compact switch, right-aligned to sit beside the actions */}
+      <div className="flex items-center justify-end">
+        <Switch
+          checked={client.is_active}
+          onCheckedChange={onToggleActive}
+          disabled={togglingStatus === client.id}
+          className="h-[18px] w-[32px] [&>span]:h-[14px] [&>span]:w-[14px] [&>span[data-state=checked]]:translate-x-[14px] [&>span[data-state=unchecked]]:translate-x-0"
+        />
+      </div>
+
+      {/* Actions */}
+      <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Link
+          href={`/clients/${slug}`}
+          className="h-[30px] w-[30px] rounded-md inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="View details"
+        >
+          <Eye className="h-[15px] w-[15px]" />
+        </Link>
+        <Link
+          href={`/clients/${slug}/edit`}
+          className="h-[30px] w-[30px] rounded-md inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground"
+          title="Edit client"
+        >
+          <Pencil className="h-[15px] w-[15px]" />
+        </Link>
+        <button
+          type="button"
+          onClick={onDelete}
+          className="h-[30px] w-[30px] rounded-md inline-flex items-center justify-center text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+          title="Delete client"
+        >
+          <Trash2 className="h-[15px] w-[15px]" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function PricingCell({ client }: { client: Client }) {
+  const slug = client.slug || client.id
+
+  if (client.pricing_model === 'complimentary') {
+    return (
+      <div>
+        <div className="text-[13px] font-semibold tracking-[-0.01em]">Complimentary</div>
+      </div>
+    )
+  }
+
+  if (client.pricing_model === 'per_sample' && client.price_per_sample) {
+    return (
+      <div>
+        <div className="text-[13px] font-semibold tracking-[-0.01em]">
+          {currencySymbol(client.currency)}{client.price_per_sample.toFixed(2)}
+        </div>
+        <div className="text-[11px] text-muted-foreground/70 mt-px">per sample</div>
+      </div>
+    )
+  }
+
+  if (client.pricing_model === 'per_pound' && client.price_per_pound_cents) {
+    return (
+      <div>
+        <div className="text-[13px] font-semibold tracking-[-0.01em]">
+          {client.price_per_pound_cents.toFixed(2)}¢ / lb
+        </div>
+        <div className="text-[11px] text-muted-foreground/70 mt-px">
+          {billingBasisLabel(client.billing_basis)}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <Link
+      href={`/clients/${slug}`}
+      className="text-[11.5px] text-muted-foreground/70 hover:text-[#15663f] dark:hover:text-emerald-400 transition-colors"
+    >
+      + Set pricing
+    </Link>
   )
 }

@@ -59,14 +59,23 @@ export async function GET(request: NextRequest) {
 
     // Default to is_qc_client=true unless caller explicitly disables it,
     // matching the legacy clients table which only held QC clients.
-    const isQcClient = isQcClientParam === null ? true : isQcClientParam === 'true'
+    // `is_qc_client=all` opts out of the filter entirely (used by the Clients
+    // list page so the chip counts can mix QC + trading-only rows).
+    const isQcClientMode: 'true' | 'false' | 'all' =
+      isQcClientParam === 'all' ? 'all'
+      : isQcClientParam === 'false' ? 'false'
+      : 'true'
+    const isQcClient = isQcClientMode === 'true'
 
     let query = (supabase as any)
       .from('companies')
       .select(QC_CLIENT_SELECT)
-      .eq('is_qc_client', isQcClient)
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1)
+
+    if (isQcClientMode !== 'all') {
+      query = query.eq('is_qc_client', isQcClient)
+    }
 
     if (search) {
       query = query.or(`name.ilike.%${search}%,fantasy_name.ilike.%${search}%`)
@@ -96,7 +105,10 @@ export async function GET(request: NextRequest) {
     let countQuery = (supabase as any)
       .from('companies')
       .select('id', { count: 'exact', head: true })
-      .eq('is_qc_client', isQcClient)
+
+    if (isQcClientMode !== 'all') {
+      countQuery = countQuery.eq('is_qc_client', isQcClient)
+    }
 
     if (search) {
       countQuery = countQuery.or(`name.ilike.%${search}%,fantasy_name.ilike.%${search}%`)

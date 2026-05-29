@@ -9,17 +9,12 @@ import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import {
-  Building2,
   Mail,
   Phone,
-  MapPin,
   Calendar,
-  FileText,
-  TrendingUp,
-  CheckCircle2,
-  Package,
+  Building2,
   Pencil,
-  X,
+  Settings,
 } from 'lucide-react'
 import { format } from 'date-fns'
 import { useSearchParams } from 'next/navigation'
@@ -28,6 +23,7 @@ import { ClientQualityManager } from './client-quality-manager'
 import { ClientMetricsTab } from './client-metrics-tab'
 import { QcConfigPanel } from './qc-config-panel'
 import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
+import { cn } from '@/lib/utils'
 
 interface ClientDetailViewProps {
   clientId: string
@@ -61,6 +57,28 @@ const CLIENT_ROLE_OPTIONS = [
   'roaster', 'final_importer', 'end_client',
 ]
 
+const TYPE_LABEL: Record<string, string> = {
+  producer: 'Producer',
+  producer_exporter: 'Exporter',
+  cooperative: 'Cooperative',
+  exporter: 'Exporter',
+  importer_buyer: 'Trader',
+  importer: 'Trader',
+  roaster: 'Roaster',
+  roaster_final_buyer: 'Roaster',
+  final_buyer: 'Final Buyer',
+  end_client: 'Final Buyer',
+  service_provider: 'Service',
+}
+
+function formatTypeLabels(types?: string[]): string {
+  if (!types || types.length === 0) return ''
+  const labels = types.map(t =>
+    TYPE_LABEL[t] || t.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+  )
+  return Array.from(new Set(labels)).join(' · ')
+}
+
 export function ClientDetailView({ clientId }: ClientDetailViewProps) {
   const searchParams = useSearchParams()
   const [data, setData] = useState<ClientData | null>(null)
@@ -90,6 +108,31 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
   useEffect(() => {
     if (clientId) fetchClientData()
   }, [clientId, fetchClientData])
+
+  // When the page lands with ?edit=true (or any time edit mode is on without
+  // a hydrated form), seed editFormData from the loaded client so the inputs
+  // aren't blank. Without this, the legacy /clients/[id]/edit redirect lands
+  // on an empty form.
+  useEffect(() => {
+    if (!isEditing) return
+    if (editFormData) return
+    if (!data) return
+    const { client } = data
+    setEditFormData({
+      name: client.name || '',
+      company: client.company || '',
+      fantasy_name: client.fantasy_name || '',
+      email: client.email || '',
+      phone: client.phone || '',
+      vat_number: client.vat_number || '',
+      address: client.address || '',
+      zip_code: client.zip_code || '',
+      city: client.city || '',
+      state: client.state || '',
+      country: client.country || '',
+      client_types: client.client_types || [],
+    })
+  }, [isEditing, editFormData, data])
 
   function handleEnterEditMode() {
     if (!data) return
@@ -186,286 +229,243 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
   }
 
   const { client, samples, sampleMetrics, qualitySpecs, certificatesCount } = data
-
-  function getQcBadgeLabel() {
-    if (!client.is_qc_client) return 'Not a QC Client'
-    if (client.pricing_model === 'complimentary') return 'QC Client · Complimentary'
-    if (client.price_per_pound_cents) {
-      return `QC Client · ${client.price_per_pound_cents} ${client.currency || 'USD'} c/lb`
-    }
-    if (client.price_per_sample) {
-      return `QC Client · ${client.price_per_sample} ${client.currency || 'USD'}/sample`
-    }
-    return 'QC Client'
-  }
+  const displayName = client.fantasy_name || client.company || client.name
+  const sublineParts = [
+    client.fantasy_name ? client.company : null,
+    client.country,
+  ].filter(Boolean)
+  const subline = sublineParts.join(' · ')
+  const typeSummary = formatTypeLabels(client.client_types)
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Save/Cancel Bar for Edit Mode */}
       {isEditing && (
-        <div className="sticky top-0 z-50 flex items-center justify-between px-4 py-2 bg-background border-b shadow-sm rounded-lg">
+        <div className="sticky top-0 z-50 flex items-center justify-between px-4 py-2 bg-background border border-border shadow-sm rounded-xl">
           <span className="text-sm font-medium">Editing client information</span>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" onClick={handleCancelEdit} disabled={saving}>
               Cancel
             </Button>
             <Button size="sm" onClick={handleSaveEdit} disabled={saving}>
-              {saving ? 'Saving...' : 'Save Changes'}
+              {saving ? 'Saving…' : 'Save Changes'}
             </Button>
           </div>
         </div>
       )}
 
       {/* Header Card */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-start justify-between">
-            <div className="flex items-center gap-5">
-              {client.logo_url && (
-                <>
-                  <div className="h-[60px] flex items-center justify-center flex-shrink-0">
-                    <img
-                      src={client.logo_url}
-                      alt={`${client.company} logo`}
-                      className="h-[60px] w-auto object-contain"
-                    />
-                  </div>
-                  <div className="h-12 w-px bg-border" />
-                </>
-              )}
-              <div>
-                {isEditing ? (
-                  <div className="space-y-2">
-                    <Input
-                      value={editFormData?.fantasy_name || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, fantasy_name: e.target.value })}
-                      className="text-2xl font-semibold h-auto py-1 px-2"
-                      placeholder="Fantasy Name"
-                    />
-                    <Input
-                      value={editFormData?.company || ''}
-                      onChange={(e) => setEditFormData({ ...editFormData, company: e.target.value })}
-                      className="text-base h-auto py-1 px-2"
-                      placeholder="Company Name"
-                    />
-                  </div>
-                ) : (
-                  <>
-                    <CardTitle className="text-2xl">{client.fantasy_name || client.company}</CardTitle>
-                    <CardDescription className="text-base mt-1">{client.name}</CardDescription>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {/* Interactive QC Badge */}
-              <button
-                onClick={() => setQcDialogOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-medium transition-colors hover:opacity-80 cursor-pointer border"
-                style={{
-                  backgroundColor: client.is_qc_client ? 'hsl(var(--primary))' : undefined,
-                  color: client.is_qc_client ? 'hsl(var(--primary-foreground))' : undefined,
-                }}
-              >
-                {getQcBadgeLabel()}
-              </button>
-
-              {client.qc_enabled ? (
-                <Badge variant="outline" className="bg-green-50 dark:bg-green-950 text-green-700 dark:text-green-300">
-                  Active
-                </Badge>
+      <div className="bg-card border border-border rounded-xl px-6 py-5">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex items-center gap-5 min-w-0">
+            {client.logo_url && (
+              <>
+                <div className="h-[52px] flex items-center justify-center flex-shrink-0">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={client.logo_url}
+                    alt={`${displayName} logo`}
+                    className="h-[52px] w-auto object-contain"
+                  />
+                </div>
+                <div className="h-10 w-px bg-border" />
+              </>
+            )}
+            <div className="min-w-0">
+              {isEditing ? (
+                <div className="space-y-2">
+                  <Input
+                    value={editFormData?.fantasy_name || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, fantasy_name: e.target.value })}
+                    className="text-[23px] font-bold tracking-[-0.02em] h-auto py-1 px-2"
+                    placeholder="Fantasy name"
+                  />
+                  <Input
+                    value={editFormData?.company || ''}
+                    onChange={(e) => setEditFormData({ ...editFormData, company: e.target.value })}
+                    className="text-sm h-auto py-1 px-2"
+                    placeholder="Company name"
+                  />
+                </div>
               ) : (
-                <Badge variant="outline" className="bg-gray-50 dark:bg-gray-950 text-gray-700 dark:text-gray-300">
-                  Inactive
-                </Badge>
-              )}
-
-              {!isEditing && (
-                <Button variant="outline" size="sm" onClick={handleEnterEditMode}>
-                  <Pencil className="h-4 w-4 mr-2" />
-                  Edit
-                </Button>
+                <>
+                  <h1 className="text-[23px] font-bold tracking-[-0.02em] leading-tight truncate">
+                    {displayName}
+                  </h1>
+                  {subline && (
+                    <p className="text-[13px] text-muted-foreground mt-0.5 truncate">{subline}</p>
+                  )}
+                </>
               )}
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          {isEditing ? (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Contact Name</Label>
-                  <Input
-                    value={editFormData?.name || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                    placeholder="Contact Name"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Email</Label>
-                  <Input
-                    value={editFormData?.email || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, email: e.target.value })}
-                    placeholder="Email"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Phone</Label>
-                  <Input
-                    value={editFormData?.phone || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, phone: e.target.value })}
-                    placeholder="Phone"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">VAT/CNPJ</Label>
-                  <Input
-                    value={editFormData?.vat_number || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, vat_number: e.target.value })}
-                    placeholder="VAT/CNPJ Number"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Address</Label>
-                  <Input
-                    value={editFormData?.address || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, address: e.target.value })}
-                    placeholder="Street Address"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">ZIP/CEP</Label>
-                  <Input
-                    value={editFormData?.zip_code || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, zip_code: e.target.value })}
-                    placeholder="ZIP/CEP Code"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">City</Label>
-                  <Input
-                    value={editFormData?.city || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, city: e.target.value })}
-                    placeholder="City"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">State/Province</Label>
-                  <Input
-                    value={editFormData?.state || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, state: e.target.value })}
-                    placeholder="State/Province"
-                  />
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs text-muted-foreground">Country</Label>
-                  <Input
-                    value={editFormData?.country || ''}
-                    onChange={(e) => setEditFormData({ ...editFormData, country: e.target.value })}
-                    placeholder="Country"
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">Client Roles</Label>
-                <div className="flex flex-wrap gap-4">
-                  {CLIENT_ROLE_OPTIONS.map((role) => (
-                    <div key={role} className="flex items-center gap-2">
-                      <Checkbox
-                        id={`role-${role}`}
-                        checked={(editFormData?.client_types || []).includes(role)}
-                        onCheckedChange={() => toggleRole(role)}
-                      />
-                      <Label htmlFor={`role-${role}`} className="text-sm capitalize">
-                        {role.replace('_', ' ')}
-                      </Label>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="space-y-2">
-                {client.email && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Mail className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <span className="truncate">{client.email}</span>
-                  </div>
-                )}
-                {client.phone && (
-                  <div className="flex items-center gap-2 text-sm">
-                    <Phone className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    <span>{client.phone}</span>
-                  </div>
-                )}
-              </div>
-              {(client.address || client.city || client.country) && (
-                <div className="flex items-start gap-2 text-sm">
-                  <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                  <span className="flex-1">
-                    {[client.address, client.city, client.state, client.country]
-                      .filter(Boolean)
-                      .join(', ')}
-                  </span>
-                </div>
-              )}
-              {client.client_types && client.client_types.length > 0 && (
-                <div className="flex items-start gap-2 text-sm">
-                  <Building2 className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                  <div className="flex flex-wrap gap-1">
-                    {client.client_types.map((type: string) => (
-                      <Badge key={type} variant="secondary" className="text-xs">
-                        {type}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="flex items-center gap-2 text-sm">
-                <Calendar className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                <span>
-                  Joined {format(new Date(client.created_at), 'MMM d, yyyy')}
-                </span>
-              </div>
-            </div>
-          )}
-        </CardContent>
-      </Card>
 
-      {/* Compact Stats Row */}
-      <div className="flex items-center gap-6 px-4 py-2 rounded-lg border bg-card text-sm">
-        <div className="flex items-center gap-2">
-          <Package className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">Samples</span>
-          <span className="font-semibold">{sampleMetrics.total}</span>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {client.is_qc_client && (
+              <span className="text-[12px] font-semibold px-3 py-1 rounded-full bg-[#e7f2ec] text-[#15663f] dark:bg-emerald-950/40 dark:text-emerald-300">
+                QC client
+              </span>
+            )}
+            <span
+              className={cn(
+                'text-[12px] font-medium px-3 py-1 rounded-full border',
+                client.is_active
+                  ? 'bg-[#e7f2ec] text-[#15663f] border-[#d4e7dc] dark:bg-emerald-950/30 dark:text-emerald-300 dark:border-emerald-900'
+                  : 'bg-muted text-muted-foreground border-border',
+              )}
+            >
+              {client.is_active ? 'Active' : 'Inactive'}
+            </span>
+            {!isEditing && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleEnterEditMode}
+                className="h-9 rounded-[9px] text-[13px] font-medium gap-1.5"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                Edit
+              </Button>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400" />
-          <span className="text-muted-foreground">Approved</span>
-          <span className="font-semibold text-green-600 dark:text-green-400">{sampleMetrics.approved}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <FileText className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">Quality Specs</span>
-          <span className="font-semibold">{qualitySpecs.length}</span>
-        </div>
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-3.5 w-3.5 text-muted-foreground" />
-          <span className="text-muted-foreground">Certificates</span>
-          <span className="font-semibold">{certificatesCount}</span>
-        </div>
+
+        {/* Meta row */}
+        {!isEditing && (
+          <div className="flex flex-wrap items-center gap-x-7 gap-y-2 mt-5">
+            {client.email && (
+              <div className="flex items-center gap-2 text-[13px] text-foreground/80 min-w-0">
+                <Mail className="h-[15px] w-[15px] text-muted-foreground/70 shrink-0" />
+                <span className="truncate">{client.email}</span>
+              </div>
+            )}
+            {client.phone && (
+              <div className="flex items-center gap-2 text-[13px] text-foreground/80">
+                <Phone className="h-[15px] w-[15px] text-muted-foreground/70 shrink-0" />
+                <span>{client.phone}</span>
+              </div>
+            )}
+            {typeSummary && (
+              <div className="flex items-center gap-2 text-[13px] text-foreground/80">
+                <Building2 className="h-[15px] w-[15px] text-muted-foreground/70 shrink-0" />
+                <span>{typeSummary}</span>
+              </div>
+            )}
+            <div className="flex items-center gap-2 text-[13px] text-foreground/80">
+              <Calendar className="h-[15px] w-[15px] text-muted-foreground/70 shrink-0" />
+              <span>Joined {format(new Date(client.created_at), 'MMM d, yyyy')}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Inline edit body */}
+        {isEditing && editFormData && (
+          <div className="mt-6 space-y-7">
+            <EditSection title="Identity">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-x-5 gap-y-4">
+                <EditField label="Contact name" value={editFormData.name} onChange={(v) => setEditFormData({ ...editFormData, name: v })} />
+                <EditField label="VAT / CNPJ" value={editFormData.vat_number} onChange={(v) => setEditFormData({ ...editFormData, vat_number: v })} />
+                <EditField label="Email" type="email" value={editFormData.email} onChange={(v) => setEditFormData({ ...editFormData, email: v })} />
+                <EditField label="Phone" value={editFormData.phone} onChange={(v) => setEditFormData({ ...editFormData, phone: v })} />
+              </div>
+            </EditSection>
+
+            <EditSection title="Address">
+              <div className="grid grid-cols-1 md:grid-cols-6 gap-x-5 gap-y-4">
+                <div className="md:col-span-4">
+                  <EditField label="Street address" value={editFormData.address} onChange={(v) => setEditFormData({ ...editFormData, address: v })} />
+                </div>
+                <div className="md:col-span-2">
+                  <EditField label="ZIP / CEP" value={editFormData.zip_code} onChange={(v) => setEditFormData({ ...editFormData, zip_code: v })} />
+                </div>
+                <div className="md:col-span-2">
+                  <EditField label="City" value={editFormData.city} onChange={(v) => setEditFormData({ ...editFormData, city: v })} />
+                </div>
+                <div className="md:col-span-2">
+                  <EditField label="State / Province" value={editFormData.state} onChange={(v) => setEditFormData({ ...editFormData, state: v })} />
+                </div>
+                <div className="md:col-span-2">
+                  <EditField label="Country" value={editFormData.country} onChange={(v) => setEditFormData({ ...editFormData, country: v })} />
+                </div>
+              </div>
+            </EditSection>
+
+            <EditSection title="Client roles">
+              <div className="flex flex-wrap gap-2">
+                {CLIENT_ROLE_OPTIONS.map((role) => {
+                  const active = (editFormData.client_types || []).includes(role)
+                  return (
+                    <button
+                      key={role}
+                      type="button"
+                      onClick={() => toggleRole(role)}
+                      className={cn(
+                        'inline-flex items-center gap-2 h-9 px-3 rounded-full border text-[12.5px] transition-colors',
+                        active
+                          ? 'bg-[#15663f]/10 text-[#15663f] border-[#15663f]/30 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800'
+                          : 'bg-card text-muted-foreground border-border hover:text-foreground',
+                      )}
+                    >
+                      <Checkbox
+                        checked={active}
+                        onCheckedChange={() => toggleRole(role)}
+                        onClick={(e) => e.stopPropagation()}
+                        className="h-3.5 w-3.5 rounded-[4px]"
+                      />
+                      <span className="capitalize">{role.replace('_', ' ')}</span>
+                    </button>
+                  )
+                })}
+              </div>
+            </EditSection>
+          </div>
+        )}
       </div>
+
+      {/* Stat strip */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5">
+        <StatCard n={sampleMetrics.total} label="Samples" />
+        <StatCard n={sampleMetrics.approved} label="Approved" tone="good" />
+        <StatCard n={qualitySpecs.length} label="Quality specs" />
+        <StatCard n={certificatesCount} label="Certificates" />
+      </div>
+
+      {/* QC services entry card — only for QC clients */}
+      {client.is_qc_client && (
+        <div className="bg-card border border-border rounded-xl px-6 py-4 flex items-center justify-between gap-4">
+          <div className="min-w-0">
+            <div className="text-[14px] font-semibold">QC services</div>
+            <div className="text-[12.5px] text-muted-foreground mt-0.5">
+              Certificate pattern, pricing &amp; billing for this client
+            </div>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setQcDialogOpen(true)}
+            className="h-9 rounded-[9px] text-[13px] font-medium gap-1.5"
+          >
+            <Settings className="h-3.5 w-3.5" />
+            Configure
+          </Button>
+        </div>
+      )}
 
       {/* Tabbed Content */}
       <Tabs defaultValue="specs" className="w-full">
-        <TabsList className="grid w-full grid-cols-3">
-          <TabsTrigger value="specs">Quality Specs</TabsTrigger>
-          <TabsTrigger value="samples">Samples</TabsTrigger>
-          <TabsTrigger value="metrics">Metrics</TabsTrigger>
+        <TabsList className="inline-flex bg-muted rounded-[10px] p-1 h-auto">
+          <TabsTrigger value="specs" className="px-4 py-1.5 text-[13px] rounded-[7px] data-[state=active]:shadow-sm">
+            Quality Specs
+          </TabsTrigger>
+          <TabsTrigger value="samples" className="px-4 py-1.5 text-[13px] rounded-[7px] data-[state=active]:shadow-sm">
+            Samples
+          </TabsTrigger>
+          <TabsTrigger value="metrics" className="px-4 py-1.5 text-[13px] rounded-[7px] data-[state=active]:shadow-sm">
+            Metrics
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="specs" className="space-y-4">
+        <TabsContent value="specs" className="space-y-4 mt-4">
           <ClientQualityManager
             clientId={client.id}
             clientName={client.fantasy_name || client.company}
@@ -476,11 +476,11 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
           />
         </TabsContent>
 
-        <TabsContent value="samples" className="space-y-4">
+        <TabsContent value="samples" className="space-y-4 mt-4">
           <SamplesTab samples={samples} />
         </TabsContent>
 
-        <TabsContent value="metrics" className="space-y-4">
+        <TabsContent value="metrics" className="space-y-4 mt-4">
           <ClientMetricsTab
             clientId={client.id}
             clientName={client.fantasy_name || client.company}
@@ -510,6 +510,55 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
         }}
         onSave={handleQcConfigSave}
         clientId={client.id}
+      />
+    </div>
+  )
+}
+
+function StatCard({ n, label, tone }: { n: number | string; label: string; tone?: 'good' }) {
+  return (
+    <div className="bg-card border border-border rounded-[11px] px-4 py-4">
+      <div className="text-[22px] font-bold tracking-[-0.02em] leading-none">{n}</div>
+      <div
+        className={cn(
+          'text-[12px] mt-1.5',
+          tone === 'good' ? 'text-[#15663f] dark:text-emerald-400' : 'text-muted-foreground',
+        )}
+      >
+        {label}
+      </div>
+    </div>
+  )
+}
+
+function EditSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3">
+      <div className="text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground/70">
+        {title}
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function EditField({
+  label, value, onChange, type,
+}: {
+  label: string
+  value: string | undefined
+  onChange: (v: string) => void
+  type?: string
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[12px] text-muted-foreground font-normal">{label}</Label>
+      <Input
+        type={type}
+        value={value || ''}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={label}
+        className="h-[38px] text-[13px] rounded-lg"
       />
     </div>
   )
@@ -575,22 +624,23 @@ function SamplesTab({ samples }: { samples: any[] }) {
 
 function ClientDetailSkeleton() {
   return (
-    <div className="space-y-6">
-      <Card>
-        <CardHeader>
-          <Skeleton className="h-8 w-64" />
-          <Skeleton className="h-4 w-48 mt-2" />
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
-              <Skeleton key={i} className="h-12" />
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-      <Skeleton className="h-10 w-full" />
-      <Skeleton className="h-96" />
+    <div className="space-y-4">
+      <div className="bg-card border border-border rounded-xl px-6 py-5">
+        <Skeleton className="h-7 w-64" />
+        <Skeleton className="h-4 w-48 mt-2" />
+        <div className="flex gap-6 mt-5">
+          {[...Array(3)].map((_, i) => (
+            <Skeleton key={i} className="h-4 w-32" />
+          ))}
+        </div>
+      </div>
+      <div className="grid grid-cols-4 gap-3.5">
+        {[...Array(4)].map((_, i) => (
+          <Skeleton key={i} className="h-[68px] rounded-[11px]" />
+        ))}
+      </div>
+      <Skeleton className="h-10 w-72" />
+      <Skeleton className="h-96 rounded-xl" />
     </div>
   )
 }

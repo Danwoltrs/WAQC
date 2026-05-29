@@ -1,31 +1,33 @@
 'use client'
 
-import { useState, useRef } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Switch } from '@/components/ui/switch'
-import { Eye, FileText, ImageIcon, Upload, Loader2, X, Trash2, AlertCircle, Layers, Plus } from 'lucide-react'
-import { CertificatePattern, DEFAULT_CERTIFICATE_PATTERN, generateCertificatePreview } from '@/types/certificate-pattern'
+import {
+  Eye, FileText, ImageIcon, Loader2, X, AlertCircle,
+  Check, Plus, FlaskConical, DollarSign, Trash2,
+} from 'lucide-react'
+import {
+  CertificatePattern,
+  generateCertificatePreview,
+} from '@/types/certificate-pattern'
 import { supabase } from '@/lib/supabase'
+import { cn } from '@/lib/utils'
 
 const FEE_PAYER_OPTIONS = [
   { value: 'exporter', label: 'Exporter' },
   { value: 'importer', label: 'Importer' },
   { value: 'roaster', label: 'Roaster' },
   { value: 'final_buyer', label: 'Final Importer' },
-  { value: 'client_pays', label: 'Client Pays' },
+  { value: 'client_pays', label: 'Client pays' },
 ]
 
 export interface QcConfigData {
@@ -51,6 +53,20 @@ interface QcConfigPanelProps {
   clientId?: string
 }
 
+interface LabRow {
+  id?: string
+  laboratory_id: string
+  laboratory_name: string
+  starting_sequence: number
+  notes?: string | null
+}
+
+interface Laboratory {
+  id: string
+  name: string
+  location?: string | null
+}
+
 export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: QcConfigPanelProps) {
   const [certificatePattern, setCertificatePattern] = useState<CertificatePattern>(data.certificatePattern)
   const [certValidityEnabled, setCertValidityEnabled] = useState(data.certificateValidityEnabled)
@@ -64,9 +80,59 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
   const [feePayer, setFeePayer] = useState(data.feePayer)
   const [billingNotes, setBillingNotes] = useState(data.billingNotes)
   const [logoUrl, setLogoUrl] = useState(data.logoUrl)
+  const [hasOriginPricing, setHasOriginPricing] = useState(false)
   const [uploadingLogo, setUploadingLogo] = useState(false)
   const [logoError, setLogoError] = useState<string | null>(null)
   const [isDragging, setIsDragging] = useState(false)
+
+  // Lab sequences
+  const [labs, setLabs] = useState<Laboratory[]>([])
+  const [labRows, setLabRows] = useState<LabRow[]>([])
+  const [labLoading, setLabLoading] = useState(false)
+  const [savingAll, setSavingAll] = useState(false)
+  const [addingLabId, setAddingLabId] = useState<string | null>(null)
+
+  // Reset all local state from props whenever the modal opens with new data
+  useEffect(() => {
+    if (!open) return
+    setCertificatePattern(data.certificatePattern)
+    setCertValidityEnabled(data.certificateValidityEnabled)
+    setCertValidityMonths(data.certificateValidityMonths)
+    setPricingModel(data.pricingModel)
+    setPricePerSample(data.pricePerSample)
+    setPricePerPoundCents(data.pricePerPoundCents)
+    setCurrency(data.currency)
+    setBillingBasis(data.billingBasis)
+    setPaymentTerms(data.paymentTerms)
+    setFeePayer(data.feePayer)
+    setBillingNotes(data.billingNotes)
+    setLogoUrl(data.logoUrl)
+    setLogoError(null)
+  }, [open, data])
+
+  // Fetch labs + existing lab configs on open
+  useEffect(() => {
+    if (!open || !clientId) return
+    setLabLoading(true)
+    Promise.all([
+      fetch('/api/laboratories').then(r => r.ok ? r.json() : { laboratories: [] }),
+      fetch(`/api/clients/${clientId}/lab-configs`).then(r => r.ok ? r.json() : { configs: [] }),
+    ])
+      .then(([labsRes, configsRes]) => {
+        const allLabs: Laboratory[] = labsRes.laboratories || []
+        setLabs(allLabs)
+        const configs = (configsRes.configs || []).map((c: any) => ({
+          id: c.id,
+          laboratory_id: c.laboratory_id,
+          laboratory_name: c.laboratories?.name || allLabs.find(l => l.id === c.laboratory_id)?.name || 'Lab',
+          starting_sequence: c.starting_sequence,
+          notes: c.notes,
+        }))
+        setLabRows(configs)
+      })
+      .catch(err => console.error('Error loading lab data:', err))
+      .finally(() => setLabLoading(false))
+  }, [open, clientId])
 
   const processLogoFile = async (file: File) => {
     const validTypes = ['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']
@@ -78,19 +144,15 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
       setLogoError('Logo must be smaller than 2MB')
       return
     }
-
     setUploadingLogo(true)
     setLogoError(null)
-
     try {
       const fileExt = file.name.split('.').pop()
       const fileName = `${clientId || 'new'}-${Date.now()}-${Math.random().toString(36).substring(7)}.${fileExt}`
       const { error: uploadError } = await supabase.storage
         .from('client-logos')
         .upload(fileName, file, { cacheControl: '3600', upsert: false })
-
       if (uploadError) throw uploadError
-
       const { data: urlData } = supabase.storage.from('client-logos').getPublicUrl(fileName)
       if (urlData?.publicUrl) {
         if (logoUrl) {
@@ -107,97 +169,166 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
     }
   }
 
-  const handleSave = () => {
-    onSave({
-      certificatePattern,
-      certificateValidityEnabled: certValidityEnabled,
-      certificateValidityMonths: certValidityMonths,
-      pricingModel,
-      pricePerSample,
-      pricePerPoundCents,
-      currency,
-      billingBasis,
-      paymentTerms,
-      feePayer,
-      billingNotes,
-      logoUrl,
-    })
-    onOpenChange(false)
+  const availableLabsToAdd = useMemo(() => {
+    const used = new Set(labRows.map(r => r.laboratory_id))
+    return labs.filter(l => !used.has(l.id))
+  }, [labs, labRows])
+
+  function addLabRow() {
+    if (!addingLabId) return
+    const lab = labs.find(l => l.id === addingLabId)
+    if (!lab) return
+    setLabRows((prev) => [
+      ...prev,
+      {
+        laboratory_id: lab.id,
+        laboratory_name: lab.name,
+        starting_sequence: 1,
+        notes: null,
+      },
+    ])
+    setAddingLabId(null)
   }
+
+  function updateLabRow(idx: number, patch: Partial<LabRow>) {
+    setLabRows((prev) => prev.map((r, i) => (i === idx ? { ...r, ...patch } : r)))
+  }
+
+  function removeLabRow(idx: number) {
+    setLabRows((prev) => prev.filter((_, i) => i !== idx))
+  }
+
+  async function handleSave() {
+    setSavingAll(true)
+    try {
+      // 1) Save client-level QC config through the existing onSave handler
+      onSave({
+        certificatePattern,
+        certificateValidityEnabled: certValidityEnabled,
+        certificateValidityMonths: certValidityMonths,
+        pricingModel,
+        pricePerSample,
+        pricePerPoundCents,
+        currency,
+        billingBasis,
+        paymentTerms,
+        feePayer,
+        billingNotes,
+        logoUrl,
+      })
+
+      // 2) Persist lab sequence rows. The endpoint upserts on (client_id, laboratory_id).
+      if (clientId) {
+        await Promise.all(
+          labRows.map((row) =>
+            fetch(`/api/clients/${clientId}/lab-configs`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                laboratory_id: row.laboratory_id,
+                starting_sequence: row.starting_sequence,
+                notes: row.notes ?? null,
+              }),
+            }),
+          ),
+        )
+      }
+    } catch (err) {
+      console.error('Error saving QC configuration:', err)
+    } finally {
+      setSavingAll(false)
+      onOpenChange(false)
+    }
+  }
+
+  const isComplimentary = pricingModel === 'complimentary'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[680px] max-h-[85vh] overflow-y-auto p-5">
-        <DialogHeader className="pb-3">
-          <DialogTitle className="text-base">QC Services Configuration</DialogTitle>
-          <DialogDescription className="text-xs">
-            Certificate pattern, pricing, and billing settings
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent
+        // The trailing selector hides shadcn's default absolute-positioned close
+        // button so we can render our own inline with the title (matches mockup).
+        className="sm:max-w-[920px] max-h-[90vh] overflow-hidden p-0 rounded-2xl gap-0 border-border [&>button[type='button'].absolute]:hidden"
+      >
+        {/* Header */}
+        <div className="flex items-start justify-between gap-4 px-7 py-4 border-b border-border">
+          <div className="min-w-0">
+            <h2 className="text-[18px] font-semibold tracking-[-0.01em] leading-tight">
+              QC Services Configuration
+            </h2>
+            <p className="text-[13px] text-muted-foreground mt-1">
+              Certificate pattern, pricing &amp; billing settings
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => onOpenChange(false)}
+            aria-label="Close"
+            className="-mr-1 -mt-0.5 h-8 w-8 rounded-md inline-flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
 
-        <div className="grid grid-cols-[1fr_1px_280px] gap-4">
-          {/* Left: Pricing & Billing */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Pricing & Billing</h4>
+        {/* Body */}
+        <div className="overflow-y-auto grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+          {/* LEFT — Pricing & billing */}
+          <div className="px-7 py-6 space-y-4">
+            <SectionLabel icon={<DollarSign className="h-3 w-3" />}>Pricing &amp; billing</SectionLabel>
 
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Pricing Model</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldShell label="Pricing model">
                 <Select value={pricingModel} onValueChange={setPricingModel}>
-                  <SelectTrigger className="h-8 text-xs rounded-none">
+                  <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="per_pound">USD c/lb</SelectItem>
-                    <SelectItem value="per_sample">Per Sample</SelectItem>
+                    <SelectItem value="per_sample">Per sample</SelectItem>
+                    <SelectItem value="per_pound">Per pound (¢/lb)</SelectItem>
+                    <SelectItem value="flat_fee">Flat fee</SelectItem>
                     <SelectItem value="complimentary">Complimentary</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Billing Basis</Label>
+              </FieldShell>
+              <FieldShell label="Billing basis">
                 <Select value={billingBasis} onValueChange={setBillingBasis}>
-                  <SelectTrigger className="h-8 text-xs rounded-none">
+                  <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="approved_only">Approved Only</SelectItem>
-                    <SelectItem value="approved_and_rejected">Approved + Rejected</SelectItem>
+                    <SelectItem value="approved_only">Approved only</SelectItem>
+                    <SelectItem value="approved_and_rejected">All samples</SelectItem>
                   </SelectContent>
                 </Select>
-              </div>
+              </FieldShell>
             </div>
 
-            {pricingModel !== 'complimentary' && (
-              <div className="grid grid-cols-3 gap-2">
-                {pricingModel === 'per_pound' && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Price (¢/lb)</Label>
+            {!isComplimentary && (
+              <div className="grid grid-cols-2 gap-3">
+                {pricingModel === 'per_pound' ? (
+                  <FieldShell label="Price (¢/lb)">
                     <Input
                       type="number" step="0.01" min="0.25"
-                      value={pricePerPoundCents || ''}
+                      value={pricePerPoundCents ?? ''}
                       onChange={(e) => setPricePerPoundCents(e.target.value ? Number(e.target.value) : undefined)}
                       placeholder="2.50"
-                      className="h-8 text-xs rounded-none"
+                      className="h-[38px] text-[13px] rounded-lg"
                     />
-                  </div>
-                )}
-                {pricingModel === 'per_sample' && (
-                  <div className="space-y-1">
-                    <Label className="text-xs">Price/Sample</Label>
+                  </FieldShell>
+                ) : (
+                  <FieldShell label="Price / sample">
                     <Input
                       type="number" step="0.01" min="0"
-                      value={pricePerSample || ''}
+                      value={pricePerSample ?? ''}
                       onChange={(e) => setPricePerSample(e.target.value ? Number(e.target.value) : undefined)}
                       placeholder="50.00"
-                      className="h-8 text-xs rounded-none"
+                      className="h-[38px] text-[13px] rounded-lg"
                     />
-                  </div>
+                  </FieldShell>
                 )}
-                <div className="space-y-1">
-                  <Label className="text-xs">Currency</Label>
+                <FieldShell label="Currency">
                   <Select value={currency} onValueChange={setCurrency}>
-                    <SelectTrigger className="h-8 text-xs rounded-none">
+                    <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -207,70 +338,54 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
                       <SelectItem value="GBP">GBP</SelectItem>
                     </SelectContent>
                   </Select>
-                </div>
-                <div className="space-y-1">
-                  <Label className="text-xs">Payment Terms</Label>
-                  <Input
-                    value={paymentTerms}
-                    onChange={(e) => setPaymentTerms(e.target.value)}
-                    placeholder="Net 30"
-                    className="h-8 text-xs rounded-none"
-                  />
-                </div>
+                </FieldShell>
               </div>
             )}
 
-            <div className="space-y-1">
-              <Label className="text-xs">Who Pays the Fee</Label>
-              <Select value={feePayer} onValueChange={setFeePayer}>
-                <SelectTrigger className="h-8 text-xs rounded-none">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {FEE_PAYER_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="grid grid-cols-2 gap-3">
+              <FieldShell label="Payment terms">
+                <Input
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  placeholder="Net 30"
+                  className="h-[38px] text-[13px] rounded-lg"
+                />
+              </FieldShell>
+              <FieldShell label="Who pays the fee">
+                <Select value={feePayer} onValueChange={setFeePayer}>
+                  <SelectTrigger className="h-[38px] text-[13px] rounded-lg">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {FEE_PAYER_OPTIONS.map((opt) => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </FieldShell>
             </div>
 
-            <div className="space-y-1">
-              <Label className="text-xs">Billing Notes</Label>
+            <FieldShell label="Billing notes">
               <Textarea
                 value={billingNotes}
                 onChange={(e) => setBillingNotes(e.target.value)}
                 placeholder="Special billing instructions"
                 rows={2}
-                className="text-xs rounded-none resize-none"
+                className="text-[13px] rounded-lg resize-none min-h-[74px]"
               />
-            </div>
+            </FieldShell>
 
-            {/* Multi-Origin Pricing */}
-            {pricingModel !== 'complimentary' && (
-              <div className="pt-2 border-t space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                    <Layers className="h-3 w-3" />
-                    Multi-Origin Pricing
-                  </div>
-                  <Switch
-                    checked={false}
-                    disabled
-                    className="scale-75"
-                  />
-                </div>
-                <p className="text-[10px] text-muted-foreground">
-                  Configure origin-specific pricing tiers (available in full edit mode)
-                </p>
-              </div>
-            )}
+            <SwitchRow
+              title="Multi-origin pricing"
+              description="Configure origin-specific pricing tiers"
+              checked={hasOriginPricing}
+              onChange={setHasOriginPricing}
+              accent="green"
+            />
 
-            {/* Company Logo */}
-            <div className="pt-2 border-t space-y-2">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                <ImageIcon className="h-3 w-3" />
-                Company Logo
-              </div>
+            <div className="pt-2">
+              <SectionLabel icon={<ImageIcon className="h-3 w-3" />} className="mt-2">Company logo</SectionLabel>
+
               <div
                 onDragOver={(e) => { e.preventDefault(); setIsDragging(true) }}
                 onDragLeave={(e) => { e.preventDefault(); setIsDragging(false) }}
@@ -281,10 +396,9 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
                 }}
               >
                 {logoUrl ? (
-                  <div className="relative group">
-                    <div className={`w-full h-20 border bg-muted/30 flex items-center justify-center overflow-hidden ${isDragging ? 'border-primary border-2' : ''}`}>
-                      <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain p-1" />
-                    </div>
+                  <div className="relative group rounded-[10px] border border-border bg-muted/30 h-[88px] flex items-center justify-center overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={logoUrl} alt="Logo" className="max-w-full max-h-full object-contain p-2" />
                     <button
                       type="button"
                       onClick={async () => {
@@ -294,210 +408,414 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
                           const filePath = logoUrl.split('/client-logos/').pop()
                           if (filePath) await supabase.storage.from('client-logos').remove([filePath])
                           setLogoUrl(null)
-                        } catch (err) { console.error(err) }
-                        finally { setUploadingLogo(false) }
+                        } catch (err) {
+                          console.error(err)
+                        } finally {
+                          setUploadingLogo(false)
+                        }
                       }}
                       disabled={uploadingLogo}
-                      className="absolute -top-1.5 -right-1.5 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                      className="absolute top-2 right-2 bg-destructive text-destructive-foreground rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
                     >
                       <X className="h-3 w-3" />
                     </button>
                   </div>
                 ) : (
-                  <div
-                    className={`w-full h-20 border-2 border-dashed flex flex-col items-center justify-center gap-0.5 cursor-pointer ${isDragging ? 'border-primary bg-primary/10' : 'border-muted-foreground/25 hover:border-muted-foreground/50'}`}
+                  <button
+                    type="button"
                     onClick={() => document.getElementById('qc-logo-upload')?.click()}
+                    className={cn(
+                      'w-full rounded-[10px] border border-dashed flex flex-col items-center justify-center gap-1 px-4 py-5 text-[12.5px] text-muted-foreground/70 hover:text-foreground hover:bg-muted/40 transition-colors',
+                      isDragging ? 'border-[#15663f] bg-[#15663f]/5 text-[#15663f]' : 'border-border',
+                    )}
                   >
                     {uploadingLogo ? (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground/50" />
+                      <Loader2 className="h-5 w-5 animate-spin" />
                     ) : (
                       <>
-                        <ImageIcon className="h-4 w-4 text-muted-foreground/40" />
-                        <span className="text-[10px] text-muted-foreground/60">Drop image here</span>
+                        <ImageIcon className="h-5 w-5 text-muted-foreground/40" />
+                        <span>
+                          Drop image here, or{' '}
+                          <span className="text-[#15663f] font-medium">browse</span>
+                        </span>
+                        <span className="text-[11px] text-muted-foreground/60">
+                          PNG recommended · max 2MB
+                        </span>
                       </>
                     )}
-                  </div>
+                  </button>
+                )}
+                <input
+                  id="qc-logo-upload" type="file"
+                  accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                  className="hidden"
+                  onChange={async (e) => { const f = e.target.files?.[0]; if (f) await processLogoFile(f) }}
+                />
+                {logoError && (
+                  <p className="text-[11px] text-destructive flex items-center gap-1 mt-2">
+                    <AlertCircle className="h-3 w-3" />
+                    {logoError}
+                  </p>
                 )}
               </div>
-              <Button
-                type="button" variant="outline" size="sm"
-                disabled={uploadingLogo}
-                onClick={() => document.getElementById('qc-logo-upload')?.click()}
-                className="w-full h-6 text-[10px] rounded-none"
-              >
-                {uploadingLogo ? <Loader2 className="h-3 w-3 animate-spin" /> : <><Upload className="h-3 w-3 mr-1" />{logoUrl ? 'Change' : 'Upload'}</>}
-              </Button>
-              <input
-                id="qc-logo-upload" type="file"
-                accept="image/png,image/jpeg,image/webp,image/svg+xml"
-                className="hidden"
-                onChange={async (e) => { const f = e.target.files?.[0]; if (f) await processLogoFile(f) }}
-              />
-              {logoError && <p className="text-[10px] text-destructive flex items-center gap-1"><AlertCircle className="h-3 w-3" />{logoError}</p>}
-              <p className="text-[10px] text-muted-foreground">PNG recommended, max 2MB</p>
             </div>
           </div>
 
-          {/* Vertical Separator */}
-          <div className="bg-border" />
+          {/* RIGHT — Certificate pattern */}
+          <div className="px-7 py-6 space-y-4">
+            <SectionLabel icon={<FileText className="h-3 w-3" />}>Certificate pattern</SectionLabel>
 
-          {/* Right: Certificate Pattern */}
-          <div className="space-y-3">
-            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Certificate</h4>
-
-            {/* Validity */}
-            <div className="space-y-2 p-2 border bg-muted/30">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="qc_cert_validity"
-                  checked={certValidityEnabled}
-                  onCheckedChange={(c) => setCertValidityEnabled(c as boolean)}
-                />
-                <Label htmlFor="qc_cert_validity" className="text-xs font-normal cursor-pointer">
-                  Certificate Validity Period
-                </Label>
-              </div>
-              {certValidityEnabled && (
-                <div className="pl-5 flex items-center gap-2">
-                  <Input
-                    type="number" min={1} max={24}
-                    value={certValidityMonths}
-                    onChange={(e) => setCertValidityMonths(parseInt(e.target.value) || 6)}
-                    className="w-16 h-7 text-xs rounded-none"
-                  />
-                  <span className="text-xs text-muted-foreground">months</span>
-                </div>
-              )}
-            </div>
-
-            {/* Pattern Config */}
-            <div className="flex items-center gap-1.5 text-xs font-semibold">
-              <FileText className="h-3 w-3" />
-              Certificate Pattern
-            </div>
-
-            <div className="space-y-2 p-2 border bg-muted/30">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="qc_quality_code"
-                  checked={certificatePattern.has_quality_code}
-                  onCheckedChange={(c) => setCertificatePattern({
-                    ...certificatePattern,
-                    has_quality_code: c as boolean,
-                    origin_position: (c as boolean) && certificatePattern.has_origin_code && certificatePattern.quality_position === certificatePattern.origin_position
-                      ? (certificatePattern.quality_position === 'prefix' ? 'suffix' : 'prefix')
-                      : certificatePattern.origin_position
-                  })}
-                />
-                <Label htmlFor="qc_quality_code" className="text-xs font-normal cursor-pointer">Include Quality Code</Label>
-              </div>
-              {certificatePattern.has_quality_code && (
-                <div className="pl-5 flex gap-1">
-                  {(['prefix', 'suffix'] as const).map(pos => (
-                    <Button key={pos} type="button" size="sm"
-                      variant={certificatePattern.quality_position === pos ? 'default' : 'outline'}
-                      className="h-6 text-[10px] px-2 rounded-none"
-                      onClick={() => setCertificatePattern({
-                        ...certificatePattern, quality_position: pos,
-                        origin_position: certificatePattern.has_origin_code ? (pos === 'prefix' ? 'suffix' : 'prefix') : certificatePattern.origin_position
-                      })}
-                    >{pos}</Button>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-2 p-2 border bg-muted/30">
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="qc_origin_code"
-                  checked={certificatePattern.has_origin_code}
-                  onCheckedChange={(c) => setCertificatePattern({
-                    ...certificatePattern,
-                    has_origin_code: c as boolean,
-                    quality_position: (c as boolean) && certificatePattern.has_quality_code && certificatePattern.origin_position === certificatePattern.quality_position
-                      ? (certificatePattern.origin_position === 'prefix' ? 'suffix' : 'prefix')
-                      : certificatePattern.quality_position
-                  })}
-                />
-                <Label htmlFor="qc_origin_code" className="text-xs font-normal cursor-pointer">Include Origin Code</Label>
-              </div>
-              {certificatePattern.has_origin_code && (
-                <div className="pl-5 flex gap-1">
-                  {(['prefix', 'suffix'] as const).map(pos => (
-                    <Button key={pos} type="button" size="sm"
-                      variant={certificatePattern.origin_position === pos ? 'default' : 'outline'}
-                      className="h-6 text-[10px] px-2 rounded-none"
-                      onClick={() => setCertificatePattern({
-                        ...certificatePattern, origin_position: pos,
-                        quality_position: certificatePattern.has_quality_code ? (pos === 'prefix' ? 'suffix' : 'prefix') : certificatePattern.quality_position
-                      })}
-                    >{pos}</Button>
-                  ))}
-                </div>
-              )}
-            </div>
+            <p className="text-[12px] text-muted-foreground -mt-2">
+              Include in the certificate number:
+            </p>
 
             <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1">
-                <Label className="text-xs">Starting Number</Label>
+              <ToggleChip
+                title="Quality code"
+                hint="e.g. AD"
+                active={certificatePattern.has_quality_code}
+                onToggle={(next) =>
+                  setCertificatePattern({
+                    ...certificatePattern,
+                    has_quality_code: next,
+                    quality_position: next ? 'prefix' : certificatePattern.quality_position,
+                    origin_position: next && certificatePattern.has_origin_code
+                      ? 'suffix'
+                      : certificatePattern.origin_position,
+                  })
+                }
+              />
+              <ToggleChip
+                title="Origin code"
+                hint="e.g. BR"
+                active={certificatePattern.has_origin_code}
+                onToggle={(next) =>
+                  setCertificatePattern({
+                    ...certificatePattern,
+                    has_origin_code: next,
+                    origin_position: next ? 'suffix' : certificatePattern.origin_position,
+                    quality_position: next && certificatePattern.has_quality_code
+                      ? 'prefix'
+                      : certificatePattern.quality_position,
+                  })
+                }
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              <FieldShell label="Starting number">
                 <Input
                   type="number" min="1"
                   value={certificatePattern.starting_sequence}
-                  onChange={(e) => setCertificatePattern({ ...certificatePattern, starting_sequence: parseInt(e.target.value) || 1 })}
-                  className="h-7 text-xs rounded-none"
+                  onChange={(e) => setCertificatePattern({
+                    ...certificatePattern,
+                    starting_sequence: parseInt(e.target.value) || 1,
+                  })}
+                  className="h-[38px] text-[13px] rounded-lg"
                 />
-              </div>
-              <div className="space-y-1">
-                <Label className="text-xs">Padding (Digits)</Label>
+              </FieldShell>
+              <FieldShell label="Padding (digits)">
                 <Input
-                  type="number" min="3" max="10"
+                  type="number" min="1" max="10"
                   value={certificatePattern.sequence_padding}
-                  onChange={(e) => setCertificatePattern({ ...certificatePattern, sequence_padding: parseInt(e.target.value) || 6 })}
-                  className="h-7 text-xs rounded-none"
+                  onChange={(e) => setCertificatePattern({
+                    ...certificatePattern,
+                    sequence_padding: Math.max(1, Math.min(10, parseInt(e.target.value) || 6)),
+                  })}
+                  className="h-[38px] text-[13px] rounded-lg"
                 />
-              </div>
+              </FieldShell>
             </div>
 
-            {/* Preview */}
-            <div className="space-y-1 pt-2 border-t">
-              <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            <div>
+              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80 mb-1.5">
                 <Eye className="h-3 w-3" />
-                Preview
+                Live preview
               </div>
-              <div className="p-2 bg-primary/5 border font-mono text-sm">
-                {generateCertificatePreview(
-                  certificatePattern,
-                  certificatePattern.has_quality_code ? 'AD' : undefined,
-                  certificatePattern.has_origin_code ? 'BR' : undefined
-                )}
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                Example with quality &quot;AD&quot; and origin &quot;BR&quot;
-              </p>
+              <CertPreview pattern={certificatePattern} />
             </div>
 
-            {/* Lab-Specific Sequences */}
-            <div className="space-y-1 pt-2 border-t">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                Lab Sequences
-              </div>
-              <p className="text-[10px] text-muted-foreground">
-                Lab-specific starting sequences (available in full edit mode)
+            <SwitchRow
+              title="Certificate validity period"
+              description="Print an expiry window on issued certificates"
+              checked={certValidityEnabled}
+              onChange={setCertValidityEnabled}
+              accent="green"
+            >
+              {certValidityEnabled && (
+                <div className="flex items-center gap-2 pt-2">
+                  <Input
+                    type="number" min={1} max={36}
+                    value={certValidityMonths}
+                    onChange={(e) => setCertValidityMonths(parseInt(e.target.value) || 6)}
+                    className="w-20 h-[32px] text-[13px] rounded-lg"
+                  />
+                  <span className="text-[12px] text-muted-foreground">months</span>
+                </div>
+              )}
+            </SwitchRow>
+
+            <div className="pt-2">
+              <SectionLabel icon={<FlaskConical className="h-3 w-3" />} className="mt-2">Lab sequences</SectionLabel>
+              <p className="text-[12px] text-muted-foreground mb-1">
+                Per-lab starting numbers. Overrides the global start for that lab.
               </p>
+
+              {labLoading ? (
+                <div className="py-4 text-[12px] text-muted-foreground flex items-center gap-2">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Loading labs…
+                </div>
+              ) : (
+                <div className="divide-y divide-border">
+                  {labRows.map((row, idx) => (
+                    <div key={row.laboratory_id} className="flex items-center gap-3 py-2.5">
+                      <span className="flex-1 text-[13px] font-medium">{row.laboratory_name}</span>
+                      <Input
+                        value={String(row.starting_sequence).padStart(certificatePattern.sequence_padding, '0')}
+                        onChange={(e) => {
+                          const n = parseInt(e.target.value.replace(/\D/g, '') || '0', 10)
+                          updateLabRow(idx, { starting_sequence: Number.isFinite(n) ? n : 0 })
+                        }}
+                        className="w-[96px] h-[32px] text-[13px] font-mono text-right rounded-lg"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeLabRow(idx)}
+                        className="h-7 w-7 rounded-md inline-flex items-center justify-center text-muted-foreground/70 hover:text-destructive hover:bg-destructive/10"
+                        title="Remove lab sequence"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {availableLabsToAdd.length > 0 && (
+                <div className="flex items-center gap-2 mt-3">
+                  <Select value={addingLabId || ''} onValueChange={(v) => setAddingLabId(v)}>
+                    <SelectTrigger className="h-[32px] text-[13px] rounded-lg flex-1">
+                      <SelectValue placeholder="Select a lab…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableLabsToAdd.map((lab) => (
+                        <SelectItem key={lab.id} value={lab.id}>{lab.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={!addingLabId}
+                    onClick={addLabRow}
+                    className={cn(
+                      'h-[32px] rounded-lg gap-1 text-[12.5px] transition-colors',
+                      'text-[#15663f] border-[#15663f]/30 hover:bg-[#15663f]/5',
+                      'dark:text-emerald-300 dark:border-emerald-500/40 dark:hover:bg-emerald-500/10 dark:hover:text-emerald-200',
+                    )}
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Add lab sequence
+                  </Button>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        <DialogFooter className="pt-3 border-t">
-          <Button type="button" variant="outline" size="sm" onClick={() => onOpenChange(false)} className="rounded-none">
+        {/* Footer */}
+        <div className="flex items-center justify-end gap-2.5 px-7 py-4 border-t border-border bg-muted/30">
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={savingAll}
+            className="h-9 rounded-[9px] text-[13px] font-medium"
+          >
             Cancel
           </Button>
-          <Button type="button" size="sm" onClick={handleSave} className="rounded-none">
-            Save QC Configuration
+          <Button
+            type="button"
+            onClick={handleSave}
+            disabled={savingAll}
+            className="h-9 rounded-[9px] text-[13px] font-medium"
+          >
+            {savingAll ? (
+              <>
+                <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" />
+                Saving…
+              </>
+            ) : (
+              'Save configuration'
+            )}
           </Button>
-        </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function SectionLabel({
+  icon, children, className,
+}: {
+  icon?: React.ReactNode
+  children: React.ReactNode
+  className?: string
+}) {
+  return (
+    <p
+      className={cn(
+        'flex items-center gap-1.5 text-[11px] font-semibold tracking-[0.06em] uppercase text-muted-foreground/70 mb-3',
+        className,
+      )}
+    >
+      {icon}
+      {children}
+    </p>
+  )
+}
+
+function FieldShell({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1.5">
+      <Label className="text-[12px] text-muted-foreground font-normal">{label}</Label>
+      {children}
+    </div>
+  )
+}
+
+function ToggleChip({
+  title, hint, active, onToggle,
+}: {
+  title: string
+  hint: string
+  active: boolean
+  onToggle: (next: boolean) => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={() => onToggle(!active)}
+      className={cn(
+        'rounded-[9px] border px-3 py-2.5 text-left transition-colors',
+        active
+          ? 'border-[#15663f] bg-[#15663f]/5 dark:bg-emerald-950/30'
+          : 'border-border bg-card hover:bg-muted/40',
+      )}
+    >
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[12.5px] font-medium">{title}</span>
+        <span
+          className={cn(
+            'h-4 w-4 rounded-[5px] border flex items-center justify-center transition-colors',
+            active
+              ? 'bg-[#15663f] border-[#15663f] text-white'
+              : 'border-border bg-card',
+          )}
+        >
+          {active && <Check className="h-3 w-3" strokeWidth={3} />}
+        </span>
+      </div>
+      <div className="text-[11px] text-muted-foreground/70 mt-0.5">{hint}</div>
+    </button>
+  )
+}
+
+function SwitchRow({
+  title, description, checked, onChange, accent, children,
+}: {
+  title: string
+  description?: string
+  checked: boolean
+  onChange: (next: boolean) => void
+  accent?: 'green'
+  children?: React.ReactNode
+}) {
+  return (
+    <div className="border-t border-border pt-3">
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <div className="text-[13px] font-medium">{title}</div>
+          {description && (
+            <div className="text-[11.5px] text-muted-foreground mt-0.5">{description}</div>
+          )}
+        </div>
+        <Switch
+          checked={checked}
+          onCheckedChange={onChange}
+          className={cn(
+            'h-5 w-9',
+            accent === 'green' && 'data-[state=checked]:bg-[#15663f]',
+          )}
+        />
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function CertPreview({ pattern }: { pattern: CertificatePattern }) {
+  const preview = useMemo(
+    () => generateCertificatePreview(
+      pattern,
+      pattern.has_quality_code ? 'AD' : undefined,
+      pattern.has_origin_code ? 'BR' : undefined,
+    ),
+    [pattern],
+  )
+
+  // Color-code: quality amber, origin green, number ink, separators muted.
+  const segments = useMemo(() => {
+    const sep = pattern.separator
+    // Split off the year portion ("/YY" or "/YYYY")
+    const slashIdx = preview.lastIndexOf('/')
+    const main = slashIdx >= 0 ? preview.slice(0, slashIdx) : preview
+    const year = slashIdx >= 0 ? preview.slice(slashIdx) : ''
+    const parts = main.split(sep)
+
+    const numIdx = parts.findIndex(p => /^\d+$/.test(p))
+    return parts.map((part, i) => {
+      let kind: 'q' | 'o' | 'n' | 'sep' = 'n'
+      if (i === numIdx) kind = 'n'
+      else if (pattern.has_quality_code && i < numIdx && pattern.quality_position === 'prefix') kind = 'q'
+      else if (pattern.has_origin_code && i > numIdx && pattern.origin_position === 'suffix') kind = 'o'
+      else if (pattern.has_origin_code && i < numIdx && pattern.origin_position === 'prefix') kind = 'o'
+      else if (pattern.has_quality_code && i > numIdx && pattern.quality_position === 'suffix') kind = 'q'
+      return { kind, text: part }
+    }).reduce<{ kind: 'q' | 'o' | 'n' | 'sep' | 'year'; text: string }[]>((acc, segment, i) => {
+      if (i > 0) acc.push({ kind: 'sep', text: sep })
+      acc.push(segment)
+      return acc
+    }, []).concat(year ? [{ kind: 'year', text: year }] : [])
+  }, [preview, pattern])
+
+  const caption = useMemo(() => {
+    const parts: string[] = []
+    if (pattern.has_quality_code) parts.push('quality "AD"')
+    if (pattern.has_origin_code) parts.push('origin "BR"')
+    return parts.length > 0 ? `Example with ${parts.join(' and ')}` : 'Sequential number with year suffix'
+  }, [pattern])
+
+  return (
+    <div className="rounded-[10px] border border-border bg-muted/30 px-4 py-4 text-center">
+      <div className="font-mono text-[21px] font-semibold tracking-[0.04em]">
+        {segments.map((s, i) => (
+          <span
+            key={i}
+            className={cn(
+              s.kind === 'q' && 'text-[#b06a14] dark:text-amber-300',
+              s.kind === 'o' && 'text-[#15663f] dark:text-emerald-400',
+              s.kind === 'n' && 'text-foreground',
+              (s.kind === 'sep' || s.kind === 'year') && 'text-muted-foreground/60',
+            )}
+          >
+            {s.text}
+          </span>
+        ))}
+      </div>
+      <div className="text-[11.5px] text-muted-foreground/70 mt-2">{caption}</div>
+    </div>
   )
 }

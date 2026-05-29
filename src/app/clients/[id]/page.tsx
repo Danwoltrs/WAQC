@@ -3,7 +3,6 @@
 import { use } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { ClientDetailView } from '@/components/clients/client-detail-view'
-import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import Link from 'next/link'
 
@@ -16,16 +15,14 @@ export default function ClientDetailPage({
 
   return (
     <MainLayout>
-      <div className="p-6 space-y-6">
-        {/* Back Button */}
-        <Link href="/clients">
-          <Button variant="ghost" size="sm">
-            <ArrowLeft className="h-4 w-4 mr-2" />
-            Back to Clients
-          </Button>
+      <div className="max-w-[1080px] px-6 py-8">
+        <Link
+          href="/clients"
+          className="inline-flex items-center gap-2 text-[13px] text-muted-foreground hover:text-foreground transition-colors mb-5"
+        >
+          <ArrowLeft className="h-[15px] w-[15px]" />
+          Back to clients
         </Link>
-
-        {/* Client Detail View */}
         <ClientDetailView clientId={id} />
       </div>
     </MainLayout>

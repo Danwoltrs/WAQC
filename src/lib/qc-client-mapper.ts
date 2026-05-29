@@ -92,6 +92,22 @@ type QcSettings = {
 }
 
 /**
+ * Slugify a fantasy/company name into something URL-safe. Stable + deterministic
+ * so we can round-trip /clients/{slug} URLs without persisting a slug column on
+ * the shared companies table. Diacritics are stripped, non-alphanumerics collapse
+ * to single dashes.
+ */
+export function slugifyName(value: string | null | undefined): string {
+  if (!value) return ''
+  return value
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+}
+
+/**
  * Map a row returned by `QC_CLIENT_SELECT` into the flat "client" shape that
  * existing UI / lib code consumes. Returns null for invalid input.
  */
@@ -105,6 +121,7 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
   return {
     id: row.id,
     company_id: row.id,
+    slug: slugifyName(row.fantasy_name) || slugifyName(row.name) || row.id,
     name: row.name,
     company: row.fantasy_name ?? row.name,
     fantasy_name: row.fantasy_name,
@@ -149,6 +166,47 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
     tax_region: settings.tax_region ?? null,
     report_branding_preference: settings.report_branding_preference ?? 'co_branded',
   }
+}
+
+/**
+ * Resolve a slug to its underlying companies UUID. Slugs are computed
+ * client-side from fantasy_name / name, so we approximate the lookup with an
+ * `ilike` pattern then slugify each candidate to pick the exact match. Returns
+ * null when nothing matches; when multiple match, QC clients win.
+ *
+ * Cost: one indexed ilike + an in-memory filter over <50 rows in practice.
+ */
+export async function resolveCompanyIdFromSlug(
+  supabase: SupabaseClient,
+  slug: string,
+): Promise<string | null> {
+  const trimmed = slug.trim().toLowerCase()
+  if (!trimmed) return null
+
+  // Build a Postgres pattern that loosely matches the slug's letter run.
+  // 'cape-horn' becomes '%cape%horn%' which catches 'Cape Horn' and 'Cape Horn Coffees'.
+  const pattern = '%' + trimmed.replace(/-+/g, '%') + '%'
+
+  const { data, error } = await (supabase as any)
+    .from('companies')
+    .select('id, name, fantasy_name, is_qc_client')
+    .or(`fantasy_name.ilike.${pattern},name.ilike.${pattern}`)
+    .limit(25)
+
+  if (error || !data || data.length === 0) return null
+
+  const exact = data.filter((row: any) => {
+    const fs = slugifyName(row.fantasy_name)
+    const ns = slugifyName(row.name)
+    return fs === trimmed || ns === trimmed
+  })
+
+  if (exact.length === 0) return null
+  if (exact.length === 1) return exact[0].id
+
+  // Multiple exact slug matches — prefer the QC client.
+  const qc = exact.find((row: any) => row.is_qc_client)
+  return (qc ?? exact[0]).id
 }
 
 /**
