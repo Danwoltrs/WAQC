@@ -234,20 +234,21 @@ export default function SamplesPage() {
   const [origins, setOrigins] = useState<string[]>([])
   const [qualities, setQualities] = useState<string[]>([])
 
-  // Column visibility. v2 collapses the old `certNr` + `stage` columns into
-  // `reference` and a merged `status` so the table no longer wraps long names;
-  // the localStorage key is bumped so old stored layouts get the new defaults.
+  // Column visibility. v3 swaps defaults: Seller is now default-on (was off),
+  // Shipper + End client are default-off (was on) per the QC tracker spec. The
+  // localStorage key is bumped so existing layouts pick up the new defaults
+  // once.
   const defaultColumnVisibility: Record<string, boolean> = {
     reference: true,
     origin: false,
     type: true,
-    quality: true,
-    seller: false,
-    shipper: true,
     wolthers: true,
+    quality: true,
+    seller: true,
+    shipper: false,
     importer: true,
     roaster: false,
-    endClient: true,
+    endClient: false,
     status: true,
     storage: false,
     created: true,
@@ -255,7 +256,7 @@ export default function SamplesPage() {
   const [columnVisibility, setColumnVisibility] = useState<Record<string, boolean>>(() => {
     if (typeof window !== 'undefined') {
       try {
-        const stored = localStorage.getItem('samplesTableColumns_v2')
+        const stored = localStorage.getItem('samplesTableColumns_v3')
         if (stored) return { ...defaultColumnVisibility, ...JSON.parse(stored) }
       } catch {}
     }
@@ -265,23 +266,24 @@ export default function SamplesPage() {
   const toggleColumn = (col: string) => {
     setColumnVisibility(prev => {
       const next = { ...prev, [col]: !prev[col] }
-      localStorage.setItem('samplesTableColumns_v2', JSON.stringify(next))
+      localStorage.setItem('samplesTableColumns_v3', JSON.stringify(next))
       return next
     })
   }
 
+  // "Wolthers" became "W&A REF" — same column key, just the chip label changed.
   const columnLabels: Record<string, string> = {
     reference: 'Reference',
-    origin: 'Origin',
+    wolthers: 'W&A REF',
     type: 'Type',
     quality: 'Quality',
     seller: 'Seller',
     shipper: 'Shipper',
-    wolthers: 'Wolthers',
     importer: 'Importer',
     roaster: 'Roaster',
     endClient: 'End Client',
     status: 'Status',
+    origin: 'Origin',
     storage: 'Storage',
     created: 'Created',
   }
@@ -1028,20 +1030,11 @@ export default function SamplesPage() {
     })
   }
 
-  // Merged status pill + stage caption. Status is the coarse state shown as a
-  // colored pill (Received / In progress / Approved / Rejected / Under review);
-  // the stage sits under it as a muted caption (Analysis, Roasting, …) so they
-  // share one column.
-  const STAGE_LABELS: Record<string, string> = {
-    received: 'Received',
-    analysis: 'Analysis',
-    roasting: 'Roasting',
-    review: 'Review',
-    certified: 'Certified',
-    rejected: 'Rejected',
-  }
-
-  const renderStatusCell = (status: string, stage?: string) => {
+  // Status as a single colored pill (Received / In progress / Approved /
+  // Rejected / Under review). The stage caption ("Certified", "Analysis", …)
+  // was removed at user request — Approved already implies Certified, so the
+  // extra line was noise.
+  const renderStatusCell = (status: string) => {
     const statusConfig: Record<string, { icon: any; label: string; className: string }> = {
       received: { icon: Clock, label: 'Received', className: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300' },
       in_progress: { icon: AlertCircle, label: 'In progress', className: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' },
@@ -1051,17 +1044,11 @@ export default function SamplesPage() {
     }
     const config = statusConfig[status] || { icon: AlertCircle, label: status, className: 'bg-muted text-muted-foreground' }
     const Icon = config.icon
-    const stageLabel = stage ? (STAGE_LABELS[stage] || stage) : null
     return (
-      <div className="flex flex-col items-start gap-0.5 min-w-0">
-        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${config.className}`}>
-          <Icon className="h-3 w-3" />
-          {config.label}
-        </span>
-        {stageLabel && stageLabel !== config.label && (
-          <span className="text-[11px] text-muted-foreground leading-tight">{stageLabel}</span>
-        )}
-      </div>
+      <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${config.className}`}>
+        <Icon className="h-3 w-3" />
+        {config.label}
+      </span>
     )
   }
 
@@ -1364,14 +1351,15 @@ export default function SamplesPage() {
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
-                      <th className="text-left py-2.5 px-3" style={{ width: 40 }}>
+                      <th className="text-left py-2.5 px-3" style={{ width: 32 }}>
                         <Checkbox
+                          className="h-3.5 w-3.5 rounded-[3px]"
                           checked={selectedSamples.size === samples.length && samples.length > 0}
                           onCheckedChange={handleSelectAll}
                         />
                       </th>
                       {selectedSamples.size > 0 && (
-                        <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 44 }}>
+                        <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 40 }}>
                           <div className="flex items-center gap-1">
                             <QrCode className="h-3 w-3" />
                             QR
@@ -1379,19 +1367,19 @@ export default function SamplesPage() {
                         </th>
                       )}
                       {columnVisibility.reference && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 180 }}>Reference</th>}
-                      {columnVisibility.origin && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 100 }}>Origin</th>}
-                      {columnVisibility.type && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 60 }}>Type</th>}
+                      {columnVisibility.type && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 56 }}>Type</th>}
+                      {columnVisibility.wolthers && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 104 }}>W&amp;A REF</th>}
                       {columnVisibility.quality && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Quality</th>}
                       {columnVisibility.seller && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Seller</th>}
                       {columnVisibility.shipper && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Shipper</th>}
-                      {columnVisibility.wolthers && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Wolthers</th>}
                       {columnVisibility.importer && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Importer</th>}
                       {columnVisibility.roaster && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Roaster</th>}
                       {columnVisibility.endClient && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">End client</th>}
-                      {columnVisibility.status && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 124 }}>Status</th>}
+                      {columnVisibility.status && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 112 }}>Status</th>}
+                      {columnVisibility.origin && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Origin</th>}
                       {columnVisibility.storage && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Storage</th>}
                       {columnVisibility.created && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Created</th>}
-                      <th className="text-right py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 116 }}></th>
+                      <th className="text-right py-2.5 pl-6 pr-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1407,6 +1395,7 @@ export default function SamplesPage() {
                             <td className="py-2 px-3 align-middle">
                               <div className="flex flex-col items-center gap-0.5">
                                 <Checkbox
+                                  className="h-3.5 w-3.5 rounded-[3px]"
                                   checked={selectedSamples.has(sample.id)}
                                   onCheckedChange={(checked) => handleSelectSample(sample.id, checked as boolean)}
                                 />
@@ -1431,6 +1420,7 @@ export default function SamplesPage() {
                               <td className="py-2 px-3 align-middle">
                                 {selectedSamples.has(sample.id) && (
                                   <Checkbox
+                                    className="h-3.5 w-3.5 rounded-[3px]"
                                     checked={selectedQrCodes.has(sample.id)}
                                     onCheckedChange={(checked) => handleToggleQrCode(sample.id, checked as boolean)}
                                   />
@@ -1461,11 +1451,6 @@ export default function SamplesPage() {
                                 </td>
                               )
                             })()}
-                            {columnVisibility.origin && (
-                              <td className="py-2 px-3 align-middle text-[13px] text-foreground/80">
-                                <div className="truncate" title={sample.origin || ''}>{sample.origin || ''}</div>
-                              </td>
-                            )}
                             {columnVisibility.type && (
                               <td className="py-2 px-3 align-middle">
                                 {sample.sample_type ? (
@@ -1473,6 +1458,15 @@ export default function SamplesPage() {
                                     {formatSampleType(sample.sample_type)}
                                   </span>
                                 ) : null}
+                              </td>
+                            )}
+                            {columnVisibility.wolthers && (
+                              <td className="py-2 px-3 align-middle font-mono text-[12px] text-foreground/80">
+                                {sample.wolthers_contract_nr ? (
+                                  <span className="truncate" title={sample.wolthers_contract_nr}>{sample.wolthers_contract_nr}</span>
+                                ) : (
+                                  <span className="text-muted-foreground/50">—</span>
+                                )}
                               </td>
                             )}
                             {columnVisibility.quality && (
@@ -1496,22 +1490,25 @@ export default function SamplesPage() {
                                 )}
                               </td>
                             )}
-                            {columnVisibility.wolthers && (
-                              <td className="py-2 px-3 align-middle font-mono text-[12px] text-foreground/80">
-                                {sample.wolthers_contract_nr ? (
-                                  <span className="truncate" title={sample.wolthers_contract_nr}>{sample.wolthers_contract_nr}</span>
-                                ) : (
-                                  <span className="text-muted-foreground/50">—</span>
-                                )}
-                              </td>
-                            )}
                             {columnVisibility.importer && (() => {
                               const importerName = sample.importer_name || (sample.importer_is_qc_client ? sample.qc_client_name : null) || ''
+                              const endClientName = sample.end_client_name || sample.qc_client_name || ''
+                              // When the End Client column is hidden but the end
+                              // client IS the importer, surface that contract nr
+                              // here so the info doesn't disappear from the table.
+                              const endClientSameAsImporter =
+                                !!importerName && !!endClientName &&
+                                importerName.trim().toLowerCase() === endClientName.trim().toLowerCase()
+                              const importerRef =
+                                sample.buyer_contract_nr ||
+                                (endClientSameAsImporter
+                                  ? sample.end_client_contract_nr || sample.qc_client_contract_nr
+                                  : null)
                               return (
                                 <td className="py-2 px-3 align-middle text-[13px] text-foreground">
                                   <div className="truncate font-medium" title={importerName}>{importerName}</div>
-                                  {sample.buyer_contract_nr && (
-                                    <div className="truncate text-[11px] text-muted-foreground font-mono">{sample.buyer_contract_nr}</div>
+                                  {importerRef && (
+                                    <div className="truncate text-[11px] text-muted-foreground font-mono">{importerRef}</div>
                                   )}
                                 </td>
                               )
@@ -1538,7 +1535,12 @@ export default function SamplesPage() {
                             })()}
                             {columnVisibility.status && (
                               <td className="py-2 px-3 align-middle">
-                                {renderStatusCell(sample.status, sample.workflow_stage)}
+                                {renderStatusCell(sample.status)}
+                              </td>
+                            )}
+                            {columnVisibility.origin && (
+                              <td className="py-2 px-3 align-middle text-[13px] text-foreground/80">
+                                <div className="truncate" title={sample.origin || ''}>{sample.origin || ''}</div>
                               </td>
                             )}
                             {columnVisibility.storage && (
@@ -1559,32 +1561,30 @@ export default function SamplesPage() {
                                 </div>
                               </td>
                             )}
-                            <td className="py-2 px-3 align-middle">
+                            <td className="py-2 pl-6 pr-3 align-middle">
                               <div className="flex items-center justify-end gap-0.5">
-                                {sample.certificate_id ? (
-                                  <Button variant="outline" size="sm" className="h-7 px-2 text-[12px]" onClick={() => handleViewCertificate(sample)}>
-                                    <Eye className="h-3 w-3 mr-1" />
-                                    View
-                                  </Button>
-                                ) : (
-                                  <Button variant="outline" size="sm" className="h-7 px-2 text-[12px]" onClick={() => setDetailSampleId(sample.id)}>
-                                    <Eye className="h-3 w-3 mr-1" />
-                                    View
-                                  </Button>
-                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                  onClick={() => sample.certificate_id ? handleViewCertificate(sample) : setDetailSampleId(sample.id)}
+                                  title={sample.certificate_id ? 'View certificate' : 'View sample'}
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                </Button>
                                 {sample.certificate_id && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    className="h-7 w-7 p-0"
+                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
                                     onClick={() => handleDownloadCertificate(sample)}
                                     disabled={downloadingSampleId === sample.id}
                                     title="Download certificate"
                                   >
                                     {downloadingSampleId === sample.id ? (
-                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
                                     ) : (
-                                      <Download className="h-3 w-3" />
+                                      <Download className="h-3.5 w-3.5" />
                                     )}
                                   </Button>
                                 )}
@@ -1597,7 +1597,7 @@ export default function SamplesPage() {
                                     className="h-7 w-7 p-0 text-muted-foreground/60 opacity-0 group-hover:opacity-100 hover:text-destructive hover:bg-destructive/10 transition-opacity"
                                     title="Delete sample"
                                   >
-                                    <Trash2 className="h-3 w-3" />
+                                    <Trash2 className="h-3.5 w-3.5" />
                                   </Button>
                                 )}
                               </div>
@@ -1779,11 +1779,6 @@ export default function SamplesPage() {
                                     </td>
                                   )
                                 })()}
-                                {columnVisibility.origin && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
-                                    <div className="truncate">{sample.origin || ''}</div>
-                                  </td>
-                                )}
                                 {columnVisibility.type && (
                                   <td className="py-2 px-3 align-middle">
                                     {sample.sample_type ? (
@@ -1791,6 +1786,15 @@ export default function SamplesPage() {
                                         {formatSampleType(sample.sample_type)}
                                       </span>
                                     ) : null}
+                                  </td>
+                                )}
+                                {columnVisibility.wolthers && (
+                                  <td className="py-2 px-3 align-middle font-mono text-[12px] text-foreground/75">
+                                    {sc.wolthers_contract_nr ? (
+                                      <span className="truncate" title={sc.wolthers_contract_nr}>{sc.wolthers_contract_nr}</span>
+                                    ) : (
+                                      <span className="text-muted-foreground/40">—</span>
+                                    )}
                                   </td>
                                 )}
                                 {columnVisibility.quality && (
@@ -1811,23 +1815,26 @@ export default function SamplesPage() {
                                     <div className="truncate">{sample.exporter_name || ''}</div>
                                   </td>
                                 )}
-                                {columnVisibility.wolthers && (
-                                  <td className="py-2 px-3 align-middle font-mono text-[12px] text-foreground/75">
-                                    {sc.wolthers_contract_nr ? (
-                                      <span className="truncate" title={sc.wolthers_contract_nr}>{sc.wolthers_contract_nr}</span>
-                                    ) : (
-                                      <span className="text-muted-foreground/40">—</span>
-                                    )}
-                                  </td>
-                                )}
-                                {columnVisibility.importer && (
-                                  <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
-                                    <div className="truncate">{sc.importer_name || ''}</div>
-                                    {sc.buyer_contract_nr && (
-                                      <div className="truncate text-[10.5px] text-muted-foreground font-mono">{sc.buyer_contract_nr}</div>
-                                    )}
-                                  </td>
-                                )}
+                                {columnVisibility.importer && (() => {
+                                  const scImporterName = sc.importer_name || ''
+                                  const scEndClientName = sc.end_client_name || sc.qc_client_name || ''
+                                  const sameAsImporter =
+                                    !!scImporterName && !!scEndClientName &&
+                                    scImporterName.trim().toLowerCase() === scEndClientName.trim().toLowerCase()
+                                  const scImporterRef =
+                                    sc.buyer_contract_nr ||
+                                    (sameAsImporter
+                                      ? sc.end_client_contract_nr || sc.qc_client_contract_nr
+                                      : null)
+                                  return (
+                                    <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
+                                      <div className="truncate">{scImporterName}</div>
+                                      {scImporterRef && (
+                                        <div className="truncate text-[10.5px] text-muted-foreground font-mono">{scImporterRef}</div>
+                                      )}
+                                    </td>
+                                  )
+                                })()}
                                 {columnVisibility.roaster && (
                                   <td className="py-2 px-3 align-middle text-[12.5px] text-foreground/85">
                                     <div className="truncate">{sc.roaster_name || ''}</div>
@@ -1846,7 +1853,12 @@ export default function SamplesPage() {
                                 )}
                                 {columnVisibility.status && (
                                   <td className="py-2 px-3 align-middle">
-                                    {renderStatusCell(sample.status, sample.workflow_stage)}
+                                    {renderStatusCell(sample.status)}
+                                  </td>
+                                )}
+                                {columnVisibility.origin && (
+                                  <td className="py-2 px-3 align-middle text-[12.5px] text-muted-foreground">
+                                    <div className="truncate">{sample.origin || ''}</div>
                                   </td>
                                 )}
                                 {columnVisibility.storage && (
@@ -1859,32 +1871,30 @@ export default function SamplesPage() {
                                     {new Date(sample.created_at).toLocaleDateString()}
                                   </td>
                                 )}
-                                <td className="py-2 px-3 align-middle">
+                                <td className="py-2 pl-6 pr-3 align-middle">
                                   <div className="flex items-center justify-end gap-0.5">
-                                    {sc.has_certificate ? (
-                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => handleViewSubContractCertificate(sample.id, sc.id)}>
-                                        <Eye className="h-2.5 w-2.5 mr-0.5" />
-                                        View
-                                      </Button>
-                                    ) : (
-                                      <Button variant="outline" size="sm" className="h-6 px-2 text-[11px]" onClick={() => setDetailSampleId(sample.id)}>
-                                        <Eye className="h-2.5 w-2.5 mr-0.5" />
-                                        View
-                                      </Button>
-                                    )}
+                                    <Button
+                                      variant="ghost"
+                                      size="sm"
+                                      className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
+                                      onClick={() => sc.has_certificate ? handleViewSubContractCertificate(sample.id, sc.id) : setDetailSampleId(sample.id)}
+                                      title={sc.has_certificate ? 'View certificate' : 'View sample'}
+                                    >
+                                      <Eye className="h-3 w-3" />
+                                    </Button>
                                     {sc.has_certificate && (
                                       <Button
                                         variant="ghost"
                                         size="sm"
-                                        className="h-6 w-6 p-0"
+                                        className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
                                         onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
                                         disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
                                         title="Download certificate"
                                       >
                                         {downloadingSampleId === `${sample.id}_${sc.id}` ? (
-                                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                          <Loader2 className="h-3 w-3 animate-spin" />
                                         ) : (
-                                          <Download className="h-2.5 w-2.5" />
+                                          <Download className="h-3 w-3" />
                                         )}
                                       </Button>
                                     )}
@@ -1898,9 +1908,9 @@ export default function SamplesPage() {
                                         title="Delete sub-contract"
                                       >
                                         {deletingId === sc.id ? (
-                                          <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                                          <Loader2 className="h-3 w-3 animate-spin" />
                                         ) : (
-                                          <Trash2 className="h-2.5 w-2.5" />
+                                          <Trash2 className="h-3 w-3" />
                                         )}
                                       </Button>
                                     )}
