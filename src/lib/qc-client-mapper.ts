@@ -23,7 +23,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  */
 export const QC_CLIENT_SELECT = `
   id, name, fantasy_name, email, phone,
-  address, city, state, country, zip_code, vat_number,
+  address, neighborhood, city, state, country, zip_code, vat_number,
   company_types, trading_roles, is_qc_client, is_active,
   legacy_client_id, logo_url, notes,
   created_at, updated_at,
@@ -34,7 +34,8 @@ export const QC_CLIENT_SELECT = `
     currency, fee_payer, payment_terms, billing_notes,
     bag_weight_kg, has_origin_pricing, certificate_delivery_timing,
     sample_size_grams, moisture_standard, defect_photos,
-    storage_layout, tax_region, report_branding_preference
+    storage_layout, tax_region, report_branding_preference,
+    address_override
   )
 `.trim()
 
@@ -49,6 +50,7 @@ type CompanyRow = {
   email: string | null
   phone: string | null
   address: string | null
+  neighborhood: string | null
   city: string | null
   state: string | null
   country: string | null
@@ -64,6 +66,15 @@ type CompanyRow = {
   created_at: string
   updated_at: string
   qc_settings: QcSettings | QcSettings[] | null
+}
+
+type AddressOverride = {
+  street?: string | null
+  neighborhood?: string | null
+  city?: string | null
+  state?: string | null
+  country?: string | null
+  zip_code?: string | null
 }
 
 type QcSettings = {
@@ -89,6 +100,7 @@ type QcSettings = {
   storage_layout?: unknown
   tax_region?: string | null
   report_branding_preference?: string | null
+  address_override?: AddressOverride | null
 }
 
 /**
@@ -118,6 +130,19 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
     Array.isArray(row.qc_settings) ? (row.qc_settings[0] ?? {}) :
     row.qc_settings ?? {}
 
+  // Address override: when present in qc_client_settings, the QC view shows the
+  // override values instead of the shared sys values. Sys values stay reachable
+  // via sys_* for "Re-pull" affordance + audit.
+  const override = settings.address_override ?? null
+  const hasOverride = override !== null && typeof override === 'object'
+
+  const effective_address = hasOverride ? override.street ?? row.address : row.address
+  const effective_neighborhood = hasOverride ? override.neighborhood ?? row.neighborhood : row.neighborhood
+  const effective_city = hasOverride ? override.city ?? row.city : row.city
+  const effective_state = hasOverride ? override.state ?? row.state : row.state
+  const effective_country = hasOverride ? override.country ?? row.country : row.country
+  const effective_zip = hasOverride ? override.zip_code ?? row.zip_code : row.zip_code
+
   return {
     id: row.id,
     company_id: row.id,
@@ -127,11 +152,22 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
     fantasy_name: row.fantasy_name,
     email: row.email,
     phone: row.phone,
-    address: row.address,
-    city: row.city,
-    state: row.state,
-    country: row.country,
-    zip_code: row.zip_code,
+    // Effective address — what the rest of the app should consume.
+    address: effective_address,
+    neighborhood: effective_neighborhood,
+    city: effective_city,
+    state: effective_state,
+    country: effective_country,
+    zip_code: effective_zip,
+    // Raw sys values + override descriptor, exposed for the edit screen.
+    sys_address: row.address,
+    sys_neighborhood: row.neighborhood,
+    sys_city: row.city,
+    sys_state: row.state,
+    sys_country: row.country,
+    sys_zip_code: row.zip_code,
+    address_override: override,
+    address_override_active: hasOverride,
     vat_number: row.vat_number,
     client_types: row.company_types ?? [],
     trading_roles: row.trading_roles ?? [],
@@ -214,7 +250,7 @@ export async function resolveCompanyIdFromSlug(
  */
 export const COMPANY_FIELDS = new Set([
   'name', 'fantasy_name', 'email', 'phone',
-  'address', 'city', 'state', 'country', 'zip_code', 'vat_number',
+  'address', 'neighborhood', 'city', 'state', 'country', 'zip_code', 'vat_number',
   'company_types', 'trading_roles', 'is_qc_client', 'is_active',
   'legacy_client_id', 'logo_url', 'notes',
 ])
@@ -227,6 +263,7 @@ export const QC_SETTINGS_FIELDS = new Set([
   'bag_weight_kg', 'has_origin_pricing', 'certificate_delivery_timing',
   'sample_size_grams', 'moisture_standard', 'defect_photos',
   'storage_layout', 'tax_region', 'report_branding_preference',
+  'address_override',
 ])
 
 /**
