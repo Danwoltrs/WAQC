@@ -1562,7 +1562,7 @@ export default function SamplesPage() {
                               </td>
                             )}
                             <td className="py-2 pl-6 pr-3 align-middle">
-                              <div className="flex items-center justify-end gap-0.5">
+                              <div className="flex items-center justify-end gap-1.5">
                                 <Button
                                   variant="ghost"
                                   size="sm"
@@ -1872,7 +1872,7 @@ export default function SamplesPage() {
                                   </td>
                                 )}
                                 <td className="py-2 pl-6 pr-3 align-middle">
-                                  <div className="flex items-center justify-end gap-0.5">
+                                  <div className="flex items-center justify-end gap-1.5">
                                     <Button
                                       variant="ghost"
                                       size="sm"
