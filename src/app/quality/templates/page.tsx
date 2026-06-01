@@ -85,17 +85,28 @@ export default function QualityTemplatesPage() {
     return m ? parseFloat(m[0]) : -1
   }
 
-  // Readable screen phrases: `Min 40% scr 16`, `Max 10% Pan`, `45–60% Peas 11`.
-  // "any" constraints (the in-between screens) are dropped — only the
-  // meaningful min/max/range boundaries are shown.
+  // Readable screen phrases: `Min 40% scr 16`, `Max 10% below 15`, `45–60% Peas 11`.
+  // "any" constraints (the in-between screens) are dropped — only the meaningful
+  // min/max/range boundaries are shown. Pan isn't a real screen, so a max on Pan
+  // reads as "below <smallest specified screen>".
   const getScreenPhrases = (template: Template): string[] => {
     const constraints = template.parameters?.screen_size_requirements?.constraints
     if (!Array.isArray(constraints) || constraints.length === 0) return []
+    const isPan = (raw: any) => /pan/i.test(String(raw ?? ''))
+    const bare = (raw: any) => String(raw ?? '').trim().replace(/^screen\s+/i, '') // "Screen 15"→"15"
     const label = (raw: any) => {
       const s = String(raw ?? '').trim()
       const m = s.match(/^(?:screen\s+)?(\d+)$/i)
       return m ? `scr ${m[1]}` : s // "Screen 16" → "scr 16"; keep "Pan", "Peas 11"
     }
+
+    // Smallest non-Pan screen present (the reference for "below"), from the full
+    // list — even the dropped "any" ones still anchor the boundary.
+    const nonPan = constraints.filter((c) => !isPan(c.screen_size))
+    const belowRef = nonPan.length
+      ? bare(nonPan.reduce((min, c) => (screenSortKey(c.screen_size) < screenSortKey(min.screen_size) ? c : min)).screen_size)
+      : null
+
     return [...constraints]
       .filter((c) => c.constraint_type !== 'any')
       .sort((a, b) => screenSortKey(b.screen_size) - screenSortKey(a.screen_size))
@@ -103,7 +114,9 @@ export default function QualityTemplatesPage() {
         const l = label(c.screen_size)
         switch (c.constraint_type) {
           case 'minimum': return `Min ${c.min_value}% ${l}`
-          case 'maximum': return `Max ${c.max_value}% ${l}`
+          case 'maximum': return isPan(c.screen_size) && belowRef
+            ? `Max ${c.max_value}% below ${belowRef}`
+            : `Max ${c.max_value}% ${l}`
           case 'range':   return `${c.min_value}–${c.max_value}% ${l}`
           default:        return ''
         }
