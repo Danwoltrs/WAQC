@@ -307,9 +307,25 @@ export async function POST(request: NextRequest) {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       let trackingNumber: string
 
-      if (attempt === 1 || !lastTrackingNumber) {
-        // First attempt: use the RPC
-        const { data: trackingNumberData, error: trackingError } = await supabase
+      // Unified numbering: a sample's tracking number IS its future certificate
+      // number, drawn from the per-lab company certificate sequence
+      // (generate_certificate_number is atomic, so each call — including a retry
+      // after a duplicate-key collision — yields the next unique number).
+      // Requires both client and lab; for edge cases lacking either (e.g. type
+      // samples with no client) we fall back to the legacy tracking generator.
+      let trackingNumberData: any
+      let trackingError: any
+      if (clientId && body.laboratory_id) {
+        ({ data: trackingNumberData, error: trackingError } = await supabase
+          .rpc('generate_certificate_number', {
+            p_client_id: clientId,
+            p_origin: body.origin,
+            p_quality_spec_id: qualitySpecId,
+            p_is_rejected: false,
+            p_laboratory_id: body.laboratory_id,
+          } as any))
+      } else {
+        ({ data: trackingNumberData, error: trackingError } = await supabase
           .rpc('generate_tracking_number', {
             p_client_id: clientId,
             p_laboratory_id: body.laboratory_id,
@@ -317,55 +333,33 @@ export async function POST(request: NextRequest) {
             p_quality_template_id: qualitySpecId,
             p_is_rejected: false,
             p_sample_type: body.sample_type || 'pss'
-          } as any)
+          } as any))
+      }
 
-        if (trackingError) {
-          console.error('Error generating tracking number:', trackingError)
-          return NextResponse.json({ error: 'Failed to generate tracking number' }, { status: 500 })
-        }
+      if (trackingError) {
+        console.error('Error generating tracking/certificate number:', trackingError)
+        return NextResponse.json({
+          error: 'Failed to generate tracking number',
+          details: trackingError.message
+        }, { status: 500 })
+      }
 
-        if (trackingNumberData === null || trackingNumberData === undefined) {
-          console.error('Tracking number generation returned null for client:', clientId, 'origin:', body.origin)
-          return NextResponse.json({
-            error: 'Failed to generate tracking number - client configuration may be invalid',
-            details: 'The tracking number format for this client is not properly configured. Please contact an administrator.'
-          }, { status: 500 })
-        }
+      if (trackingNumberData === null || trackingNumberData === undefined) {
+        console.error('Number generation returned null for client:', clientId, 'lab:', body.laboratory_id)
+        return NextResponse.json({
+          error: 'Failed to generate tracking number - client/lab configuration may be invalid',
+          details: 'The certificate pattern for this client is not properly configured. Please contact an administrator.'
+        }, { status: 500 })
+      }
 
-        trackingNumber = String(trackingNumberData)
+      trackingNumber = String(trackingNumberData)
 
-        if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
-          console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
-          return NextResponse.json({
-            error: 'Failed to generate valid tracking number',
-            details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
-          }, { status: 500 })
-        }
-      } else {
-        // Retry: increment the numeric part of the last failed tracking number
-        // Parse format like "BD-890227/26" or "AS41926/26" — find the main sequence digits
-        const slashIdx = lastTrackingNumber.lastIndexOf('/')
-        const left = slashIdx >= 0 ? lastTrackingNumber.substring(0, slashIdx) : lastTrackingNumber
-        const suffix = slashIdx >= 0 ? lastTrackingNumber.substring(slashIdx) : ''
-        // Find the last group of digits in the left part (the sequence number)
-        const match = left.match(/^(.*?)(\d+)$/)
-        if (match) {
-          const prefix = match[1]
-          const numStr = match[2]
-          const nextNum = (parseInt(numStr) + 1).toString().padStart(numStr.length, '0')
-          trackingNumber = prefix + nextNum + suffix
-        } else {
-          // Can't parse — fall back to RPC call
-          const { data: rpcData } = await supabase.rpc('generate_tracking_number', {
-            p_client_id: clientId,
-            p_laboratory_id: body.laboratory_id,
-            p_origin: body.origin,
-            p_quality_template_id: qualitySpecId,
-            p_is_rejected: false,
-            p_sample_type: body.sample_type || 'pss'
-          } as any)
-          trackingNumber = String(rpcData)
-        }
+      if (trackingNumber === 'null' || trackingNumber === '' || trackingNumber.startsWith('ERR-')) {
+        console.error('Invalid tracking number generated:', trackingNumber, 'for client:', clientId)
+        return NextResponse.json({
+          error: 'Failed to generate valid tracking number',
+          details: `Generated tracking number "${trackingNumber}" is invalid. Please check client configuration.`
+        }, { status: 500 })
       }
 
       lastTrackingNumber = trackingNumber

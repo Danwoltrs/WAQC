@@ -111,8 +111,25 @@ async function insertOneDuplicate(
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let trackingNumber: string
 
-    if (attempt === 1 && !lastTrackingNumber) {
-      const { data: trackingNumberData, error: trackingError } = await supabase
+    // Unified numbering: each duplicate draws the next number from the per-lab
+    // company certificate sequence (atomic — every call, including retries and
+    // multi-duplicate loops, yields a fresh unique number). The old
+    // manual-increment trick is gone: it would diverge from the atomic counter
+    // and collide with future intake numbers. Falls back to the legacy generator
+    // for edge cases lacking a client/lab.
+    let trackingNumberData: any
+    let trackingError: any
+    if (source.client_id && source.laboratory_id) {
+      ({ data: trackingNumberData, error: trackingError } = await supabase
+        .rpc('generate_certificate_number', {
+          p_client_id: source.client_id,
+          p_origin: source.origin,
+          p_quality_spec_id: source.quality_spec_id,
+          p_is_rejected: false,
+          p_laboratory_id: source.laboratory_id,
+        } as any))
+    } else {
+      ({ data: trackingNumberData, error: trackingError } = await supabase
         .rpc('generate_tracking_number', {
           p_client_id: source.client_id,
           p_laboratory_id: source.laboratory_id,
@@ -120,40 +137,14 @@ async function insertOneDuplicate(
           p_quality_template_id: source.quality_spec_id,
           p_is_rejected: false,
           p_sample_type: source.sample_type || 'ss'
-        } as any)
-
-      if (trackingError || !trackingNumberData) {
-        console.error('Error generating tracking number for duplicate:', trackingError)
-        return { error: 'Failed to generate tracking number' }
-      }
-      trackingNumber = String(trackingNumberData)
-    } else if (lastTrackingNumber) {
-      // Retry (or subsequent iteration in a multi-duplicate call):
-      // increment the numeric part of the most recent tracking number.
-      const slashIdx = lastTrackingNumber.lastIndexOf('/')
-      const left = slashIdx >= 0 ? lastTrackingNumber.substring(0, slashIdx) : lastTrackingNumber
-      const suffix = slashIdx >= 0 ? lastTrackingNumber.substring(slashIdx) : ''
-      const match = left.match(/^(.*?)(\d+)$/)
-      if (match) {
-        const prefix = match[1]
-        const numStr = match[2]
-        const nextNum = (parseInt(numStr) + 1).toString().padStart(numStr.length, '0')
-        trackingNumber = prefix + nextNum + suffix
-      } else {
-        const { data: rpcData } = await supabase.rpc('generate_tracking_number', {
-          p_client_id: source.client_id,
-          p_laboratory_id: source.laboratory_id,
-          p_origin: source.origin,
-          p_quality_template_id: source.quality_spec_id,
-          p_is_rejected: false,
-          p_sample_type: source.sample_type || 'ss'
-        } as any)
-        trackingNumber = String(rpcData)
-      }
-    } else {
-      // Shouldn't happen, but guard against undefined state
-      return { error: 'Tracking number generation failed' }
+        } as any))
     }
+
+    if (trackingError || !trackingNumberData) {
+      console.error('Error generating tracking number for duplicate:', trackingError)
+      return { error: 'Failed to generate tracking number' }
+    }
+    trackingNumber = String(trackingNumberData)
 
     lastTrackingNumber = trackingNumber
     console.log(`Duplicate: generated tracking number ${trackingNumber} (attempt ${attempt})`)

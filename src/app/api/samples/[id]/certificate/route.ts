@@ -305,30 +305,17 @@ export async function POST(
       })
     }
 
-    // Generate certificate number using atomic per-client sequence
+    // Unified numbering: the certificate reuses the sample's tracking number
+    // (which is itself the per-lab cert-sequence number assigned at intake).
+    // No separate certificate number is generated. Tracking number was already
+    // validated as non-empty above.
     if (!sample.client_id) {
       return NextResponse.json({
         error: 'Cannot generate certificate - sample has no client assigned'
       }, { status: 400 })
     }
 
-    const { data: generatedCertNum, error: certNumError } = await supabase
-      .rpc('generate_certificate_number', {
-        p_client_id: sample.client_id,
-        p_origin: sample.origin || undefined,
-        p_quality_spec_id: sample.quality_spec_id || undefined,
-        p_is_rejected: isRejected,
-      })
-
-    if (certNumError || !generatedCertNum) {
-      console.error('Error generating certificate number:', certNumError)
-      return NextResponse.json({
-        error: 'Failed to generate certificate number',
-        details: certNumError?.message || 'No certificate number returned'
-      }, { status: 500 })
-    }
-
-    const certificateNumber = generatedCertNum as string
+    const certificateNumber = sample.tracking_number as string
 
     // Get client name for issued_to (required field)
     const clientData = sample.client as { name?: string; company?: string; fantasy_name?: string } | null
@@ -423,23 +410,15 @@ async function createSubContractCertificates(
 
       if (!existingSubCert) {
         const isRejected = motherCert.is_rejected ?? false
-        const subClientId = sc.client_id || sample?.client_id
 
-        // Generate certificate number for sub-contract using its own client's sequence
-        const { data: subCertNum, error: subCertNumError } = await supabase
-          .rpc('generate_certificate_number', {
-            p_client_id: subClientId,
-            p_origin: sampleOrigin || null,
-            p_quality_spec_id: sampleQualitySpecId || null,
-            p_is_rejected: isRejected,
-          })
-
-        if (subCertNumError || !subCertNum) {
-          console.error('Error generating sub-contract certificate number:', subCertNumError)
-          continue // Skip this sub-contract but don't fail
+        // Unified numbering: sub-contract certificate reuses the sub-contract's
+        // own tracking number. Skip if it somehow has none.
+        if (!sc.tracking_number) {
+          console.error('Skipping sub-contract cert: sample_contract has no tracking_number', sc.id)
+          continue
         }
 
-        const subCertNumber = subCertNum as string
+        const subCertNumber = sc.tracking_number as string
 
         // Get sub-contract's QC client name (or fall back to mother's)
         let subIssuedTo = motherIssuedTo
