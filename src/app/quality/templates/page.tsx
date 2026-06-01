@@ -85,22 +85,30 @@ export default function QualityTemplatesPage() {
     return m ? parseFloat(m[0]) : -1
   }
 
-  // Build the monospace screen-profile chips: `16 ≥40%`, `15 any`, `Pan ≤10%`.
-  const getScreenChips = (template: Template): string[] => {
+  // Readable screen phrases: `Min 40% scr 16`, `Max 10% Pan`, `45–60% Peas 11`.
+  // "any" constraints (the in-between screens) are dropped — only the
+  // meaningful min/max/range boundaries are shown.
+  const getScreenPhrases = (template: Template): string[] => {
     const constraints = template.parameters?.screen_size_requirements?.constraints
     if (!Array.isArray(constraints) || constraints.length === 0) return []
+    const label = (raw: any) => {
+      const s = String(raw ?? '').trim()
+      const m = s.match(/^(?:screen\s+)?(\d+)$/i)
+      return m ? `scr ${m[1]}` : s // "Screen 16" → "scr 16"; keep "Pan", "Peas 11"
+    }
     return [...constraints]
+      .filter((c) => c.constraint_type !== 'any')
       .sort((a, b) => screenSortKey(b.screen_size) - screenSortKey(a.screen_size))
       .map((c) => {
-        // Bare label for the list: "Screen 16" → "16", keep "Pan"/"Peas 11" as-is
-        const name = String(c.screen_size ?? '').trim().replace(/^screen\s+/i, '')
+        const l = label(c.screen_size)
         switch (c.constraint_type) {
-          case 'minimum': return `${name} ≥${c.min_value}%`
-          case 'maximum': return `${name} ≤${c.max_value}%`
-          case 'range':   return `${name} ${c.min_value}-${c.max_value}%`
-          default:        return `${name} any`
+          case 'minimum': return `Min ${c.min_value}% ${l}`
+          case 'maximum': return `Max ${c.max_value}% ${l}`
+          case 'range':   return `${c.min_value}–${c.max_value}% ${l}`
+          default:        return ''
         }
       })
+      .filter(Boolean)
   }
 
   const getDefectThreshold = (template: Template): number | null => {
@@ -406,10 +414,15 @@ export default function QualityTemplatesPage() {
             </div>
 
             {filteredTemplates.map((template) => {
-              const screenChips = getScreenChips(template)
+              const screenPhrases = getScreenPhrases(template)
               const defThreshold = getDefectThreshold(template)
               const tf = getTaintFault(template)
               const quaker = getQuakerLimit(template)
+              const tfLabel = tf
+                ? (tf.zero
+                    ? 'No taints or faults'
+                    : `${tf.t} taint${tf.t === 1 ? '' : 's'}, ${tf.f} fault${tf.f === 1 ? '' : 's'} allowed`)
+                : null
               const clients = template.assigned_clients || []
               const shownClients = clients.slice(0, 2)
               const overflow = clients.length - shownClients.length
@@ -485,40 +498,40 @@ export default function QualityTemplatesPage() {
 
                   {/* Spec summary */}
                   <div className="flex flex-wrap gap-1.5 items-center">
-                    {screenChips.map((chip, i) => (
+                    {screenPhrases.map((phrase, i) => (
                       <span
                         key={i}
-                        className="font-mono text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-background border border-border text-foreground/80 whitespace-nowrap"
+                        className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground whitespace-nowrap"
                       >
-                        {chip}
+                        {phrase}
                       </span>
                     ))}
-                    {(defThreshold !== null || tf || quaker) && screenChips.length > 0 && (
+                    {(defThreshold !== null || tf || quaker) && screenPhrases.length > 0 && (
                       <span aria-hidden className="w-px h-3.5 bg-border mx-0.5" />
                     )}
                     {defThreshold !== null && (
                       <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground whitespace-nowrap">
-                        Def <b className="font-semibold text-foreground/80">≤{defThreshold}</b>
+                        Max {defThreshold} defects
                       </span>
                     )}
                     {quaker !== null && (
                       <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground whitespace-nowrap">
-                        Quakers <b className="font-semibold text-foreground/80">≤{quaker}</b>
+                        Max {quaker} quakers
                       </span>
                     )}
-                    {tf && (
+                    {tfLabel && (
                       <span
                         className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-md whitespace-nowrap ${
-                          tf.zero
+                          tf?.zero
                             ? 'bg-[#fbeceb] text-[#b0322a] dark:bg-[#b0322a]/20 dark:text-[#f0928a] font-semibold'
                             : 'bg-muted text-muted-foreground'
                         }`}
                       >
                         <AlertTriangle className="h-2.5 w-2.5" />
-                        T≤{tf.t} · F≤{tf.f}
+                        {tfLabel}
                       </span>
                     )}
-                    {screenChips.length === 0 && defThreshold === null && !tf && !quaker && (
+                    {screenPhrases.length === 0 && defThreshold === null && !tf && !quaker && (
                       <span className="text-[12px] text-muted-foreground/70">No spec set</span>
                     )}
                   </div>
