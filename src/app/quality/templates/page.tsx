@@ -470,7 +470,7 @@ export default function QualityTemplatesPage() {
                               {author.initials}
                             </span>
                             {author.date && (
-                              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap">{author.date}</span>
+                              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap hidden lg:inline">{author.date}</span>
                             )}
                           </span>
                         )
