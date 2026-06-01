@@ -2,14 +2,12 @@
 
 import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
-import { TemplateBuilder } from '@/components/quality/template-builder'
-import { TemplateViewDialog } from '@/components/quality/template-view-dialog'
+import { QualitySpecEditor } from '@/components/quality/spec-editor/quality-spec-editor'
 import { VersionComparisonDialog } from '@/components/quality/version-comparison-dialog'
 import { QualityAssignmentDialog } from '@/components/quality-assignments/quality-assignment-dialog'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,8 +19,7 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  Plus, Search, Edit, Copy, Trash2, Eye, FileText,
-  CheckCircle, XCircle, AlertCircle, History, UserPlus
+  Plus, Search, Edit, Copy, Trash2, Eye, FileText, AlertTriangle
 } from 'lucide-react'
 
 interface Template {
@@ -62,11 +59,6 @@ export default function QualityTemplatesPage() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [filterActive, setFilterActive] = useState<boolean | null>(null)
-  const [showBuilder, setShowBuilder] = useState(false)
-  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
-  const [viewingTemplate, setViewingTemplate] = useState<Template | null>(null)
-  const [viewDialogOpen, setViewDialogOpen] = useState(false)
-  const [initialEditMode, setInitialEditMode] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<Template | null>(null)
   const [clientsUsingTemplate, setClientsUsingTemplate] = useState<any[]>([])
@@ -74,25 +66,72 @@ export default function QualityTemplatesPage() {
   const [versionComparisonTemplate, setVersionComparisonTemplate] = useState<Template | null>(null)
   const [assignmentDialogOpen, setAssignmentDialogOpen] = useState(false)
   const [assigningTemplateId, setAssigningTemplateId] = useState<string | null>(null)
+  // New full-screen spec editor (replaces the nested-modal edit flow)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const [editorTemplate, setEditorTemplate] = useState<Template | null>(null)
 
   // Helper to get display name (prefer English, fallback to legacy name)
   const getTemplateName = (template: Template) => template.name_en || template.name || ''
   const getTemplateDescription = (template: Template) => template.description_en || template.description || ''
 
-  // Helper to get green aspect min label
-  const getGreenAspectMinLabel = (template: Template) => {
-    const config = template.parameters.green_aspect_configuration
-    if (!config?.validation?.min_acceptable_value || !config?.wordings) return '-'
-    const wording = config.wordings.find((w: any) => w.value === config.validation?.min_acceptable_value)
-    return wording?.label || '-'
+  // --- Spec-summary helpers (Part A) ---------------------------------------
+
+  // Numeric sort key for a screen/sieve label. Always order largest -> smallest,
+  // with Pan forced to the very end regardless of any number it may contain.
+  const screenSortKey = (size: any) => {
+    const s = String(size ?? '').trim()
+    if (/pan/i.test(s)) return -Infinity
+    const m = s.match(/-?\d+(\.\d+)?/)
+    return m ? parseFloat(m[0]) : -1
   }
 
-  // Helper to get roast aspect min label
-  const getRoastAspectMinLabel = (template: Template) => {
-    const config = template.parameters.roast_aspect_configuration
-    if (!config?.validation?.min_acceptable_value || !config?.wordings) return '-'
-    const wording = config.wordings.find((w: any) => w.value === config.validation?.min_acceptable_value)
-    return wording?.label || '-'
+  // Build the monospace screen-profile chips: `16 ≥40%`, `15 any`, `Pan ≤10%`.
+  const getScreenChips = (template: Template): string[] => {
+    const constraints = template.parameters?.screen_size_requirements?.constraints
+    if (!Array.isArray(constraints) || constraints.length === 0) return []
+    return [...constraints]
+      .sort((a, b) => screenSortKey(b.screen_size) - screenSortKey(a.screen_size))
+      .map((c) => {
+        // Bare label for the list: "Screen 16" → "16", keep "Pan"/"Peas 11" as-is
+        const name = String(c.screen_size ?? '').trim().replace(/^screen\s+/i, '')
+        switch (c.constraint_type) {
+          case 'minimum': return `${name} ≥${c.min_value}%`
+          case 'maximum': return `${name} ≤${c.max_value}%`
+          case 'range':   return `${name} ${c.min_value}-${c.max_value}%`
+          default:        return `${name} any`
+        }
+      })
+  }
+
+  const getDefectThreshold = (template: Template): number | null => {
+    const t = template.parameters?.defect_configuration?.thresholds?.max_total
+    return typeof t === 'number' ? t : null
+  }
+
+  // Returns max taints/faults plus a zero-tolerance flag (render red).
+  const getTaintFault = (template: Template): { t: number; f: number; zero: boolean } | null => {
+    const tf = template.parameters?.taint_fault_configuration
+    const rules = tf?.rules
+    if (!tf || !rules) return null
+    const t = typeof rules.max_taints === 'number' ? rules.max_taints : null
+    const f = typeof rules.max_faults === 'number' ? rules.max_faults : null
+    if (t === null && f === null && !rules.zero_tolerance) return null
+    const tv = t ?? 0
+    const fv = f ?? 0
+    return { t: tv, f: fv, zero: !!rules.zero_tolerance || (tv === 0 && fv === 0) }
+  }
+
+  // Quaker chip only when an actual limit is set.
+  const getQuakerLimit = (template: Template): number | null => {
+    const q = template.parameters?.max_quakers
+    return typeof q === 'number' && q > 0 ? q : null
+  }
+
+  const formatMetaDate = (iso?: string) => {
+    if (!iso) return ''
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
   useEffect(() => {
@@ -146,20 +185,37 @@ export default function QualityTemplatesPage() {
   }
 
   const handleCreate = () => {
-    setEditingTemplate(null)
-    setShowBuilder(true)
+    setEditorTemplate(null)
+    setEditorOpen(true)
   }
 
   const handleEdit = (template: Template) => {
-    setViewingTemplate(template)
-    setInitialEditMode(true)
-    setViewDialogOpen(true)
+    setEditorTemplate(template)
+    setEditorOpen(true)
+  }
+
+  const handleEditorSave = async (templateData: any) => {
+    const url = templateData.id
+      ? `/api/quality-templates/${templateData.id}`
+      : '/api/quality-templates'
+    const method = templateData.id ? 'PATCH' : 'POST'
+    const response = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(templateData),
+    })
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({}))
+      throw new Error(err.error || 'Failed to save template')
+    }
+    await loadTemplates()
+    setEditorOpen(false)
+    setEditorTemplate(null)
   }
 
   const handleView = (template: Template) => {
-    setViewingTemplate(template)
-    setInitialEditMode(false)
-    setViewDialogOpen(true)
+    setEditorTemplate(template)
+    setEditorOpen(true)
   }
 
   const handleClone = async (template: Template) => {
@@ -239,46 +295,6 @@ export default function QualityTemplatesPage() {
     }
   }
 
-  const handleSave = async (templateData: any) => {
-    try {
-      const url = viewingTemplate
-        ? `/api/quality-templates/${viewingTemplate.id}`
-        : '/api/quality-templates'
-
-      const method = viewingTemplate ? 'PATCH' : 'POST'
-
-      const response = await fetch(url, {
-        method,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(templateData)
-      })
-
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to save template')
-      }
-
-      await loadTemplates()
-      setShowBuilder(false)
-      setEditingTemplate(null)
-    } catch (error: any) {
-      throw new Error(error.message || 'Failed to save template')
-    }
-  }
-
-  const handleDialogSave = async (templateData: any) => {
-    await handleSave(templateData)
-    // Reload to get updated template data
-    await loadTemplates()
-    // Update the viewing template with fresh data
-    if (viewingTemplate) {
-      const updatedTemplate = templates.find(t => t.id === viewingTemplate.id)
-      if (updatedTemplate) {
-        setViewingTemplate(updatedTemplate)
-      }
-    }
-  }
-
   const filteredTemplates = templates.filter(template => {
     const name = getTemplateName(template).toLowerCase()
     const description = getTemplateDescription(template).toLowerCase()
@@ -287,31 +303,16 @@ export default function QualityTemplatesPage() {
     return name.includes(query) || description.includes(query) || createdBy.includes(query)
   })
 
-  if (showBuilder) {
+  if (editorOpen) {
     return (
-      <MainLayout>
-        <div className="p-6 max-w-6xl mx-auto">
-          <div className="mb-6">
-            <h1 className="text-3xl font-bold tracking-tight">
-              {editingTemplate ? 'Edit Template' : 'Create Quality Template'}
-            </h1>
-            <p className="text-muted-foreground">
-              {editingTemplate
-                ? 'Update the quality standards and parameters for this template'
-                : 'Define quality standards and parameters for a new template'}
-            </p>
-          </div>
-
-          <TemplateBuilder
-            template={editingTemplate || undefined}
-            onSave={handleSave}
-            onCancel={() => {
-              setShowBuilder(false)
-              setEditingTemplate(null)
-            }}
-          />
-        </div>
-      </MainLayout>
+      <QualitySpecEditor
+        template={editorTemplate || undefined}
+        onSave={handleEditorSave}
+        onCancel={() => {
+          setEditorOpen(false)
+          setEditorTemplate(null)
+        }}
+      />
     )
   }
 
@@ -329,45 +330,33 @@ export default function QualityTemplatesPage() {
           </Button>
         </div>
 
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-col md:flex-row gap-4">
-              <div className="flex-1 relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search templates..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-              <div className="flex gap-2">
-                <Button
-                  variant={filterActive === null ? 'default' : 'outline'}
-                  onClick={() => setFilterActive(null)}
-                  size="sm"
-                >
-                  All
-                </Button>
-                <Button
-                  variant={filterActive === true ? 'default' : 'outline'}
-                  onClick={() => setFilterActive(true)}
-                  size="sm"
-                >
-                  Active
-                </Button>
-                <Button
-                  variant={filterActive === false ? 'default' : 'outline'}
-                  onClick={() => setFilterActive(false)}
-                  size="sm"
-                >
-                  Inactive
-                </Button>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Toolbar: search + segmented filter */}
+        <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center">
+          <div className="flex-1 relative">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+            <Input
+              placeholder="Search templates…"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="h-11 pl-10 rounded-[10px]"
+            />
+          </div>
+          <div className="flex gap-1 p-1 rounded-[10px] bg-muted self-start sm:self-auto">
+            {([['All', null], ['Active', true], ['Inactive', false]] as const).map(([label, val]) => (
+              <button
+                key={label}
+                onClick={() => setFilterActive(val)}
+                className={`px-4 py-1.5 rounded-[7px] text-[13px] font-medium transition-colors ${
+                  filterActive === val
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Templates Table */}
         {loading ? (
@@ -391,284 +380,143 @@ export default function QualityTemplatesPage() {
             </CardContent>
           </Card>
         ) : (
-          <Card>
-            <CardContent className="p-0">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="px-4 py-3 text-left text-sm font-medium">Template</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Sharing</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Created By</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Assigned to</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Screen Sizes</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Defects</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Green Aspect</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Roast Aspect</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Quakers</th>
-                      <th className="px-4 py-3 text-left text-sm font-medium">Taints & Faults</th>
-                      <th className="px-4 py-3 text-right text-sm font-medium">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {filteredTemplates.map((template) => (
-                      <tr key={template.id} className="border-b hover:bg-muted/20 transition-colors">
-                        {/* Template Info */}
-                        <td className="px-4 py-4">
-                          <div className="space-y-1">
-                            <div className="font-medium">{getTemplateName(template)}</div>
-                            <div className="text-xs text-muted-foreground line-clamp-2">
-                              {getTemplateDescription(template) || 'No description'}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                              {template.is_active ? (
-                                <Badge variant="default" className="text-xs">
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Active
-                                </Badge>
-                              ) : (
-                                <Badge variant="secondary" className="text-xs">
-                                  <XCircle className="h-3 w-3 mr-1" />
-                                  Inactive
-                                </Badge>
-                              )}
-                              <Badge variant="outline" className="text-xs">v{template.version}</Badge>
-                            </div>
-                          </div>
-                        </td>
+          <div className="rounded-xl border border-border bg-card overflow-hidden">
+            {/* Column header */}
+            <div className="hidden md:grid grid-cols-[2.5fr_1.1fr_2.3fr_92px] items-center gap-4 px-5 h-11 bg-muted/40 border-b border-border">
+              <span className="text-[10.5px] font-semibold tracking-wider uppercase text-muted-foreground">Template</span>
+              <span className="text-[10.5px] font-semibold tracking-wider uppercase text-muted-foreground">Assigned to</span>
+              <span className="text-[10.5px] font-semibold tracking-wider uppercase text-muted-foreground">Spec summary</span>
+              <span aria-hidden className="text-right text-muted-foreground/40">·</span>
+            </div>
 
-                        {/* Sharing */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm">
-                            {template.is_global ? (
-                              <Badge variant="default" className="text-xs">
-                                Global
-                              </Badge>
-                            ) : template.laboratory ? (
-                              <Badge variant="secondary" className="text-xs">
-                                {template.laboratory.name}
-                              </Badge>
-                            ) : template.assigned_laboratories && template.assigned_laboratories.length > 0 ? (
-                              <Badge variant="secondary" className="text-xs">
-                                Multi-Lab ({template.assigned_laboratories.length})
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs">
-                                Private
-                              </Badge>
-                            )}
-                          </div>
-                        </td>
+            {filteredTemplates.map((template) => {
+              const screenChips = getScreenChips(template)
+              const defThreshold = getDefectThreshold(template)
+              const tf = getTaintFault(template)
+              const quaker = getQuakerLimit(template)
+              const clients = template.assigned_clients || []
+              const shownClients = clients.slice(0, 2)
+              const overflow = clients.length - shownClients.length
 
-                        {/* Created By */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm space-y-1">
-                            <div className="font-medium">{template.created_by_name || 'Unknown'}</div>
-                            <div className="text-xs text-muted-foreground">
-                              {new Date(template.created_at).toLocaleDateString()}
-                            </div>
-                          </div>
-                        </td>
+              return (
+                <div
+                  key={template.id}
+                  className="group grid grid-cols-1 md:grid-cols-[2.5fr_1.1fr_2.3fr_92px] items-center gap-3 md:gap-4 px-5 py-4 md:min-h-[74px] border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors"
+                >
+                  {/* Template cell */}
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[14.5px] font-semibold tracking-tight">{getTemplateName(template)}</span>
+                      <span className="font-mono text-[10.5px] font-semibold text-muted-foreground bg-muted rounded px-1.5 py-px">
+                        v{template.version}
+                      </span>
+                      {template.is_active ? (
+                        <span className="text-[11px] font-medium rounded-full px-2 py-0.5 text-[#15663f] bg-[#e7f2ec] dark:text-[#5fcf8e] dark:bg-[#15663f]/25">
+                          Active
+                        </span>
+                      ) : (
+                        <span className="text-[11px] font-medium rounded-full px-2 py-0.5 text-muted-foreground bg-muted">
+                          Inactive
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[12.5px] text-muted-foreground mt-1 truncate max-w-[440px]">
+                      {getTemplateDescription(template) || 'No description'}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground/70 mt-1">
+                      {template.created_by_name || 'Unknown'}
+                      {formatMetaDate(template.created_at) && ` · ${formatMetaDate(template.created_at)}`}
+                    </div>
+                  </div>
 
-                        {/* Assigned to */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm space-y-2">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="h-auto p-0 text-xs hover:underline"
-                              onClick={() => {
-                                setAssigningTemplateId(template.id)
-                                setAssignmentDialogOpen(true)
-                              }}
-                            >
-                              Assign to client
-                            </Button>
-                            {template.assigned_clients && template.assigned_clients.length > 0 && (
-                              <div className="text-xs text-muted-foreground space-y-1">
-                                {template.assigned_clients.map((client) => (
-                                  <div key={client.id}>{client.fantasy_name || client.name}</div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
-                        </td>
+                  {/* Assigned to — chips, click to manage */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAssigningTemplateId(template.id)
+                      setAssignmentDialogOpen(true)
+                    }}
+                    title="Manage client assignments"
+                    className="flex flex-wrap gap-1.5 text-left min-w-0 rounded-md -m-1 p-1 hover:bg-muted/50 transition-colors"
+                  >
+                    {clients.length > 0 ? (
+                      <>
+                        {shownClients.map((client) => (
+                          <span
+                            key={client.id}
+                            className="text-[11px] font-medium px-2.5 py-0.5 rounded-full bg-[#f1f5f3] text-[#3f6b54] border border-[#e3ece7] dark:bg-[#15663f]/20 dark:text-[#7bd6a0] dark:border-[#15663f]/40 whitespace-nowrap truncate max-w-[120px]"
+                          >
+                            {client.fantasy_name || client.name}
+                          </span>
+                        ))}
+                        {overflow > 0 && (
+                          <span className="text-[11px] text-muted-foreground/70 px-1 py-0.5">+{overflow}</span>
+                        )}
+                      </>
+                    ) : (
+                      <span className="text-[12px] text-muted-foreground/70">Unassigned</span>
+                    )}
+                  </button>
 
-                        {/* Screen Sizes */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm space-y-1">
-                            {template.parameters.screen_size_requirements?.constraints?.length ? (
-                              <>
-                                <div className="font-medium text-xs mb-1">
-                                  {template.parameters.screen_size_requirements.constraints.length} constraint{template.parameters.screen_size_requirements.constraints.length !== 1 ? 's' : ''}
-                                </div>
-                                <div className="space-y-0.5 max-h-20 overflow-y-auto">
-                                  {[...template.parameters.screen_size_requirements.constraints]
-                                    .sort((a, b) => (a.display_order || 0) - (b.display_order || 0))
-                                    .map((c, idx) => (
-                                      <div key={idx} className="text-xs text-muted-foreground">
-                                        <span className="font-mono">{c.screen_size}</span>: {c.constraint_type === 'minimum' && `≥${c.min_value}%`}
-                                        {c.constraint_type === 'maximum' && `≤${c.max_value}%`}
-                                        {c.constraint_type === 'range' && `${c.min_value}-${c.max_value}%`}
-                                        {c.constraint_type === 'any' && 'any'}
-                                      </div>
-                                    ))}
-                                </div>
-                              </>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">None</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Defects */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm space-y-1">
-                            {template.parameters.defect_configuration?.defects?.length ? (
-                              <>
-                                <div className="text-xs space-y-0.5">
-                                  <div>
-                                    <span className="text-muted-foreground">Primary:</span> ≤{template.parameters.defect_configuration.thresholds?.max_primary ?? '-'}
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Secondary:</span> ≤{template.parameters.defect_configuration.thresholds?.max_secondary ?? '-'}
-                                  </div>
-                                  <div>
-                                    <span className="text-muted-foreground">Total:</span> ≤{template.parameters.defect_configuration.thresholds?.max_total ?? '-'}
-                                  </div>
-                                </div>
-                              </>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">None</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Green Aspect */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm">
-                            {template.parameters.green_aspect_configuration?.wordings?.length ? (
-                              <div className="text-xs">
-                                {template.parameters.green_aspect_configuration.wordings.length} level{template.parameters.green_aspect_configuration.wordings.length !== 1 ? 's' : ''}
-                                {template.parameters.green_aspect_configuration.validation?.min_acceptable_value && (
-                                  <div className="text-muted-foreground">
-                                    Min: {getGreenAspectMinLabel(template)}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">None</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Roast Aspect */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm">
-                            {template.parameters.roast_aspect_configuration?.wordings?.length ? (
-                              <div className="text-xs">
-                                {template.parameters.roast_aspect_configuration.wordings.length} level{template.parameters.roast_aspect_configuration.wordings.length !== 1 ? 's' : ''}
-                                {template.parameters.roast_aspect_configuration.validation?.min_acceptable_value && (
-                                  <div className="text-muted-foreground">
-                                    Min: {getRoastAspectMinLabel(template)}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">None</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Quakers */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm">
-                            {template.parameters.max_quakers !== undefined ? (
-                              <div className="text-xs">
-                                ≤{template.parameters.max_quakers}
-                                <div className="text-muted-foreground">
-                                  per {template.parameters.roast_sample_size_grams || 300}g
-                                </div>
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">No limit</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Taints & Faults */}
-                        <td className="px-4 py-4">
-                          <div className="text-sm">
-                            {template.parameters.taint_fault_configuration ? (
-                              <div className="text-xs space-y-0.5">
-                                {template.parameters.taint_fault_configuration.rules?.zero_tolerance ? (
-                                  <Badge variant="destructive" className="text-xs">Zero Tolerance</Badge>
-                                ) : (
-                                  <>
-                                    {template.parameters.taint_fault_configuration.taints?.length > 0 && (
-                                      <div>
-                                        <span className="text-muted-foreground">Taints:</span> {template.parameters.taint_fault_configuration.taints.length}
-                                      </div>
-                                    )}
-                                    {template.parameters.taint_fault_configuration.faults?.length > 0 && (
-                                      <div>
-                                        <span className="text-muted-foreground">Faults:</span> {template.parameters.taint_fault_configuration.faults.length}
-                                      </div>
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-muted-foreground">None</span>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Actions */}
-                        <td className="px-4 py-4">
-                          <div className="flex justify-end gap-1">
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleView(template)}
-                              title="View details"
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleEdit(template)}
-                              title="Edit template"
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleClone(template)}
-                              title="Clone template"
-                            >
-                              <Copy className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(template)}
-                              className="text-destructive hover:text-destructive"
-                              title="Deactivate template"
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
+                  {/* Spec summary */}
+                  <div className="flex flex-wrap gap-1.5 items-center">
+                    {screenChips.map((chip, i) => (
+                      <span
+                        key={i}
+                        className="font-mono text-[10.5px] font-semibold px-2 py-0.5 rounded-md bg-background border border-border text-foreground/80 whitespace-nowrap"
+                      >
+                        {chip}
+                      </span>
                     ))}
-                  </tbody>
-                </table>
-              </div>
-            </CardContent>
-          </Card>
+                    {(defThreshold !== null || tf || quaker) && screenChips.length > 0 && (
+                      <span aria-hidden className="w-px h-3.5 bg-border mx-0.5" />
+                    )}
+                    {defThreshold !== null && (
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground whitespace-nowrap">
+                        Def <b className="font-semibold text-foreground/80">≤{defThreshold}</b>
+                      </span>
+                    )}
+                    {quaker !== null && (
+                      <span className="text-[11px] font-medium px-2 py-0.5 rounded-md bg-muted text-muted-foreground whitespace-nowrap">
+                        Quakers <b className="font-semibold text-foreground/80">≤{quaker}</b>
+                      </span>
+                    )}
+                    {tf && (
+                      <span
+                        className={`inline-flex items-center gap-1.5 text-[11px] font-medium px-2 py-0.5 rounded-md whitespace-nowrap ${
+                          tf.zero
+                            ? 'bg-[#fbeceb] text-[#b0322a] dark:bg-[#b0322a]/20 dark:text-[#f0928a] font-semibold'
+                            : 'bg-muted text-muted-foreground'
+                        }`}
+                      >
+                        <AlertTriangle className="h-2.5 w-2.5" />
+                        T≤{tf.t} · F≤{tf.f}
+                      </span>
+                    )}
+                    {screenChips.length === 0 && defThreshold === null && !tf && !quaker && (
+                      <span className="text-[12px] text-muted-foreground/70">No spec set</span>
+                    )}
+                  </div>
+
+                  {/* Actions */}
+                  <div className="flex justify-start md:justify-end gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleView(template)} title="View details">
+                      <Eye className="h-[15px] w-[15px]" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleEdit(template)} title="Edit template">
+                      <Edit className="h-[15px] w-[15px]" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleClone(template)} title="Duplicate template">
+                      <Copy className="h-[15px] w-[15px]" />
+                    </Button>
+                    <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive" onClick={() => handleDelete(template)} title="Deactivate template">
+                      <Trash2 className="h-[15px] w-[15px]" />
+                    </Button>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         )}
 
         {/* Delete Confirmation Dialog */}
@@ -742,16 +590,6 @@ export default function QualityTemplatesPage() {
             </AlertDialogFooter>
           </AlertDialogContent>
         </AlertDialog>
-
-        {/* Template View Dialog */}
-        <TemplateViewDialog
-          open={viewDialogOpen}
-          onOpenChange={setViewDialogOpen}
-          template={viewingTemplate}
-          onSave={handleDialogSave}
-          onTemplateUpdated={loadTemplates}
-          initialEditMode={initialEditMode}
-        />
 
         {/* Version Comparison Dialog */}
         {versionComparisonTemplate && (
