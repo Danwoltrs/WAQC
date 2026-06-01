@@ -134,6 +134,22 @@ export default function QualityTemplatesPage() {
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
   }
 
+  // Initials of the first two name parts: "Anderson Nunes dos Santos" → "AN"
+  const getInitials = (name?: string) => {
+    const parts = (name || '').trim().split(/\s+/).filter(Boolean)
+    if (!parts.length) return '—'
+    return ((parts[0][0] || '') + (parts[1]?.[0] || '')).toUpperCase()
+  }
+
+  // Creator / last-editor badge: name + initials + tooltip text
+  const getAuthorBadge = (template: Template) => {
+    const edited = !!template.updated_at && template.updated_at !== template.created_at
+    const name = (edited ? template.updated_by_name : template.created_by_name) || template.created_by_name || 'Unknown'
+    const when = formatMetaDate(edited ? template.updated_at : template.created_at)
+    const verb = edited ? 'Edited by' : 'Created by'
+    return { initials: getInitials(name), title: `${verb} ${name}${when ? ` · ${when}` : ''}` }
+  }
+
   useEffect(() => {
     loadTemplates()
   }, [filterActive])
@@ -401,7 +417,7 @@ export default function QualityTemplatesPage() {
               return (
                 <div
                   key={template.id}
-                  className="group grid grid-cols-1 md:grid-cols-[2.5fr_1.1fr_2.3fr_92px] items-center gap-3 md:gap-4 px-5 py-4 md:min-h-[74px] border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors"
+                  className="group grid grid-cols-1 md:grid-cols-[2.5fr_1.1fr_2.3fr_92px] items-center gap-3 md:gap-4 px-5 py-3 md:min-h-[58px] border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors"
                 >
                   {/* Template cell */}
                   <div className="min-w-0">
@@ -419,13 +435,20 @@ export default function QualityTemplatesPage() {
                           Inactive
                         </span>
                       )}
+                      {(() => {
+                        const author = getAuthorBadge(template)
+                        return (
+                          <span
+                            title={author.title}
+                            className="h-5 min-w-5 px-1 grid place-items-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground/80 cursor-default"
+                          >
+                            {author.initials}
+                          </span>
+                        )
+                      })()}
                     </div>
-                    <div className="text-[12.5px] text-muted-foreground mt-1 truncate max-w-[440px]">
+                    <div className="text-[12.5px] text-muted-foreground mt-0.5 truncate max-w-[440px]">
                       {getTemplateDescription(template) || 'No description'}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground/70 mt-1">
-                      {template.created_by_name || 'Unknown'}
-                      {formatMetaDate(template.created_at) && ` · ${formatMetaDate(template.created_at)}`}
                     </div>
                   </div>
 
