@@ -443,33 +443,34 @@ export default function QualityTemplatesPage() {
               return (
                 <div
                   key={template.id}
-                  className="group grid grid-cols-1 md:grid-cols-[2.5fr_1.1fr_2.3fr_92px] items-center gap-3 md:gap-4 px-5 py-3 md:min-h-[58px] border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors"
+                  onClick={() => handleView(template)}
+                  className="group grid grid-cols-1 md:grid-cols-[2.5fr_1.1fr_2.3fr_92px] items-center gap-3 md:gap-4 px-5 py-3 md:min-h-[58px] border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors cursor-pointer"
                 >
                   {/* Template cell */}
                   <div className="min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[14.5px] font-semibold tracking-tight">{getTemplateName(template)}</span>
-                      <span className="font-mono text-[10.5px] font-semibold text-muted-foreground bg-muted rounded px-1.5 py-px">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="text-[14.5px] font-semibold tracking-tight truncate min-w-0">{getTemplateName(template)}</span>
+                      <span className="font-mono text-[10.5px] font-semibold text-muted-foreground bg-muted rounded px-1.5 py-px shrink-0">
                         v{template.version}
                       </span>
                       {template.is_active ? (
-                        <span className="text-[11px] font-medium rounded-full px-2 py-0.5 text-[#15663f] bg-[#e7f2ec] dark:text-[#5fcf8e] dark:bg-[#15663f]/25">
+                        <span className="text-[11px] font-medium rounded-full px-2 py-0.5 text-[#15663f] bg-[#e7f2ec] dark:text-[#5fcf8e] dark:bg-[#15663f]/25 shrink-0">
                           Active
                         </span>
                       ) : (
-                        <span className="text-[11px] font-medium rounded-full px-2 py-0.5 text-muted-foreground bg-muted">
+                        <span className="text-[11px] font-medium rounded-full px-2 py-0.5 text-muted-foreground bg-muted shrink-0">
                           Inactive
                         </span>
                       )}
                       {(() => {
                         const author = getAuthorBadge(template)
                         return (
-                          <span title={author.title} className="inline-flex items-center gap-1.5 cursor-default">
+                          <span title={author.title} className="inline-flex items-center gap-1.5 cursor-default shrink-0">
                             <span className="h-5 min-w-5 px-1 grid place-items-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground/80">
                               {author.initials}
                             </span>
                             {author.date && (
-                              <span className="text-[11px] text-muted-foreground/70">{author.date}</span>
+                              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap">{author.date}</span>
                             )}
                           </span>
                         )
@@ -483,7 +484,8 @@ export default function QualityTemplatesPage() {
                   {/* Assigned to — chips, click to manage */}
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation()
                       setAssigningTemplateId(template.id)
                       setAssignmentDialogOpen(true)
                     }}
@@ -550,7 +552,7 @@ export default function QualityTemplatesPage() {
                   </div>
 
                   {/* Actions */}
-                  <div className="flex justify-start md:justify-end gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
+                  <div onClick={(e) => e.stopPropagation()} className="flex justify-start md:justify-end gap-0.5 md:opacity-0 md:group-hover:opacity-100 transition-opacity">
                     <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => handleView(template)} title="View details">
                       <Eye className="h-[15px] w-[15px]" />
                     </Button>
