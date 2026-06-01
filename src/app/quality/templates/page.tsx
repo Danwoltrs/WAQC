@@ -147,7 +147,7 @@ export default function QualityTemplatesPage() {
     const name = (edited ? template.updated_by_name : template.created_by_name) || template.created_by_name || 'Unknown'
     const when = formatMetaDate(edited ? template.updated_at : template.created_at)
     const verb = edited ? 'Edited by' : 'Created by'
-    return { initials: getInitials(name), title: `${verb} ${name}${when ? ` · ${when}` : ''}` }
+    return { initials: getInitials(name), date: when, title: `${verb} ${name}${when ? ` · ${when}` : ''}` }
   }
 
   useEffect(() => {
@@ -438,11 +438,13 @@ export default function QualityTemplatesPage() {
                       {(() => {
                         const author = getAuthorBadge(template)
                         return (
-                          <span
-                            title={author.title}
-                            className="h-5 min-w-5 px-1 grid place-items-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground/80 cursor-default"
-                          >
-                            {author.initials}
+                          <span title={author.title} className="inline-flex items-center gap-1.5 cursor-default">
+                            <span className="h-5 min-w-5 px-1 grid place-items-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground/80">
+                              {author.initials}
+                            </span>
+                            {author.date && (
+                              <span className="text-[11px] text-muted-foreground/70">{author.date}</span>
+                            )}
                           </span>
                         )
                       })()}
