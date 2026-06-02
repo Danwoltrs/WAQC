@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Plus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { ApprovalComposer } from '@/components/samples/approval-composer'
 
 interface AttributeStats {
   mean: number
@@ -215,6 +216,7 @@ export function CuppingValidationModal({
 }: CuppingValidationModalProps) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
+  const [approvalComposerOpen, setApprovalComposerOpen] = useState(false)
   const [aggregated, setAggregated] = useState<AggregatedScores | null>(null)
   const [individualScores, setIndividualScores] = useState<IndividualScore[]>([])
   const [consolidatedDefects, setConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
@@ -597,6 +599,22 @@ export function CuppingValidationModal({
         }
       }
 
+      // Contract-linked samples: open the approval composer to notify
+      // buyer/seller/logistics. Keep this modal mounted behind it; the close
+      // happens when the composer closes. The prefill route 400s for
+      // non-contract-linked samples, so r.ok is the gate.
+      if (!isPending && sampleId && (isApproved || data.decision === 'rejected')) {
+        try {
+          const r = await fetch(`/api/samples/${sampleId}/approval-recipients`)
+          if (r.ok) {
+            setApprovalComposerOpen(true)
+            return
+          }
+        } catch {
+          /* not contract-linked or unavailable — fall through to normal close */
+        }
+      }
+
       onFinalize?.()
       onOpenChange(false)
     } catch (error) {
@@ -850,6 +868,7 @@ export function CuppingValidationModal({
     .filter(s => !s.is_master_cupper && !s.is_own_score)
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -1348,5 +1367,17 @@ export function CuppingValidationModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+    {sampleId && (
+      <ApprovalComposer
+        sampleId={sampleId}
+        open={approvalComposerOpen}
+        onClose={() => {
+          setApprovalComposerOpen(false)
+          onFinalize?.()
+          onOpenChange(false)
+        }}
+      />
+    )}
+    </>
   )
 }
