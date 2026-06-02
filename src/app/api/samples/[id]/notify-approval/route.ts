@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
+import { canUserManageSample } from '@/lib/auth/sample-access'
 import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
@@ -50,6 +51,14 @@ export async function POST(
     data: { user },
   } = await server.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Authorization: only staff/QC users permitted to manage this sample may
+  // send from the institutional mailbox and write to the contract. Gate on the
+  // RLS-bound SSR client before any service-role action.
+  const access = await canUserManageSample(server as any, user.id, id)
+  if (!access.allowed) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const supabase = admin()
   const { data: profile } = await supabase
@@ -194,9 +203,11 @@ export async function POST(
       mailbox: QC_MAILBOX,
       from_email: QC_MAILBOX,
       sender_email: senderEmail ?? null,
-      to_recipients: body.to.map((e) => ({ email: e })),
-      cc_recipients: (body.cc ?? []).map((e) => ({ email: e })),
-      subject: body.subject,
+      // Log what was ACTUALLY sent (post-sandbox interception), not what was
+      // requested. Requested values are kept in metadata for traceability.
+      to_recipients: to.map((e) => ({ email: e })),
+      cc_recipients: (cc ?? []).map((e) => ({ email: e })),
+      subject,
       body_text: body.bodyText,
       body_html: approvalBodyToHtml(body.bodyText),
       contract_id: contractId,
@@ -204,7 +215,15 @@ export async function POST(
       seller_id: (contract as any)?.seller_id ?? null,
       sent_at: new Date().toISOString(),
       sent_by: user.id,
-      metadata: { source: 'sample_approval', sample_id: id, decision },
+      metadata: {
+        source: 'sample_approval',
+        sample_id: id,
+        decision,
+        sandbox: !!testTo,
+        requested_to: body.to,
+        requested_cc: body.cc ?? [],
+        requested_subject: body.subject,
+      },
     })
   } catch (e) {
     console.error('[notify-approval] email_messages log failed (non-fatal):', e)

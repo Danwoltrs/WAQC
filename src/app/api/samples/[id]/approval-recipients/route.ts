@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { createClient as createServerClient } from '@/lib/supabase-server'
+import { canUserManageSample } from '@/lib/auth/sample-access'
 import { resolveApprovalRecipients } from '@/lib/approval-notification/recipients'
 
 const admin = () =>
@@ -13,12 +15,29 @@ const admin = () =>
  * GET /api/samples/[id]/approval-recipients
  * Prefill data for the approval composer. Returns 400 when the sample is not
  * contract-linked (the client uses this as the gate for whether to open).
+ *
+ * Authorization: must be an authenticated staff/QC user permitted to manage
+ * the sample. We authenticate with the RLS-bound SSR client and gate on
+ * canUserManageSample BEFORE touching the service-role client, so counterparty
+ * contact PII is never returned to unauthorized callers.
  */
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
+
+  const server = await createServerClient()
+  const {
+    data: { user },
+  } = await server.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const access = await canUserManageSample(server as any, user.id, id)
+  if (!access.allowed) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   const supabase = admin()
 
   const { data: sample, error } = await supabase
