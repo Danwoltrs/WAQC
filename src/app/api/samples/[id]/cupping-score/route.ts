@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { computeContentLock } from '@/lib/sample-edit-permissions'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -42,6 +43,23 @@ export async function POST(
 
     if (!defects || typeof defects !== 'object') {
       return NextResponse.json({ error: 'Invalid defects data' }, { status: 400 })
+    }
+
+    // Cupping scores / defects freeze once the content lock applies (7 days
+    // after certificate generation, or after OCR scan lock).
+    const { data: lockSample } = await supabaseAdmin
+      .from('samples')
+      .select('id, locked, scanned_at, certificate_generated_at')
+      .eq('id', sampleId)
+      .single()
+    if (lockSample) {
+      const scoreLock = computeContentLock(lockSample)
+      if (scoreLock.contentLocked) {
+        return NextResponse.json(
+          { error: `Cupping scores are locked and cannot be edited. ${scoreLock.message}` },
+          { status: 423 }
+        )
+      }
     }
 
     // Find the active cupping session that contains this sample

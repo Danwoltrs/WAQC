@@ -9,6 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useToast } from '@/hooks/use-toast'
 import { supabase } from '@/lib/supabase'
+import { useAuth } from '@/components/providers/auth-provider'
+import { isSampleEditor } from '@/lib/sample-edit-permissions'
 import { Loader2 } from 'lucide-react'
 
 interface CertificateEditDialogProps {
@@ -61,9 +63,13 @@ export function CertificateEditDialog({
   onSaved
 }: CertificateEditDialogProps) {
   const { toast } = useToast()
+  const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [sample, setSample] = useState<SampleData | null>(null)
+  const [canEditContent, setCanEditContent] = useState(true)
+
+  const isEditor = isSampleEditor(profile)
 
   // Entity options
   const [exporters, setExporters] = useState<Entity[]>([])
@@ -123,6 +129,17 @@ export function CertificateEditDialog({
 
       setSample(sampleData)
       setFormData(sampleData)
+
+      // Determine whether quality (lock-sensitive) fields are still editable.
+      try {
+        const permRes = await fetch(`/api/cupping/check-edit-permission?sampleId=${sampleId}`)
+        if (permRes.ok) {
+          const perm = await permRes.json()
+          setCanEditContent(perm.canEditContent ?? true)
+        }
+      } catch {
+        // Non-blocking — default to editable; the server still enforces the lock.
+      }
 
       // Load entities in parallel — all from companies, filtered by role/type
       const [exportersRes, importersRes, roastersRes, clientsRes] = await Promise.all([
@@ -196,6 +213,17 @@ export function CertificateEditDialog({
             Update the sample information that appears on the certificate. Changes will be reflected when you regenerate the certificate.
           </DialogDescription>
         </DialogHeader>
+
+        {!isEditor && (
+          <div className="rounded-md border border-amber-300/40 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            Only master cuppers and global admins can edit certificate data. You can review the values but cannot save changes.
+          </div>
+        )}
+        {isEditor && !canEditContent && (
+          <div className="rounded-md border border-amber-300/40 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+            Quality fields (origin, micro origin, processing) are locked 7 days after the certificate was issued. Commercial and logistics fields can still be edited.
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center py-12">
@@ -421,6 +449,7 @@ export function CertificateEditDialog({
                     value={formData.origin || ''}
                     onChange={(e) => handleInputChange('origin', e.target.value || null)}
                     placeholder="e.g., Brazil"
+                    disabled={!canEditContent}
                   />
                 </div>
 
@@ -430,6 +459,7 @@ export function CertificateEditDialog({
                     value={formData.micro_origin || ''}
                     onChange={(e) => handleInputChange('micro_origin', e.target.value || null)}
                     placeholder="e.g., Cerrado Mineiro"
+                    disabled={!canEditContent}
                   />
                 </div>
 
@@ -439,6 +469,7 @@ export function CertificateEditDialog({
                     value={formData.processing_method || ''}
                     onChange={(e) => handleInputChange('processing_method', e.target.value || null)}
                     placeholder="e.g., Natural, Washed"
+                    disabled={!canEditContent}
                   />
                 </div>
 
@@ -510,7 +541,7 @@ export function CertificateEditDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={saving || loading}>
+          <Button onClick={handleSave} disabled={saving || loading || !isEditor}>
             {saving ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />

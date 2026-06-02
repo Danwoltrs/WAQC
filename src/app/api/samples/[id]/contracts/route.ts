@@ -1,6 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
+import { isSampleEditor } from '@/lib/sample-edit-permissions'
+
+/**
+ * Only master cuppers / global admins may edit a sample's sub-contracts.
+ * Returns an error response if the user is not an editor, otherwise null.
+ */
+async function requireEditor(supabase: any, userId: string): Promise<NextResponse | null> {
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('is_master_cupper, is_global_admin, qc_role')
+    .eq('id', userId)
+    .single()
+  if (!isSampleEditor(profile)) {
+    return NextResponse.json(
+      { error: 'Forbidden: Only master cuppers and global admins can edit samples.' },
+      { status: 403 }
+    )
+  }
+  return null
+}
 
 /**
  * GET /api/samples/[id]/contracts
@@ -88,6 +108,9 @@ export async function POST(
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const forbidden = await requireEditor(supabase, user.id)
+    if (forbidden) return forbidden
 
     const body = await request.json()
 
@@ -326,6 +349,9 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
+    const forbidden = await requireEditor(supabase, user.id)
+    if (forbidden) return forbidden
+
     const contractId = request.nextUrl.searchParams.get('contract_id')
     if (!contractId) {
       return NextResponse.json({ error: 'Missing contract_id query parameter' }, { status: 400 })
@@ -388,6 +414,9 @@ export async function DELETE(
     if (authError || !user) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
+
+    const forbidden = await requireEditor(supabase, user.id)
+    if (forbidden) return forbidden
 
     const contractId = request.nextUrl.searchParams.get('contract_id')
     if (!contractId) {

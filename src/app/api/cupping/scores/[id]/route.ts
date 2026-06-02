@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
+import { computeContentLock } from '@/lib/sample-edit-permissions'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -103,6 +104,24 @@ export async function PATCH(
     const canEdit = await checkEditPermission(profile, existingScore, user.id)
     if (!canEdit.allowed) {
       return NextResponse.json({ error: canEdit.reason }, { status: 403 })
+    }
+
+    // Content lock: defects / scores freeze 7 days after certificate generation.
+    if (existingScore.sample_id) {
+      const { data: lockSample } = await supabaseAdmin
+        .from('samples')
+        .select('id, locked, scanned_at, certificate_generated_at')
+        .eq('id', existingScore.sample_id)
+        .single()
+      if (lockSample) {
+        const scoreLock = computeContentLock(lockSample)
+        if (scoreLock.contentLocked) {
+          return NextResponse.json(
+            { error: `Cupping scores are locked and cannot be edited. ${scoreLock.message}` },
+            { status: 423 }
+          )
+        }
+      }
     }
 
     // Build update payload

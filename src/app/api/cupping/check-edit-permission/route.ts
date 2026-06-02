@@ -1,9 +1,19 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-
-type LockReason = 'not_locked' | 'within_7_days' | 'locked_after_scan' | 'locked_after_7_days'
+import {
+  computeContentLock,
+  isSampleEditor,
+  type LockReason,
+} from '@/lib/sample-edit-permissions'
 
 interface EditPermissionResponse {
+  /** User is a master cupper or global admin (the only sample editors). */
+  isEditor: boolean
+  /** Editor AND quality content is not locked (pre-cert or within 7 days). */
+  canEditContent: boolean
+  /** Editor — commercial / logistics fields are editable at any time. */
+  canEditCounterparties: boolean
+  /** Back-compat alias for canEditContent (older UI consumers). */
   canEdit: boolean
   reason: LockReason
   lockExpiresAt: string | null
@@ -13,22 +23,12 @@ interface EditPermissionResponse {
 /**
  * GET /api/cupping/check-edit-permission?sampleId=xxx
  *
- * Checks if a sample can be edited based on workflow state.
+ * Returns the current user's edit permissions for a sample.
  *
- * Lock Rules:
- * 1. If locked = TRUE and scanned_at is set → Cannot edit (locked after scan)
- * 2. If certificate_generated_at is NULL → Can edit (no certificate yet)
- * 3. If certificate_generated_at + 7 days > now → Can edit (within 7-day window)
- * 4. If certificate_generated_at + 7 days <= now → Cannot edit (7 days expired)
- *
- * Query Parameters:
- * - sampleId: string (required) - The sample ID to check
- *
- * Returns:
- * - canEdit: boolean - Whether the sample can be edited
- * - reason: LockReason - Why it can or cannot be edited
- * - lockExpiresAt: string | null - When the 7-day lock will expire (ISO timestamp)
- * - message: string - Human-readable explanation
+ * Role gate: only master cuppers / global admins can edit anything.
+ * Content lock: quality (lock-sensitive) fields are editable before a
+ * certificate exists and within 7 days of certificate generation; commercial /
+ * logistics fields are editable at any time by an editor.
  */
 export async function GET(request: Request) {
   try {
@@ -44,8 +44,23 @@ export async function GET(request: Request) {
 
     const supabase = await createClient()
 
+    const {
+      data: { user },
+      error: authError,
+    } = await supabase.auth.getUser()
+    if (authError || !user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // Editor role
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('is_master_cupper, is_global_admin, qc_role')
+      .eq('id', user.id)
+      .single()
+    const isEditor = isSampleEditor(profile)
+
     // Fetch sample lock status and timestamps
-    // Note: Using 'as any' because new fields aren't in generated types yet
     const { data: sample, error } = await (supabase as any)
       .from('samples')
       .select('id, locked, scanned_at, certificate_generated_at')
@@ -61,58 +76,25 @@ export async function GET(request: Request) {
     }
 
     if (!sample) {
-      return NextResponse.json(
-        { error: 'Sample not found' },
-        { status: 404 }
-      )
+      return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Rule 1: If locked after scan
-    if (sample.locked && sample.scanned_at) {
-      const response: EditPermissionResponse = {
-        canEdit: false,
-        reason: 'locked_after_scan',
-        lockExpiresAt: null,
-        message: 'Sample is locked after OCR scan validation. Editing is no longer permitted.'
-      }
-      return NextResponse.json(response)
-    }
+    const lock = computeContentLock(sample)
+    const canEditContent = isEditor && !lock.contentLocked
+    const canEditCounterparties = isEditor
 
-    // Rule 2: No certificate yet
-    if (!sample.certificate_generated_at) {
-      const response: EditPermissionResponse = {
-        canEdit: true,
-        reason: 'not_locked',
-        lockExpiresAt: null,
-        message: 'Sample can be edited. No certificate has been generated yet.'
-      }
-      return NextResponse.json(response)
+    const response: EditPermissionResponse = {
+      isEditor,
+      canEditContent,
+      canEditCounterparties,
+      canEdit: canEditContent,
+      reason: lock.reason,
+      lockExpiresAt: lock.lockExpiresAt,
+      message: !isEditor
+        ? 'Only master cuppers and global admins can edit samples.'
+        : lock.message,
     }
-
-    // Rule 3 & 4: Check 7-day window from certificate generation
-    const certificateTime = new Date(sample.certificate_generated_at)
-    const lockExpiry = new Date(certificateTime.getTime() + 7 * 24 * 60 * 60 * 1000) // +7 days
-    const now = new Date()
-
-    if (now < lockExpiry) {
-      // Within 7-day window
-      const response: EditPermissionResponse = {
-        canEdit: true,
-        reason: 'within_7_days',
-        lockExpiresAt: lockExpiry.toISOString(),
-        message: `Sample can be edited within 7 days of certificate generation. Lock expires at ${lockExpiry.toLocaleString()}.`
-      }
-      return NextResponse.json(response)
-    } else {
-      // 7 days expired
-      const response: EditPermissionResponse = {
-        canEdit: false,
-        reason: 'locked_after_7_days',
-        lockExpiresAt: lockExpiry.toISOString(),
-        message: '7 days have elapsed since certificate generation. Sample is permanently locked.'
-      }
-      return NextResponse.json(response)
-    }
+    return NextResponse.json(response)
   } catch (error) {
     console.error('Error in check-edit-permission endpoint:', error)
     return NextResponse.json(
