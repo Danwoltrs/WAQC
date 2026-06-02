@@ -170,18 +170,18 @@ export function QualityCertificate({
           bagWeightKg={sample.bag_weight_kg}
           equivalent60kgBags={sample.equivalent_60kg_bags}
           sampleType={sample.sample_type}
-          processingMethod={sample.processing_method}
           containerNumber={sample.container_nr}
           icoNumber={sample.ico_number}
           microOrigin={sample.micro_origin}
           cropYear={sample.crop_year}
         />
 
-        {/* 4. Quality Description + Certifications */}
+        {/* 4. Quality + Process + Certifications */}
         <CertificateQualityDescription
-          qualityDescription={qualitySpec?.description || null}
+          qualityDescription={qualitySpec?.description || sample.quality_name || null}
           certifications={sample.certifications}
           cropYear={sample.crop_year}
+          processingMethod={sample.processing_method}
           compact={compact}
         />
 

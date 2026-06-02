@@ -59,7 +59,6 @@ export interface CertificateSampleDetailsProps {
   equivalent60kgBags: number | null
   // Sample info
   sampleType: string | null
-  processingMethod?: string | null
   containerNumber?: string | null
   icoNumber: string | null
   // Region/micro-origin
@@ -157,7 +156,7 @@ function formatSampleType(sampleType: string | null): string {
   return typeMap[normalized] || sampleType
 }
 
-function formatProcessingMethod(method: string | null | undefined): string | null {
+export function formatProcessingMethod(method: string | null | undefined): string | null {
   if (!method) return null
   // DB stores values like 'Natural', 'Washed', etc. Sample is normalised lowercase/snake on some legacy rows.
   const normalised = method.toLowerCase().replace(/[_\-\s]/g, '_')
@@ -178,7 +177,6 @@ function formatProcessingMethod(method: string | null | undefined): string | nul
 export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
   const {
     sampleType,
-    processingMethod,
     containerNumber,
     icoNumber,
     microOrigin,
@@ -188,7 +186,6 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
 
   const quantity = formatQuantity(props)
   const formattedType = formatSampleType(sampleType)
-  const formattedProcess = formatProcessingMethod(processingMethod)
 
   // Build items array - only include items with values
   const items: { label: string; value: string | React.ReactNode }[] = []
@@ -213,10 +210,8 @@ export function CertificateSampleDetails(props: CertificateSampleDetailsProps) {
     items.push({ label: 'Type', value: formattedType })
   }
 
-  // Processing method (Natural, Washed, Honey, etc.)
-  if (formattedProcess) {
-    items.push({ label: 'Process', value: formattedProcess })
-  }
+  // Processing method is rendered in the Quality section (alongside quality
+  // and certifications), not here. See CertificateQualityDescription.
 
   // Container# and/or ICO#
   if (containerNumber) {

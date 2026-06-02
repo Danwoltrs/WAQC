@@ -6,6 +6,7 @@
 import React from 'react'
 import { View, Text, StyleSheet } from '@react-pdf/renderer'
 import { COLORS } from './certificate-styles'
+import { formatProcessingMethod } from './certificate-sample-details'
 
 const descStyles = StyleSheet.create({
   container: {
@@ -80,6 +81,7 @@ export interface CertificateQualityDescriptionProps {
   qualityDescription: string | null
   certifications?: string[] | null
   cropYear?: string | null
+  processingMethod?: string | null
   compact?: boolean
 }
 
@@ -87,9 +89,11 @@ export function CertificateQualityDescription({
   qualityDescription,
   certifications,
   cropYear,
+  processingMethod,
   compact,
 }: CertificateQualityDescriptionProps) {
   const hasCertifications = certifications && certifications.length > 0
+  const formattedProcess = formatProcessingMethod(processingMethod)
 
   // Build the full quality line with crop year appended
   const fullQualityDescription = qualityDescription && cropYear
@@ -100,8 +104,8 @@ export function CertificateQualityDescription({
     ? `Crop ${cropYear}`
     : null
 
-  // If neither description nor certifications, don't render
-  if (!fullQualityDescription && !hasCertifications) {
+  // If nothing to show, don't render
+  if (!fullQualityDescription && !hasCertifications && !formattedProcess) {
     return null
   }
 
@@ -112,6 +116,13 @@ export function CertificateQualityDescription({
           <Text style={descStyles.sectionLabel}>Quality:</Text>
           <Text style={descStyles.descriptionText}>{fullQualityDescription}</Text>
         </>
+      )}
+
+      {formattedProcess && (
+        <View style={descStyles.certificationsRow}>
+          <Text style={descStyles.certLabel}>Process:</Text>
+          <Text style={descStyles.descriptionText}>{formattedProcess}</Text>
+        </View>
       )}
 
       {hasCertifications && (

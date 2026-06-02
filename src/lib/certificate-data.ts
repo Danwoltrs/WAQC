@@ -102,6 +102,7 @@ export interface CertificateData {
     micro_origin: string | null
     sample_type: string | null
     processing_method: string | null
+    quality_name: string | null
     bags: number | null
     bag_type: string | null
     bag_weight_kg: number | null
@@ -204,6 +205,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       micro_origin,
       sample_type,
       processing_method,
+      quality_name,
       bags,
       bag_count,
       bag_type,
@@ -854,6 +856,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       micro_origin: sample.micro_origin,
       sample_type: sample.sample_type,
       processing_method: sample.processing_method,
+      quality_name: sample.quality_name,
       bags: sample.bag_count || sample.bags, // Prefer bag_count, fall back to bags for legacy
       bag_type: sample.bag_type,
       bag_weight_kg: sample.bag_weight_kg,
