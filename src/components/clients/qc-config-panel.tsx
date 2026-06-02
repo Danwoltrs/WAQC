@@ -88,6 +88,10 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
   // Lab sequences
   const [labs, setLabs] = useState<Laboratory[]>([])
   const [labRows, setLabRows] = useState<LabRow[]>([])
+  // IDs of lab-config rows as loaded from the DB, so handleSave can DELETE the
+  // ones the user removed (upsert alone never deletes — that left stale per-lab
+  // overrides like Dunkin's mistaken sequence in place).
+  const [initialLabConfigIds, setInitialLabConfigIds] = useState<string[]>([])
   const [labLoading, setLabLoading] = useState(false)
   const [savingAll, setSavingAll] = useState(false)
   const [addingLabId, setAddingLabId] = useState<string | null>(null)
@@ -129,6 +133,7 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
           notes: c.notes,
         }))
         setLabRows(configs)
+        setInitialLabConfigIds(configs.map((c: LabRow) => c.id).filter(Boolean) as string[])
       })
       .catch(err => console.error('Error loading lab data:', err))
       .finally(() => setLabLoading(false))
@@ -219,8 +224,22 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
 
       // 2) Persist lab sequence rows. The endpoint upserts on (client_id, laboratory_id).
       if (clientId) {
-        await Promise.all(
-          labRows.map((row) =>
+        // Delete rows the user removed: any originally-loaded config id no
+        // longer present in labRows. Without this, upsert alone leaves the
+        // stale override in the DB (the Dunkin per-lab sequence bug).
+        const remainingIds = new Set(
+          labRows.map((r) => r.id).filter(Boolean) as string[],
+        )
+        const removedIds = initialLabConfigIds.filter((id) => !remainingIds.has(id))
+
+        await Promise.all([
+          ...removedIds.map((configId) =>
+            fetch(
+              `/api/clients/${clientId}/lab-configs?config_id=${encodeURIComponent(configId)}`,
+              { method: 'DELETE' },
+            ),
+          ),
+          ...labRows.map((row) =>
             fetch(`/api/clients/${clientId}/lab-configs`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
@@ -231,7 +250,7 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
               }),
             }),
           ),
-        )
+        ])
       }
     } catch (err) {
       console.error('Error saving QC configuration:', err)
