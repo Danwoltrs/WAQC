@@ -27,6 +27,7 @@ export async function POST(request: NextRequest) {
       .from('cupping_sessions')
       .select('id')
       .eq('session_type', 'cva')
+      .eq('created_by', user.id)
       .contains('sample_ids', [sampleId])
       .in('status', ['setup', 'active', 'review'])
       .order('created_at', { ascending: false })

@@ -69,7 +69,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const payload: CvaAssessment = {
       ...incoming,
       protocol: 'cva',
-      score: live.score,
+      score: live.complete ? live.score : 0,
       u: live.u,
       d: live.d,
     }

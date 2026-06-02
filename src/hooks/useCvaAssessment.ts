@@ -14,6 +14,14 @@ export function useCvaAssessment(sessionId: string) {
   const [savedAt, setSavedAt] = useState<number | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const latest = useRef<CvaAssessment>(assessment)
+  const mounted = useRef(true)
+  const inFlight = useRef(false)
+  const queued = useRef(false)
+
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   // Initial load.
   useEffect(() => {
@@ -35,17 +43,25 @@ export function useCvaAssessment(sessionId: string) {
     return () => { cancelled = true }
   }, [sessionId])
 
-  const persist = useCallback(async (next: CvaAssessment) => {
-    setSaving(true)
+  // Serialized autosave: at most one PUT in flight. Changes arriving mid-save are
+  // coalesced into one follow-up save. This prevents two concurrent INSERTs of the
+  // same (session, sample, cupper) cupping_scores row from racing into duplicates.
+  // Always sends `latest.current` (the freshest state).
+  const persist = useCallback(async () => {
+    if (inFlight.current) { queued.current = true; return }
+    inFlight.current = true
+    if (mounted.current) setSaving(true)
     try {
       const res = await fetch(`/api/cupping/cva/${sessionId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(next),
+        body: JSON.stringify(latest.current),
       })
-      if (res.ok) setSavedAt(Date.now())
+      if (res.ok && mounted.current) setSavedAt(Date.now())
     } finally {
-      setSaving(false)
+      inFlight.current = false
+      if (mounted.current) setSaving(false)
+      if (queued.current) { queued.current = false; void persist() }
     }
   }, [sessionId])
 
@@ -55,7 +71,7 @@ export function useCvaAssessment(sessionId: string) {
       const next = mutator(prev)
       latest.current = next
       if (timer.current) clearTimeout(timer.current)
-      timer.current = setTimeout(() => persist(latest.current), 700)
+      timer.current = setTimeout(() => void persist(), 700)
       return next
     })
   }, [persist])
@@ -64,7 +80,7 @@ export function useCvaAssessment(sessionId: string) {
   useEffect(() => () => {
     if (timer.current) {
       clearTimeout(timer.current)
-      void persist(latest.current)
+      void persist()
     }
   }, [persist])
 
