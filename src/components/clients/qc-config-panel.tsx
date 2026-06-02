@@ -12,8 +12,8 @@ import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
-  Eye, FileText, ImageIcon, Loader2, X, AlertCircle,
-  Check, Plus, FlaskConical, DollarSign, Trash2,
+  Eye, ImageIcon, Loader2, X, AlertCircle,
+  Check, Plus, FlaskConical, Trash2,
 } from 'lucide-react'
 import {
   CertificatePattern,
@@ -248,10 +248,10 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
       <DialogContent
         // The trailing selector hides shadcn's default absolute-positioned close
         // button so we can render our own inline with the title (matches mockup).
-        className="sm:max-w-[920px] max-h-[90vh] overflow-hidden p-0 rounded-2xl gap-0 border-border [&>button[type='button'].absolute]:hidden"
+        className="sm:max-w-[920px] max-h-[90vh] overflow-hidden flex flex-col p-0 rounded-2xl gap-0 border-border [&>button[type='button'].absolute]:hidden"
       >
         {/* Header */}
-        <div className="flex items-start justify-between gap-4 px-7 py-4 border-b border-border">
+        <div className="shrink-0 flex items-start justify-between gap-4 px-7 py-3 border-b border-border">
           <div className="min-w-0">
             <h2 className="text-[18px] font-semibold tracking-[-0.01em] leading-tight">
               QC Services Configuration
@@ -271,11 +271,9 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
         </div>
 
         {/* Body */}
-        <div className="overflow-y-auto grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
+        <div className="flex-1 min-h-0 overflow-y-auto grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
           {/* LEFT — Pricing & billing */}
           <div className="px-7 py-6 space-y-4">
-            <SectionLabel icon={<DollarSign className="h-3 w-3" />}>Pricing &amp; billing</SectionLabel>
-
             <div className="grid grid-cols-2 gap-3">
               <FieldShell label="Pricing model">
                 <Select value={pricingModel} onValueChange={setPricingModel}>
@@ -463,7 +461,6 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
 
           {/* RIGHT — Certificate pattern */}
           <div className="px-7 py-6 space-y-4">
-            <SectionLabel icon={<FileText className="h-3 w-3" />}>Certificate pattern</SectionLabel>
 
             <p className="text-[12px] text-muted-foreground -mt-2">
               Include in the certificate number:
@@ -527,13 +524,7 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
               </FieldShell>
             </div>
 
-            <div>
-              <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80 mb-1.5">
-                <Eye className="h-3 w-3" />
-                Live preview
-              </div>
-              <CertPreview pattern={certificatePattern} />
-            </div>
+            <CertPreview pattern={certificatePattern} />
 
             <SwitchRow
               title="Certificate validity period"
@@ -626,7 +617,7 @@ export function QcConfigPanel({ open, onOpenChange, data, onSave, clientId }: Qc
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-2.5 px-7 py-4 border-t border-border bg-muted/30">
+        <div className="shrink-0 flex items-center justify-end gap-2.5 px-7 py-3 border-t border-border bg-muted/30">
           <Button
             type="button"
             variant="outline"
@@ -799,8 +790,12 @@ function CertPreview({ pattern }: { pattern: CertificatePattern }) {
   }, [pattern])
 
   return (
-    <div className="rounded-[10px] border border-border bg-muted/30 px-4 py-4 text-center">
-      <div className="font-mono text-[21px] font-semibold tracking-[0.04em]">
+    <div className="rounded-[10px] border border-border bg-muted/30 px-4 py-4">
+      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground/80 mb-2">
+        <Eye className="h-3 w-3" />
+        Live preview
+      </div>
+      <div className="font-mono text-[21px] font-semibold tracking-[0.04em] text-center">
         {segments.map((s, i) => (
           <span
             key={i}
@@ -815,7 +810,7 @@ function CertPreview({ pattern }: { pattern: CertificatePattern }) {
           </span>
         ))}
       </div>
-      <div className="text-[11.5px] text-muted-foreground/70 mt-2">{caption}</div>
+      <div className="text-[11.5px] text-muted-foreground/70 mt-2 text-center">{caption}</div>
     </div>
   )
 }
