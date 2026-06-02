@@ -35,7 +35,7 @@ export const QC_CLIENT_SELECT = `
     bag_weight_kg, has_origin_pricing, certificate_delivery_timing,
     sample_size_grams, moisture_standard, defect_photos,
     storage_layout, tax_region, report_branding_preference,
-    address_override
+    address_override, certificate_validity_months
   )
 `.trim()
 
@@ -80,6 +80,7 @@ type AddressOverride = {
 type QcSettings = {
   certificate_pattern?: unknown
   certificate_config?: unknown
+  certificate_validity_months?: number | null
   default_quality_specs?: string[] | null
   pricing_model?: string | null
   billing_basis?: string | null
@@ -181,6 +182,7 @@ export function mapCompanyToClient(row: CompanyRow | null | undefined): Record<s
     updated_at: row.updated_at,
     certificate_pattern: settings.certificate_pattern ?? null,
     certificate_config: settings.certificate_config ?? null,
+    certificate_validity_months: settings.certificate_validity_months ?? null,
     default_quality_specs: settings.default_quality_specs ?? [],
     pricing_model: settings.pricing_model ?? 'per_sample',
     billing_basis: settings.billing_basis ?? 'approved_only',
@@ -256,7 +258,7 @@ export const COMPANY_FIELDS = new Set([
 ])
 
 export const QC_SETTINGS_FIELDS = new Set([
-  'certificate_pattern', 'certificate_config',
+  'certificate_pattern', 'certificate_config', 'certificate_validity_months',
   'default_quality_specs', 'pricing_model', 'billing_basis', 'notification_emails',
   'tracking_number_format', 'price_per_sample', 'price_per_pound_cents',
   'currency', 'fee_payer', 'payment_terms', 'billing_notes',

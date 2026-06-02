@@ -389,9 +389,24 @@ export async function POST(request: NextRequest) {
 
     // Create certificate only if both cupping AND grading are complete
     let certificate = null
+    // Certificate validity window is per-client:
+    // qc_client_settings.certificate_validity_months. NULL/0 → no expiry
+    // window is printed on the certificate (the "Certificate validity period"
+    // toggle is off for that client).
     const validFrom = new Date()
-    const validUntil = new Date(validFrom)
-    validUntil.setFullYear(validUntil.getFullYear() + 1)
+    let validUntil: Date | null = null
+    {
+      const { data: vSettings } = await (supabaseAdmin as any)
+        .from('qc_client_settings')
+        .select('certificate_validity_months')
+        .eq('company_id', sample.client_id)
+        .maybeSingle()
+      const months = vSettings?.certificate_validity_months
+      if (typeof months === 'number' && months > 0) {
+        validUntil = new Date(validFrom)
+        validUntil.setMonth(validUntil.getMonth() + months)
+      }
+    }
 
     // Other Samples don't generate Wolthers certificates — clients approve them
     // individually via the sample_recipients flow.
@@ -439,7 +454,7 @@ export async function POST(request: NextRequest) {
             issued_by: user.id,
             status: 'issued',
             valid_from: validFrom.toISOString(),
-            valid_until: validUntil.toISOString(),
+            valid_until: validUntil ? validUntil.toISOString() : null,
             is_rejected: decision === 'rejected',
             compliance_violations: complianceResult.violations.length > 0
               ? complianceResult.violations
@@ -579,7 +594,7 @@ export async function POST(request: NextRequest) {
                   issued_by: user.id,
                   status: 'issued',
                   valid_from: validFrom.toISOString(),
-                  valid_until: validUntil.toISOString(),
+                  valid_until: validUntil ? validUntil.toISOString() : null,
                   is_rejected: decision === 'rejected',
                   compliance_violations: complianceResult.violations.length > 0
                     ? complianceResult.violations
