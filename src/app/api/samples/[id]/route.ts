@@ -4,6 +4,7 @@ import { Database } from '@/lib/database.types'
 import { isUUID, slugToTrackingNumber } from '@/lib/utils'
 import { resolveSampleId } from '@/lib/sample-utils'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
+import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
@@ -185,10 +186,10 @@ export async function PATCH(
 
     const body = await request.json()
 
-    // Validate that sample exists first
-    const { data: existingSample, error: fetchError } = await supabase
+    // Validate that sample exists first (include lock fields for authorization)
+    const { data: existingSample, error: fetchError } = await (supabase as any)
       .from('samples')
-      .select('id, workflow_stage')
+      .select('id, workflow_stage, locked, scanned_at, certificate_generated_at')
       .eq('id', id)
       .single()
 
@@ -250,6 +251,23 @@ export async function PATCH(
       if (body[field] !== undefined) {
         updateData[field as keyof SampleUpdate] = body[field]
       }
+    }
+
+    // Authorize: only master cuppers / global admins may edit; lock-sensitive
+    // (quality) fields are rejected once the content lock applies.
+    const { data: editorProfile } = await supabase
+      .from('profiles')
+      .select('is_master_cupper, is_global_admin, qc_role')
+      .eq('id', user.id)
+      .single()
+
+    const auth = authorizeSampleEdit({
+      profile: editorProfile,
+      sample: existingSample,
+      changedFields: Object.keys(updateData),
+    })
+    if (!auth.ok) {
+      return NextResponse.json({ error: auth.error }, { status: auth.status })
     }
 
     // Validate bag quantities if being updated

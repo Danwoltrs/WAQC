@@ -42,6 +42,12 @@ import { OtherSampleRecipientsPanel } from '@/components/samples/other-sample-re
 
 interface EditPermission {
   canEdit: boolean
+  /** Master cupper / global admin — the only sample editors. */
+  isEditor?: boolean
+  /** Editor AND quality content not locked (pre-cert or within 7 days). */
+  canEditContent?: boolean
+  /** Editor — commercial / logistics fields editable any time. */
+  canEditCounterparties?: boolean
   reason: 'not_locked' | 'within_7_days' | 'locked_after_scan' | 'locked_after_7_days'
   lockExpiresAt: string | null
   message: string
@@ -187,6 +193,17 @@ export function SampleDetailModal({
   const [editPermission, setEditPermission] = useState<EditPermission | null>(null)
   const [formData, setFormData] = useState<Partial<Sample>>({})
 
+  // Editor = master cupper / global admin. Falls back to the server permission
+  // payload, then to the auth profile (before the payload has loaded).
+  const isEditor =
+    editPermission?.isEditor ??
+    (profile?.is_master_cupper === true ||
+      profile?.is_global_admin === true ||
+      profile?.qc_role === 'global_admin')
+  // Quality (lock-sensitive) fields are editable only when not locked.
+  // Commercial / logistics fields stay editable any time for an editor.
+  const canEditContent = editPermission?.canEditContent ?? isEditor
+
   // Certificate preview modal states
   const [showCertificateModal, setShowCertificateModal] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
@@ -302,6 +319,15 @@ export function SampleDetailModal({
 
   const handleEnterEditMode = () => {
     if (!sample) return
+    // Only master cuppers / global admins may edit.
+    if (!isEditor) {
+      toast({
+        title: 'Editing restricted',
+        description: 'Only master cuppers and global admins can edit samples.',
+        variant: 'destructive',
+      })
+      return
+    }
     setFormData({
       bag_count: sample.bag_count,
       bag_type: sample.bag_type,
@@ -818,12 +844,17 @@ export function SampleDetailModal({
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* Left: Sample Info */}
                   <Card className="relative">
-                    {!isEditMode && (
+                    {!isEditMode && isEditor && (
                       <Button variant="ghost" size="icon" className="absolute top-0.5 right-0.5 h-7 w-7" onClick={handleEnterEditMode} title="Edit">
                         <Edit className="h-3.5 w-3.5" />
                       </Button>
                     )}
                     <CardContent className="pt-4 space-y-4">
+                      {isEditMode && !canEditContent && (
+                        <div className="rounded-md border border-amber-300/40 bg-amber-50 dark:bg-amber-950/30 px-3 py-2 text-xs text-amber-700 dark:text-amber-400">
+                          Quality fields (quality, micro origin, processing) are locked 7 days after the certificate was issued. Commercial and logistics fields can still be edited.
+                        </div>
+                      )}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="text-sm text-muted-foreground">Origin</label>
@@ -836,7 +867,7 @@ export function SampleDetailModal({
                             const currentVal = formData.micro_origin ?? sample.micro_origin ?? ''
                             if (regionOptions.length > 0) {
                               return (
-                                <Select value={currentVal || '__none__'} onValueChange={(v) => handleFormChange('micro_origin', v === '__none__' ? '' : v)}>
+                                <Select value={currentVal || '__none__'} onValueChange={(v) => handleFormChange('micro_origin', v === '__none__' ? '' : v)} disabled={!canEditContent}>
                                   <SelectTrigger className="h-8 text-sm mt-1"><SelectValue placeholder="Select micro origin..." /></SelectTrigger>
                                   <SelectContent>
                                     <SelectItem value="__none__">- None -</SelectItem>
@@ -856,6 +887,7 @@ export function SampleDetailModal({
                                 onChange={(e) => handleFormChange('micro_origin', e.target.value)}
                                 className="h-8 text-sm mt-1"
                                 placeholder="e.g., Cerrado Mineiro"
+                                disabled={!canEditContent}
                               />
                             )
                           })() : (
@@ -868,7 +900,7 @@ export function SampleDetailModal({
                             <Select
                               value={formData.quality_spec_id || sample.quality_spec_id || ''}
                               onValueChange={(v) => handleFormChange('quality_spec_id', v)}
-                              disabled={loadingQualities}
+                              disabled={loadingQualities || !canEditContent}
                             >
                               <SelectTrigger className="h-8 text-sm mt-1">
                                 <SelectValue placeholder={loadingQualities ? 'Loading...' : 'Select quality...'} />
@@ -893,6 +925,7 @@ export function SampleDetailModal({
                               onChange={(e) => handleFormChange('processing_method', e.target.value)}
                               className="h-8 text-sm mt-1"
                               placeholder="e.g., Washed, Natural"
+                              disabled={!canEditContent}
                             />
                           ) : (
                             <div className="text-sm font-medium mt-1">{sample.processing_method || '-'}</div>

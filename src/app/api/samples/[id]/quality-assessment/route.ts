@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { evaluateQualityCompliance } from '@/lib/compliance'
+import { computeContentLock } from '@/lib/sample-edit-permissions'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
 const supabaseAdmin = createSupabaseClient(
@@ -35,15 +36,26 @@ export async function POST(
     const body = await request.json()
     const { green_bean_data, roast_data, clean_cup, uniform_cup, cupping_comments, grading_comments } = body
 
-    // Verify sample exists (include workflow_stage for auto-certification check)
-    const { data: sample, error: sampleError } = await supabase
+    // Verify sample exists (include workflow_stage for auto-certification check
+    // and lock fields for the content-lock check)
+    const { data: sample, error: sampleError } = await (supabase as any)
       .from('samples')
-      .select('id, tracking_number, workflow_stage, client_id, quality_spec_id')
+      .select('id, tracking_number, workflow_stage, client_id, quality_spec_id, locked, scanned_at, certificate_generated_at')
       .eq('id', sampleId)
       .single()
 
     if (sampleError || !sample) {
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+    }
+
+    // Quality data (green bean / roast analysis) freezes once the content lock
+    // applies (7 days after certificate generation, or after OCR scan lock).
+    const assessmentLock = computeContentLock(sample)
+    if (assessmentLock.contentLocked) {
+      return NextResponse.json(
+        { error: `Quality data is locked and cannot be edited. ${assessmentLock.message}` },
+        { status: 423 }
+      )
     }
 
     // Check if quality assessment already exists
