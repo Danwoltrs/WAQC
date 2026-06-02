@@ -199,6 +199,8 @@ export default function SamplesPage() {
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleteSampleTarget, setDeleteSampleTarget] = useState<Sample | null>(null)
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false)
   const [deleteSubContractTarget, setDeleteSubContractTarget] = useState<{ sample: Sample; sc: SubContract } | null>(null)
   const [expandedSamples, setExpandedSamples] = useState<Set<string>>(new Set())
   const [selectedSubContractQrCodes, setSelectedSubContractQrCodes] = useState<Set<string>>(new Set())
@@ -722,26 +724,16 @@ export default function SamplesPage() {
     setSelectedQrCodes(newQrCodes)
   }
 
-  const handleDeleteSample = async (sample: Sample) => {
+  // Opens the in-app confirmation modal; actual delete runs in confirmDeleteSample.
+  const handleDeleteSample = (sample: Sample) => {
+    setDeleteSampleTarget(sample)
+  }
+
+  const confirmDeleteSample = async () => {
+    const sample = deleteSampleTarget
+    if (!sample) return
     const sampleNumber = parseTrackingNumber(sample.tracking_number)
-
-    const confirmed = confirm(
-      `Are you sure you want to delete sample ${sampleNumber}?\n\n` +
-      `This action cannot be undone and will permanently delete:\n` +
-      `- The sample record\n` +
-      `- All quality assessments\n` +
-      `- All related certificates\n` +
-      `- All activity logs`
-    )
-
-    if (!confirmed) return
-
-    const userInput = prompt(`Please type the sample number to confirm deletion:\n${sampleNumber}`)
-
-    if (userInput !== sampleNumber) {
-      alert('Sample number does not match. Deletion cancelled.')
-      return
-    }
+    setDeleteSampleTarget(null)
 
     try {
       setDeletingId(sample.id)
@@ -762,40 +754,33 @@ export default function SamplesPage() {
         return newSet
       })
 
-      alert(`Sample ${sampleNumber} deleted successfully`)
+      toast({ title: 'Sample deleted', description: `Sample ${sampleNumber} deleted successfully` })
     } catch (error) {
       console.error('Error deleting sample:', error)
-      alert(error instanceof Error ? error.message : 'Failed to delete sample. Please try again.')
+      toast({
+        title: 'Delete failed',
+        description: error instanceof Error ? error.message : 'Failed to delete sample. Please try again.',
+        variant: 'destructive',
+      })
     } finally {
       setDeletingId(null)
     }
   }
 
-  const handleBulkDelete = async () => {
+  const handleBulkDelete = () => {
     if (selectedSamples.size === 0) {
-      alert('Please select at least one sample to delete')
+      toast({
+        title: 'No samples selected',
+        description: 'Please select at least one sample to delete',
+        variant: 'destructive',
+      })
       return
     }
+    setBulkDeleteOpen(true)
+  }
 
-    const confirmed = confirm(
-      `Are you sure you want to delete ${selectedSamples.size} sample(s)?\n\n` +
-      `This action cannot be undone and will permanently delete:\n` +
-      `- All sample records\n` +
-      `- All quality assessments\n` +
-      `- All related certificates\n` +
-      `- All activity logs`
-    )
-
-    if (!confirmed) return
-
-    const confirmText = `DELETE ${selectedSamples.size} SAMPLES`
-    const userInput = prompt(`Please type "${confirmText}" to confirm bulk deletion:`)
-
-    if (userInput !== confirmText) {
-      alert('Confirmation text does not match. Deletion cancelled.')
-      return
-    }
-
+  const confirmBulkDelete = async () => {
+    setBulkDeleteOpen(false)
     try {
       let successCount = 0
       let failCount = 0
@@ -823,13 +808,17 @@ export default function SamplesPage() {
       setSelectedSamples(new Set())
 
       if (failCount > 0) {
-        alert(`Deleted ${successCount} sample(s). ${failCount} failed.`)
+        toast({
+          title: 'Bulk delete finished',
+          description: `Deleted ${successCount} sample(s). ${failCount} failed.`,
+          variant: 'destructive',
+        })
       } else {
-        alert(`Successfully deleted ${successCount} sample(s)`)
+        toast({ title: 'Samples deleted', description: `Successfully deleted ${successCount} sample(s)` })
       }
     } catch (error) {
       console.error('Error in bulk delete:', error)
-      alert('Failed to delete samples. Please try again.')
+      toast({ title: 'Delete failed', description: 'Failed to delete samples. Please try again.', variant: 'destructive' })
     }
   }
 
@@ -2117,6 +2106,48 @@ export default function SamplesPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Sample Confirmation */}
+      <AlertDialog open={!!deleteSampleTarget} onOpenChange={(open) => !open && setDeleteSampleTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete sample</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete sample{' '}
+              <span className="font-medium text-foreground">
+                {deleteSampleTarget ? parseTrackingNumber(deleteSampleTarget.tracking_number) : ''}
+              </span>
+              ? This permanently removes the sample, its quality assessments, certificates and activity logs. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDeleteSample} className="bg-destructive hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Samples Confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete {selectedSamples.size} sample(s)</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete{' '}
+              <span className="font-medium text-foreground">{selectedSamples.size}</span> sample(s)?
+              This permanently removes each sample, its quality assessments, certificates and activity logs. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmBulkDelete} className="bg-destructive hover:bg-destructive/90">
+              Delete {selectedSamples.size}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Delete Sub-Contract Confirmation */}
       <AlertDialog open={!!deleteSubContractTarget} onOpenChange={(open) => !open && setDeleteSubContractTarget(null)}>

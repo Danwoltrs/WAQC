@@ -21,6 +21,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
+import { useToast } from '@/hooks/use-toast'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useAuth } from '@/components/providers/auth-provider'
 import { trackingNumberToSlug } from '@/lib/utils'
@@ -165,6 +176,8 @@ export function SampleDetailModal({
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [deleting, setDeleting] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const { toast } = useToast()
   const [generatingCertificate, setGeneratingCertificate] = useState(false)
   const [downloadingCertificate, setDownloadingCertificate] = useState(false)
 
@@ -534,27 +547,15 @@ export function SampleDetailModal({
     window.URL.revokeObjectURL(url)
   }
 
-  const handleDelete = async () => {
+  // Opens the in-app confirmation modal; actual delete runs in confirmDelete.
+  const handleDelete = () => {
     if (!sample) return
+    setDeleteOpen(true)
+  }
 
-    const confirmed = confirm(
-      `Are you sure you want to delete sample ${parseTrackingNumber(sample.tracking_number)}?\n\n` +
-      `This action cannot be undone and will permanently delete:\n` +
-      `- The sample record\n` +
-      `- All quality assessments\n` +
-      `- All related certificates\n` +
-      `- All activity logs\n\n` +
-      `Type the sample number to confirm.`
-    )
-
-    if (!confirmed) return
-
-    const userInput = prompt(`Please type the sample number to confirm deletion:\n${parseTrackingNumber(sample.tracking_number)}`)
-
-    if (userInput !== parseTrackingNumber(sample.tracking_number)) {
-      alert('Sample number does not match. Deletion cancelled.')
-      return
-    }
+  const confirmDelete = async () => {
+    if (!sample) return
+    setDeleteOpen(false)
 
     try {
       setDeleting(true)
@@ -568,12 +569,16 @@ export function SampleDetailModal({
       }
 
       const data = await response.json()
-      alert(data.message || 'Sample deleted successfully')
+      toast({ title: 'Sample deleted', description: data.message || 'Sample deleted successfully' })
       onOpenChange(false)
       onSampleUpdated?.()
     } catch (error) {
       console.error('Error deleting sample:', error)
-      alert(error instanceof Error ? error.message : 'Failed to delete sample')
+      toast({
+        title: 'Delete failed',
+        description: error instanceof Error ? error.message : 'Failed to delete sample',
+        variant: 'destructive',
+      })
     } finally {
       setDeleting(false)
     }
@@ -1294,6 +1299,28 @@ export function SampleDetailModal({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Sample Confirmation */}
+      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete sample</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete sample{' '}
+              <span className="font-medium text-foreground">
+                {sample ? parseTrackingNumber(sample.tracking_number) : ''}
+              </span>
+              ? This permanently removes the sample, its quality assessments, certificates and activity logs. This cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmDelete} className="bg-destructive hover:bg-destructive/90">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   )
 }
