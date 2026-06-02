@@ -241,7 +241,9 @@ export async function PATCH(
       'end_client_id',
       'end_client_contract_nr',
       'supplier_contract_nr',
-      'quality_name'
+      'quality_name',
+      'crop_year',
+      'certifications',
     ]
 
     for (const field of allowedFields) {
@@ -282,13 +284,18 @@ export async function PATCH(
       }, { status: 500 })
     }
 
-    // Invalidate cached certificate PDF if certificate-relevant fields changed
+    // Invalidate cached certificate PDF if certificate-relevant fields changed.
+    // Must include every field the certificate renders (see quality-certificate
+    // + certificate-data), otherwise the cached PDF goes stale after an edit.
     const certFields = [
       'container_nr', 'wolthers_contract_nr', 'buyer_contract_nr', 'exporter_contract_nr',
       'roaster_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'qc_client_contract_nr',
       'exporter_id', 'importer_id', 'roaster_id', 'seller_id', 'origin', 'bags',
       'bag_type', 'bag_weight_kg', 'bags_quantity_mt', 'bag_count', 'equivalent_60kg_bags',
       'end_client_id', 'end_client_contract_nr', 'quality_spec_id',
+      // Quality / processing / certifications and other rendered fields
+      'quality_name', 'processing_method', 'certifications', 'crop_year',
+      'micro_origin', 'sample_type', 'ico_number', 'shipment_month',
     ]
     const hasCertFieldChange = certFields.some((f) => body[f] !== undefined)
     if (hasCertFieldChange) {

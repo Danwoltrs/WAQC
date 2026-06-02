@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 
 /**
  * GET /api/samples/[id]/contracts
@@ -317,7 +318,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    await params
+    const { id: sampleId } = await params
     const supabase = await createClient()
 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
@@ -359,6 +360,10 @@ export async function PATCH(
       console.error('Error updating sub-contract:', error)
       return NextResponse.json({ error: 'Failed to update sub-contract' }, { status: 500 })
     }
+
+    // Every editable sub-contract field renders on the sub-contract certificate,
+    // so a successful update invalidates the sample's cached cert PDFs.
+    invalidateCertificatePdf(supabase, sampleId).catch(() => {})
 
     return NextResponse.json({ contract })
   } catch (error: any) {
