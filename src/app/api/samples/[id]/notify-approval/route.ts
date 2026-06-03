@@ -5,7 +5,7 @@ import { canUserManageSample } from '@/lib/auth/sample-access'
 import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
-import { approvalBodyToHtml } from '@/lib/approval-notification/template'
+import { composeBodyHtml } from '@/lib/email/compose-html'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
 
@@ -28,6 +28,7 @@ interface PanelInput {
 interface Body {
   panels: PanelInput[]
   includeCertificate?: boolean
+  includeSignature?: boolean
   comments?: string | null
 }
 
@@ -38,6 +39,7 @@ export async function POST(
   const { id } = await params
   const body = (await req.json()) as Body
   const panels = (body.panels ?? []).filter((p) => p.to?.length && p.subject && p.bodyText)
+  const includeSignature = body.includeSignature !== false
   if (panels.length === 0) {
     return NextResponse.json({ error: 'At least one panel with to/subject/body is required' }, { status: 400 })
   }
@@ -49,13 +51,14 @@ export async function POST(
   if (!access.allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const supabase = admin()
-  const { data: profile } = await supabase
+  const { data: profile } = await (supabase as any)
     .from('profiles')
-    .select('full_name, email')
+    .select('full_name, email, email_signature_html')
     .eq('id', user.id)
     .single()
-  const senderEmail = (profile as any)?.email || user.email || undefined
-  const senderName = (profile as any)?.full_name || senderEmail || undefined
+  const senderEmail = profile?.email || user.email || undefined
+  const senderName = profile?.full_name || senderEmail || undefined
+  const signatureHtml: string | null = profile?.email_signature_html ?? null
 
   const { data: sample } = await supabase
     .from('samples')
@@ -108,6 +111,7 @@ export async function POST(
     const to = testTo ? [testTo] : panel.to
     const cc = testTo ? undefined : panel.cc
     const subject = testTo ? `[TEST] ${panel.subject}` : panel.subject
+    const bodyHtml = composeBodyHtml(panel.bodyText, includeSignature ? signatureHtml : null)
     try {
       await sendMail({
         mailbox: QC_MAILBOX,
@@ -115,7 +119,7 @@ export async function POST(
         cc,
         subject,
         bodyText: panel.bodyText,
-        bodyHtml: approvalBodyToHtml(panel.bodyText),
+        bodyHtml,
         attachments: attachment ? [attachment] : undefined,
         saveToSentItems: true,
         senderEmail,
@@ -133,7 +137,7 @@ export async function POST(
         cc_recipients: (cc ?? []).map((e) => ({ email: e })),
         subject,
         body_text: panel.bodyText,
-        body_html: approvalBodyToHtml(panel.bodyText),
+        body_html: bodyHtml,
         contract_id: contractId,
         buyer_id: (contract as any)?.buyer_id ?? null,
         seller_id: (contract as any)?.seller_id ?? null,
