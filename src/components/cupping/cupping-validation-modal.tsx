@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Plus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { ApprovalComposer } from '@/components/samples/approval-composer'
+import { ApprovalSendView } from '@/components/samples/approval-send-view'
 
 interface AttributeStats {
   mean: number
@@ -1368,7 +1368,7 @@ export function CuppingValidationModal({
       </DialogContent>
     </Dialog>
     {sampleId && (
-      <ApprovalComposer
+      <ApprovalSendView
         sampleId={sampleId}
         open={approvalComposerOpen}
         onClose={() => {
