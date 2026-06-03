@@ -216,7 +216,7 @@ export function CuppingValidationModal({
 }: CuppingValidationModalProps) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [approvalComposerOpen, setApprovalComposerOpen] = useState(false)
+  const [approvalSendOpen, setApprovalSendOpen] = useState(false)
   const [aggregated, setAggregated] = useState<AggregatedScores | null>(null)
   const [individualScores, setIndividualScores] = useState<IndividualScore[]>([])
   const [consolidatedDefects, setConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
@@ -607,7 +607,7 @@ export function CuppingValidationModal({
         try {
           const r = await fetch(`/api/samples/${sampleId}/approval-recipients`)
           if (r.ok) {
-            setApprovalComposerOpen(true)
+            setApprovalSendOpen(true)
             return
           }
         } catch {
@@ -1370,9 +1370,9 @@ export function CuppingValidationModal({
     {sampleId && (
       <ApprovalSendView
         sampleId={sampleId}
-        open={approvalComposerOpen}
+        open={approvalSendOpen}
         onClose={() => {
-          setApprovalComposerOpen(false)
+          setApprovalSendOpen(false)
           onFinalize?.()
           onOpenChange(false)
         }}
