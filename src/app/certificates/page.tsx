@@ -802,6 +802,16 @@ export default function CertificatesPage() {
                                 >
                                   <RefreshCw className="h-4 w-4" />
                                 </Button>
+                                {cert.sample?.wolthers_contract_nr && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setApprovalSampleId(cert.sample_id!)}
+                                    title="Send approval email"
+                                  >
+                                    <Mail className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </>
                             )}
                           </div>

@@ -19,6 +19,7 @@ import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
 import { DuplicateCountPopover } from '@/components/samples/duplicate-count-popover'
+import { ApprovalSendView } from '@/components/samples/approval-send-view'
 import { useToast } from '@/hooks/use-toast'
 import {
   Select,
@@ -215,6 +216,7 @@ export default function SamplesPage() {
   const [previewSample, setPreviewSample] = useState<Sample | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
   const [downloadingSampleId, setDownloadingSampleId] = useState<string | null>(null)
+  const [approvalSampleId, setApprovalSampleId] = useState<string | null>(null)
 
   // Track assigned cuppers for selected samples
   const [assignedCuppers, setAssignedCuppers] = useState<Array<{
@@ -1577,6 +1579,17 @@ export default function SamplesPage() {
                                     )}
                                   </Button>
                                 )}
+                                {(sample.status === 'approved' || sample.status === 'rejected') && sample.wolthers_contract_nr && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 w-7 p-0 text-muted-foreground hover:text-foreground"
+                                    onClick={() => setApprovalSampleId(sample.id)}
+                                    title="Send approval email"
+                                  >
+                                    <Mail className="h-3.5 w-3.5" />
+                                  </Button>
+                                )}
                                 {isGlobalAdmin && (
                                   <Button
                                     variant="ghost"
@@ -1696,6 +1709,12 @@ export default function SamplesPage() {
                                 <Download className="h-4 w-4 mr-2" />
                                 Download Certificate
                               </ContextMenuItem>
+                              {(sample.status === 'approved' || sample.status === 'rejected') && sample.wolthers_contract_nr && (
+                                <ContextMenuItem onClick={() => setApprovalSampleId(sample.id)}>
+                                  <Mail className="h-4 w-4 mr-2" />
+                                  Send approval email
+                                </ContextMenuItem>
+                              )}
                             </>
                           )}
                           {isGlobalAdmin && (
@@ -2106,6 +2125,14 @@ export default function SamplesPage() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {approvalSampleId && (
+        <ApprovalSendView
+          sampleId={approvalSampleId}
+          open={!!approvalSampleId}
+          onClose={() => setApprovalSampleId(null)}
+        />
+      )}
 
       {/* Delete Sample Confirmation */}
       <AlertDialog open={!!deleteSampleTarget} onOpenChange={(open) => !open && setDeleteSampleTarget(null)}>
