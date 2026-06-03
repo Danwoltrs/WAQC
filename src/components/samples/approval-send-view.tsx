@@ -49,7 +49,7 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
             contractNumber: fields.contractNumber,
             sellerReference: fields.sellerReference,
             buyerReference: fields.buyerReference,
-            sampleType: 'pss',
+            sampleType: fields.sampleType ?? 'pss',
             sampleCode: fields.sampleCode,
             trackingNumber: fields.trackingNumber,
             awb: fields.awb,
@@ -95,6 +95,15 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
       })
       const data = await res.json()
       if (!res.ok || !data.ok) throw new Error(data.error || 'Send failed')
+      const failures = (data.results ?? []).filter((r: { ok: boolean }) => !r.ok)
+      if (failures.length > 0) {
+        setError(
+          `Sent, but delivery failed for: ${failures
+            .map((f: { side: string }) => f.side)
+            .join(', ')}. You can adjust recipients and retry.`,
+        )
+        return
+      }
       onSent?.()
       onClose()
     } catch (e) {

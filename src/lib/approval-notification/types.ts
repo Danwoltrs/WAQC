@@ -17,6 +17,7 @@ export interface PanelPrefill {
 
 export interface ApprovalSampleFields {
   trackingNumber: string
+  sampleType: string
   status: ApprovalDecision
   contractNumber: string | null
   sampleCode: string | null

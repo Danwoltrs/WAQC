@@ -102,6 +102,7 @@ export async function GET(
   const payload: ApprovalPrefill = {
     sample: {
       trackingNumber: s.tracking_number,
+      sampleType: s.sample_type ?? 'pss',
       status: s.status,
       contractNumber: c.contract_number ?? null,
       sampleCode: (ss as any)?.sample_code ?? null,

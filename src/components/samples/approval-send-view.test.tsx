@@ -6,6 +6,7 @@ import type { ApprovalPrefill } from '@/lib/approval-notification/types'
 const prefill: ApprovalPrefill = {
   sample: {
     trackingNumber: 'BR-036991/26',
+    sampleType: 'pss',
     status: 'approved',
     contractNumber: '42221/26',
     sampleCode: 'PSS',

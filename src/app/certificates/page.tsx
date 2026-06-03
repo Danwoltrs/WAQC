@@ -1043,7 +1043,12 @@ export default function CertificatesPage() {
             currentlyRejected={!!overrideCertificate.is_rejected}
             onSuccess={() => {
               loadCertificates()
-              if (overrideCertificate?.sample_id) setApprovalSampleId(overrideCertificate.sample_id)
+              if (overrideCertificate?.sample_id) {
+                const sid = overrideCertificate.sample_id
+                fetch(`/api/samples/${sid}/approval-recipients`)
+                  .then((r) => { if (r.ok) setApprovalSampleId(sid) })
+                  .catch(() => {})
+              }
             }}
           />
         )}
