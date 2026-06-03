@@ -40,6 +40,7 @@ import {
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
+import { ApprovalSendView } from '@/components/samples/approval-send-view'
 
 interface Certificate {
   id: string
@@ -443,6 +444,7 @@ export default function CertificatesPage() {
 
   // Override dialog state
   const [overrideCertificate, setOverrideCertificate] = useState<Certificate | null>(null)
+  const [approvalSampleId, setApprovalSampleId] = useState<string | null>(null)
 
   // Certificate preview modal state
   const [previewCertificate, setPreviewCertificate] = useState<Certificate | null>(null)
@@ -1039,7 +1041,18 @@ export default function CertificatesPage() {
             certificateId={overrideCertificate.id}
             certificateNumber={overrideCertificate.certificate_number}
             currentlyRejected={!!overrideCertificate.is_rejected}
-            onSuccess={loadCertificates}
+            onSuccess={() => {
+              loadCertificates()
+              if (overrideCertificate?.sample_id) setApprovalSampleId(overrideCertificate.sample_id)
+            }}
+          />
+        )}
+
+        {approvalSampleId && (
+          <ApprovalSendView
+            sampleId={approvalSampleId}
+            open={!!approvalSampleId}
+            onClose={() => setApprovalSampleId(null)}
           />
         )}
 
