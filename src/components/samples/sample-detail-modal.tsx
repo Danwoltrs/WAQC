@@ -39,6 +39,7 @@ import { MICRO_ORIGINS } from '@/components/samples/intake/constants'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { CuppingGradingSection } from '@/components/samples/cupping-grading-section'
 import { OtherSampleRecipientsPanel } from '@/components/samples/other-sample-recipients-panel'
+import { ApprovalSendView } from '@/components/samples/approval-send-view'
 
 interface EditPermission {
   canEdit: boolean
@@ -227,6 +228,9 @@ export function SampleDetailModal({
 
   // Print label
   const [printingLabel, setPrintingLabel] = useState(false)
+
+  // Approval send view
+  const [showApprovalSend, setShowApprovalSend] = useState(false)
 
   // Reset state when sampleId changes or modal opens
   useEffect(() => {
@@ -1133,6 +1137,11 @@ export function SampleDetailModal({
                           Generate Cert
                         </Button>
                       )}
+                      {(sample.status === 'approved' || sample.status === 'rejected') && sample.wolthers_contract_nr && (
+                        <Button variant="outline" size="sm" onClick={() => setShowApprovalSend(true)}>
+                          Send approval email
+                        </Button>
+                      )}
                       {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
                         <Button variant="destructive" size="icon" className="h-8 w-8" onClick={handleDelete} disabled={deleting} title="Delete">
                           {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
@@ -1354,6 +1363,15 @@ export function SampleDetailModal({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Approval Send View */}
+      {sampleId && (
+        <ApprovalSendView
+          sampleId={sampleId}
+          open={showApprovalSend}
+          onClose={() => setShowApprovalSend(false)}
+        />
+      )}
     </>
   )
 }
