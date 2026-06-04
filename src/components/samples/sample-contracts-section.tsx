@@ -19,6 +19,18 @@ import {
 } from '@/components/ui/dialog'
 import { Plus, Trash2, Download, Loader2, FileText, Save, ChevronDown, ChevronRight } from 'lucide-react'
 import { createBrowserClient } from '@supabase/ssr'
+import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { computeBagQuantities } from '@/lib/bag-quantity'
+
+const BAG_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'jute_bag', label: 'Jute bag' },
+  { value: 'pp_bag', label: 'PP bag' },
+  { value: 'big_bag', label: 'Big bag' },
+  { value: 'bulk', label: 'Bulk' },
+]
+
+// Weights that don't depend on origin; jute/pp are left for the user to set.
+const FIXED_BAG_WEIGHTS: Record<string, string> = { big_bag: '1000', bulk: '21600' }
 
 interface Contract {
   id: string
@@ -41,7 +53,11 @@ interface Contract {
   end_client_id: string | null
   client_id: string | null
   sort_order: number
+  bag_count?: number | null
+  bag_weight_kg?: number | null
+  bag_type?: string | null
   bags_quantity_mt?: number | null
+  equivalent_60kg_bags?: number | null
 }
 
 interface EditForm {
@@ -58,6 +74,9 @@ interface EditForm {
   supplier_contract_nr: string
   ico_number: string
   container_nr: string
+  bag_type: string
+  bag_count: string
+  bag_weight_kg: string
 }
 
 const emptyForm: EditForm = {
@@ -74,6 +93,9 @@ const emptyForm: EditForm = {
   supplier_contract_nr: '',
   ico_number: '',
   container_nr: '',
+  bag_type: '',
+  bag_count: '',
+  bag_weight_kg: '',
 }
 
 export interface MotherSampleInfo {
@@ -92,6 +114,9 @@ export interface MotherSampleInfo {
   supplier_contract_nr?: string | null
   ico_number?: string | null
   container_nr?: string | null
+  bag_type?: string | null
+  bag_count?: number | null
+  bag_weight_kg?: number | null
   bags_quantity_mt?: number | null
 }
 
@@ -206,6 +231,9 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
     supplier_contract_nr: c.supplier_contract_nr || '',
     ico_number: c.ico_number || '',
     container_nr: c.container_nr || '',
+    bag_type: c.bag_type || '',
+    bag_count: c.bag_count != null ? String(c.bag_count) : '',
+    bag_weight_kg: c.bag_weight_kg != null ? String(c.bag_weight_kg) : '',
   })
 
   const buildMotherForm = (): EditForm => {
@@ -224,6 +252,9 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
       supplier_contract_nr: motherSample.supplier_contract_nr || '',
       ico_number: motherSample.ico_number || '',
       container_nr: motherSample.container_nr || '',
+      bag_type: motherSample.bag_type || '',
+      bag_count: motherSample.bag_count != null ? String(motherSample.bag_count) : '',
+      bag_weight_kg: motherSample.bag_weight_kg != null ? String(motherSample.bag_weight_kg) : '',
     }
   }
 
@@ -287,6 +318,9 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
     const importerId = resolveEntityId(form.importer_name, importers)
     const roasterId = resolveEntityId(form.roaster_name, roasters)
     const endClientId = resolveEntityId(form.end_client_name, qcClients)
+    const bagCount = form.bag_count ? parseInt(form.bag_count) : null
+    const bagWeight = form.bag_weight_kg ? parseFloat(form.bag_weight_kg) : null
+    const { bags_quantity_mt, equivalent_60kg_bags } = computeBagQuantities(bagCount, bagWeight, form.bag_type)
     return {
       importer_id: importerId,
       importer_is_qc_client: form.importer_is_qc_client,
@@ -300,6 +334,11 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
       supplier_contract_nr: form.supplier_contract_nr || null,
       ico_number: form.ico_number || null,
       container_nr: form.container_nr || null,
+      bag_type: form.bag_type || null,
+      bag_count: bagCount,
+      bag_weight_kg: bagWeight,
+      bags_quantity_mt,
+      equivalent_60kg_bags,
     }
   }
 
@@ -338,7 +377,7 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
         const a = document.createElement('a')
         a.href = url
         const contract = contracts.find(c => c.id === contractId)
-        a.download = `${contract?.tracking_number || 'certificate'}.pdf`
+        a.download = buildCertificateFilename(contract?.tracking_number, contract?.buyer_contract_nr)
         a.click()
         URL.revokeObjectURL(url)
       }
@@ -726,6 +765,12 @@ function ContractForm({
     return qcClients.map(c => c.name).sort((a, b) => a.localeCompare(b))
   }, [qcClients])
 
+  const qty = computeBagQuantities(
+    form.bag_count ? parseInt(form.bag_count) : null,
+    form.bag_weight_kg ? parseFloat(form.bag_weight_kg) : null,
+    form.bag_type,
+  )
+
   return (
     <div className="space-y-4">
       {/* Supply Chain */}
@@ -841,6 +886,66 @@ function ContractForm({
             </>
           )}
         </div>
+      </div>
+
+      {/* Quantity */}
+      <div className="border-t pt-3">
+        <Label className="text-[10px] uppercase text-muted-foreground tracking-wider mb-2 block">Quantity</Label>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Bag Type</Label>
+            <Select
+              value={form.bag_type || 'none'}
+              onValueChange={(value) =>
+                setForm(f => {
+                  const bag_type = value === 'none' ? '' : value
+                  const fixed = FIXED_BAG_WEIGHTS[bag_type]
+                  return { ...f, bag_type, ...(fixed ? { bag_weight_kg: fixed } : {}) }
+                })
+              }
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Select..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Select...</SelectItem>
+                {BAG_TYPE_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Bags</Label>
+            <Input
+              type="number"
+              inputMode="numeric"
+              value={form.bag_count}
+              onChange={(e) => setForm(f => ({ ...f, bag_count: e.target.value }))}
+              placeholder="0"
+              className="h-9"
+            />
+          </div>
+          <div>
+            <Label className="text-xs text-muted-foreground mb-1 block">Bag Weight (kg)</Label>
+            <Input
+              type="number"
+              inputMode="decimal"
+              value={form.bag_weight_kg}
+              onChange={(e) => setForm(f => ({ ...f, bag_weight_kg: e.target.value }))}
+              placeholder="60"
+              className="h-9"
+              disabled={form.bag_type === 'bulk'}
+            />
+          </div>
+        </div>
+        {(qty.bags_quantity_mt != null || qty.equivalent_60kg_bags != null) && (
+          <p className="text-xs text-muted-foreground mt-2">
+            {qty.bags_quantity_mt != null ? `${qty.bags_quantity_mt} MT` : ''}
+            {qty.bags_quantity_mt != null && qty.equivalent_60kg_bags != null ? ' · ' : ''}
+            {qty.equivalent_60kg_bags != null ? `${qty.equivalent_60kg_bags} × 60kg bags` : ''}
+          </p>
+        )}
       </div>
 
       {/* Contract References */}

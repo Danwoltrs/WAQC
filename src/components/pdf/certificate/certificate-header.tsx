@@ -74,6 +74,12 @@ const headerStyles = StyleSheet.create({
     color: COLORS.dark,
     marginTop: 4,
   },
+  buyerReference: {
+    fontSize: 9,
+    fontWeight: 600,
+    color: COLORS.muted,
+    marginTop: 2,
+  },
   rightContent: {
     width: 100,
     alignItems: 'flex-end',
@@ -107,6 +113,7 @@ interface CertificateHeaderProps {
   wolthersLogoBase64?: string
   clientLogoBase64?: string
   certificateNumber: string | null
+  buyerReference?: string | null
   status: string | null
   issuedDate: string | null
   validUntil: string | null
@@ -118,6 +125,7 @@ export function CertificateHeader({
   wolthersLogoBase64,
   clientLogoBase64,
   certificateNumber,
+  buyerReference,
   status,
   issuedDate,
   validUntil,
@@ -176,6 +184,11 @@ export function CertificateHeader({
           {certificateNumber && (
             <Text style={headerStyles.certificateNumber}>
               #{certificateNumber}
+            </Text>
+          )}
+          {buyerReference && (
+            <Text style={headerStyles.buyerReference}>
+              Buyer Ref: {buyerReference}
             </Text>
           )}
         </View>

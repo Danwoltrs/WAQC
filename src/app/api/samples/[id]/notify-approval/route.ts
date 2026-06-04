@@ -6,6 +6,7 @@ import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
 import { composeBodyHtml } from '@/lib/email/compose-html'
+import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
 
@@ -62,7 +63,7 @@ export async function POST(
 
   const { data: sample } = await supabase
     .from('samples')
-    .select('id, tracking_number, status, contract_id')
+    .select('id, tracking_number, status, contract_id, buyer_contract_nr')
     .eq('id', id)
     .single()
   if (!sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
@@ -101,7 +102,11 @@ export async function POST(
       if (!pdf) return NextResponse.json({ error: 'Certificate could not be generated' }, { status: 500 })
       uploadCertificatePdf(supabase, id, (cert as any).id, pdf).catch(() => {})
     }
-    attachment = { name: `${tracking}.pdf`, contentType: 'application/pdf', bytes: new Uint8Array(pdf) }
+    attachment = {
+      name: buildCertificateFilename(tracking, s.buyer_contract_nr),
+      contentType: 'application/pdf',
+      bytes: new Uint8Array(pdf),
+    }
   }
 
   const testTo = process.env.MICROSOFT_GRAPH_TEST_RECIPIENT

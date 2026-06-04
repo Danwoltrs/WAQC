@@ -6,6 +6,7 @@ import { QualityCertificate } from '@/components/pdf/certificate/quality-certifi
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { resolveSampleId } from '@/lib/sample-utils'
 import { uploadCertificatePdf, getCachedCertificatePdf } from '@/lib/certificate-storage'
+import { buildCertificateFilename } from '@/lib/certificate-filename'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -42,6 +43,26 @@ export async function GET(
     // Check for sub-contract certificate request
     const contractId = request.nextUrl.searchParams.get('contract_id')
 
+    // Resolve the buyer reference for the filename: a sub-contract uses its own
+    // buyer_contract_nr, the mother cert uses the sample's. Buyers (e.g. Ahold)
+    // ask for their contract reference in the filename alongside the cert number.
+    let buyerRef: string | null = null
+    if (contractId) {
+      const { data: scRow } = await supabase
+        .from('sample_contracts')
+        .select('buyer_contract_nr')
+        .eq('id', contractId)
+        .maybeSingle()
+      buyerRef = (scRow as any)?.buyer_contract_nr ?? null
+    } else {
+      const { data: sRow } = await supabase
+        .from('samples')
+        .select('buyer_contract_nr')
+        .eq('id', id)
+        .maybeSingle()
+      buyerRef = (sRow as any)?.buyer_contract_nr ?? null
+    }
+
     // Check for cached PDF first
     let certQuery = supabase
       .from('certificates')
@@ -59,18 +80,11 @@ export async function GET(
       .limit(1)
       .maybeSingle()
 
-    // Build sanitized filename: replace / with _, use lowercase r- for rejected
-    const sanitizeFilename = (certNum: string) => {
-      let name = certNum.replace(/\//g, '_')
-      if (name.startsWith('R-')) name = 'r-' + name.slice(2)
-      return name
-    }
-
     if (certificate?.pdf_url) {
       console.log('[Certificate] Serving cached PDF:', certificate.pdf_url)
       const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
       if (cachedBuffer) {
-        const filename = sanitizeFilename(certificate.certificate_number || 'certificate') + '.pdf'
+        const filename = buildCertificateFilename(certificate.certificate_number, buyerRef)
         return new NextResponse(new Uint8Array(cachedBuffer), {
           headers: {
             'Content-Type': 'application/pdf',
@@ -155,9 +169,9 @@ export async function GET(
         .catch((err) => console.error('[Certificate] Cache upload failed:', err))
     }
 
-    // Generate filename - sanitized certificate number
+    // Generate filename - buyer reference (when present) + sanitized certificate number
     const certificateNumber = certificateData.certificate?.certificate_number || certificateData.sample.tracking_number
-    const filename = sanitizeFilename(certificateNumber) + '.pdf'
+    const filename = buildCertificateFilename(certificateNumber, buyerRef)
 
     // Return PDF response - convert Buffer to Uint8Array for NextResponse
     return new NextResponse(new Uint8Array(pdfBuffer), {

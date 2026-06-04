@@ -764,6 +764,11 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     wolthersContract: string | null
     ico_number: string | null
     container_nr: string | null
+    bag_count: number | null
+    bag_weight_kg: number | null
+    bag_type: string | null
+    bags_quantity_mt: number | null
+    equivalent_60kg_bags: number | null
     certificateData: NonNullable<CertificateData['certificate']> & { is_rejected?: boolean | null }
   } | null = null
 
@@ -824,6 +829,13 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         wolthersContract: contract.wolthers_contract_nr ?? null,
         ico_number: contract.ico_number ?? sample.ico_number,
         container_nr: contract.container_nr ?? sample.container_nr,
+        // Per-sub-contract quantity: each contract is its own shipment split, so
+        // the cert must show THIS contract's bags, not the mother sample's.
+        bag_count: contract.bag_count ?? null,
+        bag_weight_kg: contract.bag_weight_kg ?? null,
+        bag_type: contract.bag_type ?? null,
+        bags_quantity_mt: contract.bags_quantity_mt ?? null,
+        equivalent_60kg_bags: contract.equivalent_60kg_bags ?? null,
         certificateData: scCert
           ? {
               id: scCert.id,
@@ -857,11 +869,13 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       sample_type: sample.sample_type,
       processing_method: sample.processing_method,
       quality_name: sample.quality_name,
-      bags: sample.bag_count || sample.bags, // Prefer bag_count, fall back to bags for legacy
-      bag_type: sample.bag_type,
-      bag_weight_kg: sample.bag_weight_kg,
-      bags_quantity_mt: sample.bags_quantity_mt,
-      equivalent_60kg_bags: sample.equivalent_60kg_bags,
+      // For a sub-contract cert, use the sub-contract's own quantity; otherwise the
+      // mother sample's. (bag_count preferred, falling back to legacy `bags`.)
+      bags: contractOverride?.bag_count ?? (sample.bag_count || sample.bags),
+      bag_type: contractOverride?.bag_type ?? sample.bag_type,
+      bag_weight_kg: contractOverride?.bag_weight_kg ?? sample.bag_weight_kg,
+      bags_quantity_mt: contractOverride?.bags_quantity_mt ?? sample.bags_quantity_mt,
+      equivalent_60kg_bags: contractOverride?.equivalent_60kg_bags ?? sample.equivalent_60kg_bags,
       shipment_month: sample.shipment_month,
       ico_number: contractOverride?.ico_number ?? sample.ico_number,
       container_nr: contractOverride?.container_nr ?? sample.container_nr,

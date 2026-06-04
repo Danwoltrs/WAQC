@@ -6,6 +6,7 @@ import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
+import { buildCertificateFilename } from '@/lib/certificate-filename'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -72,6 +73,7 @@ export async function POST(request: NextRequest) {
         sample:samples(
           id,
           tracking_number,
+          buyer_contract_nr,
           origin,
           exporter:companies!samples_exporter_id_fkey(id, name, contact_email:email),
           importer:companies!samples_importer_id_fkey(id, name, contact_email:email),
@@ -189,7 +191,7 @@ export async function POST(request: NextRequest) {
               const cachedBuffer = await getCachedCertificatePdf(supabase, (cert as any).pdf_url)
               if (cachedBuffer) {
                 attachments.push({
-                  filename: `${cert.certificate_number}.pdf`,
+                  filename: buildCertificateFilename(cert.certificate_number, (cert.sample as any)?.buyer_contract_nr),
                   content: cachedBuffer
                 })
                 continue
@@ -244,7 +246,7 @@ export async function POST(request: NextRequest) {
               .catch((err) => console.error('[SendEmail] Cache upload failed:', err))
 
             attachments.push({
-              filename: `${cert.certificate_number}.pdf`,
+              filename: buildCertificateFilename(cert.certificate_number, (cert.sample as any)?.buyer_contract_nr),
               content: pdfContent
             })
           } catch (pdfError) {

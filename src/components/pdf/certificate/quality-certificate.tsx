@@ -140,6 +140,7 @@ export function QualityCertificate({
           wolthersLogoBase64={wolthersLogoBase64}
           clientLogoBase64={clientLogoBase64}
           certificateNumber={certificate?.certificate_number || null}
+          buyerReference={supplyChain.importer?.contract || null}
           status={sample.status}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
