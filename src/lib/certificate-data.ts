@@ -394,11 +394,15 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     cuppingScores = allCuppingScores
   }
 
-  // Fetch certificate
+  // Fetch the MOTHER certificate (sample_contract_id IS NULL). Sub-contract
+  // certs share the mother's sample_id (they add a sample_contract_id), so
+  // without this filter the newest-created row wins and a multi-contract PSS
+  // would render the LAST sub-contract's number on the mother's certificate.
   const { data: certificate } = await supabase
     .from('certificates')
     .select('id, certificate_number, created_at, status, override_comment, is_rejected')
     .eq('sample_id', sampleId)
+    .is('sample_contract_id', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
