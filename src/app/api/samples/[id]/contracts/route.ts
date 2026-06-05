@@ -131,34 +131,9 @@ export async function POST(
 
     const nextSortOrder = (maxSort?.sort_order ?? -1) + 1
 
-    // Draw the sub-contract's tracking/cert number from the SAME atomic
-    // per-(client, lab, year) counter that sample intake and duplication use.
-    // The mother sample's number was generated with this exact function, so passing
-    // the mother's origin + quality_spec_id yields the same prefix and the next
-    // sequence number. Postgres serializes the UPSERT, so this can never hand out a
-    // duplicate or skip the order — fixing the prior manual max-scan drift.
-    const { data: trackingNumberData, error: trackingError } = await supabase
-      .rpc('generate_certificate_number', {
-        p_client_id: clientId,
-        p_origin: sample.origin,
-        p_quality_spec_id: sample.quality_spec_id,
-        p_is_rejected: false,
-        p_laboratory_id: laboratoryId,
-      } as any)
-
-    if (trackingError || !trackingNumberData) {
-      console.error('Error generating sub-contract tracking number:', trackingError)
-      return NextResponse.json(
-        { error: 'Failed to generate tracking number', details: trackingError?.message },
-        { status: 500 }
-      )
-    }
-
-    const trackingNumber = String(trackingNumberData)
-
     const contractData = {
       sample_id: sampleId,
-      tracking_number: trackingNumber,
+      tracking_number: null as unknown as string,
       wolthers_contract_nr: body.wolthers_contract_nr || null,
       seller_contract_nr: body.seller_contract_nr || null,
       shipper_contract_nr: body.shipper_contract_nr || null,
@@ -210,9 +185,6 @@ export async function POST(
 
       if (motherCert && contract) {
         const isRejected = motherCert.is_rejected ?? false
-        const subCertNumber = isRejected
-          ? `R-${contract.tracking_number}`
-          : contract.tracking_number
 
         // Get issued_to from mother sample's client (now companies)
         const { data: motherSample } = await (supabase as any)
@@ -241,7 +213,7 @@ export async function POST(
           .insert({
             sample_id: sampleId,
             sample_contract_id: contract.id,
-            certificate_number: subCertNumber,
+            certificate_number: null as unknown as string,
             issued_to: issuedTo,
             issued_by: user.id,
             status: 'issued',
@@ -249,6 +221,15 @@ export async function POST(
             valid_until: motherCert.valid_until,
             is_rejected: isRejected,
           })
+
+        const { data: refreshed } = await supabase
+          .from('sample_contracts')
+          .select('tracking_number')
+          .eq('id', contract.id)
+          .single()
+        if (refreshed?.tracking_number) {
+          (contract as any).tracking_number = refreshed.tracking_number
+        }
       }
     } catch (certErr) {
       console.error('Error auto-creating certificate for sub-contract:', certErr)
