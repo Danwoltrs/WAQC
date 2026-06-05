@@ -364,7 +364,7 @@ export async function POST(request: NextRequest) {
 
       const sampleData: Record<string, any> = {
         tracking_number: trackingNumber,
-        split_numbering: true,
+        split_numbering: Boolean(body.laboratory_id),
         client_id: clientId,
         laboratory_id: body.laboratory_id,
         quality_spec_id: qualitySpecId,
