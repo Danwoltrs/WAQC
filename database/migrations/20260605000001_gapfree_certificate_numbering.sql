@@ -97,16 +97,28 @@ BEGIN
     FROM sample_contracts WHERE id = NEW.sample_contract_id;
   END IF;
 
-  IF COALESCE(v_split, false) = false THEN
-    -- Legacy: reuse the existing number (sub-contract's own when present).
-    NEW.certificate_number := COALESCE(v_sub_tracking, v_tracking);
+  IF NEW.sample_contract_id IS NOT NULL THEN
+    -- Sub-contract cert: reuse its own number if it already has one (legacy
+    -- pre-deploy sub-contracts, or a re-issue); otherwise ALWAYS mint a fresh
+    -- number. A sub-contract must NEVER inherit the mother's number — that
+    -- would collide on the UNIQUE certificate_number (e.g. a legacy mother with
+    -- a sub-contract added after deploy). This matches pre-split behavior, where
+    -- every sub-contract drew its own number from the cert sequence.
+    IF v_sub_tracking IS NOT NULL THEN
+      NEW.certificate_number := v_sub_tracking;
+    ELSE
+      NEW.certificate_number := generate_certificate_number(v_client, v_origin, v_quality, false, v_lab);
+    END IF;
+  ELSIF COALESCE(v_split, false) = false THEN
+    -- Legacy mother: reuse the existing tracking number (today's behavior).
+    NEW.certificate_number := v_tracking;
     -- Fallback so the NOT NULL/UNIQUE column always gets a value.
     IF NEW.certificate_number IS NULL AND v_lab IS NOT NULL AND v_client IS NOT NULL THEN
       NEW.certificate_number := generate_certificate_number(v_client, v_origin, v_quality, false, v_lab);
     END IF;
   ELSE
-    -- Split: mint a gap-free official number. No R- prefix (is_rejected flag
-    -- on the row carries rejection; matches the unified-numbering rule).
+    -- Split mother: mint a gap-free official number. No R- prefix (is_rejected
+    -- flag on the row carries rejection; matches the unified-numbering rule).
     NEW.certificate_number := generate_certificate_number(v_client, v_origin, v_quality, false, v_lab);
   END IF;
 

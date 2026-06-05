@@ -853,7 +853,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
             }
           : {
               id: '',
-              certificate_number: contract.tracking_number,
+              // Split sub-contracts have no number until their cert mints; show
+              // PENDING rather than a blank. Legacy subs keep their tracking #.
+              certificate_number: (sample as any).split_numbering ? 'PENDING' : contract.tracking_number,
               issued_date: currentDate,
               valid_until: validUntil,
               status: null,

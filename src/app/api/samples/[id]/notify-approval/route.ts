@@ -89,7 +89,7 @@ export async function POST(
   if (body.includeCertificate !== false) {
     const { data: cert } = await supabase
       .from('certificates')
-      .select('id, pdf_url')
+      .select('id, pdf_url, certificate_number')
       .eq('sample_id', id)
       .is('sample_contract_id', null)
       .limit(1)
@@ -103,7 +103,9 @@ export async function POST(
       uploadCertificatePdf(supabase, id, (cert as any).id, pdf).catch(() => {})
     }
     attachment = {
-      name: buildCertificateFilename(tracking, s.buyer_contract_nr),
+      // Use the official certificate number (the buyer-facing number), not the
+      // sample's internal lab tracking number, for the attachment filename.
+      name: buildCertificateFilename((cert as any).certificate_number ?? tracking, s.buyer_contract_nr),
       contentType: 'application/pdf',
       bytes: new Uint8Array(pdf),
     }
