@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { computeBagQuantities, bagWeightForType } from './bag-quantity'
+import {
+  computeBagQuantities,
+  bagWeightForType,
+  bulkQuantitiesFromMt,
+  approxBulkContainers,
+} from './bag-quantity'
 
 describe('computeBagQuantities', () => {
   it('computes MT and 60kg-equivalent for standard 60kg bags', () => {
@@ -44,6 +49,37 @@ describe('computeBagQuantities', () => {
       bags_quantity_mt: null,
       equivalent_60kg_bags: null,
     })
+  })
+})
+
+describe('bulkQuantitiesFromMt (MT-driven bulk)', () => {
+  it('derives the 60kg-bag equivalent from net MT (standard density)', () => {
+    expect(bulkQuantitiesFromMt(63)).toEqual({
+      bags_quantity_mt: 63,
+      equivalent_60kg_bags: 1050,
+    })
+  })
+
+  it('keeps the actual MT for lower-density (grinder) containers', () => {
+    // 3 containers under-weight at 60 MT total stays 60, equiv = 1000
+    expect(bulkQuantitiesFromMt(60)).toEqual({
+      bags_quantity_mt: 60,
+      equivalent_60kg_bags: 1000,
+    })
+  })
+
+  it('returns nulls for missing/zero MT', () => {
+    expect(bulkQuantitiesFromMt(null)).toEqual({ bags_quantity_mt: null, equivalent_60kg_bags: null })
+    expect(bulkQuantitiesFromMt(0)).toEqual({ bags_quantity_mt: null, equivalent_60kg_bags: null })
+  })
+})
+
+describe('approxBulkContainers', () => {
+  it('estimates containers at ~21.6 MT each', () => {
+    expect(approxBulkContainers(21.6)).toBe(1)
+    expect(approxBulkContainers(43.2)).toBe(2)
+    expect(approxBulkContainers(63)).toBe(3)
+    expect(approxBulkContainers(0)).toBe(0)
   })
 })
 

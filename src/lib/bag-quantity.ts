@@ -21,6 +21,29 @@ export interface BagQuantities {
   equivalent_60kg_bags: number | null
 }
 
+/** Approx weight of one bulk container, used only to estimate container count. */
+export const BULK_CONTAINER_MT = 21.6
+
+/**
+ * Bulk is weight-driven: the net MT is the source of truth (container density
+ * varies — grinder coffee is lighter), and the 60kg-bag equivalent derives from
+ * it. Returns nulls when MT is missing/zero.
+ */
+export function bulkQuantitiesFromMt(mt: number | null | undefined): BagQuantities {
+  const m = Number(mt) || 0
+  if (m <= 0) return { bags_quantity_mt: null, equivalent_60kg_bags: null }
+  return {
+    bags_quantity_mt: Number(m.toFixed(3)),
+    equivalent_60kg_bags: Math.round((m * 1000) / 60),
+  }
+}
+
+/** Approximate number of bulk containers for a net weight (≈ MT / 21.6). */
+export function approxBulkContainers(mt: number | null | undefined): number {
+  const m = Number(mt) || 0
+  return m > 0 ? Math.round(m / BULK_CONTAINER_MT) : 0
+}
+
 /**
  * Compute total MT and 60kg-bag equivalent from bag count, weight, and type.
  * Returns nulls when inputs are insufficient (matches the dialog's blank-out behavior).
