@@ -431,10 +431,6 @@ export async function POST(request: NextRequest) {
           }, { status: 400 })
         }
 
-        // Unified numbering: the certificate reuses the sample's tracking number
-        // (the per-lab cert-sequence number assigned at intake). Validated above.
-        const certificateNumber = sample.tracking_number as string
-
         // Get client info for issued_to (now companies)
         const { data: client } = await (supabaseAdmin as any)
           .from('companies')
@@ -449,7 +445,7 @@ export async function POST(request: NextRequest) {
           .from('certificates')
           .insert({
             sample_id: sample_id,
-            certificate_number: certificateNumber,
+            certificate_number: null as unknown as string,
             issued_to: issuedTo,
             issued_by: user.id,
             status: 'issued',
@@ -563,14 +559,6 @@ export async function POST(request: NextRequest) {
               .maybeSingle()
 
             if (!existingSubCert) {
-              // Unified numbering: sub-contract cert reuses its own tracking number.
-              if (!sc.tracking_number) {
-                console.error('Skipping sub-contract cert: sample_contract has no tracking_number', sc.id)
-                continue
-              }
-
-              const subCertNumber = sc.tracking_number as string
-
               // Get sub-contract's QC client name (or fall back to mother's)
               let subIssuedTo = motherIssuedTo
               if (sc.client_id && sc.client_id !== sample.client_id) {
@@ -589,7 +577,7 @@ export async function POST(request: NextRequest) {
                 .insert({
                   sample_id: sample_id,
                   sample_contract_id: sc.id,
-                  certificate_number: subCertNumber,
+                  certificate_number: null as unknown as string,
                   issued_to: subIssuedTo,
                   issued_by: user.id,
                   status: 'issued',
