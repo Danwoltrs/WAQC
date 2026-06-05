@@ -255,11 +255,6 @@ async function autoCertifyIfReady(
       return null
     }
 
-    // Certificate number uses tracking_number (R- prefix for rejected)
-    const certificateNumber = isRejected
-      ? `R-${sample.tracking_number}`
-      : sample.tracking_number
-
     // Get client info for issued_to (now from companies)
     const { data: client } = await (supabaseAdmin as any)
       .from('companies')
@@ -278,7 +273,7 @@ async function autoCertifyIfReady(
       .from('certificates')
       .insert({
         sample_id: sampleId,
-        certificate_number: certificateNumber,
+        certificate_number: null,
         issued_to: issuedTo,
         issued_by: userId,
         status: 'issued',
@@ -319,10 +314,6 @@ async function autoCertifyIfReady(
             .maybeSingle()
 
           if (!existingSubCert) {
-            const subCertNumber = isRejected
-              ? `R-${sc.tracking_number}`
-              : sc.tracking_number
-
             // Get sub-contract's QC client name (or fall back to mother's)
             let subIssuedTo = motherIssuedTo
             if (sc.client_id && sc.client_id !== sample.client_id) {
@@ -341,7 +332,7 @@ async function autoCertifyIfReady(
               .insert({
                 sample_id: sampleId,
                 sample_contract_id: sc.id,
-                certificate_number: subCertNumber,
+                certificate_number: null,
                 issued_to: subIssuedTo,
                 issued_by: userId,
                 status: 'issued',
