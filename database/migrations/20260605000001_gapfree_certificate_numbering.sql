@@ -11,30 +11,47 @@
 -- tracking_number for legacy/in-progress samples (identical current behavior)
 -- and mints a fresh number only for split (post-deploy) samples. Safe to apply
 -- before deploying the app code.
-
-BEGIN;
+--
+-- LIVE-DB SAFETY: each schema change runs in its own short transaction with a
+-- lock_timeout, so a lock contended by the running app fails fast (retryable)
+-- instead of deadlocking the whole migration. Every statement is idempotent, so
+-- if a step times out just re-run the entire script. Prefer a low-traffic window.
 
 -- 1. Short lab prefix for the internal sample number ----------------------------
+BEGIN;
+SET LOCAL lock_timeout = '5s';
 ALTER TABLE laboratories ADD COLUMN IF NOT EXISTS sample_prefix TEXT;
 -- Seed known labs; others fall back to 'S-' in the function until configured.
 UPDATE laboratories SET sample_prefix = 'SAN-'
   WHERE code = 'SANTOS_HQ' AND (sample_prefix IS NULL OR sample_prefix = '');
+COMMIT;
 
 -- 2. Per-lab internal sample sequence ------------------------------------------
+BEGIN;
+SET LOCAL lock_timeout = '5s';
 CREATE TABLE IF NOT EXISTS sample_sequences (
   laboratory_id UUID NOT NULL REFERENCES laboratories(id) ON DELETE CASCADE,
   year          INT  NOT NULL,
   last_sequence INT  NOT NULL DEFAULT 0,
   PRIMARY KEY (laboratory_id, year)
 );
+COMMIT;
 
 -- 3. Grandfather flag ----------------------------------------------------------
+-- Constant default => metadata-only, no table rewrite (Postgres 11+).
+BEGIN;
+SET LOCAL lock_timeout = '5s';
 ALTER TABLE samples ADD COLUMN IF NOT EXISTS split_numbering BOOLEAN NOT NULL DEFAULT false;
+COMMIT;
 
 -- 4. Sub-contract number is filled in after its cert mints ----------------------
+BEGIN;
+SET LOCAL lock_timeout = '5s';
 ALTER TABLE sample_contracts ALTER COLUMN tracking_number DROP NOT NULL;
+COMMIT;
 
 -- 5. generate_sample_number(p_laboratory_id) -----------------------------------
+-- (CREATE FUNCTION takes no table locks.)
 CREATE OR REPLACE FUNCTION generate_sample_number(p_laboratory_id UUID)
 RETURNS TEXT
 LANGUAGE plpgsql
@@ -133,13 +150,19 @@ BEGIN
 END;
 $$;
 
+-- 7. Trigger on certificates (needs a brief AccessExclusive on certificates) ----
+BEGIN;
+SET LOCAL lock_timeout = '5s';
 DROP TRIGGER IF EXISTS trg_assign_certificate_number ON certificates;
 CREATE TRIGGER trg_assign_certificate_number
   BEFORE INSERT ON certificates
   FOR EACH ROW
   EXECUTE FUNCTION assign_certificate_number();
+COMMIT;
 
--- 7. Approval trigger: insert NULL number, let assign_certificate_number decide -
+-- 8. Approval trigger: insert NULL number, let assign_certificate_number decide -
+-- (CREATE OR REPLACE FUNCTION takes no table locks; the trigger that uses it
+--  already exists on samples and is unchanged.)
 CREATE OR REPLACE FUNCTION auto_generate_certificate_on_approval()
 RETURNS TRIGGER
 LANGUAGE plpgsql
@@ -170,5 +193,3 @@ BEGIN
   RETURN NEW;
 END;
 $$;
-
-COMMIT;
