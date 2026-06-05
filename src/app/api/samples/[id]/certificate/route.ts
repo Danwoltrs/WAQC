@@ -319,17 +319,11 @@ export async function POST(
       })
     }
 
-    // Unified numbering: the certificate reuses the sample's tracking number
-    // (which is itself the per-lab cert-sequence number assigned at intake).
-    // No separate certificate number is generated. Tracking number was already
-    // validated as non-empty above.
     if (!sample.client_id) {
       return NextResponse.json({
         error: 'Cannot generate certificate - sample has no client assigned'
       }, { status: 400 })
     }
-
-    const certificateNumber = sample.tracking_number as string
 
     // Get client name for issued_to (required field)
     const clientData = sample.client as { name?: string; company?: string; fantasy_name?: string } | null
@@ -345,7 +339,7 @@ export async function POST(
       .from('certificates')
       .insert({
         sample_id: id,
-        certificate_number: certificateNumber,
+        certificate_number: null as unknown as string,
         issued_to: issuedTo,
         issued_by: user.id,
         status: 'issued',
@@ -425,15 +419,6 @@ async function createSubContractCertificates(
       if (!existingSubCert) {
         const isRejected = motherCert.is_rejected ?? false
 
-        // Unified numbering: sub-contract certificate reuses the sub-contract's
-        // own tracking number. Skip if it somehow has none.
-        if (!sc.tracking_number) {
-          console.error('Skipping sub-contract cert: sample_contract has no tracking_number', sc.id)
-          continue
-        }
-
-        const subCertNumber = sc.tracking_number as string
-
         // Get sub-contract's QC client name (or fall back to mother's)
         let subIssuedTo = motherIssuedTo
         if (sc.client_id && sc.client_id !== sample?.client_id) {
@@ -452,7 +437,7 @@ async function createSubContractCertificates(
           .insert({
             sample_id: sampleId,
             sample_contract_id: sc.id,
-            certificate_number: subCertNumber,
+            certificate_number: null as unknown as string,
             issued_to: subIssuedTo,
             issued_by: userId,
             status: 'issued',
