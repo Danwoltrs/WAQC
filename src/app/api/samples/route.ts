@@ -307,25 +307,22 @@ export async function POST(request: NextRequest) {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       let trackingNumber: string
 
-      // Unified numbering: a sample's tracking number IS its future certificate
-      // number, drawn from the per-lab company certificate sequence
-      // (generate_certificate_number is atomic, so each call — including a retry
-      // after a duplicate-key collision — yields the next unique number).
-      // Requires both client and lab; for edge cases lacking either (e.g. type
-      // samples with no client) we fall back to the legacy tracking generator.
+      // Split numbering: intake assigns an internal lab number (gaps allowed).
+      // The official certificate number is minted gap-free at certification by
+      // the certificates BEFORE INSERT trigger (when split_numbering=true).
+      // Requires lab; for edge cases lacking a lab we fall back to the legacy
+      // tracking generator.
       let trackingNumberData: any
       let trackingError: any
-      if (clientId && body.laboratory_id) {
-        ({ data: trackingNumberData, error: trackingError } = await supabase
-          .rpc('generate_certificate_number', {
-            p_client_id: clientId,
-            p_origin: body.origin,
-            p_quality_spec_id: qualitySpecId,
-            p_is_rejected: false,
+      if (body.laboratory_id) {
+        // Internal lab number (gaps allowed). The official certificate number is
+        // minted gap-free at certification by the certificates BEFORE INSERT trigger.
+        ;({ data: trackingNumberData, error: trackingError } = await (supabase as any)
+          .rpc('generate_sample_number', {
             p_laboratory_id: body.laboratory_id,
-          } as any))
+          }))
       } else {
-        ({ data: trackingNumberData, error: trackingError } = await supabase
+        ;({ data: trackingNumberData, error: trackingError } = await supabase
           .rpc('generate_tracking_number', {
             p_client_id: clientId,
             p_laboratory_id: body.laboratory_id,
@@ -367,6 +364,7 @@ export async function POST(request: NextRequest) {
 
       const sampleData: Record<string, any> = {
         tracking_number: trackingNumber,
+        split_numbering: true,
         client_id: clientId,
         laboratory_id: body.laboratory_id,
         quality_spec_id: qualitySpecId,
