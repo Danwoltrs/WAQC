@@ -74,3 +74,6 @@ Documents/
 
 # Supabase CLI workspace
 supabase/.temp/
+
+# Brainstorming visual companion
+.superpowers/
