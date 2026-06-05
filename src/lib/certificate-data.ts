@@ -240,7 +240,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       supplier_contract_nr,
       supplier,
       crop_year,
-      certifications
+      certifications,
+      split_numbering
     `)
     .eq('id', sampleId)
     .single()
@@ -956,7 +957,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       : {
           // Placeholder when no certificate record exists yet (first generation)
           id: '',
-          certificate_number: sample.tracking_number,
+          certificate_number: (sample as any).split_numbering ? 'PENDING' : sample.tracking_number,
           issued_date: currentDate,
           valid_until: validUntil,
           status: null,
