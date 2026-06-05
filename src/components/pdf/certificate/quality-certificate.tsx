@@ -141,6 +141,11 @@ export function QualityCertificate({
           clientLogoBase64={clientLogoBase64}
           certificateNumber={certificate?.certificate_number || null}
           buyerReference={supplyChain.importer?.contract || null}
+          labRef={
+            sample.tracking_number && sample.tracking_number !== certificate?.certificate_number
+              ? sample.tracking_number
+              : null
+          }
           status={sample.status}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}

@@ -114,6 +114,7 @@ interface CertificateHeaderProps {
   clientLogoBase64?: string
   certificateNumber: string | null
   buyerReference?: string | null
+  labRef?: string | null
   status: string | null
   issuedDate: string | null
   validUntil: string | null
@@ -126,6 +127,7 @@ export function CertificateHeader({
   clientLogoBase64,
   certificateNumber,
   buyerReference,
+  labRef,
   status,
   issuedDate,
   validUntil,
@@ -189,6 +191,11 @@ export function CertificateHeader({
           {buyerReference && (
             <Text style={headerStyles.buyerReference}>
               Buyer Ref: {buyerReference}
+            </Text>
+          )}
+          {labRef && (
+            <Text style={headerStyles.buyerReference}>
+              Lab Ref: {labRef}
             </Text>
           )}
         </View>
