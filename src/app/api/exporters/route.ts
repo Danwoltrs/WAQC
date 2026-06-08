@@ -24,7 +24,7 @@ export async function GET(request: NextRequest) {
 
     let query = (supabase as any)
       .from('companies')
-      .select('id, name, country, contact_email:email, contact_phone:phone, notes')
+      .select('id, name, fantasy_name, country, contact_email:email, contact_phone:phone, notes')
       .or('trading_roles.cs.["seller"],company_types.cs.{exporter}')
       .eq('is_active', true)
       .order('name')

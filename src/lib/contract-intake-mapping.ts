@@ -54,10 +54,15 @@ export interface ContractResolution {
 export function parseBagType(input: string | null | undefined): FormData['bag_type'] {
   if (!input) return ''
   const v = input.toLowerCase()
-  if (v.includes('jute')) return 'jute_bag'
-  if (/\bpp\b/.test(v)) return 'pp_bag'
-  if (v.includes('big')) return 'big_bag'
+  // Check specific materials/containers before the generic "bag" fallback so a
+  // "PP bag" / "big bag" isn't swallowed by the generic rule below.
   if (v.includes('bulk')) return 'bulk'
+  if (v.includes('big')) return 'big_bag'
+  if (/\bpp\b/.test(v) || v.includes('polypropylene')) return 'pp_bag'
+  if (v.includes('jute')) return 'jute_bag'
+  // Generic packaging wording with no explicit material — e.g. "BAGS OF 60 KG EACH",
+  // "60 kg bag", "sacks" — defaults to jute, the standard coffee export bag.
+  if (/\bbags?\b/.test(v) || v.includes('sack')) return 'jute_bag'
   return ''
 }
 
@@ -67,6 +72,30 @@ export function parseBagType(input: string | null | undefined): FormData['bag_ty
 export function companyDisplayName(c: ContractCompany | null | undefined): string {
   if (!c) return ''
   return c.fantasy_name?.trim() || c.name?.trim() || ''
+}
+
+/**
+ * Pick the legal name for a company: `name` first, fall back to fantasy_name.
+ * Used for fields that are matched against companies.name at submit time
+ * (seller/shipper) — the dropdown shows the fantasy name as the label.
+ */
+export function companyLegalName(c: ContractCompany | null | undefined): string {
+  if (!c) return ''
+  return c.name?.trim() || c.fantasy_name?.trim() || ''
+}
+
+// Contract shipper values that mean "no real shipper named yet" — treated as
+// same-as-seller so the intake defaults to "= Shipper" checked.
+const SHIPPER_PLACEHOLDERS = new Set([
+  'tbi', 'tbn', 'tbd', 'tba', 'na', 'n/a', '-', '—',
+  'to be informed', 'to be nominated', 'to be advised', 'to be determined',
+])
+
+function isPlaceholderName(name: string | null | undefined): boolean {
+  if (!name) return true
+  const n = name.trim().toLowerCase().replace(/\./g, '')
+  if (!n) return true
+  return SHIPPER_PLACEHOLDERS.has(n)
 }
 
 /**
@@ -112,14 +141,21 @@ export function mapContractToFormData(
   if (c.seller_reference) set('seller_contract_nr', c.seller_reference)
   if (c.buyer_reference) set('importer_contract_nr', c.buyer_reference)
 
-  // Seller / shipper
-  const sellerName = companyDisplayName(c.seller)
+  // Seller — store the legal name so it matches both the dropdown option value
+  // and the submit-time companies.name lookup; the dropdown shows the trade name.
+  const sellerName = companyLegalName(c.seller)
   if (sellerName) set('seller', sellerName)
 
-  const sameSellerShipper = !c.shipper_id || c.shipper_id === c.seller_id
-  set('same_seller_shipper', sameSellerShipper)
-  if (!sameSellerShipper) {
-    const shipperName = companyDisplayName(c.shipper)
+  // Shipper — default to "= Shipper" (shipper = seller) unless the contract names a
+  // genuine, distinct shipper. A missing/placeholder shipper (T.B.I./TBN/TBD/…)
+  // counts as "no distinct shipper".
+  const shipperDistinct =
+    !!c.shipper_id &&
+    c.shipper_id !== c.seller_id &&
+    !isPlaceholderName(c.shipper?.name ?? c.shipper?.fantasy_name)
+  set('same_seller_shipper', !shipperDistinct)
+  if (shipperDistinct) {
+    const shipperName = companyLegalName(c.shipper)
     if (shipperName) set('shipper', shipperName)
   }
 

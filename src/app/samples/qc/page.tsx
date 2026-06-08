@@ -1734,12 +1734,13 @@ export default function SamplesPage() {
                             return (
                               <tr
                                 key={`sc-${sc.id}`}
-                                className="group border-b border-border bg-muted/30 hover:bg-muted/50 transition-colors"
+                                className={`group bg-muted/20 hover:bg-muted/60 transition-colors ${isLast ? 'border-b border-border' : ''}`}
                               >
-                                {/* Tree connector in checkbox column */}
-                                <td className="py-0 px-0 align-middle">
-                                  <div className="relative flex items-center justify-center" style={{minHeight: '40px'}}>
-                                    <div className="absolute left-1/2 -translate-x-1/2 top-0 w-px bg-border" style={{height: isLast ? '50%' : '100%'}} />
+                                {/* Tree connector in checkbox column - continuous
+                                    vertical line down the group with a tick per row */}
+                                <td className="p-0 align-middle relative">
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className={`absolute left-1/2 -translate-x-1/2 w-px bg-border ${isLast ? 'top-0 h-1/2' : 'inset-y-0'}`} />
                                     <div className="absolute left-1/2 top-1/2 -translate-y-1/2 h-px bg-border w-3" />
                                   </div>
                                 </td>

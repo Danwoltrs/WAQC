@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 
     let query = (supabase as any)
       .from('companies')
-      .select('id, name, country, contact_email:email, contact_phone:phone, notes')
+      .select('id, name, fantasy_name, country, contact_email:email, contact_phone:phone, notes')
       .contains('company_types', ['roaster'])
       .eq('is_active', true)
       .order('name')

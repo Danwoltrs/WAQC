@@ -9,6 +9,7 @@ import { MainLayout } from '@/components/layout/main-layout'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
+import { INTAKE_DIALOG_CONTENT_CLASS } from '@/components/samples/sample-intake-dialog'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { FlaskConical, FileText, Users, TrendingUp, Filter, Calendar, CheckCircle2, XCircle, Camera, ExternalLink, MapPin } from 'lucide-react'
@@ -522,11 +523,13 @@ function DashboardContent() {
 
       {/* New Sample Dialog */}
       <Dialog open={sampleDialogOpen} onOpenChange={setSampleDialogOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
+        <DialogContent className={INTAKE_DIALOG_CONTENT_CLASS}>
+          <DialogHeader className="flex-shrink-0">
             <DialogTitle>Sample Intake</DialogTitle>
           </DialogHeader>
-          <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} />
+          <div className="flex-1 min-h-0">
+            <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} />
+          </div>
         </DialogContent>
       </Dialog>
 

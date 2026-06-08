@@ -39,7 +39,8 @@ export function SupplyChainStep({
       })
       .map(e => ({
         id: e.id,
-        name: e.name
+        name: e.name,
+        fantasy_name: e.fantasy_name ?? null
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [exporters])
@@ -56,6 +57,7 @@ export function SupplyChainStep({
       .map((imp: any) => ({
         id: imp.id,
         name: imp.name,
+        fantasy_name: imp.fantasy_name ?? null,
         type: 'importer' as const,
         clientId: imp.client_id
       }))
@@ -68,6 +70,7 @@ export function SupplyChainStep({
       const clientOptions = qcClients.map(c => ({
         id: c.id,
         name: c.fantasy_name || c.company,
+        fantasy_name: c.fantasy_name ?? null,
         type: 'client' as const,
         clientId: c.id
       }))
@@ -105,7 +108,8 @@ export function SupplyChainStep({
       })
       .map(r => ({
         id: r.id,
-        name: r.name
+        name: r.name,
+        fantasy_name: r.fantasy_name ?? null
       }))
       .sort((a, b) => a.name.localeCompare(b.name))
   }, [roasters])
@@ -216,7 +220,7 @@ export function SupplyChainStep({
             </div>
           </div>
           <SearchableSelect
-            options={sellerOptions.map(o => ({ value: o.name, label: o.name }))}
+            options={sellerOptions.map(o => ({ value: o.name, label: o.fantasy_name || o.name }))}
             value={formData.seller || ''}
             onValueChange={(value) => updateFormData('seller', value)}
             placeholder="Select seller"
@@ -279,7 +283,7 @@ export function SupplyChainStep({
           <div>
             <Label className="text-xs text-muted-foreground mb-1.5 block">Shipper *</Label>
             <SearchableSelect
-              options={sellerOptions.map(o => ({ value: o.name, label: o.name }))}
+              options={sellerOptions.map(o => ({ value: o.name, label: o.fantasy_name || o.name }))}
               value={formData.shipper || ''}
               onValueChange={(value) => updateFormData('shipper', value)}
               placeholder="Select shipper"
@@ -347,7 +351,7 @@ export function SupplyChainStep({
             </div>
           </div>
           <SearchableSelect
-            options={mergedImporterOptions.map(o => ({ value: o.name, label: o.name }))}
+            options={mergedImporterOptions.map((o: any) => ({ value: o.name, label: o.fantasy_name || o.name }))}
             value={formData.importer || ''}
             onValueChange={(value) => updateFormData('importer', value)}
             placeholder="Select importer"
@@ -457,7 +461,7 @@ export function SupplyChainStep({
               <div>
                 <Label className="text-xs text-muted-foreground mb-1.5 block">Roaster</Label>
                 <SearchableSelect
-                  options={roasterOptions.map(r => ({ value: r.name, label: r.name }))}
+                  options={roasterOptions.map(r => ({ value: r.name, label: r.fantasy_name || r.name }))}
                   value={formData.roaster || ''}
                   onValueChange={(value) => updateFormData('roaster', value)}
                   placeholder="Select roaster"

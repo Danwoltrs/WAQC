@@ -22,19 +22,10 @@ import {
   ContractsStep,
   ContractSearchStep,
   ContractLinkBadge,
-  OtherSampleDetailsStep,
   createEmptyContract,
   SuccessView
 } from './intake'
-
-const OTHER_STEPS = [
-  { id: 1, name: 'Contract search', description: 'Optional — link to an existing sys.wolthers.com contract' },
-  { id: 2, name: 'Supply chain', description: '' },
-  { id: 3, name: 'Quality, origin, certifications', description: '' },
-  { id: 4, name: 'Quantity and shipment', description: '' },
-  { id: 5, name: 'Other sample details', description: 'Sub-type, AWB, recipients' },
-  { id: 6, name: 'Photo and review', description: '' },
-]
+import { OtherSampleIntake } from './intake/other-sample-intake'
 
 // Timeout wrapper to prevent infinite hangs on Supabase queries
 async function withTimeout<T>(
@@ -338,10 +329,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       const exportersList = exportersRes.ok ? (await exportersRes.json()).exporters || [] : []
       const clientsList = clientsRes.ok ? (await clientsRes.json()).clients || [] : []
 
-      // Merge: exporters table entries + clients with exporter role
+      // Merge: exporters table entries + clients with exporter role.
+      // `name` is the legal name (used for value + DB resolution), `fantasy_name`
+      // is the trade name shown as the dropdown label.
       const merged = [
-        ...exportersList.map((e: any) => ({ id: e.id, name: e.name, country: e.country })),
-        ...clientsList.map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country })),
+        ...exportersList.map((e: any) => ({ id: e.id, name: e.name, fantasy_name: e.fantasy_name ?? null, country: e.country })),
+        ...clientsList.map((c: any) => ({ id: c.id, name: c.company || c.name, fantasy_name: c.fantasy_name ?? null, country: c.country })),
       ]
       // Deduplicate by name (case-insensitive)
       const seen = new Set<string>()
@@ -367,10 +360,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       const importersList = importersRes.ok ? (await importersRes.json()).importers || [] : []
       const clientsList = clientsRes.ok ? (await clientsRes.json()).clients || [] : []
 
-      // Merge: importers table entries + clients with importer_buyer role
+      // Merge: importers table entries + clients with importer_buyer role.
+      // `name` = legal name (value + DB resolution); `fantasy_name` = trade name (label).
       const merged = [
-        ...importersList.map((i: any) => ({ id: i.id, name: i.name, country: i.country, client_id: i.client_id })),
-        ...clientsList.map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country, client_id: c.id })),
+        ...importersList.map((i: any) => ({ id: i.id, name: i.name, fantasy_name: i.fantasy_name ?? null, country: i.country, client_id: i.client_id })),
+        ...clientsList.map((c: any) => ({ id: c.id, name: c.company || c.name, fantasy_name: c.fantasy_name ?? null, country: c.country, client_id: c.id })),
       ]
       // Deduplicate by name (case-insensitive)
       const seen = new Set<string>()
@@ -396,10 +390,11 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       const roastersList = roastersRes.ok ? (await roastersRes.json()).roasters || [] : []
       const clientsList = clientsRes.ok ? (await clientsRes.json()).clients || [] : []
 
-      // Merge: roasters table entries + clients with roaster role
+      // Merge: roasters table entries + clients with roaster role.
+      // `name` = legal name (value + DB resolution); `fantasy_name` = trade name (label).
       const merged = [
-        ...roastersList.map((r: any) => ({ id: r.id, name: r.name, country: r.country })),
-        ...clientsList.map((c: any) => ({ id: c.id, name: c.fantasy_name || c.company, country: c.country })),
+        ...roastersList.map((r: any) => ({ id: r.id, name: r.name, fantasy_name: r.fantasy_name ?? null, country: r.country })),
+        ...clientsList.map((c: any) => ({ id: c.id, name: c.company || c.name, fantasy_name: c.fantasy_name ?? null, country: c.country })),
       ]
       // Deduplicate by name (case-insensitive)
       const seen = new Set<string>()
@@ -970,9 +965,65 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
   const HeaderWrapper = asDialog ? 'div' : CardHeader
   const ContentWrapper = asDialog ? 'div' : CardContent
 
+  // Shared props for the step components. Components only read what they need;
+  // extra props are ignored. Used by the combined Other-Sample screens.
+  const stepProps = {
+    formData,
+    updateFormData,
+    clients,
+    laboratories,
+    filteredClients,
+    approvedPSSSamples,
+    exporters,
+    importers,
+    roasters,
+    qcClients,
+    isGlobalUser,
+    onEntityCreated: (type: 'exporter' | 'importer' | 'roaster' | 'end_client' | 'qc_client') => {
+      if (type === 'exporter') loadExporters()
+      else if (type === 'importer') loadImporters()
+      else if (type === 'roaster') loadRoasters()
+      else if (type === 'end_client' || type === 'qc_client') loadQcClients()
+    },
+  }
+
+  // Other Sample = the lean sys.wolthers.com "New sample" flow: a contract-ref
+  // search resolves buyer/seller/refs/allocations, then we write the shared
+  // shipment_samples table (single) / create_sample_group RPC (per-container,
+  // choices). Entirely separate from the QC wizard below.
+  if (isOther) {
+    const categoryBtn = (cat: 'qc' | 'other', label: string) => (
+      <button
+        type="button"
+        onClick={() => updateFormData('sample_category', cat)}
+        className={`px-3 py-1.5 rounded-md transition-colors ${
+          formData.sample_category === cat
+            ? 'bg-primary text-primary-foreground'
+            : 'text-muted-foreground hover:text-foreground'
+        }`}
+      >
+        {label}
+      </button>
+    )
+    return (
+      <FormWrapper className={asDialog ? 'flex flex-col h-full min-h-0' : 'w-fit'}>
+        <HeaderWrapper className={asDialog ? 'mb-4 flex-shrink-0' : ''}>
+          {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
+          <div className="mt-3 inline-flex rounded-lg border border-input p-1 text-xs">
+            {categoryBtn('qc', 'QC Sample')}
+            {categoryBtn('other', 'Other Sample')}
+          </div>
+        </HeaderWrapper>
+        <ContentWrapper className={asDialog ? 'flex-1 min-h-0 flex flex-col' : 'flex flex-col h-full'}>
+          <OtherSampleIntake asDialog={asDialog} onSaved={() => onSuccess?.('')} />
+        </ContentWrapper>
+      </FormWrapper>
+    )
+  }
+
   return (
-    <FormWrapper className={asDialog ? '' : 'w-fit'}>
-      <HeaderWrapper className={asDialog ? 'mb-4' : ''}>
+    <FormWrapper className={asDialog ? 'flex flex-col h-full min-h-0' : 'w-fit'}>
+      <HeaderWrapper className={asDialog ? 'mb-4 flex-shrink-0' : ''}>
         {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
 
         {/* Category toggle — only meaningful on step 1 (before downstream fields diverge) */}
@@ -1004,7 +1055,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )}
 
         <div className="flex gap-2 mt-4">
-          {(isOther ? OTHER_STEPS : STEPS).map((step) => (
+          {STEPS.map((step) => (
             <div
               key={step.id}
               className={`flex-1 h-2 rounded-full transition-colors ${
@@ -1015,12 +1066,12 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         </div>
         <div className="mt-2">
           <p className="text-sm font-medium">
-            {isOther ? 'Other Sample Intake' : 'Sample Intake'} - {(isOther ? OTHER_STEPS : STEPS)[currentStep - 1].name}
+            Sample Intake - {STEPS[currentStep - 1]?.name}
           </p>
         </div>
       </HeaderWrapper>
 
-      <ContentWrapper className={asDialog ? 'flex flex-col h-full' : 'flex flex-col h-full'}>
+      <ContentWrapper className={asDialog ? 'flex-1 min-h-0 flex flex-col' : 'flex flex-col h-full'}>
         {/* Persistent contract link badge — outside the scroll region so it stays visible on long steps */}
         {currentStep > 1 && formData.selected_contract && (
           <ContractLinkBadge
@@ -1030,7 +1081,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )}
 
         {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto space-y-6 pb-4">
+        <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pb-4">
           {error && (
             <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
               <AlertCircle className="h-4 w-4" />
@@ -1038,115 +1089,75 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             </div>
           )}
 
-          {currentStep === 1 && (
-            <ContractSearchStep
-              formData={formData}
-              applyContract={applyContractPrefill}
-              unlinkContract={unlinkContract}
-              onSkip={() => setCurrentStep(2)}
-            />
-          )}
+          <>
+              {currentStep === 1 && (
+                <ContractSearchStep
+                  formData={formData}
+                  applyContract={applyContractPrefill}
+                  unlinkContract={unlinkContract}
+                  onSkip={() => setCurrentStep(2)}
+                />
+              )}
 
-          {currentStep === 2 && (
-            <SupplyChainStep
-              formData={formData}
-              updateFormData={updateFormData}
-              clients={clients}
-              laboratories={laboratories}
-              filteredClients={filteredClients}
-              approvedPSSSamples={approvedPSSSamples}
-              exporters={exporters}
-              importers={importers}
-              roasters={roasters}
-              qcClients={qcClients}
-              onEntityCreated={(type) => {
-                if (type === 'exporter') loadExporters()
-                else if (type === 'importer') loadImporters()
-                else if (type === 'roaster') loadRoasters()
-                else if (type === 'end_client' || type === 'qc_client') loadQcClients()
-              }}
-            />
-          )}
+              {currentStep === 2 && <SupplyChainStep {...stepProps} />}
 
-          {currentStep === 3 && (
-            <QualityStep
-              formData={formData}
-              updateFormData={updateFormData}
-              clients={clients}
-              laboratories={laboratories}
-              filteredClients={filteredClients}
-              approvedPSSSamples={approvedPSSSamples}
-              importers={importers}
-              qcClients={qcClients}
-              isGlobalUser={isGlobalUser}
-            />
-          )}
+              {currentStep === 3 && (
+                <QualityStep
+                  formData={formData}
+                  updateFormData={updateFormData}
+                  clients={clients}
+                  laboratories={laboratories}
+                  filteredClients={filteredClients}
+                  approvedPSSSamples={approvedPSSSamples}
+                  importers={importers}
+                  qcClients={qcClients}
+                  isGlobalUser={isGlobalUser}
+                />
+              )}
 
-          {currentStep === 4 && (
-            <QuantityStep
-              formData={formData}
-              updateFormData={updateFormData}
-              clients={clients}
-              laboratories={laboratories}
-              filteredClients={filteredClients}
-              approvedPSSSamples={approvedPSSSamples}
-            />
-          )}
+              {currentStep === 4 && (
+                <QuantityStep
+                  formData={formData}
+                  updateFormData={updateFormData}
+                  clients={clients}
+                  laboratories={laboratories}
+                  filteredClients={filteredClients}
+                  approvedPSSSamples={approvedPSSSamples}
+                />
+              )}
 
-          {currentStep === 5 && (
-            isOther ? (
-              <OtherSampleDetailsStep
-                formData={formData}
-                updateFormData={updateFormData}
-                clients={clients}
-                laboratories={laboratories}
-                filteredClients={filteredClients}
-                approvedPSSSamples={approvedPSSSamples}
-              />
-            ) : (
-              <SampleDetailsStep
-                formData={formData}
-                updateFormData={updateFormData}
-                clients={clients}
-                laboratories={laboratories}
-                filteredClients={filteredClients}
-                approvedPSSSamples={approvedPSSSamples}
-                onPhotoUpload={handlePhotoUpload}
-              />
-            )
-          )}
+              {currentStep === 5 && (
+                <SampleDetailsStep
+                  formData={formData}
+                  updateFormData={updateFormData}
+                  clients={clients}
+                  laboratories={laboratories}
+                  filteredClients={filteredClients}
+                  approvedPSSSamples={approvedPSSSamples}
+                  onPhotoUpload={handlePhotoUpload}
+                />
+              )}
 
-          {currentStep === 6 && (
-            isOther ? (
-              <SampleDetailsStep
-                formData={formData}
-                updateFormData={updateFormData}
-                clients={clients}
-                laboratories={laboratories}
-                filteredClients={filteredClients}
-                approvedPSSSamples={approvedPSSSamples}
-                onPhotoUpload={handlePhotoUpload}
-              />
-            ) : (
-              <ContractsStep
-                formData={formData}
-                updateFormData={updateFormData}
-                clients={clients}
-                laboratories={laboratories}
-                filteredClients={filteredClients}
-                approvedPSSSamples={approvedPSSSamples}
-                importers={importers}
-                roasters={roasters}
-                qcClients={qcClients}
-                onAddContract={handleAddContract}
-                onRemoveContract={handleRemoveContract}
-              />
-            )
-          )}
+              {currentStep === 6 && (
+                <ContractsStep
+                  formData={formData}
+                  updateFormData={updateFormData}
+                  clients={clients}
+                  laboratories={laboratories}
+                  filteredClients={filteredClients}
+                  approvedPSSSamples={approvedPSSSamples}
+                  importers={importers}
+                  roasters={roasters}
+                  qcClients={qcClients}
+                  onAddContract={handleAddContract}
+                  onRemoveContract={handleRemoveContract}
+                />
+              )}
+          </>
         </div>
 
         {/* Fixed footer */}
-        <div className="flex-shrink-0 flex justify-between pt-4 border-t bg-background sticky bottom-0">
+        <div className="flex-shrink-0 flex justify-between pt-4 border-t bg-background">
           <Button
             type="button"
             variant="outline"
@@ -1169,18 +1180,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               </Button>
             )}
 
-            {currentStep === 5 && isOther && (
-              <Button
-                type="button"
-                onClick={handleNext}
-                disabled={!validateStep(5)}
-              >
-                Next
-                <ChevronRight className="h-4 w-4 ml-1" />
-              </Button>
-            )}
-
-            {currentStep === 5 && !isOther && (
+            {currentStep === 5 && (
               <>
                 <Button
                   type="button"
@@ -1200,17 +1200,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
               </>
             )}
 
-            {currentStep === 6 && isOther && (
-              <Button
-                type="button"
-                onClick={handleSubmit}
-                disabled={loading || !validateStep(6)}
-              >
-                {loading ? 'Creating Sample...' : 'Create Sample'}
-              </Button>
-            )}
-
-            {currentStep === 6 && !isOther && (
+            {currentStep === 6 && (
               <>
                 <Button
                   type="button"
