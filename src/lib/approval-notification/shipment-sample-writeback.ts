@@ -8,17 +8,25 @@ export interface ShipmentSampleRow {
   created_at: string
 }
 
-/** Match by exact waqc_ref, else the latest pss row, else null. */
+/**
+ * Confident match only. Returns the row id to UPDATE, or null (→ the caller
+ * INSERTs a correctly-keyed row). We never pick among multiple/ambiguous rows:
+ * shipment_samples is shared with sys, so overwriting an arbitrary peer would
+ * mis-attribute another sample's approval.
+ *   - exact `waqc_ref` === our ref → that row.
+ *   - else a SINGLE unclaimed PSS placeholder (waqc_ref empty) → claim it.
+ *   - else null (ambiguous or none — insert instead).
+ */
 export function pickShipmentSampleMatch(
   rows: ShipmentSampleRow[],
   waqcRef: string,
 ): string | null {
   const exact = rows.find((r) => r.waqc_ref === waqcRef)
   if (exact) return exact.id
-  const pss = rows
-    .filter((r) => (r.sample_type ?? 'pss') === 'pss')
-    .sort((a, b) => b.created_at.localeCompare(a.created_at))
-  return pss[0]?.id ?? null
+  const unclaimed = rows.filter(
+    (r) => (r.sample_type ?? 'pss') === 'pss' && !r.waqc_ref,
+  )
+  return unclaimed.length === 1 ? unclaimed[0].id : null
 }
 
 export interface WritebackUpdateOpts {
@@ -26,6 +34,7 @@ export interface WritebackUpdateOpts {
   userId: string
   today: string
   certificateUrl: string | null
+  waqcRef: string
 }
 
 export function buildWritebackUpdate(opts: WritebackUpdateOpts) {
@@ -34,12 +43,14 @@ export function buildWritebackUpdate(opts: WritebackUpdateOpts) {
     approved_by: opts.userId,
     approved_date: opts.today,
     certificate_url: opts.certificateUrl,
+    // Claim/confirm the WAQC ref so a matched empty placeholder becomes exactly
+    // keyed (idempotent on resend; a no-op when it already matched exactly).
+    waqc_ref: opts.waqcRef,
   }
 }
 
 export interface WritebackInsertOpts extends WritebackUpdateOpts {
   contractId: string
-  waqcRef: string
 }
 
 export function buildWritebackInsert(opts: WritebackInsertOpts) {
@@ -88,6 +99,9 @@ export async function applyShipmentSampleApproval(
         .eq('id', matchId)
       rowId = matchId
     } else {
+      console.warn(
+        `[approval] no confident shipment_samples match for contract ${args.contractId} (ref ${args.waqcRef}); inserting a new row`,
+      )
       const { data: inserted } = await admin
         .from('shipment_samples')
         .insert(buildWritebackInsert(args))

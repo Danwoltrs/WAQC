@@ -19,13 +19,23 @@ describe('pickShipmentSampleMatch', () => {
     const rows = [r({ id: 'a', waqc_ref: 'OTHER' }), r({ id: 'b', waqc_ref: 'BR-036991/26' })]
     expect(pickShipmentSampleMatch(rows, 'BR-036991/26')).toBe('b')
   })
-  it('falls back to the latest pss row when no waqc_ref match', () => {
+  it('claims a single unclaimed PSS placeholder when no waqc_ref match', () => {
     const rows = [
-      r({ id: 'old', sample_type: 'pss', created_at: '2026-01-01T00:00:00Z' }),
-      r({ id: 'new', sample_type: 'pss', created_at: '2026-05-01T00:00:00Z' }),
-      r({ id: 'ss', sample_type: 'ss', created_at: '2026-06-01T00:00:00Z' }),
+      r({ id: 'pss', sample_type: 'pss', waqc_ref: null }),
+      r({ id: 'ss', sample_type: 'ss', waqc_ref: null }),
     ]
-    expect(pickShipmentSampleMatch(rows, 'BR-036991/26')).toBe('new')
+    expect(pickShipmentSampleMatch(rows, 'BR-036991/26')).toBe('pss')
+  })
+  it('returns null (→ insert) when multiple PSS rows are ambiguous', () => {
+    const rows = [
+      r({ id: 'a', sample_type: 'pss', waqc_ref: null }),
+      r({ id: 'b', sample_type: 'pss', waqc_ref: null }),
+    ]
+    expect(pickShipmentSampleMatch(rows, 'BR-036991/26')).toBeNull()
+  })
+  it('never overwrites a PSS row that already has a different waqc_ref', () => {
+    const rows = [r({ id: 'a', sample_type: 'pss', waqc_ref: 'SOMEONE-ELSE/26' })]
+    expect(pickShipmentSampleMatch(rows, 'BR-036991/26')).toBeNull()
   })
   it('returns null when there are no rows', () => {
     expect(pickShipmentSampleMatch([], 'X')).toBeNull()
@@ -39,12 +49,14 @@ describe('buildWritebackUpdate / buildWritebackInsert', () => {
       userId: 'u1',
       today: '2026-06-03',
       certificateUrl: 'path/cert.pdf',
+      waqcRef: 'BR-036991/26',
     })
     expect(p).toEqual({
       status: 'approved',
       approved_by: 'u1',
       approved_date: '2026-06-03',
       certificate_url: 'path/cert.pdf',
+      waqc_ref: 'BR-036991/26',
     })
   })
   it('builds an insert payload with contract link and waqc_ref', () => {
