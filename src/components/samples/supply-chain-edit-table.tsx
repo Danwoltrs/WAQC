@@ -51,6 +51,8 @@ export interface SupplyChainSampleData {
 interface SupplyChainEditTableProps {
   sample: SupplyChainSampleData
   isEditMode: boolean
+  /** Force the display (read-only) view even if the modal is in edit mode. */
+  forceReadOnly?: boolean
   formData: Record<string, any>
   onFormChange: (field: string, value: any) => void
   onEditClick?: () => void
@@ -58,7 +60,14 @@ interface SupplyChainEditTableProps {
 
 const KEEP_CURRENT = '__keep_current__'
 
-export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChange, onEditClick }: SupplyChainEditTableProps) {
+// "T.B.I." (to be informed) and empty values are placeholders — not a real party.
+function isTbi(s: string | null | undefined): boolean {
+  return !s || /^t\.?b\.?i\.?$/i.test(s.trim())
+}
+
+export function SupplyChainEditTable({ sample, isEditMode: isEditModeProp, forceReadOnly, formData, onFormChange, onEditClick }: SupplyChainEditTableProps) {
+  // When locked (e.g. viewing a sub-contract), always render the read-only view.
+  const isEditMode = isEditModeProp && !forceReadOnly
   const [exporters, setExporters] = useState<Entity[]>([])
   const [importers, setImporters] = useState<Entity[]>([])
   const [roasters, setRoasters] = useState<Entity[]>([])
@@ -349,6 +358,13 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
   const showRoaster = isEditMode || (!allSameAsQc && !!sample.roaster_name)
   const showEndClient = isEditMode || (!allSameAsQc && !!effectiveEndClientName)
 
+  // In view mode: hide the Shipper row when it's a T.B.I./empty placeholder.
+  const showShipper = isEditMode || !isTbi(sample.exporter_name)
+  // In view mode: collapse Importer + Roaster into a single "Buyer" row when
+  // they are the same company (e.g. both resolve to fantasy "Ahold").
+  const mergeImporterRoaster = !isEditMode && !!effectiveImporterName && !!sample.roaster_name &&
+    effectiveImporterName.toLowerCase().trim() === sample.roaster_name.toLowerCase().trim()
+
   return (
     <>
       <div className="border rounded-lg overflow-hidden">
@@ -408,7 +424,7 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
                   'seller_contract_nr',
                   sample.seller_contract_nr,
                 )}
-                {renderEntityCell(
+                {showShipper && renderEntityCell(
                   'Shipper',
                   sample.same_seller_shipper ? null : sample.exporter_name,
                   'exporter_id',
@@ -419,24 +435,38 @@ export function SupplyChainEditTable({ sample, isEditMode, formData, onFormChang
               </>
             )}
 
-            {/* Importer - hidden in view mode if all same as QC client */}
-            {showImporter && renderEntityCell(
-              'Importer',
-              effectiveImporterName,
-              'importer_id',
-              importers,
-              'buyer_contract_nr',
-              sample.buyer_contract_nr,
-            )}
+            {/* Importer / Buyer. When importer == roaster (view mode), one merged
+                "Buyer" row carrying the buyer ref; otherwise the Importer row. */}
+            {mergeImporterRoaster ? (
+              renderEntityCell(
+                'Buyer',
+                effectiveImporterName,
+                'importer_id',
+                importers,
+                'buyer_contract_nr',
+                sample.buyer_contract_nr || sample.roaster_contract_nr,
+              )
+            ) : (
+              <>
+                {showImporter && renderEntityCell(
+                  'Importer',
+                  effectiveImporterName,
+                  'importer_id',
+                  importers,
+                  'buyer_contract_nr',
+                  sample.buyer_contract_nr,
+                )}
 
-            {/* Roaster - hidden in view mode if empty */}
-            {showRoaster && renderEntityCell(
-              'Roaster',
-              sample.roaster_name,
-              'roaster_id',
-              roasters,
-              'roaster_contract_nr',
-              sample.roaster_contract_nr,
+                {/* Roaster - hidden in view mode if empty */}
+                {showRoaster && renderEntityCell(
+                  'Roaster',
+                  sample.roaster_name,
+                  'roaster_id',
+                  roasters,
+                  'roaster_contract_nr',
+                  sample.roaster_contract_nr,
+                )}
+              </>
             )}
 
             {/* End Client - hidden in view mode if empty */}

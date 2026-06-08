@@ -1,0 +1,1829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Specialty CVA - Tasting Journey</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fff; --card:#F9F9FA; --card-solid:#F1F1F2; --text:#000; --muted:rgba(0,0,0,0.4);
+  --border:rgba(0,0,0,0.1); --hair:rgba(0,0,0,0.06); --shadow:0 10px 40px rgba(0,0,0,0.08);
+  --accent:#556b2f; --accent-soft:rgba(85,107,47,0.12);
+  --neutral:#9aa0a6; --cool:#3b82f6;
+  --ease:cubic-bezier(.22,.61,.36,1); --spring:cubic-bezier(.34,1.56,.64,1);
+}
+[data-theme="dark"]{
+  --bg:#2A2A2A; --card:rgba(255,255,255,0.04); --card-solid:#343434; --text:#fff; --muted:rgba(255,255,255,0.4);
+  --border:rgba(255,255,255,0.15); --hair:rgba(255,255,255,0.08); --shadow:0 10px 40px rgba(0,0,0,0.45);
+  --accent:#a9a454; --accent-soft:rgba(169,164,84,0.16);
+  --neutral:#7c7f84;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{height:100%;margin:0;}
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;
+  background:var(--bg); color:var(--text);
+  font-size:14px; line-height:1.4;
+  overflow:hidden;
+  transition:background .5s var(--ease), color .35s var(--ease);
+  -webkit-font-smoothing:antialiased;
+}
+button{font-family:inherit;cursor:pointer;border:none;background:none;color:inherit;}
+.app{height:100dvh;display:flex;flex-direction:column;position:relative;}
+.tnum{font-variant-numeric:tabular-nums;font-feature-settings:"tnum";}
+
+/* ambient accent bleed (grafted from Candidate A) */
+.bleed{
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(115% 80% at 50% -12%, var(--accent-soft), transparent 62%);
+  transition:background .9s var(--ease);
+}
+
+/* ===== HEADER ===== */
+.topbar{
+  position:relative;z-index:5;
+  display:flex;align-items:center;gap:14px;
+  padding:14px 24px;border-bottom:.5px solid var(--border);
+  flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:11px;}
+.brand .mark{
+  width:30px;height:30px;border-radius:9px;flex:none;
+  background:linear-gradient(135deg,#556b2f,#a9a454);
+  display:grid;place-items:center;font-weight:800;font-size:14px;color:#fff;
+  box-shadow:0 2px 8px rgba(85,107,47,.4);transition:box-shadow .6s;
+}
+.brand b{font-weight:700;font-size:14px;letter-spacing:-.01em;display:block;line-height:1.15;}
+.brand small{font-weight:600;color:var(--muted);font-size:10.5px;text-transform:uppercase;letter-spacing:1.4px;}
+.samplehdr{
+  font-size:12.5px;color:var(--muted);font-weight:500;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  flex:1;min-width:120px;
+}
+.samplehdr b{color:var(--text);font-weight:600;}
+.topactions{display:flex;align-items:center;gap:10px;margin-left:auto;}
+.livescore{
+  display:flex;align-items:baseline;gap:7px;
+  padding:7px 15px;border-radius:14px;border:.5px solid var(--border);
+  background:var(--card);transition:border-color .3s, color .5s;
+}
+.livescore .lbl{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--muted);font-weight:600;}
+.livescore .val{font-size:19px;font-weight:800;}
+.iconbtn{
+  width:38px;height:38px;border-radius:50%;border:.5px solid var(--border);
+  background:var(--card);display:flex;align-items:center;justify-content:center;
+  transition:transform .25s var(--spring), background .3s, border-color .3s;
+}
+.iconbtn:hover{transform:translateY(-1px);background:var(--accent-soft);border-color:var(--accent);}
+.iconbtn:active{transform:scale(.92);}
+.iconbtn svg{width:18px;height:18px;}
+
+/* ===== PROGRESS PATH ===== */
+.progress{
+  position:relative;z-index:5;
+  display:flex;gap:0;padding:0 24px;height:48px;align-items:center;
+  border-bottom:.5px solid var(--border);
+}
+.pstep{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;
+  position:relative;cursor:pointer;padding:6px 2px;
+}
+.ptrack{position:relative;width:100%;height:4px;border-radius:4px;background:var(--hair);overflow:hidden;}
+.pfill{position:absolute;inset:0;width:0;border-radius:4px;background:var(--accent);transition:width .55s var(--ease), background .5s;}
+.pstep.done .pfill{width:100%;}
+.pstep.current .pfill{width:50%;}
+.pstep.current .ptrack{box-shadow:0 0 0 3px var(--accent-soft);border-radius:6px;}
+.plabel{font-size:10px;font-weight:600;color:var(--muted);letter-spacing:.2px;transition:color .3s;white-space:nowrap;}
+.pstep.current .plabel,.pstep.done .plabel{color:var(--text);}
+.pstep:hover .plabel{color:var(--accent);}
+.pstep .pdot{position:absolute;top:1px;width:7px;height:7px;border-radius:50%;background:var(--bg);border:2px solid var(--hair);transition:.4s var(--spring);}
+.pstep.current .pdot{border-color:var(--accent);transform:scale(1.3);}
+.pstep.done .pdot{background:var(--accent);border-color:var(--accent);}
+
+/* ===== STAGE ===== */
+.stage{flex:1;position:relative;z-index:2;overflow:hidden;}
+.screen{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:18px 24px;opacity:0;pointer-events:none;
+  transform:translateY(20px) scale(.99);
+  transition:opacity .42s var(--ease), transform .45s var(--ease);
+}
+.screen.active{opacity:1;pointer-events:auto;transform:none;}
+
+.canvas{
+  width:100%;max-width:880px;display:flex;flex-direction:column;align-items:center;gap:18px;
+}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:2.5px;text-transform:uppercase;color:var(--accent);transition:color .5s;}
+.bigtitle{font-size:clamp(30px,6vw,52px);font-weight:800;letter-spacing:-1.5px;margin:0;line-height:1;}
+.subtitle{font-size:14px;color:var(--muted);max-width:520px;text-align:center;margin:0;font-weight:500;line-height:1.5;}
+
+/* ===== 9-POINT IMPRESSION SCALE ===== */
+.scalewrap{width:100%;max-width:820px;display:flex;flex-direction:column;gap:14px;margin-top:6px;}
+.scalerow{display:flex;align-items:flex-end;justify-content:center;gap:18px;width:100%;}
+.scaleblocks{
+  display:flex;gap:9px;height:128px;align-items:flex-end;justify-content:center;
+  padding:24px 4px 0;flex:1;
+}
+.scalenumwrap{display:flex;flex-direction:column;align-items:center;gap:6px;flex:none;padding-bottom:2px;}
+.scalenum{
+  width:64px;height:64px;border-radius:18px;border:.5px solid var(--border);background:var(--card);
+  color:var(--text);font-family:inherit;font-size:26px;font-weight:800;text-align:center;
+  transition:border-color .25s, box-shadow .25s, background .25s;-moz-appearance:textfield;
+}
+.scalenum::-webkit-outer-spin-button,.scalenum::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.scalenum:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);background:var(--bg);}
+.scalenum.has{border-color:var(--accent);}
+.scalenumlbl{font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--muted);}
+.blk{
+  flex:1;max-width:78px;height:78px;border-radius:18px;position:relative;
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;font-weight:800;color:rgba(255,255,255,.92);
+  transition:transform .28s var(--spring), height .28s var(--spring), box-shadow .28s, filter .25s;
+  transform-origin:bottom center;cursor:pointer;user-select:none;
+  box-shadow:0 4px 14px rgba(0,0,0,.12);will-change:transform,height;
+}
+.blk .num{position:relative;z-index:2;text-shadow:0 1px 3px rgba(0,0,0,.3);transition:transform .2s;}
+.blk::after{
+  content:attr(data-lbl);position:absolute;bottom:calc(100% + 10px);left:50%;transform:translateX(-50%) translateY(6px);
+  font-size:11px;font-weight:700;color:var(--text);background:var(--card-solid);border:.5px solid var(--border);
+  padding:5px 10px;border-radius:9px;white-space:nowrap;opacity:0;pointer-events:none;transition:.2s;box-shadow:var(--shadow);z-index:6;
+}
+.blk:hover::after{opacity:1;transform:translateX(-50%) translateY(0);}
+.blk.swell{transform:scale(1.16) translateY(-6px);box-shadow:0 14px 32px rgba(0,0,0,.22);z-index:3;}
+.blk.swell-1{transform:scale(1.07) translateY(-2px);z-index:2;}
+.blk.sel{
+  height:108px;box-shadow:0 16px 40px rgba(0,0,0,.28), 0 0 0 3px var(--bg), 0 0 0 6px currentColor;
+  animation:springpop .55s var(--spring);
+}
+.blk.sel .num{transform:scale(1.18);}
+.blk.finalsel{
+  height:108px;box-shadow:0 16px 40px rgba(0,0,0,.28), 0 0 0 3px var(--bg), 0 0 0 6px #fff;
+  outline:3px dashed rgba(255,255,255,.9);outline-offset:-9px;
+  animation:springpop .55s var(--spring);
+}
+@keyframes springpop{0%{transform:scale(.78) translateY(8px)}55%{transform:scale(1.1) translateY(-8px)}100%{transform:scale(1) translateY(0)}}
+.scaleends{display:flex;justify-content:space-between;font-size:11px;font-weight:600;color:var(--muted);padding:0 6px;}
+.scaleends .lo{color:#ef4444;}.scaleends .hi{color:#22c55e;}
+
+/* selected readout + cooling */
+.readout{display:flex;align-items:center;justify-content:center;gap:12px;min-height:48px;flex-wrap:wrap;}
+.readpill{
+  display:inline-flex;align-items:center;gap:9px;padding:8px 16px;border-radius:14px;
+  background:var(--card);border:.5px solid var(--border);font-weight:700;font-size:14px;
+  animation:fadein .4s var(--ease);
+}
+.readpill .swatch{width:14px;height:14px;border-radius:5px;}
+.cooltoggle{
+  display:inline-flex;align-items:center;gap:8px;padding:8px 15px;border-radius:14px;
+  border:.5px dashed var(--border);font-size:12.5px;font-weight:600;color:var(--muted);
+  transition:.25s;background:transparent;
+}
+.cooltoggle:hover{color:var(--text);border-color:var(--cool);background:rgba(59,130,246,.08);}
+.cooltoggle.on{color:var(--cool);border-color:var(--cool);border-style:solid;background:rgba(59,130,246,.1);}
+.coolhint{font-size:12px;color:var(--muted);font-weight:500;}
+.coolhint b{color:var(--text);}
+.shiftarrow{font-size:12.5px;font-weight:700;color:var(--cool);display:inline-flex;align-items:center;gap:6px;animation:fadein .4s;}
+.shiftarrow .ar{animation:slidearrow 1.4s var(--ease) infinite;}
+@keyframes slidearrow{0%,100%{transform:translateX(0)}50%{transform:translateX(4px)}}
+
+/* describe button + chips preview */
+.sectiontools{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:2px;width:100%;}
+.describebtn{
+  display:inline-flex;align-items:center;gap:9px;padding:11px 22px;border-radius:16px;
+  border:.5px solid var(--border);background:var(--card);font-weight:700;font-size:13px;
+  transition:transform .2s, box-shadow .25s, background .25s, border-color .25s;
+}
+.describebtn:hover{transform:translateY(-2px);box-shadow:var(--shadow);background:var(--accent-soft);border-color:var(--accent);}
+.describebtn:active{transform:translateY(0) scale(.97);}
+.describebtn svg{width:17px;height:17px;}
+.describebtn .cnt{background:var(--accent);color:#fff;border-radius:20px;font-size:11px;padding:1px 8px;font-weight:800;}
+[data-theme="dark"] .describebtn .cnt{color:#15140f;}
+/* 3 group dots: filled = group has entries */
+.describebtn .gdots{display:inline-flex;gap:4px;margin-left:2px;}
+.describebtn .gdots i{width:7px;height:7px;border-radius:50%;background:var(--border);transition:background .25s,transform .25s;}
+.describebtn .gdots i.on{background:var(--accent);transform:scale(1.15);}
+.describesub{font-size:11px;color:var(--muted);font-weight:600;text-align:center;margin-top:-4px;}
+.describesub b{color:var(--accent);font-weight:700;}
+.minichips{display:flex;gap:7px;flex-wrap:wrap;justify-content:center;max-width:640px;min-height:0;}
+.minichip{
+  display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:20px;
+  font-size:11.5px;font-weight:700;color:#fff;animation:chipin .4s var(--spring);
+}
+@keyframes chipin{0%{transform:scale(.6) translateY(8px);opacity:0}100%{transform:none;opacity:1}}
+
+/* ===== NAV ===== */
+.navbar{
+  position:relative;z-index:5;display:flex;align-items:center;justify-content:space-between;
+  padding:14px 24px;border-top:.5px solid var(--border);gap:12px;
+}
+.navbtn{
+  display:inline-flex;align-items:center;gap:8px;padding:12px 26px;border-radius:16px;
+  font-weight:700;font-size:14px;transition:transform .2s, box-shadow .25s, opacity .2s, background .25s;border:.5px solid var(--border);
+}
+.navbtn.ghost{background:transparent;color:var(--muted);}
+.navbtn.ghost:hover{color:var(--text);background:var(--card);border-color:var(--accent);}
+.navbtn.primary{background:var(--accent);color:#fff;border-color:transparent;box-shadow:0 6px 18px var(--accent-soft);}
+[data-theme="dark"] .navbtn.primary{color:#15140f;}
+.navbtn.primary:hover{transform:translateY(-2px);box-shadow:0 10px 26px var(--accent-soft);}
+.navbtn:active{transform:scale(.96);}
+.navbtn:disabled{opacity:.35;pointer-events:none;}
+.navbtn svg{width:16px;height:16px;}
+.navhint{font-size:11.5px;color:var(--muted);font-weight:500;text-align:center;flex:1;}
+.navhint kbd{background:var(--card);border:.5px solid var(--border);border-radius:6px;padding:2px 7px;font-family:inherit;font-size:11px;font-weight:700;margin:0 1px;}
+
+/* ===== ROAST START SCREEN ===== */
+.roastcard{
+  background:var(--card);border:.5px solid var(--border);border-radius:20px;padding:32px;
+  width:100%;max-width:560px;box-shadow:var(--shadow);display:flex;flex-direction:column;gap:20px;
+}
+.roasttiles{display:flex;gap:10px;}
+.roasttile{
+  flex:1;display:flex;flex-direction:column;align-items:center;gap:9px;padding:14px 6px 12px;
+  border-radius:16px;border:.5px solid var(--border);background:var(--card);
+  font-family:inherit;color:var(--muted);font-size:11px;font-weight:700;line-height:1.2;text-align:center;
+  transition:transform .18s var(--spring), border-color .2s, box-shadow .2s, color .2s, background .2s;
+}
+.roasttile:hover{transform:translateY(-3px);box-shadow:var(--shadow);color:var(--text);}
+.roasttile:active{transform:scale(.96);}
+.roasttile .swatch{width:40px;height:40px;border-radius:50%;box-shadow:inset 0 2px 6px rgba(0,0,0,.35);border:2px solid var(--bg);}
+.roasttile.on{border-color:var(--accent);color:var(--text);background:var(--accent-soft);box-shadow:0 6px 18px var(--accent-soft);}
+.roasttile.on .swatch{outline:3px solid var(--accent);outline-offset:2px;}
+.roastagtron{display:flex;align-items:center;justify-content:center;gap:12px;font-size:13px;font-weight:600;color:var(--muted);}
+.roastagtron label span{font-weight:500;opacity:.7;}
+.roastagtron input{
+  width:90px;height:42px;border-radius:12px;border:.5px solid var(--border);background:var(--card);
+  color:var(--text);font-family:inherit;font-size:16px;font-weight:800;text-align:center;-moz-appearance:textfield;
+  transition:border-color .25s, box-shadow .25s;
+}
+.roastagtron input::-webkit-outer-spin-button,.roastagtron input::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.roastagtron input:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);}
+.roastval{text-align:center;font-size:16px;font-weight:800;color:var(--accent);}
+
+/* ===== FLAVOR WHEEL OVERLAY ===== */
+.overlay{
+  position:fixed;inset:0;z-index:50;background:rgba(0,0,0,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+  display:flex;align-items:center;justify-content:center;padding:18px;
+  opacity:0;pointer-events:none;transition:opacity .35s var(--ease);
+}
+.overlay.open{opacity:1;pointer-events:auto;}
+.wheelpanel{
+  background:var(--bg);border:.5px solid var(--border);border-radius:24px;
+  width:100%;max-width:1040px;height:min(94dvh,820px);box-shadow:0 30px 80px rgba(0,0,0,.5);
+  display:flex;flex-direction:column;overflow:hidden;transform:scale(.92);transition:transform .4s var(--spring);
+}
+.overlay.open .wheelpanel{transform:scale(1);}
+.wheelhead{display:flex;align-items:center;gap:14px;padding:18px 24px;border-bottom:.5px solid var(--border);flex-wrap:wrap;}
+.wheelhead h2{margin:0;font-size:17px;font-weight:800;letter-spacing:-.3px;}
+.wheelhead .sec{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);}
+.wheelhead .closeb{margin-left:auto;width:38px;height:38px;border-radius:50%;border:.5px solid var(--border);background:var(--card);display:flex;align-items:center;justify-content:center;transition:.25s;}
+.wheelhead .closeb:hover{background:#ef4444;color:#fff;transform:rotate(90deg);}
+.wheelbody{flex:1;display:flex;min-height:0;}
+.wheelcol{flex:1.3;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:14px;position:relative;min-width:0;}
+.sidecol{flex:1;border-left:.5px solid var(--border);display:flex;flex-direction:column;min-width:0;}
+
+.wheelsvgwrap{position:relative;width:min(100%,520px);aspect-ratio:1;}
+#flavorwheel{width:100%;height:100%;display:block;overflow:visible;}
+#flavorwheel .wedge{cursor:pointer;transition:opacity .3s, transform .25s;}
+#flavorwheel .wedge.dim{opacity:.16;}
+#flavorwheel .wedge.picked path{stroke:var(--text);stroke-width:2.4;}
+#flavorwheel .wlabel{font-size:8.5px;font-weight:700;fill:#fff;pointer-events:none;text-shadow:0 1px 2px rgba(0,0,0,.55);}
+#flavorwheel .clabel{font-size:11px;font-weight:800;fill:#fff;pointer-events:none;letter-spacing:.2px;text-shadow:0 1px 2px rgba(0,0,0,.4);}
+.wheelcenter{
+  position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);
+  width:25%;height:25%;border-radius:50%;background:var(--card-solid);border:.5px solid var(--border);
+  display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;pointer-events:none;
+}
+.wheelcenter .big{font-size:clamp(20px,4vw,30px);font-weight:800;line-height:1;}
+.wheelcenter .sm{font-size:9px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:1px;margin-top:3px;}
+
+/* ===== VOICE RECORDER (descriptive layer) ===== */
+.wheelcol{gap:10px;justify-content:flex-start;overflow-y:auto;padding-top:18px;}
+.voicebox{
+  width:min(100%,520px);display:flex;align-items:flex-start;gap:14px;margin-top:4px;
+  background:var(--card);border:.5px solid var(--border);border-radius:20px;padding:14px 16px;
+}
+.micbtn{
+  position:relative;flex:none;width:62px;height:62px;border-radius:50%;
+  background:var(--accent);color:#fff;display:grid;place-items:center;
+  box-shadow:0 8px 22px var(--accent-soft);transition:transform .18s var(--spring), background .25s;
+  touch-action:none;user-select:none;-webkit-user-select:none;
+}
+[data-theme="dark"] .micbtn{color:#15140f;}
+.micbtn svg{width:26px;height:26px;position:relative;z-index:2;}
+.micbtn:active{transform:scale(.93);}
+.micbtn .micring{position:absolute;inset:0;border-radius:50%;border:2px solid var(--accent);opacity:0;pointer-events:none;}
+.voicebox.recording .micbtn{background:#ef4444;color:#fff;}
+.voicebox.recording .micbtn .micring{animation:micpulse 1.4s var(--ease) infinite;border-color:#ef4444;}
+.voicebox.recording .micbtn .micring.r2{animation-delay:.7s;}
+@keyframes micpulse{0%{opacity:.7;transform:scale(1)}100%{opacity:0;transform:scale(1.85)}}
+.voicecol{flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;}
+.voicetop{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.micstate{font-size:12px;font-weight:700;color:var(--muted);transition:color .2s;}
+.voicebox.recording .micstate{color:#ef4444;}
+.langsel{display:flex;gap:4px;flex:none;}
+.langbtn{
+  padding:4px 9px;border-radius:9px;border:.5px solid var(--border);background:var(--bg);
+  font-family:inherit;font-size:11px;font-weight:800;color:var(--muted);transition:.18s;
+}
+.langbtn:hover{color:var(--text);border-color:var(--accent);}
+.langbtn.on{background:var(--accent);color:#fff;border-color:transparent;}
+[data-theme="dark"] .langbtn.on{color:#15140f;}
+.wave{height:26px;display:flex;align-items:center;gap:3px;opacity:.35;transition:opacity .25s;}
+.voicebox.recording .wave{opacity:1;}
+.wave span{flex:1;max-width:5px;border-radius:3px;background:var(--accent);height:18%;}
+.voicebox.recording .wave span{animation:wavebar .9s var(--ease) infinite;}
+@keyframes wavebar{0%,100%{height:14%}50%{height:100%}}
+.voicenotes{
+  font-size:12.5px;line-height:1.5;color:var(--text);font-weight:500;
+  background:var(--bg);border:.5px solid var(--border);border-radius:12px;padding:9px 12px;min-height:38px;
+}
+.voicenotes[data-empty="true"]{color:var(--muted);font-style:italic;font-weight:500;}
+.suggestwrap{display:flex;flex-direction:column;gap:7px;animation:fadein .35s var(--ease);}
+.suggesthd{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--accent);}
+.suggestchips{display:flex;flex-wrap:wrap;gap:7px;}
+.suggestchip{
+  display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:20px;
+  border:1.5px dashed currentColor;background:transparent;font-family:inherit;
+  font-size:12px;font-weight:700;transition:transform .15s var(--spring), background .2s, opacity .25s;
+}
+.suggestchip:hover{transform:translateY(-2px);}
+.suggestchip:active{transform:scale(.94);}
+.suggestchip .plus{font-size:13px;font-weight:800;line-height:1;}
+.suggestchip.added{opacity:.45;text-decoration:line-through;pointer-events:none;}
+
+/* intensity + chip tray */
+.sidehd{padding:16px 20px 8px;}
+.sidehd .lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);}
+.intensity{padding:4px 20px 16px;border-bottom:.5px solid var(--border);}
+.introw{display:flex;align-items:center;gap:12px;}
+.intsegs{flex:1;display:flex;gap:3px;}
+.intseg{
+  flex:1;height:42px;border-radius:7px;border:.5px solid var(--border);background:var(--card);
+  color:var(--muted);font-family:inherit;font-size:11px;font-weight:800;line-height:1;
+  display:flex;align-items:center;justify-content:center;padding:0;
+  transition:background .15s, color .15s, border-color .15s, transform .12s var(--spring);
+  position:relative;
+}
+.intseg:hover{transform:translateY(-2px);border-color:var(--accent);color:var(--text);}
+.intseg:active{transform:scale(.92);}
+.intseg.zlo{border-bottom:2px solid rgba(34,197,94,.5);}
+.intseg.zmed{border-bottom:2px solid rgba(169,164,84,.6);}
+.intseg.zhi{border-bottom:2px solid rgba(224,86,63,.6);}
+.intseg.on{background:var(--accent);color:#fff;border-color:transparent;box-shadow:0 3px 10px var(--accent-soft);}
+[data-theme="dark"] .intseg.on{color:#15140f;}
+.intnum{
+  width:54px;height:54px;flex:none;border-radius:14px;border:.5px solid var(--border);background:var(--card);
+  color:var(--text);font-family:inherit;font-size:22px;font-weight:800;text-align:center;-moz-appearance:textfield;
+  transition:border-color .25s, box-shadow .25s;
+}
+.intnum::-webkit-outer-spin-button,.intnum::-webkit-inner-spin-button{-webkit-appearance:none;margin:0;}
+.intnum:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 4px var(--accent-soft);}
+.intscale{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);font-weight:700;margin-top:8px;}
+.intscale .zlo{color:#22c55e;}.intscale .zmed{color:var(--accent);}.intscale .zhi{color:#e0563f;}
+
+.chiptray{flex:1;overflow-y:auto;padding:14px 20px;display:flex;flex-direction:column;gap:14px;}
+.chipgroup{display:flex;flex-direction:column;gap:8px;}
+.chipgrouphd{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:1px;}
+.chipgrouphd .cap{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--card);border:.5px solid var(--border);}
+.chipgrouphd .cap.full{background:#ef4444;color:#fff;border-color:transparent;}
+.chips{display:flex;flex-wrap:wrap;gap:8px;}
+.chip{
+  display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:22px;
+  font-size:12.5px;font-weight:700;color:#fff;box-shadow:0 3px 10px rgba(0,0,0,.18);
+}
+.chip.flying{position:fixed;z-index:60;pointer-events:none;transition:transform .55s cubic-bezier(.3,.9,.3,1), opacity .55s;}
+.chip .x{width:16px;height:16px;border-radius:50%;background:rgba(255,255,255,.25);display:flex;align-items:center;justify-content:center;font-size:11px;cursor:pointer;font-weight:800;transition:.15s;}
+.chip .x:hover{background:rgba(255,255,255,.5);}
+.emptytray{color:var(--muted);font-size:12.5px;font-style:italic;padding:6px 0;}
+.toast{
+  position:absolute;bottom:14px;left:50%;transform:translateX(-50%) translateY(20px);
+  background:#f59e0b;color:#1a1205;font-size:12px;font-weight:700;padding:9px 16px;border-radius:12px;
+  opacity:0;transition:.3s;pointer-events:none;box-shadow:0 8px 24px rgba(245,158,11,.4);white-space:nowrap;z-index:5;
+}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+.cataslot{padding:12px 20px 14px;border-bottom:.5px solid var(--border);display:none;}
+.cataslot .chipgrouphd{margin-bottom:8px;}
+.mtchips{display:flex;flex-wrap:wrap;gap:8px;}
+.mtchip{padding:7px 14px;border-radius:22px;font-size:12.5px;font-weight:700;border:.5px solid var(--border);background:var(--card);transition:.2s;color:var(--text);}
+.mtchip.on{color:#fff;border-color:transparent;box-shadow:0 3px 10px rgba(0,0,0,.18);}
+
+/* ===== DESCRIBE GROUP TABS ===== */
+.grouptabs{
+  display:flex;gap:8px;padding:12px 24px;border-bottom:.5px solid var(--border);flex-wrap:wrap;flex:none;
+}
+.gtab{
+  display:inline-flex;align-items:center;gap:9px;padding:9px 16px;border-radius:14px;
+  border:.5px solid var(--border);background:var(--card);font-family:inherit;
+  font-size:13px;font-weight:700;color:var(--muted);
+  transition:transform .15s var(--spring), background .2s, border-color .2s, color .2s;
+}
+.gtab:hover{color:var(--text);transform:translateY(-1px);}
+.gtab.on{color:#fff;border-color:transparent;box-shadow:0 4px 14px rgba(0,0,0,.18);}
+[data-theme="dark"] .gtab.on{color:#15140f;}
+.gtab .gdot{width:7px;height:7px;border-radius:50%;background:currentColor;opacity:.3;transition:opacity .2s,transform .2s;}
+.gtab.has .gdot{opacity:1;transform:scale(1.25);}
+.gtab .gcnt{background:rgba(255,255,255,.25);border-radius:20px;font-size:11px;padding:0 7px;font-weight:800;min-width:18px;text-align:center;}
+.gtab:not(.on) .gcnt{background:var(--accent-soft);color:var(--accent);}
+
+/* ===== MOUTHFEEL CATA (dedicated, no wheel) ===== */
+.mouthcata{width:min(100%,520px);display:flex;flex-direction:column;gap:12px;margin-top:6px;animation:fadein .35s var(--ease);}
+.mouthcatahd{display:flex;align-items:center;justify-content:space-between;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted);}
+.mouthcatahd .cap{font-size:10px;font-weight:700;padding:2px 8px;border-radius:10px;background:var(--card);border:.5px solid var(--border);letter-spacing:.5px;}
+.mouthcatahd .cap.full{background:#ef4444;color:#fff;border-color:transparent;}
+.mouthcards{display:flex;flex-direction:column;gap:10px;}
+.mouthcard{
+  display:flex;flex-direction:column;gap:3px;text-align:left;padding:14px 18px;border-radius:16px;
+  border:.5px solid var(--border);background:var(--card);font-family:inherit;color:var(--text);
+  transition:transform .15s var(--spring), border-color .2s, background .2s, box-shadow .2s;
+}
+.mouthcard:hover{transform:translateY(-2px);border-color:var(--accent);}
+.mouthcard:active{transform:scale(.98);}
+.mouthcard .mcname{font-size:15px;font-weight:800;letter-spacing:-.2px;}
+.mouthcard .mcsub{font-size:11.5px;font-weight:600;color:var(--muted);}
+.mouthcard.on{border-color:transparent;background:var(--accent);color:#fff;box-shadow:0 6px 18px var(--accent-soft);}
+[data-theme="dark"] .mouthcard.on{color:#15140f;}
+.mouthcard.on .mcsub{color:rgba(255,255,255,.8);}
+[data-theme="dark"] .mouthcard.on .mcsub{color:rgba(0,0,0,.6);}
+
+/* ===== CUPS SCREEN ===== */
+.cuprow{display:flex;gap:22px;justify-content:center;flex-wrap:wrap;margin-top:8px;}
+/* Ceramic rim tone: warm greige in light, muted neutral in dark */
+:root{--cuprim:#d9d2c4;--cuprim-inner:rgba(0,0,0,.10);}
+[data-theme="dark"]{--cuprim:#5a564e;--cuprim-inner:rgba(0,0,0,.45);}
+.cup{
+  display:flex;flex-direction:column;align-items:center;gap:8px;cursor:pointer;
+  background:none;border:none;padding:0;
+}
+.cup .cupdisc{
+  width:112px;height:112px;border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  border:10px solid var(--cuprim);background:var(--card);
+  box-shadow:inset 0 0 0 2px var(--cuprim-inner), inset 0 4px 10px var(--cuprim-inner);
+  transition:transform .2s var(--spring), box-shadow .25s, border-color .25s, background .25s;
+}
+.cup .cupnum{font-size:38px;font-weight:600;color:var(--text);line-height:1;transition:color .3s;}
+.cup:hover .cupdisc{transform:translateY(-4px);box-shadow:var(--shadow), inset 0 0 0 2px var(--cuprim-inner);}
+.cup:active .cupdisc{transform:scale(.97);}
+.cup .cupstate{font-size:11px;font-weight:700;color:var(--muted);text-align:center;min-height:14px;}
+.cup.nonuniform .cupdisc{border-color:#f59e0b;}
+.cup.nonuniform .cupnum{color:#f59e0b;}
+.cup.nonuniform .cupstate{color:#f59e0b;}
+.cup.defective .cupdisc{border-color:#ef4444;}
+.cup.defective .cupnum{color:#ef4444;}
+.cup.defective .cupstate{color:#ef4444;}
+.cuphelp{font-size:12.5px;color:var(--muted);text-align:center;max-width:480px;margin-top:4px;line-height:1.55;}
+.cuppenalty{display:flex;gap:18px;margin-top:8px;font-size:13px;font-weight:700;flex-wrap:wrap;justify-content:center;}
+.cuppenalty span{color:var(--muted);}
+.cuppenalty b{color:var(--text);}
+.cuppenalty .pen b{color:#f59e0b;}
+
+/* defect popover (grafted from Candidate A) */
+.defectpop{
+  position:fixed;z-index:60;background:var(--card-solid);border:.5px solid var(--border);
+  border-radius:16px;padding:8px;box-shadow:var(--shadow);display:none;flex-direction:column;gap:4px;min-width:182px;
+  animation:popin .25s var(--spring);
+}
+@keyframes popin{from{transform:scale(.9) translateY(6px);opacity:0}to{transform:none;opacity:1}}
+.defectpop button{text-align:left;padding:9px 13px;border-radius:10px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:9px;transition:background .2s;}
+.defectpop button:hover{background:var(--card);}
+.defectpop button .pts{margin-left:auto;color:var(--muted);font-size:11px;font-weight:700;}
+.defectpop button.sel{background:var(--accent-soft);}
+.defectpop .dhdr{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);padding:6px 13px 2px;font-weight:700;}
+.defectpop .d{width:9px;height:9px;border-radius:50%;flex:none;}
+.defectpop .d.g{background:#22c55e;}.defectpop .d.a{background:#f59e0b;}.defectpop .d.r{background:#ef4444;}
+
+/* ===== REVEAL ===== */
+.revealbg{
+  position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+  transition:background 1s var(--ease);padding:18px;
+}
+.revealeyebrow{font-size:12px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--muted);}
+.revealscore{
+  font-size:clamp(90px,22vw,200px);font-weight:800;letter-spacing:-6px;line-height:.9;
+  transition:color .8s;
+}
+.revealband{
+  font-size:clamp(20px,4vw,34px);font-weight:800;letter-spacing:-.5px;padding:8px 26px;border-radius:18px;
+  color:#fff;opacity:0;transform:translateY(16px);transition:opacity .6s, transform .6s;
+}
+.revealband.show{opacity:1;transform:none;}
+.revealsub{font-size:13px;color:var(--muted);font-weight:500;margin-top:6px;}
+.revealbreak{
+  display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:780px;margin-top:18px;opacity:0;transform:translateY(16px);transition:opacity .6s .3s, transform .6s .3s;
+}
+.revealbreak.show{opacity:1;transform:none;}
+.minisec{
+  display:flex;flex-direction:column;align-items:center;gap:3px;padding:9px 13px;border-radius:14px;
+  background:var(--card);border:.5px solid var(--border);min-width:76px;cursor:pointer;
+  transition:transform .25s var(--spring), border-color .25s;
+}
+.minisec:hover{transform:translateY(-3px);border-color:var(--accent);}
+.minisec .mname{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);}
+.minisec .mval{font-size:18px;font-weight:800;}
+.minisec .mval small{font-size:11px;color:var(--cool);font-weight:700;}
+.formulanote{margin-top:22px;font-size:11.5px;color:var(--muted);max-width:600px;text-align:center;line-height:1.7;opacity:0;transition:opacity .6s .45s;}
+.formulanote.show{opacity:1;}
+.formulanote code{background:var(--card);padding:2px 7px;border-radius:6px;border:.5px solid var(--border);font-family:inherit;font-weight:600;color:var(--text);}
+.revealactions{display:flex;gap:12px;margin-top:22px;opacity:0;transition:opacity .6s .6s;}
+.revealactions.show{opacity:1;}
+.confetti{position:fixed;width:8px;height:14px;top:-20px;z-index:80;pointer-events:none;border-radius:2px;}
+
+@media (max-width:760px){
+  .wheelbody{flex-direction:column;overflow-y:auto;}
+  .sidecol{border-left:none;border-top:.5px solid var(--border);}
+  .blk{height:60px;border-radius:14px;font-size:17px;}
+  .blk.sel,.blk.finalsel{height:86px;}
+  .scaleblocks{height:108px;gap:5px;padding-top:20px;}
+  .scalerow{gap:10px;}
+  .scalenum{width:52px;height:52px;font-size:21px;border-radius:14px;}
+  .intseg{font-size:10px;border-radius:6px;}
+  .voicebox{flex-direction:column;align-items:stretch;}
+  .micbtn{align-self:center;}
+  .grouptabs{padding:10px 14px;gap:6px;}
+  .gtab{padding:8px 11px;font-size:12px;gap:6px;}
+  .gtab .gdot{display:none;}
+  .mouthcata{margin-top:2px;}
+  .mouthcard{padding:11px 14px;}
+  .describesub{font-size:10.5px;}
+  .roasttile{font-size:10px;padding:11px 4px 9px;}
+  .roasttile .swatch{width:32px;height:32px;}
+  .samplehdr{display:none;}
+  .plabel{display:none;}
+  .progress{height:36px;}
+  .navhint{display:none;}
+  .navbtn{padding:12px 18px;}
+  .cup .cupdisc{width:96px;height:96px;border-width:9px;}.cup .cupnum{font-size:32px;}
+}
+.kbd-only{display:inline;}
+@media (pointer:coarse){.kbd-only{display:none;}}
+@keyframes fadein{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+</style>
+</head>
+<body data-theme="light">
+<div class="bleed" id="bleed"></div>
+<div class="app">
+
+  <!-- HEADER -->
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark">W</span>
+      <div><b>Specialty CVA</b><small>SCA 2024 Value Assessment</small></div>
+    </div>
+    <div class="samplehdr"><b>BR-036991/26</b> &nbsp;-&nbsp; <b>Daterra</b> &nbsp;-&nbsp; Santos Lab &nbsp;-&nbsp; Cupper: <b>D. Wolthers</b></div>
+    <div class="topactions">
+      <div class="livescore"><span class="lbl">Score so far</span><span class="val tnum" id="liveScore">--</span></div>
+      <button class="iconbtn" id="themeBtn" title="Toggle light / dark" aria-label="Toggle theme">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- PROGRESS -->
+  <nav class="progress" id="progress"></nav>
+
+  <!-- STAGE -->
+  <main class="stage" id="stage"></main>
+
+  <!-- NAV -->
+  <footer class="navbar">
+    <button class="navbtn ghost" id="backBtn">Back</button>
+    <div class="navhint" id="navHint"></div>
+    <button class="navbtn primary" id="nextBtn">Next</button>
+  </footer>
+</div>
+
+<!-- DESCRIBE-THE-CUP OVERLAY (shared, cup-level, 3 groups) -->
+<div class="overlay" id="overlay">
+  <div class="wheelpanel">
+    <div class="wheelhead">
+      <div>
+        <div class="sec" id="wheelSec">SHARED &middot; persists across all sections</div>
+        <h2>Describe this cup</h2>
+      </div>
+      <button class="closeb" id="wheelClose" title="Close (Esc)"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+    </div>
+    <!-- GROUP TABS -->
+    <div class="grouptabs" id="groupTabs" role="tablist" aria-label="Describe groups"></div>
+    <div class="wheelbody">
+      <div class="wheelcol" id="wheelCol">
+        <div class="wheelsvgwrap" id="wheelSvgWrap">
+          <svg id="flavorwheel" viewBox="0 0 400 400"></svg>
+          <div class="wheelcenter"><div class="big" id="wcCount">0</div><div class="sm" id="wcLbl">descriptors</div></div>
+        </div>
+        <!-- MOUTHFEEL CATA (replaces wheel for the Mouthfeel group) -->
+        <div class="mouthcata" id="mouthCata" style="display:none">
+          <div class="mouthcatahd"><span>Mouthfeel</span> <span class="cap" id="mouthCap">0 / 2</span></div>
+          <div class="mouthcards" id="mouthCards"></div>
+        </div>
+        <!-- VOICE RECORDER (descriptive layer) -->
+        <div class="voicebox" id="voiceBox">
+          <button class="micbtn" id="micBtn" type="button" aria-label="Hold to talk">
+            <span class="micring"></span>
+            <span class="micring r2"></span>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7"/></svg>
+          </button>
+          <div class="voicecol">
+            <div class="voicetop">
+              <span class="micstate" id="micState">Hold to talk</span>
+              <div class="langsel" id="langSel" role="group" aria-label="Recognition language">
+                <button type="button" class="langbtn on" data-lang="pt-BR">PT</button>
+                <button type="button" class="langbtn" data-lang="es-ES">ES</button>
+                <button type="button" class="langbtn" data-lang="en-US">EN</button>
+              </div>
+            </div>
+            <div class="wave" id="wave" aria-hidden="true"></div>
+            <div class="voicenotes" id="voiceNotes" data-empty="true">Press and hold the mic, describe the cup aloud, then release. A transcript appears here.</div>
+            <div class="suggestwrap" id="suggestWrap" style="display:none">
+              <div class="suggesthd">Suggested from your words &middot; tap to confirm</div>
+              <div class="suggestchips" id="suggestChips"></div>
+            </div>
+          </div>
+        </div>
+        <div class="toast" id="toast">Limit reached</div>
+      </div>
+      <div class="sidecol">
+        <div class="sidehd"><span class="lbl">Intensity &middot; 15-point</span></div>
+        <div class="intensity">
+          <div class="introw">
+            <div class="intsegs" id="intSegs" role="group" aria-label="Intensity 1 to 15"></div>
+            <input class="intnum tnum" id="intNum" type="number" inputmode="numeric" min="0" max="15" step="1" placeholder="0" aria-label="Intensity 0 to 15">
+          </div>
+          <div class="intscale"><span class="zlo">Low &middot; 1&ndash;5</span><span class="zmed">Medium &middot; 6&ndash;10</span><span class="zhi">High &middot; 11&ndash;15</span></div>
+        </div>
+        <div class="cataslot" id="cataSlot">
+          <div class="chipgrouphd"><span id="cataTitle">Main tastes</span> <span class="cap" id="mtCap">0 / 2</span></div>
+          <div class="mtchips" id="mtChips"></div>
+        </div>
+        <div class="chiptray" id="chipTray"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- DEFECT POPOVER (grafted from Candidate A) -->
+<div class="defectpop" id="defectPop"></div>
+
+<script>
+"use strict";
+
+/* ---------- DATA ---------- */
+const SECTIONS = [
+  {key:'Fragrance', accent:'#a9a454', kind:'olf'},
+  {key:'Aroma',     accent:'#6b8e23', kind:'olf'},
+  {key:'Flavor',    accent:'#b07946', kind:'flav'},
+  {key:'Aftertaste',accent:'#8a5a36', kind:'flav'},
+  {key:'Acidity',   accent:'#c2c63e', kind:'olf'},
+  {key:'Sweetness', accent:'#e8a23d', kind:'olf'},
+  {key:'Mouthfeel', accent:'#445763', kind:'mouth'},
+  {key:'Overall',   accent:'#6d6f54', kind:'olf'}
+];
+const SCALE_LABELS = ['','Extremely Low','Very Low','Moderately Low','Slightly Low','Neither High nor Low','Slightly High','Moderately High','Very High','Extremely High'];
+
+/* diverging red -> gray -> green across 9 (pre-attentive read) */
+function blockColor(v){
+  const stops=[
+    [239,68,68],[233,99,79],[212,138,62],[185,165,80],[154,160,166],
+    [120,170,120],[90,185,100],[55,200,95],[34,197,94]
+  ];
+  const c=stops[v-1]; return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+const CATS = [
+  {name:'Floral', color:'#d94a8c', desc:['Jasmine','Rose','Chamomile','Black Tea']},
+  {name:'Fruity', color:'#e0563f', desc:['Berry','Citrus','Stone Fruit','Tropical','Apple']},
+  {name:'Sour/Fermented', color:'#c2c63e', desc:['Winey','Boozy','Tart','Overripe']},
+  {name:'Green/Vegetative', color:'#6b8e23', desc:['Herb-like','Peapod','Vegetal','Hay-like']},
+  {name:'Roasted', color:'#6b4f3a', desc:['Smoky','Burnt','Cereal','Pipe Tobacco']},
+  {name:'Spices', color:'#d98a3d', desc:['Clove','Cinnamon','Pepper','Anise']},
+  {name:'Nutty/Cocoa', color:'#b07946', desc:['Almond','Hazelnut','Dark Choc','Cocoa']},
+  {name:'Sweet', color:'#e8a23d', desc:['Honey','Caramel','Vanilla','Brown Sugar']},
+  {name:'Other', color:'#607d8b', desc:['Papery','Woody','Chemical','Medicinal']}
+];
+const MAIN_TASTES = ['Salty','Sour','Sweet','Bitter','Umami'];
+/* Mouthfeel CATA with sub-qualifiers shown beneath the parent option */
+const MOUTH_CATA = [
+  {name:'Rough', sub:'Gritty / Chalky / Sandy'},
+  {name:'Oily',  sub:''},
+  {name:'Smooth',sub:'Velvety / Silky / Syrupy'},
+  {name:'Mouth-Drying', sub:''},
+  {name:'Metallic', sub:''}
+];
+const OLF_CAP = 5, TASTE_CAP = 2, CATA_CAP = 2;
+
+/* ---------- SHARED, CUP-LEVEL DESCRIBE STATE ----------
+   ONE object for the whole sample (NOT per section). Three CATA groups
+   mirroring the SCA descriptive form. Persists across sections + open/close. */
+const DESCRIBE_GROUPS = [
+  {key:'aroma',       label:'Aroma',                sec:'Fragrance + Aroma (orthonasal)', accent:'#a9a454', wheel:true,  taste:false, mouth:false},
+  {key:'flavorAfter', label:'Flavor & Aftertaste',  sec:'Retronasal',                     accent:'#b07946', wheel:true,  taste:true,  mouth:false},
+  {key:'mouthfeel',   label:'Mouthfeel',            sec:'Texture & weight',               accent:'#445763', wheel:false, taste:false, mouth:true}
+];
+const describe = {
+  active:'aroma',
+  aroma:       {descriptors:[], maintastes:[], mouth:[], intensity:0, voiceNotes:''},
+  flavorAfter: {descriptors:[], maintastes:[], mouth:[], intensity:0, voiceNotes:''},
+  mouthfeel:   {descriptors:[], maintastes:[], mouth:[], intensity:0, voiceNotes:''}
+};
+function activeGroup(){return describe[describe.active];}
+function groupDef(key){return DESCRIBE_GROUPS.find(g=>g.key===key);}
+function groupCount(key){const g=describe[key];return g.descriptors.length+g.maintastes.length+g.mouth.length;}
+function describeTotal(){return DESCRIBE_GROUPS.reduce((n,g)=>n+groupCount(g.key),0);}
+function groupHasEntries(key){return groupCount(key)>0 || (describe[key].voiceNotes||'').length>0;}
+
+/* ---------- STATE ---------- */
+const state = {
+  step:0, // 0..7 sections, 8 cups, 9 reveal
+  roastDone:false,
+  roastLevel:2,   // index into ROAST_LEVELS (0..4); default Medium
+  agtron:null,    // optional numeric Agtron reading
+  sections: SECTIONS.map(()=>({initial:null, final:null, cooling:false})),
+  cups: [0,1,2,3,4].map(()=>({state:'ok', deftype:null})) // state: ok|nonuniform|defective
+};
+const TOTAL_STEPS = SECTIONS.length + 2; // sections + cups + reveal
+
+/* ---------- HELPERS ---------- */
+const $=s=>document.querySelector(s);
+function effective(i){const s=state.sections[i];return s.final!=null?s.final:s.initial;}
+function setAccent(hex){
+  document.documentElement.style.setProperty('--accent',hex);
+  document.documentElement.style.setProperty('--accent-soft',`rgba(${hexRgb(hex)},0.15)`);
+}
+function hexRgb(h){h=h.replace('#','');return [parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)].join(',');}
+function hexa(h,a){return `rgba(${hexRgb(h)},${a})`;}
+
+/* live "score so far": counts only sections that have been set (genuine partial),
+   final reveal uses all 8 (all reachable). Both reach verified numbers. */
+function computeSum(){let sum=0,filled=0;for(let i=0;i<8;i++){const v=effective(i);if(v!=null){sum+=v;filled++;}}return {sum,filled};}
+function penalties(){
+  const u=state.cups.filter(c=>c.state==='nonuniform').length;
+  const d=state.cups.filter(c=>c.state==='defective').length;
+  return {u,d};
+}
+function roundQuarter(x){return Math.round(x/0.25)*0.25;}
+function partialScore(){
+  const {sum,filled}=computeSum();const {u,d}=penalties();
+  if(filled===0)return null;
+  return roundQuarter(0.65625*sum + 52.75 - 2*u - 4*d);
+}
+function finalScore(){
+  let sum=0;for(let i=0;i<8;i++){const v=effective(i);sum+=(v!=null?v:5);}
+  const {u,d}=penalties();
+  return roundQuarter(0.65625*sum + 52.75 - 2*u - 4*d);
+}
+function updateLiveScore(){
+  const el=$('#liveScore');
+  const ps=partialScore();
+  if(ps==null){el.textContent='--';el.style.color='';return;}
+  el.textContent=ps.toFixed(2);
+  const {filled}=computeSum();
+  el.style.color = (filled===8) ? bandFor(ps).color : '';
+}
+
+/* ---------- PROGRESS BAR ---------- */
+function buildProgress(){
+  const p=$('#progress');p.innerHTML='';
+  const labels=[...SECTIONS.map(s=>s.key),'Cups','Score'];
+  labels.forEach((lbl,i)=>{
+    const step=document.createElement('div');step.className='pstep';step.dataset.i=i;
+    step.innerHTML=`<div class="ptrack"><div class="pfill"></div></div><div class="pdot"></div><div class="plabel">${lbl}</div>`;
+    step.onclick=()=>{ if(!state.roastDone)return; goTo(i); };
+    p.appendChild(step);
+  });
+  refreshProgress();
+}
+function refreshProgress(){
+  document.querySelectorAll('.pstep').forEach((el,i)=>{
+    el.classList.remove('done','current');
+    const fill=el.querySelector('.pfill');
+    if(i<8){
+      const scored=effective(i)!=null;
+      fill.style.background=scored?SECTIONS[i].accent:'var(--accent)';
+      if(scored) el.classList.add('done');
+    }else{
+      if(i<state.step) el.classList.add('done');
+    }
+    if(i===state.step){el.classList.remove('done');el.classList.add('current');}
+  });
+}
+
+/* ---------- STAGE RENDER (pre-build all screens once: smooth, no remount jank) ---------- */
+const stage=$('#stage');
+let screens={};
+function renderStage(){
+  stage.innerHTML='';screens={};
+  screens['roast']=buildRoastScreen();stage.appendChild(screens['roast']);
+  for(let i=0;i<8;i++){screens['s'+i]=buildSectionScreen(i);stage.appendChild(screens['s'+i]);}
+  screens['cups']=buildCupsScreen();stage.appendChild(screens['cups']);
+  screens['reveal']=buildRevealScreen();stage.appendChild(screens['reveal']);
+}
+
+/* ---------- ROAST ---------- */
+function buildRoastScreen(){
+  const scr=document.createElement('div');scr.className='screen';scr.id='roastScreen';
+  scr.innerHTML=`
+    <div class="canvas">
+      <div class="eyebrow">Step 0 &middot; Before you taste</div>
+      <h1 class="bigtitle">Roast Level</h1>
+      <p class="subtitle">Capture the visual roast colour of the sample before the first sip. Tap the closest level, and optionally enter an Agtron reading.</p>
+      <div class="roastcard">
+        <div class="roastval" id="roastVal">Medium</div>
+        <div class="roasttiles" id="roastTiles"></div>
+        <div class="roastagtron">
+          <label for="agtronNum">Agtron <span>(optional)</span></label>
+          <input id="agtronNum" class="tnum" type="number" inputmode="numeric" min="0" max="120" step="1" placeholder="e.g. 58" aria-label="Agtron number, optional">
+        </div>
+      </div>
+      <button class="navbtn primary" id="beginBtn" style="margin-top:6px">Begin tasting journey</button>
+      <div class="sectiontools" style="margin-top:4px">
+        ${describeButtonHTML()}
+        <div class="describesub">Optional &mdash; you can start describing aromas now; it stays with the cup</div>
+      </div>
+    </div>`;
+  return scr;
+}
+/* Roast: five clickable preset tiles + optional Agtron numeric input. No slider, no drag. */
+const ROAST_LEVELS=[
+  {name:'Light',        swatch:'rgb(214,178,128)'},
+  {name:'Medium-Light', swatch:'rgb(178,130,78)'},
+  {name:'Medium',       swatch:'rgb(138,90,48)'},
+  {name:'Medium-Dark',  swatch:'rgb(86,54,32)'},
+  {name:'Dark',         swatch:'rgb(40,26,16)'}
+];
+function wireRoast(scr){
+  const tiles=scr.querySelector('#roastTiles'),val=scr.querySelector('#roastVal'),agtron=scr.querySelector('#agtronNum');
+  function paint(){
+    [...tiles.children].forEach((t,k)=>t.classList.toggle('on',k===state.roastLevel));
+    val.innerHTML=ROAST_LEVELS[state.roastLevel].name+(state.agtron!=null?` <span style="color:var(--muted);font-weight:600">&middot; Agtron ${state.agtron}</span>`:'');
+  }
+  tiles.innerHTML='';
+  ROAST_LEVELS.forEach((lv,k)=>{
+    const b=document.createElement('button');
+    b.className='roasttile'+(k===state.roastLevel?' on':'');b.type='button';
+    b.innerHTML=`<span class="swatch" style="background:${lv.swatch}"></span>${lv.name}`;
+    b.onclick=()=>{state.roastLevel=k;paint();};
+    tiles.appendChild(b);
+  });
+  agtron.oninput=()=>{
+    let raw=agtron.value.replace(/[^0-9]/g,'').slice(0,3);
+    agtron.value=raw;
+    state.agtron = raw===''?null:Math.min(120,parseInt(raw,10));
+    paint();
+  };
+  paint();
+  scr.querySelector('#beginBtn').onclick=()=>{state.roastDone=true;goTo(0);};
+}
+
+/* ---------- SECTION SCREENS ---------- */
+function subtitleFor(k){
+  const m={
+    Fragrance:'Dry grounds, before water. Breathe in. How intense and pleasant?',
+    Aroma:'Wet crust, just after the pour. The bloom of the cup.',
+    Flavor:'The peak of taste and retronasal aroma combined. The heart of it.',
+    Aftertaste:'What lingers after you swallow. Length and quality of the finish.',
+    Acidity:'Brightness and liveliness. Not sourness, but vibrancy.',
+    Sweetness:'Perceived sweetness and roundness across the palate.',
+    Mouthfeel:'Body, texture and weight on the tongue.',
+    Overall:'Your holistic impression. Does the cup come together?'
+  };
+  return m[k]||'';
+}
+function buildSectionScreen(i){
+  const sec=SECTIONS[i];
+  const scr=document.createElement('div');scr.className='screen';scr.dataset.idx=i;
+  scr.innerHTML=`
+    <div class="canvas">
+      <div class="eyebrow">Section ${i+1} of 8 &middot; Affective Impression</div>
+      <h1 class="bigtitle" style="color:${sec.accent}">${sec.key}</h1>
+      <p class="subtitle">${subtitleFor(sec.key)}</p>
+      <div class="scalewrap">
+        <div class="scalerow">
+          <div class="scaleblocks" data-sec="${i}"></div>
+          <div class="scalenumwrap">
+            <input class="scalenum tnum" type="number" inputmode="numeric" min="1" max="9" step="1" placeholder="-" data-scalenum="${i}" id="scalenum-${i}" name="scalenum-${i}" aria-label="${sec.key} score 1 to 9">
+            <span class="scalenumlbl">1&ndash;9</span>
+          </div>
+        </div>
+        <div class="scaleends"><span class="lo">1 &middot; Extremely Low</span><span>5 &middot; Neutral</span><span class="hi">9 &middot; Extremely High</span></div>
+      </div>
+      <div class="readout" data-readout="${i}"></div>
+      <div class="sectiontools">
+        ${describeButtonHTML()}
+        <div class="describesub">Shared across all sections &middot; edit anytime</div>
+        <div class="minichips" data-mini="${i}"></div>
+      </div>
+    </div>`;
+  return scr;
+}
+/* Shared Describe button markup (used on every section, cups + roast screen).
+   Shows total descriptor count + 3 dots (one per group: Aroma, Flavor&Aftertaste, Mouthfeel). */
+function describeButtonHTML(){
+  return `<button class="describebtn" data-describe="1">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.4M21 12h-2.4M12 21v-2.4M3 12h2.4"/></svg>
+      Describe this cup
+      <span class="cnt" style="display:none">0</span>
+      <span class="gdots" aria-hidden="true"><i></i><i></i><i></i></span>
+    </button>`;
+}
+/* Refresh every Describe button's count + group dots across all screens. */
+function refreshDescribeButtons(){
+  const total=describeTotal();
+  document.querySelectorAll('.describebtn').forEach(btn=>{
+    const cnt=btn.querySelector('.cnt');
+    if(cnt){cnt.textContent=total;cnt.style.display=total?'inline-block':'none';}
+    const dots=btn.querySelectorAll('.gdots i');
+    DESCRIBE_GROUPS.forEach((g,k)=>{ if(dots[k]) dots[k].classList.toggle('on',groupHasEntries(g.key)); });
+  });
+}
+
+function renderSectionBlocks(i){
+  const cont=stage.querySelector(`[data-sec="${i}"]`);
+  if(!cont)return;
+  cont.innerHTML='';
+  const s=state.sections[i];
+  for(let v=1;v<=9;v++){
+    const b=document.createElement('div');b.className='blk';b.dataset.v=v;
+    b.style.background=blockColor(v);
+    b.style.color=blockColor(v); /* drives currentColor ring on selection */
+    b.innerHTML=`<span class="num" style="color:rgba(255,255,255,.96)">${v}</span>`;
+    b.setAttribute('data-lbl',`${v} ${SCALE_LABELS[v]}`);
+    if(s.final===v) b.classList.add('finalsel');
+    else if(s.initial===v) b.classList.add('sel');
+    b.onclick=()=>pickValue(i,v);
+    cont.appendChild(b);
+  }
+  const blocks=[...cont.children];
+  /* magnetic hover-swell on pointer ONLY (no drag-to-select; touch is tap-only).
+     Mouse hover swells the block under the cursor + smaller swell on neighbours. */
+  cont.onpointermove=(e)=>{
+    if(e.pointerType==='touch')return; /* touch never drags or swells: tap-to-pick only */
+    const idx=blocks.findIndex(bl=>{const r=bl.getBoundingClientRect();return e.clientX>=r.left&&e.clientX<=r.right;});
+    blocks.forEach(b=>b.classList.remove('swell','swell-1'));
+    if(idx>=0){
+      blocks[idx].classList.add('swell');
+      if(blocks[idx-1])blocks[idx-1].classList.add('swell-1');
+      if(blocks[idx+1])blocks[idx+1].classList.add('swell-1');
+    }
+  };
+  cont.onpointerleave=()=>blocks.forEach(b=>b.classList.remove('swell','swell-1'));
+  syncScaleNum(i);
+  renderReadout(i);
+}
+
+/* light repaint: only update selection classes, preserving handlers + drag state */
+function paintBlocks(i){
+  const cont=stage.querySelector(`[data-sec="${i}"]`);
+  if(!cont)return;
+  const s=state.sections[i];
+  [...cont.children].forEach((b,idx)=>{
+    const v=idx+1;
+    b.classList.remove('sel','finalsel');
+    if(s.final===v) b.classList.add('finalsel');
+    else if(s.initial===v) b.classList.add('sel');
+  });
+}
+
+function syncScaleNum(i){
+  const inp=stage.querySelector(`[data-scalenum="${i}"]`);
+  if(!inp)return;
+  const v=effective(i);
+  inp.value=(v!=null)?v:'';
+  inp.classList.toggle('has',v!=null);
+}
+function pickValue(i,v,silent){
+  const s=state.sections[i];
+  if(s.cooling && s.initial!=null){
+    s.final=v;             // setting the cooled (final) value
+  }else{
+    s.initial=v;
+    if(s.final!=null && !s.cooling) s.final=null;
+  }
+  paintBlocks(i);          // light repaint keeps handlers alive
+  syncScaleNum(i);         // keep numeric input in two-way sync
+  renderReadout(i);
+  refreshProgress();
+  updateLiveScore();
+  if(!silent && !s.cooling){
+    clearTimeout(window._adv);
+    window._adv=setTimeout(()=>{ if(state.step===i && state.step<7) goTo(state.step+1); },520);
+  }
+}
+
+function renderReadout(i){
+  const ro=stage.querySelector(`[data-readout="${i}"]`);
+  if(!ro)return;
+  const s=state.sections[i];
+  if(s.initial==null){
+    ro.innerHTML=`<span class="coolhint kbd-only">Hover &amp; click a block, or press <b>1</b>&ndash;<b>9</b></span><span class="coolhint" style="display:none">Tap a block to score</span>`;
+    if(window.matchMedia('(pointer:coarse)').matches){ro.querySelector('.kbd-only').style.display='none';ro.querySelectorAll('.coolhint')[1].style.display='inline';}
+    renderMiniChips(i);
+    return;
+  }
+  let html='';
+  const init=s.initial, fin=s.final;
+  if(s.cooling && fin!=null && fin!==init){
+    html+=`<span class="readpill"><span class="swatch" style="background:${blockColor(init)}"></span>${init}</span>`;
+    const dir=fin>init?'rose':'fell';
+    html+=`<span class="shiftarrow">${init} <span class="ar">&rarr;</span> ${fin} &middot; ${dir} as it cooled</span>`;
+    html+=`<span class="readpill"><span class="swatch" style="background:${blockColor(fin)}"></span>final ${fin} &middot; ${SCALE_LABELS[fin]}</span>`;
+  }else{
+    html+=`<span class="readpill"><span class="swatch" style="background:${blockColor(init)}"></span>${init} &middot; ${SCALE_LABELS[init]}</span>`;
+  }
+  const onCls=s.cooling?'on':'';
+  const label=s.cooling?(fin!=null&&fin!==init?'Tracking cooled value':'Now set the cooled value'):'Changed as it cooled?';
+  html+=`<button class="cooltoggle ${onCls}" data-cool="${i}">
+    <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18M7 8l5-5 5 5M7 16l5 5 5-5"/></svg>${label}</button>`;
+  ro.innerHTML=html;
+  const ct=ro.querySelector(`[data-cool="${i}"]`);
+  if(ct)ct.onclick=()=>{
+    s.cooling=!s.cooling;
+    if(!s.cooling) s.final=null;             // disarming drops any shift
+    renderSectionBlocks(i);refreshProgress();updateLiveScore();
+  };
+  renderMiniChips(i);
+}
+
+/* Mini-chips now reflect the SHARED cup-level description (all 3 groups). */
+function sharedChips(){
+  const out=[];
+  describe.aroma.descriptors.forEach(d=>out.push({name:d.name,color:d.color}));
+  describe.flavorAfter.descriptors.forEach(d=>out.push({name:d.name,color:d.color}));
+  describe.flavorAfter.maintastes.forEach(t=>out.push({name:t,color:'#445763'}));
+  describe.mouthfeel.mouth.forEach(t=>out.push({name:t,color:'#607d8b'}));
+  return out;
+}
+function renderMiniChips(i){
+  refreshDescribeButtons();
+  const wrap=(i!=null && stage.querySelector(`[data-mini="${i}"]`)) || stage.querySelector('.screen.active [data-mini]');
+  if(!wrap)return;
+  const all=sharedChips();
+  wrap.innerHTML=all.map(d=>`<span class="minichip" style="background:${d.color}">${d.name}</span>`).join('');
+}
+/* Refresh mini-chips wherever they exist on the active screen. */
+function refreshSharedChipsUI(){
+  refreshDescribeButtons();
+  const all=sharedChips();
+  document.querySelectorAll('[data-mini]').forEach(wrap=>{
+    wrap.innerHTML=all.map(d=>`<span class="minichip" style="background:${d.color}">${d.name}</span>`).join('');
+  });
+}
+
+/* ---------- CUPS SCREEN (with defect popover grafted from Candidate A) ---------- */
+function buildCupsScreen(){
+  const scr=document.createElement('div');scr.className='screen';scr.dataset.cups='1';
+  scr.innerHTML=`
+    <div class="canvas">
+      <div class="eyebrow">Sample-level &middot; recorded once</div>
+      <h1 class="bigtitle">Cups &amp; Uniformity</h1>
+      <p class="subtitle">Five cups were poured from this sample. Tap any cup to flag it non-uniform or pick a defect type.</p>
+      <div class="cuprow" id="cupRow"></div>
+      <div class="cuppenalty">
+        <span>Non-uniform: <b id="uCount">0</b> &times; &minus;2</span>
+        <span>Defective: <b id="dCount">0</b> &times; &minus;4</span>
+        <span class="pen">Penalty: <b id="penTotal">0</b></span>
+      </div>
+      <div class="cuphelp">Each non-uniform cup subtracts 2 points. Each defective cup subtracts 4 points and is logged with its defect type for full traceability.</div>
+      <div class="sectiontools">
+        ${describeButtonHTML()}
+        <div class="describesub">Shared across all sections &middot; edit anytime</div>
+        <div class="minichips" data-mini="cups"></div>
+      </div>
+    </div>`;
+  return scr;
+}
+function renderCups(){
+  const row=stage.querySelector('#cupRow');if(!row)return;
+  row.innerHTML='';
+  state.cups.forEach((c,i)=>{
+    const cup=document.createElement('div');
+    cup.className='cup '+(c.state==='nonuniform'?'nonuniform':c.state==='defective'?'defective':'');
+    let stateLabel=c.state==='ok'?'Clean':c.state==='nonuniform'?'Non-uniform':'Defective &middot; '+(c.deftype||'');
+    cup.innerHTML=`<div class="cupdisc"><span class="cupnum">${i+1}</span></div><div class="cupstate">${stateLabel}</div>`;
+    cup.onclick=(e)=>openDefectPop(i,cup,e);
+    row.appendChild(cup);
+  });
+  const {u,d}=penalties();
+  stage.querySelector('#uCount').textContent=u;
+  stage.querySelector('#dCount').textContent=d;
+  const pen=2*u+4*d;
+  stage.querySelector('#penTotal').textContent= pen? '-'+pen : '0';
+  updateLiveScore();
+}
+const defectPop=$('#defectPop');
+function openDefectPop(idx,el,evt){
+  const c=state.cups[idx];
+  defectPop.innerHTML=`
+    <div class="dhdr">Cup ${idx+1}</div>
+    <button data-act="ok" class="${c.state==='ok'?'sel':''}"><span class="d g"></span>Clean</button>
+    <button data-act="nonuniform" class="${c.state==='nonuniform'?'sel':''}"><span class="d a"></span>Non-uniform <span class="pts">-2</span></button>
+    <div class="dhdr">Defective <span style="text-transform:none;letter-spacing:0;color:var(--muted)">-4 each</span></div>
+    <button data-act="defect" data-type="Moldy" class="${c.state==='defective'&&c.deftype==='Moldy'?'sel':''}"><span class="d r"></span>Moldy</button>
+    <button data-act="defect" data-type="Phenolic" class="${c.state==='defective'&&c.deftype==='Phenolic'?'sel':''}"><span class="d r"></span>Phenolic</button>
+    <button data-act="defect" data-type="Potato" class="${c.state==='defective'&&c.deftype==='Potato'?'sel':''}"><span class="d r"></span>Potato</button>`;
+  const r=el.getBoundingClientRect();
+  defectPop.style.display='flex';
+  const pw=defectPop.offsetWidth, ph=defectPop.offsetHeight;
+  let left=r.left+r.width/2-pw/2;left=Math.max(12,Math.min(window.innerWidth-pw-12,left));
+  let top=r.bottom+8;if(top+ph>window.innerHeight-12)top=r.top-ph-8;
+  defectPop.style.left=left+'px';defectPop.style.top=top+'px';
+  defectPop.querySelectorAll('button').forEach(b=>{
+    b.onclick=()=>{
+      const act=b.dataset.act;
+      if(act==='ok')state.cups[idx]={state:'ok',deftype:null};
+      else if(act==='nonuniform')state.cups[idx]={state:'nonuniform',deftype:null};
+      else state.cups[idx]={state:'defective',deftype:b.dataset.type};
+      renderCups();closeDefectPop();
+    };
+  });
+}
+function closeDefectPop(){defectPop.style.display='none';}
+document.addEventListener('pointerdown',e=>{
+  if(defectPop.style.display==='flex' && !defectPop.contains(e.target) && !e.target.closest('.cup')) closeDefectPop();
+});
+
+/* ---------- REVEAL ---------- */
+function buildRevealScreen(){
+  const scr=document.createElement('div');scr.className='screen';scr.dataset.reveal='1';
+  scr.innerHTML=`
+    <div class="revealbg" id="revealBg">
+      <div class="revealeyebrow">SCA 2024 Coffee Value Assessment</div>
+      <div class="revealscore tnum" id="revealScore">52.75</div>
+      <div class="revealband" id="revealBand">&mdash;</div>
+      <div class="revealsub">BR-036991/26 &middot; Daterra &middot; Santos Lab &middot; D. Wolthers</div>
+      <div class="revealbreak" id="revealBreak"></div>
+      <div class="formulanote" id="formulaNote"></div>
+      <div class="revealactions" id="revealActions">
+        <button class="navbtn ghost" id="revisitBtn">Revise sections</button>
+        <button class="navbtn primary" id="restartBtn">New cup &middot; Start over</button>
+      </div>
+    </div>`;
+  return scr;
+}
+function bandFor(s){
+  if(s>=90)return{label:'Outstanding',color:'#22c55e'};
+  if(s>=85)return{label:'Excellent',color:'#6b8e23'};
+  if(s>=80)return{label:'Very Good',color:'#a9a454'};
+  if(s>=75)return{label:'Good',color:'#d98a3d'};
+  return{label:'Below Specialty',color:'#e0563f'};
+}
+function runReveal(){
+  const score=finalScore();
+  const band=bandFor(score);
+  const scoreEl=stage.querySelector('#revealScore');
+  const bandEl=stage.querySelector('#revealBand');
+  const bg=stage.querySelector('#revealBg');
+  const breakEl=stage.querySelector('#revealBreak');
+  const noteEl=stage.querySelector('#formulaNote');
+  bandEl.classList.remove('show');breakEl.classList.remove('show');noteEl.classList.remove('show');stage.querySelector('#revealActions').classList.remove('show');
+  /* count up from formula base 52.75 */
+  const start52=52.75;
+  scoreEl.style.color=band.color;
+  $('#liveScore').style.color=band.color;
+  bg.style.background=`radial-gradient(circle at 50% 40%, ${hexa(band.color,0.16)}, transparent 65%)`;
+  const t0=performance.now(), dur=1500;
+  function tick(t){
+    const p=Math.min(1,(t-t0)/dur);
+    const eased=1-Math.pow(1-p,3);
+    const val=start52+(score-start52)*eased;
+    scoreEl.textContent=roundQuarter(val).toFixed(2);
+    if(p<1)requestAnimationFrame(tick);
+    else{
+      scoreEl.textContent=score.toFixed(2);
+      bandEl.textContent=band.label;bandEl.style.background=band.color;bandEl.classList.add('show');
+      breakEl.classList.add('show');noteEl.classList.add('show');
+      stage.querySelector('#revealActions').classList.add('show');
+      if(score>=85) celebrate(band.color);
+    }
+  }
+  requestAnimationFrame(tick);
+  /* breakdown chips */
+  let sum=0;
+  breakEl.innerHTML=SECTIONS.map((sec,i)=>{
+    const s=state.sections[i];const eff=effective(i);const v=eff!=null?eff:5;sum+=v;
+    const shifted=s.cooling && s.final!=null && s.final!==s.initial;
+    return `<div class="minisec" data-jump="${i}"><div class="mname">${sec.key}</div><div class="mval" style="color:${blockColor(v)}">${v}${shifted?`<small> &darr;${s.initial}</small>`:''}</div></div>`;
+  }).join('') + (()=>{
+    const {u,d}=penalties();const pen=2*u+4*d;
+    return `<div class="minisec" data-jump="8"><div class="mname">Penalty</div><div class="mval" style="color:${pen?'#ef4444':'var(--text)'}">${pen?'-'+pen:'0'}</div></div>`;
+  })();
+  breakEl.querySelectorAll('[data-jump]').forEach(el=>el.onclick=()=>goTo(+el.dataset.jump));
+  const {u,d}=penalties();
+  noteEl.innerHTML=`S = 0.65625 &times; &Sigma;(8 sections) + 52.75 &minus; 2&middot;non-uniform &minus; 4&middot;defective<br>
+    <code>0.65625 &times; ${sum}</code> + <code>52.75</code> &minus; <code>2&times;${u}</code> &minus; <code>4&times;${d}</code> = <code>${score.toFixed(2)}</code>`;
+  stage.querySelector('#revisitBtn').onclick=()=>goTo(0);
+  stage.querySelector('#restartBtn').onclick=()=>location.reload();
+}
+function celebrate(col){
+  const cols=[col,'#a9a454','#e8a23d','#556b2f','#22c55e'];
+  for(let i=0;i<46;i++){
+    const c=document.createElement('div');c.className='confetti';
+    c.style.left=Math.random()*100+'%';c.style.background=cols[i%cols.length];
+    document.body.appendChild(c);
+    const dx=(Math.random()-.5)*240, fall=window.innerHeight+60, dur=1400+Math.random()*1100;
+    c.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:`translate(${dx}px,${fall}px) rotate(${Math.random()*720}deg)`,opacity:.9}],
+      {duration:dur,easing:'cubic-bezier(.2,.6,.4,1)'}).onfinish=()=>c.remove();
+  }
+}
+
+/* ---------- NAVIGATION ---------- */
+function screenForStep(i){ if(i<8)return screens['s'+i]; if(i===8)return screens['cups']; return screens['reveal']; }
+function goTo(i){
+  if(i<0)i=0;if(i>TOTAL_STEPS-1)i=TOTAL_STEPS-1;
+  state.step=i;
+  if(i<8) setAccent(SECTIONS[i].accent);
+  else if(i===8) setAccent('#445763');
+  else setAccent(bandFor(finalScore()).color);
+
+  const target=screenForStep(i);
+  Object.values(screens).forEach(s=>{if(s!==target)s.classList.remove('active');});
+  target.classList.add('active');
+
+  if(i<8){renderSectionBlocks(i);}
+  if(i===8)renderCups();
+  if(i===9)runReveal();
+  refreshSharedChipsUI();
+  refreshProgress();updateLiveScore();updateNav();
+}
+function updateNav(){
+  const back=$('#backBtn'),next=$('#nextBtn'),hint=$('#navHint');
+  back.disabled=state.step===0;
+  next.disabled=false;
+  if(state.step<7){
+    next.innerHTML='Next';
+    hint.innerHTML=`<span class="kbd-only">Press <kbd>1</kbd>&ndash;<kbd>9</kbd> to score &amp; advance &middot; <kbd>D</kbd> describe &middot; <kbd>&larr;</kbd> <kbd>&rarr;</kbd> move &middot; </span>Tap a block to score, or "Describe" for the wheel`;
+  }else if(state.step===7){
+    next.innerHTML='To cups';
+    hint.innerHTML=`<span class="kbd-only">Press <kbd>1</kbd>&ndash;<kbd>9</kbd> &middot; <kbd>D</kbd> describe &middot; </span>Last section &mdash; then on to cups &amp; uniformity`;
+  }else if(state.step===8){
+    next.innerHTML='Reveal score';
+    hint.innerHTML=`Tap cups to flag non-uniform or defective. Most cups should stay clean.`;
+  }else{
+    next.innerHTML='Submit assessment';
+    hint.innerHTML=`Tap any step above, or a breakdown chip, to revise a section.`;
+  }
+}
+$('#backBtn').onclick=()=>{ if(state.step>0)goTo(state.step-1); };
+$('#nextBtn').onclick=()=>{
+  if(state.step<TOTAL_STEPS-1){goTo(state.step+1);return;}
+  /* submit on reveal */
+  const next=$('#nextBtn');
+  next.style.background='#22c55e';next.style.color='#06340f';next.innerHTML='Recorded';next.disabled=true;
+  $('#navHint').innerHTML='This prototype would now write the CVA result to the sample record and queue the certificate.';
+};
+
+/* ---------- KEYBOARD ---------- */
+document.addEventListener('keydown',(e)=>{
+  /* never hijack typing inside a text/number field */
+  const tag=(e.target.tagName||'').toLowerCase();
+  if(tag==='input'||tag==='textarea'||e.target.isContentEditable){
+    if(e.key==='Escape')e.target.blur();
+    return;
+  }
+  if($('#overlay').classList.contains('open')){ if(e.key==='Escape')closeWheel(); return; }
+  if(!state.roastDone){
+    if(e.key==='Enter'||e.key==='ArrowRight'){state.roastDone=true;goTo(0);}
+    return;
+  }
+  if(state.step<8){
+    if(e.key>='1'&&e.key<='9'){pickValue(state.step,+e.key);e.preventDefault();return;}
+  }
+  if(state.step<9 && (e.key==='d'||e.key==='D')){openWheel();return;}
+  if(e.key==='ArrowRight'){if(state.step<TOTAL_STEPS-1)goTo(state.step+1);}
+  if(e.key==='ArrowLeft'){if(state.step>0)goTo(state.step-1);}
+});
+
+/* ---------- DESCRIBE / FLAVOR WHEEL (shared, cup-level, 3 groups) ---------- */
+stage.addEventListener('click',(e)=>{
+  const db=e.target.closest('[data-describe]');
+  if(db){openWheel();}
+});
+/* numeric scale input: typing sets the value (two-way sync), no advance while typing */
+stage.addEventListener('input',(e)=>{
+  const inp=e.target.closest('[data-scalenum]');
+  if(!inp)return;
+  const i=+inp.dataset.scalenum;
+  let raw=inp.value.replace(/[^0-9]/g,'').slice(0,1);
+  inp.value=raw;
+  if(raw===''){return;}
+  let v=parseInt(raw,10);
+  if(v<1||v>9){return;}
+  pickValue(i,v,true); /* silent: no auto-advance while typing */
+});
+stage.addEventListener('keydown',(e)=>{
+  const inp=e.target.closest('[data-scalenum]');
+  if(inp && e.key==='Enter'){ inp.blur(); if(state.step<7) goTo(state.step+1); }
+});
+const overlay=$('#overlay');
+$('#wheelClose').onclick=closeWheel;
+overlay.addEventListener('click',(e)=>{if(e.target===overlay)closeWheel();});
+
+/* Pick a sensible starting tab from the current section (so opening from
+   e.g. the Mouthfeel section lands on the Mouthfeel group). State is shared
+   regardless of which tab opens. */
+function defaultGroupForStep(){
+  if(state.step>=8) return describe.active; // cups/reveal: keep last tab
+  const kind=SECTIONS[state.step] && SECTIONS[state.step].kind;
+  if(kind==='flav') return 'flavorAfter';
+  if(kind==='mouth') return 'mouthfeel';
+  return 'aroma';
+}
+function openWheel(forceGroup){
+  describe.active = forceGroup || defaultGroupForStep();
+  buildGroupTabs();
+  buildWheelSVG();           // wheel content is shared; visibility set per group
+  applyActiveGroup();        // shows/hides wheel vs mouthfeel CATA, builds panels
+  overlay.classList.add('open');
+}
+function closeWheel(){
+  if(recActive)stopVoice();
+  overlay.classList.remove('open');
+  if(state.step<8) setAccent(SECTIONS[state.step].accent);
+  else if(state.step===8) setAccent('#445763');
+  refreshSharedChipsUI();refreshProgress();updateLiveScore();
+}
+
+/* Build the 3 group tabs with per-group dot + count indicators. */
+function buildGroupTabs(){
+  const tabs=$('#groupTabs');tabs.innerHTML='';
+  DESCRIBE_GROUPS.forEach(g=>{
+    const on=describe.active===g.key;
+    const cnt=groupCount(g.key);
+    const b=document.createElement('button');
+    b.type='button';b.className='gtab'+(on?' on':'')+(groupHasEntries(g.key)?' has':'');
+    b.setAttribute('role','tab');b.setAttribute('aria-selected',on?'true':'false');
+    if(on)b.style.background=g.accent;
+    b.innerHTML=`<span class="gdot"></span>${g.label}${cnt?`<span class="gcnt">${cnt}</span>`:''}`;
+    b.onclick=()=>{ if(describe.active!==g.key){ if(recActive)stopVoice(); describe.active=g.key; buildGroupTabs(); applyActiveGroup(); } };
+    tabs.appendChild(b);
+  });
+}
+
+/* Switch the panel to reflect the active group: accent, header sub-label,
+   wheel vs mouthfeel CATA, intensity, main-tastes slot, chip tray, voice. */
+function applyActiveGroup(){
+  const g=groupDef(describe.active);
+  setAccent(g.accent);
+  $('#wheelSec').textContent=`${g.label.toUpperCase()} · ${g.sec}`;
+  // wheel vs mouthfeel CATA
+  $('#wheelSvgWrap').style.display = g.wheel ? 'block' : 'none';
+  $('#mouthCata').style.display    = g.mouth ? 'flex'  : 'none';
+  $('#wcLbl').textContent = g.wheel ? 'descriptors' : 'mouthfeel';
+  if(g.wheel) recolorPicked();
+  if(g.mouth) buildMouthCata();
+  buildIntensity();
+  buildCataSlot();   // main tastes (flavorAfter only)
+  renderChipTray();
+  loadVoiceForGroup();
+  updateWheelCount();
+}
+
+/* SVG flavor wheel: 2 rings, preserved for ALL sections (incl. Mouthfeel) */
+function buildWheelSVG(){
+  const svg=$('#flavorwheel');svg.innerHTML='';
+  const cx=200,cy=200,rInner=60,rMid=120,rOuter=188;
+  const n=CATS.length, seg=(Math.PI*2)/n;
+  CATS.forEach((cat,ci)=>{
+    const a0=ci*seg-Math.PI/2, a1=a0+seg;
+    const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.classList.add('wedge');g.dataset.cat=ci;
+    const inner=document.createElementNS('http://www.w3.org/2000/svg','path');
+    inner.setAttribute('d',annulusPath(cx,cy,rInner,rMid,a0,a1));
+    inner.setAttribute('fill',cat.color);
+    g.appendChild(inner);
+    const mid=(a0+a1)/2, lr=(rInner+rMid)/2;
+    const ct=document.createElementNS('http://www.w3.org/2000/svg','text');
+    ct.setAttribute('x',cx+Math.cos(mid)*lr);ct.setAttribute('y',cy+Math.sin(mid)*lr);
+    ct.setAttribute('text-anchor','middle');ct.setAttribute('dominant-baseline','middle');
+    ct.classList.add('clabel');ct.textContent=cat.name.split('/')[0];
+    g.appendChild(ct);
+    svg.appendChild(g);
+
+    const dn=cat.desc.length, dseg=seg/dn;
+    cat.desc.forEach((d,di)=>{
+      const b0=a0+di*dseg, b1=b0+dseg;
+      const wg=document.createElementNS('http://www.w3.org/2000/svg','g');
+      wg.classList.add('wedge');wg.dataset.cat=ci;wg.dataset.desc=d;
+      const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+      p.setAttribute('d',annulusPath(cx,cy,rMid+2,rOuter,b0+0.012,b1-0.012));
+      p.setAttribute('fill',shade(cat.color,0.20-di*0.045));
+      wg.appendChild(p);
+      /* curved-ish outer label (grafted polish from Candidate A) */
+      const dmid=(b0+b1)/2, dr=(rMid+rOuter)/2;
+      const tx=cx+Math.cos(dmid)*dr, ty=cy+Math.sin(dmid)*dr;
+      let deg=dmid*180/Math.PI; if(deg>90&&deg<270)deg+=180;
+      const t=document.createElementNS('http://www.w3.org/2000/svg','text');
+      t.setAttribute('x',tx);t.setAttribute('y',ty);
+      t.setAttribute('text-anchor','middle');t.setAttribute('dominant-baseline','middle');
+      t.setAttribute('transform',`rotate(${deg} ${tx} ${ty})`);
+      t.classList.add('wlabel');t.textContent=d;
+      wg.appendChild(t);
+      wg.addEventListener('click',()=>addDescriptor(ci,d,p));
+      wg.addEventListener('pointerenter',()=>dimOthers(ci));
+      wg.addEventListener('pointerleave',undim);
+      svg.appendChild(wg);
+    });
+    inner.addEventListener('pointerenter',()=>dimOthers(ci));
+    g.addEventListener('pointerleave',undim);
+  });
+  recolorPicked();
+}
+function annulusPath(cx,cy,r0,r1,a0,a1){
+  const x0=cx+Math.cos(a0)*r0,y0=cy+Math.sin(a0)*r0;
+  const x1=cx+Math.cos(a0)*r1,y1=cy+Math.sin(a0)*r1;
+  const x2=cx+Math.cos(a1)*r1,y2=cy+Math.sin(a1)*r1;
+  const x3=cx+Math.cos(a1)*r0,y3=cy+Math.sin(a1)*r0;
+  const large=(a1-a0)>Math.PI?1:0;
+  return `M${x0} ${y0} L${x1} ${y1} A${r1} ${r1} 0 ${large} 1 ${x2} ${y2} L${x3} ${y3} A${r0} ${r0} 0 ${large} 0 ${x0} ${y0} Z`;
+}
+function shade(hex,amt){const r=hexRgb(hex).split(',').map(Number);return `rgb(${r.map(c=>Math.round(Math.max(0,Math.min(255,c+amt*255)))).join(',')})`;}
+function dimOthers(ci){document.querySelectorAll('#flavorwheel .wedge').forEach(w=>{if(+w.dataset.cat!==ci)w.classList.add('dim');else w.classList.remove('dim');});}
+function undim(){document.querySelectorAll('#flavorwheel .wedge').forEach(w=>w.classList.remove('dim'));}
+function recolorPicked(){
+  const g=activeGroup();
+  const picked=new Set(g.descriptors.map(d=>d.name));
+  document.querySelectorAll('#flavorwheel .wedge').forEach(w=>{
+    if(w.dataset.desc) w.classList.toggle('picked',picked.has(w.dataset.desc));
+  });
+}
+
+/* caps: olfactory descriptors <= 5 PER GROUP, replace-oldest with feedback.
+   Writes into the ACTIVE describe group. */
+function addDescriptor(ci,name,pathEl){
+  const cat=CATS[ci];
+  const g=activeGroup();
+  const existIdx=g.descriptors.findIndex(d=>d.name===name);
+  if(existIdx>=0){g.descriptors.splice(existIdx,1);renderChipTray();recolorPicked();updateWheelCount();return;}
+  if(g.descriptors.length>=OLF_CAP){
+    const removed=g.descriptors.shift();
+    showToast(`Cap of ${OLF_CAP} reached &mdash; replaced "${removed.name}"`);
+  }
+  g.descriptors.push({name,color:cat.color,cat:cat.name});
+  flyChip(pathEl,cat.color,name);
+  renderChipTray();recolorPicked();updateWheelCount();
+}
+function flyChip(pathEl,color,name){
+  const r=pathEl.getBoundingClientRect();
+  const tray=$('#chipTray').getBoundingClientRect();
+  const chip=document.createElement('span');
+  chip.className='chip flying';chip.style.background=color;chip.textContent=name;
+  chip.style.left=(r.left+r.width/2-30)+'px';chip.style.top=(r.top+r.height/2-14)+'px';
+  document.body.appendChild(chip);
+  requestAnimationFrame(()=>{
+    const dx=tray.left+40-(r.left+r.width/2-30);
+    const dy=tray.top+30-(r.top+r.height/2-14);
+    chip.style.transform=`translate(${dx}px,${dy}px) scale(.9)`;chip.style.opacity='0';
+  });
+  setTimeout(()=>chip.remove(),560);
+}
+function updateWheelCount(){
+  const g=groupDef(describe.active);
+  // center number = descriptors for wheel groups, mouthfeel picks for mouthfeel group
+  $('#wcCount').textContent = g.mouth ? activeGroup().mouth.length : activeGroup().descriptors.length;
+  buildGroupTabs();           // keep tab counts/dots live
+  refreshDescribeButtons();   // keep on-screen buttons live while overlay is open
+}
+let toastTimer;
+function showToast(msg){const t=$('#toast');t.innerHTML=msg;t.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>t.classList.remove('show'),2200);}
+
+/* Intensity: 15 clickable tick/segment buttons (Low/Medium/High zones) + numeric input. No slider, no drag.
+   Clicking a segment fills 1..n (click the active value again to clear). */
+/* Intensity is per-group (15-point, buttons + numeric, no slider). */
+function buildIntensity(){
+  const g=activeGroup();
+  const segs=$('#intSegs'),num=$('#intNum');
+  function paint(v){
+    [...segs.children].forEach((b,k)=>b.classList.toggle('on',(k+1)<=v));
+    num.value = v>0 ? v : '';
+  }
+  function set(v){v=Math.max(0,Math.min(15,Math.round(v||0)));g.intensity=v;paint(v);}
+  segs.innerHTML='';
+  for(let v=1;v<=15;v++){
+    const b=document.createElement('button');
+    const zone=v<=5?'zlo':v<=10?'zmed':'zhi';
+    b.className='intseg '+zone;b.type='button';b.textContent=v;b.dataset.v=v;
+    b.setAttribute('aria-label','Intensity '+v);
+    b.onclick=()=>set(g.intensity===v?v-1:v); /* tapping current top de-selects down one */
+    segs.appendChild(b);
+  }
+  num.oninput=()=>{
+    let raw=num.value.replace(/[^0-9]/g,'').slice(0,2);
+    num.value=raw;
+    let v=raw===''?0:parseInt(raw,10);
+    if(v>15){v=15;num.value='15';}
+    set(v);
+  };
+  set(g.intensity);
+}
+
+/* Main-tastes CATA slot (<=2): ONLY for the Flavor & Aftertaste group. */
+function buildCataSlot(){
+  const def=groupDef(describe.active);
+  const slot=$('#cataSlot'),title=$('#cataTitle'),cont=$('#mtChips'),cap=$('#mtCap');
+  const g=activeGroup();
+  if(!def.taste){slot.style.display='none';return;}
+  title.textContent='Main tastes';
+  slot.style.display='block';
+  cont.innerHTML='';
+  MAIN_TASTES.forEach(t=>{
+    const on=g.maintastes.includes(t);
+    const b=document.createElement('button');
+    b.className='mtchip'+(on?' on':'');b.textContent=t;
+    if(on)b.style.background='#445763';
+    b.onclick=()=>{
+      const idx=g.maintastes.indexOf(t);
+      if(idx>=0)g.maintastes.splice(idx,1);
+      else{
+        if(g.maintastes.length>=TASTE_CAP){const rem=g.maintastes.shift();showToast(`Max ${TASTE_CAP} main tastes &mdash; replaced "${rem}"`);}
+        g.maintastes.push(t);
+      }
+      buildCataSlot();updateWheelCount();
+    };
+    cont.appendChild(b);
+  });
+  cap.textContent=`${g.maintastes.length} / ${TASTE_CAP}`;
+  cap.className='cap'+(g.maintastes.length>=TASTE_CAP?' full':'');
+}
+
+/* Dedicated Mouthfeel CATA (<=2) cards, replacing the wheel for that group. */
+function buildMouthCata(){
+  const g=describe.mouthfeel;
+  const wrap=$('#mouthCards'),cap=$('#mouthCap');
+  wrap.innerHTML='';
+  MOUTH_CATA.forEach(opt=>{
+    const on=g.mouth.includes(opt.name);
+    const b=document.createElement('button');
+    b.type='button';b.className='mouthcard'+(on?' on':'');
+    b.innerHTML=`<span class="mcname">${opt.name}</span>${opt.sub?`<span class="mcsub">${opt.sub}</span>`:''}`;
+    b.onclick=()=>{
+      const idx=g.mouth.indexOf(opt.name);
+      if(idx>=0)g.mouth.splice(idx,1);
+      else{
+        if(g.mouth.length>=CATA_CAP){const rem=g.mouth.shift();showToast(`Max ${CATA_CAP} mouthfeel &mdash; replaced "${rem}"`);}
+        g.mouth.push(opt.name);
+      }
+      buildMouthCata();updateWheelCount();
+    };
+    wrap.appendChild(b);
+  });
+  cap.textContent=`${g.mouth.length} / ${CATA_CAP}`;
+  cap.className='cap'+(g.mouth.length>=CATA_CAP?' full':'');
+}
+
+/* Chip tray reflects the ACTIVE group's collected descriptors / tastes / mouthfeel. */
+function renderChipTray(){
+  const def=groupDef(describe.active);
+  const g=activeGroup();
+  const tray=$('#chipTray');
+  let html='';
+  if(def.wheel){
+    html+=`<div class="chipgroup"><div class="chipgrouphd">${def.taste?'Retronasal descriptors':'Olfactory descriptors'} <span class="cap ${g.descriptors.length>=OLF_CAP?'full':''}">${g.descriptors.length} / ${OLF_CAP}</span></div><div class="chips">`;
+    if(g.descriptors.length===0)html+=`<div class="emptytray">Tap the wheel to add descriptors. They fly in here.</div>`;
+    else html+=g.descriptors.map(d=>`<span class="chip" style="background:${d.color}">${d.name}<span class="x" data-rm-desc="${d.name}">&times;</span></span>`).join('');
+    html+='</div></div>';
+  }
+  if(def.taste){
+    html+=`<div class="chipgroup"><div class="chipgrouphd">Main tastes <span class="cap ${g.maintastes.length>=TASTE_CAP?'full':''}">${g.maintastes.length} / ${TASTE_CAP}</span></div><div class="chips">`;
+    if(g.maintastes.length===0)html+=`<div class="emptytray">Pick up to ${TASTE_CAP} main tastes above.</div>`;
+    else html+=g.maintastes.map(t=>`<span class="chip" style="background:#445763">${t}<span class="x" data-rm-taste="${t}">&times;</span></span>`).join('');
+    html+='</div></div>';
+  }
+  if(def.mouth){
+    html+=`<div class="chipgroup"><div class="chipgrouphd">Mouthfeel <span class="cap ${g.mouth.length>=CATA_CAP?'full':''}">${g.mouth.length} / ${CATA_CAP}</span></div><div class="chips">`;
+    if(g.mouth.length===0)html+=`<div class="emptytray">Pick up to ${CATA_CAP} mouthfeel qualities on the left.</div>`;
+    else html+=g.mouth.map(t=>`<span class="chip" style="background:#607d8b">${t}<span class="x" data-rm-mouth="${t}">&times;</span></span>`).join('');
+    html+='</div></div>';
+  }
+  tray.innerHTML=html;
+  tray.querySelectorAll('[data-rm-desc]').forEach(x=>{
+    x.onclick=()=>{const n=x.dataset.rmDesc;const idx=g.descriptors.findIndex(d=>d.name===n);if(idx>=0)g.descriptors.splice(idx,1);renderChipTray();recolorPicked();updateWheelCount();};
+  });
+  tray.querySelectorAll('[data-rm-taste]').forEach(x=>{
+    x.onclick=()=>{const n=x.dataset.rmTaste;const idx=g.maintastes.indexOf(n);if(idx>=0)g.maintastes.splice(idx,1);buildCataSlot();renderChipTray();updateWheelCount();};
+  });
+  tray.querySelectorAll('[data-rm-mouth]').forEach(x=>{
+    x.onclick=()=>{const n=x.dataset.rmMouth;const idx=g.mouth.indexOf(n);if(idx>=0)g.mouth.splice(idx,1);buildMouthCata();renderChipTray();updateWheelCount();};
+  });
+  updateWheelCount();
+}
+
+/* ---------- VOICE RECORDER (descriptive layer) ---------- */
+/* keyword -> {cat index in CATS, descriptor name on the wheel} */
+const VOICE_MAP=[
+  {kw:['lemon','lime','citrus','citric','limon','limão','laranja','orange','grapefruit'], ci:1, desc:'Citrus'},
+  {kw:['berry','berries','blueberry','raspberry','strawberry','morango','frutas vermelhas','baga'], ci:1, desc:'Berry'},
+  {kw:['tropical','mango','pineapple','passion','maracuja','abacaxi','papaya'], ci:1, desc:'Tropical'},
+  {kw:['apple','pear','maçã','manzana'], ci:1, desc:'Apple'},
+  {kw:['stone fruit','peach','apricot','plum','pessego','damasco'], ci:1, desc:'Stone Fruit'},
+  {kw:['jasmine','jasmim','jazmin','floral','flower','flor','blossom'], ci:0, desc:'Jasmine'},
+  {kw:['rose','rosa'], ci:0, desc:'Rose'},
+  {kw:['chamomile','camomila'], ci:0, desc:'Chamomile'},
+  {kw:['black tea','tea','chá','té','bergamot'], ci:0, desc:'Black Tea'},
+  {kw:['honey','mel','miel','honeyed','syrup','syrupy','xarope'], ci:7, desc:'Honey'},
+  {kw:['caramel','caramelo','toffee'], ci:7, desc:'Caramel'},
+  {kw:['vanilla','baunilha','vainilla'], ci:7, desc:'Vanilla'},
+  {kw:['brown sugar','molasses','açúcar mascavo','panela'], ci:7, desc:'Brown Sugar'},
+  {kw:['chocolate','choc','cocoa','cacau','cacao','chocolate amargo'], ci:6, desc:'Dark Choc'},
+  {kw:['hazelnut','avelã','avellana'], ci:6, desc:'Hazelnut'},
+  {kw:['almond','amêndoa','almendra'], ci:6, desc:'Almond'},
+  {kw:['nutty','nut','noz'], ci:6, desc:'Cocoa'},
+  {kw:['clove','cravo','clavo'], ci:5, desc:'Clove'},
+  {kw:['cinnamon','canela'], ci:5, desc:'Cinnamon'},
+  {kw:['pepper','pimenta','spice','spicy','especiaria'], ci:5, desc:'Pepper'},
+  {kw:['smoky','smoke','fumaça','smoked'], ci:4, desc:'Smoky'},
+  {kw:['cereal','grain','malt','malte'], ci:4, desc:'Cereal'},
+  {kw:['herb','herbal','herbaceo','green','grass','grassy','erva'], ci:3, desc:'Herb-like'},
+  {kw:['vegetal','vegetable','vegetativo'], ci:3, desc:'Vegetal'},
+  {kw:['winey','wine','vinho','boozy'], ci:2, desc:'Winey'},
+  {kw:['tart','tangy','azedo','overripe','fermented','fermentado'], ci:2, desc:'Tart'},
+  {kw:['woody','wood','madeira','papery'], ci:8, desc:'Woody'}
+];
+const FALLBACK_TRANSCRIPTS={
+  'pt-BR':'acidez de limão brilhante, florais de jasmim, corpo aveludado e mel',
+  'es-ES':'acidez de limón brillante, florales de jazmín, cuerpo sedoso y miel',
+  'en-US':'bright lemon acidity, jasmine florals, syrupy honeyed body'
+};
+let voiceLang='pt-BR';
+let recog=null, recActive=false, recHeard='';
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+
+function buildWave(){
+  const w=$('#wave');if(w.children.length)return;
+  for(let k=0;k<22;k++){const s=document.createElement('span');s.style.animationDelay=(k*0.05)+'s';w.appendChild(s);}
+}
+function setMicState(t){$('#micState').textContent=t;}
+const VOICE_PLACEHOLDER='Press and hold the mic, describe the cup aloud, then release. A transcript appears here.';
+/* Load the ACTIVE group's saved transcript (persists per group across open/close). */
+function loadVoiceForGroup(){
+  const g=activeGroup();
+  const notes=$('#voiceNotes');
+  if(g.voiceNotes){
+    notes.textContent=g.voiceNotes;notes.dataset.empty='false';
+    buildSuggestions(g.voiceNotes);
+  }else{
+    notes.textContent=VOICE_PLACEHOLDER;notes.dataset.empty='true';
+    $('#suggestWrap').style.display='none';$('#suggestChips').innerHTML='';
+  }
+  setMicState('Hold to talk');
+  $('#voiceBox').classList.remove('recording');
+}
+function startVoice(){
+  if(recActive)return;
+  recActive=true;recHeard='';
+  $('#voiceBox').classList.add('recording');
+  setMicState('Listening...');
+  if(SR){
+    try{
+      recog=new SR();
+      recog.lang=voiceLang;recog.interimResults=true;recog.continuous=true;
+      recog.onresult=(ev)=>{
+        let txt='';
+        for(let k=0;k<ev.results.length;k++)txt+=ev.results[k][0].transcript;
+        recHeard=txt.trim();
+        if(recHeard){const n=$('#voiceNotes');n.textContent=recHeard;n.dataset.empty='false';}
+      };
+      recog.onerror=()=>{};
+      recog.start();
+    }catch(_){recog=null;}
+  }
+}
+function stopVoice(){
+  if(!recActive)return;
+  recActive=false;
+  $('#voiceBox').classList.remove('recording');
+  setMicState('Hold to talk');
+  if(recog){try{recog.stop();}catch(_){}}
+  /* always resolve to a usable transcript so the demo works offline */
+  setTimeout(()=>{
+    let transcript = recHeard && recHeard.length>3 ? recHeard : FALLBACK_TRANSCRIPTS[voiceLang];
+    activeGroup().voiceNotes=transcript;          // persist into the active group
+    const n=$('#voiceNotes');n.textContent=transcript;n.dataset.empty='false';
+    buildSuggestions(transcript);
+    buildGroupTabs();refreshDescribeButtons();
+    recog=null;
+  },180);
+}
+/* keyword -> mouthfeel CATA option, used only on the Mouthfeel group */
+const MOUTH_VOICE_MAP=[
+  {kw:['rough','gritty','chalky','sandy','aspero','áspero','arenoso'], name:'Rough'},
+  {kw:['oily','oleoso','aceitoso','buttery','greasy'], name:'Oily'},
+  {kw:['smooth','velvety','silky','syrupy','aveludado','sedoso','suave','redondo'], name:'Smooth'},
+  {kw:['drying','dry','astringent','adstringente','seca','astringente'], name:'Mouth-Drying'},
+  {kw:['metallic','metalico','metálico','tinny','metal'], name:'Metallic'}
+];
+/* Suggestions are scoped to the ACTIVE group: wheel groups suggest olfactory
+   descriptors; the mouthfeel group suggests mouthfeel CATA options. */
+function buildSuggestions(text){
+  const low=text.toLowerCase();
+  const wrap=$('#suggestWrap'),chips=$('#suggestChips');
+  const def=groupDef(describe.active);
+  chips.innerHTML='';
+
+  if(def.mouth){
+    const found=[];const seen=new Set();
+    MOUTH_VOICE_MAP.forEach(m=>{ if(seen.has(m.name))return; if(m.kw.some(k=>low.includes(k))){found.push(m);seen.add(m.name);} });
+    const top=found.slice(0,3);
+    if(top.length===0){wrap.style.display='none';return;}
+    top.forEach(m=>{
+      const g=describe.mouthfeel;
+      const already=g.mouth.includes(m.name);
+      const b=document.createElement('button');
+      b.type='button';b.className='suggestchip'+(already?' added':'');b.style.color='#607d8b';
+      b.innerHTML=`<span class="plus">+</span>${m.name} <span style="opacity:.6;font-weight:600">&middot; mouthfeel</span>`;
+      b.onclick=()=>{
+        if(!g.mouth.includes(m.name)){
+          if(g.mouth.length>=CATA_CAP){const rem=g.mouth.shift();showToast(`Max ${CATA_CAP} mouthfeel &mdash; replaced "${rem}"`);}
+          g.mouth.push(m.name);
+          buildMouthCata();renderChipTray();updateWheelCount();
+        }
+        b.classList.add('added');
+      };
+      chips.appendChild(b);
+    });
+    wrap.style.display='flex';return;
+  }
+
+  // wheel groups (Aroma, Flavor & Aftertaste): suggest olfactory descriptors
+  const found=[];const seen=new Set();
+  VOICE_MAP.forEach(m=>{ if(seen.has(m.desc))return; if(m.kw.some(k=>low.includes(k))){found.push(m);seen.add(m.desc);} });
+  const top=found.slice(0,3);
+  if(top.length===0){wrap.style.display='none';return;}
+  top.forEach(m=>{
+    const cat=CATS[m.ci];
+    const g=activeGroup();
+    const already=g.descriptors.some(d=>d.name===m.desc);
+    const b=document.createElement('button');
+    b.type='button';b.className='suggestchip'+(already?' added':'');
+    b.style.color=cat.color;
+    b.innerHTML=`<span class="plus">+</span>${m.desc} <span style="opacity:.6;font-weight:600">&middot; ${cat.name.split('/')[0]}</span>`;
+    b.onclick=()=>{
+      const gg=activeGroup();
+      if(!gg.descriptors.some(d=>d.name===m.desc)){
+        if(gg.descriptors.length>=OLF_CAP){const rem=gg.descriptors.shift();showToast(`Cap of ${OLF_CAP} reached &mdash; replaced "${rem.name}"`);}
+        gg.descriptors.push({name:m.desc,color:cat.color,cat:cat.name});
+        renderChipTray();recolorPicked();updateWheelCount();
+      }
+      b.classList.add('added');
+    };
+    chips.appendChild(b);
+  });
+  wrap.style.display='flex';
+}
+function wireVoice(){
+  buildWave();
+  const mic=$('#micBtn');
+  /* press-and-hold via pointer events (covers mouse + touch); never a drag */
+  mic.addEventListener('pointerdown',(e)=>{e.preventDefault();try{mic.setPointerCapture(e.pointerId);}catch(_){}startVoice();});
+  mic.addEventListener('pointerup',(e)=>{e.preventDefault();stopVoice();});
+  mic.addEventListener('pointercancel',()=>stopVoice());
+  mic.addEventListener('pointerleave',()=>{if(recActive)stopVoice();});
+  $('#langSel').addEventListener('click',(e)=>{
+    const b=e.target.closest('.langbtn');if(!b)return;
+    voiceLang=b.dataset.lang;
+    $('#langSel').querySelectorAll('.langbtn').forEach(x=>x.classList.toggle('on',x===b));
+  });
+}
+
+/* ---------- THEME ---------- */
+const themeBtn=$('#themeBtn');
+function setThemeIcon(t){
+  themeBtn.querySelector('svg').outerHTML = t==='dark'
+    ? `<svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>`
+    : `<svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>`;
+}
+themeBtn.onclick=()=>{
+  const cur=document.body.getAttribute('data-theme');
+  const nxt=cur==='dark'?'light':'dark';
+  document.body.setAttribute('data-theme',nxt);
+  setThemeIcon(nxt);
+};
+
+/* ---------- INIT ---------- */
+function init(){
+  buildProgress();
+  renderStage();
+  wireRoast(screens['roast']);
+  wireVoice();
+  setAccent(SECTIONS[0].accent);
+  screens['roast'].classList.add('active');
+  setThemeIcon(document.body.getAttribute('data-theme'));
+  updateNav();
+  updateLiveScore();
+  /* on roast screen, disable footer nav until they begin */
+  $('#backBtn').disabled=true;$('#nextBtn').disabled=true;
+}
+/* override nav state while on roast intro */
+const _origUpdateNav=updateNav;
+updateNav=function(){
+  if(!state.roastDone){
+    $('#backBtn').disabled=true;$('#nextBtn').disabled=true;
+    $('#navHint').innerHTML=`Set the roast level, then begin your guided tasting journey.`;
+    return;
+  }
+  _origUpdateNav();
+};
+init();
+</script>
+</body>
+</html>

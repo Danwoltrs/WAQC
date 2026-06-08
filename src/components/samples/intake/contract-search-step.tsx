@@ -56,9 +56,13 @@ interface Props {
   applyContract: (patch: Partial<FormData>, prefilled: (keyof FormData)[]) => void
   unlinkContract: () => void
   onSkip: () => void
+  // When the step is embedded in a combined single-screen layout (Other Sample),
+  // there's nothing to "skip to" — hide the Skip button and let the user just
+  // leave the search empty.
+  embedded?: boolean
 }
 
-export function ContractSearchStep({ formData, applyContract, unlinkContract, onSkip }: Props) {
+export function ContractSearchStep({ formData, applyContract, unlinkContract, onSkip, embedded = false }: Props) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState<SearchResultRow[]>([])
   const [loading, setLoading] = useState(false)        // a search request is in flight
@@ -242,11 +246,13 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
         </>
       )}
 
-      <div className="pt-2">
-        <Button type="button" variant="outline" onClick={onSkip}>
-          Skip — enter manually
-        </Button>
-      </div>
+      {!embedded && (
+        <div className="pt-2">
+          <Button type="button" variant="outline" onClick={onSkip}>
+            Skip — enter manually
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

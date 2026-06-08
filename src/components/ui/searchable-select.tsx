@@ -58,7 +58,10 @@ export function SearchableSelect({
   }, [options, value])
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    // `modal` matches Radix Select's behaviour so the list scrolls when this
+    // combobox is rendered inside a Dialog — without it, the dialog's scroll-lock
+    // blocks the wheel on the portaled popover and the list becomes unscrollable.
+    <Popover open={open} onOpenChange={setOpen} modal>
       <PopoverTrigger asChild>
         <Button
           variant="outline"

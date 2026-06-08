@@ -119,11 +119,18 @@ export async function GET(request: NextRequest) {
 
     // Transform samples to include flattened entity names
     const transformedSamples = (samples || []).map((sample: any) => {
-      // Handle certificate array - Supabase returns array for one-to-many relations
-      // A sample can have at most one certificate, so we take the first one
-      const certificate = Array.isArray(sample.certificate)
-        ? sample.certificate[0] || null
-        : sample.certificate || null
+      // Handle certificate array - Supabase returns array for one-to-many relations.
+      // A sample with sub-contracts has MANY certificate rows (one mother +
+      // one per sub-contract). The mother is the row with sample_contract_id
+      // NULL — pick it explicitly. Taking [0] returned an arbitrary sub-contract
+      // cert, so the tracker/preview title showed the wrong number.
+      const allCerts: any[] = Array.isArray(sample.certificate)
+        ? sample.certificate
+        : sample.certificate
+          ? [sample.certificate]
+          : []
+      const certificate =
+        allCerts.find((c: any) => c.sample_contract_id === null) || allCerts[0] || null
 
       // Check QC client types for importer/roaster fallback (same logic as detail API)
       const clientTypes: string[] = sample.qc_client?.client_types || []
@@ -176,7 +183,6 @@ export async function GET(request: NextRequest) {
           : [],
         sub_contracts: Array.isArray(sample.sample_contracts)
           ? sample.sample_contracts.map((c: any) => {
-              const allCerts = Array.isArray(sample.certificate) ? sample.certificate : []
               const subCert = allCerts.find((cert: any) => cert.sample_contract_id === c.id)
               const scQcName = c.client_id ? entityMaps.clients[c.client_id] : null
               return {
@@ -197,6 +203,11 @@ export async function GET(request: NextRequest) {
                 bags_quantity_mt: c.bags_quantity_mt || null,
                 has_certificate: !!subCert,
                 certificate_id: subCert?.id || null,
+                // Official minted cert number for THIS sub-contract (gap-free
+                // numbering stores it on the certificate row, not on
+                // sample_contracts.tracking_number). Needed so the preview title
+                // shows the clicked child's number, not the mother's.
+                certificate_number: subCert?.certificate_number || null,
               }
             })
           : [],
@@ -307,25 +318,22 @@ export async function POST(request: NextRequest) {
     for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
       let trackingNumber: string
 
-      // Unified numbering: a sample's tracking number IS its future certificate
-      // number, drawn from the per-lab company certificate sequence
-      // (generate_certificate_number is atomic, so each call — including a retry
-      // after a duplicate-key collision — yields the next unique number).
-      // Requires both client and lab; for edge cases lacking either (e.g. type
-      // samples with no client) we fall back to the legacy tracking generator.
+      // Split numbering: intake assigns an internal lab number (gaps allowed).
+      // The official certificate number is minted gap-free at certification by
+      // the certificates BEFORE INSERT trigger (when split_numbering=true).
+      // Requires lab; for edge cases lacking a lab we fall back to the legacy
+      // tracking generator.
       let trackingNumberData: any
       let trackingError: any
-      if (clientId && body.laboratory_id) {
-        ({ data: trackingNumberData, error: trackingError } = await supabase
-          .rpc('generate_certificate_number', {
-            p_client_id: clientId,
-            p_origin: body.origin,
-            p_quality_spec_id: qualitySpecId,
-            p_is_rejected: false,
+      if (body.laboratory_id) {
+        // Internal lab number (gaps allowed). The official certificate number is
+        // minted gap-free at certification by the certificates BEFORE INSERT trigger.
+        ;({ data: trackingNumberData, error: trackingError } = await (supabase as any)
+          .rpc('generate_sample_number', {
             p_laboratory_id: body.laboratory_id,
-          } as any))
+          }))
       } else {
-        ({ data: trackingNumberData, error: trackingError } = await supabase
+        ;({ data: trackingNumberData, error: trackingError } = await supabase
           .rpc('generate_tracking_number', {
             p_client_id: clientId,
             p_laboratory_id: body.laboratory_id,
@@ -367,6 +375,7 @@ export async function POST(request: NextRequest) {
 
       const sampleData: Record<string, any> = {
         tracking_number: trackingNumber,
+        split_numbering: Boolean(body.laboratory_id),
         client_id: clientId,
         laboratory_id: body.laboratory_id,
         quality_spec_id: qualitySpecId,

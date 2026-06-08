@@ -39,6 +39,7 @@ import { MICRO_ORIGINS } from '@/components/samples/intake/constants'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { CuppingGradingSection } from '@/components/samples/cupping-grading-section'
 import { OtherSampleRecipientsPanel } from '@/components/samples/other-sample-recipients-panel'
+import { ApprovalSendView } from '@/components/samples/approval-send-view'
 
 interface EditPermission {
   canEdit: boolean
@@ -165,6 +166,8 @@ export interface SampleDetailModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   sampleId: string | null
+  /** When set, the modal shows this sub-contract's parties/number (read-only parties). */
+  contractId?: string | null
   onSampleUpdated?: () => void
   startInEditMode?: boolean
 }
@@ -173,6 +176,7 @@ export function SampleDetailModal({
   open,
   onOpenChange,
   sampleId,
+  contractId,
   onSampleUpdated,
   startInEditMode,
 }: SampleDetailModalProps) {
@@ -228,7 +232,10 @@ export function SampleDetailModal({
   // Print label
   const [printingLabel, setPrintingLabel] = useState(false)
 
-  // Reset state when sampleId changes or modal opens
+  // Approval send view
+  const [showApprovalSend, setShowApprovalSend] = useState(false)
+
+  // Reset state when sampleId/contractId changes or modal opens
   useEffect(() => {
     if (open && sampleId) {
       setSample(null)
@@ -238,7 +245,7 @@ export function SampleDetailModal({
       loadSampleDetails(sampleId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sampleId])
+  }, [open, sampleId, contractId])
 
   // Auto-enter edit mode when startInEditMode is true and sample is loaded
   useEffect(() => {
@@ -265,7 +272,7 @@ export function SampleDetailModal({
       setLoading(true)
       setLoadError(null)
 
-      const sampleRes = await fetch(`/api/samples/${id}`)
+      const sampleRes = await fetch(`/api/samples/${id}${contractId ? `?contract_id=${contractId}` : ''}`)
       const sampleData = await sampleRes.json()
 
       if (sampleRes.ok && sampleData.sample) {
@@ -645,7 +652,7 @@ export function SampleDetailModal({
     try {
       setDownloadingCertificate(true)
 
-      const response = await fetch(`/api/samples/${sample.id}/certificate`)
+      const response = await fetch(`/api/samples/${sample.id}/certificate${contractId ? `?contract_id=${contractId}` : ''}`)
 
       if (!response.ok) {
         const data = await response.json()
@@ -677,7 +684,7 @@ export function SampleDetailModal({
     setPreviewPdfUrl(null)
 
     try {
-      const response = await fetch(`/api/samples/${sample.id}/certificate`)
+      const response = await fetch(`/api/samples/${sample.id}/certificate${contractId ? `?contract_id=${contractId}` : ''}`)
       if (response.ok) {
         const blob = await response.blob()
         const url = window.URL.createObjectURL(blob)
@@ -1049,9 +1056,12 @@ export function SampleDetailModal({
                   <SupplyChainEditTable
                     sample={sample}
                     isEditMode={isEditMode}
+                    // Sub-contract parties are edited in the sub-contract editor, not
+                    // here (this modal's save targets the mother sample), so lock them.
+                    forceReadOnly={!!contractId}
                     formData={formData}
                     onFormChange={(field, value) => handleFormChange(field as keyof Sample, value)}
-                    onEditClick={handleEnterEditMode}
+                    onEditClick={contractId ? undefined : handleEnterEditMode}
                   />
                 </div>
 
@@ -1131,6 +1141,11 @@ export function SampleDetailModal({
                         <Button variant="outline" size="sm" onClick={handleGenerateCertificate} disabled={generatingCertificate}>
                           {generatingCertificate ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Award className="h-4 w-4 mr-2" />}
                           Generate Cert
+                        </Button>
+                      )}
+                      {(sample.status === 'approved' || sample.status === 'rejected') && sample.wolthers_contract_nr && (
+                        <Button variant="outline" size="sm" onClick={() => setShowApprovalSend(true)}>
+                          Send approval email
                         </Button>
                       )}
                       {(profile?.is_global_admin || profile?.qc_role === 'global_admin') && (
@@ -1354,6 +1369,15 @@ export function SampleDetailModal({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Approval Send View */}
+      {sampleId && (
+        <ApprovalSendView
+          sampleId={sampleId}
+          open={showApprovalSend}
+          onClose={() => setShowApprovalSend(false)}
+        />
+      )}
     </>
   )
 }

@@ -17,7 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Plus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { ApprovalComposer } from '@/components/samples/approval-composer'
+import { ApprovalSendView } from '@/components/samples/approval-send-view'
 
 interface AttributeStats {
   mean: number
@@ -216,7 +216,7 @@ export function CuppingValidationModal({
 }: CuppingValidationModalProps) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [approvalComposerOpen, setApprovalComposerOpen] = useState(false)
+  const [approvalSendOpen, setApprovalSendOpen] = useState(false)
   const [aggregated, setAggregated] = useState<AggregatedScores | null>(null)
   const [individualScores, setIndividualScores] = useState<IndividualScore[]>([])
   const [consolidatedDefects, setConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
@@ -607,7 +607,7 @@ export function CuppingValidationModal({
         try {
           const r = await fetch(`/api/samples/${sampleId}/approval-recipients`)
           if (r.ok) {
-            setApprovalComposerOpen(true)
+            setApprovalSendOpen(true)
             return
           }
         } catch {
@@ -1368,11 +1368,11 @@ export function CuppingValidationModal({
       </DialogContent>
     </Dialog>
     {sampleId && (
-      <ApprovalComposer
+      <ApprovalSendView
         sampleId={sampleId}
-        open={approvalComposerOpen}
+        open={approvalSendOpen}
         onClose={() => {
-          setApprovalComposerOpen(false)
+          setApprovalSendOpen(false)
           onFinalize?.()
           onOpenChange(false)
         }}

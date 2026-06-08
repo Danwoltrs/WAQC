@@ -129,66 +129,18 @@ export async function POST(
       return NextResponse.json({ error: 'Mother sample has no tracking number' }, { status: 400 })
     }
 
-    // Parse the mother sample's tracking number to derive the format for sub-contracts.
-    // Sub-contracts share the same prefix (quality+origin code) and suffix (year).
-    // Format: "AD1-890239/26" → prefix="AD1", num=890239, suffix="26"
-    const motherTN = sample.tracking_number as string
-    const slashIdx = motherTN.lastIndexOf('/')
-    const tnSuffix = slashIdx >= 0 ? motherTN.substring(slashIdx + 1) : ''
-    const tnLeft = slashIdx >= 0 ? motherTN.substring(0, slashIdx) : motherTN
-    const dashIdx = tnLeft.lastIndexOf('-')
-    const tnPrefix = dashIdx >= 0 ? tnLeft.substring(0, dashIdx) : ''
-    const tnNumStr = dashIdx >= 0 ? tnLeft.substring(dashIdx + 1) : tnLeft
-    const tnNumLen = tnNumStr.length
-
-    // The sequence number is per client + per lab, shared across ALL quality prefixes.
-    // Find the highest existing number in both samples and sample_contracts for this client+lab.
-    const clientId = sample.client_id as string
+    const clientId = sample.client_id as string | null
     const laboratoryId = sample.laboratory_id as string | null
 
-    // 1. All tracking numbers from samples for this QC client + lab
-    let samplesQuery = supabase
-      .from('samples')
-      .select('id, tracking_number')
-      .eq('client_id', clientId)
-
-    if (laboratoryId) {
-      samplesQuery = samplesQuery.eq('laboratory_id', laboratoryId)
-    }
-
-    const { data: clientSamples } = await samplesQuery
-
-    const sampleTrackingNumbers = (clientSamples || []).map((s: any) => s.tracking_number)
-    const clientSampleIds = (clientSamples || []).map((s: any) => s.id)
-
-    // 2. All tracking numbers from sample_contracts for those samples
-    let contractTrackingNumbers: string[] = []
-    if (clientSampleIds.length > 0) {
-      // Batch in chunks of 200 to avoid URL length limits
-      for (let i = 0; i < clientSampleIds.length; i += 200) {
-        const chunk = clientSampleIds.slice(i, i + 200)
-        const { data: contracts } = await supabase
-          .from('sample_contracts')
-          .select('tracking_number')
-          .in('sample_id', chunk)
-        if (contracts) {
-          contractTrackingNumbers.push(...contracts.map((c: any) => c.tracking_number))
-        }
-      }
-    }
-
-    // 3. Find the max sequence number across all tracking numbers.
-    // Extract the sequence number as the last group of digits before the slash.
-    // This correctly handles prefixes with digits (e.g., "AD1-890239/26" → 890239).
-    let maxNum = parseInt(tnNumStr) || 0
-    for (const ecStr of [...sampleTrackingNumbers, ...contractTrackingNumbers]) {
-      if (!ecStr) continue
-      const ecSlash = ecStr.lastIndexOf('/')
-      const ecLeft = ecSlash >= 0 ? ecStr.substring(0, ecSlash) : ecStr
-      const ecDash = ecLeft.lastIndexOf('-')
-      const ecNumStr = ecDash >= 0 ? ecLeft.substring(ecDash + 1) : ecLeft
-      const ecNum = parseInt(ecNumStr) || 0
-      if (ecNum >= maxNum) maxNum = ecNum + 1
+    // Containers/sub-contracts are commercial shipment splits and always belong to
+    // a sample with a QC client + laboratory. Without those we cannot draw from the
+    // atomic per-(client, lab, year) sequence, so block rather than fall back to a
+    // racy manual scan (which previously produced duplicate/out-of-order numbers).
+    if (!clientId || !laboratoryId) {
+      return NextResponse.json(
+        { error: 'Cannot add a container: this sample has no QC client and laboratory.' },
+        { status: 400 }
+      )
     }
 
     // Get current max sort_order
@@ -202,71 +154,47 @@ export async function POST(
 
     const nextSortOrder = (maxSort?.sort_order ?? -1) + 1
 
-    // Insert with retry on duplicate key — increment sequence on each retry
-    const MAX_CONTRACT_RETRIES = 5
-    let contract: any = null
-
-    for (let attempt = 0; attempt < MAX_CONTRACT_RETRIES; attempt++) {
-      const currentNum = maxNum + attempt
-      const finalNumStr = currentNum.toString().padStart(tnNumLen, '0')
-      const finalLeft = tnPrefix ? `${tnPrefix}-${finalNumStr}` : finalNumStr
-      const trackingNumber = tnSuffix ? `${finalLeft}/${tnSuffix}` : finalLeft
-
-      const contractData = {
-        sample_id: sampleId,
-        tracking_number: trackingNumber,
-        wolthers_contract_nr: body.wolthers_contract_nr || null,
-        seller_contract_nr: body.seller_contract_nr || null,
-        shipper_contract_nr: body.shipper_contract_nr || null,
-        buyer_contract_nr: body.buyer_contract_nr || null,
-        roaster_contract_nr: body.roaster_contract_nr || null,
-        qc_client_contract_nr: body.qc_client_contract_nr || null,
-        end_client_contract_nr: body.end_client_contract_nr || null,
-        supplier_contract_nr: body.supplier_contract_nr || null,
-        ico_number: body.ico_number || null,
-        container_nr: body.container_nr || null,
-        importer_id: body.importer_id || null,
-        importer_is_qc_client: body.importer_is_qc_client ?? true,
-        roaster_id: body.roaster_id || null,
-        end_client_id: body.end_client_id || null,
-        client_id: body.client_id || null,
-        bag_count: body.bag_count || null,
-        bag_weight_kg: body.bag_weight_kg || null,
-        bag_type: body.bag_type || null,
-        bags_quantity_mt: body.bags_quantity_mt || null,
-        equivalent_60kg_bags: body.equivalent_60kg_bags || null,
-        exporter_sample_number: body.exporter_sample_number || null,
-        shipment_month: body.shipment_month || null,
-        sort_order: nextSortOrder,
-        created_by: user.id,
-      }
-
-      const { data: insertedContract, error: insertError } = await supabase
-        .from('sample_contracts')
-        .insert(contractData)
-        .select()
-        .single()
-
-      if (!insertError) {
-        contract = insertedContract
-        break
-      }
-
-      const isDuplicate = insertError.message?.includes('duplicate key') ||
-        insertError.message?.includes('unique constraint') ||
-        insertError.code === '23505'
-
-      if (isDuplicate && attempt < MAX_CONTRACT_RETRIES - 1) {
-        console.warn(`Duplicate tracking number ${trackingNumber} for sub-contract, retrying with incremented sequence...`)
-        continue
-      }
-
-      console.error('Error creating sub-contract:', insertError)
-      return NextResponse.json({ error: 'Failed to create sub-contract', details: insertError.message }, { status: 500 })
+    const contractData = {
+      sample_id: sampleId,
+      tracking_number: null as unknown as string,
+      wolthers_contract_nr: body.wolthers_contract_nr || null,
+      seller_contract_nr: body.seller_contract_nr || null,
+      shipper_contract_nr: body.shipper_contract_nr || null,
+      buyer_contract_nr: body.buyer_contract_nr || null,
+      roaster_contract_nr: body.roaster_contract_nr || null,
+      qc_client_contract_nr: body.qc_client_contract_nr || null,
+      end_client_contract_nr: body.end_client_contract_nr || null,
+      supplier_contract_nr: body.supplier_contract_nr || null,
+      ico_number: body.ico_number || null,
+      container_nr: body.container_nr || null,
+      importer_id: body.importer_id || null,
+      importer_is_qc_client: body.importer_is_qc_client ?? true,
+      roaster_id: body.roaster_id || null,
+      end_client_id: body.end_client_id || null,
+      client_id: body.client_id || null,
+      bag_count: body.bag_count || null,
+      bag_weight_kg: body.bag_weight_kg || null,
+      bag_type: body.bag_type || null,
+      bags_quantity_mt: body.bags_quantity_mt || null,
+      equivalent_60kg_bags: body.equivalent_60kg_bags || null,
+      exporter_sample_number: body.exporter_sample_number || null,
+      shipment_month: body.shipment_month || null,
+      sort_order: nextSortOrder,
+      created_by: user.id,
     }
 
-    if (!contract) {
-      return NextResponse.json({ error: 'Failed to create sub-contract after retries' }, { status: 500 })
+    const { data: contract, error: insertError } = await supabase
+      .from('sample_contracts')
+      .insert(contractData)
+      .select()
+      .single()
+
+    if (insertError || !contract) {
+      console.error('Error creating sub-contract:', insertError)
+      return NextResponse.json(
+        { error: 'Failed to create sub-contract', details: insertError?.message },
+        { status: 500 }
+      )
     }
 
     // Auto-create certificate if mother sample already has one
@@ -280,9 +208,6 @@ export async function POST(
 
       if (motherCert && contract) {
         const isRejected = motherCert.is_rejected ?? false
-        const subCertNumber = isRejected
-          ? `R-${contract.tracking_number}`
-          : contract.tracking_number
 
         // Get issued_to from mother sample's client (now companies)
         const { data: motherSample } = await (supabase as any)
@@ -311,7 +236,7 @@ export async function POST(
           .insert({
             sample_id: sampleId,
             sample_contract_id: contract.id,
-            certificate_number: subCertNumber,
+            certificate_number: null as unknown as string,
             issued_to: issuedTo,
             issued_by: user.id,
             status: 'issued',
@@ -319,6 +244,15 @@ export async function POST(
             valid_until: motherCert.valid_until,
             is_rejected: isRejected,
           })
+
+        const { data: refreshed } = await supabase
+          .from('sample_contracts')
+          .select('tracking_number')
+          .eq('id', contract.id)
+          .single()
+        if (refreshed?.tracking_number) {
+          (contract as any).tracking_number = refreshed.tracking_number
+        }
       }
     } catch (certErr) {
       console.error('Error auto-creating certificate for sub-contract:', certErr)

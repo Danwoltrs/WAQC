@@ -111,23 +111,18 @@ async function insertOneDuplicate(
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     let trackingNumber: string
 
-    // Unified numbering: each duplicate draws the next number from the per-lab
-    // company certificate sequence (atomic — every call, including retries and
-    // multi-duplicate loops, yields a fresh unique number). The old
-    // manual-increment trick is gone: it would diverge from the atomic counter
-    // and collide with future intake numbers. Falls back to the legacy generator
-    // for edge cases lacking a client/lab.
+    // Internal lab numbering: each duplicate draws the next internal sample
+    // number from the per-lab sequence (atomic — every call, including retries
+    // and multi-duplicate loops, yields a fresh unique number). The cert number
+    // is assigned only at approval time (split_numbering=true path). Falls back
+    // to the legacy generator for edge cases lacking a lab id.
     let trackingNumberData: any
     let trackingError: any
-    if (source.client_id && source.laboratory_id) {
-      ({ data: trackingNumberData, error: trackingError } = await supabase
-        .rpc('generate_certificate_number', {
-          p_client_id: source.client_id,
-          p_origin: source.origin,
-          p_quality_spec_id: source.quality_spec_id,
-          p_is_rejected: false,
+    if (source.laboratory_id) {
+      ;({ data: trackingNumberData, error: trackingError } = await (supabase as any)
+        .rpc('generate_sample_number', {
           p_laboratory_id: source.laboratory_id,
-        } as any))
+        }))
     } else {
       ({ data: trackingNumberData, error: trackingError } = await supabase
         .rpc('generate_tracking_number', {
@@ -159,6 +154,7 @@ async function insertOneDuplicate(
     // without these per-shipment identifiers; user fills them in if needed.
     const duplicateData: Record<string, any> = {
       tracking_number: trackingNumber,
+      split_numbering: Boolean(source.laboratory_id),
       client_id: source.client_id,
       laboratory_id: source.laboratory_id,
       origin: source.origin,

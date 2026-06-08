@@ -40,6 +40,7 @@ import {
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
+import { ApprovalSendView } from '@/components/samples/approval-send-view'
 
 interface Certificate {
   id: string
@@ -49,6 +50,9 @@ interface Certificate {
   created_at: string
   pdf_url: string | null
   sample_id: string | null
+  // Set for sub-contract certificates; null for the mother cert. Must be passed
+  // as ?contract_id= when fetching the PDF, else the route renders the mother.
+  sample_contract_id: string | null
   is_rejected: boolean | null
   sample: {
     id: string
@@ -344,9 +348,10 @@ export default function CertificatesPage() {
   }
 
   // Single certificate download handler
-  const handleDownload = async (sampleId: string, certificateNumber: string) => {
+  const handleDownload = async (sampleId: string, certificateNumber: string, contractId?: string | null) => {
     try {
-      const response = await fetch(`/api/samples/${sampleId}/certificate`)
+      const qs = contractId ? `?contract_id=${contractId}` : ''
+      const response = await fetch(`/api/samples/${sampleId}/certificate${qs}`)
       if (response.ok) {
         const blob = await response.blob()
         const url = window.URL.createObjectURL(blob)
@@ -443,6 +448,7 @@ export default function CertificatesPage() {
 
   // Override dialog state
   const [overrideCertificate, setOverrideCertificate] = useState<Certificate | null>(null)
+  const [approvalSampleId, setApprovalSampleId] = useState<string | null>(null)
 
   // Certificate preview modal state
   const [previewCertificate, setPreviewCertificate] = useState<Certificate | null>(null)
@@ -459,7 +465,10 @@ export default function CertificatesPage() {
   const handleViewCertificate = (cert: Certificate) => {
     setPreviewCertificate(cert)
     if (cert.sample_id) {
-      setPreviewPdfUrl(`/api/samples/${cert.sample_id}/certificate`)
+      // Pass contract_id for sub-contract certs so the route renders THIS cert's
+      // PDF (matching the title) rather than falling back to the mother cert.
+      const qs = cert.sample_contract_id ? `?contract_id=${cert.sample_contract_id}` : ''
+      setPreviewPdfUrl(`/api/samples/${cert.sample_id}/certificate${qs}`)
     }
   }
 
@@ -787,7 +796,7 @@ export default function CertificatesPage() {
                                 <Button
                                   variant="ghost"
                                   size="sm"
-                                  onClick={() => handleDownload(cert.sample_id!, cert.certificate_number)}
+                                  onClick={() => handleDownload(cert.sample_id!, cert.certificate_number, cert.sample_contract_id)}
                                   title="Download Certificate"
                                 >
                                   <Download className="h-4 w-4" />
@@ -1010,7 +1019,7 @@ export default function CertificatesPage() {
                 <>
                   <Button
                     variant="outline"
-                    onClick={() => handleDownload(previewCertificate.sample_id!, previewCertificate.certificate_number)}
+                    onClick={() => handleDownload(previewCertificate.sample_id!, previewCertificate.certificate_number, previewCertificate.sample_contract_id)}
                   >
                     <Download className="h-4 w-4 mr-2" />
                     Download
@@ -1039,7 +1048,23 @@ export default function CertificatesPage() {
             certificateId={overrideCertificate.id}
             certificateNumber={overrideCertificate.certificate_number}
             currentlyRejected={!!overrideCertificate.is_rejected}
-            onSuccess={loadCertificates}
+            onSuccess={() => {
+              loadCertificates()
+              if (overrideCertificate?.sample_id) {
+                const sid = overrideCertificate.sample_id
+                fetch(`/api/samples/${sid}/approval-recipients`)
+                  .then((r) => { if (r.ok) setApprovalSampleId(sid) })
+                  .catch(() => {})
+              }
+            }}
+          />
+        )}
+
+        {approvalSampleId && (
+          <ApprovalSendView
+            sampleId={approvalSampleId}
+            open={!!approvalSampleId}
+            onClose={() => setApprovalSampleId(null)}
           />
         )}
 

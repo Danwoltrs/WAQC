@@ -77,10 +77,14 @@ export function QuantityStep({ formData, updateFormData }: StepComponentProps) {
       setCustomWeight(false)
     }
 
-    // Jute/PP Bag: Auto-select based on origin
+    // Jute/PP Bag: Auto-select based on origin — but don't clobber a weight that's
+    // already set (e.g. prefilled from a linked contract). Manual type changes reset
+    // the weight to '' first, so this still fills a sensible default in that case.
     else if (formData.bag_type === 'jute_bag' || formData.bag_type === 'pp_bag') {
-      const isBrazil = formData.origin?.toLowerCase() === 'brazil'
-      updateFormData('bag_weight_kg', isBrazil ? '60' : '70')
+      if (!formData.bag_weight_kg) {
+        const isBrazil = formData.origin?.toLowerCase() === 'brazil'
+        updateFormData('bag_weight_kg', isBrazil ? '60' : '70')
+      }
       setCustomWeight(false)
     }
   }, [formData.bag_type])

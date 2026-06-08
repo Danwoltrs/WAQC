@@ -8,6 +8,7 @@ import { getCountryName } from '@/lib/country-flags'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
+  id?: string | null      // Company id — used to dedup importer/roaster reliably
   name: string | null
   country: string | null
   contract: string | null
@@ -240,7 +241,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       supplier_contract_nr,
       supplier,
       crop_year,
-      certifications
+      certifications,
+      split_numbering
     `)
     .eq('id', sampleId)
     .single()
@@ -295,18 +297,21 @@ export async function getCertificateData(sampleId: string, contractId?: string):
 
   // Fetch supply chain entities in parallel — all from companies post-consolidation.
   // Each role-specific FK on samples (exporter_id, importer_id, etc.) points at companies(id).
+  // Prefer fantasy_name on the certificate so parties read "Ahold" instead of
+  // "Ahold Delhaize Coffee Company B.V." (which crowds/wraps the parties bar).
+  // Also pull id so importer/roaster pointing at the same company dedup cleanly.
   const [exporterResult, importerResult, roasterResult, sellerResult, endClientResult] = await Promise.all([
     sample.exporter_id
-      ? (supabase as any).from('companies').select('name, country').eq('id', sample.exporter_id).single()
+      ? (supabase as any).from('companies').select('id, name, fantasy_name, country').eq('id', sample.exporter_id).single()
       : Promise.resolve({ data: null }),
     sample.importer_id
-      ? (supabase as any).from('companies').select('name, country').eq('id', sample.importer_id).single()
+      ? (supabase as any).from('companies').select('id, name, fantasy_name, country').eq('id', sample.importer_id).single()
       : Promise.resolve({ data: null }),
     sample.roaster_id
-      ? (supabase as any).from('companies').select('name, country').eq('id', sample.roaster_id).single()
+      ? (supabase as any).from('companies').select('id, name, fantasy_name, country').eq('id', sample.roaster_id).single()
       : Promise.resolve({ data: null }),
     sample.seller_id
-      ? (supabase as any).from('companies').select('name, country').eq('id', sample.seller_id).single()
+      ? (supabase as any).from('companies').select('id, name, fantasy_name, country').eq('id', sample.seller_id).single()
       : Promise.resolve({ data: null }),
     sample.end_client_id
       ? (supabase as any)
@@ -394,11 +399,15 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     cuppingScores = allCuppingScores
   }
 
-  // Fetch certificate
+  // Fetch the MOTHER certificate (sample_contract_id IS NULL). Sub-contract
+  // certs share the mother's sample_id (they add a sample_contract_id), so
+  // without this filter the newest-created row wins and a multi-contract PSS
+  // would render the LAST sub-contract's number on the mother's certificate.
   const { data: certificate } = await supabase
     .from('certificates')
     .select('id, certificate_number, created_at, status, override_comment, is_rejected')
     .eq('sample_id', sampleId)
+    .is('sample_contract_id', null)
     .order('created_at', { ascending: false })
     .limit(1)
     .single()
@@ -727,10 +736,15 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     validUntil = validDate.toISOString().split('T')[0]
   }
 
+  // Prefer fantasy_name (short trade name) for every supply-chain party.
+  const displayName = (d: { fantasy_name?: string | null; name?: string | null } | null | undefined): string | null =>
+    d?.fantasy_name ?? d?.name ?? null
+
   // Build supplier entity (farm/coop from seller_id)
   // supplier_type indicates "farm" or "coop"
   const supplierEntity: SupplyChainEntity = {
-    name: sellerResult.data?.name ?? null,
+    id: sellerResult.data?.id ?? null,
+    name: displayName(sellerResult.data),
     country: sellerResult.data?.country ?? null,
     contract: sample.seller_contract_nr ?? null,
     address: null, // Address not yet in exporters table
@@ -741,14 +755,16 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   // Otherwise, shipper is a separate contract (uses exporter entity with shipper contract)
   const shipperEntity: SupplyChainEntity = sample.same_seller_shipper
     ? {
-        name: exporterResult.data?.name ?? null,
+        id: exporterResult.data?.id ?? null,
+        name: displayName(exporterResult.data),
         country: exporterResult.data?.country ?? null,
         contract: sample.shipper_contract_nr || null,
         address: null,
       }
     : {
         // When shipper is different, show exporter entity as shipper
-        name: exporterResult.data?.name ?? null,
+        id: exporterResult.data?.id ?? null,
+        name: displayName(exporterResult.data),
         country: exporterResult.data?.country ?? null,
         contract: sample.shipper_contract_nr || null,
         address: null,
@@ -764,6 +780,11 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     wolthersContract: string | null
     ico_number: string | null
     container_nr: string | null
+    bag_count: number | null
+    bag_weight_kg: number | null
+    bag_type: string | null
+    bags_quantity_mt: number | null
+    equivalent_60kg_bags: number | null
     certificateData: NonNullable<CertificateData['certificate']> & { is_rejected?: boolean | null }
   } | null = null
 
@@ -772,8 +793,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       .from('sample_contracts')
       .select(`
         *,
-        importer:companies!sample_contracts_importer_id_fkey(name, country),
-        roaster:companies!sample_contracts_roaster_id_fkey(name, country),
+        importer:companies!sample_contracts_importer_id_fkey(id, name, fantasy_name, country),
+        roaster:companies!sample_contracts_roaster_id_fkey(id, name, fantasy_name, country),
         end_client:companies!sample_contracts_end_client_id_fkey(fantasy_name, name, country),
         qc_client:companies!sample_contracts_client_id_fkey(fantasy_name, name, country, company_types, trading_roles)
       `)
@@ -798,13 +819,15 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       contractOverride = {
         tracking_number: contract.tracking_number,
         importerEntity: {
-          name: contract.importer?.name ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
+          id: contract.importer?.id ?? null,
+          name: displayName(contract.importer) ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
           country: contract.importer?.country ?? null,
           contract: contract.buyer_contract_nr ?? null,
           address: null,
         },
         roasterEntity: {
-          name: contract.roaster?.name ?? (scIsRoasterClient ? scQcClientName : null),
+          id: contract.roaster?.id ?? null,
+          name: displayName(contract.roaster) ?? (scIsRoasterClient ? scQcClientName : null),
           country: contract.roaster?.country ?? null,
           contract: contract.roaster_contract_nr ?? null,
           address: null,
@@ -824,6 +847,13 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         wolthersContract: contract.wolthers_contract_nr ?? null,
         ico_number: contract.ico_number ?? sample.ico_number,
         container_nr: contract.container_nr ?? sample.container_nr,
+        // Per-sub-contract quantity: each contract is its own shipment split, so
+        // the cert must show THIS contract's bags, not the mother sample's.
+        bag_count: contract.bag_count ?? null,
+        bag_weight_kg: contract.bag_weight_kg ?? null,
+        bag_type: contract.bag_type ?? null,
+        bags_quantity_mt: contract.bags_quantity_mt ?? null,
+        equivalent_60kg_bags: contract.equivalent_60kg_bags ?? null,
         certificateData: scCert
           ? {
               id: scCert.id,
@@ -836,7 +866,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
             }
           : {
               id: '',
-              certificate_number: contract.tracking_number,
+              // Split sub-contracts have no number until their cert mints; show
+              // PENDING rather than a blank. Legacy subs keep their tracking #.
+              certificate_number: (sample as any).split_numbering ? 'PENDING' : contract.tracking_number,
               issued_date: currentDate,
               valid_until: validUntil,
               status: null,
@@ -857,11 +889,13 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       sample_type: sample.sample_type,
       processing_method: sample.processing_method,
       quality_name: sample.quality_name,
-      bags: sample.bag_count || sample.bags, // Prefer bag_count, fall back to bags for legacy
-      bag_type: sample.bag_type,
-      bag_weight_kg: sample.bag_weight_kg,
-      bags_quantity_mt: sample.bags_quantity_mt,
-      equivalent_60kg_bags: sample.equivalent_60kg_bags,
+      // For a sub-contract cert, use the sub-contract's own quantity; otherwise the
+      // mother sample's. (bag_count preferred, falling back to legacy `bags`.)
+      bags: contractOverride?.bag_count ?? (sample.bag_count || sample.bags),
+      bag_type: contractOverride?.bag_type ?? sample.bag_type,
+      bag_weight_kg: contractOverride?.bag_weight_kg ?? sample.bag_weight_kg,
+      bags_quantity_mt: contractOverride?.bags_quantity_mt ?? sample.bags_quantity_mt,
+      equivalent_60kg_bags: contractOverride?.equivalent_60kg_bags ?? sample.equivalent_60kg_bags,
       shipment_month: sample.shipment_month,
       ico_number: contractOverride?.ico_number ?? sample.ico_number,
       container_nr: contractOverride?.container_nr ?? sample.container_nr,
@@ -878,22 +912,25 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     supplyChain: {
       supplier: supplierEntity,
       exporter: {
-        name: exporterResult.data?.name ?? null,
+        id: exporterResult.data?.id ?? null,
+        name: displayName(exporterResult.data),
         country: exporterResult.data?.country ?? null,
         contract: sample.exporter_contract_nr ?? null,
         address: null, // Address not yet in exporters table
       },
       shipper: shipperEntity,
       importer: contractOverride?.importerEntity ?? {
+        id: importerResult.data?.id ?? null,
         // Use importer from DB, or fall back to client if they're an importer type or importer_is_qc_client flag is set
-        name: importerResult.data?.name ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
+        name: displayName(importerResult.data) ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: importerResult.data?.country ?? client?.country ?? null,
         contract: sample.buyer_contract_nr ?? null,
         address: null, // Address not yet in importers table
       },
       roaster: contractOverride?.roasterEntity ?? {
+        id: roasterResult.data?.id ?? null,
         // Use roaster from DB, or fall back to client if they're a roaster type
-        name: roasterResult.data?.name ?? (isRoasterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
+        name: displayName(roasterResult.data) ?? (isRoasterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: roasterResult.data?.country ?? null,
         contract: sample.roaster_contract_nr ?? null,
         address: null, // Address not yet in roasters table
@@ -938,7 +975,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       : {
           // Placeholder when no certificate record exists yet (first generation)
           id: '',
-          certificate_number: sample.tracking_number,
+          certificate_number: (sample as any).split_numbering ? 'PENDING' : sample.tracking_number,
           issued_date: currentDate,
           valid_until: validUntil,
           status: null,

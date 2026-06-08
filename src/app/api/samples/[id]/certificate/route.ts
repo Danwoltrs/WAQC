@@ -6,6 +6,7 @@ import { QualityCertificate } from '@/components/pdf/certificate/quality-certifi
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { resolveSampleId } from '@/lib/sample-utils'
 import { uploadCertificatePdf, getCachedCertificatePdf } from '@/lib/certificate-storage'
+import { buildCertificateFilename } from '@/lib/certificate-filename'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -42,6 +43,33 @@ export async function GET(
     // Check for sub-contract certificate request
     const contractId = request.nextUrl.searchParams.get('contract_id')
 
+    // Bypass the stored-PDF cache when developing (so template/layout code
+    // changes are reflected immediately) or when explicitly asked via ?nocache=1.
+    // The fresh render still re-caches below, updating the shared cache.
+    const bypassCache =
+      process.env.NODE_ENV !== 'production' ||
+      request.nextUrl.searchParams.get('nocache') === '1'
+
+    // Resolve the buyer reference for the filename: a sub-contract uses its own
+    // buyer_contract_nr, the mother cert uses the sample's. Buyers (e.g. Ahold)
+    // ask for their contract reference in the filename alongside the cert number.
+    let buyerRef: string | null = null
+    if (contractId) {
+      const { data: scRow } = await supabase
+        .from('sample_contracts')
+        .select('buyer_contract_nr')
+        .eq('id', contractId)
+        .maybeSingle()
+      buyerRef = (scRow as any)?.buyer_contract_nr ?? null
+    } else {
+      const { data: sRow } = await supabase
+        .from('samples')
+        .select('buyer_contract_nr')
+        .eq('id', id)
+        .maybeSingle()
+      buyerRef = (sRow as any)?.buyer_contract_nr ?? null
+    }
+
     // Check for cached PDF first
     let certQuery = supabase
       .from('certificates')
@@ -59,23 +87,18 @@ export async function GET(
       .limit(1)
       .maybeSingle()
 
-    // Build sanitized filename: replace / with _, use lowercase r- for rejected
-    const sanitizeFilename = (certNum: string) => {
-      let name = certNum.replace(/\//g, '_')
-      if (name.startsWith('R-')) name = 'r-' + name.slice(2)
-      return name
-    }
-
-    if (certificate?.pdf_url) {
+    if (certificate?.pdf_url && !bypassCache) {
       console.log('[Certificate] Serving cached PDF:', certificate.pdf_url)
       const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
       if (cachedBuffer) {
-        const filename = sanitizeFilename(certificate.certificate_number || 'certificate') + '.pdf'
+        const filename = buildCertificateFilename(certificate.certificate_number, buyerRef)
         return new NextResponse(new Uint8Array(cachedBuffer), {
           headers: {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `inline; filename="${filename}"`,
-            'Cache-Control': 'public, max-age=3600',
+            // no-cache so the browser revalidates instead of holding a stale
+            // cert PDF (cert content changes when sample/template data is edited).
+            'Cache-Control': 'no-cache',
           },
         })
       }
@@ -155,9 +178,9 @@ export async function GET(
         .catch((err) => console.error('[Certificate] Cache upload failed:', err))
     }
 
-    // Generate filename - sanitized certificate number
+    // Generate filename - buyer reference (when present) + sanitized certificate number
     const certificateNumber = certificateData.certificate?.certificate_number || certificateData.sample.tracking_number
-    const filename = sanitizeFilename(certificateNumber) + '.pdf'
+    const filename = buildCertificateFilename(certificateNumber, buyerRef)
 
     // Return PDF response - convert Buffer to Uint8Array for NextResponse
     return new NextResponse(new Uint8Array(pdfBuffer), {
@@ -305,17 +328,11 @@ export async function POST(
       })
     }
 
-    // Unified numbering: the certificate reuses the sample's tracking number
-    // (which is itself the per-lab cert-sequence number assigned at intake).
-    // No separate certificate number is generated. Tracking number was already
-    // validated as non-empty above.
     if (!sample.client_id) {
       return NextResponse.json({
         error: 'Cannot generate certificate - sample has no client assigned'
       }, { status: 400 })
     }
-
-    const certificateNumber = sample.tracking_number as string
 
     // Get client name for issued_to (required field)
     const clientData = sample.client as { name?: string; company?: string; fantasy_name?: string } | null
@@ -331,7 +348,7 @@ export async function POST(
       .from('certificates')
       .insert({
         sample_id: id,
-        certificate_number: certificateNumber,
+        certificate_number: null as unknown as string,
         issued_to: issuedTo,
         issued_by: user.id,
         status: 'issued',
@@ -411,15 +428,6 @@ async function createSubContractCertificates(
       if (!existingSubCert) {
         const isRejected = motherCert.is_rejected ?? false
 
-        // Unified numbering: sub-contract certificate reuses the sub-contract's
-        // own tracking number. Skip if it somehow has none.
-        if (!sc.tracking_number) {
-          console.error('Skipping sub-contract cert: sample_contract has no tracking_number', sc.id)
-          continue
-        }
-
-        const subCertNumber = sc.tracking_number as string
-
         // Get sub-contract's QC client name (or fall back to mother's)
         let subIssuedTo = motherIssuedTo
         if (sc.client_id && sc.client_id !== sample?.client_id) {
@@ -438,7 +446,7 @@ async function createSubContractCertificates(
           .insert({
             sample_id: sampleId,
             sample_contract_id: sc.id,
-            certificate_number: subCertNumber,
+            certificate_number: null as unknown as string,
             issued_to: subIssuedTo,
             issued_by: userId,
             status: 'issued',

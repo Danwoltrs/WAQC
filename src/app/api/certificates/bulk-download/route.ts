@@ -5,6 +5,7 @@ import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
+import { buildCertificateFilename } from '@/lib/certificate-filename'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -46,6 +47,24 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch certificates' }, { status: 500 })
     }
 
+    // Resolve buyer references for filenames: a sub-contract cert uses its own
+    // buyer_contract_nr, a mother cert uses the sample's. Batched to avoid N queries.
+    const subIds = Array.from(new Set(certificates.map(c => c.sample_contract_id).filter(Boolean))) as string[]
+    const sampleIds = Array.from(new Set(certificates.map(c => c.sample_id).filter(Boolean))) as string[]
+    const subRefMap = new Map<string, string | null>()
+    const sampleRefMap = new Map<string, string | null>()
+    if (subIds.length) {
+      const { data } = await supabase.from('sample_contracts').select('id, buyer_contract_nr').in('id', subIds)
+      for (const r of (data || []) as any[]) subRefMap.set(r.id, r.buyer_contract_nr ?? null)
+    }
+    if (sampleIds.length) {
+      const { data } = await supabase.from('samples').select('id, buyer_contract_nr').in('id', sampleIds)
+      for (const r of (data || []) as any[]) sampleRefMap.set(r.id, r.buyer_contract_nr ?? null)
+    }
+    const buyerRefFor = (c: { sample_id: string | null; sample_contract_id: string | null }) =>
+      (c.sample_contract_id ? subRefMap.get(c.sample_contract_id) : null) ??
+      (c.sample_id ? sampleRefMap.get(c.sample_id) : null) ?? null
+
     // Load Wolthers logo once
     let wolthersLogoBase64: string | undefined
     try {
@@ -54,13 +73,6 @@ export async function POST(request: NextRequest) {
       wolthersLogoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
     } catch (err) {
       console.error('Error loading Wolthers logo:', err)
-    }
-
-    // Build sanitized filename: replace / with _, use lowercase r- for rejected
-    const sanitizeFilename = (certNum: string) => {
-      let name = certNum.replace(/\//g, '_')
-      if (name.startsWith('R-')) name = 'r-' + name.slice(2)
-      return name
     }
 
     // Create ZIP file
@@ -75,7 +87,7 @@ export async function POST(request: NextRequest) {
         if (cert.pdf_url) {
           const cachedBuffer = await getCachedCertificatePdf(supabase, cert.pdf_url)
           if (cachedBuffer) {
-            const filename = sanitizeFilename(cert.certificate_number) + '.pdf'
+            const filename = buildCertificateFilename(cert.certificate_number, buyerRefFor(cert))
             zip.file(filename, cachedBuffer)
             continue
           }
@@ -128,8 +140,8 @@ export async function POST(request: NextRequest) {
         uploadCertificatePdf(supabase, cert.sample_id, cert.id, Buffer.from(pdfBuffer))
           .catch((err) => console.error('[BulkDownload] Cache upload failed:', err))
 
-        // Add to ZIP with sanitized certificate number as filename
-        const filename = sanitizeFilename(cert.certificate_number) + '.pdf'
+        // Add to ZIP with buyer reference (when present) + certificate number
+        const filename = buildCertificateFilename(cert.certificate_number, buyerRefFor(cert))
         zip.file(filename, pdfBuffer)
       } catch (pdfError) {
         console.error(`Error generating PDF for certificate ${cert.id}:`, pdfError)

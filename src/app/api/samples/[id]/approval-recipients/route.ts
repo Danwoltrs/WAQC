@@ -2,7 +2,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { canUserManageSample } from '@/lib/auth/sample-access'
-import { resolveApprovalRecipients } from '@/lib/approval-notification/recipients'
+import { resolvePanel, type ContactRow } from '@/lib/approval-notification/resolve-panels'
+import type { ApprovalPrefill } from '@/lib/approval-notification/types'
+
+const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
 
 const admin = () =>
   createSupabaseClient(
@@ -11,22 +14,11 @@ const admin = () =>
     { auth: { autoRefreshToken: false, persistSession: false } },
   )
 
-/**
- * GET /api/samples/[id]/approval-recipients
- * Prefill data for the approval composer. Returns 400 when the sample is not
- * contract-linked (the client uses this as the gate for whether to open).
- *
- * Authorization: must be an authenticated staff/QC user permitted to manage
- * the sample. We authenticate with the RLS-bound SSR client and gate on
- * canUserManageSample BEFORE touching the service-role client, so counterparty
- * contact PII is never returned to unauthorized callers.
- */
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-
   const server = await createServerClient()
   const {
     data: { user },
@@ -34,42 +26,70 @@ export async function GET(
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const access = await canUserManageSample(server as any, user.id, id)
-  if (!access.allowed) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  if (!access.allowed) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
   const supabase = admin()
-
   const { data: sample, error } = await supabase
     .from('samples')
-    .select(
-      'id, tracking_number, status, contract_id, origin, quality_name, ' +
-        'quality_assessment:quality_assessments(green_bean_data)',
-    )
+    .select('id, tracking_number, status, contract_id, sample_type')
     .eq('id', id)
     .single()
+  if (error || !sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
 
-  if (error || !sample) {
-    return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+  const s = sample as any
+  if (!s.contract_id) {
+    return NextResponse.json({ error: 'Sample is not contract-linked' }, { status: 400 })
   }
-  if (!(sample as any).contract_id) {
-    return NextResponse.json(
-      { error: 'Sample is not contract-linked' },
-      { status: 400 },
-    )
+  if (s.status !== 'approved' && s.status !== 'rejected') {
+    return NextResponse.json({ error: 'Sample is not approved/rejected' }, { status: 400 })
   }
 
   const { data: contract } = await supabase
     .from('contracts')
-    .select('contract_number, buyer_id, seller_id')
-    .eq('id', (sample as any).contract_id)
+    .select('contract_number, buyer_id, seller_id, buyer_reference, seller_reference')
+    .eq('id', s.contract_id)
     .single()
+  const c = (contract ?? {}) as any
 
-  const { to, cc } = await resolveApprovalRecipients(
-    supabase,
-    (contract as any)?.buyer_id ?? null,
-    (contract as any)?.seller_id ?? null,
-  )
+  // Companies for team-name greeting fallback.
+  const { data: companies } = await supabase
+    .from('companies')
+    .select('id, name, fantasy_name')
+    .in('id', [c.buyer_id, c.seller_id].filter(Boolean))
+  const nameOf = (cid: string | null): string | null => {
+    const co = (companies ?? []).find((x: any) => x.id === cid) as any
+    return co ? co.fantasy_name ?? co.name ?? null : null
+  }
+
+  // DB column is `is_group`; remapped to is_group_mailbox to match ContactRow interface.
+  const { data: contactRows } = await supabase
+    .from('contacts')
+    .select('company_id, email, name, nickname, role, is_primary, is_group, routing_purposes')
+    .in('company_id', [c.buyer_id, c.seller_id].filter(Boolean))
+    .eq('is_active', true)
+    .not('email', 'is', null)
+  const rows: ContactRow[] = (contactRows ?? []).map((r) => ({
+    company_id: r.company_id,
+    email: r.email,
+    name: r.name,
+    nickname: (r as any).nickname ?? null,
+    role: r.role,
+    is_primary: r.is_primary,
+    is_group_mailbox: (r as any).is_group ?? null,
+    routing_purposes: (r as any).routing_purposes ?? null,
+  }))
+
+  // Matched shipment_samples row gives sample_code / AWB / courier for the body.
+  const { data: ssRows } = await supabase
+    .from('shipment_samples')
+    .select('sample_code, tracking_number, courier_company, waqc_ref, sample_type, created_at')
+    .eq('contract_id', s.contract_id)
+  const ss =
+    (ssRows ?? []).find((r: any) => r.waqc_ref === s.tracking_number) ??
+    (ssRows ?? [])
+      .filter((r: any) => (r.sample_type ?? 'pss') === 'pss')
+      .sort((a: any, b: any) => String(b.created_at).localeCompare(String(a.created_at)))[0] ??
+    null
 
   const { data: cert } = await supabase
     .from('certificates')
@@ -79,22 +99,23 @@ export async function GET(
     .limit(1)
     .maybeSingle()
 
-  const qa = Array.isArray((sample as any).quality_assessment)
-    ? (sample as any).quality_assessment[0]
-    : (sample as any).quality_assessment
-  const cuppingScore = qa?.green_bean_data?.cupping_score ?? null
-
-  return NextResponse.json({
+  const payload: ApprovalPrefill = {
     sample: {
-      tracking_number: (sample as any).tracking_number,
-      status: (sample as any).status,
-      origin: (sample as any).origin,
-      quality_name: (sample as any).quality_name,
-      cupping_score: cuppingScore,
-      contract_number: (contract as any)?.contract_number ?? null,
+      trackingNumber: s.tracking_number,
+      sampleType: s.sample_type ?? 'pss',
+      status: s.status,
+      contractNumber: c.contract_number ?? null,
+      sampleCode: (ss as any)?.sample_code ?? null,
+      awb: (ss as any)?.tracking_number ?? null,
+      courier: (ss as any)?.courier_company ?? null,
+      sellerReference: c.seller_reference ?? null,
+      buyerReference: c.buyer_reference ?? null,
     },
-    defaultTo: to,
-    defaultCc: cc,
+    panels: {
+      seller: resolvePanel(rows, c.seller_id ?? null, nameOf(c.seller_id ?? null), QC_MAILBOX),
+      buyer: resolvePanel(rows, c.buyer_id ?? null, nameOf(c.buyer_id ?? null), QC_MAILBOX),
+    },
     certificateAvailable: !!cert,
-  })
+  }
+  return NextResponse.json(payload)
 }
