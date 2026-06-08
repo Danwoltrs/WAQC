@@ -61,16 +61,26 @@ function namesMatch(a: string | null | undefined, b: string | null | undefined):
   return a.toLowerCase().trim() === b.toLowerCase().trim()
 }
 
+// "T.B.I." (to be informed/identified) is a placeholder party — treat it, and
+// empty names, as "not linked" so the column is dropped rather than printing
+// a meaningless "T.B.I.". Mirrors isTbi() in approval-notification.
+function isTbi(s: string | null | undefined): boolean {
+  return !s || /^t\.?b\.?i\.?$/i.test(s.trim())
+}
+
 interface MergedColumn {
   label: string
+  id?: string | null
   name: string
   contracts: string[]
   address: string | null
+  note?: string | null  // secondary line, e.g. "Sample 219/26", rendered un-prefixed
 }
 
 /**
- * Merge entities within a group that share the same name.
- * Returns an array of merged columns.
+ * Merge entities within a group that represent the same company.
+ * Two entities match on company id when both have one, otherwise on name.
+ * T.B.I./empty entities are skipped entirely. Returns merged columns.
  */
 function mergeEntities(
   entities: Array<{ label: string; entity: SupplyChainEntity | null | undefined }>
@@ -78,10 +88,14 @@ function mergeEntities(
   const merged: MergedColumn[] = []
 
   for (const { label, entity } of entities) {
-    if (!entity?.name) continue
+    if (!entity?.name || isTbi(entity.name)) continue
 
-    // Find existing merged column with the same name (case-insensitive)
-    const existing = merged.find(m => namesMatch(m.name, entity.name))
+    // Merge when the same company id OR the same display name. Either catches
+    // the "Ahold" case: importer "Ahold Delhaize B.V." and roaster "Ahold" are
+    // distinct company rows, but both resolve to fantasy name "Ahold" → one col.
+    const existing = merged.find(m =>
+      (!!m.id && !!entity.id && m.id === entity.id) || namesMatch(m.name, entity.name)
+    )
 
     if (existing) {
       // Merge: combine labels (e.g. "Seller / Shipper"), add contracts
@@ -92,6 +106,7 @@ function mergeEntities(
     } else {
       merged.push({
         label,
+        id: entity.id ?? null,
         name: entity.name,
         contracts: entity.contract ? [entity.contract] : [],
         address: entity.address || null,
@@ -134,12 +149,14 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
-  // Group 1: Wolthers (always first if contract or sample number exists)
-  const wolthersColumns: MergedColumn[] = wolthersContract
-    ? [{ label: 'Wolthers', name: wolthersContract, contracts: [], address: null }]
-    : []
-  // Add exporter sample number as a separate column if present
-  if (exporterSampleNumber) {
+  // Group 1: Wolthers — single column. The Wolthers ref is the primary value and
+  // the sample number sits below it (was a separate column → too crowded).
+  const sampleNote = exporterSampleNumber ? `Sample ${exporterSampleNumber}` : null
+  const wolthersColumns: MergedColumn[] = []
+  if (wolthersContract) {
+    wolthersColumns.push({ label: 'Wolthers', name: wolthersContract, contracts: [], address: null, note: sampleNote })
+  } else if (exporterSampleNumber) {
+    // No Wolthers ref — fall back to showing the sample number as the value.
     wolthersColumns.push({ label: 'Sample Nr', name: exporterSampleNumber, contracts: [], address: null })
   }
 
@@ -191,6 +208,7 @@ export function CertificateSupplyChainRow({
             <View style={rowStyles.entityColumn}>
               <Text style={rowStyles.label}>{col.label}</Text>
               <Text style={rowStyles.name}>{col.name}</Text>
+              {col.note && <Text style={rowStyles.contract}>{col.note}</Text>}
               {col.contracts.length > 0 && (
                 col.contracts.map((ref, refIdx) => (
                   <Text key={refIdx} style={rowStyles.contract}>Ref: {ref}</Text>

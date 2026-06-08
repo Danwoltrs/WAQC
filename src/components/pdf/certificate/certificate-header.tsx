@@ -190,7 +190,7 @@ export function CertificateHeader({
           )}
           {buyerReference && (
             <Text style={headerStyles.buyerReference}>
-              Buyer Ref: {buyerReference}
+              Ref: {buyerReference}
             </Text>
           )}
           {labRef && (

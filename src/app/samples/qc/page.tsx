@@ -12,6 +12,7 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
+import { INTAKE_DIALOG_CONTENT_CLASS } from '@/components/samples/sample-intake-dialog'
 import { SampleDetailModal } from '@/components/samples/sample-detail-modal'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
@@ -71,6 +72,7 @@ interface SubContract {
   bags_quantity_mt: number | null
   has_certificate: boolean
   certificate_id: string | null
+  certificate_number: string | null
 }
 
 interface Sample {
@@ -181,6 +183,9 @@ export default function SamplesPage() {
   const { profile } = useAuth()
   const [samples, setSamples] = useState<Sample[]>([])
   const [detailSampleId, setDetailSampleId] = useState<string | null>(null)
+  // When the detail modal is opened from a sub-contract row, this carries the
+  // sub-contract id so the modal shows that contract's parties/number.
+  const [detailContractId, setDetailContractId] = useState<string | null>(null)
   const [detailStartInEditMode, setDetailStartInEditMode] = useState(false)
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
@@ -214,6 +219,10 @@ export default function SamplesPage() {
   // Certificate preview modal states
   const [previewSample, setPreviewSample] = useState<Sample | null>(null)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  // Cert number of the SPECIFIC certificate being previewed. For a sub-contract
+  // this is the child's minted number — the mother sample's certificate_number
+  // would be wrong. Kept separate so the title matches the rendered PDF.
+  const [previewCertNumber, setPreviewCertNumber] = useState<string | null>(null)
   const [downloadingSampleId, setDownloadingSampleId] = useState<string | null>(null)
 
   // Track assigned cuppers for selected samples
@@ -825,6 +834,7 @@ export default function SamplesPage() {
   // Certificate handlers
   const handleViewCertificate = (sample: Sample) => {
     setPreviewSample(sample)
+    setPreviewCertNumber(sample.certificate_number || parseTrackingNumber(sample.tracking_number))
     // Use direct API URL so the browser's PDF viewer respects Content-Disposition filename
     setPreviewPdfUrl(`/api/samples/${sample.id}/certificate`)
   }
@@ -832,6 +842,7 @@ export default function SamplesPage() {
   const handleClosePreview = () => {
     setPreviewSample(null)
     setPreviewPdfUrl(null)
+    setPreviewCertNumber(null)
   }
 
   const handleDownloadCertificate = async (sample: Sample) => {
@@ -881,9 +892,11 @@ export default function SamplesPage() {
     }
   }
 
-  const handleViewSubContractCertificate = (sampleId: string, contractId: string) => {
+  const handleViewSubContractCertificate = (sampleId: string, sc: SubContract) => {
     setPreviewSample(samples.find(s => s.id === sampleId) || null)
-    setPreviewPdfUrl(`/api/samples/${sampleId}/certificate?contract_id=${contractId}`)
+    // Title must reflect the SUB-CONTRACT's own minted number, not the mother's.
+    setPreviewCertNumber(sc.certificate_number || sc.tracking_number)
+    setPreviewPdfUrl(`/api/samples/${sampleId}/certificate?contract_id=${sc.id}`)
   }
 
   const handleDeleteSubContract = (sample: Sample, sc: SubContract) => {
@@ -1156,11 +1169,13 @@ export default function SamplesPage() {
                   New Sample
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
+              <DialogContent className={INTAKE_DIALOG_CONTENT_CLASS}>
+                <DialogHeader className="flex-shrink-0">
                   <DialogTitle>Sample Intake</DialogTitle>
                 </DialogHeader>
-                <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} />
+                <div className="flex-1 min-h-0">
+                  <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} />
+                </div>
               </DialogContent>
             </Dialog>
           </div>
@@ -1750,7 +1765,7 @@ export default function SamplesPage() {
                                     <td className="py-2 px-3 align-middle">
                                       <div className="min-w-0">
                                         <button
-                                          onClick={() => setDetailSampleId(sample.id)}
+                                          onClick={() => { setDetailContractId(sc.id); setDetailSampleId(sample.id) }}
                                           className="block w-full text-left font-mono text-[12.5px] font-semibold text-foreground/85 hover:underline truncate"
                                           title={sc.tracking_number}
                                         >
@@ -1866,7 +1881,7 @@ export default function SamplesPage() {
                                       variant="ghost"
                                       size="sm"
                                       className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                                      onClick={() => sc.has_certificate ? handleViewSubContractCertificate(sample.id, sc.id) : setDetailSampleId(sample.id)}
+                                      onClick={() => sc.has_certificate ? handleViewSubContractCertificate(sample.id, sc) : setDetailSampleId(sample.id)}
                                       title={sc.has_certificate ? 'View certificate' : 'View sample'}
                                     >
                                       <Eye className="h-3 w-3" />
@@ -1876,7 +1891,7 @@ export default function SamplesPage() {
                                         variant="ghost"
                                         size="sm"
                                         className="h-6 w-6 p-0 text-muted-foreground hover:text-foreground"
-                                        onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.tracking_number)}
+                                        onClick={() => handleDownloadSubContractCertificate(sample.id, sc.id, sc.certificate_number || sc.tracking_number)}
                                         disabled={downloadingSampleId === `${sample.id}_${sc.id}`}
                                         title="Download certificate"
                                       >
@@ -2067,7 +2082,7 @@ export default function SamplesPage() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5" />
-              Certificate {previewSample?.certificate_number || parseTrackingNumber(previewSample?.tracking_number || '')}
+              Certificate {previewCertNumber || previewSample?.certificate_number || parseTrackingNumber(previewSample?.tracking_number || '')}
             </DialogTitle>
           </DialogHeader>
 
@@ -2175,10 +2190,12 @@ export default function SamplesPage() {
         onOpenChange={(open) => {
           if (!open) {
             setDetailSampleId(null)
+            setDetailContractId(null)
             setDetailStartInEditMode(false)
           }
         }}
         sampleId={detailSampleId}
+        contractId={detailContractId}
         onSampleUpdated={loadSamples}
         startInEditMode={detailStartInEditMode}
       />

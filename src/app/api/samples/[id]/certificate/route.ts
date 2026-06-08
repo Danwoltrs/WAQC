@@ -43,6 +43,13 @@ export async function GET(
     // Check for sub-contract certificate request
     const contractId = request.nextUrl.searchParams.get('contract_id')
 
+    // Bypass the stored-PDF cache when developing (so template/layout code
+    // changes are reflected immediately) or when explicitly asked via ?nocache=1.
+    // The fresh render still re-caches below, updating the shared cache.
+    const bypassCache =
+      process.env.NODE_ENV !== 'production' ||
+      request.nextUrl.searchParams.get('nocache') === '1'
+
     // Resolve the buyer reference for the filename: a sub-contract uses its own
     // buyer_contract_nr, the mother cert uses the sample's. Buyers (e.g. Ahold)
     // ask for their contract reference in the filename alongside the cert number.
@@ -80,7 +87,7 @@ export async function GET(
       .limit(1)
       .maybeSingle()
 
-    if (certificate?.pdf_url) {
+    if (certificate?.pdf_url && !bypassCache) {
       console.log('[Certificate] Serving cached PDF:', certificate.pdf_url)
       const cachedBuffer = await getCachedCertificatePdf(supabase, certificate.pdf_url)
       if (cachedBuffer) {
@@ -89,7 +96,9 @@ export async function GET(
           headers: {
             'Content-Type': 'application/pdf',
             'Content-Disposition': `inline; filename="${filename}"`,
-            'Cache-Control': 'public, max-age=3600',
+            // no-cache so the browser revalidates instead of holding a stale
+            // cert PDF (cert content changes when sample/template data is edited).
+            'Cache-Control': 'no-cache',
           },
         })
       }

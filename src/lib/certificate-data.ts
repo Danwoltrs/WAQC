@@ -8,6 +8,7 @@ import { getCountryName } from '@/lib/country-flags'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
+  id?: string | null      // Company id — used to dedup importer/roaster reliably
   name: string | null
   country: string | null
   contract: string | null
@@ -296,18 +297,21 @@ export async function getCertificateData(sampleId: string, contractId?: string):
 
   // Fetch supply chain entities in parallel — all from companies post-consolidation.
   // Each role-specific FK on samples (exporter_id, importer_id, etc.) points at companies(id).
+  // Prefer fantasy_name on the certificate so parties read "Ahold" instead of
+  // "Ahold Delhaize Coffee Company B.V." (which crowds/wraps the parties bar).
+  // Also pull id so importer/roaster pointing at the same company dedup cleanly.
   const [exporterResult, importerResult, roasterResult, sellerResult, endClientResult] = await Promise.all([
     sample.exporter_id
-      ? (supabase as any).from('companies').select('name, country').eq('id', sample.exporter_id).single()
+      ? (supabase as any).from('companies').select('id, name, fantasy_name, country').eq('id', sample.exporter_id).single()
       : Promise.resolve({ data: null }),
     sample.importer_id
-      ? (supabase as any).from('companies').select('name, country').eq('id', sample.importer_id).single()
+      ? (supabase as any).from('companies').select('id, name, fantasy_name, country').eq('id', sample.importer_id).single()
       : Promise.resolve({ data: null }),
     sample.roaster_id
-      ? (supabase as any).from('companies').select('name, country').eq('id', sample.roaster_id).single()
+      ? (supabase as any).from('companies').select('id, name, fantasy_name, country').eq('id', sample.roaster_id).single()
       : Promise.resolve({ data: null }),
     sample.seller_id
-      ? (supabase as any).from('companies').select('name, country').eq('id', sample.seller_id).single()
+      ? (supabase as any).from('companies').select('id, name, fantasy_name, country').eq('id', sample.seller_id).single()
       : Promise.resolve({ data: null }),
     sample.end_client_id
       ? (supabase as any)
@@ -732,10 +736,15 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     validUntil = validDate.toISOString().split('T')[0]
   }
 
+  // Prefer fantasy_name (short trade name) for every supply-chain party.
+  const displayName = (d: { fantasy_name?: string | null; name?: string | null } | null | undefined): string | null =>
+    d?.fantasy_name ?? d?.name ?? null
+
   // Build supplier entity (farm/coop from seller_id)
   // supplier_type indicates "farm" or "coop"
   const supplierEntity: SupplyChainEntity = {
-    name: sellerResult.data?.name ?? null,
+    id: sellerResult.data?.id ?? null,
+    name: displayName(sellerResult.data),
     country: sellerResult.data?.country ?? null,
     contract: sample.seller_contract_nr ?? null,
     address: null, // Address not yet in exporters table
@@ -746,14 +755,16 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   // Otherwise, shipper is a separate contract (uses exporter entity with shipper contract)
   const shipperEntity: SupplyChainEntity = sample.same_seller_shipper
     ? {
-        name: exporterResult.data?.name ?? null,
+        id: exporterResult.data?.id ?? null,
+        name: displayName(exporterResult.data),
         country: exporterResult.data?.country ?? null,
         contract: sample.shipper_contract_nr || null,
         address: null,
       }
     : {
         // When shipper is different, show exporter entity as shipper
-        name: exporterResult.data?.name ?? null,
+        id: exporterResult.data?.id ?? null,
+        name: displayName(exporterResult.data),
         country: exporterResult.data?.country ?? null,
         contract: sample.shipper_contract_nr || null,
         address: null,
@@ -782,8 +793,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       .from('sample_contracts')
       .select(`
         *,
-        importer:companies!sample_contracts_importer_id_fkey(name, country),
-        roaster:companies!sample_contracts_roaster_id_fkey(name, country),
+        importer:companies!sample_contracts_importer_id_fkey(id, name, fantasy_name, country),
+        roaster:companies!sample_contracts_roaster_id_fkey(id, name, fantasy_name, country),
         end_client:companies!sample_contracts_end_client_id_fkey(fantasy_name, name, country),
         qc_client:companies!sample_contracts_client_id_fkey(fantasy_name, name, country, company_types, trading_roles)
       `)
@@ -808,13 +819,15 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       contractOverride = {
         tracking_number: contract.tracking_number,
         importerEntity: {
-          name: contract.importer?.name ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
+          id: contract.importer?.id ?? null,
+          name: displayName(contract.importer) ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
           country: contract.importer?.country ?? null,
           contract: contract.buyer_contract_nr ?? null,
           address: null,
         },
         roasterEntity: {
-          name: contract.roaster?.name ?? (scIsRoasterClient ? scQcClientName : null),
+          id: contract.roaster?.id ?? null,
+          name: displayName(contract.roaster) ?? (scIsRoasterClient ? scQcClientName : null),
           country: contract.roaster?.country ?? null,
           contract: contract.roaster_contract_nr ?? null,
           address: null,
@@ -899,22 +912,25 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     supplyChain: {
       supplier: supplierEntity,
       exporter: {
-        name: exporterResult.data?.name ?? null,
+        id: exporterResult.data?.id ?? null,
+        name: displayName(exporterResult.data),
         country: exporterResult.data?.country ?? null,
         contract: sample.exporter_contract_nr ?? null,
         address: null, // Address not yet in exporters table
       },
       shipper: shipperEntity,
       importer: contractOverride?.importerEntity ?? {
+        id: importerResult.data?.id ?? null,
         // Use importer from DB, or fall back to client if they're an importer type or importer_is_qc_client flag is set
-        name: importerResult.data?.name ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
+        name: displayName(importerResult.data) ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: importerResult.data?.country ?? client?.country ?? null,
         contract: sample.buyer_contract_nr ?? null,
         address: null, // Address not yet in importers table
       },
       roaster: contractOverride?.roasterEntity ?? {
+        id: roasterResult.data?.id ?? null,
         // Use roaster from DB, or fall back to client if they're a roaster type
-        name: roasterResult.data?.name ?? (isRoasterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
+        name: displayName(roasterResult.data) ?? (isRoasterClient ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: roasterResult.data?.country ?? null,
         contract: sample.roaster_contract_nr ?? null,
         address: null, // Address not yet in roasters table

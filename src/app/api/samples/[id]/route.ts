@@ -29,6 +29,11 @@ export async function GET(
     // Await params (Next.js 15)
     const { id } = await params
 
+    // Optional sub-contract context: when present, the response is overridden
+    // with that sub-contract's parties/refs/number (the detail modal opened
+    // from a sub-contract row should show the sub-contract, not the mother).
+    const contractId = request.nextUrl.searchParams.get('contract_id')
+
     // Determine if id is a UUID or tracking number slug
     const lookupByUUID = isUUID(id)
     const trackingNumber = lookupByUUID ? null : slugToTrackingNumber(id)
@@ -42,13 +47,13 @@ export async function GET(
       .select(`
         *,
         quality_spec:client_qualities(custom_name, quality_code),
-        seller:companies!samples_seller_id_fkey(id, name, country),
-        exporter:companies!samples_exporter_id_fkey(id, name, country),
-        importer:companies!samples_importer_id_fkey(id, name, country),
-        roaster:companies!samples_roaster_id_fkey(id, name, country),
+        seller:companies!samples_seller_id_fkey(id, name, fantasy_name, country),
+        exporter:companies!samples_exporter_id_fkey(id, name, fantasy_name, country),
+        importer:companies!samples_importer_id_fkey(id, name, fantasy_name, country),
+        roaster:companies!samples_roaster_id_fkey(id, name, fantasy_name, country),
         client:companies!samples_client_id_fkey(id, name, company:name, fantasy_name, country, client_types:company_types),
         end_client:companies!samples_end_client_id_fkey(id, name, company:name, fantasy_name, country),
-        certificate:certificates(id, certificate_number, status, created_at),
+        certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
         sample_recipients(id, client_id, contact_emails, status, comments, sent_at, responded_at, responded_by, created_at, updated_at, client:companies!sample_recipients_client_id_fkey(id, name, company:name, fantasy_name, country, email))
       `)
 
@@ -103,11 +108,13 @@ export async function GET(
     const isImporterClient = clientTypes.some((t: string) => t.includes('importer'))
     const clientName = clientObj?.fantasy_name || clientObj?.company || null
 
-    // Handle certificate array - Supabase returns array for one-to-many relations
-    // A sample can have at most one certificate, so we take the first one
-    const certificate = Array.isArray(sample.certificate)
-      ? sample.certificate[0] || null
-      : sample.certificate || null
+    // Handle certificate array - a sample with sub-contracts has many cert rows
+    // (mother + one per sub-contract). Prefer the mother (sample_contract_id
+    // NULL); the contractId branch below overrides with the sub-contract's cert.
+    const allCerts: any[] = Array.isArray(sample.certificate)
+      ? sample.certificate
+      : sample.certificate ? [sample.certificate] : []
+    const certificate = allCerts.find((c: any) => c.sample_contract_id === null) || allCerts[0] || null
 
     // Transform sample to include flattened entity names (matching list API format)
     const transformedSample = {
@@ -116,17 +123,17 @@ export async function GET(
       // fall back to quality_spec's custom_name
       quality_name: sample.quality_name || sample.quality_spec?.custom_name || null,
       quality_code: sample.quality_spec?.quality_code || null,
-      // Seller (farm/producer) from seller_id
-      seller_name: sample.seller?.name || null,
+      // Seller (farm/producer) from seller_id — prefer fantasy (trade) name
+      seller_name: sample.seller?.fantasy_name || sample.seller?.name || null,
       seller_country: sample.seller?.country || null,
       // Exporter/Shipper from exporter_id
-      exporter_name: sample.exporter?.name || null,
+      exporter_name: sample.exporter?.fantasy_name || sample.exporter?.name || null,
       exporter_country: sample.exporter?.country || null,
       // Use importer from DB, or fall back to client if they're an importer type
-      importer_name: sample.importer?.name || (isImporterClient ? clientName : null),
+      importer_name: sample.importer?.fantasy_name || sample.importer?.name || (isImporterClient ? clientName : null),
       importer_country: sample.importer?.country || null,
       // Use roaster from DB, or fall back to client if they're a roaster type
-      roaster_name: sample.roaster?.name || (isRoasterClient ? clientName : null),
+      roaster_name: sample.roaster?.fantasy_name || sample.roaster?.name || (isRoasterClient ? clientName : null),
       roaster_country: sample.roaster?.country || null,
       // QC Client (who hired Wolthers) from client_id
       qc_client_name: clientName,
@@ -148,6 +155,77 @@ export async function GET(
       end_client: undefined,
       client: undefined,
       certificate: undefined
+    }
+
+    // Sub-contract override: replace commercial fields with the sub-contract's
+    // own values so the detail modal reflects the clicked contract (number,
+    // importer/roaster, buyer ref, quantity) while keeping shared quality data.
+    if (contractId) {
+      const { data: sc } = await (supabase as any)
+        .from('sample_contracts')
+        .select(`
+          id, tracking_number, importer_id, roaster_id, end_client_id, client_id,
+          importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr,
+          roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr,
+          supplier_contract_nr, ico_number, container_nr, bags_quantity_mt,
+          importer:companies!sample_contracts_importer_id_fkey(id, name, fantasy_name, country),
+          roaster:companies!sample_contracts_roaster_id_fkey(id, name, fantasy_name, country),
+          end_client:companies!sample_contracts_end_client_id_fkey(id, name, fantasy_name, country),
+          qc_client:companies!sample_contracts_client_id_fkey(id, name, fantasy_name, country, client_types:company_types)
+        `)
+        .eq('id', contractId)
+        .maybeSingle()
+
+      if (sc) {
+        const dn = (c: any) => c?.fantasy_name || c?.name || null
+        const scQc = sc.qc_client
+        const scQcName = dn(scQc)
+        const scTypes: string[] = scQc?.client_types || []
+        const scIsImporterClient = scTypes.some((t: string) => t.includes('importer'))
+        const scIsRoasterClient = scTypes.some((t: string) => t.includes('roaster'))
+
+        // Sub-contract certificate (its own minted number), if any
+        const { data: scCert } = await supabase
+          .from('certificates')
+          .select('id, certificate_number, status, created_at')
+          .eq('sample_contract_id', contractId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+
+        Object.assign(transformedSample, {
+          // Identity / quantity for this contract
+          tracking_number: sc.tracking_number ?? transformedSample.tracking_number,
+          bags_quantity_mt: sc.bags_quantity_mt ?? transformedSample.bags_quantity_mt,
+          ico_number: sc.ico_number ?? transformedSample.ico_number,
+          container_nr: sc.container_nr ?? transformedSample.container_nr,
+          // Parties (prefer fantasy names), with QC-client fallback like the cert
+          importer_id: sc.importer_id ?? null,
+          importer_name: dn(sc.importer) || (sc.importer_is_qc_client ? scQcName : null) || (scIsImporterClient ? scQcName : null),
+          importer_country: sc.importer?.country ?? null,
+          roaster_id: sc.roaster_id ?? null,
+          roaster_name: dn(sc.roaster) || (scIsRoasterClient ? scQcName : null),
+          roaster_country: sc.roaster?.country ?? null,
+          end_client_id: sc.end_client_id ?? null,
+          end_client_name: dn(sc.end_client),
+          qc_client_name: scQcName ?? transformedSample.qc_client_name,
+          // Refs
+          wolthers_contract_nr: sc.wolthers_contract_nr ?? null,
+          buyer_contract_nr: sc.buyer_contract_nr ?? null,
+          roaster_contract_nr: sc.roaster_contract_nr ?? null,
+          end_client_contract_nr: sc.end_client_contract_nr ?? null,
+          qc_client_contract_nr: sc.qc_client_contract_nr ?? null,
+          supplier_contract_nr: sc.supplier_contract_nr ?? null,
+          importer_is_qc_client: sc.importer_is_qc_client ?? transformedSample.importer_is_qc_client,
+          // Certificate for this contract
+          certificate_id: scCert?.id ?? null,
+          certificate_number: scCert?.certificate_number ?? sc.tracking_number ?? null,
+          certificate_status: scCert?.status ?? null,
+          certificate_created_at: scCert?.created_at ?? null,
+          // Marks the payload as a sub-contract view (modal locks party editing)
+          sub_contract_id: sc.id,
+        })
+      }
     }
 
     return NextResponse.json({ sample: transformedSample })
