@@ -332,6 +332,7 @@ export function OtherSampleIntake({ asDialog = false, onSaved }: OtherSampleInta
           created_by: user.id,
           recipient_company_id: recipientCompanyId,
           recipient_contact_id: recipientContactId || null,
+          source: 'qc', // tag provenance → sys shows a "QC" badge (through qc.wolthers.com)
         })
         if (insErr) throw insErr
       } else {
@@ -363,6 +364,7 @@ export function OtherSampleIntake({ asDialog = false, onSaved }: OtherSampleInta
           p_notes: notes.trim() || null,
           p_leaves: leaves,
           p_rerequested_from_group_id: null,
+          p_source: 'qc', // tag provenance → sys shows a "QC" badge (through qc.wolthers.com)
         })
         if (rpcErr) throw rpcErr
       }
