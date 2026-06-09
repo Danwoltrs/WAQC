@@ -270,6 +270,16 @@ export function QualityStep({
     }
   }
 
+  // Show a muted hint while the dropdown still holds the server-auto-selected spec.
+  // It disappears the moment the lab changes the dropdown, because updateFormData
+  // drops quality_spec_id from contract_prefilled_fields on edit.
+  const qualityMatch = formData.contract_resolution?.quality_match
+  const showQualityHint =
+    qualityMatch?.confidence === 'high' &&
+    !!qualityMatch.spec_id &&
+    formData.quality_spec_id === qualityMatch.spec_id &&
+    (formData.contract_prefilled_fields?.includes('quality_spec_id') ?? false)
+
   return (
     <div className="space-y-4">
       {/* Row 1: Sample Type, Laboratory (for global users), Origin, Micro-Origin */}
@@ -554,6 +564,11 @@ export function QualityStep({
               </SelectTrigger>
               <SelectContent />
             </Select>
+          )}
+          {showQualityHint && (
+            <p className="text-[11px] text-muted-foreground mt-1 max-w-[200px] leading-snug">
+              Auto-selected from contract quality &ldquo;{qualityMatch!.source_text}&rdquo; — change if needed.
+            </p>
           )}
         </div>
       </div>
