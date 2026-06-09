@@ -1072,8 +1072,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       </HeaderWrapper>
 
       <ContentWrapper className={asDialog ? 'flex-1 min-h-0 flex flex-col' : 'flex flex-col h-full'}>
-        {/* Persistent contract link badge — outside the scroll region so it stays visible on long steps */}
-        {currentStep > 1 && formData.selected_contract && (
+        {/* Persistent contract link badge — outside the scroll region so it stays visible on long steps.
+            Step 5 (review) renders its own compact contract chip beside Arrival Date, so skip it there. */}
+        {currentStep > 1 && currentStep !== 5 && formData.selected_contract && (
           <ContractLinkBadge
             contract={formData.selected_contract}
             onUnlink={unlinkContract}
