@@ -168,6 +168,11 @@ export async function POST(request: NextRequest) {
       is_active: body.is_active !== undefined ? body.is_active : true
     }
 
+    // CVA methodology routing (top-level columns — the CVA eligible route filters on these)
+    ;(templateData as any).methodology = body.methodology === 'cva' ? 'cva' : 'commodity'
+    ;(templateData as any).cva_min_score = body.methodology === 'cva' ? (body.cva_min_score ?? 84) : null
+    ;(templateData as any).requires_descriptors = body.methodology === 'cva' ? !!body.requires_descriptors : false
+
     // Insert template
     const { data: template, error: insertError } = await (supabase as any)
       .from('quality_templates')

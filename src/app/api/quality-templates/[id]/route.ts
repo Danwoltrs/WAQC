@@ -113,7 +113,9 @@ export async function PATCH(
       // Screen size requirements
       'screen_size_requirements',
       // Backward compatibility
-      'name', 'description', 'parameters', 'is_active'
+      'name', 'description', 'parameters', 'is_active',
+      // CVA methodology routing
+      'methodology', 'cva_min_score', 'requires_descriptors'
     ]
 
     for (const field of allowedFields) {
