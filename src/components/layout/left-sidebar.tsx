@@ -128,6 +128,12 @@ const getNavigation = (openIntakeDialog: () => void): NavItem[] => [
     permission: 'conduct_assessments',
   },
   {
+    title: 'Specialty (CVA)',
+    href: '/cupping/cva',
+    icon: CuppingBowl,
+    permission: 'conduct_assessments',
+  },
+  {
     title: 'Certificates',
     href: '/certificates',
     icon: FileText,
