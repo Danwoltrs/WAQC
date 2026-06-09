@@ -1,4 +1,5 @@
 import { Database } from '@/lib/supabase'
+import type { QualityMatch } from '@/lib/quality-matching'
 
 export type SampleInsert = Database['public']['Tables']['samples']['Insert']
 export type Laboratory = Database['public']['Tables']['laboratories']['Row']
@@ -113,6 +114,7 @@ export interface FormData {
     multiple_seller_matches: boolean
     multiple_shipper_matches: boolean
     importer_resolved: boolean   // true if a WAQC client OR importer was matched for the buyer
+    quality_match: QualityMatch | null  // server-side contract->spec match, for the auto-select hint
   } | null
 }
 
