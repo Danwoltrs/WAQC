@@ -55,6 +55,9 @@ interface Template {
   assigned_laboratories?: string[]
   created_by?: string
   created_at?: string
+  methodology?: 'commodity' | 'cva'
+  cva_min_score?: number | null
+  requires_descriptors?: boolean
 }
 
 interface QualitySpecEditorProps {
@@ -124,6 +127,15 @@ export function QualitySpecEditor({ template, onSave, onCancel }: QualitySpecEdi
     template?.is_global ? 'public'
       : (template?.assigned_laboratories?.length || template?.laboratory_id) ? 'lab'
       : 'private'
+  )
+  const [methodology, setMethodology] = useState<'commodity' | 'cva'>(
+    template?.methodology === 'cva' ? 'cva' : 'commodity'
+  )
+  const [cvaMinScore, setCvaMinScore] = useState<string>(
+    template?.cva_min_score != null ? String(template.cva_min_score) : '84'
+  )
+  const [requiresDescriptors, setRequiresDescriptors] = useState<boolean>(
+    !!template?.requires_descriptors
   )
 
   // --- Parameters working copy (deep-ish clone; sections mutate slices) ---
@@ -216,6 +228,9 @@ export function QualitySpecEditor({ template, onSave, onCancel }: QualitySpecEdi
         // Preserve existing lab assignment untouched (full sharing UI lands later)
         laboratory_id: sharing === 'public' ? null : (template?.laboratory_id ?? null),
         assigned_laboratories: sharing === 'public' ? [] : (template?.assigned_laboratories ?? []),
+        methodology,
+        cva_min_score: methodology === 'cva' ? (parseFloat(cvaMinScore) || 84) : null,
+        requires_descriptors: methodology === 'cva' ? requiresDescriptors : false,
       }
       await onSave(payload)
     } catch (err: any) {
@@ -342,6 +357,9 @@ export function QualitySpecEditor({ template, onSave, onCancel }: QualitySpecEdi
                   })}
                   description={description} setDescription={setDescription}
                   sharing={sharing} setSharing={setSharing}
+                  methodology={methodology} setMethodology={setMethodology}
+                  cvaMinScore={cvaMinScore} setCvaMinScore={setCvaMinScore}
+                  requiresDescriptors={requiresDescriptors} setRequiresDescriptors={setRequiresDescriptors}
                 />
               ) : active === 'screen' ? (
                 <ScreenSizesSection params={params} patch={patch} />
@@ -382,6 +400,9 @@ function BasicInformation(props: {
   onToggleMicroOrigin: (name: string) => void
   description: string; setDescription: (v: string) => void
   sharing: Sharing; setSharing: (v: Sharing) => void
+  methodology: 'commodity' | 'cva'; setMethodology: (v: 'commodity' | 'cva') => void
+  cvaMinScore: string; setCvaMinScore: (v: string) => void
+  requiresDescriptors: boolean; setRequiresDescriptors: (v: boolean) => void
 }) {
   return (
     <div className="rounded-2xl border border-border bg-card p-6 space-y-5">
@@ -454,6 +475,39 @@ function BasicInformation(props: {
             <SelectItem value="public">Public — shared across all labs</SelectItem>
           </SelectContent>
         </Select>
+      </div>
+
+      <div className="space-y-4 max-w-md">
+        <div className="space-y-2">
+          <Label>Grading methodology</Label>
+          <Select value={props.methodology} onValueChange={(v) => props.setMethodology(v as 'commodity' | 'cva')}>
+            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="commodity">Commodity — standard cupping grid</SelectItem>
+              <SelectItem value="cva">Specialty — SCA CVA 2024</SelectItem>
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Specialty qualities open the immersive CVA tasting journey and score 0–100 on the SCA 2024 standard.
+          </p>
+        </div>
+
+        {props.methodology === 'cva' && (
+          <div className="space-y-4 rounded-xl border border-border p-4">
+            <div className="space-y-2">
+              <Label htmlFor="cva-min">Minimum CVA score to pass</Label>
+              <Input id="cva-min" type="number" min={0} max={100} step={0.25} className="w-32"
+                value={props.cvaMinScore} onChange={(e) => props.setCvaMinScore(e.target.value)} />
+              <p className="text-xs text-muted-foreground">
+                e.g. 82 or 84. SCA defines no pass mark — this is the Wolthers/contract threshold.
+              </p>
+            </div>
+            <label className="flex items-center gap-3 text-sm cursor-pointer select-none">
+              <Switch checked={props.requiresDescriptors} onCheckedChange={props.setRequiresDescriptors} />
+              Require flavor notes (descriptive CATA) before this quality can pass
+            </label>
+          </div>
+        )}
       </div>
     </div>
   )
