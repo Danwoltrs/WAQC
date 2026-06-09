@@ -425,7 +425,7 @@ export function OtherSampleIntake({ asDialog = false, onSaved }: OtherSampleInta
   return (
     // `data-intake-narrow` tells the shared intake DialogContent to shrink to a
     // ~2xl box that fits this single-column flow (see INTAKE_DIALOG_CONTENT_CLASS).
-    <div data-intake-narrow className={`flex min-h-0 flex-col ${asDialog ? 'h-full flex-1' : ''}`}>
+    <div data-intake-narrow className={`flex min-h-0 flex-col ${asDialog ? 'flex-auto' : ''}`}>
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto w-full max-w-[600px] space-y-3 pb-4">
           {/* Contract search / linked header */}
