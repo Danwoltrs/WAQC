@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Search } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem } from '@/components/ui/command'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { Check } from 'lucide-react'
@@ -58,6 +58,12 @@ export function QualityAssignmentDialog({
   const [selectedClientId, setSelectedClientId] = useState<string>(clientId || '')
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>(templateId || '')
   const [customName, setCustomName] = useState('')
+  // Tracks whether the user has manually edited the name. While false, the name
+  // mirrors the selected template so assigning a quality as-is needs no typing.
+  const [customNameTouched, setCustomNameTouched] = useState(false)
+  // Canonical name of the fixed template in from-template mode (the picked
+  // template isn't in the `templates` list there, so we fetch it to prefill).
+  const [templateName, setTemplateName] = useState('')
   const [qualityCode, setQualityCode] = useState('')
   const [cupsPerSample, setCupsPerSample] = useState<number>(10)
   const [notes, setNotes] = useState('')
@@ -78,8 +84,25 @@ export function QualityAssignmentDialog({
   useEffect(() => {
     if (mode === 'from-template' && open) {
       fetchAvailableClients()
+      fetchTemplateName()
     }
   }, [mode, open, templateId])
+
+  // Load the fixed template's name (from-template mode) so the quality name
+  // defaults to the template name — the user can assign it as-is.
+  const fetchTemplateName = async () => {
+    if (!templateId) return
+    try {
+      const response = await fetch(`/api/quality-templates/${templateId}`)
+      if (!response.ok) return
+      const data = await response.json()
+      const name = data.template?.name_en || ''
+      setTemplateName(name)
+      setCustomName((prev) => (customNameTouched || prev.trim() ? prev : name))
+    } catch (error) {
+      console.error('Error fetching template name:', error)
+    }
+  }
 
   // Fetch templates (for from-client mode)
   useEffect(() => {
@@ -197,10 +220,19 @@ export function QualityAssignmentDialog({
       return
     }
 
-    if (!customName.trim()) {
+    // The name defaults to the chosen template's name when left blank, so a
+    // quality can be assigned as-is without inventing a new name.
+    const effectiveName =
+      customName.trim() ||
+      (mode === 'from-client'
+        ? templates.find((t) => t.id === selectedTemplateId)?.name_en
+        : templateName) ||
+      ''
+
+    if (!effectiveName) {
       toast({
         title: 'Validation Error',
-        description: 'Please enter a custom quality name',
+        description: 'Please select a quality template',
         variant: 'destructive'
       })
       return
@@ -211,7 +243,7 @@ export function QualityAssignmentDialog({
       const payload = {
         client_id: mode === 'from-template' ? selectedClientId : clientId,
         template_id: mode === 'from-client' ? selectedTemplateId : templateId,
-        custom_name: customName.trim(),
+        custom_name: effectiveName,
         quality_code: qualityCode.trim() || null,
         code_position: selectedClient?.certificate_pattern?.quality_position || 'suffix',
         cups_per_sample: cupsPerSample,
@@ -237,6 +269,7 @@ export function QualityAssignmentDialog({
 
       // Reset form
       setCustomName('')
+      setCustomNameTouched(false)
       setQualityCode('')
       setCupsPerSample(10)
       setNotes('')
@@ -309,34 +342,36 @@ export function QualityAssignmentDialog({
                     <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-full p-0">
-                  <Command>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                  <Command shouldFilter={false}>
                     <CommandInput
                       placeholder="Search clients..."
                       value={clientSearch}
                       onValueChange={setClientSearch}
                     />
-                    <CommandEmpty>No clients found.</CommandEmpty>
-                    <CommandGroup className="max-h-64 overflow-auto">
-                      {filteredClients.map((client) => (
-                        <CommandItem
-                          key={client.id}
-                          value={client.id}
-                          onSelect={() => {
-                            setSelectedClientId(client.id)
-                            setClientOpen(false)
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              selectedClientId === client.id ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          <div className="font-medium">{client.fantasy_name || client.company}</div>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
+                    <CommandList>
+                      <CommandEmpty>No clients found.</CommandEmpty>
+                      <CommandGroup>
+                        {filteredClients.map((client) => (
+                          <CommandItem
+                            key={client.id}
+                            value={client.id}
+                            onSelect={() => {
+                              setSelectedClientId(client.id)
+                              setClientOpen(false)
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                selectedClientId === client.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="font-medium">{client.fantasy_name || client.company}</div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
                   </Command>
                 </PopoverContent>
               </Popover>
@@ -362,36 +397,41 @@ export function QualityAssignmentDialog({
                     <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-full p-0">
-                  <Command>
+                <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                  <Command shouldFilter={false}>
                     <CommandInput
                       placeholder="Search templates..."
                       value={templateSearch}
                       onValueChange={setTemplateSearch}
                     />
-                    <CommandEmpty>No templates found.</CommandEmpty>
-                    <CommandGroup className="max-h-64 overflow-auto">
-                      {filteredTemplates.map((template) => (
-                        <CommandItem
-                          key={template.id}
-                          value={template.id}
-                          onSelect={() => {
-                            setSelectedTemplateId(template.id)
-                            setTemplateOpen(false)
-                          }}
-                        >
-                          <Check
-                            className={cn(
-                              "mr-2 h-4 w-4",
-                              selectedTemplateId === template.id ? "opacity-100" : "opacity-0"
-                            )}
-                          />
-                          <div className="font-medium">
-                            {template.name_en} <span className="text-sm text-muted-foreground font-normal">v{template.version}</span>
-                          </div>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
+                    <CommandList>
+                      <CommandEmpty>No templates found.</CommandEmpty>
+                      <CommandGroup>
+                        {filteredTemplates.map((template) => (
+                          <CommandItem
+                            key={template.id}
+                            value={template.id}
+                            onSelect={() => {
+                              setSelectedTemplateId(template.id)
+                              // Default the quality name to the template name unless
+                              // the user has typed their own.
+                              if (!customNameTouched) setCustomName(template.name_en)
+                              setTemplateOpen(false)
+                            }}
+                          >
+                            <Check
+                              className={cn(
+                                "mr-2 h-4 w-4",
+                                selectedTemplateId === template.id ? "opacity-100" : "opacity-0"
+                              )}
+                            />
+                            <div className="font-medium">
+                              {template.name_en} <span className="text-sm text-muted-foreground font-normal">v{template.version}</span>
+                            </div>
+                          </CommandItem>
+                        ))}
+                      </CommandGroup>
+                    </CommandList>
                   </Command>
                 </PopoverContent>
               </Popover>
@@ -402,15 +442,18 @@ export function QualityAssignmentDialog({
           <div className="space-y-2">
             <div className="flex items-start gap-4">
               <div className="flex-1 space-y-2">
-                <Label htmlFor="custom-name">Custom Quality Name *</Label>
+                <Label htmlFor="custom-name">Quality Name</Label>
                 <Input
                   id="custom-name"
                   placeholder="e.g., Alfenas Dulce, Santos Fancy Gourmet"
                   value={customName}
-                  onChange={(e) => setCustomName(e.target.value)}
+                  onChange={(e) => {
+                    setCustomNameTouched(true)
+                    setCustomName(e.target.value)
+                  }}
                 />
                 <p className="text-sm text-muted-foreground">
-                  This is how this quality will be displayed for this client
+                  Defaults to the template name — change it only if this client uses a different name
                 </p>
               </div>
 
