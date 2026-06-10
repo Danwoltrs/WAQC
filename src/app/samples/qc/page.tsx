@@ -19,7 +19,7 @@ import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
-import { DuplicateCountPopover } from '@/components/samples/duplicate-count-popover'
+import { DuplicateCountPopover, type DuplicateBagOverride } from '@/components/samples/duplicate-count-popover'
 import { useToast } from '@/hooks/use-toast'
 import {
   Select,
@@ -968,7 +968,7 @@ export default function SamplesPage() {
     setDuplicatePrompt({ sample, x: event.clientX, y: event.clientY })
   }
 
-  const handleDuplicateSubmit = async (count: number) => {
+  const handleDuplicateSubmit = async (count: number, bags: DuplicateBagOverride) => {
     const target = duplicatePrompt?.sample
     if (!target) return
     setDuplicating(true)
@@ -976,7 +976,7 @@ export default function SamplesPage() {
       const res = await fetch(`/api/samples/${target.id}/duplicate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ count }),
+        body: JSON.stringify({ count, ...bags }),
       })
       const data = await res.json().catch(() => ({} as any))
       if (!res.ok) {
@@ -2067,6 +2067,9 @@ export default function SamplesPage() {
       {duplicatePrompt && (
         <DuplicateCountPopover
           trackingNumber={duplicatePrompt.sample.tracking_number}
+          bagType={duplicatePrompt.sample.bag_type}
+          bagCount={duplicatePrompt.sample.bag_count}
+          bagsQuantityMt={duplicatePrompt.sample.bags_quantity_mt}
           x={duplicatePrompt.x}
           y={duplicatePrompt.y}
           busy={duplicating}

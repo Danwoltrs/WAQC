@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { computeBagQuantities, bulkQuantitiesFromMt } from '@/lib/bag-quantity'
 
 const MAX_DUPLICATE_COUNT = 20
+
+/** Optional per-duplicate bag-quantity override supplied from the duplicate dialog. */
+interface BagOverride {
+  bagCount: number | null
+  bagsMt: number | null
+}
 
 /**
  * POST /api/samples/[id]/duplicate
@@ -19,15 +26,24 @@ export async function POST(
     const { id: sampleId } = await params
     const supabase = await createClient()
 
-    // Parse and validate count from body (default 1; out-of-range rejected)
+    // Parse count + optional bag-quantity override from body. The duplicate
+    // dialog lets the user change the number of bags (or net weight, for bulk)
+    // for the copies; when omitted, the source sample's quantity is kept.
     let count = 1
+    const bagOverride: BagOverride = { bagCount: null, bagsMt: null }
     try {
       const body = await request.json()
       if (body && typeof body.count === 'number' && Number.isFinite(body.count)) {
         count = Math.floor(body.count)
       }
+      if (body && typeof body.bag_count === 'number' && Number.isFinite(body.bag_count) && body.bag_count > 0) {
+        bagOverride.bagCount = Math.floor(body.bag_count)
+      }
+      if (body && typeof body.bags_quantity_mt === 'number' && Number.isFinite(body.bags_quantity_mt) && body.bags_quantity_mt > 0) {
+        bagOverride.bagsMt = body.bags_quantity_mt
+      }
     } catch {
-      // No body or invalid JSON — default count stays at 1
+      // No body or invalid JSON — default count stays at 1, no override
     }
     if (count < 1 || count > MAX_DUPLICATE_COUNT) {
       return NextResponse.json(
@@ -61,7 +77,7 @@ export async function POST(
     let lastTrackingNumber: string | null = null
 
     for (let i = 0; i < count; i++) {
-      const created = await insertOneDuplicate(supabase, source, lastTrackingNumber)
+      const created = await insertOneDuplicate(supabase, source, lastTrackingNumber, bagOverride)
       if (created.sample) {
         createdSamples.push(created.sample)
         lastTrackingNumber = created.sample.tracking_number
@@ -103,7 +119,8 @@ export async function POST(
 async function insertOneDuplicate(
   supabase: any,
   source: any,
-  seedTrackingNumber: string | null
+  seedTrackingNumber: string | null,
+  bagOverride: BagOverride
 ): Promise<{ sample?: any; error?: string }> {
   const MAX_RETRIES = 5
   let lastTrackingNumber: string | null = seedTrackingNumber
@@ -192,6 +209,21 @@ async function insertOneDuplicate(
       shipment_month: source.shipment_month,
       status: 'received',
       workflow_stage: 'received',
+    }
+
+    // Apply the user's bag-quantity override (if any). Derived fields are
+    // recomputed with the shared helpers so MT / 60kg-equivalent stay consistent
+    // (matching intake and what the DB bag trigger would compute). Bulk is
+    // weight-driven (override = net MT); everything else is bag-count-driven.
+    if (bagOverride.bagsMt != null && source.bag_type === 'bulk') {
+      const q = bulkQuantitiesFromMt(bagOverride.bagsMt)
+      duplicateData.bags_quantity_mt = q.bags_quantity_mt
+      duplicateData.equivalent_60kg_bags = q.equivalent_60kg_bags
+    } else if (bagOverride.bagCount != null) {
+      const q = computeBagQuantities(bagOverride.bagCount, source.bag_weight_kg, source.bag_type)
+      duplicateData.bag_count = bagOverride.bagCount
+      duplicateData.bags_quantity_mt = q.bags_quantity_mt
+      duplicateData.equivalent_60kg_bags = q.equivalent_60kg_bags
     }
 
     const { data: insertedSample, error: insertError } = await (supabase as any)
