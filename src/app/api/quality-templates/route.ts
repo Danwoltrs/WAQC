@@ -50,6 +50,13 @@ export async function GET(request: NextRequest) {
       query = query.or(`name_en.ilike.%${search}%,name_pt.ilike.%${search}%,name_es.ilike.%${search}%,description_en.ilike.%${search}%,description_pt.ilike.%${search}%,description_es.ilike.%${search}%`)
     }
 
+    // Private per-client template variants (created by duplicating a client spec
+    // with isolated parameters) are scoped to one client and must not appear in
+    // the global pickers or templates list. Opt in with ?include_variants=true.
+    if (searchParams.get('include_variants') !== 'true') {
+      query = query.eq('is_client_variant', false)
+    }
+
     const { data: templates, error } = await query
 
     if (error) {

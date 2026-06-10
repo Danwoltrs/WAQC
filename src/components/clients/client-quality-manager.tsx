@@ -33,8 +33,13 @@ import {
   Edit,
   Trash2,
   FileText,
+  Copy,
+  Check,
+  Search,
 } from 'lucide-react'
 import { Switch } from '@/components/ui/switch'
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command'
+import { cn } from '@/lib/utils'
 import { TemplateViewDialog } from '@/components/quality/template-view-dialog'
 
 interface ClientQualityManagerProps {
@@ -253,6 +258,10 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
   const [error, setError] = useState<string | null>(null)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [editingQuality, setEditingQuality] = useState<ClientQuality | null>(null)
+  // Searchable template picker + name-prefill tracking.
+  const [templateOpen, setTemplateOpen] = useState(false)
+  const [templateSearch, setTemplateSearch] = useState('')
+  const [customNameTouched, setCustomNameTouched] = useState(false)
   const [formData, setFormData] = useState({
     template_id: '',
     custom_name: '',
@@ -320,8 +329,10 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
   }
 
   function handleOpenDialog(quality?: ClientQuality) {
+    setTemplateSearch('')
     if (quality) {
       setEditingQuality(quality)
+      setCustomNameTouched(true)
       setFormData({
         template_id: quality.template_id,
         custom_name: quality.custom_name || '',
@@ -333,6 +344,7 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
       })
     } else {
       setEditingQuality(null)
+      setCustomNameTouched(false)
       setFormData({
         template_id: '',
         custom_name: '',
@@ -345,6 +357,52 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
     }
     setDialogOpen(true)
   }
+
+  // Pick a template: prefill the name with the template name (so the spec can be
+  // assigned as-is, keeping the same name) and suggest a code, unless the user
+  // already typed their own name. Skipped when editing (template is locked).
+  function handleTemplateSelect(template: QualityTemplate) {
+    setFormData((prev) => ({
+      ...prev,
+      template_id: template.id,
+      ...(editingQuality ? {} : {
+        description: prev.description || template.description || '',
+        custom_name: customNameTouched ? prev.custom_name : (prev.custom_name || template.name),
+        quality_code: prev.quality_code || generateCodeSuggestion(prev.custom_name || template.name),
+      }),
+    }))
+    setTemplateOpen(false)
+  }
+
+  // Duplicate an assigned spec into a fully INDEPENDENT copy for the same client.
+  // The server clones the template into a private variant (hidden from pickers),
+  // so the copy's quality parameters can be changed for this client only without
+  // affecting the original or other clients. Assignment fields carry over; the
+  // name gets a unique "(copy)" suffix. We then open the copy for editing — and
+  // clicking its name opens the (now isolated) parameter editor.
+  async function handleDuplicate(quality: ClientQuality) {
+    try {
+      const response = await fetch(`/api/client-qualities/${quality.id}/duplicate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      })
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}))
+        throw new Error(err.error || 'Failed to duplicate quality spec')
+      }
+      const { client_quality } = await response.json()
+      await fetchClientQualities()
+      // Open the new copy for immediate tweaks ("duplicate, then make changes").
+      if (client_quality) handleOpenDialog(client_quality)
+    } catch (err) {
+      console.error('Error duplicating quality spec:', err)
+      alert(err instanceof Error ? err.message : 'Failed to duplicate quality spec.')
+    }
+  }
+
+  const filteredTemplates = templates.filter((t) =>
+    t.name.toLowerCase().includes(templateSearch.toLowerCase())
+  )
 
   async function handleSubmit() {
     try {
@@ -477,32 +535,57 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
               <div className="space-y-4 py-4">
                 <div className="space-y-2">
                   <Label htmlFor="template">Quality Template</Label>
-                  <Select
-                    value={formData.template_id}
-                    onValueChange={(value) => {
-                      const selectedTemplate = templates.find(t => t.id === value)
-                      setFormData({
-                        ...formData,
-                        template_id: value,
-                        ...(selectedTemplate && !editingQuality ? {
-                          description: selectedTemplate.description || '',
-                          quality_code: formData.quality_code || generateCodeSuggestion(formData.custom_name || selectedTemplate.name),
-                        } : {}),
-                      })
-                    }}
-                    disabled={!!editingQuality}
-                  >
-                    <SelectTrigger id="template">
-                      <SelectValue placeholder="Select a template" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {templates.map((template) => (
-                        <SelectItem key={template.id} value={template.id}>
-                          {template.name} (v{template.version})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <Popover open={templateOpen} onOpenChange={setTemplateOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        id="template"
+                        variant="outline"
+                        role="combobox"
+                        aria-expanded={templateOpen}
+                        className="w-full justify-between font-normal"
+                        disabled={!!editingQuality}
+                      >
+                        <span className={cn('truncate', !formData.template_id && 'text-muted-foreground')}>
+                          {formData.template_id
+                            ? templates.find((t) => t.id === formData.template_id)?.name || 'Select a template'
+                            : 'Select a template'}
+                        </span>
+                        <Search className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
+                      <Command shouldFilter={false}>
+                        <CommandInput
+                          placeholder="Search templates..."
+                          value={templateSearch}
+                          onValueChange={setTemplateSearch}
+                        />
+                        <CommandList>
+                          <CommandEmpty>No templates found.</CommandEmpty>
+                          <CommandGroup>
+                            {filteredTemplates.map((template) => (
+                              <CommandItem
+                                key={template.id}
+                                value={template.id}
+                                onSelect={() => handleTemplateSelect(template)}
+                              >
+                                <Check
+                                  className={cn(
+                                    'mr-2 h-4 w-4',
+                                    formData.template_id === template.id ? 'opacity-100' : 'opacity-0'
+                                  )}
+                                />
+                                <span className="truncate">
+                                  {template.name}{' '}
+                                  <span className="text-xs text-muted-foreground font-normal">v{template.version}</span>
+                                </span>
+                              </CommandItem>
+                            ))}
+                          </CommandGroup>
+                        </CommandList>
+                      </Command>
+                    </PopoverContent>
+                  </Popover>
                 </div>
 
                 <div className="grid grid-cols-4 gap-3">
@@ -511,7 +594,10 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                     <Input
                       id="custom_name"
                       value={formData.custom_name}
-                      onChange={(e) => setFormData({ ...formData, custom_name: e.target.value })}
+                      onChange={(e) => {
+                        setCustomNameTouched(true)
+                        setFormData({ ...formData, custom_name: e.target.value })
+                      }}
                       placeholder="e.g., Alfenas Dulce"
                     />
                   </div>
@@ -678,6 +764,7 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
+                          title="Edit"
                           onClick={() => handleOpenDialog(quality)}
                         >
                           <Edit className="h-3.5 w-3.5" />
@@ -686,6 +773,16 @@ export function ClientQualityManager({ clientId, clientName, defaultFeePrice, de
                           variant="ghost"
                           size="icon"
                           className="h-7 w-7"
+                          title="Duplicate"
+                          onClick={() => handleDuplicate(quality)}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          title="Delete"
                           onClick={() => handleDelete(quality.id)}
                         >
                           <Trash2 className="h-3.5 w-3.5" />
