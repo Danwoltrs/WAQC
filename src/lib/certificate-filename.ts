@@ -2,9 +2,10 @@
  * Certificate download/attachment filename helpers.
  *
  * A certificate number like "SAG-011692/26" is not filesystem-safe (the slash).
- * Some buyers (e.g. Ahold) ask for the file to carry THEIR contract reference
- * alongside our certificate number, so the filename leads with the buyer
- * reference when one is present: "<buyerRef>_<certNumber>.pdf".
+ * When the buyer/importer contract reference is known we append it after our
+ * certificate number so the file is identifiable by both: the filename leads
+ * with our certificate number, then the buyer reference when one is present:
+ * "<certNumber>_<buyerRef>.pdf".
  */
 
 /** Filesystem-safe form of a certificate number: "SAG-011692/26" -> "SAG-011692_26". */
@@ -21,7 +22,7 @@ export function sanitizeReference(ref: string | null | undefined): string {
 
 /**
  * Build the certificate filename.
- * With a buyer reference: "<buyerRef>_<certNumber>.pdf" (buyer ref first).
+ * With a buyer reference: "<certNumber>_<buyerRef>.pdf" (cert number first).
  * Without: "<certNumber>.pdf".
  */
 export function buildCertificateFilename(
@@ -30,5 +31,5 @@ export function buildCertificateFilename(
 ): string {
   const cert = sanitizeCertNumber(certNumber)
   const ref = sanitizeReference(buyerRef)
-  return ref ? `${ref}_${cert}.pdf` : `${cert}.pdf`
+  return ref ? `${cert}_${ref}.pdf` : `${cert}.pdf`
 }

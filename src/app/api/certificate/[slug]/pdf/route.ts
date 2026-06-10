@@ -7,6 +7,7 @@ import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { generateQRCode } from '@/lib/qr-code'
+import { buildCertificateFilename } from '@/lib/certificate-filename'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -35,7 +36,7 @@ export async function GET(
     let sample: any = null
     const { data: directMatch } = await supabase
       .from('samples')
-      .select('id, tracking_number, workflow_stage')
+      .select('id, tracking_number, workflow_stage, buyer_contract_nr')
       .eq('tracking_number', trackingNumber)
       .is('deleted_at', null)
       .maybeSingle()
@@ -45,7 +46,7 @@ export async function GET(
     } else {
       const { data: fallback } = await supabase
         .from('samples')
-        .select('id, tracking_number, workflow_stage')
+        .select('id, tracking_number, workflow_stage, buyer_contract_nr')
         .ilike('tracking_number', trackingNumber)
         .is('deleted_at', null)
         .limit(1)
@@ -77,13 +78,8 @@ export async function GET(
       return NextResponse.json({ error: 'Certificate not found' }, { status: 404 })
     }
 
-    // Build sanitized filename: replace / with _, use lowercase r- for rejected
-    const sanitizeFilename = (certNum: string) => {
-      let name = certNum.replace(/\//g, '_')
-      if (name.startsWith('R-')) name = 'r-' + name.slice(2)
-      return name
-    }
-    const pdfFilename = sanitizeFilename(certificate.certificate_number) + '.pdf'
+    // Filename: "<certNumber>_<buyerRef>.pdf" (buyer ref appended when known)
+    const pdfFilename = buildCertificateFilename(certificate.certificate_number, sample.buyer_contract_nr)
 
     // Try cached PDF first (skip with ?nocache=1)
     const skipCache = request.nextUrl.searchParams.get('nocache') === '1'

@@ -16,9 +16,9 @@ describe('sanitizeCertNumber', () => {
 })
 
 describe('buildCertificateFilename', () => {
-  it('leads with the buyer reference, then the cert number (Ahold request)', () => {
+  it('leads with the cert number, then the buyer reference', () => {
     expect(buildCertificateFilename('SAG-011692/26', 'IR0007634-1')).toBe(
-      'IR0007634-1_SAG-011692_26.pdf',
+      'SAG-011692_26_IR0007634-1.pdf',
     )
   })
 
@@ -29,7 +29,7 @@ describe('buildCertificateFilename', () => {
 
   it('sanitizes a buyer reference that contains a slash or spaces', () => {
     expect(buildCertificateFilename('SAG-011692/26', 'PO 123/A')).toBe(
-      'PO_123_A_SAG-011692_26.pdf',
+      'SAG-011692_26_PO_123_A.pdf',
     )
   })
 })
