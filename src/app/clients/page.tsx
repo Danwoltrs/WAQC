@@ -667,6 +667,15 @@ function ClientRow({
           <div className="flex items-center gap-1.5 mt-0.5 text-[11.5px] text-muted-foreground/80 whitespace-nowrap">
             <FileText className="h-3 w-3 text-muted-foreground/60 shrink-0" />
             <span>{specsCount} {specsCount === 1 ? 'spec' : 'specs'}</span>
+            {client.is_qc_client && (
+              <button
+                type="button"
+                onClick={onAssignSpecs}
+                className="font-medium text-muted-foreground/70 hover:text-[#15663f] dark:hover:text-emerald-400 transition-colors"
+              >
+                + add
+              </button>
+            )}
           </div>
         )}
         {showSpecsGap && (
