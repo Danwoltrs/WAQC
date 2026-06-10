@@ -527,7 +527,7 @@ function DashboardContent() {
           <DialogHeader className="flex-shrink-0">
             <DialogTitle>Sample Intake</DialogTitle>
           </DialogHeader>
-          <div className="flex-1 min-h-0">
+          <div className="flex-auto min-h-0 flex flex-col">
             <SampleIntakeForm onSuccess={handleSampleCreated} asDialog={true} />
           </div>
         </DialogContent>

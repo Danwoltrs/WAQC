@@ -128,6 +128,7 @@ export function ContractSearchStep({ formData, applyContract, unlinkContract, on
           multiple_seller_matches: resolution.multiple_seller_matches,
           multiple_shipper_matches: resolution.multiple_shipper_matches,
           importer_resolved: resolution.resolved_client_id !== null || resolution.resolved_importer_id !== null,
+          quality_match: resolution.quality_match ?? null,
         },
       }
       applyContract(fullPatch, [...prefilled, 'contract_resolution', 'selected_contract'])

@@ -23,6 +23,8 @@ const baseResolution: ContractResolution = {
   candidate_shipper_exporter_ids: [],
   multiple_seller_matches: false,
   multiple_shipper_matches: false,
+  resolved_quality_spec_id: null,
+  quality_match: null,
 }
 
 const baseContract = (over: Partial<ContractWithParties>): ContractWithParties => ({
@@ -154,5 +156,34 @@ describe('mapContractToFormData — smart =Shipper rule', () => {
     }))
     expect(patch.same_seller_shipper).toBe(false)
     expect(patch.shipper).toBe('Cooperativa Regional de Cafeicultores em Guaxupe Ltda')
+  })
+})
+
+describe('mapContractToFormData — quality spec prefill', () => {
+  it('sets quality_spec_id and marks it prefilled when the resolver matched a spec', () => {
+    const c = baseContract({ quality_description: 'NY 2/3 17/18 FC' })
+    const resolution: ContractResolution = {
+      ...baseResolution,
+      resolved_quality_spec_id: 'spec-123',
+      quality_match: {
+        matched: true,
+        spec_id: 'spec-123',
+        spec_label: '17/18 FC',
+        source_text: 'NY 2/3 17/18 FC',
+        confidence: 'high',
+      },
+    }
+    const { patch, prefilled } = mapContractToFormData(c, resolution)
+    expect(patch.quality_spec_id).toBe('spec-123')
+    expect(prefilled).toContain('quality_spec_id')
+    // Free-text quality_name is still set as before.
+    expect(patch.quality_name).toBe('NY 2/3 17/18 FC')
+  })
+
+  it('does not set quality_spec_id when there is no confident match', () => {
+    const c = baseContract({ quality_description: 'NY 2/3 17/18 FC' })
+    const { patch, prefilled } = mapContractToFormData(c, baseResolution)
+    expect(patch.quality_spec_id).toBeUndefined()
+    expect(prefilled).not.toContain('quality_spec_id')
   })
 })

@@ -1,0 +1,451 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WAQC · Quality Spec Editor (full screen)</title>
+<style>
+  :root{
+    --green:#15663f; --ink:#0d0f12; --page:#f6f7f8;
+    --muted:#6b7280; --faint:#9aa1ab;
+    --border:#ececee; --border-strong:#e2e3e6; --row-hover:#fafbfb;
+    --qc-bg:#e7f2ec; --qc-fg:#15663f; --tag-bg:#f2f3f5; --tag-fg:#4b5563;
+    --danger:#c0392b; --radius:11px; --field-h:40px;
+    --nav-w:262px; --bar-h:60px;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--page);color:var(--ink);font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .app{height:100vh;display:flex;flex-direction:column}
+
+  /* top bar */
+  .topbar{height:var(--bar-h);flex:0 0 auto;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:14px;padding:0 20px}
+  .crumb{display:flex;align-items:center;gap:9px;color:var(--muted);font-size:13px;cursor:pointer}
+  .crumb svg{width:16px;height:16px}
+  .crumb .sep{color:var(--faint)}
+  .crumb .now{color:var(--ink);font-weight:620}
+  .vtag{font-family:var(--mono);font-size:11px;font-weight:600;color:var(--tag-fg);background:var(--tag-bg);border-radius:6px;padding:2px 7px}
+  .bar-right{margin-left:auto;display:flex;align-items:center;gap:14px}
+  .swcell{display:flex;align-items:center;gap:8px}
+  .swcell .lab{font-size:12.5px;font-weight:540;color:#374151}
+  .sw{width:32px;height:19px;border-radius:999px;background:#d6d8dc;position:relative;cursor:pointer;transition:.15s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .sw.on{background:var(--green)}.sw.on::after{left:15px}
+  .btn{height:36px;padding:0 15px;border-radius:9px;font-size:13px;font-weight:560;cursor:pointer;border:1px solid var(--border-strong);background:#fff;color:var(--ink);display:inline-flex;align-items:center;gap:7px}
+  .btn svg{width:14px;height:14px}
+  .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  .body{flex:1;display:flex;min-height:0}
+
+  /* side nav */
+  .sidenav{width:var(--nav-w);flex:0 0 auto;background:#f7f8f9;border-right:1px solid var(--border);overflow-y:auto;padding:14px 12px}
+  .navitem{display:block;padding:10px 12px;border-radius:10px;cursor:pointer;margin-bottom:3px;border:1px solid transparent;
+    transition:transform .12s ease, box-shadow .14s ease, background .14s ease}
+  .navitem:hover{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.05)}
+  .navitem:active{transform:translateY(1px);box-shadow:inset 0 1px 3px rgba(0,0,0,.10)}
+  .navitem.on{background:#fff;border-color:#e7eae8;transform:translateY(-1px);
+    box-shadow:0 1px 1px rgba(0,0,0,.03), 0 9px 20px -11px rgba(20,70,45,.40)}
+  .navitem.on:active{transform:translateY(0);box-shadow:0 1px 1px rgba(0,0,0,.03), 0 4px 10px -7px rgba(20,70,45,.40)}
+  .navitem .nt{font-size:13px;font-weight:540;line-height:1.2}
+  .navitem.on .nt{color:var(--green);font-weight:600}
+  .navitem .ns{font-size:11px;color:var(--faint);margin-top:2px;line-height:1.25}
+  .navgrp{font-size:10px;font-weight:600;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);padding:14px 11px 7px}
+
+  /* main panel */
+  .panel{flex:1;overflow-y:auto;padding:0}
+  .panel-inner{max-width:880px;margin:0 auto;padding:28px 34px 80px}
+  .section{display:none}
+  .section.on{display:block}
+  .sec-h{margin-bottom:22px}
+  .sec-h h2{font-size:20px;font-weight:660;letter-spacing:-.02em;margin:0}
+  .sec-h p{font-size:13px;color:var(--muted);margin:5px 0 0}
+
+  .grouplbl{font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--faint);margin:28px 0 13px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:20px 22px;margin-bottom:16px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px}
+  .field label{font-size:12px;color:var(--muted);display:block;margin-bottom:6px}
+  .inp,.sel,textarea.inp{width:100%;border:1px solid var(--border-strong);border-radius:8px;padding:0 12px;font-size:13.5px;background:#fff;outline:none;color:var(--ink);height:var(--field-h)}
+  textarea.inp{height:auto;padding:10px 12px;resize:none;line-height:1.45}
+  .inp:focus,.sel:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(21,102,63,.10)}
+  .sel{appearance:none;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14' fill='none' stroke='%239aa1ab' stroke-width='2'><path d='M3 5l4 4 4-4'/></svg>");background-repeat:no-repeat;background-position:right 12px center}
+
+  /* constraint / list rows */
+  .lrow{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:9px;padding:9px 12px;margin-bottom:8px;background:#fff}
+  .lrow .handle{color:var(--faint);cursor:grab;display:flex;flex-direction:column;line-height:.6}
+  .idx{width:24px;height:24px;border-radius:999px;border:1px solid var(--border-strong);display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--muted);flex:0 0 auto}
+  .pillk{font-size:11.5px;font-weight:600;background:#fff;border:1px solid var(--border-strong);border-radius:7px;padding:3px 9px}
+  .pillv{font-size:11.5px;font-weight:540;background:var(--tag-bg);border-radius:7px;padding:3px 9px;color:var(--tag-fg)}
+  .lrow .grow{flex:1;font-size:13.5px}
+  .lrow input.flat{border:none;outline:none;font-size:13.5px;flex:1;background:transparent;color:var(--ink)}
+  .vnum{width:74px;height:32px;border:1px solid var(--border-strong);border-radius:7px;font-size:13px;text-align:center}
+  .xbtn{width:28px;height:28px;border-radius:7px;display:grid;place-items:center;color:var(--faint);cursor:pointer;flex:0 0 auto}
+  .xbtn:hover{background:#fbecea;color:var(--danger)}
+  .xbtn svg{width:14px;height:14px}
+  .addrow{display:flex;align-items:end;gap:10px;margin-top:14px;padding-top:16px;border-top:1px dashed var(--border-strong)}
+  .addrow .field{flex:1}
+  .addbtn{height:var(--field-h);padding:0 16px;border-radius:8px;background:var(--ink);color:#fff;font-size:13px;font-weight:560;border:none;cursor:pointer;display:inline-flex;align-items:center;gap:7px;white-space:nowrap}
+  .addbtn svg{width:14px;height:14px}
+
+  /* compact wording rows (green / roast) — value sits next to the word */
+  .wrow{display:flex;align-items:center;gap:10px;padding:4px 2px;border-top:1px solid var(--border);max-width:440px}
+  .wrow:first-of-type{border-top:none}
+  .wrow .whandle{color:var(--faint);cursor:grab;display:flex}
+  .wrow .whandle svg{width:14px;height:14px}
+  .wrow .widx{width:22px;height:22px;border-radius:999px;border:1px solid var(--border-strong);display:grid;place-items:center;font-size:11px;font-weight:600;color:var(--muted);flex:0 0 auto}
+  .wrow input.wname{flex:1;min-width:0;height:32px;border:1px solid transparent;border-radius:6px;padding:0 8px;font-size:13.5px;background:transparent;color:var(--ink);outline:none}
+  .wrow input.wname:hover{border-color:var(--border)}
+  .wrow input.wname:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(21,102,63,.10)}
+  .wrow .vlab{font-size:11.5px;color:var(--faint)}
+  .wrow input.wval{width:54px;height:32px;border:1px solid var(--border-strong);border-radius:6px;font-size:13px;text-align:center;font-family:var(--mono);flex:0 0 auto}
+  .wrow .wx{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;color:var(--faint);cursor:pointer;flex:0 0 auto}
+  .wrow .wx:hover{background:#fbecea;color:var(--danger)}.wrow .wx svg{width:14px;height:14px}
+
+  .subhead{display:flex;align-items:center;justify-content:space-between;margin-bottom:12px}
+  .subhead .t{font-size:13.5px;font-weight:620}
+  .subhead .t small{color:var(--faint);font-weight:500;margin-left:6px}
+
+  /* defect two-col */
+  .defcols{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .dt-head,.drow{display:grid;grid-template-columns:26px 1fr 70px 26px;gap:10px;align-items:center}
+  .dt-head{padding:0 2px 8px;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+  .dt-head .r{text-align:center}
+  .drow{padding:4px 2px;border-top:1px solid var(--border)}
+  .drow .num{font-size:12px;color:var(--faint);text-align:center}
+  .drow input.dn{border:1px solid transparent;border-radius:6px;height:30px;padding:0 8px;font-size:13px;background:transparent;color:var(--ink);outline:none;width:100%}
+  .drow input.dn:hover{border-color:var(--border)}
+  .drow input.dn:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(21,102,63,.10)}
+  .drow input.dw{height:30px;border:1px solid var(--border-strong);border-radius:6px;font-size:12.5px;text-align:center;width:100%;font-family:var(--mono)}
+  .drow .dx{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;color:var(--faint);cursor:pointer}
+  .drow .dx:hover{background:#fbecea;color:var(--danger)}.drow .dx svg{width:13px;height:13px}
+  .dadd{display:flex;gap:8px;align-items:center;margin-top:12px;padding-top:12px;border-top:1px dashed var(--border-strong)}
+  .dadd input.an{flex:1;height:34px;border:1px solid var(--border-strong);border-radius:7px;padding:0 10px;font-size:13px}
+  .dadd input.aw{width:64px;height:34px;border:1px solid var(--border-strong);border-radius:7px;font-size:12.5px;text-align:center;font-family:var(--mono)}
+  .dadd .ab{height:34px;width:34px;border-radius:7px;background:var(--ink);color:#fff;border:none;cursor:pointer;display:grid;place-items:center}
+  .dadd .ab svg{width:15px;height:15px}
+
+  /* cupping attribute cards */
+  .attrgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+  .attr{border:1px solid var(--border);border-radius:10px;padding:13px;background:#fff;position:relative}
+  .attr.dragging{opacity:.45;border-color:var(--green);border-style:dashed}
+  .attr.dragover{box-shadow:-3px 0 0 var(--green)}
+  .atop{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+  .grip{color:var(--faint);cursor:grab;display:flex;padding:2px;border-radius:5px}
+  .grip:hover{background:#f1f2f4;color:var(--muted)}
+  .grip:active{cursor:grabbing}
+  .grip svg{width:15px;height:15px}
+  .attr .an{font-size:13px;font-weight:560;margin-bottom:8px}
+  .attr .abbr{height:30px;border:1px solid var(--border-strong);border-radius:7px;font-size:12px;color:var(--faint);display:flex;align-items:center;padding:0 9px;margin-bottom:8px}
+  .attr .scale{font-size:11.5px;color:var(--muted)}
+  .attr .scale b{background:var(--tag-bg);border-radius:5px;padding:2px 6px;font-size:10.5px;font-weight:600;color:var(--tag-fg);margin-right:6px}
+  .attr .x{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;color:var(--faint);cursor:pointer}
+  .attr .x:hover{background:#f1f2f4}.attr .x svg{width:12px;height:12px}
+
+  /* registry table */
+  .regt{width:100%;border-collapse:collapse;font-size:13px}
+  .regt th{text-align:left;font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:0 10px 10px}
+  .regt td{padding:7px 10px;border-top:1px solid var(--border)}
+  .regt input{height:32px;border:1px solid var(--border-strong);border-radius:7px;padding:0 9px;font-size:13px;width:100%}
+  .regt .thr{width:120px}.regt .small{width:70px;text-align:center}
+  .chk{width:18px;height:18px;border-radius:5px;border:1.5px solid var(--green);background:var(--green);display:grid;place-items:center}
+  .chk svg{width:11px;height:11px;color:#fff}
+
+  .hint{font-size:12px;color:var(--faint);margin-top:8px}
+  .toggle-chips{display:flex;gap:8px;flex-wrap:wrap}
+  .tchip{border:1px solid var(--border-strong);border-radius:999px;padding:6px 13px;font-size:12.5px;font-weight:520;cursor:pointer;color:#374151}
+  .tchip.on{border-color:var(--green);background:#f3f9f5;color:var(--green)}
+</style>
+
+<div class="app">
+
+  <!-- TOP BAR -->
+  <div class="topbar">
+    <div class="crumb">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+      Quality Templates <span class="sep">/</span> <span class="now">Eurodulce 15/16</span>
+    </div>
+    <span class="vtag">v7</span>
+    <div class="bar-right">
+      <div class="swcell"><span class="lab">Active</span><span class="sw on" onclick="this.classList.toggle('on')"></span></div>
+      <button class="btn">Cancel</button>
+      <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></svg>Save template</button>
+    </div>
+  </div>
+
+  <div class="body">
+
+    <!-- SIDE NAV -->
+    <nav class="sidenav">
+      <div class="navgrp">Definition</div>
+      <div class="navitem on" data-t="basic" onclick="go(this)"><div class="nt">Basic information</div><div class="ns">Brazil · 300g · Private</div></div>
+      <div class="navitem" data-t="screens" onclick="go(this)"><div class="nt">Screen sizes</div><div class="ns">3 constraints</div></div>
+
+      <div class="navgrp">Appearance</div>
+      <div class="navitem" data-t="green" onclick="go(this)"><div class="nt">Green aspect</div><div class="ns">9 levels</div></div>
+      <div class="navitem" data-t="roast" onclick="go(this)"><div class="nt">Roast aspect</div><div class="ns">4 levels</div></div>
+
+      <div class="navgrp">Physical</div>
+      <div class="navitem" data-t="defects" onclick="go(this)"><div class="nt">Defects</div><div class="ns">15 defects · Total ≤21</div></div>
+      <div class="navitem" data-t="moisture" onclick="go(this)"><div class="nt">Moisture %</div><div class="ns">11% – 12%</div></div>
+      <div class="navitem" data-t="quaker" onclick="go(this)"><div class="nt">Quaker count</div><div class="ns">Required · max 5</div></div>
+
+      <div class="navgrp">Sensory</div>
+      <div class="navitem" data-t="cupping" onclick="go(this)"><div class="nt">Cupping attributes</div><div class="ns">8 attributes · max 80</div></div>
+      <div class="navitem" data-t="taints" onclick="go(this)"><div class="nt">Taints &amp; faults</div><div class="ns">11 active · T≤2 · F≤1</div></div>
+      <div class="navitem" data-t="clean" onclick="go(this)"><div class="nt">Clean / uniform cups</div><div class="ns">Auto-calculated</div></div>
+    </nav>
+
+    <!-- MAIN PANEL -->
+    <main class="panel">
+      <div class="panel-inner">
+
+        <!-- BASIC -->
+        <section class="section on" id="basic">
+          <div class="sec-h"><h2>Basic information</h2><p>Name, origin and how this template is shared.</p></div>
+          <div class="card">
+            <div class="grid2" style="margin-bottom:14px">
+              <div class="field"><label>Template name</label><input class="inp" value="Eurodulce 15/16"></div>
+              <div class="field"><label>Sample size (grams)</label><input class="inp" value="300"></div>
+            </div>
+            <div class="grid2" style="margin-bottom:14px">
+              <div class="field"><label>Origin</label><select class="sel"><option>Brazil</option><option>Colombia</option><option>Guatemala</option></select></div>
+              <div class="field"><label>Micro-origins (blends)</label><select class="sel"><option>—</option></select></div>
+            </div>
+            <div class="field" style="margin-bottom:14px"><label>Description</label><textarea class="inp" rows="2">Brazil Arabica Coffee - Eurodulce, NY 2/3, Screen 15/16, S. Soft, Good Cup (FREE OF RIO, RIADO OR FERMENTED CUPS - max. allowed 1 dirty cup)</textarea></div>
+            <div class="field"><label>Template sharing</label>
+              <select class="sel"><option>Private — only visible to you</option><option>Lab — visible to your lab</option><option>Public — all WA users</option></select></div>
+          </div>
+        </section>
+
+        <!-- SCREEN SIZES -->
+        <section class="section" id="screens">
+          <div class="sec-h"><h2>Screen size requirements</h2><p>Constraints applied to the green screen distribution.</p></div>
+          <div class="card">
+            <div class="subhead"><div class="t">Defined constraints <small>3</small></div></div>
+            <div class="lrow"><span class="pillk">Screen 15</span><span class="pillv">any</span><span class="grow">Any amount</span><span class="xbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="lrow"><span class="pillk">Pan</span><span class="pillv">maximum</span><span class="grow">≤ 10%</span><span class="xbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="lrow"><span class="pillk">Screen 16</span><span class="pillv">minimum</span><span class="grow">≥ 40%</span><span class="xbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="addrow">
+              <div class="field"><label>Screen size</label><select class="sel"><option>Select…</option></select></div>
+              <div class="field"><label>Type</label><select class="sel"><option>Min (≥)</option><option>Max (≤)</option><option>Any</option></select></div>
+              <div class="field" style="max-width:120px"><label>Value %</label><input class="inp" value="40"></div>
+              <button class="addbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- GREEN ASPECT -->
+        <section class="section" id="green">
+          <div class="sec-h"><h2>Green aspect</h2><p>Raw bean appearance terminology, ordered low → high quality.</p></div>
+          <div class="card">
+            <div class="field" style="margin-bottom:16px"><label>Load from template</label><select class="sel"><option>Choose a scale…</option><option>Brazil traditional (9)</option><option>SCA</option></select></div>
+            <div class="subhead"><div class="t">Appearance wordings <small>9</small></div></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">1</span><input class="wname" value="Uneven"><span class="vlab">value</span><input class="wval" value="1"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">2</span><input class="wname" value="Brownish"><span class="vlab">value</span><input class="wval" value="2"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">3</span><input class="wname" value="Yellowish"><span class="vlab">value</span><input class="wval" value="3"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">4</span><input class="wname" value="Yellow"><span class="vlab">value</span><input class="wval" value="4"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">5</span><input class="wname" value="Yellow-Green"><span class="vlab">value</span><input class="wval" value="5"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">6</span><input class="wname" value="Greenish"><span class="vlab">value</span><input class="wval" value="6"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">7</span><input class="wname" value="Green"><span class="vlab">value</span><input class="wval" value="7"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">8</span><input class="wname" value="Bluish-Green"><span class="vlab">value</span><input class="wval" value="8"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">9</span><input class="wname" value="Blue-Green"><span class="vlab">value</span><input class="wval" value="9"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="hint">Drag the handle to reorder · higher value = better appearance.</div>
+            <div class="addrow">
+              <div class="field"><label>New wording</label><input class="inp" placeholder="e.g. Pale Green"></div>
+              <div class="field" style="max-width:110px"><label>Value (1–10)</label><input class="inp" placeholder="—"></div>
+              <button class="addbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+            </div>
+          </div>
+          <div class="grid2">
+            <div class="card" style="margin:0"><div class="field"><label>Minimum acceptable wording</label><select class="sel"><option>No validation</option></select></div></div>
+            <div class="card" style="margin:0"><div class="field"><label>Notes</label><input class="inp" placeholder="Optional notes"></div></div>
+          </div>
+        </section>
+
+        <!-- ROAST (mirror, compact) -->
+        <section class="section" id="roast">
+          <div class="sec-h"><h2>Roast aspect</h2><p>Roasted bean appearance terminology, ordered low → high quality.</p></div>
+          <div class="card">
+            <div class="subhead"><div class="t">Appearance wordings <small>4</small></div></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">1</span><input class="wname" value="Uneven"><span class="vlab">value</span><input class="wval" value="1"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">2</span><input class="wname" value="Good"><span class="vlab">value</span><input class="wval" value="4"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">3</span><input class="wname" value="Good to Fine"><span class="vlab">value</span><input class="wval" value="7"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="wrow"><span class="whandle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="widx">4</span><input class="wname" value="Fine"><span class="vlab">value</span><input class="wval" value="10"><span class="wx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+            <div class="hint">Drag the handle to reorder · higher value = better appearance.</div>
+            <div class="addrow">
+              <div class="field"><label>New wording</label><input class="inp" placeholder="e.g. Very Fine"></div>
+              <div class="field" style="max-width:110px"><label>Value (1–10)</label><input class="inp" placeholder="—"></div>
+              <button class="addbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add</button>
+            </div>
+          </div>
+        </section>
+
+        <!-- DEFECTS -->
+        <section class="section" id="defects">
+          <div class="sec-h"><h2>Defect configuration</h2><p>Primary &amp; secondary defects with weights. Thresholds drive pass/fail.</p></div>
+          <div class="grid3" style="margin-bottom:16px">
+            <div class="field"><label>Primary max</label><input class="inp" value="≤ 1"></div>
+            <div class="field"><label>Secondary max</label><input class="inp" value="≤ 21"></div>
+            <div class="field"><label>Total max</label><input class="inp" value="≤ 21"></div>
+          </div>
+          <div class="defcols">
+            <div class="card" style="margin:0">
+              <div class="subhead"><div class="t">Primary <small>6 · weight ~1.00 each</small></div></div>
+              <div class="dt-head"><span>#</span><span>Defect</span><span class="r">Weight</span><span></span></div>
+              <div class="drow"><span class="num">1</span><input class="dn" value="Full Black"><input class="dw" value="1"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">2</span><input class="dn" value="Full Sour"><input class="dw" value="1"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">3</span><input class="dn" value="Pod/Cherry"><input class="dw" value="1"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">4</span><input class="dn" value="Stone/Stick"><input class="dw" value="1"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">5</span><input class="dn" value="Foreign Material"><input class="dw" value="1"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">6</span><input class="dn" value="Large Husk"><input class="dw" value="1"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="dadd"><input class="an" placeholder="Add primary defect…"><input class="aw" value="1.0"><button class="ab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button></div>
+            </div>
+            <div class="card" style="margin:0">
+              <div class="subhead"><div class="t">Secondary <small>9 · weight 0.1 – 0.5</small></div></div>
+              <div class="dt-head"><span>#</span><span>Defect</span><span class="r">Weight</span><span></span></div>
+              <div class="drow"><span class="num">1</span><input class="dn" value="Severe Broca"><input class="dw" value="0.2"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">2</span><input class="dn" value="Minor Broca"><input class="dw" value="0.1"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">3</span><input class="dn" value="Broken"><input class="dw" value="0.2"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">4</span><input class="dn" value="Unripe/Immature"><input class="dw" value="0.2"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">5</span><input class="dn" value="Bad Formed"><input class="dw" value="0.2"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">6</span><input class="dn" value="Shells"><input class="dw" value="0.34"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">7</span><input class="dn" value="Partial Husk"><input class="dw" value="0.5"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">8</span><input class="dn" value="Partial Sour"><input class="dw" value="0.5"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="drow"><span class="num">9</span><input class="dn" value="Partial Black"><input class="dw" value="0.5"><span class="dx"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div>
+              <div class="dadd"><input class="an" placeholder="Add secondary defect…"><input class="aw" value="0.2"><button class="ab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- MOISTURE -->
+        <section class="section" id="moisture">
+          <div class="sec-h"><h2>Moisture %</h2><p>Acceptable moisture range and measurement standard.</p></div>
+          <div class="card">
+            <div class="grid3">
+              <div class="field"><label>Min (%)</label><input class="inp" value="11"></div>
+              <div class="field"><label>Max (%)</label><input class="inp" value="12"></div>
+              <div class="field"><label>Standard</label><select class="sel"><option>Coffee Industry</option><option>ISO</option></select></div>
+            </div>
+          </div>
+        </section>
+
+        <!-- QUAKER -->
+        <section class="section" id="quaker">
+          <div class="sec-h"><h2>Quaker count</h2><p>Whether quaker counting is required for this quality.</p></div>
+          <div class="card">
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <div><div style="font-size:14px;font-weight:560">Quaker count required</div><div style="font-size:12px;color:var(--muted);margin-top:2px">Off → quakers aren't assessed for this quality.</div></div>
+              <span class="sw on" id="qreq" onclick="toggleQuaker(this)"></span>
+            </div>
+            <div id="quakerfields" style="margin-top:18px;padding-top:18px;border-top:1px solid var(--border)">
+              <div class="grid2">
+                <div class="field"><label>Roast sample size (grams)</label><input class="inp" value="300"></div>
+                <div class="field"><label>Quaker limit (max)</label><input class="inp" placeholder="e.g. 5"></div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CUPPING -->
+        <section class="section" id="cupping">
+          <div class="sec-h"><h2>Cupping attributes</h2><p>Sensory attributes and their scoring scales. Drag the handle to reorder.</p></div>
+          <div class="card">
+            <div class="field" style="margin-bottom:16px"><label>Load from template</label><select class="sel"><option>Choose…</option><option>SCA</option><option>COE</option><option>Brazil Traditional</option></select></div>
+            <div class="subhead"><div class="t">Attributes <small>8 · max total 80</small></div><button class="btn" style="height:32px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add attribute</button></div>
+            <div class="attrgrid" id="attrgrid">
+              <div class="attr" draggable="true"><div class="atop"><span class="grip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="an">Fragrance / Aroma</div><div class="abbr">Abbr. (4–5)</div><div class="scale"><b>Numeric</b>1–10 · step 0.25</div></div>
+              <div class="attr" draggable="true"><div class="atop"><span class="grip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="an">Flavor</div><div class="abbr">Abbr. (4–5)</div><div class="scale"><b>Numeric</b>1–10 · step 0.25</div></div>
+              <div class="attr" draggable="true"><div class="atop"><span class="grip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="an">Aftertaste</div><div class="abbr">Abbr. (4–5)</div><div class="scale"><b>Numeric</b>1–10 · step 0.25</div></div>
+              <div class="attr" draggable="true"><div class="atop"><span class="grip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="an">Acidity</div><div class="abbr">Abbr. (4–5)</div><div class="scale"><b>Numeric</b>1–10 · step 0.25</div></div>
+              <div class="attr" draggable="true"><div class="atop"><span class="grip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="an">Body</div><div class="abbr">Abbr. (4–5)</div><div class="scale"><b>Numeric</b>1–10 · step 0.25</div></div>
+              <div class="attr" draggable="true"><div class="atop"><span class="grip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="an">Sweetness</div><div class="abbr">Abbr. (4–5)</div><div class="scale"><b>Numeric</b>1–10 · step 0.25</div></div>
+              <div class="attr" draggable="true"><div class="atop"><span class="grip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="an">Balance</div><div class="abbr">Abbr. (4–5)</div><div class="scale"><b>Numeric</b>1–10 · step 0.25</div></div>
+              <div class="attr" draggable="true"><div class="atop"><span class="grip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="18" r="1"/></svg></span><span class="x"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></div><div class="an">Overall</div><div class="abbr">Abbr. (4–5)</div><div class="scale"><b>Numeric</b>1–10 · step 0.25</div></div>
+            </div>
+            <div class="hint">Each attribute can use a numeric, wording, or yes/no scale — edit per card.</div>
+          </div>
+        </section>
+
+        <!-- TAINTS & FAULTS (the old stacked-modal registry, now inline) -->
+        <section class="section" id="taints">
+          <div class="sec-h"><h2>Taints &amp; faults</h2><p>Defect registry, taint thresholds and the deduction formula.</p></div>
+          <div class="card">
+            <div class="field" style="margin-bottom:16px"><label>Load from template</label><select class="sel"><option>Choose…</option></select></div>
+            <div class="subhead"><div class="t">Registered defects <small>11 active</small></div><button class="btn" style="height:32px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Add defect</button></div>
+            <table class="regt">
+              <thead><tr><th>Defect</th><th>Taint threshold</th><th>Max intensity</th><th>Increment</th><th>Active</th><th></th></tr></thead>
+              <tbody>
+                <tr><td><input value="Harsh"></td><td class="thr"><input value="2"></td><td class="small"><input value="10"></td><td class="small"><input value="0.5"></td><td><span class="chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="xbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></td></tr>
+                <tr><td><input value="Dirty"></td><td class="thr"><input value="3"></td><td class="small"><input value="10"></td><td class="small"><input value="0.5"></td><td><span class="chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="xbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></td></tr>
+                <tr><td><input value="Phenol (rio)"></td><td class="thr"><input value="0 — always fault"></td><td class="small"><input value="10"></td><td class="small"><input value="0.5"></td><td><span class="chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="xbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></td></tr>
+                <tr><td><input value="Fermented"></td><td class="thr"><input value="0 — always fault"></td><td class="small"><input value="10"></td><td class="small"><input value="0.5"></td><td><span class="chk"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></span></td><td><span class="xbtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg></span></td></tr>
+              </tbody>
+            </table>
+            <div class="hint">…7 more defects. Threshold 0 = always counts as a fault.</div>
+          </div>
+          <div class="grid2">
+            <div class="card" style="margin:0">
+              <div class="subhead"><div class="t">Sample validation</div></div>
+              <div class="grid2"><div class="field"><label>Max taints</label><input class="inp" value="2"></div><div class="field"><label>Max faults</label><input class="inp" value="1"></div></div>
+            </div>
+            <div class="card" style="margin:0">
+              <div class="subhead"><div class="t">Deduction multipliers</div></div>
+              <div class="grid2"><div class="field"><label>Taint ×</label><input class="inp" value="0.5"></div><div class="field"><label>Fault ×</label><input class="inp" value="2"></div></div>
+              <div class="hint" style="font-family:var(--mono)">deducted = (cups affected / total) × intensity × ×</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- CLEAN / UNIFORM -->
+        <section class="section" id="clean">
+          <div class="sec-h"><h2>Clean / uniform cups</h2><p>How Clean Cup and Uniform Cup are auto-calculated from defect counts.</p></div>
+          <div class="grid2">
+            <div class="card" style="margin:0">
+              <div class="subhead"><div class="t">Clean cup</div></div>
+              <div class="grid2"><div class="field"><label>Max taints</label><input class="inp" value="0"></div><div class="field"><label>Max faults</label><input class="inp" value="0"></div></div>
+            </div>
+            <div class="card" style="margin:0">
+              <div class="subhead"><div class="t">Uniform cup</div></div>
+              <div class="grid2"><div class="field"><label>Max taints</label><input class="inp" value="0"></div><div class="field"><label>Max faults</label><input class="inp" value="0"></div></div>
+            </div>
+          </div>
+          <div class="hint">If no rules are set, both default to true (no defects = clean / uniform).</div>
+        </section>
+
+      </div>
+    </main>
+  </div>
+</div>
+
+<script>
+  function go(el){
+    document.querySelectorAll('.navitem').forEach(n=>n.classList.remove('on'));
+    el.classList.add('on');
+    var t=el.getAttribute('data-t');
+    document.querySelectorAll('.section').forEach(s=>s.classList.toggle('on', s.id===t));
+    document.querySelector('.panel').scrollTop=0;
+    if(t==='cupping') initDnD();
+  }
+  function toggleQuaker(el){
+    el.classList.toggle('on');
+    document.getElementById('quakerfields').style.display = el.classList.contains('on') ? 'block' : 'none';
+  }
+
+  /* drag-and-drop reorder for cupping attribute cards */
+  var dndReady=false, dragEl=null;
+  function initDnD(){
+    if(dndReady) return; dndReady=true;
+    var grid=document.getElementById('attrgrid');
+    grid.querySelectorAll('.attr').forEach(function(a){
+      a.addEventListener('dragstart',function(){ dragEl=a; setTimeout(function(){a.classList.add('dragging')},0); });
+      a.addEventListener('dragend',function(){ a.classList.remove('dragging'); grid.querySelectorAll('.attr').forEach(x=>x.classList.remove('dragover')); dragEl=null; });
+    });
+    grid.addEventListener('dragover',function(e){
+      e.preventDefault();
+      var over=e.target.closest('.attr');
+      grid.querySelectorAll('.attr').forEach(x=>x.classList.remove('dragover'));
+      if(!over||over===dragEl) return;
+      over.classList.add('dragover');
+      var r=over.getBoundingClientRect();
+      if(e.clientX < r.left + r.width/2) grid.insertBefore(dragEl, over);
+      else grid.insertBefore(dragEl, over.nextSibling);
+    });
+  }
+</script>

@@ -73,6 +73,7 @@ export function QualityCertificate({
     greenBeanAnalysis,
     roastAnalysis,
     cuppingData,
+    cuppingComments,
     gradingComments,
     certificate,
     qualitySpec,
@@ -141,11 +142,6 @@ export function QualityCertificate({
           clientLogoBase64={clientLogoBase64}
           certificateNumber={certificate?.certificate_number || null}
           buyerReference={supplyChain.importer?.contract || null}
-          labRef={
-            sample.tracking_number && sample.tracking_number !== certificate?.certificate_number
-              ? sample.tracking_number
-              : null
-          }
           status={sample.status}
           issuedDate={certificate?.issued_date || null}
           validUntil={certificate?.valid_until || null}
@@ -250,7 +246,7 @@ export function QualityCertificate({
 
         {/* 9. Notes section */}
         <CertificateComments
-          cuppingNotes={cuppingData?.comments || null}
+          cuppingNotes={cuppingComments || cuppingData?.comments || null}
           additionalNotes={gradingComments}
           overrideComment={certificate?.override_comment}
         />

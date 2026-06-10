@@ -1006,7 +1006,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       </button>
     )
     return (
-      <FormWrapper className={asDialog ? 'flex flex-col h-full min-h-0' : 'w-fit'}>
+      <FormWrapper className={asDialog ? 'flex flex-col flex-auto min-h-0' : 'w-fit'}>
         <HeaderWrapper className={asDialog ? 'mb-4 flex-shrink-0' : ''}>
           {!asDialog && <CardTitle>Sample Intake Form</CardTitle>}
           <div className="mt-3 inline-flex rounded-lg border border-input p-1 text-xs">
@@ -1014,7 +1014,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
             {categoryBtn('other', 'Other Sample')}
           </div>
         </HeaderWrapper>
-        <ContentWrapper className={asDialog ? 'flex-1 min-h-0 flex flex-col' : 'flex flex-col h-full'}>
+        <ContentWrapper className={asDialog ? 'flex-auto min-h-0 flex flex-col' : 'flex flex-col h-full'}>
           <OtherSampleIntake asDialog={asDialog} onSaved={() => onSuccess?.('')} />
         </ContentWrapper>
       </FormWrapper>
@@ -1071,9 +1071,10 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         </div>
       </HeaderWrapper>
 
-      <ContentWrapper className={asDialog ? 'flex-1 min-h-0 flex flex-col' : 'flex flex-col h-full'}>
-        {/* Persistent contract link badge — outside the scroll region so it stays visible on long steps */}
-        {currentStep > 1 && formData.selected_contract && (
+      <ContentWrapper className={asDialog ? 'flex-auto min-h-0 flex flex-col' : 'flex flex-col h-full'}>
+        {/* Persistent contract link badge — outside the scroll region so it stays visible on long steps.
+            Step 5 (review) renders its own compact contract chip beside Arrival Date, so skip it there. */}
+        {currentStep > 1 && currentStep !== 5 && formData.selected_contract && (
           <ContractLinkBadge
             contract={formData.selected_contract}
             onUnlink={unlinkContract}
@@ -1081,7 +1082,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         )}
 
         {/* Scrollable content area */}
-        <div className="flex-1 min-h-0 overflow-y-auto space-y-6 pb-4">
+        <div className="flex-auto min-h-0 overflow-y-auto space-y-6 pb-4">
           {error && (
             <div className="flex items-center gap-2 p-3 text-sm text-destructive bg-destructive/10 border border-destructive/20 rounded-md">
               <AlertCircle className="h-4 w-4" />

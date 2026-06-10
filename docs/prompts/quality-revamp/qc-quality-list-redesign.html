@@ -1,0 +1,146 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WAQC · Quality Templates list</title>
+<style>
+  :root{
+    --green:#15663f; --ink:#0d0f12; --page:#f6f7f8;
+    --muted:#6b7280; --faint:#9aa1ab;
+    --border:#ececee; --border-strong:#e2e3e6; --row-hover:#fafbfb;
+    --qc-bg:#e7f2ec; --qc-fg:#15663f; --tag-bg:#f2f3f5; --tag-fg:#4b5563;
+    --danger:#c0392b; --radius:12px; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--page);color:var(--ink);font-family:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  .wrap{max-width:1200px;margin:0 auto;padding:30px 24px 90px}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+  .head h1{font-size:25px;font-weight:680;letter-spacing:-.02em;margin:0}
+  .btn{height:38px;padding:0 15px;border-radius:9px;font-size:13px;font-weight:560;cursor:pointer;border:1px solid var(--border-strong);background:#fff;color:var(--ink);display:inline-flex;align-items:center;gap:7px}
+  .btn svg{width:15px;height:15px}.btn.primary{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+  .toolbar{display:flex;gap:12px;align-items:center;margin-bottom:16px}
+  .search{position:relative;flex:1}
+  .search input{width:100%;height:44px;border:1px solid var(--border-strong);border-radius:10px;padding:0 14px 0 40px;font-size:14px;outline:none;background:#fff}
+  .search svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);width:16px;height:16px;color:var(--faint)}
+  .seg{display:flex;gap:4px;background:#f0f1f3;border-radius:10px;padding:4px}
+  .seg span{padding:7px 15px;border-radius:7px;font-size:13px;font-weight:540;color:var(--muted);cursor:pointer}
+  .seg span.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.06)}
+
+  .card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+  .thead,.row{display:grid;grid-template-columns:2.5fr 1.1fr 2.3fr 92px;align-items:center;gap:16px;padding:0 22px}
+  .thead{height:42px;background:#fcfcfd;border-bottom:1px solid var(--border)}
+  .thead span{font-size:10.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:var(--faint)}
+  .thead .r{text-align:right}
+  .row{min-height:74px;border-bottom:1px solid var(--border);transition:background .12s}
+  .row:last-child{border-bottom:0}.row:hover{background:var(--row-hover)}
+
+  /* template cell */
+  .tname{display:flex;align-items:center;gap:9px}
+  .tname .n{font-size:14.5px;font-weight:620;letter-spacing:-.01em}
+  .vtag{font-family:var(--mono);font-size:10.5px;font-weight:600;color:var(--tag-fg);background:var(--tag-bg);border-radius:5px;padding:1px 6px}
+  .active{font-size:11px;font-weight:560;color:var(--green);background:var(--qc-bg);border-radius:999px;padding:2px 9px}
+  .desc{font-size:12.5px;color:var(--muted);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:440px}
+  .meta{font-size:11px;color:var(--faint);margin-top:4px}
+
+  /* assigned chips */
+  .chips{display:flex;flex-wrap:wrap;gap:5px}
+  .cchip{font-size:11px;font-weight:520;padding:3px 9px;border-radius:999px;background:#f1f5f3;color:#3f6b54;border:1px solid #e3ece7;white-space:nowrap}
+  .cmore{font-size:11px;color:var(--faint);padding:3px 4px}
+  .unassigned{font-size:12px;color:var(--faint)}
+
+  /* spec param chips */
+  .specs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .sc{font-family:var(--mono);font-size:10.5px;font-weight:600;padding:3px 8px;border-radius:6px;background:#fff;border:1px solid var(--border-strong);color:#374151;white-space:nowrap}
+  .s{font-size:11px;font-weight:520;padding:3px 9px;border-radius:7px;background:var(--tag-bg);color:var(--tag-fg);white-space:nowrap}
+  .s b{font-weight:600;color:#2b2f36}
+  .s.tf{display:inline-flex;align-items:center;gap:5px}
+  .s.tf svg{width:11px;height:11px}
+  .s.zero{background:#fbeceb;color:#b0322a;font-weight:600}
+  .specs .div{width:1px;height:14px;background:var(--border-strong);margin:0 2px}
+
+  .acts{display:flex;justify-content:flex-end;gap:2px;opacity:0;transition:opacity .12s}
+  .row:hover .acts{opacity:1}
+  .ic{width:30px;height:30px;border-radius:8px;display:grid;place-items:center;color:var(--muted);cursor:pointer}
+  .ic:hover{background:#f1f2f4;color:var(--ink)}.ic.del:hover{background:#fbecea;color:var(--danger)}
+  .ic svg{width:15px;height:15px}
+
+  .note{font-size:12.5px;color:var(--muted);background:#fff;border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin-top:22px;line-height:1.65}
+  .note b{color:var(--ink)}
+</style>
+
+<div class="wrap">
+  <div class="head">
+    <h1>Quality Templates</h1>
+    <button class="btn primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>Create template</button>
+  </div>
+
+  <div class="toolbar">
+    <div class="search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg><input placeholder="Search templates…"></div>
+    <div class="seg"><span class="on">All</span><span>Active</span><span>Inactive</span></div>
+  </div>
+
+  <div class="card">
+    <div class="thead">
+      <span>Template</span><span>Assigned to</span><span>Spec summary</span><span class="r">·</span>
+    </div>
+
+    <div class="row">
+      <div>
+        <div class="tname"><span class="n">Eurodulce 15/16</span><span class="vtag">v7</span><span class="active">Active</span></div>
+        <div class="desc">Brazil Arabica — Eurodulce, NY 2/3, Screen 15/16, S. Soft, Good Cup…</div>
+        <div class="meta">Anderson Nunes · 5 May 2026</div>
+      </div>
+      <div class="chips"><span class="cchip">Blaser</span></div>
+      <div class="specs"><span class="sc">15 any</span><span class="sc">16 ≥40%</span><span class="sc">Pan ≤10%</span><span class="div"></span><span class="s">Def <b>≤21</b></span><span class="s tf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.2 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.2a2 2 0 0 0-3.4 0z"/></svg>T≤2 · F≤1</span></div>
+      <div class="acts"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></div><div class="ic del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+    <div class="row">
+      <div>
+        <div class="tname"><span class="n">Ahold SAP</span><span class="vtag">v2</span><span class="active">Active</span></div>
+        <div class="desc">Brazilian Arabica, NY 2/3, Peas 9/10/11</div>
+        <div class="meta">Anderson Nunes · 14 Apr 2026</div>
+      </div>
+      <div class="chips"><span class="cchip">Ahold</span></div>
+      <div class="specs"><span class="sc">Peas 11 ≥45%</span><span class="sc">Peas 10 any</span><span class="div"></span><span class="s">Def <b>≤21</b></span><span class="s tf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.2 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.2a2 2 0 0 0-3.4 0z"/></svg>T≤2 · F≤1</span></div>
+      <div class="acts"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></div><div class="ic del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+    <div class="row">
+      <div>
+        <div class="tname"><span class="n">Nespresso Cerrado Regenerative</span><span class="vtag">v4</span><span class="active">Active</span></div>
+        <div class="desc">Brazil Unwashed Pure Cerrado — Nespresso AAA certified…</div>
+        <div class="meta">Anderson Nunes · 16 Mar 2026</div>
+      </div>
+      <div class="chips"><span class="cchip">Blaser</span></div>
+      <div class="specs"><span class="sc">18 ≥15%</span><span class="sc">17 any</span><span class="div"></span><span class="s">Def <b>≤9</b></span><span class="s zero">T≤0 · F≤0</span></div>
+      <div class="acts"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></div><div class="ic del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+    <div class="row">
+      <div>
+        <div class="tname"><span class="n">NY 2/3 14/16 Very Good Cup</span><span class="vtag">v4</span><span class="active">Active</span></div>
+        <div class="desc">Brazil Unwashed Arabica — NY 2/3, MTGB (14/15/16), Strictly…</div>
+        <div class="meta">Anderson Nunes · 12 Mar 2026</div>
+      </div>
+      <div class="chips"><span class="cchip">Rich Coop</span></div>
+      <div class="specs"><span class="sc">16 ≥45%</span><span class="sc">15 any</span><span class="div"></span><span class="s">Def <b>≤33</b></span><span class="s tf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.2 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.2a2 2 0 0 0-3.4 0z"/></svg>T≤2 · F≤1</span></div>
+      <div class="acts"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></div><div class="ic del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+    <div class="row">
+      <div>
+        <div class="tname"><span class="n">NY 3/4 14/16 Good Cup</span><span class="vtag">v14</span><span class="active">Active</span></div>
+        <div class="desc">NY 3/4, Screen 14/16, Good Cup (FREE OF RIO, RIADO OR…)</div>
+        <div class="meta">Anderson Nunes · 3 Mar 2026</div>
+      </div>
+      <div class="chips"><span class="cchip">Mitsui</span><span class="cchip">Coffein</span></div>
+      <div class="specs"><span class="sc">16 ≥45%</span><span class="sc">15 any</span><span class="div"></span><span class="s">Def <b>≤33</b></span><span class="s tf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.2 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.2a2 2 0 0 0-3.4 0z"/></svg>T≤2 · F≤1</span></div>
+      <div class="acts"><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7z"/><circle cx="12" cy="12" r="3"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 0 1 3 3L12 15l-4 1 1-4z"/></svg></div><div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></div><div class="ic del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg></div></div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <b>What changed:</b> the <b>Sharing</b> column (always "Wolthers &amp; Associates…") and <b>Created By</b> (always Anderson) repeated identical text on every row — demoted to a faint <b>meta line</b>. The spec summary now shows what a grader scans for: the actual <b>screen profile with targets</b> (16 ≥40%, 15 any, Pan ≤10%) instead of a bare "3 screens", the <b>defect threshold</b>, and the <b>max taints / faults</b> allowed — with zero-tolerance flagged red. Green and roast levels were dropped as noise. <b>Assigned</b> clients show as chips with +N overflow. Edit opens the new <b>full-screen editor</b>.
+  </div>
+</div>

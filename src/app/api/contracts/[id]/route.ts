@@ -7,6 +7,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import type { ContractWithParties, ContractResolution } from '@/lib/contract-intake-mapping'
+import { matchQuality, type QualitySpecCandidate } from '@/lib/quality-matching'
 
 export async function GET(
   request: NextRequest,
@@ -154,6 +155,37 @@ export async function GET(
     const resolved_client_id: string | null = clientData?.id ?? null
     const importer_is_qc_client: boolean = !!clientData?.is_qc_client
 
+    // Quality auto-fill — only when a QC client resolved AND the contract carries a
+    // free-text quality. Fetch that client's active specs and run the conservative
+    // matcher. A 'high' confidence result pins the dropdown; anything else stays
+    // manual (the free-text quality_name still flows through as before).
+    let resolved_quality_spec_id: string | null = null
+    let quality_match: ContractResolution['quality_match'] = null
+    if (resolved_client_id && c.quality_description) {
+      const { data: specRows, error: specErr } = await (supabase as any)
+        .from('client_qualities')
+        .select('id, custom_name, quality_code, template:quality_templates(name)')
+        .eq('client_id', resolved_client_id)
+        .eq('is_active', true)
+      if (specErr) {
+        console.warn('[contracts/[id]] could not load client_qualities for quality match:', specErr.message)
+      }
+      const candidates: QualitySpecCandidate[] = (specRows || []).map((r: any) => ({
+        id: r.id,
+        custom_name: r.custom_name ?? null,
+        quality_code: r.quality_code ?? null,
+        template_name: r.template?.name ?? null,
+      }))
+      quality_match = matchQuality(c.quality_description, candidates)
+      resolved_quality_spec_id = quality_match.confidence === 'high' ? quality_match.spec_id : null
+      if (quality_match.confidence !== 'high') {
+        // Observability for tuning the abbreviation dict — logs the misses only.
+        console.debug('[contracts/[id]] quality match not high:', {
+          source: c.quality_description, confidence: quality_match.confidence, specs: candidates.length,
+        })
+      }
+    }
+
     // Only resolve / auto-create an importer when the buyer isn't already a QC
     // client. Otherwise the QC client merges into the importer dropdown via the
     // is_qc_client toggle, and creating a duplicate importer row would clutter.
@@ -210,6 +242,8 @@ export async function GET(
       candidate_shipper_exporter_ids,
       multiple_seller_matches: candidate_seller_exporter_ids.length > 1,
       multiple_shipper_matches: candidate_shipper_exporter_ids.length > 1,
+      resolved_quality_spec_id,
+      quality_match,
     }
 
     return NextResponse.json({ contract: c, resolution })

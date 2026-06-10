@@ -151,6 +151,7 @@ export interface CertificateData {
   greenBeanAnalysis: GreenBeanAnalysis | null
   roastAnalysis: RoastAnalysis | null
   cuppingData: CuppingData | null
+  cuppingComments: string | null
   gradingComments: string | null
   certificate: {
     id: string
@@ -960,6 +961,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     greenBeanAnalysis,
     roastAnalysis,
     cuppingData,
+    cuppingComments: qualityAssessment?.cupping_comments || null,
     gradingComments: qualityAssessment?.grading_comments || null,
     // Certificate data: use sub-contract certificate if available, otherwise mother certificate
     certificate: contractOverride?.certificateData ?? (certificate

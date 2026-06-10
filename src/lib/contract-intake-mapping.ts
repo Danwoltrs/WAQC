@@ -5,6 +5,7 @@
 // for the sample intake form.
 
 import type { FormData, SelectedContract } from '@/components/samples/intake/types'
+import type { QualityMatch } from '@/lib/quality-matching'
 
 export interface ContractCompany {
   id: string
@@ -45,6 +46,8 @@ export interface ContractResolution {
   candidate_shipper_exporter_ids: string[]  // exporters whose name matches the shipper
   multiple_seller_matches: boolean
   multiple_shipper_matches: boolean
+  resolved_quality_spec_id: string | null   // client_qualities.id of a high-confidence quality match, else null
+  quality_match: QualityMatch | null         // full match detail for the UI hint (null when not computed)
 }
 
 /**
@@ -171,8 +174,12 @@ export function mapContractToFormData(
   const endBuyerName = companyDisplayName(c.end_buyer)
   if (endBuyerName) set('end_client', endBuyerName)
 
-  // Quality
+  // Quality — keep the free-text label, and additionally pin the structured spec
+  // when the server resolver found a confident match (so the dropdown preselects).
   if (c.quality_description) set('quality_name', c.quality_description)
+  if (resolution.resolved_quality_spec_id) {
+    set('quality_spec_id', resolution.resolved_quality_spec_id)
+  }
 
   // Crop
   if (c.crop) set('crop_year', c.crop)
