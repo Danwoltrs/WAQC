@@ -1433,17 +1433,36 @@ export default function SamplesPage() {
                             )}
                             {columnVisibility.reference && (() => {
                               const secondary = getSecondaryRef(sample)
+                              // Primary reference: the official certificate number once
+                              // certified, otherwise the container/ICO/sample identifier.
+                              // The internal lab number (SAN-…) is only a last-resort
+                              // fallback when nothing else exists, and is no longer the
+                              // main thing shown here.
+                              const certNumber = sample.certificate_id ? sample.certificate_number : null
+                              const primaryTitle = certNumber || secondary?.value || parseTrackingNumber(sample.tracking_number)
                               return (
                                 <td className="py-2 px-3 align-middle">
                                   <div className="min-w-0">
                                     <button
                                       onClick={() => setDetailSampleId(sample.id)}
                                       className="block w-full text-left font-mono text-[13px] font-semibold tracking-tight text-foreground hover:underline truncate"
-                                      title={parseTrackingNumber(sample.tracking_number)}
+                                      title={primaryTitle}
                                     >
-                                      {parseTrackingNumber(sample.tracking_number)}
+                                      {certNumber ? (
+                                        certNumber
+                                      ) : secondary ? (
+                                        <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
+                                          <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
+                                            {secondary.tag}
+                                          </span>
+                                          <span className="truncate">{secondary.value}</span>
+                                        </span>
+                                      ) : (
+                                        parseTrackingNumber(sample.tracking_number)
+                                      )}
                                     </button>
-                                    {secondary && (
+                                    {/* Once certified, keep the container/ICO/sample id visible beneath the cert nr. */}
+                                    {certNumber && secondary && (
                                       <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono truncate">
                                         <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
                                           {secondary.tag}
@@ -1755,24 +1774,37 @@ export default function SamplesPage() {
                                     )}
                                   </td>
                                 )}
-                                {/* Reference (sub-contract tracking nr) */}
+                                {/* Reference (container/ICO; cert nr once certified) */}
                                 {columnVisibility.reference && (() => {
                                   const scSecondary = sc.container_nr
                                     ? { tag: 'CTR', value: sc.container_nr }
                                     : sc.ico_number
                                       ? { tag: 'ICO', value: sc.ico_number }
                                       : null
+                                  const scCertNumber = sc.has_certificate ? sc.certificate_number : null
+                                  const scTitle = scCertNumber || scSecondary?.value || sc.tracking_number
                                   return (
                                     <td className="py-2 px-3 align-middle">
                                       <div className="min-w-0">
                                         <button
                                           onClick={() => { setDetailContractId(sc.id); setDetailSampleId(sample.id) }}
                                           className="block w-full text-left font-mono text-[12.5px] font-semibold text-foreground/85 hover:underline truncate"
-                                          title={sc.tracking_number}
+                                          title={scTitle}
                                         >
-                                          {sc.tracking_number}
+                                          {scCertNumber ? (
+                                            scCertNumber
+                                          ) : scSecondary ? (
+                                            <span className="inline-flex max-w-full items-center gap-1.5 align-middle">
+                                              <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
+                                                {scSecondary.tag}
+                                              </span>
+                                              <span className="truncate">{scSecondary.value}</span>
+                                            </span>
+                                          ) : (
+                                            sc.tracking_number
+                                          )}
                                         </button>
-                                        {scSecondary && (
+                                        {scCertNumber && scSecondary && (
                                           <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-muted-foreground font-mono truncate">
                                             <span className="inline-flex items-center rounded px-1 py-px text-[9px] font-sans font-semibold uppercase tracking-wider bg-muted text-muted-foreground/80">
                                               {scSecondary.tag}
