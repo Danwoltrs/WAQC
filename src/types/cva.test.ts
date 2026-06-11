@@ -34,6 +34,9 @@ describe('CvaDescribe v2', () => {
     delete a.describe
     const n = normalizeAssessment(a as unknown as CvaAssessment)
     expect(n.describe.aroma.picks).toEqual([])
+    expect(n.describe.intensities).toEqual(createEmptyAssessment().describe.intensities)
+    expect(n.describe.mouthfeel).toEqual({ cata: [] })
+    expect(n.describe.notes).toEqual({})
   })
 
   it('describeIsEmpty: true for empty, false with a pick or any intensity', () => {
@@ -45,5 +48,11 @@ describe('CvaDescribe v2', () => {
     const withIntensity = createEmptyAssessment()
     withIntensity.describe.intensities.acidity = 9
     expect(describeIsEmpty(withIntensity.describe)).toBe(false)
+    const withMouthfeel = createEmptyAssessment()
+    withMouthfeel.describe.mouthfeel.cata.push('Oily')
+    expect(describeIsEmpty(withMouthfeel.describe)).toBe(false)
+    const withTaste = createEmptyAssessment()
+    withTaste.describe.flavor_aftertaste.main_tastes.push('Sweet')
+    expect(describeIsEmpty(withTaste.describe)).toBe(false)
   })
 })

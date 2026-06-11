@@ -13,6 +13,8 @@ export interface WheelPick {
   path: string[]
 }
 
+/** Overlay tab groups. Note: 'mouthfeel' has no wheel picks — consumers must
+ *  narrow to 'aroma' | 'flavor_aftertaste' before touching `.picks`. */
 export type DescribeGroup = 'aroma' | 'flavor_aftertaste' | 'mouthfeel'
 
 export interface CvaDescribe {
@@ -86,6 +88,8 @@ export function createEmptyAssessment(): CvaAssessment {
  */
 export function normalizeAssessment(a: CvaAssessment): CvaAssessment {
   const empty = createEmptyAssessment()
+  // The cast is deliberate: the input is typed CvaAssessment but comes from the
+  // network/DB, where corrupted or pre-describe rows may lack the field entirely.
   const d = (a as Partial<CvaAssessment>).describe
   if (!d) return { ...a, describe: empty.describe }
   return {
@@ -110,6 +114,8 @@ export function describeIsEmpty(d: CvaDescribe): boolean {
   return (
     d.aroma.picks.length === 0 &&
     d.flavor_aftertaste.picks.length === 0 &&
+    d.flavor_aftertaste.main_tastes.length === 0 &&
+    d.mouthfeel.cata.length === 0 &&
     Object.values(d.intensities).every((v) => !v)
   )
 }
