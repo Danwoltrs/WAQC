@@ -10,22 +10,42 @@ interface Props {
 
 export function ProgressPath({ steps, current, onJump }: Props) {
   return (
-    <nav className="flex items-center gap-1 overflow-x-auto py-2">
+    <nav className="flex h-12 items-center gap-0 px-1">
       {steps.map((s, i) => {
-        const active = i === current
+        const isCurrent = i === current
+        const fill = s.done ? '100%' : isCurrent ? '50%' : '0%'
         return (
           <button
             key={s.key}
             type="button"
             onClick={() => onJump(i)}
-            className="group flex shrink-0 items-center gap-2 rounded-full px-3 py-1.5 text-xs transition"
-            style={{ background: active ? `${s.accent}22` : 'transparent' }}
+            className="group relative flex flex-1 cursor-pointer flex-col items-center gap-1.5 px-0.5 py-1.5"
           >
             <span
-              className="h-2.5 w-2.5 rounded-full"
-              style={{ background: active || s.done ? s.accent : 'var(--border, #9ca3af)', opacity: s.done || active ? 1 : 0.4 }}
-            />
-            <span className={active ? 'font-semibold text-foreground' : 'text-muted-foreground'}>{s.label}</span>
+              className="relative w-full overflow-hidden rounded"
+              style={{
+                height: 4,
+                background: 'var(--cva-hair)',
+                boxShadow: isCurrent ? '0 0 0 3px var(--cva-accent-soft)' : 'none',
+                borderRadius: isCurrent ? 6 : 4,
+              }}
+            >
+              <span
+                className="absolute inset-0 rounded"
+                style={{
+                  width: fill,
+                  background: s.done || isCurrent ? s.accent : 'transparent',
+                  transition: 'width .55s var(--cva-ease), background .5s',
+                }}
+              />
+            </span>
+            <span
+              className={`hidden whitespace-nowrap text-[10px] font-semibold tracking-tight transition-colors sm:block ${
+                isCurrent || s.done ? 'text-foreground' : 'text-muted-foreground'
+              } group-hover:text-[var(--cva-accent)]`}
+            >
+              {s.label}
+            </span>
           </button>
         )
       })}

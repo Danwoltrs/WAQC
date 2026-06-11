@@ -122,3 +122,56 @@
 .safe-area-inset-bottom {
   padding-bottom: max(env(safe-area-inset-bottom, 0px), 8px);
 }
+
+/* ===================================================================== */
+/* Specialty CVA tasting journey — scoped design tokens (matches the      */
+/* locked prototype docs/superpowers/specs/prototypes/cva-cupping-prototype.html) */
+/* ===================================================================== */
+.cva-root {
+  /* --cva-accent is overridden per active section via inline style */
+  --cva-accent: #556b2f;
+  --cva-accent-soft: color-mix(in srgb, var(--cva-accent) 14%, transparent);
+  --cva-shadow: 0 10px 40px rgba(0, 0, 0, 0.08);
+  --cva-card-solid: #f1f1f2;
+  --cva-hair: rgba(0, 0, 0, 0.06);
+  --cva-cool: #3b82f6;
+  --cva-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --cva-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.dark .cva-root {
+  --cva-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
+  --cva-card-solid: #343434;
+  --cva-hair: rgba(255, 255, 255, 0.08);
+}
+.cva-bleed {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background: radial-gradient(115% 80% at 50% -12%, var(--cva-accent-soft), transparent 62%);
+  transition: background 0.9s var(--cva-ease);
+}
+@keyframes cva-springpop {
+  0% { transform: scale(0.78) translateY(8px); }
+  55% { transform: scale(1.1) translateY(-8px); }
+  100% { transform: scale(1) translateY(0); }
+}
+@keyframes cva-fadein {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes cva-slidearrow {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(4px); }
+}
+.cva-anim-springpop { animation: cva-springpop 0.55s var(--cva-spring); }
+.cva-anim-fadein { animation: cva-fadein 0.4s var(--cva-ease); }
+.cva-confetti {
+  position: fixed;
+  width: 8px;
+  height: 14px;
+  top: -20px;
+  z-index: 80;
+  pointer-events: none;
+  border-radius: 2px;
+}

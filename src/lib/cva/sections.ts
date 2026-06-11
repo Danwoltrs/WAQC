@@ -7,20 +7,22 @@ export type CvaSectionKey =
 export interface CvaSectionDef {
   key: CvaSectionKey
   label: string
-  /** Brand-aligned ambient accent (Wolthers chart palette + tasteful extensions). Tunable. */
+  /** Ambient accent — reconciled verbatim to the locked prototype's SECTIONS palette. */
   accent: string
+  /** One-line SCA descriptor shown under the section heading. */
+  hint: string
 }
 
-/** The 8 affective sections, in tasting order (SCA-104 §5.1). */
+/** The 8 affective sections, in tasting order (SCA-104 §5.1). Accents match the prototype. */
 export const CVA_SECTIONS: CvaSectionDef[] = [
-  { key: 'fragrance',  label: 'Fragrance',  accent: '#556b2f' },
-  { key: 'aroma',      label: 'Aroma',      accent: '#a9a454' },
-  { key: 'flavor',     label: 'Flavor',     accent: '#b07946' },
-  { key: 'aftertaste', label: 'Aftertaste', accent: '#8c6239' },
-  { key: 'acidity',    label: 'Acidity',    accent: '#445763' },
-  { key: 'sweetness',  label: 'Sweetness',  accent: '#c9a84a' },
-  { key: 'mouthfeel',  label: 'Mouthfeel',  accent: '#6b7280' },
-  { key: 'overall',    label: 'Overall',    accent: '#151618' },
+  { key: 'fragrance',  label: 'Fragrance',  accent: '#a9a454', hint: 'Dry aroma of the ground coffee' },
+  { key: 'aroma',      label: 'Aroma',      accent: '#6b8e23', hint: 'Wet aroma after breaking the crust' },
+  { key: 'flavor',     label: 'Flavor',     accent: '#b07946', hint: 'Combined taste and retronasal aroma' },
+  { key: 'aftertaste', label: 'Aftertaste', accent: '#8a5a36', hint: 'Lingering quality after swallowing' },
+  { key: 'acidity',    label: 'Acidity',    accent: '#c2c63e', hint: 'Quality of the perceived acidity' },
+  { key: 'sweetness',  label: 'Sweetness',  accent: '#e8a23d', hint: 'Perceived sweetness of the cup' },
+  { key: 'mouthfeel',  label: 'Mouthfeel',  accent: '#445763', hint: 'Texture and weight in the mouth' },
+  { key: 'overall',    label: 'Overall',    accent: '#6d6f54', hint: 'Holistic impression of quality' },
 ]
 
 export const SECTION_KEYS: CvaSectionKey[] = CVA_SECTIONS.map((s) => s.key)

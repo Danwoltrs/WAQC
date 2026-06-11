@@ -10,21 +10,53 @@ const admin = createServiceClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-async function loadContext(sessionId: string) {
+interface SessionCtx {
+  sampleIds: string[]
+}
+
+async function loadSession(sessionId: string): Promise<SessionCtx | null> {
   const { data: session } = await admin
     .from('cupping_sessions')
     .select('id, sample_ids, session_type, status')
     .eq('id', sessionId)
     .single()
   if (!session) return null
-  const sampleId = (session as any).sample_ids?.[0] as string | undefined
-  if (!sampleId) return null
-  const { data: sample } = await admin
-    .from('samples')
-    .select('id, tracking_number, status')
-    .eq('id', sampleId)
-    .single()
-  return { session, sampleId, sample }
+  const sampleIds = ((session as any).sample_ids ?? []) as string[]
+  if (sampleIds.length === 0) return null
+  return { sampleIds }
+}
+
+/** Resolve each sample's pass mark (quality_templates.cva_min_score) via its quality_spec. */
+async function loadPassMarks(qualitySpecIds: string[]) {
+  const out = new Map<string, { min_score: number | null; requires_descriptors: boolean }>()
+  if (qualitySpecIds.length === 0) return out
+  const { data: cqs } = await admin
+    .from('client_qualities')
+    .select('id, template_id')
+    .in('id', qualitySpecIds)
+  const templateBySpec = new Map<string, string>()
+  const templateIds: string[] = []
+  for (const cq of (cqs ?? []) as any[]) {
+    if (cq.template_id) {
+      templateBySpec.set(cq.id, cq.template_id)
+      templateIds.push(cq.template_id)
+    }
+  }
+  if (templateIds.length === 0) return out
+  const { data: templates } = await admin
+    .from('quality_templates')
+    .select('id, cva_min_score, requires_descriptors')
+    .in('id', templateIds)
+  const byTemplate = new Map<string, any>()
+  for (const t of (templates ?? []) as any[]) byTemplate.set(t.id, t)
+  for (const [specId, templateId] of templateBySpec) {
+    const t = byTemplate.get(templateId)
+    out.set(specId, {
+      min_score: t?.cva_min_score != null ? Number(t.cva_min_score) : null,
+      requires_descriptors: !!t?.requires_descriptors,
+    })
+  }
+  return out
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -34,19 +66,49 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id: sessionId } = await params
-    const ctx = await loadContext(sessionId)
+    const ctx = await loadSession(sessionId)
     if (!ctx) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
-    const { data: row } = await admin
-      .from('cupping_scores')
-      .select('scores')
-      .eq('session_id', sessionId)
-      .eq('sample_id', ctx.sampleId)
-      .eq('cupper_id', user.id)
-      .maybeSingle()
+    const { data: sampleRows } = await admin
+      .from('samples')
+      .select('id, tracking_number, status, quality_spec_id')
+      .in('id', ctx.sampleIds)
 
-    const assessment = ((row as any)?.scores as CvaAssessment) ?? createEmptyAssessment()
-    return NextResponse.json({ sample: ctx.sample, assessment }, { headers: { 'Cache-Control': 'no-store' } })
+    const specIds = Array.from(
+      new Set((sampleRows ?? []).map((s: any) => s.quality_spec_id).filter(Boolean))
+    ) as string[]
+    const passMarks = await loadPassMarks(specIds)
+
+    const { data: scoreRows } = await admin
+      .from('cupping_scores')
+      .select('sample_id, scores')
+      .eq('session_id', sessionId)
+      .eq('cupper_id', user.id)
+      .in('sample_id', ctx.sampleIds)
+    const assessmentBySample = new Map<string, CvaAssessment>()
+    for (const r of (scoreRows ?? []) as any[]) {
+      if (r.scores) assessmentBySample.set(r.sample_id, r.scores as CvaAssessment)
+    }
+
+    // Preserve session order; fall back to the raw id if the sample row is missing.
+    const byId = new Map<string, any>((sampleRows ?? []).map((s: any) => [s.id, s]))
+    const samples = ctx.sampleIds.map((id) => {
+      const s = byId.get(id)
+      const pm = s?.quality_spec_id ? passMarks.get(s.quality_spec_id) : undefined
+      return {
+        id,
+        tracking_number: s?.tracking_number ?? id,
+        status: s?.status ?? null,
+        min_score: pm?.min_score ?? null,
+        requires_descriptors: pm?.requires_descriptors ?? false,
+      }
+    })
+    const assessments: Record<string, CvaAssessment> = {}
+    for (const id of ctx.sampleIds) {
+      assessments[id] = assessmentBySample.get(id) ?? createEmptyAssessment()
+    }
+
+    return NextResponse.json({ samples, assessments }, { headers: { 'Cache-Control': 'no-store' } })
   } catch (error) {
     console.error('GET /api/cupping/cva/[id]', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
@@ -60,10 +122,19 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
     const { id: sessionId } = await params
-    const ctx = await loadContext(sessionId)
+    const ctx = await loadSession(sessionId)
     if (!ctx) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
-    const incoming = (await request.json()) as CvaAssessment
+    const body = await request.json()
+    const sampleId: string | undefined = body?.sample_id
+    const incoming = body?.assessment as CvaAssessment | undefined
+    if (!sampleId || !incoming) {
+      return NextResponse.json({ error: 'sample_id and assessment required' }, { status: 400 })
+    }
+    if (!ctx.sampleIds.includes(sampleId)) {
+      return NextResponse.json({ error: 'Sample not in session' }, { status: 400 })
+    }
+
     // Re-verify the score server-side — never trust the client's number.
     const live = computeAssessmentScore(incoming)
     const payload: CvaAssessment = {
@@ -78,13 +149,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       .from('cupping_scores')
       .select('id')
       .eq('session_id', sessionId)
-      .eq('sample_id', ctx.sampleId)
+      .eq('sample_id', sampleId)
       .eq('cupper_id', user.id)
       .maybeSingle()
 
     const rowData = {
       session_id: sessionId,
-      sample_id: ctx.sampleId,
+      sample_id: sampleId,
       cupper_id: user.id,
       scores: payload,
       protocol: 'cva',

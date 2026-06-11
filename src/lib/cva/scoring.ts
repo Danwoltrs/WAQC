@@ -17,6 +17,23 @@ export function cvaScoreFromSum(sumH: number, nonUniform = 0, defective = 0): nu
   return roundToQuarter(0.65625 * sumH + 52.75 - 2 * nonUniform - 4 * defective)
 }
 
+export interface CvaBand {
+  label: string
+  color: string
+}
+
+/**
+ * SCA CVA quality band for a 0–100 score (prototype §reveal). Pure presentation —
+ * the Wolthers/contract pass mark lives on quality_templates.cva_min_score, not here.
+ */
+export function cvaBand(score: number): CvaBand {
+  if (score >= 90) return { label: 'Outstanding', color: '#22c55e' }
+  if (score >= 85) return { label: 'Excellent', color: '#6b8e23' }
+  if (score >= 80) return { label: 'Very Good', color: '#a9a454' }
+  if (score >= 75) return { label: 'Good', color: '#d98a3d' }
+  return { label: 'Below Specialty', color: '#e0563f' }
+}
+
 /** The impression that scores: the cooled "final" value if present, else the initial. */
 export function effectiveImpression(section?: CvaSectionScore | null): number | null {
   if (!section) return null

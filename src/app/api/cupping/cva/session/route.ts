@@ -8,6 +8,9 @@ const admin = createServiceClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
+const sameSet = (a: string[], b: string[]) =>
+  a.length === b.length && new Set([...a, ...b]).size === a.length
+
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -17,31 +20,36 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const sampleId: string | undefined = body?.sample_id
-    if (!sampleId) {
-      return NextResponse.json({ error: 'sample_id required' }, { status: 400 })
+    // Accept a single sample_id (back-compat) or a sample_ids array (multi-sample tabs).
+    const ids: string[] = Array.isArray(body?.sample_ids)
+      ? body.sample_ids.filter(Boolean)
+      : body?.sample_id
+        ? [body.sample_id]
+        : []
+    if (ids.length === 0) {
+      return NextResponse.json({ error: 'sample_id or sample_ids required' }, { status: 400 })
     }
 
-    // Reuse an existing active CVA session that contains this sample, if any.
-    const { data: existing } = await admin
+    // Reuse an active CVA session this cupper already owns that holds exactly this set.
+    const { data: candidates } = await admin
       .from('cupping_sessions')
-      .select('id')
+      .select('id, sample_ids')
       .eq('session_type', 'cva')
       .eq('created_by', user.id)
-      .contains('sample_ids', [sampleId])
       .in('status', ['setup', 'active', 'review'])
       .order('created_at', { ascending: false })
-      .limit(1)
+      .limit(25)
 
-    if (existing && existing.length > 0) {
-      return NextResponse.json({ session_id: existing[0].id })
+    const match = (candidates ?? []).find((c: any) => sameSet((c.sample_ids ?? []) as string[], ids))
+    if (match) {
+      return NextResponse.json({ session_id: (match as any).id })
     }
 
-    // Carry the sample's lab onto the session when available.
+    // Carry the first sample's lab onto the session when available.
     const { data: sample } = await admin
       .from('samples')
       .select('laboratory_id')
-      .eq('id', sampleId)
+      .eq('id', ids[0])
       .single()
 
     const { data: created, error } = await admin
@@ -52,7 +60,7 @@ export async function POST(request: NextRequest) {
         created_by: user.id,
         participants: [user.id],
         cupper_ids: [user.id],
-        sample_ids: [sampleId],
+        sample_ids: ids,
         laboratory_id: (sample as any)?.laboratory_id ?? null,
       } as any)
       .select('id')
