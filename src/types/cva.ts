@@ -8,13 +8,27 @@ export interface CvaSectionScore {
   note?: string
 }
 
+export interface WheelPick {
+  /** Full wheel path, most general first, e.g. ["Fruity","Berry","Blueberry"]. Length 1–3. */
+  path: string[]
+}
+
+export type DescribeGroup = 'aroma' | 'flavor_aftertaste' | 'mouthfeel'
+
 export interface CvaDescribe {
   intensities: Record<Exclude<CvaSectionKey, 'overall'>, number>  // 7 sections, 0–15
-  aroma: { cata: string[] }                                       // ≤5 olfactory (fragrance + aroma)
-  flavor_aftertaste: { cata: string[]; main_tastes: string[] }    // ≤5 olfactory + ≤2 main tastes
-  mouthfeel: { cata: string[] }                                   // ≤2 mouthfeel CATA
-  notes: { acidity?: string; sweetness?: string }
-  voice: Record<string, string>                                   // group → transcript (Phase 3)
+  aroma:             { picks: WheelPick[]; cata: string[] }        // picks ≤5; cata DERIVED from picks
+  flavor_aftertaste: { picks: WheelPick[]; cata: string[]; main_tastes: string[] }  // ≤5 / derived / ≤2
+  mouthfeel:         { cata: string[] }                            // ≤2 of the 5 official options
+  /** Freely elicited off-taxonomy notes — ALL sections per SCA-103 §6.3.4. */
+  notes: {
+    fragrance_aroma?: string
+    flavor_aftertaste?: string
+    mouthfeel?: string
+    acidity?: string
+    sweetness?: string
+  }
+  voice: Record<string, string>                                    // group → transcript (Phase 3)
 }
 
 export type CvaDefectType = 'moldy' | 'phenolic' | 'potato'
@@ -51,8 +65,8 @@ export function createEmptyAssessment(): CvaAssessment {
     sections: {},
     describe: {
       intensities: { fragrance: 0, aroma: 0, flavor: 0, aftertaste: 0, acidity: 0, sweetness: 0, mouthfeel: 0 },
-      aroma: { cata: [] },
-      flavor_aftertaste: { cata: [], main_tastes: [] },
+      aroma: { picks: [], cata: [] },
+      flavor_aftertaste: { picks: [], cata: [], main_tastes: [] },
       mouthfeel: { cata: [] },
       notes: {},
       voice: {},
@@ -63,4 +77,39 @@ export function createEmptyAssessment(): CvaAssessment {
     d: 0,
     highlights: null,
   }
+}
+
+/**
+ * Upgrade any persisted assessment to the current CvaDescribe shape.
+ * Phase-1 rows were saved before the describe UI existed (empty or v1 blobs);
+ * this fills missing picks arrays / notes keys without touching real data.
+ */
+export function normalizeAssessment(a: CvaAssessment): CvaAssessment {
+  const empty = createEmptyAssessment()
+  const d = (a as Partial<CvaAssessment>).describe
+  if (!d) return { ...a, describe: empty.describe }
+  return {
+    ...a,
+    describe: {
+      intensities: { ...empty.describe.intensities, ...d.intensities },
+      aroma: { picks: d.aroma?.picks ?? [], cata: d.aroma?.cata ?? [] },
+      flavor_aftertaste: {
+        picks: d.flavor_aftertaste?.picks ?? [],
+        cata: d.flavor_aftertaste?.cata ?? [],
+        main_tastes: d.flavor_aftertaste?.main_tastes ?? [],
+      },
+      mouthfeel: { cata: d.mouthfeel?.cata ?? [] },
+      notes: { ...d.notes },
+      voice: d.voice ?? {},
+    },
+  }
+}
+
+/** True when nothing descriptive has been recorded — drives the requires_descriptors soft gate. */
+export function describeIsEmpty(d: CvaDescribe): boolean {
+  return (
+    d.aroma.picks.length === 0 &&
+    d.flavor_aftertaste.picks.length === 0 &&
+    Object.values(d.intensities).every((v) => !v)
+  )
 }
