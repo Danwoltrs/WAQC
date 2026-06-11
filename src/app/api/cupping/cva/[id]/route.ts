@@ -79,15 +79,20 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     ) as string[]
     const passMarks = await loadPassMarks(specIds)
 
+    // Newest first so that, if a legacy duplicate row exists for a (sample,cupper),
+    // the latest write wins deterministically (keep-first below).
     const { data: scoreRows } = await admin
       .from('cupping_scores')
-      .select('sample_id, scores')
+      .select('sample_id, scores, updated_at')
       .eq('session_id', sessionId)
       .eq('cupper_id', user.id)
       .in('sample_id', ctx.sampleIds)
+      .order('updated_at', { ascending: false })
     const assessmentBySample = new Map<string, CvaAssessment>()
     for (const r of (scoreRows ?? []) as any[]) {
-      if (r.scores) assessmentBySample.set(r.sample_id, r.scores as CvaAssessment)
+      if (r.scores && !assessmentBySample.has(r.sample_id)) {
+        assessmentBySample.set(r.sample_id, r.scores as CvaAssessment)
+      }
     }
 
     // Preserve session order; fall back to the raw id if the sample row is missing.
@@ -145,14 +150,6 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       d: live.d,
     }
 
-    const { data: existing } = await admin
-      .from('cupping_scores')
-      .select('id')
-      .eq('session_id', sessionId)
-      .eq('sample_id', sampleId)
-      .eq('cupper_id', user.id)
-      .maybeSingle()
-
     const rowData = {
       session_id: sessionId,
       sample_id: sampleId,
@@ -164,12 +161,41 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       updated_at: new Date().toISOString(),
     }
 
-    if (existing) {
-      const { error } = await admin.from('cupping_scores').update(rowData as any).eq('id', (existing as any).id)
+    // Resilient upsert without depending on a DB unique constraint: list all matching
+    // rows (newest first — tolerates legacy duplicates without throwing like
+    // .maybeSingle() would), update the latest, and prune any older duplicates so the
+    // table self-heals back to one row per (session, sample, cupper).
+    const findLatest = async () => {
+      const { data } = await admin
+        .from('cupping_scores')
+        .select('id')
+        .eq('session_id', sessionId)
+        .eq('sample_id', sampleId)
+        .eq('cupper_id', user.id)
+        .order('updated_at', { ascending: false })
+      return (data ?? []) as { id: string }[]
+    }
+
+    let rows = await findLatest()
+    if (rows.length > 0) {
+      const { error } = await admin.from('cupping_scores').update(rowData as any).eq('id', rows[0].id)
       if (error) throw error
+      if (rows.length > 1) {
+        await admin.from('cupping_scores').delete().in('id', rows.slice(1).map((r) => r.id))
+      }
     } else {
       const { error } = await admin.from('cupping_scores').insert(rowData as any)
-      if (error) throw error
+      if (error) {
+        // A concurrent insert (or a DB unique index) may have won the race — fall back
+        // to updating whatever row now exists instead of surfacing a 500.
+        rows = await findLatest()
+        if (rows.length > 0) {
+          const { error: upErr } = await admin.from('cupping_scores').update(rowData as any).eq('id', rows[0].id)
+          if (upErr) throw upErr
+        } else {
+          throw error
+        }
+      }
     }
 
     return NextResponse.json({ ok: true, cva_score: live.score, complete: live.complete })
