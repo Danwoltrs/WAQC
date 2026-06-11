@@ -5,7 +5,7 @@ import type { WheelPick } from '@/types/cva'
 
 export interface WheelNodeDef { n: string; c: string; k?: WheelNodeDef[] }
 
-export const WHEEL: WheelNodeDef[] = [
+export const WHEEL: readonly WheelNodeDef[] = [
   { n: 'Floral', c: '#e0479e', k: [
     { n: 'Black Tea', c: '#9d6a8e' },
     { n: 'Floral', c: '#e961a5', k: [{ n: 'Chamomile', c: '#f0b432' }, { n: 'Rose', c: '#ef7ca2' }, { n: 'Jasmine', c: '#f2e8d2' }] }] },
@@ -75,7 +75,7 @@ export function leafCount(nd: WheelNodeDef): number {
 
 export const TOTAL_LEAVES = WHEEL.reduce((s, c) => s + leafCount(c), 0)
 
-export const NODES: WheelNode[] = (() => {
+export const NODES: readonly WheelNode[] = (() => {
   const out: WheelNode[] = []
   const u = TAU / TOTAL_LEAVES
   let a = -Math.PI / 2
@@ -108,7 +108,7 @@ export function nodeAt(x: number, y: number): WheelNode | null {
   const dx = x - CX
   const dy = y - CY
   const r = Math.hypot(dx, dy)
-  if (r < R0 || r > R3) return null
+  if (r <= R0 || r >= R3) return null
   let th = Math.atan2(dy, dx)
   while (th < -Math.PI / 2) th += TAU
   while (th >= TAU - Math.PI / 2) th -= TAU
@@ -154,9 +154,10 @@ export const MOUTH_CAP = 2 // mouthfeel options (§6.3.3)
 
 /**
  * Derive the official boxes for one pick. Every path element matching a box
- * (directly or via alias) checks it. The leaf becomes the freely-elicited
- * descriptor ONLY if it matched no box — Fermented/Woody/Musty-Earthy are
- * leaves that ARE boxes and produce no free descriptor (spec §2 exception).
+ * (directly or via alias) checks it; boxes return in path order (family →
+ * subcategory → leaf). The leaf becomes the freely-elicited descriptor ONLY
+ * if it matched no box — Fermented/Woody/Musty-Earthy are leaves that ARE
+ * boxes and produce no free descriptor (spec §2 exception).
  */
 export function cataForPick(path: string[]): { boxes: string[]; free: string | null } {
   const boxes: string[] = []

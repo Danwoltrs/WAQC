@@ -35,6 +35,16 @@ describe('wheel taxonomy', () => {
     expect(nodeAt(CX, CY - (R3 + 5))).toBeNull()            // outside rim
     expect(nodeAt(CX + Math.cos(mid) * (R0 + 1), CY + Math.sin(mid) * (R0 + 1))?.ring).toBe(1)
   })
+
+  it('nodeAt at a ring-3 family boundary: upper bound is exclusive, next family owns the seam', () => {
+    const fruityLeaves = NODES.filter((n) => n.family === 'Fruity' && n.ring === 3)
+    const lastLeaf = fruityLeaves[fruityLeaves.length - 1]   // Citrus Fruit > Lime
+    const rMid = (R2 + R3) / 2
+    const inside = lastLeaf.a1 - 1e-6
+    expect(nodeAt(CX + Math.cos(inside) * rMid, CY + Math.sin(inside) * rMid)).toBe(lastLeaf)
+    const justPast = lastLeaf.a1 + 1e-9
+    expect(nodeAt(CX + Math.cos(justPast) * rMid, CY + Math.sin(justPast) * rMid)?.family).toBe('Sour/Fermented')
+  })
 })
 
 import { CATA_BOXES, cataForPick, cataForPicks } from './flavor-wheel-data'
