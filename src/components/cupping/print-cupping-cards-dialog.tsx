@@ -26,6 +26,7 @@ import {
   ThermalCuppingCardData,
 } from '@/components/pdf/thermal-cupping-card'
 import { ThermalCuppingCardA4Document } from '@/components/pdf/thermal-cupping-card-a4'
+import { CvaDescriptiveFormDocument } from '@/components/pdf/cva-descriptive-card'
 import {
   getVisibilitySettings,
   updateVisibilitySetting,
@@ -75,6 +76,7 @@ interface Sample {
       id: string
       name: string
       parameters?: any
+      methodology?: string // 'cva' = specialty CVA — prints on the SCA Descriptive Form
     }
   }
 }
@@ -103,6 +105,8 @@ export function PrintCuppingCardsDialog({
   const [visibility, setVisibility] = useState<SampleVisibilitySettings>(() => getVisibilitySettings())
   const [numCuppers, setNumCuppers] = useState('5')
   const [outputFormat, setOutputFormat] = useState<'thermal' | 'pdf'>('pdf')
+  // CVA forms: one full set per cupper (name pre-filled) or a single blank set
+  const [cvaCopies, setCvaCopies] = useState<'per-cupper' | 'single'>('per-cupper')
   const [cardData, setCardData] = useState<ThermalCuppingCardData[] | null>(
     null
   )
@@ -359,6 +363,7 @@ export function PrintCuppingCardsDialog({
             num_cuppers: effectiveCuppers.length > 0 ? effectiveCuppers.length : parseInt(numCuppers),
             cuppers: effectiveCuppers.length > 0 ? effectiveCuppers.map(c => c.full_name.split(' ')[0]) : undefined,
             qr_code: qrCodeDataUrl,
+            is_cva: template?.methodology === 'cva',
             // logo_url: '/logo.png', // Add if you have a logo
           }
 
@@ -415,30 +420,84 @@ export function PrintCuppingCardsDialog({
     generateCards()
   }
 
-  // Memoize the PDF document to prevent constant regeneration
-  const pdfDocument = useMemo(() => {
+  // Whether the selection contains CVA (specialty) samples — they always print
+  // on the SCA Descriptive Form (A4), regardless of the chosen output format.
+  const cvaSampleCount = useMemo(
+    () => fullSamples.filter(s => s.quality_spec?.template?.methodology === 'cva').length,
+    [fullSamples]
+  )
+  const allCva = fullSamples.length > 0 && cvaSampleCount === fullSamples.length
+
+  // Memoize the PDF documents to prevent constant regeneration.
+  // CVA samples go to the SCA Descriptive Form; the rest keep the classic card.
+  const documents = useMemo(() => {
     if (!isReadyForDownload || !cardData || cardData.length === 0) {
-      return null
+      return []
     }
 
-    return outputFormat === 'thermal' ? (
-      <ThermalCuppingCardDocument
-        cards={cardData}
-        show_quality={visibility.showQuality}
-        show_buyer={visibility.showBuyer}
-        show_supplier={visibility.showSupplier}
-        show_exporter={visibility.showExporter}
-      />
-    ) : (
-      <ThermalCuppingCardA4Document
-        cards={cardData}
-        show_quality={visibility.showQuality}
-        show_buyer={visibility.showBuyer}
-        show_supplier={visibility.showSupplier}
-        show_exporter={visibility.showExporter}
-      />
-    )
-  }, [isReadyForDownload, cardData, outputFormat, visibility.showQuality, visibility.showBuyer, visibility.showSupplier, visibility.showExporter])
+    const dateStamp = new Date().toISOString().split('T')[0]
+    const standardCards = cardData.filter(c => !c.is_cva)
+    const cvaCards = cardData.filter(c => c.is_cva)
+    const docs: { key: string; fileName: string; count: number; label: string; document: React.ReactElement<any> }[] = []
+
+    if (standardCards.length > 0) {
+      docs.push({
+        key: 'standard',
+        fileName: `cupping-cards-${outputFormat}-${dateStamp}.pdf`,
+        count: standardCards.length,
+        label: `${standardCards.length} Card${standardCards.length !== 1 ? 's' : ''}`,
+        document:
+          outputFormat === 'thermal' ? (
+            <ThermalCuppingCardDocument
+              cards={standardCards}
+              show_quality={visibility.showQuality}
+              show_buyer={visibility.showBuyer}
+              show_supplier={visibility.showSupplier}
+              show_exporter={visibility.showExporter}
+            />
+          ) : (
+            <ThermalCuppingCardA4Document
+              cards={standardCards}
+              show_quality={visibility.showQuality}
+              show_buyer={visibility.showBuyer}
+              show_supplier={visibility.showSupplier}
+              show_exporter={visibility.showExporter}
+            />
+          ),
+      })
+    }
+
+    if (cvaCards.length > 0) {
+      docs.push({
+        key: 'cva',
+        fileName: `cva-descriptive-forms-${dateStamp}.pdf`,
+        count: cvaCards.length,
+        label: `${cvaCards.length} CVA Form${cvaCards.length !== 1 ? 's' : ''}`,
+        document: (
+          <CvaDescriptiveFormDocument
+            cards={cvaCards}
+            cupper_names={
+              cvaCopies === 'per-cupper' && effectiveCuppers.length > 0
+                ? effectiveCuppers.map(c => c.full_name.split(' ')[0])
+                : undefined
+            }
+            num_copies={
+              cvaCopies === 'single'
+                ? 1
+                : effectiveCuppers.length > 0
+                ? undefined
+                : parseInt(numCuppers)
+            }
+            show_quality={visibility.showQuality}
+            show_buyer={visibility.showBuyer}
+            show_exporter={visibility.showExporter}
+          />
+        ),
+      })
+    }
+
+    return docs
+  }, [isReadyForDownload, cardData, outputFormat, effectiveCuppers, numCuppers, cvaCopies, visibility.showQuality, visibility.showBuyer, visibility.showSupplier, visibility.showExporter])
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -468,7 +527,14 @@ export function PrintCuppingCardsDialog({
                     key={sample.id}
                     className="flex items-center justify-between border-b border-border/50 py-1 last:border-0"
                   >
-                    <span className="font-medium">{sample.tracking_number}</span>
+                    <span className="font-medium">
+                      {sample.tracking_number}
+                      {sample.quality_spec?.template?.methodology === 'cva' && (
+                        <span className="ml-2 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                          CVA
+                        </span>
+                      )}
+                    </span>
                     <span className="text-xs text-muted-foreground">
                       {sample.client?.company || 'No client'} |{' '}
                       {sample.quality_spec?.template?.name || 'No template'}
@@ -597,7 +663,51 @@ export function PrintCuppingCardsDialog({
             </div>
           )}
 
-          {/* Output Format */}
+          {/* CVA samples always print on the SCA Descriptive Form (A4 portrait) */}
+          {cvaSampleCount > 0 && (
+            <div className="space-y-3 rounded-md border bg-muted/40 p-3">
+              <p className="text-sm text-muted-foreground">
+                {allCva
+                  ? `All ${cvaSampleCount} sample${cvaSampleCount !== 1 ? 's' : ''} are Specialty CVA — they print on the SCA Descriptive Form (A4).`
+                  : `${cvaSampleCount} Specialty CVA sample${cvaSampleCount !== 1 ? 's' : ''} will print on the SCA Descriptive Form (A4). The output format below applies to the remaining samples only.`}
+              </p>
+              <div className="space-y-2">
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="cva-per-cupper"
+                    name="cva-copies"
+                    value="per-cupper"
+                    checked={cvaCopies === 'per-cupper'}
+                    disabled={isReadyForDownload}
+                    onChange={() => setCvaCopies('per-cupper')}
+                    className="h-4 w-4"
+                  />
+                  <label htmlFor="cva-per-cupper" className="text-sm">
+                    One sheet per cupper (name pre-filled on each copy)
+                  </label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="radio"
+                    id="cva-single"
+                    name="cva-copies"
+                    value="single"
+                    checked={cvaCopies === 'single'}
+                    disabled={isReadyForDownload}
+                    onChange={() => setCvaCopies('single')}
+                    className="h-4 w-4"
+                  />
+                  <label htmlFor="cva-single" className="text-sm">
+                    Single copy (Name left blank)
+                  </label>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Output Format (classic cards only) */}
+          {!allCva && (
           <div className="space-y-2">
             <Label>Output Format</Label>
             <div className="flex items-center space-x-4">
@@ -637,41 +747,44 @@ export function PrintCuppingCardsDialog({
               </div>
             </div>
           </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          {isReadyForDownload && pdfDocument ? (
-            <PDFDownloadLink
-              key={pdfKey}
-              document={pdfDocument}
-              fileName={`cupping-cards-${outputFormat}-${new Date().toISOString().split('T')[0]}.pdf`}
-            >
-              {({ loading, error }) => {
-                if (error) {
-                  console.error('🔴 PDFDownloadLink error:', error)
-                  console.error('Card data at error time:', cardData)
-                  console.error('Output format:', outputFormat)
-                }
-                return (
-                  <Button
-                    disabled={loading || !!error}
-                    onClick={() => {
-                      // Auto-close dialog after PDF download starts
-                      if (!loading && !error) {
-                        setTimeout(() => {
-                          onOpenChange(false)
-                        }, 500)
-                      }
-                    }}
-                  >
-                    {loading ? 'Generating PDF...' : error ? `Error - ${error.message || 'Try Again'}` : `Download ${cardData ? cardData.length : 0} Card${cardData && cardData.length !== 1 ? 's' : ''}`}
-                  </Button>
-                )
-              }}
-            </PDFDownloadLink>
+          {isReadyForDownload && documents.length > 0 ? (
+            documents.map((doc) => (
+              <PDFDownloadLink
+                key={`${doc.key}-${pdfKey}`}
+                document={doc.document}
+                fileName={doc.fileName}
+              >
+                {({ loading, error }) => {
+                  if (error) {
+                    console.error(`🔴 PDFDownloadLink error (${doc.key}):`, error)
+                    console.error('Card data at error time:', cardData)
+                    console.error('Output format:', outputFormat)
+                  }
+                  return (
+                    <Button
+                      disabled={loading || !!error}
+                      onClick={() => {
+                        // Auto-close after download starts — only when this is the sole document
+                        if (!loading && !error && documents.length === 1) {
+                          setTimeout(() => {
+                            onOpenChange(false)
+                          }, 500)
+                        }
+                      }}
+                    >
+                      {loading ? 'Generating PDF...' : error ? `Error - ${error.message || 'Try Again'}` : `Download ${doc.label}`}
+                    </Button>
+                  )
+                }}
+              </PDFDownloadLink>
+            ))
           ) : (
             <Button onClick={handlePrint} disabled={isGenerating || loading}>
               {loading

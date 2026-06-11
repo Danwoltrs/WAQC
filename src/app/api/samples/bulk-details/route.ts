@@ -69,7 +69,8 @@ export async function POST(request: NextRequest) {
           template:quality_templates!client_qualities_template_id_fkey(
             id,
             name,
-            parameters
+            parameters,
+            methodology
           )
         )
       `)

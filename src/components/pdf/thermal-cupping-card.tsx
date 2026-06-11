@@ -101,6 +101,7 @@ export interface ThermalCuppingCardData {
   cuppers?: string[] // Optional pre-assigned cupper names
   qr_code: string // Data URL for QR code
   logo_url?: string // Optional Wolthers logo
+  is_cva?: boolean // Specialty CVA sample — prints on the SCA Descriptive Form instead
 }
 
 // Create styles for thermal cupping card (optimized for thermal printer)
