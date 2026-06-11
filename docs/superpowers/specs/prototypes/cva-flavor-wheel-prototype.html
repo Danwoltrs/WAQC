@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CVA Flavor Wheel — curved family labels (v8)</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#fff; --card:#F9F9FA; --card-solid:#F1F1F2; --text:#000; --muted:rgba(0,0,0,0.4);
+  --border:rgba(0,0,0,0.1); --hair:rgba(0,0,0,0.06); --shadow:0 10px 40px rgba(0,0,0,0.08);
+  --accent:#556b2f; --accent-soft:rgba(85,107,47,0.12);
+  --ease:cubic-bezier(.22,.61,.36,1); --spring:cubic-bezier(.34,1.56,.64,1);
+}
+[data-theme="dark"]{
+  --bg:#2A2A2A; --card:rgba(255,255,255,0.04); --card-solid:#343434; --text:#fff; --muted:rgba(255,255,255,0.4);
+  --border:rgba(255,255,255,0.15); --hair:rgba(255,255,255,0.08); --shadow:0 10px 40px rgba(0,0,0,0.45);
+  --accent:#a9a454; --accent-soft:rgba(169,164,84,0.16);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+body{
+  font-family:'Inter',system-ui,-apple-system,sans-serif;margin:0;
+  background:var(--bg);color:var(--text);font-size:14px;line-height:1.45;
+  -webkit-font-smoothing:antialiased;transition:background .4s,color .3s;
+}
+.page{max-width:1180px;margin:0 auto;padding:28px 28px 80px;}
+h1{font-size:20px;font-weight:800;letter-spacing:-.3px;margin:0 0 4px;}
+h2{font-size:15px;font-weight:700;margin:0 0 4px;}
+.sub{color:var(--muted);font-size:13px;margin:0 0 8px;}
+.kicker{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;color:var(--accent);margin-bottom:6px;}
+.themebtn{position:fixed;top:16px;right:18px;z-index:50;width:38px;height:38px;border-radius:50%;border:.5px solid var(--border);background:var(--card-solid);color:var(--text);font-size:15px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
+.demo{display:grid;grid-template-columns:640px 1fr;gap:26px;align-items:start;
+  background:var(--card);border:.5px solid var(--border);border-radius:20px;padding:24px;margin-bottom:30px;}
+@media(max-width:1100px){.demo{grid-template-columns:1fr;}}
+.stage{
+  position:relative;width:100%;aspect-ratio:1;border-radius:18px;overflow:hidden;
+  background:radial-gradient(110% 85% at 50% -10%, var(--accent-soft), transparent 60%), var(--card-solid);
+  border:.5px solid var(--hair);
+}
+.stage svg{width:100%;height:100%;display:block;transform-origin:50% 50%;transition:transform .65s var(--ease);}
+.stage svg .wedge{cursor:pointer;}
+.branch{transform-box:view-box;transform-origin:50% 50%;transition:transform .35s var(--spring), opacity .3s, filter .35s;}
+.root.hovering .branch:not(.hot){opacity:.32;}
+.root.hovering .branch.hot{transform:scale(1.055);filter:drop-shadow(0 6px 14px rgba(0,0,0,.30));}
+.root.zoomed .branch:not(.focusedbranch){opacity:.10;}
+.root.zoomed .branch.focusedbranch{filter:drop-shadow(0 4px 18px rgba(0,0,0,.28));}
+.root.midzoom .branch:not(.focusedbranch){opacity:.55;}
+.root.midzoom .branch.focusedbranch{filter:drop-shadow(0 4px 14px rgba(0,0,0,.22));}
+.wedge{transform-box:view-box;transform-origin:50% 50%;transition:transform .28s var(--spring);}
+.lw{transform-box:view-box;transform-origin:50% 50%;transition:transform .28s var(--spring);pointer-events:none;}
+.wedge.wpop{transform:scale(1.045);}
+.lw.wpop{transform:scale(1.045);}
+.wedge.wpop path{filter:brightness(1.1) drop-shadow(0 3px 9px rgba(0,0,0,.4));}
+/* overview calm: outer descriptor ring is frosted until its family is lifted or focused */
+.w3{filter:blur(1.5px) saturate(.75) opacity(.6);transition:filter .4s var(--ease);}
+.branch.hot .w3, .branch.focusedbranch .w3{filter:none;}
+.root .l3t{opacity:0;transition:opacity .4s .15s;pointer-events:none;}
+.root .branch.focusedbranch .l3t{opacity:1;}
+text{user-select:none;pointer-events:none;font-family:'Inter',system-ui,sans-serif;}
+.wedge path{stroke:var(--card-solid);stroke-width:.9;transition:filter .2s;}
+.wedge.picked path{stroke:var(--text);stroke-width:1.5;filter:brightness(1.1) saturate(1.15);}
+.hub{
+  position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:128px;height:128px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  text-align:center;gap:2px;cursor:default;transition:opacity .3s;pointer-events:none;
+}
+.hub .big{font-size:26px;font-weight:800;line-height:1;font-variant-numeric:tabular-nums;}
+.hub .sm{font-size:8.5px;color:var(--muted);font-weight:700;text-transform:uppercase;letter-spacing:1px;max-width:110px;}
+.stage.iszoomed .hub{opacity:0;}
+.backpill{
+  position:absolute;top:12px;left:12px;z-index:6;display:none;align-items:center;gap:7px;
+  background:var(--card-solid);border:.5px solid var(--border);color:var(--text);
+  border-radius:999px;padding:7px 14px 7px 10px;font-size:12px;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 14px rgba(0,0,0,.18);
+}
+.stage.iszoomed .backpill{display:flex;}
+.homehint{
+  position:absolute;z-index:5;display:none;pointer-events:none;align-items:center;gap:6px;
+  background:var(--card-solid);border:.5px solid var(--border);color:var(--muted);
+  border-radius:999px;padding:5px 11px;font-size:10.5px;font-weight:700;letter-spacing:.4px;
+  box-shadow:0 3px 10px rgba(0,0,0,.16);transform:translate(-50%,-50%);
+}
+.stage.iszoomed .homehint{display:flex;}
+.homehint .pulse{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pul 1.6s infinite;}
+@keyframes pul{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.7);opacity:.45}}
+.tray{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;min-height:30px;align-items:center;}
+.chip{display:flex;align-items:center;gap:6px;background:var(--card-solid);border:.5px solid var(--border);
+  border-radius:999px;padding:4px 10px 4px 6px;font-size:11.5px;font-weight:600;cursor:pointer;}
+.chip .dot{width:10px;height:10px;border-radius:50%;flex:none;}
+.chip small{color:var(--muted);font-weight:500;}
+.chip:hover{border-color:#ef4444;}
+.cata{margin-top:8px;font-size:11.5px;color:var(--muted);line-height:1.6;}
+.cata b{color:var(--text);font-weight:700;}
+.cata .box{display:inline-block;background:var(--accent-soft);color:var(--text);border-radius:6px;padding:1px 7px;margin:0 3px 3px 0;font-weight:600;font-size:11px;}
+.cata .free{display:inline-block;border:1px dashed var(--border);border-radius:6px;padding:1px 7px;margin:0 3px 3px 0;font-size:11px;}
+.hint{font-size:12px;color:var(--muted);margin-top:10px;}
+.hint b{color:var(--text);}
+.choices{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:8px;}
+@media(max-width:900px){.choices{grid-template-columns:1fr;}}
+.choice{background:var(--card);border:1.5px solid var(--border);border-radius:16px;padding:16px 18px;cursor:pointer;transition:.2s;}
+.choice:hover{border-color:var(--accent);}
+.choice.selected{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 1px var(--accent);}
+.choice h3{margin:0 0 4px;font-size:13.5px;} .choice p{margin:0;font-size:12px;color:var(--muted);}
+.badge{display:inline-block;background:var(--accent);color:#fff;border-radius:6px;font-size:9.5px;font-weight:800;letter-spacing:.6px;padding:2px 7px;margin-left:6px;vertical-align:1px;}
+.resetb{margin-left:auto;font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;}
+.trayrow{display:flex;align-items:center;}
+.steps{font-size:12.5px;color:var(--muted);line-height:1.8;margin-top:14px;}
+.steps b{color:var(--text);}
+</style>
+</head>
+<body>
+<button class="themebtn" id="themeBtn" title="Toggle theme">◐</button>
+<div class="page">
+  <div class="kicker">CVA Phase 2 · Describe the cup · v8</div>
+  <h1>Curved labels for the two crowded families</h1>
+  <p class="sub">Per your call: <b>GREEN/VEGETATIVE</b> and <b>SOUR/FERMENTED</b> now run on a single line <b>curved along the ring</b> (like the official wheel), so they can't collide with their subcategory labels. All other families keep the radial style. Everything else is v7: rest 1.3×, frosted outer ring, graded hover zoom, screen panning with the pointer.</p>
+
+  <section class="demo">
+    <div class="stage" id="stageA">
+      <svg viewBox="0 0 440 440" id="svgA" class="root"></svg>
+      <div class="hub" id="hubA"><div class="big">0</div><div class="sm">descriptors · rest on a family</div></div>
+      <button class="backpill" id="backA"><span>←</span><span id="crumbA">Back</span></button>
+      <div class="homehint" id="homeA"><span class="pulse"></span><span>center · zoom out</span></div>
+    </div>
+    <div>
+      <h2>A — Lift &amp; Focus, graded <span class="badge">FINAL CANDIDATE</span></h2>
+      <div class="steps">
+        <b>1.</b> Rest on Fruity — the disc leans in.<br>
+        <b>2.</b> Sweep the outer notes, pick a couple.<br>
+        <b>3.</b> Slide down onto the big <b>FRUITY inner wedge</b> — the disc eases halfway out; the other families reappear around it.<br>
+        <b>4.</b> From there: drift onto another family → it leans in <b>there</b>; or continue to the center marker → fully out.<br>
+      </div>
+      <div class="trayrow"><div class="hint">Depths: rest 1.3× · half-out 1.75× · in 2.4× (the JS constants are normative). Dwells ~0.2s.</div><button class="resetb" data-reset="A">reset</button></div>
+      <div class="tray" id="trayA"><span class="hint">No descriptors yet.</span></div>
+      <div class="cata" id="cataA"></div>
+    </div>
+  </section>
+
+  <h2 style="margin-top:6px">Verdict?</h2>
+  <div class="choices">
+    <div class="choice" data-choice="graded-good" onclick="chooseCard(this)"><h3>Feels right</h3><p>Lock the three-depth hover zoom into the spec.</p></div>
+    <div class="choice" data-choice="tune" onclick="chooseCard(this)"><h3>Close — tune it</h3><p>Tell me in the terminal what to adjust (dwell, depths, dimming).</p></div>
+    <div class="choice" data-choice="simpler" onclick="chooseCard(this)"><h3>Too much — simplify</h3><p>Drop the half-out level; inner ring zooms straight out.</p></div>
+  </div>
+</div>
+
+<script>
+const WHEEL=[
+ {n:'Floral',c:'#e0479e',k:[
+   {n:'Black Tea',c:'#9d6a8e'},
+   {n:'Floral',c:'#e961a5',k:[{n:'Chamomile',c:'#f0b432'},{n:'Rose',c:'#ef7ca2'},{n:'Jasmine',c:'#f2e8d2'}]}]},
+ {n:'Fruity',c:'#d6273e',k:[
+   {n:'Berry',c:'#d6325c',k:[{n:'Blackberry',c:'#2b2030'},{n:'Raspberry',c:'#e0218a'},{n:'Blueberry',c:'#7177c8'},{n:'Strawberry',c:'#e23c47'}]},
+   {n:'Dried Fruit',c:'#a64a6e',k:[{n:'Raisin',c:'#8d4585'},{n:'Prune',c:'#6f4b75'}]},
+   {n:'Other Fruit',c:'#e86450',k:[{n:'Coconut',c:'#d8a886'},{n:'Cherry',c:'#d2243f'},{n:'Pomegranate',c:'#e85f77'},{n:'Pineapple',c:'#f2a93b'},{n:'Grape',c:'#a3bb45'},{n:'Apple',c:'#7fb24a'},{n:'Peach',c:'#f0955d'},{n:'Pear',c:'#c4cf4f'}]},
+   {n:'Citrus Fruit',c:'#f1a52f',k:[{n:'Grapefruit',c:'#f07568'},{n:'Orange',c:'#ef8c2d'},{n:'Lemon',c:'#f4d22e'},{n:'Lime',c:'#a9c93f'}]}]},
+ {n:'Sour/Fermented',c:'#e3c52e',k:[
+   {n:'Sour',c:'#e7d93c',k:[{n:'Sour Aromatics',c:'#d9d33e'},{n:'Acetic Acid',c:'#c4cf3a'},{n:'Butyric Acid',c:'#b8c542'},{n:'Isovaleric Acid',c:'#aebd3f'},{n:'Citric Acid',c:'#d3d23a'},{n:'Malic Acid',c:'#c9d04a'}]},
+   {n:'Alcohol/Fermented',c:'#b9a33b',k:[{n:'Winey',c:'#8c2f51'},{n:'Whiskey',c:'#a26430'},{n:'Fermented',c:'#b08e3a'},{n:'Overripe',c:'#9c8136'}]}]},
+ {n:'Green/Vegetative',c:'#187a33',k:[
+   {n:'Olive Oil',c:'#a3a73a'},
+   {n:'Raw',c:'#6f8f3c'},
+   {n:'Green/Vegetative',c:'#2c9e48',k:[{n:'Under-ripe',c:'#9ebf6a'},{n:'Peapod',c:'#7fb45a'},{n:'Fresh',c:'#3fae5b'},{n:'Dark Green',c:'#1d6e35'},{n:'Vegetative',c:'#2f8f44'},{n:'Hay-like',c:'#b9c46a'},{n:'Herb-like',c:'#86ad4f'}]},
+   {n:'Beany',c:'#7e9a63'}]},
+ {n:'Other',c:'#2d8fc4',k:[
+   {n:'Papery/Musty',c:'#aebdc4',k:[{n:'Stale',c:'#c8b69a'},{n:'Cardboard',c:'#b39b7e'},{n:'Papery',c:'#e4ded2'},{n:'Woody',c:'#6e5132'},{n:'Moldy/Damp',c:'#8a9a84'},{n:'Musty/Dusty',c:'#b3a68c'},{n:'Musty/Earthy',c:'#7a6a4f'},{n:'Animalic',c:'#8c7a5c'},{n:'Meaty Brothy',c:'#b07a64'},{n:'Phenolic',c:'#857a8c'}]},
+   {n:'Chemical',c:'#62b6d9',k:[{n:'Bitter',c:'#7fc3bf'},{n:'Salty',c:'#dfe6e9'},{n:'Medicinal',c:'#74a8c4'},{n:'Petroleum',c:'#1f7ea8'},{n:'Skunky',c:'#4b7b8c'},{n:'Rubber',c:'#23303f'}]}]},
+ {n:'Roasted',c:'#c4452c',k:[
+   {n:'Pipe Tobacco',c:'#8a5a35'},
+   {n:'Tobacco',c:'#a8743f'},
+   {n:'Burnt',c:'#9c5b32',k:[{n:'Acrid',c:'#a8987a'},{n:'Ashy',c:'#9aa08e'},{n:'Smoky',c:'#b08a52'},{n:'Brown, Roast',c:'#6e4a26'}]},
+   {n:'Cereal',c:'#d9a440',k:[{n:'Grain',c:'#d9b87a'},{n:'Malt',c:'#e0a45c'}]}]},
+ {n:'Spices',c:'#a32638',k:[
+   {n:'Pungent',c:'#6e3c5a'},
+   {n:'Pepper',c:'#c42b3a'},
+   {n:'Brown Spice',c:'#b04a45',k:[{n:'Anise',c:'#c4a83a'},{n:'Nutmeg',c:'#8a2e2a'},{n:'Cinnamon',c:'#d98a3d'},{n:'Clove',c:'#b98a2e'}]}]},
+ {n:'Nutty/Cocoa',c:'#9c7a5e',k:[
+   {n:'Nutty',c:'#b08a5c',k:[{n:'Peanuts',c:'#e3c12e'},{n:'Hazelnut',c:'#9c6a3a'},{n:'Almond',c:'#e8c9b4'}]},
+   {n:'Cocoa',c:'#a3672f',k:[{n:'Chocolate',c:'#6e3a26'},{n:'Dark Chocolate',c:'#3f241a'}]}]},
+ {n:'Sweet',c:'#ef8231',k:[
+   {n:'Brown Sugar',c:'#d87f93',k:[{n:'Molasses',c:'#2a1f1a'},{n:'Maple Syrup',c:'#b46a32'},{n:'Caramelized',c:'#e8a43b'},{n:'Honey',c:'#ef9c2d'}]},
+   {n:'Vanilla',c:'#d98a9a'},
+   {n:'Vanillin',c:'#e8b4c4'},
+   {n:'Overall Sweet',c:'#e85d8a'},
+   {n:'Sweet Aromatics',c:'#c45d74'}]}
+];
+const CATA_BOXES=new Set(['Floral','Fruity','Berry','Dried Fruit','Citrus Fruit','Sour/Fermented','Sour','Fermented','Green/Vegetative','Other','Chemical','Musty/Earthy','Woody','Roasted','Cereal','Burnt','Tobacco','Spice','Nutty/Cocoa','Nutty','Cocoa','Sweet','Vanilla/Vanillin','Brown Sugar']);
+const ALIAS={'Alcohol/Fermented':'Fermented','Spices':'Spice','Vanilla':'Vanilla/Vanillin','Vanillin':'Vanilla/Vanillin','Pipe Tobacco':'Tobacco'};
+
+const CX=220,CY=220,R0=58,R1=106,R2=158,R3=212;
+const REST_S=1.3;                      /* resting scale: rings 1-2 fill the stage, frosted rim bleeds off */
+const DEPTHS={full:{s:2.4,r:130},mid:{s:1.75,r:80}};
+const DWELL_IN=190, DWELL_SWITCH=240, DWELL_OUT=220, DWELL_MID=200, DWELL_BACKIN=180;
+const TAU=Math.PI*2;
+function leaves(nd){return nd.k?nd.k.reduce((s,c)=>s+leaves(c),0):1;}
+const TOTAL=WHEEL.reduce((s,c)=>s+leaves(c),0);
+function arcPath(r0,r1,a0,a1){
+  const p=(r,a)=>[CX+Math.cos(a)*r,CY+Math.sin(a)*r];
+  const large=(a1-a0)>Math.PI?1:0;
+  const [x0,y0]=p(r1,a0),[x1,y1]=p(r1,a1),[x2,y2]=p(r0,a1),[x3,y3]=p(r0,a0);
+  return `M${x0},${y0}A${r1},${r1} 0 ${large} 1 ${x1},${y1}L${x2},${y2}A${r0},${r0} 0 ${large} 0 ${x3},${y3}Z`;
+}
+function lum(hex){const n=parseInt(hex.slice(1),16),r=n>>16&255,g=n>>8&255,b=n&255;return (0.299*r+0.587*g+0.114*b)/255;}
+const SVGNS='http://www.w3.org/2000/svg';
+function el(t,attrs,parent){const e=document.createElementNS(SVGNS,t);for(const a in attrs)e.setAttribute(a,attrs[a]);if(parent)parent.appendChild(e);return e;}
+function splitLabel(str,maxChars){
+  if(str.length<=maxChars)return[str];
+  const slash=str.indexOf('/');
+  if(slash>0&&slash<str.length-1)return[str.slice(0,slash+1),str.slice(slash+1)];
+  const sp=[...str].reduce((best,ch,i)=>ch===' '&&Math.abs(i-str.length/2)<Math.abs(best-str.length/2)?i:best,-1);
+  if(sp>0)return[str.slice(0,sp),str.slice(sp+1)];
+  return[str];
+}
+function radialLabel(parent,r,aMid,str,size,weight,fill,cls,maxChars){
+  let deg=aMid*180/Math.PI,anchor='start';
+  const x=CX+Math.cos(aMid)*r,y=CY+Math.sin(aMid)*r;
+  if(deg>90&&deg<270){deg+=180;anchor='end';}
+  const lines=splitLabel(str,maxChars||99);
+  const t=el('text',{x,y,'font-size':size,'font-weight':weight,fill,
+    'text-anchor':anchor,'dominant-baseline':'middle',
+    transform:`rotate(${deg} ${x} ${y})`,class:cls||''},parent);
+  if(lines.length===1){t.textContent=str;}
+  else{
+    const t1=el('tspan',{x,dy:'-0.52em'},t);t1.textContent=lines[0];
+    const t2=el('tspan',{x,dy:'1.06em'},t);t2.textContent=lines[1];
+  }
+  return t;
+}
+/* Families whose label curves along the ring instead of radiating (per Daniel:
+   only the two whose wrapped radial labels collided with their subcategories). */
+const ARC_FAMS=new Set(['Green/Vegetative','Sour/Fermented']);
+function arcLabel(parent,a0,a1,str,fill,uid){
+  const midA=(a0+a1)/2, down=Math.sin(midA)>0;       /* flip on the bottom half to stay upright */
+  const arcLen=(a1-a0)*82-8;
+  let fs=7;
+  if(str.length*fs*0.62>arcLen)fs=Math.max(5,arcLen/(str.length*0.62));
+  const r=down?86:79;
+  const P=a=>[CX+Math.cos(a)*r,CY+Math.sin(a)*r];
+  const [xs,ys]=P(down?a1:a0),[xe,ye]=P(down?a0:a1);
+  el('path',{id:'lp'+uid,d:`M${xs},${ys}A${r},${r} 0 0 ${down?0:1} ${xe},${ye}`,fill:'none'},parent);
+  const t=el('text',{'font-size':fs,'font-weight':800,fill},parent);
+  const tp=el('textPath',{href:'#lp'+uid,startOffset:'50%','text-anchor':'middle'},t);
+  tp.textContent=str;
+  return t;
+}
+const NODES=[];
+(function layout(){
+  let a=-Math.PI/2;
+  const u=TAU/TOTAL;
+  WHEEL.forEach(cat=>{
+    const span=leaves(cat)*u, a0=a, a1=a+span;
+    NODES.push({node:cat,path:[cat.n],a0,a1,r0:R0,r1:R1,ring:1,cat,_els:{}});
+    let b=a0;
+    cat.k.forEach(mid=>{
+      const ms=leaves(mid)*u, b0=b, b1=b+ms;
+      if(mid.k){
+        NODES.push({node:mid,path:[cat.n,mid.n],a0:b0,a1:b1,r0:R1,r1:R2,ring:2,cat,_els:{}});
+        let c0=b0;
+        mid.k.forEach(leaf=>{
+          NODES.push({node:leaf,path:[cat.n,mid.n,leaf.n],a0:c0,a1:c0+u,r0:R2,r1:R3,ring:3,cat,_els:{}});
+          c0+=u;
+        });
+      }else{
+        NODES.push({node:mid,path:[cat.n,mid.n],a0:b0,a1:b1,r0:R1,r1:R3,ring:2.5,cat,_els:{}});
+      }
+      b=b1;
+    });
+    a=a1;
+  });
+})();
+function nodeAt(x,y){
+  const dx=x-CX,dy=y-CY,r=Math.hypot(dx,dy);
+  let th=Math.atan2(dy,dx);
+  while(th< -Math.PI/2)th+=TAU; while(th>=TAU-Math.PI/2)th-=TAU;
+  if(r<R0||r>R3)return null;
+  return NODES.find(nd=>th>=nd.a0&&th<nd.a1&&r>=nd.r0&&r<nd.r1)||null;
+}
+function cataFor(pathArr){
+  const boxes=[];
+  pathArr.forEach(name=>{
+    const mapped=ALIAS[name]||name;
+    if(CATA_BOXES.has(mapped)&&!boxes.includes(mapped))boxes.push(mapped);
+  });
+  const last=pathArr[pathArr.length-1],lastMapped=ALIAS[last]||last;
+  const free=CATA_BOXES.has(lastMapped)?null:last;
+  return {boxes,free};
+}
+
+function buildWheel(id){
+  const svg=document.getElementById('svg'+id);
+  const stage=document.getElementById('stage'+id);
+  const hub=document.getElementById('hub'+id);
+  const tray=document.getElementById('tray'+id);
+  const cataEl=document.getElementById('cata'+id);
+  const home=document.getElementById('home'+id);
+  const picks=new Map();
+  let zState={mode:'out',fam:null};   /* out | mid | full */
+  let popped=null;
+  let dwellTimer=null, dwellKey=null;
+  const branchEls=new Map();
+
+  WHEEL.forEach(cat=>{
+    const g=el('g',{class:'branch'},svg);
+    const gW=el('g',{},g);
+    const gW3=el('g',{class:'w3'},g);  /* outer ring in its own layer so it can frost as one */
+    const gL=el('g',{'pointer-events':'none'},g);
+    branchEls.set(cat.n,g);
+    NODES.filter(nd=>nd.cat===cat).forEach(nd=>{
+      const w=el('g',{class:'wedge','data-key':nd.path.join('>')},nd.ring===3?gW3:gW);
+      el('path',{d:arcPath(nd.r0,nd.r1,nd.a0+0.0028,nd.a1-0.0028),fill:nd.node.c},w);
+      const mid=(nd.a0+nd.a1)/2;
+      const txtFill=lum(nd.node.c)>0.62?'#1c1c1c':'#fff';
+      const lw=el('g',{class:'lw'},gL);
+      let t;
+      if(nd.ring===1)      t=ARC_FAMS.has(nd.node.n)
+        ? arcLabel(lw,nd.a0,nd.a1,nd.node.n.toUpperCase(),txtFill,id+NODES.indexOf(nd))
+        : radialLabel(lw,R0+8,mid,nd.node.n.toUpperCase(),7,800,txtFill,'',10);
+      else if(nd.ring===2) t=radialLabel(lw,R1+6,mid,nd.node.n,5.6,700,txtFill,'',11);
+      else if(nd.ring===2.5)t=radialLabel(lw,R1+6,mid,nd.node.n,5.4,700,txtFill,'',22);
+      else                 t=radialLabel(lw,R2+4,mid,nd.node.n,4.9,600,txtFill,'l3t',22);
+      nd._els[id]={w,t,lw};
+    });
+  });
+
+  function refreshTray(){
+    hub.querySelector('.big').textContent=picks.size;
+    tray.innerHTML='';
+    if(!picks.size){tray.innerHTML='<span class="hint">No descriptors yet.</span>';cataEl.innerHTML='';return;}
+    picks.forEach(nd=>{
+      const chip=document.createElement('div');chip.className='chip';chip.title='Remove';
+      chip.innerHTML=`<span class="dot" style="background:${nd.node.c}"></span>${nd.path[nd.path.length-1]} <small>${nd.path.slice(0,-1).join(' ▸ ')}</small>`;
+      chip.onclick=()=>togglePick(nd);
+      tray.appendChild(chip);
+    });
+    const boxes=new Set(),frees=[];
+    picks.forEach(nd=>{const m=cataFor(nd.path);m.boxes.forEach(b=>boxes.add(b));if(m.free)frees.push(m.free);});
+    cataEl.innerHTML=`<b>Official form auto-fill</b> · CATA ${boxes.size}/5: `+
+      [...boxes].map(b=>`<span class="box">${b}</span>`).join('')+
+      (frees.length?` · precise notes: `+frees.map(f=>`<span class="free">${f}</span>`).join(''):'');
+  }
+  function togglePick(nd){
+    const key=nd.path.join('>');
+    const e=nd._els[id];
+    if(picks.has(key)){picks.delete(key);e.w.classList.remove('picked');}
+    else{picks.set(key,nd);e.w.classList.add('picked');}
+    refreshTray();
+  }
+  document.querySelector(`[data-reset="${id}"]`).onclick=()=>{
+    picks.forEach(nd=>nd._els[id].w.classList.remove('picked'));picks.clear();refreshTray();
+  };
+  function clearPop(){
+    if(!popped)return;
+    popped.w.classList.remove('wpop');popped.lw.classList.remove('wpop');
+    popped=null;
+  }
+  function setDwell(key,ms,fn){
+    if(dwellKey===key)return;
+    clearTimeout(dwellTimer);dwellKey=key;
+    dwellTimer=setTimeout(()=>{dwellKey=null;fn();},ms);
+  }
+  function clearDwell(){clearTimeout(dwellTimer);dwellKey=null;}
+
+  const backBtn=document.getElementById('back'+id);
+  const crumb=document.getElementById('crumb'+id);
+  function centerOn(d,ang){
+    /* stage rect is untransformed, so f is stable mid-transition */
+    const f=stage.getBoundingClientRect().width/440;
+    const bx=Math.cos(ang)*d.r*f, by=Math.sin(ang)*d.r*f;
+    svg.style.transform=`scale(${d.s}) translate(${-bx}px,${-by}px)`;
+    /* keep the center marker glued to the (clamped) wheel-hub direction */
+    let hx=-bx*d.s, hy=-by*d.s;
+    const sr=stage.getBoundingClientRect();
+    const len=Math.hypot(hx,hy), max=sr.width/2-46;
+    if(len>max){hx=hx/len*max;hy=hy/len*max;}
+    home.style.left=`calc(50% + ${hx}px)`;home.style.top=`calc(50% + ${hy}px)`;
+  }
+  function applyZoom(mode,fam){
+    clearDwell();clearPop();
+    if(mode==='out'){
+      zState={mode:'out',fam:null};
+      svg.style.transform=`scale(${REST_S})`;
+      svg.classList.remove('zoomed','midzoom');
+      stage.classList.remove('iszoomed');
+      branchEls.forEach(g=>g.classList.remove('focusedbranch'));
+      return;
+    }
+    const d=DEPTHS[mode];
+    const rec=NODES.find(n=>n.cat.n===fam&&n.ring===1);
+    const mid=(rec.a0+rec.a1)/2;
+    zState={mode,fam};
+    centerOn(d,mid);
+    svg.classList.toggle('zoomed',mode==='full');
+    svg.classList.toggle('midzoom',mode==='mid');
+    svg.classList.remove('hovering');
+    stage.classList.add('iszoomed');
+    branchEls.forEach((g,n)=>{g.classList.toggle('focusedbranch',n===fam);g.classList.remove('hot');});
+    crumb.textContent=fam;
+  }
+  backBtn.onclick=()=>applyZoom('out');
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')applyZoom('out');});
+
+  function toVB(e){const r=svg.getBoundingClientRect();return[(e.clientX-r.left)*440/r.width,(e.clientY-r.top)*440/r.height];}
+
+  /* graded hover zoom: outer = in, inner ring = halfway out, hub = out */
+  svg.addEventListener('pointermove',e=>{
+    if(e.pointerType==='touch')return;
+    const[x,y]=toVB(e);
+    const r=Math.hypot(x-CX,y-CY);
+    if(zState.mode==='out'){
+      const nd=nodeAt(x,y);
+      if(nd)setDwell('full:'+nd.cat.n,DWELL_IN,()=>applyZoom('full',nd.cat.n));
+      else clearDwell();
+      return;
+    }
+    if(r<R0){setDwell('out',zState.mode==='mid'?DWELL_BACKIN:DWELL_OUT,()=>applyZoom('out'));return;}
+    const nd=nodeAt(x,y);
+    if(!nd){clearDwell();return;}
+    const fam=nd.cat.n;
+    if(zState.mode==='full'){
+      if(fam===zState.fam){
+        if(nd.ring===1)setDwell('mid',DWELL_MID,()=>applyZoom('mid',fam));
+        else clearDwell();
+      }else{
+        setDwell('full:'+fam,DWELL_SWITCH,()=>applyZoom('full',fam));
+      }
+    }else{ /* mid */
+      if(fam===zState.fam&&nd.ring===1){clearDwell();}
+      else setDwell('full:'+fam,DWELL_BACKIN,()=>applyZoom('full',fam));
+    }
+  });
+  svg.addEventListener('pointerleave',clearDwell);
+
+  branchEls.forEach((g,catName)=>{
+    g.addEventListener('pointerenter',()=>{if(zState.mode!=='out')return;svg.classList.add('hovering');g.classList.add('hot');});
+    g.addEventListener('pointerleave',()=>{g.classList.remove('hot');clearPop();
+      if(![...branchEls.values()].some(x=>x.classList.contains('hot')))svg.classList.remove('hovering');});
+    g.addEventListener('pointerover',e=>{
+      if(zState.mode!=='full'||zState.fam!==catName)return;
+      const wEl=e.target.closest('.wedge');if(!wEl)return;
+      if(popped&&popped.w===wEl)return;
+      clearPop();
+      const nd=NODES.find(n=>n.path.join('>')===wEl.dataset.key);
+      const els=nd._els[id];
+      els.w.classList.add('wpop');els.lw.classList.add('wpop');
+      els.w.parentNode.appendChild(els.w);
+      els.lw.parentNode.appendChild(els.lw);
+      popped=els;
+      /* pan the screen with the pointer: re-aim the zoom at the hovered note,
+         clamped inside the family span so the view never leaves the slice */
+      const famRec=NODES.find(n=>n.cat.n===catName&&n.ring===1);
+      const pad=Math.min(0.10,(famRec.a1-famRec.a0)/4);
+      const ang=Math.max(famRec.a0+pad,Math.min(famRec.a1-pad,(nd.a0+nd.a1)/2));
+      centerOn(DEPTHS.full,ang);
+    });
+    g.addEventListener('click',e=>{
+      const wEl=e.target.closest('.wedge');if(!wEl)return;
+      const nd=NODES.find(n=>n.path.join('>')===wEl.dataset.key);
+      if(zState.mode==='full'&&zState.fam===catName){togglePick(nd);}
+      else{applyZoom('full',catName);}
+    });
+  });
+  svg.addEventListener('click',e=>{
+    if(zState.mode!=='out'&&!e.target.closest('.wedge'))applyZoom('out');
+  });
+  refreshTray();
+  applyZoom('out');   /* establish the resting 1.3x scale */
+}
+buildWheel('A');
+
+function chooseCard(elm){
+  document.querySelectorAll('.choice').forEach(c=>c.classList.remove('selected'));
+  elm.classList.add('selected');
+}
+document.getElementById('themeBtn').onclick=()=>{
+  const h=document.documentElement;
+  h.dataset.theme=h.dataset.theme==='dark'?'':'dark';
+};
+</script>
+</body>
+</html>
