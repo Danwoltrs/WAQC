@@ -198,12 +198,53 @@ export function FlavorWheel({ picks, onToggle }: Props) {
     return cls.join(' ')
   }
 
-  // Task 9 fills these in (hover layer). Declared here so JSX wiring is final.
-  const onPointerMove = (_e: React.PointerEvent<SVGSVGElement>) => {}
+  const scheduleDwell = useCallback((key: string, ms: number, next: ZoomState) => {
+    if (dwellRef.current.key === key) return       // same intent already pending
+    if (dwellRef.current.t) clearTimeout(dwellRef.current.t)
+    dwellRef.current = {
+      key,
+      t: setTimeout(() => { dwellRef.current = { key: null, t: null }; applyZoom(next) }, ms),
+    }
+  }, [applyZoom])
+
+  // Hover drives everything on pointer devices; touch is fully guarded —
+  // unguarded, a tap would pan the view before the click lands and the
+  // finger would pick the wrong note (spec §3 Touch).
+  const onPointerMove = (e: React.PointerEvent<SVGSVGElement>) => {
+    if (e.pointerType === 'touch') return
+    const rect = svgRef.current!.getBoundingClientRect()
+    const x = ((e.clientX - rect.left) * VIEW) / rect.width
+    const y = ((e.clientY - rect.top) * VIEW) / rect.height
+    const r = Math.hypot(x - CX, y - CY)
+    const nd = nodeAt(x, y)
+    const hover: HoverSample =
+      r < R0 ? { region: 'hub' }
+      : nd ? { region: 'node', fam: nd.family, ring: nd.ring === 2.5 ? 2 : nd.ring }
+      : { region: 'none' }
+
+    const plan = planDwell(zoom, hover)
+    if (plan.kind === 'clear') clearDwell()
+    else scheduleDwell(plan.key, plan.ms, plan.next)
+
+    if (zoom.mode === 'rest') {
+      setHotFam(nd?.family ?? null)
+      return
+    }
+    // Focused: pop the hovered note and pan the screen onto it (clamped to the slice).
+    if (zoom.mode === 'full' && nd && nd.family === zoom.fam) {
+      const key = nd.path.join('>')
+      if (popped !== key) {
+        setPopped(key)
+        const span = FAM_SPANS.get(zoom.fam)!
+        const pad = Math.min(0.10, (span.a1 - span.a0) / 4)
+        setPanAngle(Math.max(span.a0 + pad, Math.min(span.a1 - pad, (nd.a0 + nd.a1) / 2)))
+      }
+    } else if (popped) {
+      setPopped(null)
+    }
+  }
+
   const onPointerLeave = () => { clearDwell(); setHotFam(null); setPopped(null) }
-  void planDwell // referenced by Task 9
-  void nodeAt
-  void onPointerMove
 
   const poppedLast = (a: WheelNode, b: WheelNode) =>
     (pickKey({ path: a.path }) === popped ? 1 : 0) - (pickKey({ path: b.path }) === popped ? 1 : 0)
