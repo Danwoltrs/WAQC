@@ -2,17 +2,20 @@
 
 Supersedes `2026-06-11-specialty-cva-cupping-handoff.md` for the Phase-2 thread (that doc's Phase-1 content still stands).
 
-**Resume point:** CONTINUE subagent-driven execution of [`../plans/2026-06-11-cva-phase2-describe-flavor-wheel.md`](../plans/2026-06-11-cva-phase2-describe-flavor-wheel.md) at **Task 5 (zoom-machine)**. Tasks 1–4 are implemented, two-stage-reviewed, fixed, and PUSHED. Use the superpowers:subagent-driven-development skill: fresh implementer per task batch → spec reviewer → quality reviewer → fix loop. Remaining batches: 5, 6, 7, 8+9, 10, 11, 12, 13, 14.
+**Resume point (updated 2026-06-12):** Phase 2 is **fully BUILT** — Tasks 5–14 implemented via TDD, adversarially reviewed (multi-lens workflow), all three confirmed findings fixed, **219 tests green, tsc clean**. Everything is committed to **LOCAL `main`** (this session's commits `5c601ba..b5269a8`) but **NOT pushed** — Daniel is holding the push for a **manual browser smoke test + SCA-103 color-fidelity pass** (both need a browser / the PDF, which the agent can't drive). **Resume = run the plan's Task-14 manual smoke (8 steps) + color check, then `git push`** (trunk-based → Vercel prod at qc.wolthers.com). No migrations this phase. If a defect surfaces in smoke, it's a normal bugfix on `main`.
+
+> Original resume point (now done): execute the plan at Task 5. Tasks 1–4 were already pushed (`8a229aa`); Tasks 5–14 were completed this follow-up session inline (TDD red→green→commit) rather than via subagents, for transcription fidelity and real local verification.
 
 ## The work (one paragraph)
 
 Phase 2 of the specialty CVA cupping screen adds the SCA-103 descriptive assessment to the existing journey: an interactive **110-node SCA flavor wheel** (the session's centerpiece — design iterated live with Daniel through 8 prototype versions and locked), per-section **0–15 intensity tap-tracks**, main tastes (≤2), mouthfeel CATA (≤2), and freely-elicited notes for every section. Everything persists through the existing per-sample `CvaAssessment` autosave — **no API or DB changes anywhere in this phase**.
 
-## Repo state right now
+## Repo state right now (2026-06-12)
 
-- **Repo:** WAQC (`/Users/danielwolthers/Documents/GitHub/WAQC`), branch `main`, **in sync with origin/main at `8a229aa`** (everything pushed). Working tree clean except the untracked `docs/superpowers/handoffs/` dir (this file + the morning's Phase-1 handoff live there).
-- **Deploy:** trunk-based; pushes auto-deploy to prod (qc.wolthers.com). The pushed Tasks 1–4 code is inert — nothing imports it yet — so prod is unaffected.
-- **No stashes.** Daniel committed unrelated work mid-session (`3468c4d` print cards, `36fe01b` samples column) — not part of this thread.
+- **Repo:** WAQC (`/Users/danielwolthers/Documents/GitHub/WAQC`), branch `main`. Tasks 5–14 + review fixes = **11 commits `5c601ba..b5269a8`**; plus this handoff update, local `main` is **12 ahead of `origin/main`** (upstream still `1f81066`). **Working tree clean. NOT pushed** (Daniel's choice — holding for manual smoke).
+- **Deploy:** trunk-based; a push auto-deploys to prod (qc.wolthers.com). **Unlike Tasks 1–4 (inert), this changeset is LIVE once pushed** — Task 13 wires the DescribeOverlay, intensity tracks, Describe buttons, and the reveal soft-gate into the journey. So the smoke test matters before pushing.
+- **No migrations, no API/DB changes** this phase (describe rides the existing autosave blob).
+- **Verify locally with** `npx tsc --noEmit` + `npx vitest run` (NOT `npm test` = watch, NOT `npm run build` = fails offline on Google Fonts).
 
 ## What's done
 
@@ -23,7 +26,25 @@ Phase 2 of the specialty CVA cupping screen adds the SCA-103 descriptive assessm
 | `30f7d32` + `0a899fa` | **Task 1**: `CvaDescribe` v2 in `src/types/cva.ts` (WheelPick paths = source of truth, derived `cata`, five-key `notes`), `normalizeAssessment`, `describeIsEmpty` + review fixes. 4 tests. |
 | `4f83b2a` + `8a229aa` | **Tasks 2–4**: `src/lib/cva/flavor-wheel-data.ts` — full taxonomy (verified character-identical to the prototype), geometry, `nodeAt`, 24-box CATA derivation + aliases + box-named-leaf exception, replace-oldest caps + review fixes (readonly exports, exclusive `nodeAt` bounds, family-boundary test). 16 tests. |
 
-**Verification actually run:** `npx tsc --noEmit` → 0 errors; `npx vitest run` on the two new test files → 4 + 16 green; full suite was 156 before this work (only added since).
+### Follow-up session 2026-06-12 — Tasks 5–14 (LOCAL `main`, NOT pushed)
+
+| SHA | What |
+|---|---|
+| `5c601ba` | **Task 5** — `wheel/zoom-machine.ts` pure dwell/zoom state machine. 7 tests. |
+| `219dcd7` | **Task 6** — `IntensityTrack.tsx` 0–15 tap-track (no sliders). 3 tests. |
+| `2b70740` | **Task 7** — `wheel/MainTastes.tsx` + `wheel/MouthfeelCata.tsx` pickers. 4 tests. |
+| `deecba1` | **Task 8** — `wheel/FlavorWheel.tsx` render + tap path + `.cva-wheel-*` CSS. |
+| `cecf11d` | **Task 9** — FlavorWheel hover layer (graded dwell zoom, lift, note pop, pan). 11 tests total. |
+| `0b67768` | **Task 10** — `wheel/DescribeOverlay.tsx` tabs/chips/caps-toast/notes. 6 tests. **Fixed a plan bug:** `togglePick` called `setToast` inside the `onDescribe` updater (setState-during-render warning); moved the toast outside the updater. |
+| `ed615d2` | **Task 11** — `useCvaSession` gains `setDescribe` + normalizes legacy blobs on hydrate. 1 test. |
+| `4ceae0a` | **Task 12** — `SectionScreen` gains intensity track + `descriptorSlot`. 3 tests (5 locked ImpressionScale selectors still green). |
+| `8cf76da` | **Task 13** — `CvaJourney` mounts the overlay, `GROUP_FOR` routing, `goToStep` reveal soft-gate. |
+| `1aa19f3` | **Review fix** — popped-label z-order (sort `famLabels` `poppedLast`) + mid-zoom focused-branch shadow fidelity. |
+| `b5269a8` | **Review fix** — `CvaJourney.test.tsx` backfills the reveal soft-gate (3 entry points + ack memory + re-arm + short-circuit); mutation-checked. |
+
+**Verification actually run (2026-06-12):** every task red→green→commit with real `vitest`/`tsc`; **full suite `npx vitest run` → 219/219 green; `npx tsc --noEmit` → 0 errors.** Only console noise is pre-existing `ApprovalSendView` act() warnings (in the baseline, unrelated to CVA). `npm run build` deliberately NOT run (offline Google-Fonts failure).
+
+**Adversarial review (Task 14):** ran a 4-lens review workflow (spec-fidelity / correctness / test-adequacy / integration) then a refute pass. 8 findings → **3 confirmed** (all medium/low, all fixed above), 5 correctly refuted — including one that flagged the shipped `describeIsEmpty` as a "divergence" when it's the deliberately-broadened, more-correct decision-7 behavior.
 
 ## Locked decisions (do NOT relitigate)
 
@@ -65,13 +86,15 @@ The plan has the COMPLETE code for every one of these — implementer subagents 
 - The `session_type='cva'` enum check from the Phase-1 handoff may STILL be unverified — harmless to re-run: `ALTER TYPE session_type ADD VALUE IF NOT EXISTS 'cva';`
 - Brainstorm artifacts in `.superpowers/brainstorm/` are gitignored throwaways; the COMMITTED prototype in `docs/superpowers/specs/prototypes/` is the reference. The visual-companion server (port 56791, pinned) is likely dead — that's fine, it's not needed for execution.
 
-## Next / suggested next-up
+## Next / suggested next-up (2026-06-12)
 
-1. **Task 5** (zoom-machine) — pure logic, haiku-able, 10 minutes.
-2. Tasks 6, 7 — small components, fast.
-3. **Tasks 8+9** (FlavorWheel) — the big one; sonnet implementer, expect the test file to need jsdom care (mocked `getBoundingClientRect`, `act()`-wrapped timer advances — the plan's test code already handles this).
-4. Task 10 (overlay — check the <1280px full-bleed against decision 4), 11, 12, 13.
-5. **Task 14**: full gates, color-fidelity pass vs SCA-103 PDF p.11, the 8-step manual smoke (in the plan), final whole-feature review subagent, push.
+The build + automated gates + review are all DONE. What remains needs a human/browser:
+
+1. **Manual smoke test** — the plan's Task 14 §3, 8 steps, on a laptop at `/cupping/cva`: pick a CVA sample → start → Describe opens the wheel overlay (full-bleed <1280px); rest = big frosted center, hover Fruity lifts+unfrosts, dwell zooms, sweep notes → pop + pan, inner-ring dwell → half-out, center marker → rest; pick Blueberry → chip + "Official form auto-fill · Fruity, Berry · precise notes: Blueberry" + "Picks 1/5"; 6 picks → cap toast; Flavor&Aftertaste main-tastes cap 2; Mouthfeel CATA cap 2; Acidity intensity + free-note; reload → describe restored; on a `requires_descriptors` quality with nothing described, footer/progress-jump/live-pill each raise the gate and "Reveal anyway" doesn't re-ask; iPad/touch-emulation → taps only, no hover artifacts.
+2. **Color-fidelity pass** — plan Task 14 §2: open `docs/superpowers/specs/prototypes/cva-flavor-wheel-prototype.html` next to p.11 of `Documents/Specialty/AW_SCA-103_Descriptive-Assessment_Sept2024_Secured.pdf`; nudge any obviously-off hex in `src/lib/cva/flavor-wheel-data.ts` `WHEEL` (colors are data, no test changes). Anchors: Blackberry near-black, Blueberry blue-violet, Lemon yellow, Lime green, Winey dark red, Molasses near-black, Jasmine cream.
+3. **Push** — `git push` (trunk-based → prod). Then Phase 2 is live.
+
+After push, the remaining roadmap (separate efforts): Cup-button auto-routing from the samples list; Phase 3 voice (`describe.voice`); Phase 4 cups screen; Phase 5 Coffee Profile + AI; Phase 6 multi-cupper calibration; feeding `describe` into the Descriptive-Form print cards + certificates (cert rule: ≤5 boxes/group, always print precise descriptors).
 
 ## Things the user (Daniel) said that should shape future work
 
