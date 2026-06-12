@@ -1,8 +1,10 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import type { CvaSectionDef } from '@/lib/cva/sections'
 import type { CvaSectionScore } from '@/types/cva'
 import { ImpressionScale } from './ImpressionScale'
+import { IntensityTrack } from './IntensityTrack'
 
 interface Props {
   section: CvaSectionDef
@@ -12,9 +14,16 @@ interface Props {
   value: CvaSectionScore | undefined
   onChange: (patch: Partial<CvaSectionScore>) => void
   onCommit?: (v: number) => void
+  /** Descriptive intensity 0–15 (SCA-103). Omit both to hide (Overall has none). */
+  intensity?: number
+  onIntensityChange?: (v: number) => void
+  /** Injected by CvaJourney: a Describe button or the acidity/sweetness note field. */
+  descriptorSlot?: ReactNode
 }
 
-export function SectionScreen({ section, index, total, value, onChange, onCommit }: Props) {
+export function SectionScreen({
+  section, index, total, value, onChange, onCommit, intensity, onIntensityChange, descriptorSlot,
+}: Props) {
   return (
     <div className="flex w-full max-w-[820px] flex-col items-center gap-5">
       <div className="flex flex-col items-center gap-1.5 text-center">
@@ -33,6 +42,17 @@ export function SectionScreen({ section, index, total, value, onChange, onCommit
         onChangeFinal={(v) => onChange({ impression_final: v })}
         onCommit={onCommit}
       />
+
+      {onIntensityChange && (
+        <div className="flex w-full max-w-[560px] flex-col gap-1.5">
+          <span className="text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">
+            Intensity (0–15)
+          </span>
+          <IntensityTrack value={intensity ?? 0} accent={section.accent} onChange={onIntensityChange} />
+        </div>
+      )}
+
+      {descriptorSlot}
 
       <textarea
         value={value?.note ?? ''}
