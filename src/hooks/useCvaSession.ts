@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { createEmptyAssessment, type CvaAssessment, type CvaSectionScore } from '@/types/cva'
+import { createEmptyAssessment, normalizeAssessment, type CvaAssessment, type CvaDescribe, type CvaSectionScore } from '@/types/cva'
 import { computeAssessmentScore, type LiveScore } from '@/lib/cva/scoring'
 import type { CvaSectionKey } from '@/lib/cva/sections'
 
@@ -51,7 +51,10 @@ export function useCvaSession(sessionId: string) {
         const data = await res.json()
         if (cancelled) return
         const roster: CvaSampleMeta[] = data.samples ?? []
-        const loaded: Record<string, CvaAssessment> = data.assessments ?? {}
+        const raw: Record<string, CvaAssessment> = data.assessments ?? {}
+        const loaded: Record<string, CvaAssessment> = Object.fromEntries(
+          Object.entries(raw).map(([id, a]) => [id, normalizeAssessment(a)]),
+        )
         setSamples(roster)
         setAssessments(loaded)
         latest.current = loaded
@@ -129,6 +132,12 @@ export function useCvaSession(sessionId: string) {
     update(id, (d) => ({ ...d, roast: { ...d.roast, ...patch } }))
   }, [update])
 
+  const setDescribe = useCallback((mutator: (d: CvaDescribe) => CvaDescribe) => {
+    const id = activeRef.current
+    if (!id) return
+    update(id, (a) => ({ ...a, describe: mutator(a.describe) }))
+  }, [update])
+
   const scoreOf = useCallback((id: string): LiveScore => {
     return computeAssessmentScore(assessments[id] ?? empty)
   }, [assessments])
@@ -146,6 +155,7 @@ export function useCvaSession(sessionId: string) {
     setStep,
     setSectionValue,
     setRoast,
+    setDescribe,
     saving,
     savedAt,
     scoreOf,
