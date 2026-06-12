@@ -1,18 +1,33 @@
 'use client'
 
-import { useMemo } from 'react'
-import { CVA_SECTIONS } from '@/lib/cva/sections'
+import { useMemo, useRef, useState } from 'react'
+import { CVA_SECTIONS, type CvaSectionKey } from '@/lib/cva/sections'
 import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
 import { useCvaSession, type CvaSampleMeta } from '@/hooks/useCvaSession'
+import { describeIsEmpty, type DescribeGroup } from '@/types/cva'
 import type { LiveScore } from '@/lib/cva/scoring'
 import { ProgressPath } from './ProgressPath'
 import { RoastStep } from './RoastStep'
 import { SectionScreen } from './SectionScreen'
 import { ScoreSummary } from './ScoreSummary'
 import { LiveScore as LiveScorePill } from './LiveScore'
+import { DescribeOverlay } from './wheel/DescribeOverlay'
 
 const ROAST_ACCENT = '#6d6f54'
 const SCORE_ACCENT = '#151618'
+
+/** Which overlay group a section's Describe button opens (spec §1 table). */
+const GROUP_FOR: Partial<Record<CvaSectionKey, DescribeGroup>> = {
+  fragrance: 'aroma',
+  aroma: 'aroma',
+  flavor: 'flavor_aftertaste',
+  aftertaste: 'flavor_aftertaste',
+  mouthfeel: 'mouthfeel',
+}
+const NOTE_FOR: Partial<Record<CvaSectionKey, 'acidity' | 'sweetness'>> = {
+  acidity: 'acidity',
+  sweetness: 'sweetness',
+}
 
 type TabStatus = 'none' | 'in-progress' | 'pass' | 'fail'
 
@@ -32,7 +47,12 @@ function tabStatus(meta: CvaSampleMeta, live: LiveScore): TabStatus {
 
 export function CvaJourney({ sessionId }: { sessionId: string }) {
   const session = useCvaSession(sessionId)
-  const { samples, ready, activeId, setActive, assessment, step, setStep, setSectionValue, setRoast, saving, savedAt, scoreOf } = session
+  const { samples, ready, activeId, setActive, assessment, step, setStep, setSectionValue, setRoast, setDescribe, saving, savedAt, scoreOf } = session
+
+  const [describeOpen, setDescribeOpen] = useState(false)
+  const [describeGroup, setDescribeGroup] = useState<DescribeGroup>('aroma')
+  const [gateOpen, setGateOpen] = useState(false)
+  const gateAcked = useRef<Set<string>>(new Set())
 
   const live = useMemo(() => scoreOf(activeId), [scoreOf, activeId])
 
@@ -52,6 +72,59 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
 
   const last = steps.length - 1
   const activeMeta = samples.find((s) => s.id === activeId)
+
+  // requires_descriptors soft gate — fires on ANY first transition into the
+  // score step (footer button, progress-path jump, live-score pill); soft only.
+  const goToStep = (n: number) => {
+    if (
+      n === last &&
+      step !== last &&
+      activeMeta?.requires_descriptors &&
+      !gateAcked.current.has(activeId) &&
+      describeIsEmpty(assessment.describe)
+    ) {
+      setGateOpen(true)
+      return
+    }
+    setStep(n)
+  }
+
+  const descriptorSlotFor = (key: CvaSectionKey) => {
+    const group = GROUP_FOR[key]
+    if (group) {
+      const count =
+        group === 'aroma' ? assessment.describe.aroma.picks.length
+        : group === 'flavor_aftertaste' ? assessment.describe.flavor_aftertaste.picks.length
+        : assessment.describe.mouthfeel.cata.length
+      return (
+        <button
+          type="button"
+          onClick={() => { setDescribeGroup(group); setDescribeOpen(true) }}
+          className="inline-flex items-center gap-2 rounded-[16px] border border-border px-6 py-3 text-sm font-bold transition hover:border-[var(--cva-accent)]"
+        >
+          Describe
+          {count > 0 && (
+            <span className="rounded-md px-1.5 py-0.5 text-[11px] font-extrabold text-white" style={{ background: 'var(--cva-accent)' }}>
+              {count}
+            </span>
+          )}
+        </button>
+      )
+    }
+    const noteKey = NOTE_FOR[key]
+    if (!noteKey) return null
+    return (
+      <label className="flex w-full max-w-[560px] flex-col gap-1.5 text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">
+        Descriptors — freely elicited
+        <input
+          value={assessment.describe.notes[noteKey] ?? ''}
+          onChange={(e) => setDescribe((d) => ({ ...d, notes: { ...d.notes, [noteKey]: e.target.value } }))}
+          placeholder="SCA gives this section no checklist — write what you taste."
+          className="h-11 rounded-[14px] border border-border bg-card px-4 text-sm font-normal normal-case tracking-normal outline-none focus:border-[var(--cva-accent)]"
+        />
+      </label>
+    )
+  }
 
   const accent = useMemo(() => {
     if (step === 0) return ROAST_ACCENT
@@ -124,12 +197,12 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
           {saving ? 'Saving…' : savedAt ? 'Saved' : 'Specialty · SCA CVA 2024'}
         </div>
         <div className="ml-auto">
-          <LiveScorePill live={live} onClick={() => setStep(last)} />
+          <LiveScorePill live={live} onClick={() => goToStep(last)} />
         </div>
       </header>
 
       <div className="relative z-10 border-b border-border px-6">
-        <ProgressPath steps={steps} current={step} onJump={setStep} />
+        <ProgressPath steps={steps} current={step} onJump={goToStep} />
       </div>
 
       <main className="relative z-[2] flex flex-1 flex-col overflow-y-auto">
@@ -145,7 +218,13 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
                 total={8}
                 value={assessment.sections[section.key]}
                 onChange={(patch) => setSectionValue(section.key, patch)}
-                onCommit={() => { if (step < last) setStep(step + 1) }}
+                onCommit={() => { if (step < last) goToStep(step + 1) }}
+                intensity={section.key === 'overall' ? undefined : assessment.describe.intensities[section.key]}
+                onIntensityChange={
+                  section.key === 'overall' ? undefined
+                  : (v) => setDescribe((d) => ({ ...d, intensities: { ...d.intensities, [section.key]: v } }))
+                }
+                descriptorSlot={descriptorSlotFor(section.key)}
               />
             )
           })()}
@@ -175,13 +254,50 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         <button
           type="button"
           disabled={step === last}
-          onClick={() => setStep(Math.min(last, step + 1))}
+          onClick={() => goToStep(Math.min(last, step + 1))}
           className="inline-flex items-center gap-2 rounded-[16px] px-7 py-3 text-sm font-bold text-white transition disabled:pointer-events-none disabled:opacity-35"
           style={{ background: 'var(--cva-accent)', boxShadow: '0 6px 18px var(--cva-accent-soft)' }}
         >
           {nextLabel}
         </button>
       </footer>
+
+      <DescribeOverlay
+        open={describeOpen}
+        group={describeGroup}
+        onGroupChange={setDescribeGroup}
+        describe={assessment.describe}
+        onDescribe={setDescribe}
+        onClose={() => setDescribeOpen(false)}
+      />
+
+      {gateOpen && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40">
+          <div className="w-[min(92vw,420px)] rounded-[20px] border border-border bg-background p-6 shadow-2xl">
+            <h3 className="text-sm font-bold">No descriptors recorded</h3>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This quality requires flavor notes. Reveal the score anyway?
+            </p>
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setGateOpen(false)}
+                className="rounded-[12px] border border-border px-4 py-2 text-sm font-semibold"
+              >
+                Keep describing
+              </button>
+              <button
+                type="button"
+                onClick={() => { gateAcked.current.add(activeId); setGateOpen(false); setStep(last) }}
+                className="rounded-[12px] px-4 py-2 text-sm font-bold text-white"
+                style={{ background: 'var(--cva-accent)' }}
+              >
+                Reveal anyway
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
