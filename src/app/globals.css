@@ -177,19 +177,21 @@
 }
 
 /* ===== CVA flavor wheel (Phase 2; v8 prototype is normative) ===== */
-.cva-wheel-stage{position:relative;width:100%;aspect-ratio:1;border-radius:18px;overflow:hidden;
-  background:radial-gradient(110% 85% at 50% -10%, var(--cva-accent-soft), transparent 60%), var(--cva-card-solid);
-  border:.5px solid var(--cva-hair);}
+/* full-screen hero — no card/module chrome; the accent glow is painted full-width
+   by the overlay region behind it, so the stage itself is transparent. */
+.cva-wheel-stage{position:relative;width:100%;aspect-ratio:1;overflow:hidden;background:transparent;}
 .cva-wheel-svg{display:block;width:100%;height:100%;transform-origin:50% 50%;transition:transform .65s var(--cva-ease);}
 .cva-wheel-branch{transform-box:view-box;transform-origin:50% 50%;transition:transform .35s var(--cva-spring),opacity .3s,filter .35s;}
 .cva-wheel-branch.is-hot{transform:scale(1.055);filter:drop-shadow(0 6px 14px rgba(0,0,0,.30));}
 .cva-wheel-branch.is-dim{opacity:.32;}
-.cva-wheel-branch.is-faded{opacity:.10;}
+.cva-wheel-branch.is-faded{opacity:.14;}
+.cva-wheel-branch.is-adjacent{opacity:.62;}
 .cva-wheel-branch.is-soft{opacity:.55;}
 .cva-wheel-branch.is-focused{filter:drop-shadow(0 4px 18px rgba(0,0,0,.28));}
 .cva-wheel-svg[data-zoom-mode="mid"] .cva-wheel-branch.is-focused{filter:drop-shadow(0 4px 14px rgba(0,0,0,.22));}
 .cva-wheel-w3{filter:blur(1.5px) saturate(.75) opacity(.6);transition:filter .4s var(--cva-ease);}
 .cva-wheel-w3.is-clear{filter:none;}
+.cva-wheel-w3.is-semiclear{filter:blur(.5px) saturate(.92);}   /* neighbour leaves: legible, not fully sharp */
 .cva-wheel-wedge{transform-box:view-box;transform-origin:50% 50%;transition:transform .28s var(--cva-spring);cursor:pointer;}
 .cva-wheel-wedge path{stroke:var(--cva-card-solid);stroke-width:.9;}
 .cva-wheel-wedge.is-popped{transform:scale(1.045);}

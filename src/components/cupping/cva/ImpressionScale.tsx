@@ -48,113 +48,120 @@ export function ImpressionScale({ value, finalValue, accent, onChange, onChangeF
     return { scale: 1, lift: 0, z: 1 }
   }
 
+  const numericValue = (cooling ? finalValue : value) ?? value
+  const ringBg = 'var(--background)'
+
   return (
-    <div data-testid="impression-scale" tabIndex={0} onKeyDown={onKeyDown} className="space-y-3 outline-none">
-      <div
-        className="relative flex items-end justify-center gap-[9px] px-1 pt-6"
-        style={{ height: 128 }}
-        onMouseLeave={() => setHovered(null)}
-      >
-        {IMPRESSION_COLORS.map((color, i) => {
-          const point = i + 1
-          const selected = value === point && !cooling
-          const isFinal = finalValue === point && cooling
-          const active = value === point || finalValue === point
-          const sw = swell(i)
-          const tall = active
-          const ringBg = 'hsl(var(--background))'
-          return (
-            <button
-              key={point}
-              type="button"
-              aria-label={`Impression ${point} — ${IMPRESSION_LABELS[i]}`}
-              aria-pressed={value === point}
-              onMouseEnter={() => setHovered(i)}
-              onClick={() => pick(point)}
-              className={`group relative flex flex-1 items-center justify-center rounded-[18px] ${active ? 'cva-anim-springpop' : ''}`}
-              style={{
-                maxWidth: 78,
-                height: tall ? 108 : 78,
-                background: color,
-                color,
-                transform: `scale(${sw.scale}) translateY(${sw.lift}px)`,
-                transformOrigin: 'bottom center',
-                zIndex: active ? 4 : sw.z,
-                transition: 'transform .28s var(--cva-spring), height .28s var(--cva-spring), box-shadow .28s',
-                boxShadow: selected
-                  ? `0 16px 40px rgba(0,0,0,.28), 0 0 0 3px ${ringBg}, 0 0 0 6px currentColor`
-                  : isFinal
-                    ? `0 16px 40px rgba(0,0,0,.28), 0 0 0 3px ${ringBg}, 0 0 0 6px ${accent}`
-                    : '0 4px 14px rgba(0,0,0,.12)',
-                outline: isFinal ? '3px dashed rgba(255,255,255,.9)' : 'none',
-                outlineOffset: isFinal ? -9 : 0,
-              }}
-            >
-              <span
-                className="text-[22px] font-extrabold"
-                style={{ color: 'rgba(255,255,255,.92)', textShadow: '0 1px 3px rgba(0,0,0,.3)' }}
+    <div
+      data-testid="impression-scale"
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      className="mx-auto w-full max-w-[820px] space-y-3.5 outline-none"
+    >
+      {/* scale row: nine blocks (fill the width) + the inline numeric box */}
+      <div className="flex w-full items-end justify-center gap-[18px]">
+        <div
+          className="relative flex h-[128px] flex-1 items-end justify-center gap-[9px] px-1 pt-6"
+          onMouseLeave={() => setHovered(null)}
+        >
+          {IMPRESSION_COLORS.map((color, i) => {
+            const point = i + 1
+            const selected = value === point && !cooling
+            const isFinal = finalValue === point && cooling
+            const active = value === point || finalValue === point
+            const sw = swell(i)
+            return (
+              <button
+                key={point}
+                type="button"
+                aria-label={`Impression ${point} — ${IMPRESSION_LABELS[i]}`}
+                aria-pressed={value === point}
+                onMouseEnter={() => setHovered(i)}
+                onClick={() => pick(point)}
+                className={`group relative flex h-full max-w-[78px] flex-1 items-center justify-center rounded-[18px] ${active ? 'cva-anim-springpop' : ''}`}
+                style={{
+                  height: active ? 108 : 78,
+                  background: color,
+                  color,
+                  transform: `scale(${sw.scale}) translateY(${sw.lift}px)`,
+                  transformOrigin: 'bottom center',
+                  zIndex: active ? 4 : sw.z,
+                  transition: 'transform .28s var(--cva-spring), height .28s var(--cva-spring), box-shadow .28s',
+                  boxShadow: selected
+                    ? `0 16px 40px rgba(0,0,0,.28), 0 0 0 3px ${ringBg}, 0 0 0 6px currentColor`
+                    : isFinal
+                      ? `0 16px 40px rgba(0,0,0,.28), 0 0 0 3px ${ringBg}, 0 0 0 6px ${accent}`
+                      : '0 4px 14px rgba(0,0,0,.12)',
+                  outline: isFinal ? '3px dashed rgba(255,255,255,.9)' : 'none',
+                  outlineOffset: isFinal ? -9 : 0,
+                }}
               >
-                {point}
-              </span>
-            </button>
-          )
-        })}
-        {value != null && finalValue != null && value !== finalValue && (
-          <CoolingArrow from={value} to={finalValue} accent={accent} />
-        )}
-      </div>
-
-      {/* scale legend: 1 worst (red) → 9 best (green) */}
-      <div className="flex justify-between px-1.5 text-[11px] font-semibold">
-        <span style={{ color: '#ef4444' }}>1 · {IMPRESSION_LABELS[0]}</span>
-        <span style={{ color: '#22c55e' }}>9 · {IMPRESSION_LABELS[8]}</span>
-      </div>
-
-      {/* readout */}
-      {value != null && (
-        <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-sm">
-          <span className="inline-flex items-center gap-2 rounded-2xl border border-border bg-card px-4 py-2 font-semibold">
-            <span className="h-3.5 w-3.5 rounded-md" style={{ background: IMPRESSION_COLORS[value - 1] }} />
-            {value} · {IMPRESSION_LABELS[value - 1]}
-          </span>
-          {cooling && finalValue != null && finalValue !== value && (
-            <span className="inline-flex items-center gap-2 rounded-2xl px-4 py-2 font-semibold" style={{ color: 'var(--cva-cool)' }}>
-              <span className="h-3.5 w-3.5 rounded-md" style={{ background: IMPRESSION_COLORS[finalValue - 1] }} />
-              final {finalValue} · {finalValue > value ? 'rose' : 'fell'} as it cooled
-            </span>
+                <span
+                  className="text-[22px] font-extrabold"
+                  style={{ color: 'rgba(255,255,255,.96)', textShadow: '0 1px 3px rgba(0,0,0,.3)' }}
+                >
+                  {point}
+                </span>
+              </button>
+            )
+          })}
+          {value != null && finalValue != null && value !== finalValue && (
+            <CoolingArrow from={value} to={finalValue} accent={accent} />
           )}
         </div>
-      )}
 
-      <div className="flex flex-wrap items-center justify-center gap-4 pt-1">
-        <label className="flex flex-col items-center gap-1.5">
+        <label className="flex flex-none flex-col items-center gap-1.5 pb-0.5">
           <input
             aria-label="Impression value"
             type="number"
             min={1}
             max={9}
-            value={(cooling ? finalValue : value) ?? ''}
+            placeholder="-"
+            value={numericValue ?? ''}
             onChange={(e) => onNumeric(e.target.value)}
-            className="h-16 w-16 rounded-[18px] border border-border bg-card text-center text-[26px] font-extrabold outline-none focus:border-[var(--cva-accent)] focus:ring-4 focus:ring-[var(--cva-accent-soft)]"
+            className="h-16 w-16 rounded-[18px] border bg-card text-center text-[26px] font-extrabold outline-none transition-colors focus:border-[var(--cva-accent)] focus:ring-4 focus:ring-[var(--cva-accent-soft)]"
+            style={{ borderColor: numericValue != null ? 'var(--cva-accent)' : 'var(--border)' }}
           />
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Type 1–9</span>
-        </label>
-        <label
-          className={`inline-flex cursor-pointer items-center gap-2 rounded-2xl border px-4 py-2 text-[12.5px] font-semibold transition ${
-            cooling ? 'border-[var(--cva-cool)] text-[var(--cva-cool)]' : 'border-dashed border-border text-muted-foreground'
-          }`}
-          style={cooling ? { background: 'rgba(59,130,246,.1)' } : undefined}
-        >
-          <input
-            type="checkbox"
-            className="sr-only"
-            checked={cooling}
-            onChange={(e) => { setCooling(e.target.checked); if (!e.target.checked) onChangeFinal(undefined) }}
-          />
-          <span aria-hidden className="text-[13px]">{cooling ? '●' : '○'}</span>
-          Changed as it cooled?
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">1–9</span>
         </label>
       </div>
+
+      {/* ends */}
+      <div className="flex justify-between px-1.5 text-[11px] font-semibold text-muted-foreground">
+        <span style={{ color: '#ef4444' }}>1 · {IMPRESSION_LABELS[0]}</span>
+        <span>5 · {IMPRESSION_LABELS[4]}</span>
+        <span style={{ color: '#22c55e' }}>9 · {IMPRESSION_LABELS[8]}</span>
+      </div>
+
+      {/* readout + cooling toggle (appears once a value is set) */}
+      {value != null && (
+        <div className="flex min-h-[44px] flex-wrap items-center justify-center gap-3 pt-0.5 text-sm">
+          <span className="inline-flex items-center gap-2 rounded-[14px] border border-border bg-card px-4 py-2 font-bold">
+            <span className="h-3.5 w-3.5 rounded-md" style={{ background: IMPRESSION_COLORS[value - 1] }} />
+            {value} · {IMPRESSION_LABELS[value - 1]}
+          </span>
+          <label
+            className={`inline-flex cursor-pointer items-center gap-2 rounded-[14px] border px-[15px] py-2 text-[12.5px] font-semibold transition ${
+              cooling ? 'border-[var(--cva-cool)] text-[var(--cva-cool)]' : 'border-dashed border-border text-muted-foreground hover:text-foreground'
+            }`}
+            style={cooling ? { background: 'rgba(59,130,246,.1)' } : undefined}
+          >
+            <input
+              type="checkbox"
+              className="sr-only"
+              checked={cooling}
+              onChange={(e) => { setCooling(e.target.checked); if (!e.target.checked) onChangeFinal(undefined) }}
+            />
+            <span aria-hidden className="text-[13px]">{cooling ? '●' : '○'}</span>
+            Changed as it cooled?
+          </label>
+          {cooling && finalValue != null && finalValue !== value && (
+            <span className="inline-flex items-center gap-1.5 text-[12.5px] font-bold" style={{ color: 'var(--cva-cool)' }}>
+              {value} <span aria-hidden>→</span> {finalValue} · {finalValue > value ? 'rose' : 'fell'} as it cooled
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

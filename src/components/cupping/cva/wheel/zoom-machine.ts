@@ -6,8 +6,10 @@ export type ZoomMode = 'rest' | 'mid' | 'full'
 export interface ZoomState { mode: ZoomMode; fam: string | null }
 export interface HoverSample { region: 'hub' | 'node' | 'none'; fam?: string; ring?: number }
 
-export const REST_S = 1.3
-export const DEPTHS = { full: { s: 2.4, r: 130 }, mid: { s: 1.75, r: 80 } } as const
+// Rest shows the whole wheel (outer segments readable, not bleeding off); focused
+// zoom is gentle so neighbouring families stay on-screen for a continuous flow.
+export const REST_S = 1.06
+export const DEPTHS = { full: { s: 1.6, r: 92 }, mid: { s: 1.32, r: 56 } } as const
 export const DWELL = { in: 190, backIn: 180, mid: 200, out: 220, switch: 240 } as const
 
 export type DwellPlan =

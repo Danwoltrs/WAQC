@@ -29,6 +29,15 @@ const ARC_FAMS = new Set(['Green/Vegetative', 'Sour/Fermented'])
 const FAM_SPANS = new Map(
   NODES.filter((n) => n.ring === 1).map((n) => [n.family, { a0: n.a0, a1: n.a1 }]),
 )
+const FAM_ORDER = WHEEL.map((f) => f.n)
+/** The two families flanking `fam` in the (circular) wheel order. */
+function neighbours(fam: string | null): Set<string> {
+  if (!fam) return new Set()
+  const i = FAM_ORDER.indexOf(fam)
+  if (i < 0) return new Set()
+  const n = FAM_ORDER.length
+  return new Set([FAM_ORDER[(i - 1 + n) % n], FAM_ORDER[(i + 1) % n]])
+}
 
 /* ---------- static geometry helpers ---------- */
 
@@ -189,11 +198,14 @@ export function FlavorWheel({ picks, onToggle }: Props) {
     else applyZoom({ mode: 'full', fam: nd.family })
   }
 
+  const adjacent = useMemo(() => neighbours(zoom.fam), [zoom.fam])
+
   const branchClass = (fam: string) => {
     const cls = ['cva-wheel-branch']
     if (zoom.mode === 'rest') {
       if (hotFam) cls.push(fam === hotFam ? 'is-hot' : 'is-dim')
     } else if (fam === zoom.fam) cls.push('is-focused')
+    else if (adjacent.has(fam)) cls.push('is-adjacent')   // keep neighbours readable — continuous flow
     else cls.push(zoom.mode === 'full' ? 'is-faded' : 'is-soft')
     return cls.join(' ')
   }
@@ -244,7 +256,14 @@ export function FlavorWheel({ picks, onToggle }: Props) {
     }
   }
 
-  const onPointerLeave = () => { clearDwell(); setHotFam(null); setPopped(null) }
+  // Leaving the wheel entirely springs it back to rest (Daniel: "if the mouse
+  // goes outside the wheel, zoom back out").
+  const onPointerLeave = () => {
+    clearDwell()
+    setHotFam(null)
+    setPopped(null)
+    if (zoomRef.current.mode !== 'rest') applyZoom({ mode: 'rest', fam: null })
+  }
 
   const poppedLast = (a: WheelNode, b: WheelNode) =>
     (pickKey({ path: a.path }) === popped ? 1 : 0) - (pickKey({ path: b.path }) === popped ? 1 : 0)
@@ -268,8 +287,11 @@ export function FlavorWheel({ picks, onToggle }: Props) {
     const g = LABELS[idx]
     const key = nd.path.join('>')
     const l3 = nd.ring === 3
+    // reveal leaf labels for the focused family AND its neighbours, so the notes
+    // read continuously across the boundary instead of cutting off at one slice.
+    const showLeaf = zoom.fam === nd.family || adjacent.has(nd.family)
     const wrapCls = `cva-wheel-lw${popped === key ? ' is-popped' : ''}`
-    const txtCls = `cva-wheel-label${l3 ? ` cva-l3${zoom.fam === nd.family ? ' is-visible' : ''}` : ''}`
+    const txtCls = `cva-wheel-label${l3 ? ` cva-l3${showLeaf ? ' is-visible' : ''}` : ''}`
     if (g.kind === 'arc') {
       return (
         <g key={key} className={wrapCls}>
@@ -321,7 +343,7 @@ export function FlavorWheel({ picks, onToggle }: Props) {
           return (
             <g key={fam.n} className={branchClass(fam.n)}>
               <g>{inner.map(renderWedge)}</g>
-              <g className={`cva-wheel-w3${hotFam === fam.n || zoom.fam === fam.n ? ' is-clear' : ''}`}>
+              <g className={`cva-wheel-w3${hotFam === fam.n || zoom.fam === fam.n ? ' is-clear' : adjacent.has(fam.n) ? ' is-semiclear' : ''}`}>
                 {outer.map(renderWedge)}
               </g>
               <g pointerEvents="none">{famLabels.map(([n, i]) => renderLabel(n, i))}</g>

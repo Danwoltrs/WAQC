@@ -26,12 +26,14 @@ export function SectionScreen({
 }: Props) {
   return (
     <div className="flex w-full max-w-[820px] flex-col items-center gap-5">
-      <div className="flex flex-col items-center gap-1.5 text-center">
+      <div className="flex flex-col items-center gap-2 text-center">
         <span className="text-[11px] font-bold uppercase tracking-[2.5px]" style={{ color: section.accent }}>
-          Section {index} of {total}
+          Section {index} of {total} · Affective Impression
         </span>
-        <h2 className="text-[clamp(28px,5vw,46px)] font-extrabold leading-none tracking-tight">{section.label}</h2>
-        <p className="max-w-[520px] text-sm font-medium text-muted-foreground">{section.hint}</p>
+        <h2 className="text-[clamp(30px,5.5vw,52px)] font-extrabold leading-none tracking-tight" style={{ color: section.accent }}>
+          {section.label}
+        </h2>
+        <p className="max-w-[560px] text-[15px] font-medium text-muted-foreground">{section.hint}</p>
       </div>
 
       <ImpressionScale

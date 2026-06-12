@@ -90,7 +90,7 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-black/45" onClick={onClose} aria-hidden />
-      <div className="absolute inset-0 flex flex-col overflow-hidden bg-background xl:inset-6 xl:rounded-[20px] xl:border xl:border-border xl:shadow-2xl">
+      <div className="absolute inset-0 flex flex-col overflow-hidden bg-background">
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
           <div role="tablist" className="flex gap-2">
             {GROUPS.map((g) => {
@@ -125,19 +125,32 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
           </button>
         </div>
 
-        <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto p-5 lg:flex-row">
-          <div className="mx-auto w-full max-w-[min(94vw,60dvh)] lg:mx-0 lg:max-w-[min(58vw,86dvh)] lg:flex-[1.3]">
-            {isOlfactory ? (
+        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          {/* full-width accent glow behind the wheel — the wheel's "box" runs edge
+              to edge, while the wheel itself stays this size. */}
+          <div
+            className="pointer-events-none absolute inset-0"
+            style={{ background: 'radial-gradient(62% 64% at 50% 44%, var(--cva-accent-soft), transparent 82%)' }}
+          />
+          {isOlfactory ? (
+            <div
+              className="relative m-auto shrink-0"
+              style={{ width: 'min(100vw, calc(100dvh - 200px))', height: 'min(100vw, calc(100dvh - 200px))' }}
+            >
               <FlavorWheel picks={olf.picks} onToggle={togglePick} />
-            ) : (
+            </div>
+          ) : (
+            <div className="relative m-auto shrink-0">
               <MouthfeelCata
                 value={describe.mouthfeel.cata}
                 onChange={(next) => onDescribe((d) => ({ ...d, mouthfeel: { cata: next } }))}
               />
-            )}
-          </div>
+            </div>
+          )}
 
-          <div className="flex flex-1 flex-col gap-5">
+          {/* descriptors — centered card, lifted off the bottom edge */}
+          <div className="relative flex shrink-0 justify-center px-4 pb-7 pt-1">
+            <div className="flex max-h-[168px] w-full max-w-[820px] flex-col items-center gap-3 overflow-y-auto rounded-[20px] border border-border bg-background/80 px-5 py-3 backdrop-blur-md">
             {group === 'flavor_aftertaste' && (
               <MainTastes
                 value={describe.flavor_aftertaste.main_tastes}
@@ -148,14 +161,14 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
             )}
 
             {isOlfactory && (
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
+              <div className="flex w-full flex-col items-center gap-2">
+                <div className="flex items-center justify-center gap-2">
                   <span className="text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">Descriptors</span>
                   <span className="rounded-md bg-[var(--cva-accent-soft)] px-2 py-0.5 text-[11px] font-bold">
                     Picks {olf.picks.length}/{OLF_CAP}
                   </span>
                 </div>
-                <div className="flex min-h-9 flex-wrap gap-1.5">
+                <div className="flex min-h-9 flex-wrap justify-center gap-1.5">
                   {olf.picks.length === 0 && (
                     <span className="text-xs text-muted-foreground">Tap a family on the wheel, then tap the notes you find.</span>
                   )}
@@ -172,7 +185,7 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
                     </button>
                   ))}
                 </div>
-                <p className="text-[11.5px] leading-relaxed text-muted-foreground" data-testid="derived-cata">
+                <p className="text-center text-[11.5px] leading-relaxed text-muted-foreground" data-testid="derived-cata">
                   <b className="text-foreground">Official form auto-fill</b>
                   {' · '}
                   {derived!.boxes.length ? derived!.boxes.join(', ') : '—'}
@@ -181,7 +194,7 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
               </div>
             )}
 
-            <label className="flex flex-col gap-1.5 text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">
+            <label className="flex w-full max-w-[560px] flex-col gap-1.5 text-center text-[10.5px] font-bold uppercase tracking-[1.4px] text-muted-foreground">
               Descriptors — freely elicited (off-wheel)
               <input
                 aria-label="Descriptors — freely elicited"
@@ -190,7 +203,7 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
                   onDescribe((d) => ({ ...d, notes: { ...d.notes, [NOTE_KEY[group]]: e.target.value } }))
                 }
                 placeholder='e.g. "dried tomato" — notes the wheel does not cover'
-                className="h-11 rounded-[14px] border border-border bg-card px-4 text-sm font-normal normal-case tracking-normal outline-none focus:border-[var(--cva-accent)]"
+                className="h-11 rounded-[14px] border border-border bg-card px-4 text-center text-sm font-normal normal-case tracking-normal outline-none focus:border-[var(--cva-accent)]"
               />
             </label>
 
@@ -199,6 +212,7 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
                 {toast}
               </div>
             )}
+            </div>
           </div>
         </div>
       </div>

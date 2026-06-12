@@ -92,23 +92,40 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const descriptorSlotFor = (key: CvaSectionKey) => {
     const group = GROUP_FOR[key]
     if (group) {
-      const count =
-        group === 'aroma' ? assessment.describe.aroma.picks.length
-        : group === 'flavor_aftertaste' ? assessment.describe.flavor_aftertaste.picks.length
-        : assessment.describe.mouthfeel.cata.length
+      const d = assessment.describe
+      const dots = [
+        d.aroma.picks.length > 0,
+        d.flavor_aftertaste.picks.length > 0 || d.flavor_aftertaste.main_tastes.length > 0,
+        d.mouthfeel.cata.length > 0,
+      ]
+      const total =
+        d.aroma.picks.length + d.flavor_aftertaste.picks.length +
+        d.flavor_aftertaste.main_tastes.length + d.mouthfeel.cata.length
       return (
-        <button
-          type="button"
-          onClick={() => { setDescribeGroup(group); setDescribeOpen(true) }}
-          className="inline-flex items-center gap-2 rounded-[16px] border border-border px-6 py-3 text-sm font-bold transition hover:border-[var(--cva-accent)]"
-        >
-          Describe
-          {count > 0 && (
-            <span className="rounded-md px-1.5 py-0.5 text-[11px] font-extrabold text-white" style={{ background: 'var(--cva-accent)' }}>
-              {count}
+        <div className="flex flex-col items-center gap-2">
+          <button
+            type="button"
+            onClick={() => { setDescribeGroup(group); setDescribeOpen(true) }}
+            className="inline-flex items-center gap-2.5 rounded-[16px] border border-border bg-card px-[22px] py-[11px] text-[13px] font-bold transition hover:-translate-y-0.5 hover:border-[var(--cva-accent)] hover:bg-[var(--cva-accent-soft)] hover:shadow-lg"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="h-[17px] w-[17px]">
+              <circle cx="12" cy="12" r="9" /><circle cx="12" cy="12" r="3.2" />
+              <path d="M12 3v2.4M21 12h-2.4M12 21v-2.4M3 12h2.4" />
+            </svg>
+            Describe this cup
+            {total > 0 && (
+              <span className="rounded-full px-2 py-px text-[11px] font-extrabold text-white" style={{ background: 'var(--cva-accent)' }}>
+                {total}
+              </span>
+            )}
+            <span className="ml-0.5 inline-flex gap-1" aria-hidden>
+              {dots.map((on, k) => (
+                <span key={k} className="h-[7px] w-[7px] rounded-full transition" style={{ background: on ? 'var(--cva-accent)' : 'var(--border)', transform: on ? 'scale(1.15)' : undefined }} />
+              ))}
             </span>
-          )}
-        </button>
+          </button>
+          <span className="text-[11px] font-semibold text-muted-foreground">Shared across all sections · edit anytime</span>
+        </div>
       )
     }
     const noteKey = NOTE_FOR[key]
@@ -205,8 +222,9 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         <ProgressPath steps={steps} current={step} onJump={goToStep} />
       </div>
 
-      <main className="relative z-[2] flex flex-1 flex-col overflow-y-auto">
-        <div className="m-auto flex w-full justify-center px-6 py-6">
+      <div className="relative z-[2] flex flex-1 flex-col overflow-y-auto min-h-0">
+        <div className="m-auto flex w-full max-w-[880px] flex-col px-6 py-6">
+          <main className="flex w-full justify-center">
           {step === 0 && <RoastStep roast={assessment.roast} onChange={setRoast} />}
           {step >= 1 && step <= 8 && (() => {
             const section = CVA_SECTIONS[step - 1]
@@ -236,10 +254,9 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
               onJump={(s) => setStep(s)}
             />
           )}
-        </div>
-      </main>
+          </main>
 
-      <footer className="relative z-10 flex items-center justify-between gap-3 border-t border-border px-6 py-3.5">
+          <footer className="mt-7 flex items-center justify-between gap-3 border-t border-border pt-5">
         <button
           type="button"
           disabled={step === 0}
@@ -260,7 +277,9 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         >
           {nextLabel}
         </button>
-      </footer>
+          </footer>
+        </div>
+      </div>
 
       <DescribeOverlay
         open={describeOpen}
