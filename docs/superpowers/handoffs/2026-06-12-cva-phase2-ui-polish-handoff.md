@@ -11,7 +11,7 @@ Phase 2 adds the SCA-103 descriptive assessment to the specialty CVA cupping jou
 ## Repo state right now (2026-06-12)
 
 - **Repo:** WAQC (`/Users/danielwolthers/Documents/GitHub/WAQC`), branch `main`, **working tree CLEAN**.
-- **Local `main` is 13 commits AHEAD of `origin/main`** (upstream still `1f81066`). **NOTHING pushed.** Range `5c601ba..73d7874` = Tasks 5–14 + 2 review fixes + 2 handoff/polish commits. Verify with `git log --oneline @{u}..HEAD`.
+- **Local `main` is 15 commits AHEAD of `origin/main`** (upstream still `1f81066`). **NOTHING pushed.** Range `5c601ba..7618f5e` = Tasks 5–14 + 2 review fixes + 2 handoff commits + 2 UI-polish commits (`73d7874` + Daniel's hand-tuned `7618f5e`). Verify with `git log --oneline @{u}..HEAD`.
 - **No migrations, no API/DB changes** this whole phase (describe rides the existing `CvaAssessment` autosave blob).
 - **Deploy:** trunk-based — a push auto-deploys `main` → prod (qc.wolthers.com). This changeset is **LIVE once pushed** (the describe feature is wired into the journey). That's why the push is held for Daniel's manual smoke + color check.
 - **Verify locally with** `npx tsc --noEmit` + `npx vitest run` (NOT `npm test` = watch; NOT `npm run build` = fails offline on Google Fonts).
@@ -33,7 +33,9 @@ Phase 2 adds the SCA-103 descriptive assessment to the specialty CVA cupping jou
 | `1aa19f3` | Review fix — popped-label z-order + mid-zoom shadow fidelity |
 | `b5269a8` | Review fix — `CvaJourney.test.tsx` backfills the soft-gate (mutation-checked) |
 | `29f4923` | docs — prior Phase-2 handoff update |
-| `73d7874` | **This session's UI polish** — section-screen reskin + full-screen describe wheel (see below) |
+| `73d7874` | UI polish — section-screen reskin + full-screen describe wheel (see below) |
+| `5f38cdc` | docs — this handoff |
+| `7618f5e` | **Daniel's hand-tune** — wheel frame is the screen: `overflow:visible` stage/svg + 130% edge-to-edge glow + floating describe card (see below) |
 
 **Verification:** every change red→green→commit with real `vitest`/`tsc`; full suite **219/219 green, tsc 0 errors**. (Pre-existing `ApprovalSendView` `act()` warnings are baseline noise, unrelated.) A 4-lens adversarial review workflow ran earlier (Task 14): 8 findings → 3 confirmed + fixed, 5 refuted.
 
@@ -48,11 +50,12 @@ Phase 2 adds the SCA-103 descriptive assessment to the specialty CVA cupping jou
 - `CvaJourney` journey footer + content centered as one group (the "Begin tasting" was stranded at the screen bottom).
 
 **Describe overlay** (`DescribeOverlay.tsx`, `FlavorWheel.tsx`, `zoom-machine.ts`, `globals.css`):
-- Overlay is **full-bleed** (dropped the `xl:` inset module). The flavor wheel is the **chromeless hero** — `.cva-wheel-stage` is transparent; a **full-width accent glow** is painted behind it by the overlay region (the wheel's "box runs edge to edge").
-- Wheel sized **`min(100vw, calc(100dvh - 200px))`** so the **whole wheel stays visible** (no over-zoom / outer-ring cut), centered above the descriptors. Descriptors are a **centered rounded card BELOW** the wheel (`max-w-[820px]`, lifted off the bottom with `pb-7`) — no overlap.
+- Overlay is **full-bleed** (dropped the `xl:` inset module). The flavor wheel is the **chromeless hero**.
+- Wheel sized **`min(100vw, calc(100dvh - 200px))`** so the **whole wheel stays visible** (no over-zoom / outer-ring cut), centered.
 - Zoom dialed down: `REST_S 1.06`, `DEPTHS.full {s:1.6,r:92}`, `mid {s:1.32,r:56}`.
 - **Continuous flow:** focusing a family keeps its two **neighbours** visible (`.is-adjacent` opacity .62) with only light frost (`.is-semiclear`), and **reveals the neighbours' leaf labels** too (not just the focused family's).
 - **Pointer-leave springs the wheel back to rest** (`onPointerLeave` → `applyZoom(rest)`).
+- **`7618f5e` (Daniel's hand-tune) — "the wheel's frame is the screen":** `.cva-wheel-stage` AND `.cva-wheel-svg` are now `overflow:visible` so the zoomed/panned wheel spills past its square and is clipped only by the overlay region (this fixed a faint square-cut on popped wedges / drop-shadows / blur when zoomed — **do NOT revert these to `overflow:hidden`**). The accent glow is a **130% radial** (`radial-gradient(130% 130% at 50% 50%, var(--cva-accent-soft) 0%, transparent 96%)`) so its falloff never shows a seam. The descriptors are a **floating bottom-anchored card** (`absolute inset-x-0 bottom-6`, `pointer-events-none` wrapper / `pointer-events-auto` card, `max-h-[min(46dvh,340px)]`) above the wheel's lower edge — i.e. back to floating, not stacked-below.
 
 ## Locked decisions (do NOT relitigate)
 
@@ -65,25 +68,26 @@ Phase 2 adds the SCA-103 descriptive assessment to the specialty CVA cupping jou
 
 ## Codebase anchors
 
-- [DescribeOverlay.tsx](../../../src/components/cupping/cva/wheel/DescribeOverlay.tsx) — overlay shell, tabs, **wheel region (full-width glow + wheel size `min(100vw, calc(100dvh-200px))`)**, descriptors centered card. Body layout is the most-edited spot this session.
+- [DescribeOverlay.tsx](../../../src/components/cupping/cva/wheel/DescribeOverlay.tsx) — overlay shell, tabs, **wheel region (130% glow + wheel size `min(100vw, calc(100dvh-200px))`)**, **floating bottom-anchored describe card** (`absolute … bottom-6`). Body layout is the most-edited spot this session.
 - [FlavorWheel.tsx](../../../src/components/cupping/cva/wheel/FlavorWheel.tsx) — `neighbours()` + `adjacent` memo, `branchClass` (is-focused/is-adjacent/is-faded), `renderLabel` `showLeaf` (focused+neighbours), `onPointerLeave` zoom-out, `poppedLast` sort on wedges+labels.
 - [zoom-machine.ts](../../../src/components/cupping/cva/wheel/zoom-machine.ts) — `REST_S`, `DEPTHS` (the zoom knobs Daniel is tuning).
 - [ImpressionScale.tsx](../../../src/components/cupping/cva/ImpressionScale.tsx) — full-width scale row, inline numeric, gradient blocks, cooling readout.
 - [SectionScreen.tsx](../../../src/components/cupping/cva/SectionScreen.tsx) — eyebrow/title/subtitle, intensity track, `descriptorSlot`.
 - [CvaJourney.tsx](../../../src/components/cupping/cva/CvaJourney.tsx) — `descriptorSlotFor` (the "Describe this cup" pill), `goToStep` gate, the centered content+footer group.
 - [sections.ts](../../../src/lib/cva/sections.ts) — `IMPRESSION_COLORS` (gradient), `CVA_SECTIONS` accents + `hint` subtitles.
-- [globals.css](../../../src/app/globals.css) — the `.cva-wheel-*` block: `.cva-wheel-stage` (transparent), `.is-adjacent` (.62), `.cva-wheel-w3.is-semiclear`, `.cva-l3.is-visible`.
+- [globals.css](../../../src/app/globals.css) — the `.cva-wheel-*` block: `.cva-wheel-stage` + `.cva-wheel-svg` are **`overflow:visible`** (intentional — see gotcha), `.is-adjacent` (.62), `.cva-wheel-w3.is-semiclear`, `.cva-l3.is-visible`.
 - Prototypes (source of truth): [cva-cupping-prototype.html](../specs/prototypes/cva-cupping-prototype.html) (section screens; `.blk`/`blockColor` ~140–169/686, `.scalerow` ~124–169, `describebtn` ~194–209/922), [cva-flavor-wheel-prototype.html](../specs/prototypes/cva-flavor-wheel-prototype.html) (wheel interaction — but Daniel overrode sizing/zoom live).
 - Plan (complete code, mostly transcribed): [2026-06-11-cva-phase2-describe-flavor-wheel.md](../plans/2026-06-11-cva-phase2-describe-flavor-wheel.md).
 
 ## Open visual items (what may still need tuning)
 
-- **"The wheel's border should go all the way"** — I interpreted this as a **full-width accent glow** behind the wheel (the dark/colored box runs edge-to-edge while the wheel petals stay `min(100vw, calc(100dvh-200px))`). The accent-soft glow is subtle; **Daniel may have meant something more pronounced** (e.g. the colored area literally reaching the screen sides). If he reopens it, the lever is the gradient on the wheel-region div in `DescribeOverlay.tsx` (the `radial-gradient(62% 64% …)` inline style) and/or making the wheel itself bigger (accepting outer-ring bleed).
-- **Wheel-size tension (inherent):** a round wheel can't fill a much-wider-than-tall window without the top/bottom bleeding off. Current choice = **whole wheel visible** (small side margins on very wide windows). If Daniel wants edge-to-edge width, bump the wheel size up (toward `max(100vw, …)`) and accept bleed — but that's what he disliked as "too zoomed," so confirm first.
-- Possible follow-ups he hasn't asked for yet: descriptor panel auto-shifting to the opposite side when a low family is focused; the intensity-track cell size on section screens.
+- **"The wheel's border should go all the way" — RESOLVED by Daniel in `7618f5e`** (overflow:visible wheel clipped by the screen + 130% glow + floating card). Treat the describe-overlay visuals as **Daniel's current preferred baseline**; don't reopen unless he asks.
+- **Wheel-size tension (inherent, still true):** a round wheel can't fill a much-wider-than-tall window without the top/bottom bleeding off. Current = **whole wheel visible** at `min(100vw, calc(100dvh-200px))` (small side margins on very wide windows). The lever if Daniel wants it bigger is that size value in `DescribeOverlay.tsx`.
+- Possible follow-ups he hasn't asked for yet: descriptor card auto-shifting to the opposite side when a low family is focused; the intensity-track cell size on section screens.
 
 ## Gotchas
 
+- **Do NOT set `.cva-wheel-stage` / `.cva-wheel-svg` back to `overflow:hidden`** — they're intentionally `overflow:visible` (`7618f5e`) so the zoomed/panned wheel spills past its square and is clipped only by the overlay. `overflow:hidden` reintroduces a faint square-cut on popped wedges / drop-shadows / blur when zoomed. The overlay region (`relative … overflow-hidden`) is the real clip.
 - **Don't push** — held for Daniel's manual browser smoke + SCA-103 **color-fidelity pass** (compare `cva-flavor-wheel-prototype.html` to p.11 of `Documents/Specialty/AW_SCA-103_Descriptive-Assessment_Sept2024_Secured.pdf`; nudge any off hex in `flavor-wheel-data.ts` `WHEEL` — colors are data, no test changes).
 - **WAQC is a single repo** with its own `.git`; the handoff docs live in it too (not a separate outer repo for this project). Commit docs to the same `main`.
 - `npm run build` fails locally on offline Google Fonts only — use `tsc` + `vitest run`.
