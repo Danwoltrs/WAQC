@@ -5,7 +5,7 @@
 // the wheel is the chromeless hero inside an edge-to-edge framed stage band,
 // with the descriptors card floating bottom-center above it.
 
-import { useEffect, useRef, useState } from 'react'
+import { memo, useCallback, useEffect, useRef, useState } from 'react'
 import { OLF_CAP, addPickCapped, cataForPicks } from '@/lib/cva/flavor-wheel-data'
 import type { CvaDescribe, DescribeGroup, WheelPick } from '@/types/cva'
 import { FlavorWheel } from './FlavorWheel'
@@ -33,9 +33,17 @@ const NOTE_KEY: Record<DescribeGroup, keyof CvaDescribe['notes']> = {
   mouthfeel: 'mouthfeel',
 }
 
-export function DescribeOverlay({ open, group, onGroupChange, describe, onDescribe, onClose }: Props) {
+export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGroupChange, describe, onDescribe, onClose }: Props) {
   const [toast, setToast] = useState<string | null>(null)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Latest-ref mirrors so togglePick stays referentially stable — a fresh
+  // closure per render would defeat FlavorWheel's memo and reconcile the
+  // ~600-element wheel on every keystroke/autosave flip.
+  const describeRef = useRef(describe)
+  describeRef.current = describe
+  const groupRef = useRef(group)
+  groupRef.current = group
 
   // The FlavorWheel (child) registers its Esc handler first (child effects run
   // before parent effects) and preventDefaults while zoomed — so this only
@@ -51,28 +59,26 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
 
   useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current) }, [])
 
-  if (!open) return null
-
-  const isOlfactory = group !== 'mouthfeel'
-  const olf = group === 'aroma' ? describe.aroma : describe.flavor_aftertaste
-
-  const showToast = (msg: string) => {
+  const showToast = useCallback((msg: string) => {
     setToast(msg)
     if (toastTimer.current) clearTimeout(toastTimer.current)
     toastTimer.current = setTimeout(() => setToast(null), 2500)
-  }
+  }, [])
 
-  const togglePick = (pick: WheelPick) => {
-    if (!isOlfactory) return
-    const g = group as 'aroma' | 'flavor_aftertaste'
-    // Compute from the controlled `describe` prop and fire the toast OUTSIDE the
-    // state updater — calling setToast inside the updater would be a setState
-    // during the parent's render (React warns). The overlay is controlled, so
-    // describe[g].picks is the live value the updater will apply.
-    const res = addPickCapped(describe[g].picks, pick)
+  const togglePick = useCallback((pick: WheelPick) => {
+    const grp = groupRef.current
+    if (grp === 'mouthfeel') return
+    const g = grp as 'aroma' | 'flavor_aftertaste'
+    // Compute from the controlled `describe` (via ref — kept current each
+    // render) and fire the toast OUTSIDE the state updater — calling setToast
+    // inside the updater would be a setState during the parent's render.
+    const res = addPickCapped(describeRef.current[g].picks, pick)
     if (res.removed) showToast(`Cap of ${OLF_CAP} reached — replaced "${res.removed.path[res.removed.path.length - 1]}"`)
     onDescribe((d) => ({ ...d, [g]: { ...d[g], picks: res.picks, cata: cataForPicks(res.picks).boxes } }))
-  }
+  }, [onDescribe, showToast])
+
+  const isOlfactory = group !== 'mouthfeel'
+  const olf = group === 'aroma' ? describe.aroma : describe.flavor_aftertaste
 
   const removePick = (pick: WheelPick) => {
     const g = group as 'aroma' | 'flavor_aftertaste'
@@ -89,7 +95,9 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
     : describe.mouthfeel.cata.length
 
   return (
-    <div className="fixed inset-0 z-50">
+    // kept mounted when closed (display:none) — re-mounting the ~600-element
+    // wheel on every open was the repeated first-interaction hitch
+    <div className="fixed inset-0 z-50" style={{ display: open ? undefined : 'none' }}>
       <div className="absolute inset-0 bg-black/45" onClick={onClose} aria-hidden />
       <div className="absolute inset-0 flex flex-col overflow-hidden bg-background">
         <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
@@ -138,7 +146,7 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
               className="relative m-auto shrink-0"
               style={{ width: 'min(100vw, calc(100dvh - 200px))', height: 'min(100vw, calc(100dvh - 200px))' }}
             >
-              <FlavorWheel picks={olf.picks} onToggle={togglePick} />
+              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} />
             </div>
           ) : (
             <div className="relative m-auto shrink-0">
@@ -220,4 +228,4 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
       </div>
     </div>
   )
-}
+})

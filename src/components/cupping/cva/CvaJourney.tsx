@@ -1,6 +1,7 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import dynamic from 'next/dynamic'
 import { CVA_SECTIONS, type CvaSectionKey } from '@/lib/cva/sections'
 import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
 import { useCvaSession, type CvaSampleMeta } from '@/hooks/useCvaSession'
@@ -11,7 +12,13 @@ import { RoastStep } from './RoastStep'
 import { SectionScreen } from './SectionScreen'
 import { ScoreSummary } from './ScoreSummary'
 import { LiveScore as LiveScorePill } from './LiveScore'
-import { DescribeOverlay } from './wheel/DescribeOverlay'
+// Code-split: the wheel subtree (~110-node taxonomy + label geometry) stays out
+// of the route's first-load JS; a mount-time preload warms the chunk long
+// before a Describe button is reachable.
+const DescribeOverlay = dynamic(
+  () => import('./wheel/DescribeOverlay').then((m) => ({ default: m.DescribeOverlay })),
+  { ssr: false },
+)
 
 const ROAST_ACCENT = '#6d6f54'
 const SCORE_ACCENT = '#151618'
@@ -53,6 +60,16 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const [describeGroup, setDescribeGroup] = useState<DescribeGroup>('aroma')
   const [gateOpen, setGateOpen] = useState(false)
   const gateAcked = useRef<Set<string>>(new Set())
+
+  // The overlay mounts on first open and then stays mounted (hidden) — the
+  // wheel's ~600-element mount is paid once, not on every Describe tap.
+  const everOpenedDescribe = useRef(false)
+  if (describeOpen) everOpenedDescribe.current = true
+  const closeDescribe = useCallback(() => setDescribeOpen(false), [])
+
+  // Warm the code-split overlay chunk right after mount so the first open
+  // never waits on the network.
+  useEffect(() => { void import('./wheel/DescribeOverlay') }, [])
 
   const live = useMemo(() => scoreOf(activeId), [scoreOf, activeId])
 
@@ -281,14 +298,16 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
         </div>
       </div>
 
-      <DescribeOverlay
-        open={describeOpen}
-        group={describeGroup}
-        onGroupChange={setDescribeGroup}
-        describe={assessment.describe}
-        onDescribe={setDescribe}
-        onClose={() => setDescribeOpen(false)}
-      />
+      {(everOpenedDescribe.current || describeOpen) && (
+        <DescribeOverlay
+          open={describeOpen}
+          group={describeGroup}
+          onGroupChange={setDescribeGroup}
+          describe={assessment.describe}
+          onDescribe={setDescribe}
+          onClose={closeDescribe}
+        />
+      )}
 
       {gateOpen && (
         <div className="fixed inset-0 z-50 grid place-items-center bg-black/40">
