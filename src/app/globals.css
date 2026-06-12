@@ -187,6 +187,7 @@
 .cva-wheel-branch.is-faded{opacity:.10;}
 .cva-wheel-branch.is-soft{opacity:.55;}
 .cva-wheel-branch.is-focused{filter:drop-shadow(0 4px 18px rgba(0,0,0,.28));}
+.cva-wheel-svg[data-zoom-mode="mid"] .cva-wheel-branch.is-focused{filter:drop-shadow(0 4px 14px rgba(0,0,0,.22));}
 .cva-wheel-w3{filter:blur(1.5px) saturate(.75) opacity(.6);transition:filter .4s var(--cva-ease);}
 .cva-wheel-w3.is-clear{filter:none;}
 .cva-wheel-wedge{transform-box:view-box;transform-origin:50% 50%;transition:transform .28s var(--cva-spring);cursor:pointer;}

@@ -315,7 +315,9 @@ export function FlavorWheel({ picks, onToggle }: Props) {
         {WHEEL.map((fam) => {
           const inner = NODES.filter((n) => n.family === fam.n && n.ring !== 3).sort(poppedLast)
           const outer = NODES.filter((n) => n.family === fam.n && n.ring === 3).sort(poppedLast)
-          const famLabels = NODES.map((n, i) => [n, i] as const).filter(([n]) => n.family === fam.n)
+          const famLabels = NODES.map((n, i) => [n, i] as const)
+            .filter(([n]) => n.family === fam.n)
+            .sort(([a], [b]) => poppedLast(a, b))   // popped label paints last, like the prototype's re-append
           return (
             <g key={fam.n} className={branchClass(fam.n)}>
               <g>{inner.map(renderWedge)}</g>
