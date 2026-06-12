@@ -1,8 +1,9 @@
 'use client'
 
 // Full-screen "Describe the cup" overlay — 3 shared group tabs (layout from the
-// journey prototype's wheelpanel, minus the Phase-3 voicebox). Full-bleed below
-// 1280px (laptops/iPads — Daniel's requirement); inset rounded panel above.
+// journey prototype's wheelpanel, minus the Phase-3 voicebox). Always full-bleed:
+// the wheel is the chromeless hero inside an edge-to-edge framed stage band,
+// with the descriptors card floating bottom-center above it.
 
 import { useEffect, useRef, useState } from 'react'
 import { OLF_CAP, addPickCapped, cataForPicks } from '@/lib/cva/flavor-wheel-data'
@@ -126,11 +127,11 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
         </div>
 
         <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          {/* full-width accent glow behind the wheel — the wheel's "box" runs edge
-              to edge, while the wheel itself stays this size. */}
+          {/* the wheel's frame — fills the region to all four edges; the gradient
+              ellipse is larger than the screen so its falloff never shows a seam */}
           <div
             className="pointer-events-none absolute inset-0"
-            style={{ background: 'radial-gradient(62% 64% at 50% 44%, var(--cva-accent-soft), transparent 82%)' }}
+            style={{ background: 'radial-gradient(130% 130% at 50% 50%, var(--cva-accent-soft) 0%, transparent 96%)' }}
           />
           {isOlfactory ? (
             <div
@@ -148,9 +149,10 @@ export function DescribeOverlay({ open, group, onGroupChange, describe, onDescri
             </div>
           )}
 
-          {/* descriptors — centered card, lifted off the bottom edge */}
-          <div className="relative flex shrink-0 justify-center px-4 pb-7 pt-1">
-            <div className="flex max-h-[168px] w-full max-w-[820px] flex-col items-center gap-3 overflow-y-auto rounded-[20px] border border-border bg-background/80 px-5 py-3 backdrop-blur-md">
+          {/* descriptors — bottom-anchored centered card, floats above the
+              wheel's lower edge so it never clips off-screen */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
+            <div className="pointer-events-auto flex max-h-[min(46dvh,340px)] w-full max-w-[820px] flex-col items-center gap-3 overflow-y-auto rounded-[20px] border border-border bg-background/80 px-5 py-3 backdrop-blur-md">
             {group === 'flavor_aftertaste' && (
               <MainTastes
                 value={describe.flavor_aftertaste.main_tastes}

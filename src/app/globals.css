@@ -179,8 +179,13 @@
 /* ===== CVA flavor wheel (Phase 2; v8 prototype is normative) ===== */
 /* full-screen hero — no card/module chrome; the accent glow is painted full-width
    by the overlay region behind it, so the stage itself is transparent. */
-.cva-wheel-stage{position:relative;width:100%;aspect-ratio:1;overflow:hidden;background:transparent;}
-.cva-wheel-svg{display:block;width:100%;height:100%;transform-origin:50% 50%;transition:transform .65s var(--cva-ease);}
+/* overflow visible: the zoomed/panned wheel spills past its square and is only
+   clipped by the overlay region — the wheel's frame is the screen itself. */
+.cva-wheel-stage{position:relative;width:100%;aspect-ratio:1;overflow:visible;background:transparent;}
+/* overflow visible: UA default clips svg content at the element box — the rim
+   (R3 212) is only 8 viewBox units inside it, so popped wedges, drop-shadows
+   and blur bleed were flat-cut into a faint square when zoomed. */
+.cva-wheel-svg{display:block;width:100%;height:100%;overflow:visible;transform-origin:50% 50%;transition:transform .65s var(--cva-ease);}
 .cva-wheel-branch{transform-box:view-box;transform-origin:50% 50%;transition:transform .35s var(--cva-spring),opacity .3s,filter .35s;}
 .cva-wheel-branch.is-hot{transform:scale(1.055);filter:drop-shadow(0 6px 14px rgba(0,0,0,.30));}
 .cva-wheel-branch.is-dim{opacity:.32;}
