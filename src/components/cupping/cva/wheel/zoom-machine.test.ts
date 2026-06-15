@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { planDwell, DWELL, type ZoomState } from './zoom-machine'
+import { planDwell, nextShade, SHADE_HIDE_Y, SHADE_SHOW_Y, DWELL, type ZoomState } from './zoom-machine'
 
 const rest: ZoomState = { mode: 'rest', fam: null }
 const fullFruity: ZoomState = { mode: 'full', fam: 'Fruity' }
@@ -52,5 +52,27 @@ describe('planDwell — the v8 graded hover zoom', () => {
   it('background clears in every zoomed mode', () => {
     expect(planDwell(fullFruity, { region: 'none' })).toEqual({ kind: 'clear' })
     expect(planDwell(midFruity, { region: 'none' })).toEqual({ kind: 'clear' })
+  })
+})
+
+describe('nextShade — descriptor-tray hysteresis (anti-flicker)', () => {
+  it('hides only once the pointer drops past the lower threshold', () => {
+    expect(nextShade(false, true, SHADE_HIDE_Y + 1)).toBe(true)
+    expect(nextShade(false, true, SHADE_HIDE_Y - 1)).toBe(false)
+  })
+
+  it('once hidden, stays hidden across the whole dead zone until the pointer rises out', () => {
+    // the SAME mid-band y resolves differently depending on prior state — this
+    // is the dead zone that stops the sweep-the-boundary flicker the old
+    // single-threshold check produced.
+    const mid = (SHADE_HIDE_Y + SHADE_SHOW_Y) / 2
+    expect(nextShade(true, true, mid)).toBe(true)    // hidden holds
+    expect(nextShade(false, true, mid)).toBe(false)  // shown holds
+    expect(nextShade(true, true, SHADE_SHOW_Y - 1)).toBe(false) // rose out → reveal
+  })
+
+  it('hub / off-wheel always reveals the tray', () => {
+    expect(nextShade(true, false, 400)).toBe(false)
+    expect(nextShade(false, false, 400)).toBe(false)
   })
 })

@@ -23,6 +23,22 @@ export type DwellPlan =
   | { kind: 'schedule'; key: string; ms: number; next: ZoomState }
   | { kind: 'clear' }
 
+// Descriptor-tray auto-hide (Daniel 2026-06-12: "hide the descriptors when the
+// mouse is trying to look at the bottom parts"). The tray floats over the
+// wheel's lower portion; hovering there fades it away. Two thresholds form a
+// dead zone (viewBox y, centre = 220) so a cursor sweeping past the boundary
+// doesn't flick the tray on and off — the original single-threshold check did.
+export const SHADE_HIDE_Y = 244   // shown → hide once the pointer drops below here
+export const SHADE_SHOW_Y = 196   // hidden → keep hidden until it rises above here
+
+/** Next tray-shade state from the previous one and the current pointer sample.
+    Off-wheel / hub (no node) always reveals; otherwise the dead zone holds the
+    previous state, so only a deliberate cross flips it. */
+export function nextShade(prev: boolean, overNode: boolean, y: number): boolean {
+  if (!overNode) return false
+  return prev ? y >= SHADE_SHOW_Y : y > SHADE_HIDE_Y
+}
+
 export function planDwell(state: ZoomState, hover: HoverSample): DwellPlan {
   if (state.mode === 'rest') {
     if (hover.region === 'node' && hover.fam)

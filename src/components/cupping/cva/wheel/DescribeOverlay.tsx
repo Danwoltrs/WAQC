@@ -36,8 +36,17 @@ const NOTE_KEY: Record<DescribeGroup, keyof CvaDescribe['notes']> = {
 export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGroupChange, describe, onDescribe, onClose }: Props) {
   const [toast, setToast] = useState<string | null>(null)
   // True while the cupper is reading the wheel's lower half — the tray fades
-  // out of the way (it floats over the wheel's bottom edge).
-  const [shade, setShade] = useState(false)
+  // out of the way (it floats over the wheel's bottom edge). Hide is instant;
+  // reveal is debounced so a cursor crossing the band repeatedly (the source of
+  // the earlier flicker) doesn't pop the tray back between sweeps.
+  const [shade, setShadeRaw] = useState(false)
+  const shadeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const setShade = useCallback((on: boolean) => {
+    if (shadeTimer.current) { clearTimeout(shadeTimer.current); shadeTimer.current = null }
+    if (on) setShadeRaw(true)
+    else shadeTimer.current = setTimeout(() => setShadeRaw(false), 200)
+  }, [])
+  useEffect(() => () => { if (shadeTimer.current) clearTimeout(shadeTimer.current) }, [])
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Latest-ref mirrors so togglePick stays referentially stable — a fresh

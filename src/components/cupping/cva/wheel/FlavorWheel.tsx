@@ -23,7 +23,7 @@ import {
 } from '@/lib/cva/flavor-wheel-data'
 import {
   COMPACT_MQ, DEPTHS, DEPTHS_COMPACT, REST_S, REST_S_COMPACT,
-  planDwell, type ZoomState, type HoverSample,
+  planDwell, nextShade, type ZoomState, type HoverSample,
 } from './zoom-machine'
 import type { WheelPick } from '@/types/cva'
 
@@ -437,7 +437,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const r = Math.hypot(x - CX, y - CY)
     const nd = nodeAt(x, y)
     // Reading the lower half — tell the overlay to lift its descriptor tray.
-    setPointerShade(!!nd && y > CY + 20)
+    // Hysteresis (dead zone) so a sweeping cursor doesn't flicker it.
+    setPointerShade((prev) => nextShade(prev, !!nd, y))
     const hover: HoverSample =
       r < R0 ? { region: 'hub' }
       : nd ? { region: 'node', fam: nd.family, ring: nd.ring === 2.5 ? 2 : nd.ring }
