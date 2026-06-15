@@ -21,7 +21,10 @@ import {
   CX, CY, R0, R1, R2, R3, VIEW, NODES, WHEEL, nodeAt, pickKey,
   type WheelNode,
 } from '@/lib/cva/flavor-wheel-data'
-import { DEPTHS, REST_S, planDwell, type ZoomState, type HoverSample } from './zoom-machine'
+import {
+  COMPACT_MQ, DEPTHS, DEPTHS_COMPACT, REST_S, REST_S_COMPACT,
+  planDwell, type ZoomState, type HoverSample,
+} from './zoom-machine'
 import type { WheelPick } from '@/types/cva'
 
 interface Props {
@@ -29,6 +32,10 @@ interface Props {
   onToggle: (pick: WheelPick) => void
   /** false while the (kept-mounted) overlay is hidden — springs the wheel to rest. */
   active?: boolean
+  /** True while the user is reading the wheel's lower half (pointer there, or a
+      bottom family focused) — the overlay hides its descriptor tray, which
+      floats over the wheel's bottom edge and made those slices unreadable. */
+  onShade?: (shaded: boolean) => void
 }
 
 const GAP = 0.0028
@@ -161,6 +168,12 @@ const FAM_GROUPS: FamGroup[] = WHEEL.map((f) => {
 
 const KEY_FAM = new Map(NODES.map((n) => [n.path.join('>'), n.family]))
 
+/** Families whose slice midpoint sits in the lower half (SVG y grows down) —
+    focusing one keeps the overlay's descriptor tray hidden. */
+const BOTTOM_FAMS = new Set(
+  [...FAM_SPANS].filter(([, s]) => Math.sin((s.a0 + s.a1) / 2) > 0.25).map(([n]) => n),
+)
+
 /** popped-paints-last without sorting — same z-order as the prototype's
     re-append (stable order otherwise); O(n) and only runs in the owning family. */
 function reorder(arr: NodeRec[], poppedKey: string | null): NodeRec[] {
@@ -260,12 +273,14 @@ const Branch = memo(function Branch({ group, cls, w3state, poppedKey, pickedSig,
 
 /* ---------- component ---------- */
 
-export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true }: Props) {
+export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onShade }: Props) {
   const [zoom, setZoom] = useState<ZoomState>({ mode: 'rest', fam: null })
   const [hotFam, setHotFam] = useState<string | null>(null)
   const [popped, setPopped] = useState<string | null>(null)
   const [panAngle, setPanAngle] = useState<number | null>(null)
   const [stageW, setStageW] = useState(0)
+  const [compact, setCompact] = useState(false)
+  const [pointerShade, setPointerShade] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const dwellRef = useRef<{ key: string | null; t: ReturnType<typeof setTimeout> | null }>({ key: null, t: null })
@@ -295,8 +310,24 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   // Hidden (kept-mounted) overlay: spring back to rest so reopening starts clean
   // and the document Esc listener below becomes a no-op.
   useEffect(() => {
-    if (!active) applyZoom({ mode: 'rest', fam: null })
+    if (!active) {
+      applyZoom({ mode: 'rest', fam: null })
+      setPointerShade(false)
+    }
   }, [active, applyZoom])
+
+  // Small screens / iPad get the deeper zoom set (jsdom has no matchMedia).
+  useEffect(() => {
+    if (typeof window.matchMedia !== 'function') return
+    const mq = window.matchMedia(COMPACT_MQ)
+    const update = () => setCompact(mq.matches)
+    update()
+    mq.addEventListener('change', update)
+    return () => mq.removeEventListener('change', update)
+  }, [])
+
+  const shaded = pointerShade || (zoom.mode !== 'rest' && !!zoom.fam && BOTTOM_FAMS.has(zoom.fam))
+  useEffect(() => { onShade?.(shaded) }, [shaded, onShade])
 
   // Stage width drives the px translate of the zoom transform.
   useEffect(() => {
@@ -325,21 +356,21 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   useEffect(() => clearDwell, [clearDwell])
 
   const transform = useMemo(() => {
-    if (zoom.mode === 'rest' || !zoom.fam) return `scale(${REST_S})`
-    const d = DEPTHS[zoom.mode]
+    if (zoom.mode === 'rest' || !zoom.fam) return `scale(${compact ? REST_S_COMPACT : REST_S})`
+    const d = (compact ? DEPTHS_COMPACT : DEPTHS)[zoom.mode]
     const span = FAM_SPANS.get(zoom.fam)!
     const mid = panAngle ?? (span.a0 + span.a1) / 2
     const f = stageW / VIEW
     const bx = Math.cos(mid) * d.r * f
     const by = Math.sin(mid) * d.r * f
     return `scale(${d.s}) translate(${-bx}px, ${-by}px)`
-  }, [zoom, panAngle, stageW])
+  }, [zoom, panAngle, stageW, compact])
 
   // "center · zoom out" marker — a REAL button (spec: the prototype's was
   // decorative; in the app it must be tappable), clamped inside the stage.
   const marker = useMemo(() => {
     if (zoom.mode === 'rest' || !zoom.fam || !stageW) return null
-    const d = DEPTHS[zoom.mode]
+    const d = (compact ? DEPTHS_COMPACT : DEPTHS)[zoom.mode]
     const span = FAM_SPANS.get(zoom.fam)!
     const mid = panAngle ?? (span.a0 + span.a1) / 2
     const f = stageW / VIEW
@@ -349,7 +380,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const max = stageW / 2 - 46
     if (len > max) { hx = (hx / len) * max; hy = (hy / len) * max }
     return { hx, hy }
-  }, [zoom, panAngle, stageW])
+  }, [zoom, panAngle, stageW, compact])
 
   // Stable across renders (reads zoom/onToggle through refs) so the memoized
   // branches never re-render because of a fresh handler identity.
@@ -405,6 +436,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const y = ((e.clientY - rect.top) * VIEW) / rect.height
     const r = Math.hypot(x - CX, y - CY)
     const nd = nodeAt(x, y)
+    // Reading the lower half — tell the overlay to lift its descriptor tray.
+    setPointerShade(!!nd && y > CY + 20)
     const hover: HoverSample =
       r < R0 ? { region: 'hub' }
       : nd ? { region: 'node', fam: nd.family, ring: nd.ring === 2.5 ? 2 : nd.ring }
@@ -438,6 +471,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     clearDwell()
     setHotFam(null)
     setPopped(null)
+    setPointerShade(false)
     if (zoomRef.current.mode !== 'rest') applyZoom({ mode: 'rest', fam: null })
   }
 

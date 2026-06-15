@@ -35,6 +35,9 @@ const NOTE_KEY: Record<DescribeGroup, keyof CvaDescribe['notes']> = {
 
 export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGroupChange, describe, onDescribe, onClose }: Props) {
   const [toast, setToast] = useState<string | null>(null)
+  // True while the cupper is reading the wheel's lower half — the tray fades
+  // out of the way (it floats over the wheel's bottom edge).
+  const [shade, setShade] = useState(false)
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Latest-ref mirrors so togglePick stays referentially stable — a fresh
@@ -100,7 +103,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
     <div className="fixed inset-0 z-50" style={{ display: open ? undefined : 'none' }}>
       <div className="absolute inset-0 bg-black/45" onClick={onClose} aria-hidden />
       <div className="absolute inset-0 flex flex-col overflow-hidden bg-background">
-        <div className="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3.5">
+        <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2.5 sm:gap-3 sm:px-5 sm:py-3.5">
           <div role="tablist" className="flex gap-2">
             {GROUPS.map((g) => {
               const on = g.key === group
@@ -111,7 +114,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
                   role="tab"
                   aria-selected={on}
                   onClick={() => onGroupChange(g.key)}
-                  className={`rounded-full border px-4 py-2 text-[13px] font-bold transition ${
+                  className={`rounded-full border px-3 py-1.5 text-[12px] font-bold transition sm:px-4 sm:py-2 sm:text-[13px] ${
                     on ? 'border-transparent text-white' : 'border-border text-muted-foreground'
                   }`}
                   style={on ? { background: 'var(--cva-accent)' } : undefined}
@@ -121,7 +124,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
               )
             })}
           </div>
-          <span className="text-[11px] font-bold uppercase tracking-[1.5px] text-muted-foreground">
+          <span className="hidden text-[11px] font-bold uppercase tracking-[1.5px] text-muted-foreground md:inline">
             {GROUPS.find((g) => g.key === group)!.sub} · shared across sections
           </span>
           <button
@@ -146,7 +149,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
               className="relative m-auto shrink-0"
               style={{ width: 'min(100vw, calc(100dvh - 200px))', height: 'min(100vw, calc(100dvh - 200px))' }}
             >
-              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} />
+              <FlavorWheel picks={olf.picks} onToggle={togglePick} active={open} onShade={setShade} />
             </div>
           ) : (
             <div className="relative m-auto shrink-0">
@@ -158,9 +161,14 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
           )}
 
           {/* descriptors — bottom-anchored centered card, floats above the
-              wheel's lower edge so it never clips off-screen */}
-          <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center px-4">
-            <div className="pointer-events-auto flex max-h-[min(46dvh,340px)] w-full max-w-[820px] flex-col items-center gap-3 overflow-y-auto rounded-[20px] border border-border bg-background/80 px-5 py-3 backdrop-blur-md">
+              wheel's lower edge so it never clips off-screen; fades out while
+              the cupper is reading the wheel's lower half (onShade) */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-3 sm:bottom-6 sm:px-4">
+            <div
+              className={`flex max-h-[min(36dvh,300px)] w-full max-w-[820px] flex-col items-center gap-3 overflow-y-auto rounded-[20px] border border-border bg-background/80 px-4 py-2.5 backdrop-blur-md transition-opacity duration-300 sm:max-h-[min(46dvh,340px)] sm:px-5 sm:py-3 ${
+                shade && isOlfactory ? 'pointer-events-none opacity-0' : 'pointer-events-auto'
+              }`}
+            >
             {group === 'flavor_aftertaste' && (
               <MainTastes
                 value={describe.flavor_aftertaste.main_tastes}

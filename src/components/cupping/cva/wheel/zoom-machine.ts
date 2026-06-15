@@ -10,6 +10,13 @@ export interface HoverSample { region: 'hub' | 'node' | 'none'; fam?: string; ri
 // zoom is gentle so neighbouring families stay on-screen for a continuous flow.
 export const REST_S = 1.06
 export const DEPTHS = { full: { s: 1.6, r: 92 }, mid: { s: 1.32, r: 56 } } as const
+
+// Small screens / iPad only (Daniel 2026-06-12: desktop keeps the values above).
+// Rest fills the stage with the two inner rings — the leaf ring bleeds past the
+// stage edge; focused zoom goes deeper so leaf labels are readable on a tablet.
+export const COMPACT_MQ = '(max-width: 1023px), (pointer: coarse)'
+export const REST_S_COMPACT = 1.38
+export const DEPTHS_COMPACT = { full: { s: 1.9, r: 130 }, mid: { s: 1.5, r: 70 } } as const
 export const DWELL = { in: 190, backIn: 180, mid: 200, out: 220, switch: 240 } as const
 
 export type DwellPlan =
