@@ -93,6 +93,51 @@ export interface TaintFaultValidationRules {
 }
 
 /**
+ * Per-defect spec evaluation result.
+ */
+export interface DefectSpecEvaluation {
+  /** True when the defect's category is categorically disallowed by the spec */
+  outOfSpec: boolean
+  /** Human-readable reason ('' when in spec) */
+  reason: string
+}
+
+/**
+ * Decide whether a single defect occurrence is out of spec, based purely on its
+ * taint/fault classification and the spec's acceptance rules.
+ *
+ * Acceptance is classification-based, NOT cup-count-based: cup count records
+ * spread and feeds the deduction formula, it does not gate pass/fail here.
+ * Aggregate count limits (more than `max_taints` distinct taints, etc.) are
+ * enforced separately over the full defect list.
+ *
+ * A defect is out of spec only when its category is categorically disallowed:
+ *   - zero_tolerance      → any defect is rejected
+ *   - fault & max_faults===0 → faults not allowed
+ *   - taint & max_taints===0 → taints not allowed
+ */
+export function evaluateDefectAgainstRules(
+  rules: TaintFaultValidationRules | undefined,
+  isTaint: boolean
+): DefectSpecEvaluation {
+  if (!rules) return { outOfSpec: false, reason: '' }
+
+  if (rules.zero_tolerance === true) {
+    return { outOfSpec: true, reason: 'not allowed (zero tolerance)' }
+  }
+
+  if (!isTaint && rules.max_faults === 0) {
+    return { outOfSpec: true, reason: 'fault-level intensity, no faults allowed' }
+  }
+
+  if (isTaint && rules.max_taints === 0) {
+    return { outOfSpec: true, reason: 'taints not allowed' }
+  }
+
+  return { outOfSpec: false, reason: '' }
+}
+
+/**
  * Complete taint/fault configuration for a quality template
  */
 export interface TaintFaultConfiguration {

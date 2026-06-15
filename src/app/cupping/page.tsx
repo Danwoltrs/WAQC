@@ -25,7 +25,7 @@ import {
   getVisibilitySettings,
   updateVisibilitySetting
 } from '@/lib/sample-visibility'
-import { TaintFaultDefect } from '@/types/taint-fault-configuration'
+import { TaintFaultDefect, evaluateDefectAgainstRules } from '@/types/taint-fault-configuration'
 import { CuppingReports } from '@/components/cupping/cupping-reports'
 import { CuppingValidationModal } from '@/components/cupping/cupping-validation-modal'
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
@@ -219,105 +219,31 @@ function CuppingPageContent() {
 
   // Defect modal state
   const [defectModalOpen, setDefectModalOpen] = useState<string | null>(null) // defect name when open
-  const [modalCupIntensities, setModalCupIntensities] = useState<number[]>([1]) // array of intensity values, one per cup
+  const [modalIntensity, setModalIntensity] = useState<number>(1) // single intensity applied to all affected cups
+  const [modalCups, setModalCups] = useState<number>(1) // number of cups affected by this defect
 
-  // Defect validation: check cupping defects against quality spec thresholds
-  // Check if a specific defect violates its tolerance
-  const getDefectTolerance = (sampleId: string, defectName: string): number | null => {
+  // Read the active taint/fault acceptance rules for a sample.
+  const getTaintFaultRules = (sampleId: string) => {
     const sample = samples.find(s => s.id === sampleId)
-    if (!sample) return null
-
-    const customParams = sample.quality_spec?.custom_parameters
-    const templateParams = sample.quality_spec?.template?.parameters
-
-    // Check for defect-specific tolerances in quality spec
-    const defectsList = customParams?.cupping_defects ||
-                       customParams?.defects ||
-                       customParams?.taint_fault_configuration?.defects ||
-                       templateParams?.cupping_defects ||
-                       templateParams?.defects ||
-                       templateParams?.taint_fault_configuration?.defects
-
-    // Also check rules-level zero tolerance
-    const taintFaultConfig = customParams?.taint_fault_configuration || templateParams?.taint_fault_configuration
-    const rules = taintFaultConfig?.rules
-
-    console.log(`[DEFECT VALIDATION] Checking tolerance for "${defectName}"`)
-    console.log('[DEFECT VALIDATION] Defects list:', defectsList)
-    console.log('[DEFECT VALIDATION] Rules:', rules)
-
-    // Check for rules-level zero tolerance (applies to ALL defects)
-    if (rules?.zero_tolerance === true) {
-      console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (rules.zero_tolerance = true)`)
-      return 0
-    }
-
-    if (defectsList && Array.isArray(defectsList)) {
-      const defectConfig = defectsList.find((d: any) =>
-        (typeof d === 'object' && d.name === defectName)
-      )
-
-      console.log(`[DEFECT VALIDATION] Found config for "${defectName}":`, defectConfig)
-
-      if (defectConfig && typeof defectConfig === 'object') {
-        // Check if this is a zero-tolerance defect (taint_range === null means "always a fault" = zero tolerance)
-        if (defectConfig.taint_range === null) {
-          console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (taint_range === null)`)
-          return 0 // Zero tolerance - no cups allowed
-        }
-
-        // Check for empty taint range (min === max === 0)
-        if (defectConfig.taint_range &&
-            typeof defectConfig.taint_range === 'object' &&
-            defectConfig.taint_range.min === 0 &&
-            defectConfig.taint_range.max === 0) {
-          console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (empty taint_range)`)
-          return 0
-        }
-
-        // Check for explicit max_cups = 0
-        if (defectConfig.max_cups === 0) {
-          console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (max_cups = 0)`)
-          return 0
-        }
-
-        // Check for explicit tolerance = 0
-        if (defectConfig.tolerance === 0) {
-          console.log(`[DEFECT VALIDATION] "${defectName}" is ZERO TOLERANCE (tolerance = 0)`)
-          return 0
-        }
-
-        // Check for legacy tolerance or max_cups property (non-zero values)
-        if (typeof defectConfig.tolerance === 'number' && defectConfig.tolerance > 0) {
-          console.log(`[DEFECT VALIDATION] "${defectName}" has tolerance: ${defectConfig.tolerance}`)
-          return defectConfig.tolerance
-        }
-        if (typeof defectConfig.max_cups === 'number' && defectConfig.max_cups > 0) {
-          console.log(`[DEFECT VALIDATION] "${defectName}" has max_cups: ${defectConfig.max_cups}`)
-          return defectConfig.max_cups
-        }
-      }
-    }
-
-    // Check rules-level max_faults = 0 (zero tolerance for faults)
-    if (rules?.max_faults === 0) {
-      console.log(`[DEFECT VALIDATION] "${defectName}" treated as ZERO TOLERANCE (rules.max_faults = 0)`)
-      return 0
-    }
-
-    console.log(`[DEFECT VALIDATION] No tolerance found for "${defectName}"`)
-    return null // No specific tolerance defined
+    const customParams = sample?.quality_spec?.custom_parameters
+    const templateParams = sample?.quality_spec?.template?.parameters
+    const config = customParams?.taint_fault_configuration || templateParams?.taint_fault_configuration
+    return config?.rules
   }
 
-  // Validate individual defect against its tolerance
+  // Validate an individual defect against the spec, based on its taint/fault
+  // classification (intensity vs the defect's taint threshold) — NOT cup count.
+  // Cup count records spread and feeds the deduction; aggregate count limits
+  // (max taints/faults) are enforced separately in validateCuppingDefects.
   const isDefectOutOfSpec = (sampleId: string, defect: CuppingDefect): { outOfSpec: boolean; reason: string } => {
-    const tolerance = getDefectTolerance(sampleId, defect.name)
+    const rules = getTaintFaultRules(sampleId)
+    const evaluation = evaluateDefectAgainstRules(rules, defect.is_taint)
 
-    if (tolerance !== null && defect.cups_affected > tolerance) {
-      return {
-        outOfSpec: true,
-        reason: `${defect.name}: ${defect.cups_affected} cups affected, maximum ${tolerance} allowed (zero tolerance)`
-      }
+    if (evaluation.outOfSpec) {
+      const detail = defect.is_taint
+        ? evaluation.reason
+        : evaluation.reason.replace('fault-level intensity', `fault-level intensity (${defect.intensity})`)
+      return { outOfSpec: true, reason: `${defect.name}: ${detail}` }
     }
 
     return { outOfSpec: false, reason: '' }
@@ -341,25 +267,21 @@ function CuppingPageContent() {
       }
     })
 
-    // Also check total taint/fault thresholds if configured
-    const customParams = sample.quality_spec?.custom_parameters
-    const templateParams = sample.quality_spec?.template?.parameters
+    // Also check total taint/fault count thresholds if configured. Counts are
+    // by distinct defect entry (type), not by cups — one defect across many cups
+    // is one taint/fault.
+    const rules = getTaintFaultRules(sampleId)
+    if (rules && (rules.max_taints != null || rules.max_faults != null)) {
+      const maxTaints = rules.max_taints
+      const maxFaults = rules.max_faults
 
-    const taintFaultConfig = customParams?.taint_fault_configuration ||
-                             templateParams?.taint_fault_configuration
-
-    if (taintFaultConfig && (taintFaultConfig.max_taints || taintFaultConfig.max_faults)) {
-      const maxTaints = taintFaultConfig.max_taints
-      const maxFaults = taintFaultConfig.max_faults
-
-      // Count total taints and faults
       const taintCount = cuppingData.defects.filter(d => d.is_taint).length
       const faultCount = cuppingData.defects.filter(d => !d.is_taint).length
 
-      if (maxTaints && taintCount > maxTaints) {
+      if (maxTaints != null && taintCount > maxTaints) {
         errors.push(`Total taints exceed maximum: ${taintCount}/${maxTaints} allowed`)
       }
-      if (maxFaults && faultCount > maxFaults) {
+      if (maxFaults != null && faultCount > maxFaults) {
         errors.push(`Total faults exceed maximum: ${faultCount}/${maxFaults} allowed`)
       }
     }
@@ -773,76 +695,42 @@ function CuppingPageContent() {
     const dConfig = defectConfigsMap.get(sampleId)?.get(defectName)
     const initialIntensity = dConfig?.increment ?? 0.5
     setDefectModalOpen(defectName)
-    setModalCupIntensities([initialIntensity])
-  }
-
-  const addCupToModal = () => {
-    const dConfig = defectModalOpen ? defectConfigsMap.get(activeSampleId)?.get(defectModalOpen) : null
-    const initialIntensity = dConfig?.increment ?? 0.5
-    setModalCupIntensities([...modalCupIntensities, initialIntensity])
-  }
-
-  const removeCupFromModal = (index: number) => {
-    if (modalCupIntensities.length > 1) {
-      setModalCupIntensities(modalCupIntensities.filter((_, i) => i !== index))
-    }
-  }
-
-  const updateCupIntensity = (index: number, intensity: number) => {
-    const newIntensities = [...modalCupIntensities]
-    newIntensities[index] = intensity
-    setModalCupIntensities(newIntensities)
+    setModalIntensity(initialIntensity)
+    setModalCups(1)
   }
 
   const handleAddDefectConfirm = (sampleId: string) => {
     if (!defectModalOpen) return
 
-    // Check zero tolerance rules
-    const sample = samples.find(s => s.id === sampleId)
-    if (sample) {
-      const customParams = sample.quality_spec?.custom_parameters
-      const templateParams = sample.quality_spec?.template?.parameters
-      const taintFaultConfig = customParams?.taint_fault_configuration || templateParams?.taint_fault_configuration
+    const defectConfig = defectConfigsMap.get(sampleId)?.get(defectModalOpen)
+    const isTaint = classifyDefectAsTaint(defectConfig, modalIntensity)
 
-      if (taintFaultConfig) {
-        const maxTaints = taintFaultConfig.max_taints ?? Infinity
-        const maxFaults = taintFaultConfig.max_faults ?? Infinity
-
-        // Count taints and faults using the per-defect spec — an "always fault"
-        // defect (taint_range=null) counts as fault no matter the intensity.
-        const defectConfigForCount = defectConfigsMap.get(sampleId)?.get(defectModalOpen)
-        const taintCount = modalCupIntensities.filter(i => classifyDefectAsTaint(defectConfigForCount, i)).length
-        const faultCount = modalCupIntensities.length - taintCount
-
-        // Zero tolerance check
-        if (taintCount > 0 && maxTaints === 0) {
-          toast({
-            title: 'Zero Tolerance',
-            description: 'This quality specification does not allow any taints.',
-            variant: 'destructive'
-          })
-          return
-        }
-
-        if (faultCount > 0 && maxFaults === 0) {
-          toast({
-            title: 'Zero Tolerance',
-            description: 'This quality specification does not allow any faults.',
-            variant: 'destructive'
-          })
-          return
-        }
-      }
+    // Categorical zero-tolerance check based on this defect's classification.
+    const rules = getTaintFaultRules(sampleId)
+    if (isTaint && rules?.max_taints === 0) {
+      toast({
+        title: 'Zero Tolerance',
+        description: 'This quality specification does not allow any taints.',
+        variant: 'destructive'
+      })
+      return
+    }
+    if (!isTaint && rules?.max_faults === 0) {
+      toast({
+        title: 'Zero Tolerance',
+        description: 'This quality specification does not allow any faults.',
+        variant: 'destructive'
+      })
+      return
     }
 
-    // Add a separate defect entry for each cup with its specific intensity
-    modalCupIntensities.forEach((intensity) => {
-      addDefect(sampleId, defectModalOpen, 1, intensity)
-    })
+    // One entry for the defect, carrying the number of cups it affects.
+    addDefect(sampleId, defectModalOpen, modalCups, modalIntensity)
 
     // Reset modal state
     setDefectModalOpen(null)
-    setModalCupIntensities([1])
+    setModalIntensity(1)
+    setModalCups(1)
   }
 
   const updateDefect = (sampleId: string, defectId: string, updates: Partial<CuppingDefect>) => {
@@ -1860,11 +1748,9 @@ function CuppingPageContent() {
                                     const dConfig = defectConfigsMap.get(sample.id)?.get(defectName)
                                     const step = dConfig?.increment ?? 0.5
                                     const maxInt = dConfig?.max_intensity ?? 10
-                                    // Header badge reflects the worst-case cup. An "always fault" defect
+                                    // Badge reflects the chosen intensity. An "always fault" defect
                                     // (taint_range=null) is fault regardless of intensity.
-                                    const headerIsTaint = modalCupIntensities.every(
-                                      i => classifyDefectAsTaint(dConfig, i)
-                                    )
+                                    const headerIsTaint = classifyDefectAsTaint(dConfig, modalIntensity)
 
                                     return (
                                   <div className="space-y-3">
@@ -1879,80 +1765,82 @@ function CuppingPageContent() {
                                       </Badge>
                                     </div>
 
-                                    {/* Dynamic Cup List */}
-                                    <div className="space-y-2">
-                                      <Label className="text-xs text-muted-foreground">Affected Cups</Label>
-                                      <div className="space-y-2 max-h-48 overflow-y-auto">
-                                        {modalCupIntensities.map((intensity, index) => (
-                                          <div key={index} className="flex items-center gap-2 p-2 bg-muted/30 rounded-md">
-                                            <span className="text-xs font-medium w-12">Cup {index + 1}</span>
-                                            <div className="flex items-center gap-1 flex-1">
-                                              <Button
-                                                variant="outline"
-                                                size="icon"
-                                                className="h-6 w-6 cursor-pointer"
-                                                onClick={() => {
-                                                  const newVal = Math.round((intensity - step) * 100) / 100
-                                                  updateCupIntensity(index, Math.max(step, newVal))
-                                                }}
-                                              >
-                                                <Minus className="h-3 w-3" />
-                                              </Button>
-                                              <Input
-                                                type="number"
-                                                step={step}
-                                                value={intensity}
-                                                onChange={(e) => {
-                                                  const v = parseFloat(e.target.value)
-                                                  if (!isNaN(v) && v >= step && v <= maxInt) {
-                                                    updateCupIntensity(index, v)
-                                                  }
-                                                }}
-                                                className="w-14 h-6 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                                min={step}
-                                                max={maxInt}
-                                              />
-                                              <Button
-                                                variant="outline"
-                                                size="icon"
-                                                className="h-6 w-6 cursor-pointer"
-                                                onClick={() => {
-                                                  const newVal = Math.round((intensity + step) * 100) / 100
-                                                  updateCupIntensity(index, Math.min(maxInt, newVal))
-                                                }}
-                                              >
-                                                <Plus className="h-3 w-3" />
-                                              </Button>
-                                              <span className="text-xs text-muted-foreground ml-1">
-                                                {classifyDefectAsTaint(dConfig, intensity) ? 'Taint' : 'Fault'}
-                                              </span>
-                                            </div>
-                                            {modalCupIntensities.length > 1 && (
-                                              <Button
-                                                variant="ghost"
-                                                size="icon"
-                                                className="h-6 w-6"
-                                                onClick={() => removeCupFromModal(index)}
-                                              >
-                                                <X className="h-3 w-3" />
-                                              </Button>
-                                            )}
-                                          </div>
-                                        ))}
-                                      </div>
-
-                                      {/* Add Cup Button */}
-                                      {modalCupIntensities.length < cups && (
+                                    {/* Intensity (applied to all affected cups) */}
+                                    <div className="space-y-1.5">
+                                      <Label className="text-xs text-muted-foreground">Intensity</Label>
+                                      <div className="flex items-center gap-1">
                                         <Button
                                           variant="outline"
-                                          size="sm"
-                                          onClick={addCupToModal}
-                                          className="w-full"
+                                          size="icon"
+                                          className="h-7 w-7 cursor-pointer"
+                                          onClick={() => setModalIntensity(Math.max(step, Math.round((modalIntensity - step) * 100) / 100))}
                                         >
-                                          <Plus className="h-3 w-3 mr-1" />
-                                          Add Cup
+                                          <Minus className="h-3 w-3" />
                                         </Button>
-                                      )}
+                                        <Input
+                                          type="number"
+                                          step={step}
+                                          value={modalIntensity}
+                                          onChange={(e) => {
+                                            const v = parseFloat(e.target.value)
+                                            if (!isNaN(v) && v >= step && v <= maxInt) setModalIntensity(v)
+                                          }}
+                                          className="w-16 h-7 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          min={step}
+                                          max={maxInt}
+                                        />
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-7 w-7 cursor-pointer"
+                                          onClick={() => setModalIntensity(Math.min(maxInt, Math.round((modalIntensity + step) * 100) / 100))}
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                        </Button>
+                                        <span className="text-xs text-muted-foreground ml-2">0–{maxInt} scale</span>
+                                      </div>
+                                    </div>
+
+                                    {/* Cups affected */}
+                                    <div className="space-y-1.5">
+                                      <Label className="text-xs text-muted-foreground">Cups affected</Label>
+                                      <div className="flex items-center gap-1">
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-7 w-7 cursor-pointer"
+                                          onClick={() => setModalCups(Math.max(1, modalCups - 1))}
+                                        >
+                                          <Minus className="h-3 w-3" />
+                                        </Button>
+                                        <Input
+                                          type="number"
+                                          step={1}
+                                          value={modalCups}
+                                          onChange={(e) => {
+                                            const v = parseInt(e.target.value, 10)
+                                            if (!isNaN(v) && v >= 1 && v <= cups) setModalCups(v)
+                                          }}
+                                          className="w-16 h-7 text-center text-xs [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                          min={1}
+                                          max={cups}
+                                        />
+                                        <Button
+                                          variant="outline"
+                                          size="icon"
+                                          className="h-7 w-7 cursor-pointer"
+                                          onClick={() => setModalCups(Math.min(cups, modalCups + 1))}
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                        </Button>
+                                        <button
+                                          type="button"
+                                          onClick={() => setModalCups(cups)}
+                                          className="text-xs text-muted-foreground underline-offset-2 hover:underline ml-2 cursor-pointer"
+                                        >
+                                          All {cups} cups
+                                        </button>
+                                      </div>
                                     </div>
 
                                     <div className="flex gap-2 pt-2">
@@ -1961,7 +1849,7 @@ function CuppingPageContent() {
                                         className="flex-1"
                                         onClick={() => handleAddDefectConfirm(sample.id)}
                                       >
-                                        Add All
+                                        Add
                                       </Button>
                                       <Button
                                         size="sm"
@@ -1969,7 +1857,8 @@ function CuppingPageContent() {
                                         className="flex-1"
                                         onClick={() => {
                                           setDefectModalOpen(null)
-                                          setModalCupIntensities([1])
+                                          setModalIntensity(1)
+                                          setModalCups(1)
                                         }}
                                       >
                                         Cancel
