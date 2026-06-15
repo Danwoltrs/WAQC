@@ -181,60 +181,56 @@ interface BranchProps {
   cls: string                                   // cva-wheel-branch + zoom/hover state
   w3state: '' | 'is-clear' | 'is-semiclear'
   pickedSig: string                             // '|'-joined picked keys in this family
-  showLeaf: boolean
   leafReady: boolean
   onWedge: (nd: WheelNode) => void
 }
 
-// The hover "pop" (scale + highlight) is pure CSS :hover now (scoped in
-// globals.css to the focused family in full mode) — so a cursor sweeping the
-// notes fires NOTHING in React, and no DOM is reshuffled. This <Branch> only
-// re-renders on zoom/pick changes, never on plain hover.
-const Branch = memo(function Branch({ group, cls, w3state, pickedSig, showLeaf, leafReady, onWedge }: BranchProps) {
-  const picked = useMemo(() => new Set(pickedSig ? pickedSig.split('|') : []), [pickedSig])
-  const w3cls = w3state ? ` ${w3state}` : ''
-
-  // The label lives INSIDE its wedge group so the CSS :hover scale lifts the
-  // wedge AND its text together (Daniel: the text must ride the pop). pointer-
-  // events:none on the label (via .cva-wheel-lw) keeps the wedge the hover/click
-  // target. Radial-only scale means a lifted node never covers an angular
-  // neighbour, so no z-reorder is needed.
-  const renderNodeLabel = (r: NodeRec) => {
-    const g = r.geo
-    const l3 = r.nd.ring === 3
-    if (l3 && !leafReady) return null
-    const txtCls = `cva-wheel-label${l3 ? ` cva-l3${showLeaf ? ' is-visible' : ''}` : ''}`
-    if (g.kind === 'arc') {
-      return (
-        <g className="cva-wheel-lw">
-          <path id={g.pid} d={g.pathD} fill="none" />
-          <text className={txtCls} fontSize={g.size} fontWeight={800} fill={g.fill}>
-            <textPath href={`#${g.pid}`} startOffset="50%" textAnchor="middle">{g.text}</textPath>
-          </text>
-        </g>
-      )
-    }
+// Node renderers at module scope so the per-branch useMemo below has clean,
+// honest deps (the only inputs are geometry + picks + leafReady). The label
+// lives INSIDE its wedge group so the CSS :hover scale lifts the wedge AND its
+// text together (Daniel: the text must ride the pop); pointer-events:none on the
+// label keeps the wedge the hover/click target. Radial-only scale means a lifted
+// node never covers an angular neighbour, so no z-reorder is needed.
+function nodeLabelEl(r: NodeRec, leafReady: boolean) {
+  const g = r.geo
+  const l3 = r.nd.ring === 3
+  if (l3 && !leafReady) return null
+  const txtCls = `cva-wheel-label${l3 ? ' cva-l3' : ''}`
+  if (g.kind === 'arc') {
     return (
       <g className="cva-wheel-lw">
-        <text
-          className={txtCls}
-          x={g.x} y={g.y}
-          fontSize={g.size} fontWeight={g.weight} fill={g.fill}
-          textAnchor={g.anchor} dominantBaseline="middle"
-          transform={`rotate(${g.deg} ${g.x} ${g.y})`}
-        >
-          {g.lines.length === 1 ? g.lines[0] : (
-            <>
-              <tspan x={g.x} dy="-0.52em">{g.lines[0]}</tspan>
-              <tspan x={g.x} dy="1.06em">{g.lines[1]}</tspan>
-            </>
-          )}
+        {/* guide for the curved text only — stroke:none beats the .cva-wheel-wedge
+            path stroke it would otherwise inherit (was an underline on the two
+            arc families). */}
+        <path id={g.pid} d={g.pathD} fill="none" style={{ stroke: 'none' }} />
+        <text className={txtCls} fontSize={g.size} fontWeight={800} fill={g.fill}>
+          <textPath href={`#${g.pid}`} startOffset="50%" textAnchor="middle">{g.text}</textPath>
         </text>
       </g>
     )
   }
+  return (
+    <g className="cva-wheel-lw">
+      <text
+        className={txtCls}
+        x={g.x} y={g.y}
+        fontSize={g.size} fontWeight={g.weight} fill={g.fill}
+        textAnchor={g.anchor} dominantBaseline="middle"
+        transform={`rotate(${g.deg} ${g.x} ${g.y})`}
+      >
+        {g.lines.length === 1 ? g.lines[0] : (
+          <>
+            <tspan x={g.x} dy="-0.52em">{g.lines[0]}</tspan>
+            <tspan x={g.x} dy="1.06em">{g.lines[1]}</tspan>
+          </>
+        )}
+      </text>
+    </g>
+  )
+}
 
-  const renderNode = (r: NodeRec) => (
+function wedgeNodeEl(r: NodeRec, picked: Set<string>, leafReady: boolean, onWedge: (nd: WheelNode) => void) {
+  return (
     <g
       key={r.key}
       role="button"
@@ -243,8 +239,36 @@ const Branch = memo(function Branch({ group, cls, w3state, pickedSig, showLeaf, 
       onClick={(e) => { e.stopPropagation(); onWedge(r.nd) }}
     >
       <path d={r.d} fill={r.nd.color} />
-      {renderNodeLabel(r)}
+      {nodeLabelEl(r, leafReady)}
     </g>
+  )
+}
+
+// The hover "pop" is pure CSS :hover; the leaf-label fade is driven from the
+// .cva-wheel-w3 wrapper state in CSS. So the node lists depend ONLY on geometry,
+// picks and leafReady — none of which change on a focus switch. Memoizing them
+// means switching families updates 3 wrapper classNames (cls + the two w3
+// wrappers) and re-renders ZERO of the ~600 nodes — that 9-branch reconcile was
+// the cross-section lag.
+const Branch = memo(function Branch({ group, cls, w3state, pickedSig, leafReady, onWedge }: BranchProps) {
+  const picked = useMemo(() => new Set(pickedSig ? pickedSig.split('|') : []), [pickedSig])
+  const w3cls = w3state ? ` ${w3state}` : ''
+
+  const innerNodes = useMemo(
+    () => group.inner.map((r) => wedgeNodeEl(r, picked, leafReady, onWedge)),
+    [group, picked, leafReady, onWedge],
+  )
+  const frostNodes = useMemo(
+    () => group.outer.map((r) => (
+      <g key={r.key} className={`cva-wheel-wedge${picked.has(r.key) ? ' is-picked' : ''}`}>
+        <path d={r.d} fill={r.nd.color} />
+      </g>
+    )),
+    [group, picked],
+  )
+  const outerNodes = useMemo(
+    () => group.outer.map((r) => wedgeNodeEl(r, picked, leafReady, onWedge)),
+    [group, picked, leafReady, onWedge],
   )
 
   return (
@@ -253,20 +277,12 @@ const Branch = memo(function Branch({ group, cls, w3state, pickedSig, showLeaf, 
       <path className="cva-wheel-bsh cva-wheel-bsh--hot" d={group.shadowD} fill="#000" filter="url(#cva-sh-hot)" pointerEvents="none" />
       <path className="cva-wheel-bsh cva-wheel-bsh--focused" d={group.shadowD} fill="#000" filter="url(#cva-sh-focused)" pointerEvents="none" />
       <path className="cva-wheel-bsh cva-wheel-bsh--mid" d={group.shadowD} fill="#000" filter="url(#cva-sh-mid)" pointerEvents="none" />
-      <g>{group.inner.map(renderNode)}</g>
+      <g>{innerNodes}</g>
       {/* static frost copy — its blur never animates; the sharp interactive ring
           below crossfades over it. No role/aria/labels: stays out of the a11y
           tree and only ever shows when the family is unfocused. */}
-      <g className={`cva-wheel-w3-frost${w3cls}`} aria-hidden pointerEvents="none">
-        {group.outer.map((r) => (
-          <g key={r.key} className={`cva-wheel-wedge${picked.has(r.key) ? ' is-picked' : ''}`}>
-            <path d={r.d} fill={r.nd.color} />
-          </g>
-        ))}
-      </g>
-      <g className={`cva-wheel-w3${w3cls}`}>
-        {group.outer.map(renderNode)}
-      </g>
+      <g className={`cva-wheel-w3-frost${w3cls}`} aria-hidden pointerEvents="none">{frostNodes}</g>
+      <g className={`cva-wheel-w3${w3cls}`}>{outerNodes}</g>
     </g>
   )
 })
@@ -545,7 +561,6 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
             cls={branchClass(g.name)}
             w3state={hotFam === g.name || zoom.fam === g.name ? 'is-clear' : adjacent.has(g.name) ? 'is-semiclear' : ''}
             pickedSig={pickedSigs.get(g.name) ?? ''}
-            showLeaf={zoom.fam === g.name || adjacent.has(g.name)}
             leafReady={leafReady}
             onWedge={onWedge}
           />
