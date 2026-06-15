@@ -289,8 +289,8 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const onToggleRef = useRef(onToggle)
   onToggleRef.current = onToggle
 
-  // The ~73 ring-3 leaf labels are invisible until a family is focused (190ms
-  // dwell minimum) — defer their DOM by one commit so first mount paints sooner.
+  // The ~73 ring-3 leaf labels are invisible until a family is focused (the
+  // dwell-in delay) — defer their DOM by one commit so first mount paints sooner.
   const [leafReady, setLeafReady] = useState(false)
   useEffect(() => { setLeafReady(true) }, [])
 
@@ -476,8 +476,19 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     if (zoomRef.current.mode !== 'rest') applyZoom({ mode: 'rest', fam: null })
   }
 
+  // Per-note pan (leaf-to-leaf cursor chase) is the most-repeated gesture, so it
+  // runs at a short duration; the rest↔focus grand zoom keeps a calmer one. One
+  // shared var on the stage so the SVG transform AND the "zoom out" marker's
+  // left/top read the same duration and stay glued together (no desync snap).
+  const panDur = zoom.mode !== 'rest' && panAngle != null ? '.34s' : '.55s'
+
   return (
-    <div ref={stageRef} className="cva-wheel-stage" data-testid="flavor-wheel-stage">
+    <div
+      ref={stageRef}
+      className="cva-wheel-stage"
+      data-testid="flavor-wheel-stage"
+      style={{ ['--cva-wheel-tdur' as string]: panDur }}
+    >
       <svg
         ref={svgRef}
         viewBox={`0 0 ${VIEW} ${VIEW}`}

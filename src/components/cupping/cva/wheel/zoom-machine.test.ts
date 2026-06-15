@@ -6,7 +6,7 @@ const fullFruity: ZoomState = { mode: 'full', fam: 'Fruity' }
 const midFruity: ZoomState = { mode: 'mid', fam: 'Fruity' }
 
 describe('planDwell — the v8 graded hover zoom', () => {
-  it('rest: hovering any node schedules full zoom at 190ms', () => {
+  it('rest: hovering any node schedules full zoom at the dwell-in delay', () => {
     expect(planDwell(rest, { region: 'node', fam: 'Fruity', ring: 2 })).toEqual({
       kind: 'schedule', key: 'full:Fruity', ms: DWELL.in, next: { mode: 'full', fam: 'Fruity' },
     })

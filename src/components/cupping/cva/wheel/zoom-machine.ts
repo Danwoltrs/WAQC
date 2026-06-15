@@ -17,7 +17,9 @@ export const DEPTHS = { full: { s: 1.6, r: 92 }, mid: { s: 1.32, r: 56 } } as co
 export const COMPACT_MQ = '(max-width: 1023px), (pointer: coarse)'
 export const REST_S_COMPACT = 1.38
 export const DEPTHS_COMPACT = { full: { s: 1.9, r: 130 }, mid: { s: 1.5, r: 70 } } as const
-export const DWELL = { in: 190, backIn: 180, mid: 200, out: 220, switch: 240 } as const
+// `in` carries a small guard band (210ms) so a hesitant cross-wheel sweep that
+// incidentally rests over an intermediate family doesn't zoom into it.
+export const DWELL = { in: 210, backIn: 180, mid: 200, out: 220, switch: 240 } as const
 
 export type DwellPlan =
   | { kind: 'schedule'; key: string; ms: number; next: ZoomState }

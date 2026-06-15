@@ -44,7 +44,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
   const setShade = useCallback((on: boolean) => {
     if (shadeTimer.current) { clearTimeout(shadeTimer.current); shadeTimer.current = null }
     if (on) setShadeRaw(true)
-    else shadeTimer.current = setTimeout(() => setShadeRaw(false), 200)
+    else shadeTimer.current = setTimeout(() => setShadeRaw(false), 140)
   }, [])
   useEffect(() => () => { if (shadeTimer.current) clearTimeout(shadeTimer.current) }, [])
   const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -174,7 +174,7 @@ export const DescribeOverlay = memo(function DescribeOverlay({ open, group, onGr
               the cupper is reading the wheel's lower half (onShade) */}
           <div className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center px-3 sm:bottom-6 sm:px-4">
             <div
-              className={`flex max-h-[min(36dvh,300px)] w-full max-w-[820px] flex-col items-center gap-3 overflow-y-auto rounded-[20px] border border-border bg-background/80 px-4 py-2.5 backdrop-blur-md transition-opacity duration-300 sm:max-h-[min(46dvh,340px)] sm:px-5 sm:py-3 ${
+              className={`flex max-h-[min(36dvh,300px)] w-full max-w-[820px] flex-col items-center gap-3 overflow-y-auto rounded-[20px] border border-border bg-background/80 px-4 py-2.5 backdrop-blur-md transition-opacity duration-200 [transition-timing-function:var(--cva-ease)] sm:max-h-[min(46dvh,340px)] sm:px-5 sm:py-3 ${
                 shade && isOlfactory ? 'pointer-events-none opacity-0' : 'pointer-events-auto'
               }`}
             >
