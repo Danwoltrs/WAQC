@@ -6,6 +6,7 @@ import { CVA_SECTIONS, type CvaSectionKey } from '@/lib/cva/sections'
 import { cvaBand, effectiveImpression } from '@/lib/cva/scoring'
 import { useCvaSession, type CvaSampleMeta } from '@/hooks/useCvaSession'
 import { describeIsEmpty, type DescribeGroup } from '@/types/cva'
+import { trackingNumberToSlug } from '@/lib/utils'
 import type { LiveScore } from '@/lib/cva/scoring'
 import { ProgressPath } from './ProgressPath'
 import { RoastStep } from './RoastStep'
@@ -102,6 +103,18 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
 
   const last = steps.length - 1
   const activeMeta = samples.find((s) => s.id === activeId)
+
+  // Show the sample number in the address bar, never the raw session UUID — the
+  // journey can be opened by either (the API [id] route resolves both). Rewrite
+  // cosmetically via the History API so it does NOT remount/refetch the session.
+  useEffect(() => {
+    if (!ready || !activeMeta?.tracking_number || typeof window === 'undefined') return
+    const slug = trackingNumberToSlug(activeMeta.tracking_number)
+    const segs = window.location.pathname.split('/')
+    if (decodeURIComponent(segs[segs.length - 1]) === slug) return
+    segs[segs.length - 1] = encodeURIComponent(slug)
+    window.history.replaceState(window.history.state, '', segs.join('/') + window.location.search)
+  }, [ready, activeMeta?.tracking_number])
 
   // requires_descriptors soft gate — fires on ANY first transition into the
   // score step (footer button, progress-path jump, live-score pill); soft only.

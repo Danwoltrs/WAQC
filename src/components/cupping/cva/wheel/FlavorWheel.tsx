@@ -452,14 +452,20 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       setHotFam(nd?.family ?? null)
       return
     }
-    // Focused: pop the hovered note and pan the screen onto it (clamped to the slice).
+    // Focused: pop the hovered note. Per-note PAN (the wheel slides to centre the
+    // hovered note) runs only on compact/iPad, where the deeper zoom pushes a
+    // family's edge notes off-screen. On desktop it just pops — re-translating
+    // the whole 600-node SVG on every mouse move was the "laggy moving around the
+    // notes" swim (a full repaint per frame; SVG roots aren't GPU-composited).
     if (zoom.mode === 'full' && nd && nd.family === zoom.fam) {
       const key = nd.path.join('>')
       if (popped !== key) {
         setPopped(key)
-        const span = FAM_SPANS.get(zoom.fam)!
-        const pad = Math.min(0.10, (span.a1 - span.a0) / 4)
-        setPanAngle(Math.max(span.a0 + pad, Math.min(span.a1 - pad, (nd.a0 + nd.a1) / 2)))
+        if (compact) {
+          const span = FAM_SPANS.get(zoom.fam)!
+          const pad = Math.min(0.10, (span.a1 - span.a0) / 4)
+          setPanAngle(Math.max(span.a0 + pad, Math.min(span.a1 - pad, (nd.a0 + nd.a1) / 2)))
+        }
       }
     } else if (popped) {
       setPopped(null)
