@@ -281,8 +281,10 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const [stageW, setStageW] = useState(0)
   const [compact, setCompact] = useState(false)
   const [pointerShade, setPointerShade] = useState(false)
+  const [zooming, setZooming] = useState(false)
   const stageRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dwellRef = useRef<{ key: string | null; t: ReturnType<typeof setTimeout> | null }>({ key: null, t: null })
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
@@ -365,6 +367,18 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     const by = Math.sin(mid) * d.r * f
     return `scale(${d.s}) translate(${-bx}px, ${-by}px)`
   }, [zoom, panAngle, stageW, compact])
+
+  // GPU-composite the zoom/pan: promote the viewport to its own layer ONLY while
+  // a transform transition is gliding (set on every transform change, cleared a
+  // beat after it settles). During a pure-transform glide the content is static,
+  // so the browser slides a cached bitmap instead of repainting ~600 SVG nodes.
+  // When idle, no permanent layer — so CSS-:hover note pops stay cheap and local.
+  useEffect(() => {
+    setZooming(true)
+    if (zoomTimer.current) clearTimeout(zoomTimer.current)
+    zoomTimer.current = setTimeout(() => setZooming(false), 650)
+    return () => { if (zoomTimer.current) clearTimeout(zoomTimer.current) }
+  }, [transform])
 
   // "center · zoom out" marker — a REAL button (spec: the prototype's was
   // decorative; in the app it must be tappable), clamped inside the stage.
@@ -495,12 +509,17 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       data-testid="flavor-wheel-stage"
       style={{ ['--cva-wheel-tdur' as string]: panDur }}
     >
+      {/* GPU-compositable layer — the zoom/pan transform lives on this HTML div
+          (an svg root does not promote reliably); will-change is transient. */}
+      <div
+        className="cva-wheel-viewport"
+        style={{ transform, willChange: zooming ? 'transform' : undefined }}
+      >
       <svg
         ref={svgRef}
         viewBox={`0 0 ${VIEW} ${VIEW}`}
         className="cva-wheel-svg"
         data-zoom-mode={zoom.mode}
-        style={{ transform }}
         onPointerMove={onPointerMove}
         onPointerLeave={onPointerLeave}
         onClick={() => { if (zoom.mode !== 'rest') applyZoom({ mode: 'rest', fam: null }) }}
@@ -539,6 +558,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
           />
         ))}
       </svg>
+      </div>
 
       {zoom.mode === 'rest' && (
         <div className="cva-wheel-hub" aria-hidden>

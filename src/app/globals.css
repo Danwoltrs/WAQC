@@ -185,9 +185,12 @@
 /* overflow visible: UA default clips svg content at the element box — the rim
    (R3 212) is only 8 viewBox units inside it, so popped wedges, drop-shadows
    and blur bleed were flat-cut into a faint square when zoomed. */
-/* --cva-wheel-tdur (set on the stage): short while chasing notes (.34s), calmer
-   for the rest<->focus grand zoom (.55s) — see FlavorWheel panDur. */
-.cva-wheel-svg{display:block;width:100%;height:100%;overflow:visible;transform-origin:50% 50%;transition:transform var(--cva-wheel-tdur,.55s) var(--cva-ease);}
+/* The zoom/pan transform lives on this HTML wrapper (a div promotes to a GPU
+   layer reliably; an svg root does not). will-change is set transiently from JS
+   only while the glide is in flight. --cva-wheel-tdur (set on the stage): short
+   while chasing notes (.34s), calmer for the rest<->focus grand zoom (.55s). */
+.cva-wheel-viewport{position:absolute;inset:0;transform-origin:50% 50%;overflow:visible;transition:transform var(--cva-wheel-tdur,.55s) var(--cva-ease);}
+.cva-wheel-svg{display:block;width:100%;height:100%;overflow:visible;}
 /* perf: `filter` is never transitioned — animating blur/drop-shadow re-rasterizes
    the branch on the main thread every frame. Shadows are pre-blurred silhouette
    paths (.cva-wheel-bsh, one per preset, SVG filters in FlavorWheel's <defs>)
