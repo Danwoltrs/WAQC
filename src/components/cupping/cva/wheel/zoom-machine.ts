@@ -17,9 +17,10 @@ export const DEPTHS = { full: { s: 1.6, r: 92 }, mid: { s: 1.32, r: 56 } } as co
 export const COMPACT_MQ = '(max-width: 1023px), (pointer: coarse)'
 export const REST_S_COMPACT = 1.38
 export const DEPTHS_COMPACT = { full: { s: 1.9, r: 130 }, mid: { s: 1.5, r: 70 } } as const
-// `in` is a short dwell so the hover-zoom feels responsive, with just enough
-// guard that a fast sweep across the wheel doesn't zoom into every family.
-export const DWELL = { in: 165, backIn: 180, mid: 200, out: 220, switch: 240 } as const
+// `in` carries a guard band so a sweep across the wheel doesn't fire the (heavy,
+// full-repaint) zoom into every family it brushes — a too-short dwell makes the
+// zoom feel MORE laggy, not less, because it triggers constantly.
+export const DWELL = { in: 210, backIn: 180, mid: 200, out: 220, switch: 240 } as const
 
 export type DwellPlan =
   | { kind: 'schedule'; key: string; ms: number; next: ZoomState }
