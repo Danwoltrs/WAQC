@@ -174,28 +174,23 @@ const BOTTOM_FAMS = new Set(
   [...FAM_SPANS].filter(([, s]) => Math.sin((s.a0 + s.a1) / 2) > 0.25).map(([n]) => n),
 )
 
-/** popped-paints-last without sorting — same z-order as the prototype's
-    re-append (stable order otherwise); O(n) and only runs in the owning family. */
-function reorder(arr: NodeRec[], poppedKey: string | null): NodeRec[] {
-  if (!poppedKey) return arr
-  const i = arr.findIndex((r) => r.key === poppedKey)
-  return i < 0 ? arr : [...arr.slice(0, i), ...arr.slice(i + 1), arr[i]]
-}
-
 /* ---------- per-family branch (memoized) ---------- */
 
 interface BranchProps {
   group: FamGroup
   cls: string                                   // cva-wheel-branch + zoom/hover state
   w3state: '' | 'is-clear' | 'is-semiclear'
-  poppedKey: string | null                      // non-null only when popped is ours
   pickedSig: string                             // '|'-joined picked keys in this family
   showLeaf: boolean
   leafReady: boolean
   onWedge: (nd: WheelNode) => void
 }
 
-const Branch = memo(function Branch({ group, cls, w3state, poppedKey, pickedSig, showLeaf, leafReady, onWedge }: BranchProps) {
+// The hover "pop" (scale + highlight) is pure CSS :hover now (scoped in
+// globals.css to the focused family in full mode) — so a cursor sweeping the
+// notes fires NOTHING in React, and no DOM is reshuffled. This <Branch> only
+// re-renders on zoom/pick changes, never on plain hover.
+const Branch = memo(function Branch({ group, cls, w3state, pickedSig, showLeaf, leafReady, onWedge }: BranchProps) {
   const picked = useMemo(() => new Set(pickedSig ? pickedSig.split('|') : []), [pickedSig])
   const w3cls = w3state ? ` ${w3state}` : ''
 
@@ -204,7 +199,7 @@ const Branch = memo(function Branch({ group, cls, w3state, poppedKey, pickedSig,
       key={r.key}
       role="button"
       aria-label={r.aria}
-      className={`cva-wheel-wedge${picked.has(r.key) ? ' is-picked' : ''}${poppedKey === r.key ? ' is-popped' : ''}`}
+      className={`cva-wheel-wedge${picked.has(r.key) ? ' is-picked' : ''}`}
       onClick={(e) => { e.stopPropagation(); onWedge(r.nd) }}
     >
       <path d={r.d} fill={r.nd.color} />
@@ -215,7 +210,7 @@ const Branch = memo(function Branch({ group, cls, w3state, poppedKey, pickedSig,
     const g = r.geo
     const l3 = r.nd.ring === 3
     if (l3 && !leafReady) return null
-    const wrapCls = `cva-wheel-lw${poppedKey === r.key ? ' is-popped' : ''}`
+    const wrapCls = 'cva-wheel-lw'
     const txtCls = `cva-wheel-label${l3 ? ` cva-l3${showLeaf ? ' is-visible' : ''}` : ''}`
     if (g.kind === 'arc') {
       return (
@@ -253,7 +248,7 @@ const Branch = memo(function Branch({ group, cls, w3state, poppedKey, pickedSig,
       <path className="cva-wheel-bsh cva-wheel-bsh--hot" d={group.shadowD} fill="#000" filter="url(#cva-sh-hot)" pointerEvents="none" />
       <path className="cva-wheel-bsh cva-wheel-bsh--focused" d={group.shadowD} fill="#000" filter="url(#cva-sh-focused)" pointerEvents="none" />
       <path className="cva-wheel-bsh cva-wheel-bsh--mid" d={group.shadowD} fill="#000" filter="url(#cva-sh-mid)" pointerEvents="none" />
-      <g>{reorder(group.inner, poppedKey).map(renderWedge)}</g>
+      <g>{group.inner.map(renderWedge)}</g>
       {/* static frost copy — its blur never animates; the sharp interactive ring
           below crossfades over it. No role/aria: stays out of the a11y tree. */}
       <g className={`cva-wheel-w3-frost${w3cls}`} aria-hidden pointerEvents="none">
@@ -264,9 +259,9 @@ const Branch = memo(function Branch({ group, cls, w3state, poppedKey, pickedSig,
         ))}
       </g>
       <g className={`cva-wheel-w3${w3cls}`}>
-        {reorder(group.outer, poppedKey).map(renderWedge)}
+        {group.outer.map(renderWedge)}
       </g>
-      <g pointerEvents="none">{reorder(group.recs, poppedKey).map(renderLabel)}</g>
+      <g pointerEvents="none">{group.recs.map(renderLabel)}</g>
     </g>
   )
 })
@@ -276,7 +271,6 @@ const Branch = memo(function Branch({ group, cls, w3state, poppedKey, pickedSig,
 export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active = true, onShade }: Props) {
   const [zoom, setZoom] = useState<ZoomState>({ mode: 'rest', fam: null })
   const [hotFam, setHotFam] = useState<string | null>(null)
-  const [popped, setPopped] = useState<string | null>(null)
   const [panAngle, setPanAngle] = useState<number | null>(null)
   const [stageW, setStageW] = useState(0)
   const [compact, setCompact] = useState(false)
@@ -285,6 +279,9 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const stageRef = useRef<HTMLDivElement>(null)
   const svgRef = useRef<SVGSVGElement>(null)
   const zoomTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Last note the compact pan re-centred on — avoids redundant setPanAngle while
+  // the cursor stays inside one note (compact/iPad-with-mouse only).
+  const lastPanRef = useRef<string | null>(null)
   const dwellRef = useRef<{ key: string | null; t: ReturnType<typeof setTimeout> | null }>({ key: null, t: null })
   const zoomRef = useRef(zoom)
   zoomRef.current = zoom
@@ -303,7 +300,7 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
 
   const applyZoom = useCallback((next: ZoomState) => {
     clearDwell()
-    setPopped(null)
+    lastPanRef.current = null
     setPanAngle(null)
     setHotFam(null)
     setZoom(next)
@@ -416,8 +413,6 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
     return cls.join(' ')
   }
 
-  const poppedFam = popped ? KEY_FAM.get(popped) ?? null : null
-
   // Per-family picked-keys signature — a string prop keeps Branch.memo effective
   // (a shared Set would change identity on every pick).
   const pickedSigs = useMemo(() => {
@@ -466,23 +461,18 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
       setHotFam(nd?.family ?? null)
       return
     }
-    // Focused: pop the hovered note. Per-note PAN (the wheel slides to centre the
-    // hovered note) runs only on compact/iPad, where the deeper zoom pushes a
-    // family's edge notes off-screen. On desktop it just pops — re-translating
-    // the whole 600-node SVG on every mouse move was the "laggy moving around the
-    // notes" swim (a full repaint per frame; SVG roots aren't GPU-composited).
-    if (zoom.mode === 'full' && nd && nd.family === zoom.fam) {
+    // Focused: the hover "pop" is pure CSS :hover now — nothing fires in React as
+    // the cursor sweeps notes. The only JS here is the per-note PAN, and only on
+    // compact/iPad-with-mouse, where the deeper zoom pushes a family's edge notes
+    // off-screen. Desktop does nothing per move (the heavy work is gone).
+    if (compact && zoom.mode === 'full' && nd && nd.family === zoom.fam) {
       const key = nd.path.join('>')
-      if (popped !== key) {
-        setPopped(key)
-        if (compact) {
-          const span = FAM_SPANS.get(zoom.fam)!
-          const pad = Math.min(0.10, (span.a1 - span.a0) / 4)
-          setPanAngle(Math.max(span.a0 + pad, Math.min(span.a1 - pad, (nd.a0 + nd.a1) / 2)))
-        }
+      if (lastPanRef.current !== key) {
+        lastPanRef.current = key
+        const span = FAM_SPANS.get(zoom.fam)!
+        const pad = Math.min(0.10, (span.a1 - span.a0) / 4)
+        setPanAngle(Math.max(span.a0 + pad, Math.min(span.a1 - pad, (nd.a0 + nd.a1) / 2)))
       }
-    } else if (popped) {
-      setPopped(null)
     }
   }
 
@@ -491,7 +481,6 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
   const onPointerLeave = () => {
     clearDwell()
     setHotFam(null)
-    setPopped(null)
     setPointerShade(false)
     if (zoomRef.current.mode !== 'rest') applyZoom({ mode: 'rest', fam: null })
   }
@@ -550,7 +539,6 @@ export const FlavorWheel = memo(function FlavorWheel({ picks, onToggle, active =
             group={g}
             cls={branchClass(g.name)}
             w3state={hotFam === g.name || zoom.fam === g.name ? 'is-clear' : adjacent.has(g.name) ? 'is-semiclear' : ''}
-            poppedKey={poppedFam === g.name ? popped : null}
             pickedSig={pickedSigs.get(g.name) ?? ''}
             showLeaf={zoom.fam === g.name || adjacent.has(g.name)}
             leafReady={leafReady}

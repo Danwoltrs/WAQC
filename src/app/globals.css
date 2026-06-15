@@ -218,11 +218,13 @@
 .cva-wheel-w3.is-semiclear{opacity:1;filter:blur(.5px) saturate(.92);}   /* neighbour leaves: legible, not fully sharp */
 .cva-wheel-wedge{transform-box:view-box;transform-origin:50% 50%;transition:transform .28s var(--cva-spring);cursor:pointer;}
 .cva-wheel-wedge path{stroke:var(--cva-card-solid);stroke-width:.9;}
-.cva-wheel-wedge.is-popped{transform:scale(1.045);}
-.cva-wheel-wedge.is-popped path{filter:brightness(1.1) drop-shadow(0 3px 9px rgba(0,0,0,.4));}
+/* hover "pop" — pure CSS, scoped to the focused family in full mode. A cursor
+   sweeping the notes pops only the one under it with ZERO React work (no popped
+   state, no DOM reshuffle). The filter is toggled, never transitioned. */
+.cva-wheel-svg[data-zoom-mode="full"] .cva-wheel-branch.is-focused .cva-wheel-wedge:hover{transform:scale(1.045);}
+.cva-wheel-svg[data-zoom-mode="full"] .cva-wheel-branch.is-focused .cva-wheel-wedge:hover path{filter:brightness(1.12) saturate(1.08) drop-shadow(0 3px 9px rgba(0,0,0,.4));}
 .cva-wheel-wedge.is-picked path{stroke:var(--foreground);stroke-width:1.5;filter:brightness(1.1) saturate(1.15);}
 .cva-wheel-lw{transform-box:view-box;transform-origin:50% 50%;transition:transform .28s var(--cva-spring);pointer-events:none;}
-.cva-wheel-lw.is-popped{transform:scale(1.045);}
 .cva-wheel-label{user-select:none;pointer-events:none;font-family:inherit;}
 .cva-l3{opacity:0;transition:opacity .32s .06s;}   /* pulled in with the zoom; brief residual delay keeps the ring-leads-text cascade */
 .cva-l3.is-visible{opacity:1;}

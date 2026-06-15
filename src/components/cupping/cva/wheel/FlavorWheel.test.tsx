@@ -116,17 +116,10 @@ describe('FlavorWheel — hover layer', () => {
     expect(container.querySelectorAll('.cva-wheel-w3.is-clear')).toHaveLength(1)
   })
 
-  it('while focused, hovering a note pops it (wedge + label ride together)', () => {
-    vi.useFakeTimers()
-    const { container } = render(<FlavorWheel picks={[]} onToggle={() => {}} />)
-    const svg = container.querySelector('svg')! as SVGSVGElement
-    mockRect(svg)
-    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
-    moveTo(svg, 'Fruity>Berry>Blueberry')
-    expect(screen.getByRole('button', { name: 'Fruity / Berry / Blueberry' }).classList.contains('is-popped')).toBe(true)
-    expect(container.querySelectorAll('.cva-wheel-lw.is-popped')).toHaveLength(1)
-    vi.useRealTimers()
-  })
+  // The hover "pop" is now pure CSS :hover (globals.css, scoped to the focused
+  // family in full mode) — there is no JS state or DOM reshuffle to assert, and
+  // jsdom does not apply :hover styling, so it isn't unit-tested here. Sweeping a
+  // cursor across notes deliberately does NO React work (the point of the change).
 
   it('touch pointermoves are fully ignored (no lift, no dwell zoom)', () => {
     vi.useFakeTimers()
@@ -138,20 +131,5 @@ describe('FlavorWheel — hover layer', () => {
     expect(svg.getAttribute('data-zoom-mode')).toBe('rest')
     expect(container.querySelectorAll('.cva-wheel-branch.is-hot')).toHaveLength(0)
     vi.useRealTimers()
-  })
-
-  it('a popped note label is re-ordered last in its family group so it paints over siblings', () => {
-    const { container } = render(<FlavorWheel picks={[]} onToggle={() => {}} />)
-    const svg = container.querySelector('svg')! as SVGSVGElement
-    mockRect(svg)
-    fireEvent.click(screen.getByRole('button', { name: 'Fruity' }))
-    moveTo(svg, 'Fruity>Berry>Blueberry')
-    const poppedLw = container.querySelector('.cva-wheel-lw.is-popped') as Element
-    expect(poppedLw).toBeTruthy()
-    // The prototype re-appends the popped label so it paints last; mirror that.
-    const labelSiblings = Array.from(poppedLw.parentElement!.children).filter((c) =>
-      c.classList.contains('cva-wheel-lw'),
-    )
-    expect(labelSiblings[labelSiblings.length - 1]).toBe(poppedLw)
   })
 })
