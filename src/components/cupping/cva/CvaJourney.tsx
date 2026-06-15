@@ -74,18 +74,31 @@ export function CvaJourney({ sessionId }: { sessionId: string }) {
   const live = useMemo(() => scoreOf(activeId), [scoreOf, activeId])
 
   const steps = useMemo(() => {
-    const sectionSteps = CVA_SECTIONS.map((s) => ({
-      key: s.key,
-      label: s.label,
-      accent: s.accent,
-      done: effectiveImpression(assessment.sections[s.key]) != null,
-    }))
+    const sectionSteps = CVA_SECTIONS.map((s) => {
+      const v = effectiveImpression(assessment.sections[s.key])
+      return {
+        key: s.key,
+        label: s.label,
+        accent: s.accent,
+        done: v != null,
+        value: v != null ? String(v) : null,
+      }
+    })
+    const roastLabel = assessment.roast.level
+      ? assessment.roast.level.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join('-')
+      : null
     return [
-      { key: 'roast', label: 'Roast', accent: ROAST_ACCENT, done: !!assessment.roast.level },
+      { key: 'roast', label: 'Roast', accent: ROAST_ACCENT, done: !!assessment.roast.level, value: roastLabel },
       ...sectionSteps,
-      { key: 'score', label: 'Score', accent: SCORE_ACCENT, done: live.complete },
+      {
+        key: 'score',
+        label: 'Score',
+        accent: SCORE_ACCENT,
+        done: live.complete,
+        value: live.complete ? Number(live.score.toFixed(2)).toString() : null,
+      },
     ]
-  }, [assessment, live.complete])
+  }, [assessment, live.complete, live.score])
 
   const last = steps.length - 1
   const activeMeta = samples.find((s) => s.id === activeId)

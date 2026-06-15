@@ -1,6 +1,6 @@
 'use client'
 
-interface Step { key: string; label: string; accent: string; done: boolean }
+interface Step { key: string; label: string; accent: string; done: boolean; value?: string | null }
 
 interface Props {
   steps: Step[]
@@ -10,7 +10,7 @@ interface Props {
 
 export function ProgressPath({ steps, current, onJump }: Props) {
   return (
-    <nav className="flex h-12 items-center gap-0 px-1">
+    <nav className="flex items-center gap-0 px-1">
       {steps.map((s, i) => {
         const isCurrent = i === current
         const fill = s.done ? '100%' : isCurrent ? '50%' : '0%'
@@ -19,7 +19,7 @@ export function ProgressPath({ steps, current, onJump }: Props) {
             key={s.key}
             type="button"
             onClick={() => onJump(i)}
-            className="group relative flex flex-1 cursor-pointer flex-col items-center gap-1.5 px-0.5 py-1.5"
+            className="group relative flex flex-1 cursor-pointer flex-col items-center gap-1 px-0.5 py-1.5"
           >
             <span
               className="relative w-full overflow-hidden rounded"
@@ -45,6 +45,15 @@ export function ProgressPath({ steps, current, onJump }: Props) {
               } group-hover:text-[var(--cva-accent)]`}
             >
               {s.label}
+            </span>
+            {/* aria-hidden: keeps the button's accessible name = its label */}
+            <span
+              aria-hidden
+              className={`hidden whitespace-nowrap text-[11px] font-bold leading-none sm:block ${
+                s.value != null ? 'text-foreground' : 'text-muted-foreground/50'
+              }`}
+            >
+              {s.value ?? '—'}
             </span>
           </button>
         )

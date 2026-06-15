@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { trackingNumberToSlug } from '@/lib/utils'
 
 interface EligibleSample { id: string; tracking_number: string; status?: string }
 
@@ -52,7 +53,13 @@ export default function CvaIndexPage() {
         body: JSON.stringify({ sample_ids: orderedSelection }),
       })
       const data = await res.json()
-      if (data.session_id) router.push(`/cupping/cva/${data.session_id}`)
+      if (data.session_id) {
+        // URL by sample number, not the session UUID — the API's [id] route
+        // resolves a tracking-number slug back to the session.
+        const first = samples.find((s) => s.id === orderedSelection[0])
+        const slug = first?.tracking_number ? trackingNumberToSlug(first.tracking_number) : data.session_id
+        router.push(`/cupping/cva/${slug}`)
+      }
     } finally {
       setStarting(false)
     }

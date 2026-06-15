@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase-server'
 import { createClient as createServiceClient } from '@supabase/supabase-js'
 import { computeAssessmentScore } from '@/lib/cva/scoring'
 import { createEmptyAssessment, type CvaAssessment } from '@/types/cva'
+import { isUUID, slugToTrackingNumber } from '@/lib/utils'
 
 const admin = createServiceClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -12,6 +13,30 @@ const admin = createServiceClient(
 
 interface SessionCtx {
   sampleIds: string[]
+}
+
+/** The route param is either the session UUID or a sample tracking-number slug
+    (e.g. SAN-001234_26) — the journey URL shows the sample number, not the raw
+    UUID. A slug resolves to the newest CVA session containing that sample. */
+async function resolveSessionId(param: string): Promise<string | null> {
+  const raw = decodeURIComponent(param)
+  if (isUUID(raw)) return raw
+  const tracking = slugToTrackingNumber(raw)
+  const { data: sampleRows } = await admin
+    .from('samples')
+    .select('id')
+    .eq('tracking_number', tracking)
+    .limit(1)
+  const sampleId = (sampleRows?.[0] as any)?.id
+  if (!sampleId) return null
+  const { data: sessions } = await admin
+    .from('cupping_sessions')
+    .select('id, created_at')
+    .eq('session_type', 'cva')
+    .contains('sample_ids', [sampleId])
+    .order('created_at', { ascending: false })
+    .limit(1)
+  return (sessions?.[0] as any)?.id ?? null
 }
 
 async function loadSession(sessionId: string): Promise<SessionCtx | null> {
@@ -65,9 +90,10 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { id: sessionId } = await params
-    const ctx = await loadSession(sessionId)
-    if (!ctx) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    const { id: idParam } = await params
+    const sessionId = await resolveSessionId(idParam)
+    const ctx = sessionId ? await loadSession(sessionId) : null
+    if (!sessionId || !ctx) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
     const { data: sampleRows } = await admin
       .from('samples')
@@ -126,9 +152,10 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     const { data: { user }, error: authError } = await supabase.auth.getUser()
     if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-    const { id: sessionId } = await params
-    const ctx = await loadSession(sessionId)
-    if (!ctx) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
+    const { id: idParam } = await params
+    const sessionId = await resolveSessionId(idParam)
+    const ctx = sessionId ? await loadSession(sessionId) : null
+    if (!sessionId || !ctx) return NextResponse.json({ error: 'Session not found' }, { status: 404 })
 
     const body = await request.json()
     const sampleId: string | undefined = body?.sample_id
