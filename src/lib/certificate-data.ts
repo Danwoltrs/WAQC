@@ -261,17 +261,20 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       .select(`
         id, name, fantasy_name, logo_url, country,
         company_types, trading_roles,
-        qc_settings:qc_client_settings(certificate_validity_enabled, certificate_validity_months)
+        qc_settings:qc_client_settings(certificate_config, certificate_validity_months)
       `)
       .eq('id', sample.client_id)
       .single()
     if (data) {
       const settings = Array.isArray(data.qc_settings) ? data.qc_settings[0] : data.qc_settings
+      // There is no certificate_validity_enabled column; the flag lives in the
+      // certificate_config JSON ({ enabled: boolean }).
+      const validityEnabled = settings?.certificate_config?.enabled ?? null
       client = {
         ...data,
         company: data.fantasy_name || data.name,
         client_types: data.company_types ?? [],  // legacy alias
-        certificate_validity_enabled: settings?.certificate_validity_enabled ?? null,
+        certificate_validity_enabled: validityEnabled,
         certificate_validity_months: settings?.certificate_validity_months ?? null,
       }
     }

@@ -365,6 +365,18 @@ export function CertificateCuppingChart({
   const faultsDisplay = faults != null && faults > 0 ? String(faults) : 'None'
   const taintsDisplay = taints != null && taints > 0 ? String(taints) : 'None'
 
+  // Format a single defect detail as e.g. "Past crop - 12 cups at intensity level of 1"
+  const formatDefectDetail = (d: { name: string; intensity: number | null; cups_affected?: number | null }): string => {
+    const parts: string[] = []
+    if (d.cups_affected != null && d.cups_affected > 0) {
+      parts.push(`${d.cups_affected} cup${d.cups_affected === 1 ? '' : 's'}`)
+    }
+    if (d.intensity != null) {
+      parts.push(`intensity level of ${d.intensity}`)
+    }
+    return parts.length > 0 ? `${d.name} - ${parts.join(' at ')}` : d.name
+  }
+
   // Taints/faults out-of-spec checks
   const taintsOutOfSpec = maxTaints !== undefined && taints != null && taints > maxTaints
   const faultsOutOfSpec = maxFaults !== undefined && faults != null && faults > maxFaults
@@ -554,7 +566,7 @@ export function CertificateCuppingChart({
             {faultDetails && faultDetails.length > 0 ? (
               faultDetails.map((fault, idx) => (
                 <Text key={idx} style={faultsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
-                  {fault.name}{fault.intensity ? ` (${fault.intensity})` : ''}
+                  {formatDefectDetail(fault)}
                 </Text>
               ))
             ) : (
@@ -573,7 +585,7 @@ export function CertificateCuppingChart({
             {taintDetails && taintDetails.length > 0 ? (
               taintDetails.map((taint, idx) => (
                 <Text key={idx} style={taintsOutOfSpec ? { ...chartStyles.defectValue, color: COLORS.outOfSpec, fontWeight: 700 } : chartStyles.defectValue}>
-                  {taint.name}{taint.intensity ? ` (${taint.intensity})` : ''}
+                  {formatDefectDetail(taint)}
                 </Text>
               ))
             ) : (
