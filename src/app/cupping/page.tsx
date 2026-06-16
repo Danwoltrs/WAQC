@@ -31,6 +31,7 @@ import { CuppingValidationModal } from '@/components/cupping/cupping-validation-
 import { OCRValidationDialog } from '@/components/cupping/ocr-validation-dialog'
 import { CertificateEditDialog } from '@/components/cupping/certificate-edit-dialog'
 import { supabase } from '@/lib/supabase'
+import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 
 // Dynamic import of Plotly to avoid SSR issues
 const Plot = dynamic(() => import('react-plotly.js'), { ssr: false })
@@ -859,17 +860,8 @@ function CuppingPageContent() {
       const link = document.createElement('a')
       link.href = url
 
-      // Get filename from Content-Disposition header or use sample tracking number
-      const contentDisposition = pdfResponse.headers.get('Content-Disposition')
-      let filename = 'certificate.pdf'
-      if (contentDisposition) {
-        const filenameMatch = contentDisposition.match(/filename="(.+)"/)
-        if (filenameMatch) {
-          filename = filenameMatch[1]
-        }
-      }
-
-      link.download = filename
+      // Use the server's filename (official cert number + buyer reference).
+      link.download = certificateFilenameFromResponse(pdfResponse)
       document.body.appendChild(link)
       link.click()
       document.body.removeChild(link)

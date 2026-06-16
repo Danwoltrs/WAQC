@@ -21,6 +21,7 @@ import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-card
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
 import { DuplicateCountPopover, type DuplicateBagOverride } from '@/components/samples/duplicate-count-popover'
 import { useToast } from '@/hooks/use-toast'
+import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import {
   Select,
   SelectContent,
@@ -855,7 +856,9 @@ export default function SamplesPage() {
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `${sample.certificate_number || parseTrackingNumber(sample.tracking_number)}.pdf`
+        // Use the server's filename (official cert number + buyer reference),
+        // not the internal lab number the page may have loaded.
+        a.download = certificateFilenameFromResponse(response, sample.certificate_number, sample.buyer_contract_nr)
         document.body.appendChild(a)
         a.click()
         window.URL.revokeObjectURL(url)
@@ -879,7 +882,9 @@ export default function SamplesPage() {
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        a.download = `${trackingNumber}.pdf`
+        // The sub-contract cert route sets Content-Disposition to its own minted
+        // number + buyer reference; prefer that over the raw tracking number.
+        a.download = certificateFilenameFromResponse(response, trackingNumber)
         document.body.appendChild(a)
         a.click()
         window.URL.revokeObjectURL(url)

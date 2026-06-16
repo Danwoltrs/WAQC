@@ -39,6 +39,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
+import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 import { ApprovalSendView } from '@/components/samples/approval-send-view'
 
@@ -357,9 +358,8 @@ export default function CertificatesPage() {
         const url = window.URL.createObjectURL(blob)
         const a = document.createElement('a')
         a.href = url
-        let sanitizedName = certificateNumber.replace(/\//g, '_')
-        if (sanitizedName.startsWith('R-')) sanitizedName = 'r-' + sanitizedName.slice(2)
-        a.download = `${sanitizedName}.pdf`
+        // Use the server's filename (official cert number + buyer reference).
+        a.download = certificateFilenameFromResponse(response, certificateNumber)
         document.body.appendChild(a)
         a.click()
         window.URL.revokeObjectURL(url)

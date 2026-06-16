@@ -149,15 +149,13 @@ export function CertificateSupplyChainRow({
     !namesMatch(qcClient?.name, importer.name) &&
     !namesMatch(qcClient?.name, roaster.name)
 
-  // Group 1: Wolthers — single column. The Wolthers ref is the primary value and
-  // the sample number sits below it (was a separate column → too crowded).
+  // Group 1: Wolthers — single column showing the Wolthers contract reference.
+  // The exporter sample number is attached to the Seller column below (the seller
+  // shipped the sample, so its reference belongs with them).
   const sampleNote = exporterSampleNumber ? `Sample ${exporterSampleNumber}` : null
   const wolthersColumns: MergedColumn[] = []
   if (wolthersContract) {
-    wolthersColumns.push({ label: 'Wolthers', name: wolthersContract, contracts: [], address: null, note: sampleNote })
-  } else if (exporterSampleNumber) {
-    // No Wolthers ref — fall back to showing the sample number as the value.
-    wolthersColumns.push({ label: 'Sample Nr', name: exporterSampleNumber, contracts: [], address: null })
+    wolthersColumns.push({ label: 'Wolthers', name: wolthersContract, contracts: [], address: null })
   }
 
   // Group 2: Supply-side (Seller, Exporter, Shipper) - merge if same name
@@ -175,6 +173,20 @@ export function CertificateSupplyChainRow({
       if (col.label === 'Seller' && col.label.includes('Shipper')) {
         col.label = 'Seller / Shipper'
       }
+    }
+  }
+
+  // The seller shipped the sample, so its sample number sits with the Seller
+  // column (rendered as an un-prefixed line above any "Ref:" contract numbers).
+  // Fall back to a Wolthers-side note, then a standalone column, when there is no
+  // supply-side column to carry it.
+  if (sampleNote) {
+    if (supplySideColumns.length > 0) {
+      supplySideColumns[0].note = sampleNote
+    } else if (wolthersColumns.length > 0) {
+      wolthersColumns[0].note = sampleNote
+    } else if (exporterSampleNumber) {
+      wolthersColumns.push({ label: 'Sample Nr', name: exporterSampleNumber, contracts: [], address: null })
     }
   }
 

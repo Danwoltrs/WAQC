@@ -19,7 +19,8 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import {
   createNumericScale, createWordingScale, createBooleanScale, getScaleMaxValue,
-  type AttributeScaleType,
+  getScaleValidValues, getScoreLabel, formatValidationRule,
+  type AttributeScaleType, type AttributeValidationRule,
 } from '@/types/attribute-scales'
 import { CUPPING_ATTRIBUTE_TEMPLATES } from '@/types/cupping-templates'
 
@@ -187,6 +188,11 @@ function AttributeCard({
         <span className="text-[10.5px] font-medium px-1.5 py-0.5 rounded bg-muted text-muted-foreground capitalize">{scale.type}</span>
         <span className="text-[11px] text-muted-foreground truncate">{scaleSummary(scale)}</span>
       </div>
+      {attr.validation_rule && (
+        <div className="mt-1 text-[11px] text-muted-foreground">
+          Accepted <span className="font-medium text-foreground">{formatValidationRule(attr.validation_rule, scale)}</span>
+        </div>
+      )}
 
       {editing && (
         <div className="mt-3 pt-3 border-t border-border space-y-2">
@@ -202,6 +208,90 @@ function AttributeCard({
             </Select>
           </div>
           <ScaleEditor scale={scale} onChange={(s) => onUpdate({ scale: s })} />
+          <div className="pt-2 border-t border-border">
+            <AcceptedRange
+              scale={scale}
+              rule={attr.validation_rule}
+              onChange={(rule) => onUpdate({ validation_rule: rule })}
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Per-attribute acceptable score range (the "target" shown on the certificate).
+ * Stored as validation_rule: { type, min_value, max_value? } — read back by the
+ * certificate (formatSpecText) to render e.g. "(4 +/-1)" or "(>=8)". Min/Max are
+ * picked from the scale's valid values so they always align to the increment.
+ */
+function AcceptedRange({
+  scale, rule, onChange,
+}: {
+  scale: AttributeScaleType
+  rule: AttributeValidationRule | undefined
+  onChange: (rule: AttributeValidationRule | undefined) => void
+}) {
+  const values = getScaleValidValues(scale)
+  const optionLabel = (v: number) => {
+    const l = getScoreLabel(v, scale)
+    return scale.type === 'wording' && l ? `${v} (${l})` : String(v)
+  }
+  const mid = values[Math.floor(values.length / 2)] ?? values[0] ?? 0
+
+  return (
+    <div className="space-y-2">
+      <div className="space-y-1.5">
+        <Label className="text-[11px]">Accepted range (certificate target)</Label>
+        <Select
+          value={rule?.type || 'none'}
+          onValueChange={(v) => {
+            if (v === 'none') { onChange(undefined); return }
+            onChange({
+              type: v as 'minimum' | 'range',
+              min_value: rule?.min_value ?? mid,
+              max_value: v === 'range' ? (rule?.max_value ?? values[values.length - 1]) : undefined,
+            })
+          }}
+        >
+          <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            <SelectItem value="none">No target</SelectItem>
+            <SelectItem value="minimum">Minimum (≥)</SelectItem>
+            <SelectItem value="range">Range</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {rule && (
+        <div className={`grid ${rule.type === 'range' ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
+          <div className="space-y-1">
+            <Label className="text-[11px]">{rule.type === 'minimum' ? 'Minimum' : 'Min'}</Label>
+            <Select value={String(rule.min_value)} onValueChange={(v) => onChange({ ...rule, min_value: parseFloat(v) })}>
+              <SelectTrigger className="h-8"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {values.map((v) => <SelectItem key={v} value={String(v)}>{optionLabel(v)}</SelectItem>)}
+              </SelectContent>
+            </Select>
+          </div>
+          {rule.type === 'range' && (
+            <div className="space-y-1">
+              <Label className="text-[11px]">Max</Label>
+              <Select
+                value={rule.max_value != null ? String(rule.max_value) : ''}
+                onValueChange={(v) => onChange({ ...rule, max_value: parseFloat(v) })}
+              >
+                <SelectTrigger className="h-8"><SelectValue placeholder="—" /></SelectTrigger>
+                <SelectContent>
+                  {values.filter((v) => v > rule.min_value).map((v) => (
+                    <SelectItem key={v} value={String(v)}>{optionLabel(v)}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       )}
     </div>

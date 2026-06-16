@@ -19,7 +19,7 @@ import {
 } from '@/components/ui/dialog'
 import { Plus, Trash2, Download, Loader2, FileText, Save, ChevronDown, ChevronRight } from 'lucide-react'
 import { createBrowserClient } from '@supabase/ssr'
-import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { computeBagQuantities, bulkQuantitiesFromMt, approxBulkContainers } from '@/lib/bag-quantity'
 
 const BAG_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
@@ -392,7 +392,8 @@ export function SampleContractsSection({ sampleId, isEditMode, motherSample }: S
         const a = document.createElement('a')
         a.href = url
         const contract = contracts.find(c => c.id === contractId)
-        a.download = buildCertificateFilename(contract?.tracking_number, contract?.buyer_contract_nr)
+        // Use the server's filename (official cert number + buyer reference).
+        a.download = certificateFilenameFromResponse(response, contract?.tracking_number, contract?.buyer_contract_nr)
         a.click()
         URL.revokeObjectURL(url)
       }

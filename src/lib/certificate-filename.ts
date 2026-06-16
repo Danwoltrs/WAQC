@@ -33,3 +33,23 @@ export function buildCertificateFilename(
   const ref = sanitizeReference(buyerRef)
   return ref ? `${cert}_${ref}.pdf` : `${cert}.pdf`
 }
+
+/**
+ * The certificate API routes already set Content-Disposition to the authoritative
+ * filename — the OFFICIAL certificate number plus the buyer reference (via
+ * buildCertificateFilename), resolved server-side from the DB. Client download
+ * handlers must use that name rather than reconstructing one from whatever fields
+ * happen to be loaded on the page (which can be the internal lab number, or miss
+ * the buyer reference). This reads the server's chosen filename, falling back to
+ * building it locally only when the header is somehow absent.
+ */
+export function certificateFilenameFromResponse(
+  response: Response,
+  fallbackCertNumber?: string | null,
+  fallbackBuyerRef?: string | null,
+): string {
+  const disposition = response.headers.get('Content-Disposition')
+  const match = disposition?.match(/filename="([^"]+)"/)
+  if (match?.[1]) return match[1]
+  return buildCertificateFilename(fallbackCertNumber, fallbackBuyerRef)
+}
