@@ -467,8 +467,13 @@ export default function CertificatesPage() {
     if (cert.sample_id) {
       // Pass contract_id for sub-contract certs so the route renders THIS cert's
       // PDF (matching the title) rather than falling back to the mother cert.
-      const qs = cert.sample_contract_id ? `?contract_id=${cert.sample_contract_id}` : ''
-      setPreviewPdfUrl(`/api/samples/${cert.sample_id}/certificate${qs}`)
+      // nocache=1 forces a fresh render so the preview always reflects current
+      // sample/template/company data (and re-caches the corrected PDF, healing
+      // any stale stored copy used by Download/Email).
+      const params = new URLSearchParams()
+      if (cert.sample_contract_id) params.set('contract_id', cert.sample_contract_id)
+      params.set('nocache', '1')
+      setPreviewPdfUrl(`/api/samples/${cert.sample_id}/certificate?${params.toString()}`)
     }
   }
 
@@ -980,7 +985,7 @@ export default function CertificatesPage() {
 
         {/* Certificate Preview Modal */}
         <Dialog open={!!previewCertificate} onOpenChange={(open) => !open && handleClosePreview()}>
-          <DialogContent className="sm:max-w-[1100px] max-h-[95vh]">
+          <DialogContent className="sm:max-w-[1400px] w-[96vw] max-h-[96vh]">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <FileText className="h-5 w-5" />
@@ -1000,11 +1005,11 @@ export default function CertificatesPage() {
               </DialogDescription>
             </DialogHeader>
 
-            <div className="flex-1 min-h-[700px] bg-muted rounded-lg overflow-hidden">
+            <div className="flex-1 min-h-[78vh] bg-muted rounded-lg overflow-hidden">
               {previewPdfUrl ? (
                 <iframe
                   src={previewPdfUrl}
-                  className="w-full h-[700px] border-0"
+                  className="w-full h-[80vh] border-0"
                   title="Certificate Preview"
                 />
               ) : (
