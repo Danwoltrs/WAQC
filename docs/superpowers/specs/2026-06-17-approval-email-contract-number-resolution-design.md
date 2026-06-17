@@ -101,10 +101,20 @@ resolved id too.
   and the composer already attaches the cert. "With graphs" = the attached cert; no new
   rendering. Verify the cert exists/generates for these samples before send (the composer
   surfaces `certificateAvailable`).
-- **Reasons ("both")**: the email body already pre-fills cupping comments and the composer
-  already exposes an editable "Additional message" field. Verify the **rejection** body
-  carries the rejection reason/comments the same way the approval body does; fix the body
-  builder if rejection drops them.
+- **Reasons ("both")** — *correction to an earlier assumption*: WAQC's live email body
+  (`buildSampleApprovedBody` in
+  [sample-approved-template.ts](../../../src/lib/approval-notification/sample-approved-template.ts))
+  currently includes **no** cupping comments or rejection reasons — only contract/refs/
+  codes/courier. (The "Comments from …" text seen in the reference screenshots is the
+  *sys.wolthers.com* approval modal, not WAQC's composer.) So this is real, small work:
+  - Source the human-written reasoning from `quality_assessments.cupping_comments` and
+    `grading_comments` (already aggregated into a single `comments` string by
+    [certificate-data.ts:1584](../../../src/lib/certificate-data.ts)).
+  - Thread a `comments` field through the prefill (`ApprovalPrefill` /
+    `ApprovalSampleFields`) → `SampleApprovedInput` → `buildSampleApprovedBody`, which
+    appends a `Comments:` block when present, for **both** approved and rejected decisions.
+  - The composer body is already editable per recipient (`RecipientPanel` `onChange`), so
+    "editable reason" needs no new field — pre-fill + existing edit satisfies "both".
 
 ### 4. Write-back + contacts (consequence of §1)
 
@@ -122,11 +132,16 @@ backfill.
 
 ## Affected files
 
-- `src/lib/approval-notification/` — new `resolveSampleContract` helper (+ unit test).
-- `src/app/api/samples/[id]/approval-recipients/route.ts` — use resolver.
+- `src/lib/approval-notification/contract-resolver.ts` — new `resolveSampleContract` +
+  pure `contractLookup` / `pickContract` helpers (+ unit test).
+- `src/app/api/samples/[id]/approval-recipients/route.ts` — use resolver; also fetch
+  `quality_assessments.cupping_comments`/`grading_comments` and pass `comments` in prefill.
 - `src/app/api/samples/[id]/notify-approval/route.ts` — use resolver.
+- `src/lib/approval-notification/types.ts` — add `comments` to `ApprovalSampleFields`.
+- `src/lib/approval-notification/sample-approved-template.ts` — add `comments` to
+  `SampleApprovedInput`; append a `Comments:` block in `buildSampleApprovedBody` (+ test).
+- `src/components/samples/approval-send-view.tsx` — pass `comments` into the template input.
 - (verify) certificate-override success handler on `src/app/certificates/page.tsx`.
-- (verify) rejection body builder in the email compose path.
 - (optional) intake path to set `samples.contract_id`.
 
 ## Testing
