@@ -14,6 +14,7 @@ const prefill: ApprovalPrefill = {
     courier: 'FedEx',
     sellerReference: null,
     buyerReference: '106197',
+    comments: null,
   },
   panels: {
     seller: { greeting: 'João', to: [{ email: 'seller@x.com', name: 'João', nickname: null, isGroupMailbox: false }], cc: [{ email: 'qualitycontrol@wolthers.com', name: 'Quality Control', nickname: null, isGroupMailbox: false }] },

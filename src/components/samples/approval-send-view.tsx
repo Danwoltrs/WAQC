@@ -54,6 +54,7 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
             trackingNumber: fields.trackingNumber,
             awb: fields.awb,
             courier: fields.courier,
+            comments: fields.comments,
           }
           return {
             side,
