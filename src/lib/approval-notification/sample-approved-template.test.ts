@@ -15,6 +15,7 @@ const base = {
   trackingNumber: 'BR-036991/26',
   awb: '872243057708',
   courier: 'FedEx',
+  comments: null,
 }
 
 describe('buildSampleApprovedSubject', () => {

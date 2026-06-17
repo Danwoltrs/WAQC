@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient as createServerClient } from '@/lib/supabase-server'
 import { canUserManageSample } from '@/lib/auth/sample-access'
 import { resolvePanel, type ContactRow } from '@/lib/approval-notification/resolve-panels'
+import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
 import type { ApprovalPrefill } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
@@ -31,31 +32,38 @@ export async function GET(
   const supabase = admin()
   const { data: sample, error } = await supabase
     .from('samples')
-    .select('id, tracking_number, status, contract_id, sample_type')
+    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, sample_type')
     .eq('id', id)
     .single()
   if (error || !sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
 
   const s = sample as any
-  if (!s.contract_id) {
+  const ctx = await resolveSampleContract(supabase, s)
+  if (!ctx) {
     return NextResponse.json({ error: 'Sample is not contract-linked' }, { status: 400 })
   }
   if (s.status !== 'approved' && s.status !== 'rejected') {
     return NextResponse.json({ error: 'Sample is not approved/rejected' }, { status: 400 })
   }
 
-  const { data: contract } = await supabase
-    .from('contracts')
-    .select('contract_number, buyer_id, seller_id, buyer_reference, seller_reference')
-    .eq('id', s.contract_id)
-    .single()
-  const c = (contract ?? {}) as any
+  // Most-recent cupping/grading comments for the body's Comments block.
+  const { data: qa } = await supabase
+    .from('quality_assessments')
+    .select('cupping_comments, grading_comments')
+    .eq('sample_id', id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+  const comments =
+    [ (qa as any)?.cupping_comments, (qa as any)?.grading_comments ]
+      .filter((x) => x && String(x).trim())
+      .join('\n') || null
 
   // Companies for team-name greeting fallback.
   const { data: companies } = await supabase
     .from('companies')
     .select('id, name, fantasy_name')
-    .in('id', [c.buyer_id, c.seller_id].filter(Boolean))
+    .in('id', [ctx.buyerId, ctx.sellerId].filter(Boolean))
   const nameOf = (cid: string | null): string | null => {
     const co = (companies ?? []).find((x: any) => x.id === cid) as any
     return co ? co.fantasy_name ?? co.name ?? null : null
@@ -65,7 +73,7 @@ export async function GET(
   const { data: contactRows } = await supabase
     .from('contacts')
     .select('company_id, email, name, nickname, role, is_primary, is_group, routing_purposes')
-    .in('company_id', [c.buyer_id, c.seller_id].filter(Boolean))
+    .in('company_id', [ctx.buyerId, ctx.sellerId].filter(Boolean))
     .eq('is_active', true)
     .not('email', 'is', null)
   const rows: ContactRow[] = (contactRows ?? []).map((r) => ({
@@ -83,7 +91,7 @@ export async function GET(
   const { data: ssRows } = await supabase
     .from('shipment_samples')
     .select('sample_code, tracking_number, courier_company, waqc_ref, sample_type, created_at')
-    .eq('contract_id', s.contract_id)
+    .eq('contract_id', ctx.contractId)
   const ss =
     (ssRows ?? []).find((r: any) => r.waqc_ref === s.tracking_number) ??
     (ssRows ?? [])
@@ -104,16 +112,17 @@ export async function GET(
       trackingNumber: s.tracking_number,
       sampleType: s.sample_type ?? 'pss',
       status: s.status,
-      contractNumber: c.contract_number ?? null,
+      contractNumber: ctx.contractNumber,
       sampleCode: (ss as any)?.sample_code ?? null,
       awb: (ss as any)?.tracking_number ?? null,
       courier: (ss as any)?.courier_company ?? null,
-      sellerReference: c.seller_reference ?? null,
-      buyerReference: c.buyer_reference ?? null,
+      sellerReference: ctx.sellerReference,
+      buyerReference: ctx.buyerReference,
+      comments,
     },
     panels: {
-      seller: resolvePanel(rows, c.seller_id ?? null, nameOf(c.seller_id ?? null), QC_MAILBOX),
-      buyer: resolvePanel(rows, c.buyer_id ?? null, nameOf(c.buyer_id ?? null), QC_MAILBOX),
+      seller: resolvePanel(rows, ctx.sellerId, nameOf(ctx.sellerId), QC_MAILBOX),
+      buyer: resolvePanel(rows, ctx.buyerId, nameOf(ctx.buyerId), QC_MAILBOX),
     },
     certificateAvailable: !!cert,
   }
