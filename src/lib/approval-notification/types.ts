@@ -25,6 +25,7 @@ export interface ApprovalSampleFields {
   courier: string | null
   sellerReference: string | null
   buyerReference: string | null
+  comments: string | null
 }
 
 export interface ApprovalPrefill {

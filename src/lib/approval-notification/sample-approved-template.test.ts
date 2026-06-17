@@ -54,3 +54,32 @@ describe('buildSampleApprovedBody', () => {
     expect(body).toContain('Sample: PSS · BR-036991/26')
   })
 })
+
+const base2 = {
+  greeting: 'Paulo',
+  contractNumber: '41535/26',
+  sellerReference: '38378/2026',
+  buyerReference: '106328',
+  sampleType: 'pss',
+  sampleCode: 'PSS',
+  trackingNumber: 'SAN-00047/26',
+  awb: null,
+  courier: null,
+}
+
+describe('buildSampleApprovedBody — comments', () => {
+  it('appends a Comments block when comments are present', () => {
+    const body = buildSampleApprovedBody({ ...base2, decision: 'approved', comments: 'Clean cup, sweet.' })
+    expect(body).toContain('Comments:')
+    expect(body).toContain('Clean cup, sweet.')
+  })
+  it('includes comments on a rejection too', () => {
+    const body = buildSampleApprovedBody({ ...base2, decision: 'rejected', comments: 'Phenol detected.' })
+    expect(body).toContain('Comments:')
+    expect(body).toContain('Phenol detected.')
+  })
+  it('omits the Comments block when comments are null or blank', () => {
+    expect(buildSampleApprovedBody({ ...base2, decision: 'approved', comments: null })).not.toContain('Comments:')
+    expect(buildSampleApprovedBody({ ...base2, decision: 'approved', comments: '   ' })).not.toContain('Comments:')
+  })
+})

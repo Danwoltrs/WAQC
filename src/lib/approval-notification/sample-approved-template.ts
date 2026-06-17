@@ -11,6 +11,7 @@ export interface SampleApprovedInput {
   trackingNumber: string
   awb: string | null
   courier: string | null
+  comments: string | null
 }
 
 const isTbi = (s: string | null): boolean =>
@@ -38,6 +39,9 @@ export function buildSampleApprovedBody(input: SampleApprovedInput): string {
   lines.push(`Sample: ${sampleTypeLabel} · ${sampleLabel}`)
   if (input.awb) {
     lines.push(`AWB: ${input.awb}${input.courier ? ` · ${input.courier}` : ''}`)
+  }
+  if (input.comments && input.comments.trim()) {
+    lines.push('', 'Comments:', input.comments.trim())
   }
   lines.push('', 'Best regards,', 'Wolthers & Associates')
   return lines.join('\n')
