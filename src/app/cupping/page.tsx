@@ -706,27 +706,24 @@ function CuppingPageContent() {
     const defectConfig = defectConfigsMap.get(sampleId)?.get(defectModalOpen)
     const isTaint = classifyDefectAsTaint(defectConfig, modalIntensity)
 
-    // Categorical zero-tolerance check based on this defect's classification.
+    // A defect disallowed by the spec does NOT block entry — it means the sample
+    // is rejected. Always add the defect, then surface the rejection so the
+    // cupper knows why. The out-of-spec defect renders red and feeds the
+    // fail/rejected compliance status via validateCuppingDefects.
     const rules = getTaintFaultRules(sampleId)
-    if (isTaint && rules?.max_taints === 0) {
-      toast({
-        title: 'Zero Tolerance',
-        description: 'This quality specification does not allow any taints.',
-        variant: 'destructive'
-      })
-      return
-    }
-    if (!isTaint && rules?.max_faults === 0) {
-      toast({
-        title: 'Zero Tolerance',
-        description: 'This quality specification does not allow any faults.',
-        variant: 'destructive'
-      })
-      return
-    }
+    const evaluation = evaluateDefectAgainstRules(rules, isTaint)
 
     // One entry for the defect, carrying the number of cups it affects.
     addDefect(sampleId, defectModalOpen, modalCups, modalIntensity)
+
+    if (evaluation.outOfSpec) {
+      const category = isTaint ? 'taint' : 'fault'
+      toast({
+        title: 'Sample Rejected',
+        description: `${defectModalOpen} (${category}) is not allowed by this quality specification (${evaluation.reason}). The sample will be marked as rejected.`,
+        variant: 'destructive'
+      })
+    }
 
     // Reset modal state
     setDefectModalOpen(null)
