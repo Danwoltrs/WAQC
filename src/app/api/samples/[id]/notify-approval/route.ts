@@ -8,6 +8,7 @@ import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
 import { composeBodyHtml } from '@/lib/email/compose-html'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
+import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
 import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
@@ -63,7 +64,7 @@ export async function POST(
 
   const { data: sample } = await supabase
     .from('samples')
-    .select('id, tracking_number, status, contract_id, buyer_contract_nr')
+    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, buyer_contract_nr')
     .eq('id', id)
     .single()
   if (!sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
@@ -71,18 +72,14 @@ export async function POST(
   if (s.status !== 'approved' && s.status !== 'rejected') {
     return NextResponse.json({ error: 'Sample is not approved/rejected' }, { status: 400 })
   }
-  if (!s.contract_id) {
+  const ctx = await resolveSampleContract(supabase, s)
+  if (!ctx) {
     return NextResponse.json({ error: 'Sample is not contract-linked' }, { status: 400 })
   }
   const decision = s.status as ApprovalDecision
   const tracking = s.tracking_number as string
-  const contractId = s.contract_id as string
-
-  const { data: contract } = await supabase
-    .from('contracts')
-    .select('buyer_id, seller_id')
-    .eq('id', contractId)
-    .single()
+  const contractId = ctx.contractId
+  const contract = { buyer_id: ctx.buyerId, seller_id: ctx.sellerId }
 
   // Certificate bytes (shared across panels)
   let attachment: GraphSendAttachment | null = null
