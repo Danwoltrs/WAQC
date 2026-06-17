@@ -29,11 +29,20 @@ export function contractLookup(sample: SampleContractKeys): ContractLookup | nul
   return null
 }
 
-/** Deterministically pick one contract when a number match returns several. */
-export function pickContract<T extends { id: string }>(rows: T[]): T | null {
+/** Pick one contract when a number match returns several: prefer status 'active',
+ *  then most-recently-updated, then a deterministic id tiebreak. */
+export function pickContract<T extends { id: string; status?: string | null; updated_at?: string | null }>(
+  rows: T[],
+): T | null {
   if (rows.length === 0) return null
   if (rows.length === 1) return rows[0]
-  return [...rows].sort((a, b) => String(b.id).localeCompare(String(a.id)))[0]
+  const rank = (r: T) => (r.status === 'active' ? 1 : 0)
+  return [...rows].sort(
+    (a, b) =>
+      rank(b) - rank(a) ||
+      String(b.updated_at ?? '').localeCompare(String(a.updated_at ?? '')) ||
+      String(b.id).localeCompare(String(a.id)),
+  )[0]
 }
 
 interface ContractRow {
@@ -43,6 +52,8 @@ interface ContractRow {
   seller_id: string | null
   buyer_reference: string | null
   seller_reference: string | null
+  status: string | null
+  updated_at: string | null
 }
 
 /** Resolve full contract context for a sample, or null when there is no contract. */
@@ -54,9 +65,15 @@ export async function resolveSampleContract(
   if (!lookup) return null
   const { data } = await admin
     .from('contracts')
-    .select('id, contract_number, buyer_id, seller_id, buyer_reference, seller_reference')
+    .select('id, contract_number, buyer_id, seller_id, buyer_reference, seller_reference, status, updated_at')
     .eq(lookup.column, lookup.value)
-  const row = pickContract((data ?? []) as ContractRow[])
+  const rows = (data ?? []) as ContractRow[]
+  if (lookup.column === 'contract_number' && rows.length > 1) {
+    console.warn(
+      `[contract-resolver] ${rows.length} contracts share contract_number "${lookup.value}"; picked active/most-recent`,
+    )
+  }
+  const row = pickContract(rows)
   if (!row) return null
   return {
     contractId: row.id,
