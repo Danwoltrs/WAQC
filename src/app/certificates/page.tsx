@@ -36,6 +36,7 @@ import {
   CheckCircle,
   XCircle,
   RefreshCw,
+  Pencil,
 } from 'lucide-react'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
@@ -43,6 +44,8 @@ import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 import { ApprovalSendView } from '@/components/samples/approval-send-view'
 import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
+import { SampleDetailModal } from '@/components/samples/sample-detail-modal'
+import { useAuth } from '@/components/providers/auth-provider'
 
 interface Certificate {
   id: string
@@ -107,6 +110,8 @@ interface Certificate {
     sellerSent: { initials: string; name: string | null; at: string | null } | null
     full: boolean
   } | null
+  buyer_id?: string | null
+  seller_id?: string | null
 }
 
 interface Client {
@@ -166,6 +171,10 @@ export default function CertificatesPage() {
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [showBatchSend, setShowBatchSend] = useState(false)
+  const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[]; side: 'buyer' | 'seller' } | null>(null)
+  const [editSampleId, setEditSampleId] = useState<string | null>(null)
+  const { profile } = useAuth()
+  const isMasterEditor = profile?.is_master_cupper === true || profile?.is_global_admin === true
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [selectedCertificates, setSelectedCertificates] = useState<Set<string>>(new Set())
@@ -685,14 +694,38 @@ export default function CertificatesPage() {
                     )}
                     Download ZIP
                   </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setShowEmailDialog(true)}
-                  >
-                    <Mail className="h-4 w-4 mr-2" />
-                    Send Email
-                  </Button>
+                  {(() => {
+                    const selCerts = filteredCertificates.filter(c => selectedCertificates.has(c.id))
+                    const sampleIds = Array.from(new Set(selCerts.map(c => c.sample?.id).filter((x): x is string => !!x)))
+                    const buyers = new Set(selCerts.map(c => c.buyer_id).filter(Boolean))
+                    const sellers = new Set(selCerts.map(c => c.seller_id).filter(Boolean))
+                    const canBuyer = buyers.size === 1 && sampleIds.length > 0
+                    const canSeller = sellers.size === 1 && sampleIds.length > 0
+                    return (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!canBuyer}
+                          title={canBuyer ? undefined : 'Select certificates that share a single buyer'}
+                          onClick={() => setBatchSelection({ sampleIds, side: 'buyer' })}
+                        >
+                          <Mail className="h-4 w-4 mr-2" />
+                          Send to buyer
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={!canSeller}
+                          title={canSeller ? undefined : 'Select certificates that share a single seller'}
+                          onClick={() => setBatchSelection({ sampleIds, side: 'seller' })}
+                        >
+                          <Mail className="h-4 w-4 mr-2" />
+                          Send to seller
+                        </Button>
+                      </>
+                    )
+                  })()}
                 </div>
               </div>
             </CardContent>
@@ -877,6 +910,16 @@ export default function CertificatesPage() {
                                 >
                                   <RefreshCw className="h-4 w-4" />
                                 </Button>
+                                {isMasterEditor && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => setEditSampleId(cert.sample_id)}
+                                    title="Edit Certificate"
+                                  >
+                                    <Pencil className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </>
                             )}
                           </div>
@@ -1141,6 +1184,24 @@ export default function CertificatesPage() {
           range={{ from: dateFrom, to: dateTo }}
           onClose={() => setShowBatchSend(false)}
           onSent={() => loadCertificates()}
+        />
+
+        <BatchApprovalSendView
+          open={!!batchSelection}
+          selection={batchSelection ?? undefined}
+          onClose={() => setBatchSelection(null)}
+          onSent={() => {
+            loadCertificates()
+            setSelectedCertificates(new Set())
+          }}
+        />
+
+        <SampleDetailModal
+          open={!!editSampleId}
+          sampleId={editSampleId}
+          startInEditMode
+          onOpenChange={(o) => { if (!o) setEditSampleId(null) }}
+          onSampleUpdated={() => loadCertificates()}
         />
 
         {/* Single Certificate Email Dialog */}

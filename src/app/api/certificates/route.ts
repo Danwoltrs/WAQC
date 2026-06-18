@@ -247,6 +247,11 @@ export async function GET(request: NextRequest) {
           cert.send_status = st
             ? { buyerSent: toChip(st.buyerSent), sellerSent: toChip(st.sellerSent), full: st.full }
             : { buyerSent: null, sellerSent: null, full: false }
+          // Buyer/seller company ids drive the page's "Send to buyer / seller"
+          // same-counterparty gating.
+          const ctx = sid ? contexts.get(sid) : undefined
+          cert.buyer_id = ctx?.buyerId ?? null
+          cert.seller_id = ctx?.sellerId ?? null
         }
       }
     } catch (e) {

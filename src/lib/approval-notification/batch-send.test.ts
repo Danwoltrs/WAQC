@@ -15,7 +15,8 @@ const panel = (greeting: string, to: string[]): PanelPrefill => ({
   to: to.map(chip),
   cc: [chip('qualitycontrol@wolthers.com')],
 })
-const line = (over: Partial<BatchUnitLine> = {}): BatchUnitLine => ({
+type LineCore = Omit<BatchUnitLine, 'reference' | 'date'>
+const line = (over: Partial<LineCore> = {}): LineCore => ({
   containerNr: 'C1',
   certNumber: 'CERT-1',
   contractNumber: '100/26',
@@ -81,9 +82,10 @@ describe('buildBatchUnits', () => {
     ['sellerS', 'Seller Co'],
   ])
 
+  const base = { buyerReference: null, sellerReference: null, date: null }
   const samples: BatchSampleInput[] = [
-    { sampleId: 's1', buyerId: 'buyerZ', sellerId: 'sellerS', line: line({ containerNr: 'C1' }) },
-    { sampleId: 's2', buyerId: 'buyerA', sellerId: 'sellerS', line: line({ containerNr: 'C2', decision: 'rejected', reason: 'phenol' }) },
+    { sampleId: 's1', buyerId: 'buyerZ', sellerId: 'sellerS', ...base, line: line({ containerNr: 'C1' }) },
+    { sampleId: 's2', buyerId: 'buyerA', sellerId: 'sellerS', ...base, line: line({ containerNr: 'C2', decision: 'rejected', reason: 'phenol' }) },
   ]
 
   it('emits all buyer units (sorted by name) before seller units', () => {
@@ -119,7 +121,7 @@ describe('buildBatchUnits', () => {
   })
 
   it('skips a side with no company', () => {
-    const orphan: BatchSampleInput[] = [{ sampleId: 's9', buyerId: 'buyerZ', sellerId: null, line: line() }]
+    const orphan: BatchSampleInput[] = [{ sampleId: 's9', buyerId: 'buyerZ', sellerId: null, buyerReference: null, sellerReference: null, date: null, line: line() }]
     const units = buildBatchUnits(orphan, new Map(), panels, names)
     expect(units.every((u) => u.side === 'buyer')).toBe(true)
   })

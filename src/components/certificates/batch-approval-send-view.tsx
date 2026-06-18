@@ -6,7 +6,11 @@ import type { BatchUnit } from '@/lib/approval-notification/batch-send'
 
 interface Props {
   open: boolean
-  range: { from: string; to: string }
+  /** Date-range mode (the "Send unsent certificates" toolbar button). */
+  range?: { from: string; to: string }
+  /** Explicit-selection mode (the "Send to buyer / seller" bulk buttons): send
+   *  the chosen samples to one side regardless of date or prior-send status. */
+  selection?: { sampleIds: string[]; side: 'buyer' | 'seller' }
   onClose: () => void
   onSent?: () => void
 }
@@ -23,7 +27,7 @@ interface UnitResult {
   failed: number
 }
 
-export function BatchApprovalSendView({ open, range, onClose, onSent }: Props) {
+export function BatchApprovalSendView({ open, range, selection, onClose, onSent }: Props) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [units, setUnits] = useState<BatchUnit[]>([])
@@ -44,8 +48,13 @@ export function BatchApprovalSendView({ open, range, onClose, onSent }: Props) {
     setResults([])
     setAnySent(false)
     const qs = new URLSearchParams()
-    if (range.from) qs.set('from', range.from)
-    if (range.to) qs.set('to', range.to)
+    if (selection) {
+      qs.set('sampleIds', selection.sampleIds.join(','))
+      qs.set('side', selection.side)
+    } else if (range) {
+      if (range.from) qs.set('from', range.from)
+      if (range.to) qs.set('to', range.to)
+    }
     fetch(`/api/certificates/batch-send/queue?${qs.toString()}`)
       .then(async (r) => {
         if (!r.ok) throw new Error((await r.json()).error || 'Failed to load queue')
@@ -57,7 +66,8 @@ export function BatchApprovalSendView({ open, range, onClose, onSent }: Props) {
       })
       .catch((e) => setError(e.message))
       .finally(() => setLoading(false))
-  }, [open, range.from, range.to])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, range?.from, range?.to, selection?.side, (selection?.sampleIds ?? []).join(',')])
 
   if (!open) return null
 

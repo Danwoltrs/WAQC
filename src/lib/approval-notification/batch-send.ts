@@ -87,7 +87,12 @@ export interface BatchSampleInput {
   sampleId: string
   buyerId: string | null
   sellerId: string | null
-  line: BatchUnitLine
+  // Per-side references; the unit picks the one matching its side.
+  buyerReference: string | null
+  sellerReference: string | null
+  // Certificate issue date (ISO) for the email's range summary.
+  date: string | null
+  line: Omit<BatchUnitLine, 'reference' | 'date'>
 }
 
 export interface BatchUnitSample extends BatchUnitLine {
@@ -117,8 +122,9 @@ export function buildBatchUnits(
   sendStatus: Map<string, SampleSendStatus>,
   panelsByCompany: Map<string, PanelPrefill>,
   companyNameById: Map<string, string>,
+  opts?: { onlySide?: ApprovalSide; includeAlreadySent?: boolean },
 ): BatchUnit[] {
-  const sides: ApprovalSide[] = ['buyer', 'seller']
+  const sides: ApprovalSide[] = opts?.onlySide ? [opts.onlySide] : ['buyer', 'seller']
   const units: BatchUnit[] = []
 
   for (const side of sides) {
@@ -128,9 +134,10 @@ export function buildBatchUnits(
       if (!companyId) continue
       const status = sendStatus.get(s.sampleId)
       const alreadySent = side === 'buyer' ? status?.buyerSent : status?.sellerSent
-      if (alreadySent) continue
+      if (alreadySent && !opts?.includeAlreadySent) continue
+      const reference = side === 'buyer' ? s.buyerReference : s.sellerReference
       const list = bucket.get(companyId) ?? []
-      list.push({ sampleId: s.sampleId, ...s.line })
+      list.push({ sampleId: s.sampleId, ...s.line, reference, date: s.date })
       bucket.set(companyId, list)
     }
 

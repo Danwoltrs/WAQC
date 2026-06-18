@@ -11,7 +11,7 @@ import {
   type BatchSampleInput,
   type SendStatusRow,
 } from '@/lib/approval-notification/batch-send'
-import type { ApprovalDecision, PanelPrefill } from '@/lib/approval-notification/types'
+import type { ApprovalDecision, ApprovalSide, PanelPrefill } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
 const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
@@ -27,6 +27,7 @@ interface CertRow {
   id: string
   certificate_number: string | null
   is_rejected: boolean | null
+  created_at: string | null
   sample_id: string | null
   sample: {
     id: string
@@ -58,20 +59,32 @@ export async function GET(req: NextRequest) {
       .map((d) => d.trim())
       .filter((d): d is ApprovalDecision => d === 'approved' || d === 'rejected'),
   )
+  // Explicit-selection mode: send a chosen set of samples to one side (buyer or
+  // seller) regardless of date or prior-send status — used by the certificates
+  // page "Send to buyer / Send to seller" buttons.
+  const explicitIds = (sp.get('sampleIds') ?? '').split(',').map((s) => s.trim()).filter(Boolean)
+  const sideParam = sp.get('side')
+  const onlySide: ApprovalSide | undefined =
+    sideParam === 'buyer' || sideParam === 'seller' ? sideParam : undefined
+  const explicitMode = explicitIds.length > 0
 
   const supabase = admin()
 
-  // Mother certificates (one per sample) issued in the range.
+  // Mother certificates (one per sample) issued in the range (or the explicit set).
   let q = supabase
     .from('certificates')
     .select(
-      `id, certificate_number, is_rejected, sample_id,
+      `id, certificate_number, is_rejected, created_at, sample_id,
        sample:samples(id, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status)`,
     )
     .eq('status', 'issued')
     .is('sample_contract_id', null)
-  if (from) q = q.gte('created_at', from)
-  if (to) q = q.lte('created_at', to + 'T23:59:59')
+  if (explicitMode) {
+    q = q.in('sample_id', explicitIds)
+  } else {
+    if (from) q = q.gte('created_at', from)
+    if (to) q = q.lte('created_at', to + 'T23:59:59')
+  }
 
   const { data: certData, error } = await q
   if (error) {
@@ -199,6 +212,9 @@ export async function GET(req: NextRequest) {
       sampleId: sample.id,
       buyerId: ctx.buyerId,
       sellerId: ctx.sellerId,
+      buyerReference: ctx.buyerReference,
+      sellerReference: ctx.sellerReference,
+      date: c.created_at ?? null,
       line: {
         containerNr: sample.container_nr ?? null,
         certNumber: c.certificate_number ?? sample.tracking_number ?? null,
@@ -209,7 +225,10 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  const units = buildBatchUnits(inputs, sendStatus, panelsByCompany, companyNameById)
+  const units = buildBatchUnits(inputs, sendStatus, panelsByCompany, companyNameById, {
+    onlySide,
+    includeAlreadySent: explicitMode,
+  })
 
   // Samples in scope that produced no unit and aren't already fully sent → no recipients.
   const covered = new Set<string>()
