@@ -157,7 +157,12 @@ function buildMessagePayload(params: GraphSendParams) {
       emailAddress: { address: addr },
     })),
   }
-  if (params.senderEmail) {
+  // "Send on behalf of" only works for a mailbox the QC mailbox can act for —
+  // i.e. another tenant (@wolthers.com) user. Setting `sender` to an external
+  // address (e.g. a personal gmail used as a profile email) makes Graph reject
+  // the send with 403 ErrorAccessDenied. For non-tenant senders, omit `sender`
+  // so the message goes out plainly as the mailbox itself.
+  if (params.senderEmail && /@wolthers\.com$/i.test(params.senderEmail)) {
     msg.sender = {
       emailAddress: {
         address: params.senderEmail,
