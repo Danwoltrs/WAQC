@@ -1,5 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
+import {
+  resolveSampleContractsBatch,
+  computeSendStatus,
+  getInitials,
+  type SendStatusRow,
+} from '@/lib/approval-notification/batch-send'
+
+const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
+const adminClient = () =>
+  createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } },
+  )
 
 /**
  * GET /api/certificates
@@ -52,6 +67,7 @@ export async function GET(request: NextRequest) {
           ico_number,
           container_nr,
           wolthers_contract_nr,
+          contract_id,
           exporter_id,
           importer_id,
           roaster_id,
@@ -176,6 +192,65 @@ export async function GET(request: NextRequest) {
           client_id: sample.client_id
         })
       }
+    }
+
+    // Enrich each certificate with per-side send status (who/when) for the Sent
+    // column. Computed with the service role so contract/email reads aren't
+    // blocked by RLS; the certificate list itself stays user-scoped above.
+    try {
+      const sampleKeys = filtered
+        .map((cert) => cert.sample as { id?: string; contract_id?: string | null; wolthers_contract_nr?: string | null } | null)
+        .filter((s): s is { id: string; contract_id: string | null; wolthers_contract_nr: string | null } => !!s?.id)
+        .map((s) => ({ id: s.id, contract_id: s.contract_id ?? null, wolthers_contract_nr: s.wolthers_contract_nr ?? null }))
+
+      if (sampleKeys.length > 0) {
+        const admin = adminClient()
+        const contexts = await resolveSampleContractsBatch(admin, sampleKeys)
+        const sampleIds = sampleKeys.map((s) => s.id)
+        const required = new Map<string, { buyer: boolean; seller: boolean }>()
+        for (const [sid, ctx] of contexts) required.set(sid, { buyer: !!ctx.buyerId, seller: !!ctx.sellerId })
+        const contractIds = [...new Set([...contexts.values()].map((c) => c.contractId))]
+
+        const statusRows: SendStatusRow[] = []
+        if (contractIds.length > 0) {
+          const { data: msgs } = await admin
+            .from('email_messages')
+            .select('sent_by, sent_at, metadata, status')
+            .in('contract_id', contractIds)
+            .eq('status', 'sent')
+          const relevant = ((msgs ?? []) as any[]).filter((m) => {
+            const meta = m.metadata ?? {}
+            return PRIOR_SOURCES.has(meta.source) && sampleIds.includes(meta.sample_id) && (meta.side === 'buyer' || meta.side === 'seller')
+          })
+          const sentByIds = new Set<string>()
+          for (const m of relevant) if (m.sent_by) sentByIds.add(m.sent_by)
+          const nameById = new Map<string, string>()
+          if (sentByIds.size > 0) {
+            const { data: profs } = await admin.from('profiles').select('id, full_name').in('id', [...sentByIds])
+            for (const p of (profs ?? []) as any[]) nameById.set(p.id, p.full_name ?? '')
+          }
+          for (const m of relevant) {
+            statusRows.push({
+              sampleId: m.metadata.sample_id,
+              side: m.metadata.side,
+              sentBy: m.sent_by ? nameById.get(m.sent_by) ?? null : null,
+              sentAt: m.sent_at ?? null,
+            })
+          }
+        }
+        const sendStatus = computeSendStatus(statusRows, required)
+        const toChip = (side: { by: string | null; at: string | null } | null) =>
+          side ? { initials: getInitials(side.by), name: side.by, at: side.at } : null
+        for (const cert of filtered as any[]) {
+          const sid = (cert.sample as { id?: string } | null)?.id
+          const st = sid ? sendStatus.get(sid) : undefined
+          cert.send_status = st
+            ? { buyerSent: toChip(st.buyerSent), sellerSent: toChip(st.sellerSent), full: st.full }
+            : { buyerSent: null, sellerSent: null, full: false }
+        }
+      }
+    } catch (e) {
+      console.error('[certificates] send-status enrichment failed (non-fatal):', e)
     }
 
     return NextResponse.json({

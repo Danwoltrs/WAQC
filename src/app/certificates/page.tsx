@@ -42,6 +42,7 @@ import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 import { ApprovalSendView } from '@/components/samples/approval-send-view'
+import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
 
 interface Certificate {
   id: string
@@ -101,6 +102,11 @@ interface Certificate {
       }
     } | null
   } | null
+  send_status?: {
+    buyerSent: { initials: string; name: string | null; at: string | null } | null
+    sellerSent: { initials: string; name: string | null; at: string | null } | null
+    full: boolean
+  } | null
 }
 
 interface Client {
@@ -116,6 +122,24 @@ interface Quality {
 
 type SortField = 'certificate_number' | 'created_at' | 'issued_to' | 'origin' | 'status'
 type SortOrder = 'asc' | 'desc'
+
+// Local YYYY-MM-DD for a date.
+const ymd = (d: Date): string =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+
+// Date-range presets for the batch-send selector (week starts Monday).
+const presetRange = (kind: 'today' | 'week' | 'month'): { from: string; to: string } => {
+  const now = new Date()
+  const to = ymd(now)
+  if (kind === 'today') return { from: to, to }
+  if (kind === 'week') {
+    const day = (now.getDay() + 6) % 7 // Mon=0
+    const start = new Date(now)
+    start.setDate(now.getDate() - day)
+    return { from: ymd(start), to }
+  }
+  return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to }
+}
 
 // Helper to parse tracking number from potential JSON
 const parseTrackingNumber = (trackingNumber: string): string => {
@@ -141,6 +165,7 @@ export default function CertificatesPage() {
   const [qualityFilter, setQualityFilter] = useState<string>('all')
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
+  const [showBatchSend, setShowBatchSend] = useState(false)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [selectedCertificates, setSelectedCertificates] = useState<Set<string>>(new Set())
@@ -532,6 +557,20 @@ export default function CertificatesPage() {
   return (
     <MainLayout>
       <div className="p-6 space-y-4">
+        {/* Batch send toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1">
+            <span className="text-xs text-muted-foreground mr-1">Range:</span>
+            <Button variant="outline" size="sm" onClick={() => { const r = presetRange('today'); setDateFrom(r.from); setDateTo(r.to) }}>Today</Button>
+            <Button variant="outline" size="sm" onClick={() => { const r = presetRange('week'); setDateFrom(r.from); setDateTo(r.to) }}>This week</Button>
+            <Button variant="outline" size="sm" onClick={() => { const r = presetRange('month'); setDateFrom(r.from); setDateTo(r.to) }}>This month</Button>
+          </div>
+          <Button size="sm" onClick={() => setShowBatchSend(true)}>
+            <Mail className="h-4 w-4 mr-2" />
+            Send unsent certificates
+          </Button>
+        </div>
+
         {/* Filters */}
         <Card>
           <CardContent className="pt-6">
@@ -736,6 +775,9 @@ export default function CertificatesPage() {
                           <SortIcon field="status" />
                         </button>
                       </th>
+                      <th className="py-3 px-4 text-left">
+                        <span className="font-medium text-sm">Sent</span>
+                      </th>
                       <th className="py-3 px-4 text-right">
                         <span className="font-medium text-sm">Actions</span>
                       </th>
@@ -785,6 +827,27 @@ export default function CertificatesPage() {
                         </td>
                         <td className="py-3 px-4">
                           {getStatusBadge(cert)}
+                        </td>
+                        <td className="py-3 px-4 text-sm">
+                          {(() => {
+                            const ss = cert.send_status
+                            if (!ss || (!ss.buyerSent && !ss.sellerSent)) {
+                              return <span className="text-muted-foreground">—</span>
+                            }
+                            const sides = [ss.buyerSent, ss.sellerSent].filter(Boolean) as { initials: string; name: string | null; at: string | null }[]
+                            const last = [...sides].sort((a, b) => String(b.at ?? '').localeCompare(String(a.at ?? '')))[0]
+                            const title = [
+                              ss.buyerSent && `Buyer: ${ss.buyerSent.name || ss.buyerSent.initials}${ss.buyerSent.at ? ` · ${new Date(ss.buyerSent.at).toLocaleDateString()}` : ''}`,
+                              ss.sellerSent && `Seller: ${ss.sellerSent.name || ss.sellerSent.initials}${ss.sellerSent.at ? ` · ${new Date(ss.sellerSent.at).toLocaleDateString()}` : ''}`,
+                            ].filter(Boolean).join('\n')
+                            return (
+                              <span className={ss.full ? 'text-green-600' : 'text-amber-600'} title={title}>
+                                {last.initials}
+                                {last.at ? ` ${new Date(last.at).toLocaleDateString()}` : ''}
+                                {!ss.full ? ' (partial)' : ''}
+                              </span>
+                            )
+                          })()}
                         </td>
                         <td className="py-3 px-4 text-right">
                           <div className="flex items-center justify-end gap-2">
@@ -1072,6 +1135,13 @@ export default function CertificatesPage() {
             onClose={() => setApprovalSampleId(null)}
           />
         )}
+
+        <BatchApprovalSendView
+          open={showBatchSend}
+          range={{ from: dateFrom, to: dateTo }}
+          onClose={() => setShowBatchSend(false)}
+          onSent={() => loadCertificates()}
+        />
 
         {/* Single Certificate Email Dialog */}
         <Dialog open={showSingleEmailDialog} onOpenChange={setShowSingleEmailDialog}>

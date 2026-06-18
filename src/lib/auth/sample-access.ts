@@ -81,3 +81,23 @@ export async function canUserManageSample(
     ? { allowed: true }
     : { allowed: false, reason: 'not_authorized' }
 }
+
+/**
+ * Sample-id-free gate for staff-only batch operations (e.g. the certificates
+ * batch-send queue): true when the user is a global admin or holds one of the
+ * sample-manager QC roles. Per-sample authorization is still enforced at send
+ * time via `canUserManageSample`.
+ */
+export async function isStaffSampleManager(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<boolean> {
+  const { data: profile } = await (supabase as any)
+    .from('profiles')
+    .select('is_global_admin, qc_role')
+    .eq('id', userId)
+    .maybeSingle()
+  if (!profile) return false
+  if (profile.is_global_admin === true) return true
+  return typeof profile.qc_role === 'string' && STAFF_SAMPLE_MANAGER_ROLES.has(profile.qc_role)
+}
