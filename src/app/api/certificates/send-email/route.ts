@@ -1,17 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
-import { Resend } from 'resend'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
 
-const resend = new Resend(process.env.RESEND_API_KEY)
+const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
 
 interface RecipientInfo {
   email: string
@@ -39,6 +39,8 @@ export async function POST(request: NextRequest) {
       .select('full_name, email')
       .eq('id', user.id)
       .single()
+    const senderEmail = profile?.email || user.email || undefined
+    const testTo = process.env.MICROSOFT_GRAPH_TEST_RECIPIENT
 
     const body = await request.json()
     const { certificateIds, recipients } = body
@@ -181,7 +183,7 @@ export async function POST(request: NextRequest) {
     for (const [email, { info, certificates: recipientCerts }] of recipientCertificates) {
       try {
         // Generate PDF attachments for this recipient's certificates
-        const attachments: Array<{ filename: string; content: Buffer }> = []
+        const attachments: GraphSendAttachment[] = []
 
         for (const cert of recipientCerts) {
           if (!cert.sample_id) continue
@@ -192,8 +194,9 @@ export async function POST(request: NextRequest) {
               const cachedBuffer = await getCachedCertificatePdf(supabase, (cert as any).pdf_url)
               if (cachedBuffer) {
                 attachments.push({
-                  filename: buildCertificateFilename(cert.certificate_number, (cert.sample as any)?.buyer_contract_nr),
-                  content: cachedBuffer
+                  name: buildCertificateFilename(cert.certificate_number, (cert.sample as any)?.buyer_contract_nr),
+                  contentType: 'application/pdf',
+                  bytes: new Uint8Array(cachedBuffer),
                 })
                 continue
               }
@@ -250,8 +253,9 @@ export async function POST(request: NextRequest) {
               .catch((err) => console.error('[SendEmail] Cache upload failed:', err))
 
             attachments.push({
-              filename: buildCertificateFilename(cert.certificate_number, (cert.sample as any)?.buyer_contract_nr),
-              content: pdfContent
+              name: buildCertificateFilename(cert.certificate_number, (cert.sample as any)?.buyer_contract_nr),
+              contentType: 'application/pdf',
+              bytes: new Uint8Array(pdfContent),
             })
           } catch (pdfError) {
             console.error(`Error generating PDF for certificate ${cert.id}:`, pdfError)
@@ -272,14 +276,20 @@ export async function POST(request: NextRequest) {
 
         // Build email content
         const certNumbers = recipientCerts.map(c => c.certificate_number).join(', ')
-        const senderName = profile?.full_name || 'Wolthers QC'
-
-        // Send email with Resend
-        const { error: emailError } = await resend.emails.send({
-          from: 'Wolthers QC <qualitycontrol@wolthers.com>',
-          to: email,
-          subject: `Quality Certificates: ${certNumbers}`,
-          html: `
+        const senderName = profile?.full_name || senderEmail || 'Wolthers QC'
+        const certList = recipientCerts.map(c => c.certificate_number)
+        const bodyText = [
+          `Dear ${info.name},`,
+          '',
+          `Please find attached ${attachments.length === 1 ? 'the quality certificate' : `${attachments.length} quality certificates`} for your records:`,
+          ...certList.map((n) => `- ${n}`),
+          '',
+          'If you have any questions about these certificates, please don\'t hesitate to contact us.',
+          '',
+          'Best regards,',
+          'Wolthers & Associates',
+        ].join('\n')
+        const bodyHtml = `
             <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
               <h2 style="color: #556b2f;">Wolthers Quality Certificates</h2>
               <p>Dear ${info.name},</p>
@@ -291,27 +301,26 @@ export async function POST(request: NextRequest) {
               <hr style="border: none; border-top: 1px solid #eee; margin: 20px 0;" />
               <p style="color: #888; font-size: 12px;">
                 Sent by ${senderName}<br />
-                Wolthers Quality Control<br />
-                This is an automated message.
+                Wolthers Quality Control
               </p>
             </div>
-          `,
-          attachments: attachments.map(a => ({
-            filename: a.filename,
-            content: a.content
-          }))
-        })
+          `
 
-        if (emailError) {
-          results.push({
-            email,
-            name: info.name,
-            type: info.type,
-            success: false,
-            error: emailError.message,
-            certificateCount: attachments.length
+        // Send via Microsoft Graph on behalf of the signed-in QC user.
+        const sendTo = testTo ? [testTo] : [email]
+        const subject = testTo ? `[TEST] Quality Certificates: ${certNumbers}` : `Quality Certificates: ${certNumbers}`
+        try {
+          await sendMail({
+            mailbox: QC_MAILBOX,
+            to: sendTo,
+            subject,
+            bodyText,
+            bodyHtml,
+            attachments,
+            saveToSentItems: true,
+            senderEmail,
+            senderName: profile?.full_name || senderEmail,
           })
-        } else {
           results.push({
             email,
             name: info.name,
@@ -319,20 +328,15 @@ export async function POST(request: NextRequest) {
             success: true,
             certificateCount: attachments.length
           })
-
-          // Log email in certificate_emails table if it exists
-          try {
-            for (const cert of recipientCerts) {
-              await (supabase as any).from('certificate_emails').insert({
-                certificate_id: cert.id,
-                recipient_email: email,
-                sent_at: new Date().toISOString()
-              })
-            }
-          } catch (logError) {
-            // Table might not exist, ignore
-            console.error('Error logging email:', logError)
-          }
+        } catch (emailError) {
+          results.push({
+            email,
+            name: info.name,
+            type: info.type,
+            success: false,
+            error: emailError instanceof Error ? emailError.message : 'Send failed',
+            certificateCount: attachments.length
+          })
         }
       } catch (error) {
         results.push({
