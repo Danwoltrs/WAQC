@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
+import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 
 // Admin client bypasses RLS for sample status updates
 const supabaseAdmin = createSupabaseClient(
@@ -105,6 +106,9 @@ export async function PATCH(
           { status: 500 }
         )
       }
+
+      // Reflect the override on the shared sys shipment_samples row immediately.
+      await writeDecisionToShipmentSamples(supabaseAdmin, certificate.sample_id, user.id)
 
       // Update sub-contract certificates (same sample, different contract)
       const { data: subCerts } = await supabase

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
+import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { evaluateQualityCompliance } from '@/lib/compliance'
 import { computeContentLock } from '@/lib/sample-edit-permissions'
 
@@ -260,6 +261,9 @@ async function autoCertifyIfReady(
       console.error('[AutoCertify] Sample update failed:', sampleUpdateError)
       return null
     }
+
+    // Push the decision to the shared sys shipment_samples row immediately.
+    await writeDecisionToShipmentSamples(supabaseAdmin, sampleId, userId)
 
     // Validate tracking number
     if (!sample.tracking_number || sample.tracking_number === 'null' || sample.tracking_number === '') {

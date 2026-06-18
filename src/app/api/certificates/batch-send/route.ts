@@ -9,6 +9,7 @@ import { composeBodyHtml } from '@/lib/email/compose-html'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
+import { getInitials } from '@/lib/approval-notification/batch-send'
 import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
@@ -230,6 +231,7 @@ export async function POST(req: NextRequest) {
       userId: user.id,
       today,
       certificateUrl: certificatePath,
+      initials: senderName ? getInitials(senderName) : null,
     })
 
     results.push({ sampleId: p.sampleId, ok: true })

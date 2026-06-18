@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
+import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
 import { QualityCertificate } from '@/components/pdf/certificate/quality-certificate'
@@ -299,6 +301,15 @@ export async function POST(
           status: 'approved'
         })
         .eq('id', id)
+
+      // Reflect the recovered approval on the shared sys shipment_samples row
+      // (service role — the shared table is RLS-guarded for the user client).
+      const ssAdmin = createSupabaseClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } },
+      )
+      await writeDecisionToShipmentSamples(ssAdmin, id, user.id)
 
     } else if (sample.workflow_stage !== 'certified' && sample.workflow_stage !== 'rejected') {
       return NextResponse.json({

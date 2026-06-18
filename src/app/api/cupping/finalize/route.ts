@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
+import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import {
   evaluateQualityCompliance,
   checkHasValidationRules,
@@ -384,6 +385,10 @@ export async function POST(request: NextRequest) {
           details: sampleUpdateError.message
         }, { status: 500 })
       }
+
+      // Push the decision to the shared sys shipment_samples row immediately
+      // (status + approver initials + QC marker), independent of email send.
+      await writeDecisionToShipmentSamples(supabaseAdmin, sample_id, user.id)
     }
     // If no grading data, sample stays in 'review' stage (already transitioned above)
 

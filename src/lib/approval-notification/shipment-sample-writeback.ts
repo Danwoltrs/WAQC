@@ -82,6 +82,9 @@ export async function applyShipmentSampleApproval(
     today: string
     certificateUrl: string | null
     comments?: string | null
+    /** Approver initials (e.g. "AN"). Its presence on the row also drives the
+     *  sys "approved-in-QC" marker. */
+    initials?: string | null
   },
 ): Promise<string | null> {
   try {
@@ -91,11 +94,16 @@ export async function applyShipmentSampleApproval(
       .eq('contract_id', args.contractId)
     const matchId = pickShipmentSampleMatch((rows ?? []) as ShipmentSampleRow[], args.waqcRef)
 
+    // Don't clobber an existing certificate_url when the caller has none yet
+    // (decision-time write-back precedes certificate generation/email send).
+    const update: Record<string, unknown> = buildWritebackUpdate(args)
+    if (args.certificateUrl == null) delete update.certificate_url
+
     let rowId: string | null
     if (matchId) {
       await admin
         .from('shipment_samples')
-        .update(buildWritebackUpdate(args))
+        .update(update)
         .eq('id', matchId)
       rowId = matchId
     } else {
@@ -110,11 +118,18 @@ export async function applyShipmentSampleApproval(
       rowId = (inserted as { id: string } | null)?.id ?? null
     }
 
-    if (rowId && args.comments) {
-      // Optional column; ignore failure if it does not exist yet.
+    // Optional columns set in a second guarded update so a missing column never
+    // fails the core write-back: approval_comments, the approver initials (which
+    // also marks the row as approved-in-QC for sys), and an explicit
+    // rejected_date for rejections.
+    const optional: Record<string, unknown> = {}
+    if (args.comments) optional.approval_comments = args.comments
+    if (args.initials) optional.approved_by_initials = args.initials
+    if (args.decision === 'rejected') optional.rejected_date = args.today
+    if (rowId && Object.keys(optional).length > 0) {
       await admin
         .from('shipment_samples')
-        .update({ approval_comments: args.comments })
+        .update(optional)
         .eq('id', rowId)
         .then(undefined, () => undefined)
     }
