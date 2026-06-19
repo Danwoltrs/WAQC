@@ -1,73 +1,41 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 
 /**
- * Upload a certificate PDF to Supabase Storage and save the path in the certificate record.
- * Path format: {sampleId}/{certificateId}.pdf
+ * Certificate PDF caching is DISABLED (product decision 2026-06-19).
+ *
+ * Certificates are now always rendered on the fly from current sample data at
+ * download / email time, and delivered via the end-of-day batch email. We no
+ * longer persist PDFs to Supabase Storage, so:
+ *   - there is no stale-PDF risk now that editors can edit certificates anytime;
+ *   - the `certificates` storage bucket stops growing;
+ *   - `pdf_url` is never written, so every read path regenerates fresh.
+ *
+ * The functions below are kept as no-ops so existing callers compile unchanged.
+ */
+
+/**
+ * No-op: certificate PDFs are no longer saved to storage.
+ * Returns null so callers treat it as "nothing cached".
  */
 export async function uploadCertificatePdf(
-  supabase: SupabaseClient,
-  sampleId: string,
-  certificateId: string,
-  pdfBuffer: Buffer | Uint8Array,
-  contractId?: string
+  _supabase: SupabaseClient,
+  _sampleId: string,
+  _certificateId: string,
+  _pdfBuffer: Buffer | Uint8Array,
+  _contractId?: string
 ): Promise<string | null> {
-  try {
-    const suffix = contractId ? `-${contractId}` : ''
-    const storagePath = `${sampleId}/${certificateId}${suffix}.pdf`
-
-    const { error: uploadError } = await supabase.storage
-      .from('certificates')
-      .upload(storagePath, pdfBuffer, {
-        contentType: 'application/pdf',
-        upsert: true,
-      })
-
-    if (uploadError) {
-      console.error('[CertStorage] Upload failed:', uploadError.message)
-      return null
-    }
-
-    // Save the storage path in the certificate record
-    const { error: updateError } = await supabase
-      .from('certificates')
-      .update({ pdf_url: storagePath })
-      .eq('id', certificateId)
-
-    if (updateError) {
-      console.error('[CertStorage] Failed to save pdf_url:', updateError.message)
-    }
-
-    return storagePath
-  } catch (err) {
-    console.error('[CertStorage] uploadCertificatePdf error:', err)
-    return null
-  }
+  return null
 }
 
 /**
- * Download a cached certificate PDF from Supabase Storage.
- * Returns the PDF as a Buffer, or null if not found.
+ * No-op: PDFs are always regenerated on the fly, never served from cache.
+ * Returns null so callers fall through to fresh generation.
  */
 export async function getCachedCertificatePdf(
-  supabase: SupabaseClient,
-  pdfUrl: string
+  _supabase: SupabaseClient,
+  _pdfUrl: string
 ): Promise<Buffer | null> {
-  try {
-    const { data, error } = await supabase.storage
-      .from('certificates')
-      .download(pdfUrl)
-
-    if (error || !data) {
-      console.error('[CertStorage] Download failed:', error?.message)
-      return null
-    }
-
-    const arrayBuffer = await data.arrayBuffer()
-    return Buffer.from(arrayBuffer)
-  } catch (err) {
-    console.error('[CertStorage] getCachedCertificatePdf error:', err)
-    return null
-  }
+  return null
 }
 
 /**
