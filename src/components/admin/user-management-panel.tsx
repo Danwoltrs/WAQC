@@ -239,6 +239,12 @@ export function UserManagementPanel() {
       return
     }
 
+    // A cupper with no laboratory is invisible in every lab's cupper picker.
+    if ((selectedUser.is_cupper || selectedUser.is_q_grader) && !editForm.laboratory_id) {
+      toast.error('This user is a cupper — please select a laboratory, or they will not appear in any lab\'s cupper list.')
+      return
+    }
+
     setActionLoading(true)
     try {
       const { error } = await supabase
@@ -276,10 +282,22 @@ export function UserManagementPanel() {
     field: 'is_cupper' | 'qc_enabled' | 'is_q_grader' | 'is_master_cupper',
     currentValue: boolean
   ) => {
+    const nextValue = !currentValue
+
+    // A cupper with no laboratory is invisible in every lab's cupper picker —
+    // require a lab before marking someone a cupper/Q-grader.
+    if (nextValue && (field === 'is_cupper' || field === 'is_q_grader')) {
+      const target = users.find((u) => u.id === userId)
+      if (target && !target.laboratory_id) {
+        toast.error('Assign a laboratory to this user first (via Edit), or they will not appear in any lab\'s cupper list.')
+        return
+      }
+    }
+
     try {
       const { error } = await supabase
         .from('profiles')
-        .update({ [field]: !currentValue, updated_at: new Date().toISOString() })
+        .update({ [field]: nextValue, updated_at: new Date().toISOString() })
         .eq('id', userId)
 
       if (error) {
@@ -316,6 +334,12 @@ export function UserManagementPanel() {
       !inviteForm.laboratory_id
     ) {
       toast.error('Please select a laboratory for this role.')
+      return
+    }
+
+    // A cupper with no laboratory is invisible in every lab's cupper picker.
+    if ((inviteForm.is_cupper || inviteForm.is_q_grader) && !inviteForm.laboratory_id) {
+      toast.error('Cuppers must belong to a laboratory, or they will not appear in any lab\'s cupper list. Please select a laboratory.')
       return
     }
 
