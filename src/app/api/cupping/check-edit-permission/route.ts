@@ -80,10 +80,7 @@ export async function GET(request: Request) {
     }
 
     const lock = computeContentLock(sample)
-    // Editors bypass the content lock entirely — they may edit quality content
-    // at any time (product decision 2026-06-19). The lock state is still
-    // reported for informational messaging.
-    const canEditContent = isEditor
+    const canEditContent = isEditor && !lock.contentLocked
     const canEditCounterparties = isEditor
 
     const response: EditPermissionResponse = {
@@ -95,7 +92,7 @@ export async function GET(request: Request) {
       lockExpiresAt: lock.lockExpiresAt,
       message: !isEditor
         ? 'Only master cuppers and global admins can edit samples.'
-        : 'You can edit all fields, including quality data.',
+        : lock.message,
     }
     return NextResponse.json(response)
   } catch (error) {

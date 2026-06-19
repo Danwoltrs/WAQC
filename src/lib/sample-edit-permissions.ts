@@ -4,11 +4,10 @@
  * Two independent gates, both enforced server-side:
  *   1. Role gate — only master cuppers and global admins may edit a sample at
  *      any stage. Regular lab personnel can create but never edit.
- *   2. Content lock — informational for non-editors only. "Lock-sensitive"
- *      (quality) fields freeze 7 days after certificate generation for regular
- *      lab personnel, but EDITORS (master cuppers / global admins) bypass the
- *      lock and may edit every field at any time (product decision 2026-06-19).
- *      "Always-editable" (commercial / logistics) fields ignore the lock too.
+ *   2. Content lock — "lock-sensitive" (quality) fields are editable before a
+ *      certificate exists and within 7 days of certificate generation, then
+ *      frozen. "Always-editable" (commercial / logistics) fields ignore the
+ *      lock and are governed by the role gate alone.
  *
  * See docs/superpowers/specs/2026-06-02-master-cupper-edit-permissions-design.md
  */
@@ -116,23 +115,6 @@ export function isLockSensitiveField(field: string): boolean {
 }
 
 /**
- * Whether lock-sensitive (quality) content may be written for this sample.
- *
- * Editors (master cuppers / global admins) bypass the content lock entirely —
- * they may correct quality data at any time (product decision 2026-06-19).
- * Non-editors may write only while the content is not locked (pre-certificate
- * or within the 7-day window), which preserves the normal cupping workflow for
- * lab personnel entering scores before a certificate exists.
- */
-export function canEditLockedContent(
-  profile: EditorProfile | null | undefined,
-  sample: LockableSample
-): boolean {
-  if (isSampleEditor(profile)) return true
-  return !computeContentLock(sample).contentLocked
-}
-
-/**
  * Compute the content-lock state for a sample using the established rules.
  * Mirrors the original logic in /api/cupping/check-edit-permission.
  */
@@ -200,7 +182,7 @@ export function authorizeSampleEdit(opts: {
   sample: LockableSample
   changedFields: string[]
 }): AuthorizeResult {
-  const { profile } = opts
+  const { profile, sample, changedFields } = opts
 
   if (!isSampleEditor(profile)) {
     return {
@@ -210,9 +192,18 @@ export function authorizeSampleEdit(opts: {
     }
   }
 
-  // Editors may edit every field at any time. The 7-day / post-scan content
-  // lock no longer freezes quality fields for editors (product decision
-  // 2026-06-19). The role gate above remains the only restriction.
+  const lock = computeContentLock(sample)
+  if (lock.contentLocked) {
+    const blocked = changedFields.filter(isLockSensitiveField)
+    if (blocked.length > 0) {
+      return {
+        ok: false,
+        status: 423, // Locked
+        error: `Quality fields are locked and cannot be edited: ${blocked.join(', ')}. ${lock.message}`,
+      }
+    }
+  }
+
   return { ok: true, status: 200 }
 }
 
@@ -225,7 +216,7 @@ export function authorizeContentEdit(opts: {
   profile: EditorProfile | null | undefined
   sample: LockableSample
 }): AuthorizeResult {
-  const { profile } = opts
+  const { profile, sample } = opts
 
   if (!isSampleEditor(profile)) {
     return {
@@ -235,7 +226,14 @@ export function authorizeContentEdit(opts: {
     }
   }
 
-  // Editors bypass the content lock — quality data is editable at any time
-  // (product decision 2026-06-19). Role gate above is the only restriction.
+  const lock = computeContentLock(sample)
+  if (lock.contentLocked) {
+    return {
+      ok: false,
+      status: 423,
+      error: `Quality data is locked and cannot be edited. ${lock.message}`,
+    }
+  }
+
   return { ok: true, status: 200 }
 }
