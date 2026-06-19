@@ -46,6 +46,7 @@ import { ApprovalSendView } from '@/components/samples/approval-send-view'
 import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
 import { SampleDetailModal } from '@/components/samples/sample-detail-modal'
 import { useAuth } from '@/components/providers/auth-provider'
+import { isSampleEditor } from '@/lib/sample-edit-permissions'
 
 interface Certificate {
   id: string
@@ -174,7 +175,10 @@ export default function CertificatesPage() {
   const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[]; side: 'buyer' | 'seller' } | null>(null)
   const [editSampleId, setEditSampleId] = useState<string | null>(null)
   const { profile } = useAuth()
-  const isMasterEditor = profile?.is_master_cupper === true || profile?.is_global_admin === true
+  // Single source of truth for who may edit (master cupper / global admin /
+  // qc_role global_admin) — matches the server-side gate and tolerates the
+  // is_global_admin↔qc_role drift fixed in migration 20260618000000.
+  const isMasterEditor = isSampleEditor(profile)
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [selectedCertificates, setSelectedCertificates] = useState<Set<string>>(new Set())
