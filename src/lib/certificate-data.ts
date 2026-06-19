@@ -715,7 +715,8 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       masterCupperId,
       cuppingAttributeIncrements,
       cuppingAttributeOrder,
-      resolvedDefectsForCert
+      resolvedDefectsForCert,
+      (qualityAssessment?.green_bean_data as any)?.cup_profile ?? null
     )
   }
 
@@ -1241,7 +1242,8 @@ function processCuppingScores(
   masterCupperId?: string | null,
   attributeIncrements?: Record<string, number>,
   attributeOrder?: string[],
-  resolvedDefects?: { taints?: unknown[]; faults?: unknown[] } | null
+  resolvedDefects?: { taints?: unknown[]; faults?: unknown[] } | null,
+  cupProfileOverride?: string | null
 ): CuppingData {
   // Cast to allow cupper_id access
   const scoresWithCupper = cuppingScores as Array<{ scores: unknown; notes: string | null; defects?: unknown; cupper_id?: string | null }>
@@ -1568,9 +1570,12 @@ function processCuppingScores(
   const deduplicatedTaints = deduplicateDefects(filteredTaints)
   const deduplicatedFaults = deduplicateDefects(filteredFaults)
 
-  // Flavor descriptor: use the most common descriptor across cuppers
+  // Flavor descriptor (cup profile): a master-cupper override wins; otherwise
+  // use the most common descriptor across cuppers.
   let flavorDescriptor: string | null = null
-  if (flavorDescriptors.length > 0) {
+  if (typeof cupProfileOverride === 'string' && cupProfileOverride.trim()) {
+    flavorDescriptor = cupProfileOverride.trim()
+  } else if (flavorDescriptors.length > 0) {
     const counts = new Map<string, number>()
     for (const d of flavorDescriptors) {
       counts.set(d, (counts.get(d) || 0) + 1)

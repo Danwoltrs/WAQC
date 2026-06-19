@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import {
   Edit, Save, X, Lock, Coffee, Beaker, Loader2
 } from 'lucide-react'
+import { FLAVOR_DESCRIPTORS } from '@/types/cupping-templates'
 
 // Dynamic key-value map for cupping scores (keys come from cupping templates)
 type CuppingScores = Record<string, number>
@@ -111,6 +112,9 @@ export function CuppingGradingSection({
   const [uniformCup, setUniformCup] = useState<boolean | null>(null)
   const [cuppingComments, setCuppingComments] = useState<string | null>(null)
   const [gradingComments, setGradingComments] = useState<string | null>(null)
+  // Cup profile (Flavor descriptor): current effective value + edit-mode draft
+  const [cupProfile, setCupProfile] = useState<string | null>(null)
+  const [editCupProfile, setEditCupProfile] = useState<string>('')
 
   // Taints & faults from cupping aggregate
   const [taintsData, setTaintsData] = useState<TaintFaultEntry[]>([])
@@ -172,6 +176,8 @@ export function CuppingGradingSection({
       let aggregateTaints: TaintFaultEntry[] = []
       let aggregateFaults: TaintFaultEntry[] = []
 
+      let aggregateFlavorDescriptor: string | null = null
+
       const cuppingRes = await fetch(`/api/cupping/scores/aggregate?sample_id=${sampleUuid}`)
       if (cuppingRes.ok) {
         const cuppingData = await cuppingRes.json()
@@ -181,6 +187,9 @@ export function CuppingGradingSection({
             scores[key as keyof CuppingScores] = value.finalScore
           })
           setCuppingScores(scores)
+        }
+        if (typeof cuppingData.aggregated?.flavor_descriptor === 'string') {
+          aggregateFlavorDescriptor = cuppingData.aggregated.flavor_descriptor
         }
         // Extract taints/faults from aggregate
         if (cuppingData.aggregated?.defects) {
@@ -220,6 +229,10 @@ export function CuppingGradingSection({
           setUniformCup(gradingDataRes.assessment.uniform_cup ?? null)
           setCuppingComments(gradingDataRes.assessment.cupping_comments ?? null)
           setGradingComments(gradingDataRes.assessment.grading_comments ?? null)
+          // Cup profile: master-cupper override (green_bean_data.cup_profile) wins,
+          // else the descriptor aggregated across cuppers.
+          const override = gradingDataRes.assessment.green_bean_data?.cup_profile
+          setCupProfile((typeof override === 'string' && override.trim()) ? override : aggregateFlavorDescriptor)
 
           // If aggregate endpoint failed but assessment has cupping scores in green_bean_data
           // try to extract cupping totals from the assessment
@@ -246,6 +259,7 @@ export function CuppingGradingSection({
           // No assessment - use aggregate taints/faults
           setTaintsData(aggregateTaints)
           setFaultsData(aggregateFaults)
+          setCupProfile(aggregateFlavorDescriptor)
         }
       }
     } catch (error) {
@@ -294,6 +308,7 @@ export function CuppingGradingSection({
     // Pre-fill taints/faults
     setEditTaints([...taintsData])
     setEditFaults([...faultsData])
+    setEditCupProfile(cupProfile ?? '')
     setEditReason('')
     setIsEditingCuppingGrading(true)
   }
@@ -348,8 +363,15 @@ export function CuppingGradingSection({
       const filteredDefects = editDefects.filter(d => d.name.trim())
       const primaryTotal = filteredDefects.filter(d => isPrimarySave(d.name)).reduce((s, d) => s + d.count, 0)
       const secondaryTotal = filteredDefects.filter(d => !isPrimarySave(d.name)).reduce((s, d) => s + d.count, 0)
+      // Cup profile (Flavor descriptor) override — authoritative on the certificate.
+      const newCupProfile = editCupProfile.trim() || null
+      if (newCupProfile !== (cupProfile ?? null)) {
+        changes.cup_profile = { old: cupProfile ?? null, new: newCupProfile }
+      }
+
       const greenBeanWithDefects = {
         ...cuppingGradingFormData.grading?.green_bean_data,
+        cup_profile: newCupProfile,
         defects: {
           defect_list: filteredDefects,
           primary: primaryTotal,
@@ -454,6 +476,26 @@ export function CuppingGradingSection({
                 Save Changes
               </Button>
             </div>
+          </div>
+        )}
+
+        {/* Cup Profile (Flavor descriptor) */}
+        {(cupProfile || isEditingCuppingGrading) && (
+          <div className="mb-3">
+            <h4 className="text-sm font-medium mb-1">Cup Profile</h4>
+            {isEditingCuppingGrading ? (
+              <Select value={editCupProfile || '__none__'} onValueChange={(v) => setEditCupProfile(v === '__none__' ? '' : v)}>
+                <SelectTrigger className="h-8 text-sm w-48"><SelectValue placeholder="Select cup profile..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">—</SelectItem>
+                  {FLAVOR_DESCRIPTORS.map(desc => (
+                    <SelectItem key={desc} value={desc}>{desc}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <span className="text-sm font-medium">{cupProfile || '-'}</span>
+            )}
           </div>
         )}
 

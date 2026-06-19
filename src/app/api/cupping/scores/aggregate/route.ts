@@ -68,6 +68,8 @@ interface AggregatedScores {
   defect_levels: DefectLevelStats[]
   hasDiscrepancies: boolean
   discrepancy_flags: string[]
+  /** Cup-profile word (Strictly Soft / Soft / Hard / Rio …) — master cupper's, else most common. */
+  flavor_descriptor: string | null
 }
 
 /**
@@ -691,6 +693,24 @@ export async function GET(request: NextRequest) {
       levels: Object.fromEntries(stat.levels) // Convert Map to object
     }))
 
+    // Cup profile (Flavor descriptor word): prefer the master cupper's choice,
+    // else the most common descriptor across cuppers.
+    const flavorDescriptor: string | null = (() => {
+      const fromMaster = masterCupperId
+        ? (scores.find((s: any) => s.cupper_id === masterCupperId)?.scores as Record<string, any> | undefined)?.['Flavor_descriptor']
+        : undefined
+      if (typeof fromMaster === 'string' && fromMaster.trim()) return fromMaster
+      const counts = new Map<string, number>()
+      for (const s of scores as any[]) {
+        const d = (s.scores as Record<string, any> | undefined)?.['Flavor_descriptor']
+        if (typeof d === 'string' && d.trim()) counts.set(d, (counts.get(d) || 0) + 1)
+      }
+      let best: string | null = null
+      let bestN = 0
+      for (const [d, n] of counts) if (n > bestN) { best = d; bestN = n }
+      return best
+    })()
+
     const aggregated: AggregatedScores = {
       sample_id: sampleId || scores[0].sample?.id || '',
       sample_tracking_number: scores[0].sample?.tracking_number || 'Unknown',
@@ -704,6 +724,7 @@ export async function GET(request: NextRequest) {
       defect_levels: serializableDefectLevelStats as any,
       hasDiscrepancies: discrepancyFlags.length > 0,
       discrepancy_flags: discrepancyFlags,
+      flavor_descriptor: flavorDescriptor,
     }
 
     // Only warn about single cupper if the session was intended for multiple cuppers

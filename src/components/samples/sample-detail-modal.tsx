@@ -772,7 +772,7 @@ export function SampleDetailModal({
   return (
     <>
       <Dialog open={open} onOpenChange={onOpenChange}>
-        <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col overflow-hidden p-0">
+        <DialogContent className="flex flex-col overflow-hidden gap-0 p-0 !w-screen !h-[100dvh] !max-w-none !max-h-none !left-0 !top-0 !translate-x-0 !translate-y-0 !rounded-none !border-0 xl:!left-1/2 xl:!top-1/2 xl:!-translate-x-1/2 xl:!-translate-y-1/2 xl:!w-[95vw] xl:!max-w-5xl xl:!h-auto xl:!max-h-[90vh] xl:!rounded-lg xl:!border">
           {loading ? (
             <div className="flex items-center justify-center py-12 px-6">
               <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
