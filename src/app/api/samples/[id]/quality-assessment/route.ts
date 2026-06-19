@@ -4,7 +4,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 import { evaluateQualityCompliance } from '@/lib/compliance'
-import { computeContentLock } from '@/lib/sample-edit-permissions'
+import { canEditLockedContent } from '@/lib/sample-edit-permissions'
 
 // Admin client bypasses RLS for sample status updates and certificate creation
 const supabaseAdmin = createSupabaseClient(
@@ -49,12 +49,17 @@ export async function POST(
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Quality data (green bean / roast analysis) freezes once the content lock
-    // applies (7 days after certificate generation, or after OCR scan lock).
-    const assessmentLock = computeContentLock(sample)
-    if (assessmentLock.contentLocked) {
+    // Quality data freezes once the content lock applies (7 days after
+    // certificate generation, or after OCR scan lock) — but editors (master
+    // cuppers / global admins) bypass the lock and may correct it at any time.
+    const { data: lockProfile } = await supabase
+      .from('profiles')
+      .select('is_master_cupper, is_global_admin, qc_role')
+      .eq('id', user.id)
+      .single()
+    if (!canEditLockedContent(lockProfile, sample)) {
       return NextResponse.json(
-        { error: `Quality data is locked and cannot be edited. ${assessmentLock.message}` },
+        { error: 'Quality data is locked and cannot be edited.' },
         { status: 423 }
       )
     }

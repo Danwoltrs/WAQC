@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
-import { computeContentLock } from '@/lib/sample-edit-permissions'
+import { canEditLockedContent } from '@/lib/sample-edit-permissions'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -46,17 +46,22 @@ export async function POST(
     }
 
     // Cupping scores / defects freeze once the content lock applies (7 days
-    // after certificate generation, or after OCR scan lock).
+    // after certificate generation, or after OCR scan lock) — but editors
+    // (master cuppers / global admins) bypass the lock and may correct them.
     const { data: lockSample } = await supabaseAdmin
       .from('samples')
       .select('id, locked, scanned_at, certificate_generated_at')
       .eq('id', sampleId)
       .single()
     if (lockSample) {
-      const scoreLock = computeContentLock(lockSample)
-      if (scoreLock.contentLocked) {
+      const { data: lockProfile } = await supabase
+        .from('profiles')
+        .select('is_master_cupper, is_global_admin, qc_role')
+        .eq('id', user.id)
+        .single()
+      if (!canEditLockedContent(lockProfile, lockSample)) {
         return NextResponse.json(
-          { error: `Cupping scores are locked and cannot be edited. ${scoreLock.message}` },
+          { error: 'Cupping scores are locked and cannot be edited.' },
           { status: 423 }
         )
       }

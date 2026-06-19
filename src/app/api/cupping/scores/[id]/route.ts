@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
-import { computeContentLock } from '@/lib/sample-edit-permissions'
+import { computeContentLock, isSampleEditor } from '@/lib/sample-edit-permissions'
 
 // Create admin client with service role key (bypasses RLS)
 const supabaseAdmin = createSupabaseClient(
@@ -106,8 +106,10 @@ export async function PATCH(
       return NextResponse.json({ error: canEdit.reason }, { status: 403 })
     }
 
-    // Content lock: defects / scores freeze 7 days after certificate generation.
-    if (existingScore.sample_id) {
+    // Content lock: defects / scores freeze 7 days after certificate generation
+    // for regular lab personnel — but editors (master cuppers / global admins)
+    // bypass the lock and may correct them at any time.
+    if (existingScore.sample_id && !isSampleEditor(profile)) {
       const { data: lockSample } = await supabaseAdmin
         .from('samples')
         .select('id, locked, scanned_at, certificate_generated_at')
