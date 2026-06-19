@@ -353,6 +353,10 @@ export function SampleDetailModal({
       container_nr: sample.container_nr,
       processing_method: sample.processing_method,
       micro_origin: sample.micro_origin,
+      origin: sample.origin,
+      sample_type: sample.sample_type,
+      exporter_sample_number: sample.exporter_sample_number,
+      tracking_number: sample.tracking_number,
       storage_position: sample.storage_position,
       quality_spec_id: sample.quality_spec_id,
       ...(sample.seller_id ? { seller_id: sample.seller_id } : {}),
@@ -810,14 +814,37 @@ export function SampleDetailModal({
                 <div className="flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <DialogTitle className="text-2xl font-bold tracking-tight">
-                      {parseTrackingNumber(sample.tracking_number)}
+                      {isEditMode ? (
+                        <Input
+                          value={formData.tracking_number ?? ''}
+                          onChange={(e) => handleFormChange('tracking_number', e.target.value)}
+                          className="h-9 w-56 text-lg font-bold"
+                          title="Sample number — also the certificate number"
+                        />
+                      ) : (
+                        parseTrackingNumber(sample.tracking_number)
+                      )}
                     </DialogTitle>
                     {getStatusBadge(sample.status)}
-                    {sample.sample_type && (
+                    {isEditMode ? (
+                      <Select
+                        value={(formData.sample_type as string) || '__none__'}
+                        onValueChange={(v) => handleFormChange('sample_type', v === '__none__' ? null : v)}
+                        disabled={!canEditContent}
+                      >
+                        <SelectTrigger className="h-8 w-28 text-xs uppercase"><SelectValue placeholder="Type" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ss">SS</SelectItem>
+                          <SelectItem value="pss">PSS</SelectItem>
+                          <SelectItem value="type">Type</SelectItem>
+                          <SelectItem value="specialty">Specialty</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : sample.sample_type ? (
                       <Badge variant="outline" className="text-xs uppercase">
                         {sample.sample_type}
                       </Badge>
-                    )}
+                    ) : null}
                   </div>
                   <div className="flex items-center gap-2 mr-8">
                     <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
@@ -865,7 +892,16 @@ export function SampleDetailModal({
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="text-sm text-muted-foreground">Origin</label>
-                          <div className="text-sm font-medium mt-1">{sample.origin}</div>
+                          {isEditMode ? (
+                            <Input
+                              value={formData.origin ?? ''}
+                              onChange={(e) => handleFormChange('origin', e.target.value)}
+                              className="h-8 text-sm mt-1"
+                              disabled={!canEditContent}
+                            />
+                          ) : (
+                            <div className="text-sm font-medium mt-1">{sample.origin}</div>
+                          )}
                         </div>
                         <div>
                           <label className="text-sm text-muted-foreground">Micro Origin</label>
@@ -1016,7 +1052,16 @@ export function SampleDetailModal({
                         <div className="grid grid-cols-2 gap-4">
                           <div>
                             <label className="text-sm text-muted-foreground">Exporter Sample #</label>
-                            <div className="text-sm font-medium font-mono mt-1">{sample.exporter_sample_number || '-'}</div>
+                            {isEditMode ? (
+                              <Input
+                                value={formData.exporter_sample_number || ''}
+                                onChange={(e) => handleFormChange('exporter_sample_number', e.target.value)}
+                                className="h-8 text-sm font-mono mt-1"
+                                placeholder="Exporter sample #"
+                              />
+                            ) : (
+                              <div className="text-sm font-medium font-mono mt-1">{sample.exporter_sample_number || '-'}</div>
+                            )}
                           </div>
                         </div>
                       ) : (

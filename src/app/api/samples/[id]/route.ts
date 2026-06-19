@@ -267,7 +267,7 @@ export async function PATCH(
     // Validate that sample exists first (include lock fields for authorization)
     const { data: existingSample, error: fetchError } = await (supabase as any)
       .from('samples')
-      .select('id, workflow_stage, locked, scanned_at, certificate_generated_at')
+      .select('id, tracking_number, workflow_stage, locked, scanned_at, certificate_generated_at')
       .eq('id', id)
       .single()
 
@@ -323,6 +323,10 @@ export async function PATCH(
       'quality_name',
       'crop_year',
       'certifications',
+      'exporter_sample_number',
+      // Sample number (also the certificate number). Freely editable by editors;
+      // cascaded to the certificate record below so the two never diverge.
+      'tracking_number',
     ]
 
     for (const field of allowedFields) {
@@ -378,6 +382,21 @@ export async function PATCH(
         error: 'Failed to update sample',
         details: updateError.message
       }, { status: 500 })
+    }
+
+    // Cascade a sample-number change to the mother certificate so the two never
+    // diverge (the certificate number mirrors the sample's tracking number).
+    // Scoped by the OLD number so sub-contract certs (different numbers) are untouched.
+    if (
+      body.tracking_number !== undefined &&
+      existingSample.tracking_number &&
+      body.tracking_number !== existingSample.tracking_number
+    ) {
+      await supabase
+        .from('certificates')
+        .update({ certificate_number: body.tracking_number })
+        .eq('sample_id', id)
+        .eq('certificate_number', existingSample.tracking_number)
     }
 
     // Invalidate cached certificate PDF if certificate-relevant fields changed.
