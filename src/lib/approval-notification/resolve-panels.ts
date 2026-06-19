@@ -11,6 +11,16 @@ export interface ContactRow {
   routing_purposes: string[] | null
 }
 
+// Sys.wolthers.com "SENDS → QC certificates" checkbox writes this routing
+// purpose (sys contact-detail-pane.tsx). It is the ONLY signal for who at a
+// counterparty receives our QC certificate / approval emails — no fallback to a
+// random primary contact.
+export const QC_CERTIFICATES_PURPOSE = 'qc_certificates'
+
+// Locked: every QC email also copies head office. Enforced server-side at send
+// time so it cannot be removed in the composer; surfaced here for transparency.
+export const HOUSE_CC = 'wolthers@wolthers.com'
+
 const isInternal = (email: string): boolean => /@wolthers\.com$/i.test(email)
 
 const toChip = (r: ContactRow): RecipientChip => ({
@@ -26,9 +36,16 @@ function hasPurpose(r: ContactRow, p: string): boolean {
 
 /**
  * Resolve one panel (seller or buyer) from the contact rows of one company.
- * TO = sample_approvals contacts (∪ primary ∪ first), minus internal-only.
- * CC = QC mailbox + group mailboxes + logistics-role contacts.
- * Greeting = first non-group-mailbox TO contact's nickname/name, else "{team} team".
+ * TO/CC are built ONLY from contacts the company has tagged for QC certificates
+ * in sys.wolthers.com — never a guessed primary/first contact and never
+ * role-based extras (that previously pulled in random people).
+ *
+ * TO = tagged individuals (external). If a company tagged only group inboxes,
+ *      those are promoted to TO so the email still has a recipient.
+ * CC = QC mailbox + house office + tagged group inboxes.
+ * Greeting = first TO individual's nickname/name, else "{team} team".
+ * When a company has no tagged contact, TO is empty (the sender adds one or sets
+ * the flag in sys) — we do not invent a recipient.
  */
 export function resolvePanel(
   allRows: ContactRow[],
@@ -42,43 +59,49 @@ export function resolvePanel(
     nickname: null,
     isGroupMailbox: false,
   }
+  const houseChip: RecipientChip = {
+    email: HOUSE_CC,
+    name: 'Wolthers',
+    nickname: null,
+    isGroupMailbox: true,
+  }
+  const fallbackTeam = teamName ? `${teamName} team` : 'team'
+  const baseCc = (): RecipientChip[] => {
+    const cc: RecipientChip[] = [qcChip]
+    if (!isInternal(qcMailbox) || qcMailbox.toLowerCase() !== HOUSE_CC.toLowerCase()) cc.push(houseChip)
+    return cc
+  }
   if (!companyId) {
-    return { greeting: teamName ? `${teamName} team` : 'team', to: [], cc: [qcChip] }
+    return { greeting: fallbackTeam, to: [], cc: baseCc() }
   }
 
-  const rows = allRows.filter(
-    (r) => r.company_id === companyId && !!r.email,
+  // Only this company's external contacts that are tagged for QC certificates.
+  const tagged = allRows.filter(
+    (r) =>
+      r.company_id === companyId &&
+      !!r.email &&
+      !isInternal(r.email as string) &&
+      hasPurpose(r, QC_CERTIFICATES_PURPOSE),
   )
+  const individuals = tagged.filter((r) => !r.is_group_mailbox)
+  const groupInboxes = tagged.filter((r) => r.is_group_mailbox)
 
-  const tagged = rows.filter((r) => hasPurpose(r, 'sample_approvals'))
-  let toRows: ContactRow[]
-  if (tagged.length > 0) {
-    toRows = tagged
-  } else {
-    const primary = rows.find((r) => r.is_primary)
-    toRows = primary ? [primary] : rows[0] ? [rows[0]] : []
-  }
-
-  // Never email Wolthers as the counterparty: if all TO are internal, drop them.
-  // Group mailboxes go to CC, not TO.
-  const toExternal = toRows.filter((r) => !isInternal(r.email as string) && !r.is_group_mailbox)
-  const to = toExternal.map(toChip)
+  // Tagged individuals are the recipients; if a company tagged only group
+  // inboxes, promote them to TO so the message still reaches someone.
+  const toRows = individuals.length > 0 ? individuals : groupInboxes
+  const ccGroupRows = individuals.length > 0 ? groupInboxes : []
+  const to = toRows.map(toChip)
 
   const greetSource = to.find((c) => !c.isGroupMailbox)
-  const greeting = greetSource
-    ? greetSource.nickname ?? greetSource.name ?? (teamName ? `${teamName} team` : 'team')
-    : teamName
-      ? `${teamName} team`
-      : 'team'
+  const greeting = greetSource ? greetSource.nickname ?? greetSource.name ?? fallbackTeam : fallbackTeam
 
-  const cc: RecipientChip[] = [qcChip]
-  const seen = new Set<string>([qcMailbox.toLowerCase(), ...to.map((c) => c.email.toLowerCase())])
-  for (const r of rows) {
-    const email = r.email as string
-    const wantCc = r.is_group_mailbox || /logistic|docs|shipping/i.test(r.role ?? '')
-    if (wantCc && !seen.has(email.toLowerCase())) {
+  const cc = baseCc()
+  const seen = new Set<string>(cc.map((c) => c.email.toLowerCase()).concat(to.map((c) => c.email.toLowerCase())))
+  for (const r of ccGroupRows) {
+    const email = (r.email as string).toLowerCase()
+    if (!seen.has(email)) {
       cc.push(toChip(r))
-      seen.add(email.toLowerCase())
+      seen.add(email)
     }
   }
 

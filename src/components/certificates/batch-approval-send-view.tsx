@@ -211,25 +211,46 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
             onChange={(next) => patchCurrent({ to: next.to, cc: next.cc, body: next.body })}
           />
 
-          <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
-            <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
-              {current.samples.length} certificate{current.samples.length === 1 ? '' : 's'} attached
+          {current.to.length === 0 && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              No QC-certificate recipients are configured for {current.companyName}. Add a contact with the
+              &ldquo;QC certificates&rdquo; send-flag in sys.wolthers.com, or enter a recipient above.
+            </p>
+          )}
+
+          {current.summaryHtml && (
+            <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+                Quality summary{current.noAttachments ? ' — no certificates attached' : ''}
+              </div>
+              <div
+                className="overflow-auto rounded-lg bg-white p-3 text-sm text-black"
+                dangerouslySetInnerHTML={{ __html: current.summaryHtml }}
+              />
             </div>
-            <ul className="space-y-1 text-sm">
-              {current.samples.map((s) => (
-                <li key={s.sampleId} className="flex items-center gap-2">
-                  <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-[#556b2f]'}>
-                    {s.decision === 'rejected' ? 'Rejected' : 'Approved'}
-                  </span>
-                  <span className="opacity-80">
-                    {[s.containerNr && `Container ${s.containerNr}`, s.certNumber && `Cert ${s.certNumber}`, s.contractNumber && `Contract ${s.contractNumber}`]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
+          )}
+
+          {!current.noAttachments && (
+            <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+              <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+                {current.samples.length} certificate{current.samples.length === 1 ? '' : 's'} attached
+              </div>
+              <ul className="space-y-1 text-sm">
+                {current.samples.map((s) => (
+                  <li key={s.sampleId} className="flex items-center gap-2">
+                    <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-[#556b2f]'}>
+                      {s.decision === 'rejected' ? 'Rejected' : 'Approved'}
+                    </span>
+                    <span className="opacity-80">
+                      {[s.containerNr && `Container ${s.containerNr}`, s.certNumber && `Cert ${s.certNumber}`, s.contractNumber && `Contract ${s.contractNumber}`]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={includeSignature} onChange={(e) => setIncludeSignature(e.target.checked)} />

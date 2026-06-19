@@ -109,6 +109,12 @@ export interface BatchUnit {
   subject: string
   body: string
   samples: BatchUnitSample[]
+  // Quality summary table (set in the queue for both sides). `body` becomes the
+  // editable cover note; this table is rendered read-only and rebuilt at send.
+  summaryText?: string
+  summaryHtml?: string
+  // True for seller units: certificates are NOT attached (sellers don't pay).
+  noAttachments?: boolean
 }
 
 /**

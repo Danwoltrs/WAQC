@@ -10,9 +10,24 @@ import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
 import { getInitials } from '@/lib/approval-notification/batch-send'
+import { HOUSE_CC } from '@/lib/approval-notification/resolve-panels'
 import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
+
+/** De-duplicate emails case-insensitively, preserving order. */
+const dedupeEmails = (list: string[]): string[] => {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const e of list.filter(Boolean)) {
+    const k = e.toLowerCase()
+    if (!seen.has(k)) {
+      seen.add(k)
+      out.push(e)
+    }
+  }
+  return out
+}
 
 const admin = () =>
   createSupabaseClient(
@@ -114,7 +129,8 @@ export async function POST(
 
   for (const panel of panels) {
     const to = testTo ? [testTo] : panel.to
-    const cc = testTo ? undefined : panel.cc
+    // Locked: always copy head office on every real send.
+    const cc = testTo ? undefined : dedupeEmails([...(panel.cc ?? []), HOUSE_CC])
     const subject = testTo ? `[TEST] ${panel.subject}` : panel.subject
     const bodyHtml = composeBodyHtml(panel.bodyText, includeSignature ? signatureHtml : null)
     try {

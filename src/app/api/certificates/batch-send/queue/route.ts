@@ -11,6 +11,14 @@ import {
   type BatchSampleInput,
   type SendStatusRow,
 } from '@/lib/approval-notification/batch-send'
+import {
+  fetchQualitySampleSummaries,
+  groupQualitySamples,
+  buildQualitySummaryText,
+  buildQualitySummaryHtml,
+  buildQualityCoverNote,
+  buildQualitySummarySubject,
+} from '@/lib/approval-notification/quality-summary'
 import type { ApprovalDecision, ApprovalSide, PanelPrefill } from '@/lib/approval-notification/types'
 
 const QC_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX || 'qualitycontrol@wolthers.com'
@@ -229,6 +237,28 @@ export async function GET(req: NextRequest) {
     onlySide,
     includeAlreadySent: explicitMode,
   })
+
+  // Attach the quality summary table to every unit. Both sides get the same
+  // table (screen / defects / type / cup); buyers keep certs attached and group
+  // by seller, sellers attach nothing and group by QC client. The unit body
+  // becomes an editable cover note; the table is rebuilt authoritatively at send.
+  if (units.length > 0) {
+    const allSampleIds = [...new Set(units.flatMap((u) => u.samples.map((s) => s.sampleId)))]
+    const summaries = await fetchQualitySampleSummaries(supabase, allSampleIds)
+    for (const u of units) {
+      const list = u.samples
+        .map((s) => summaries.get(s.sampleId))
+        .filter((s): s is NonNullable<typeof s> => !!s)
+      if (list.length === 0) continue
+      const attached = u.side === 'buyer'
+      const groups = groupQualitySamples(list, u.side === 'seller' ? 'qcClient' : 'seller')
+      u.body = buildQualityCoverNote(u.greeting, attached)
+      u.subject = buildQualitySummarySubject(groups, attached)
+      u.summaryText = buildQualitySummaryText(groups)
+      u.summaryHtml = buildQualitySummaryHtml(groups)
+      u.noAttachments = !attached
+    }
+  }
 
   // Samples in scope that produced no unit and aren't already fully sent → no recipients.
   const covered = new Set<string>()
