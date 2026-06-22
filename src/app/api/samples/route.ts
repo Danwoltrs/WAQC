@@ -52,8 +52,7 @@ export async function GET(request: NextRequest) {
         end_client:companies!samples_end_client_id_fkey(id, name, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
         sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt),
-        sample_recipients(id, status),
-        linked_pss:samples!samples_linked_pss_sample_id_fkey(id, tracking_number)
+        sample_recipients(id, status)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -118,6 +117,22 @@ export async function GET(request: NextRequest) {
       for (const r of (data || []) as any[]) entityMaps.clients[r.id] = r.fantasy_name || r.name || ''
     }
 
+    // Resolve linked PSS tracking numbers for SS samples. A plain follow-up query
+    // (not a PostgREST self-embed) — the samples->samples self relationship is
+    // ambiguous (forward to-one vs. reverse to-many) and brittle against the
+    // schema cache, so we map id->tracking_number ourselves.
+    const linkedPssIds = [...new Set((samples || [])
+      .map((s: any) => s.linked_pss_sample_id)
+      .filter(Boolean))] as string[]
+    const linkedPssMap: Record<string, string> = {}
+    if (linkedPssIds.length > 0) {
+      const { data } = await (supabase as any)
+        .from('samples')
+        .select('id, tracking_number')
+        .in('id', linkedPssIds)
+      for (const r of (data || []) as any[]) linkedPssMap[r.id] = r.tracking_number
+    }
+
     // Transform samples to include flattened entity names
     const transformedSamples = (samples || []).map((sample: any) => {
       // Handle certificate array - Supabase returns array for one-to-many relations.
@@ -174,6 +189,10 @@ export async function GET(request: NextRequest) {
         // End client (final buyer) - when NULL, QC client IS the end client
         end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
         end_client_country: sample.end_client?.country || null,
+        // Linked PSS (for SS samples) — resolved via linkedPssMap, not a self-embed
+        linked_pss: sample.linked_pss_sample_id && linkedPssMap[sample.linked_pss_sample_id]
+          ? { id: sample.linked_pss_sample_id, tracking_number: linkedPssMap[sample.linked_pss_sample_id] }
+          : null,
         // Certificate info (flattened)
         certificate_id: certificate?.id || null,
         certificate_number: certificate?.certificate_number || null,
