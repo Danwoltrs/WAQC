@@ -21,11 +21,15 @@ import {
   SampleDetailsStep,
   ContractsStep,
   ContractSearchStep,
+  PssLinkStep,
   ContractLinkBadge,
   createEmptyContract,
   SuccessView
 } from './intake'
 import { OtherSampleIntake } from './intake/other-sample-intake'
+import { Label } from '@/components/ui/label'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { mapPssToFormData } from '@/lib/pss-intake-mapping'
 
 // Timeout wrapper to prevent infinite hangs on Supabase queries
 async function withTimeout<T>(
@@ -307,7 +311,7 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
   const loadApprovedPSSSamples = async () => {
     try {
-      const response = await fetch('/api/samples?sample_type=pss&status=approved&limit=50')
+      const response = await fetch('/api/samples?sample_type=pss&status=approved&limit=200')
       if (response.ok) {
         const data = await response.json()
         setApprovedPSSSamples(data.samples || [])
@@ -478,6 +482,30 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
       next.contract_prefilled_fields = []
       return next
     })
+  }
+
+  // SS → PSS: selecting a PSS prefills every shared field via the same prefill-tracking
+  // machinery as contracts, so edits clear per-field and reselecting resets stale values.
+  const handleSelectPss = (id: string) => {
+    updateFormData('linked_pss_sample_id', id)
+    const pss = approvedPSSSamples.find((s: any) => s.id === id)
+    if (pss) {
+      const { patch, prefilled } = mapPssToFormData(pss)
+      applyContractPrefill(patch, prefilled)
+    }
+  }
+
+  const handleClearPss = () => {
+    applyContractPrefill({}, [])
+    updateFormData('linked_pss_sample_id', '')
+  }
+
+  // Step-1 sample-type change: leaving SS clears any linked PSS + its prefill.
+  const handleStep1TypeChange = (value: string) => {
+    updateFormData('sample_type', value as FormData['sample_type'])
+    if (value !== 'ss' && formData.linked_pss_sample_id) {
+      handleClearPss()
+    }
   }
 
   const isOther = formData.sample_category === 'other'
@@ -756,6 +784,10 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
         processing_method: formData.processing_method,
         crop_year: formData.crop_year || undefined,
         sample_type: formData.sample_type || undefined,
+        linked_pss_sample_id:
+          formData.linked_pss_sample_id && formData.linked_pss_sample_id !== 'none'
+            ? formData.linked_pss_sample_id
+            : undefined,
         quality_spec_id: formData.quality_spec_id || undefined,
         quality_name: formData.quality_name ? formData.quality_name.trim() : undefined,
         hide_exporter_on_label: formData.hide_exporter_on_label || false,
@@ -1092,12 +1124,45 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
 
           <>
               {currentStep === 1 && (
-                <ContractSearchStep
-                  formData={formData}
-                  applyContract={applyContractPrefill}
-                  unlinkContract={unlinkContract}
-                  onSkip={() => setCurrentStep(2)}
-                />
+                isOther ? (
+                  <ContractSearchStep
+                    formData={formData}
+                    applyContract={applyContractPrefill}
+                    unlinkContract={unlinkContract}
+                    onSkip={() => setCurrentStep(2)}
+                  />
+                ) : (
+                  <div className="space-y-5">
+                    <div className="flex flex-col gap-1.5">
+                      <Label className="text-xs text-muted-foreground">Sample Type *</Label>
+                      <Select value={formData.sample_type} onValueChange={handleStep1TypeChange}>
+                        <SelectTrigger className="w-[260px] h-9">
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
+                          <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
+                          <SelectItem value="type">Type Sample</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {formData.sample_type === 'ss' ? (
+                      <PssLinkStep
+                        formData={formData}
+                        approvedPSSSamples={approvedPSSSamples}
+                        onSelectPss={handleSelectPss}
+                        onClearPss={handleClearPss}
+                      />
+                    ) : (
+                      <ContractSearchStep
+                        formData={formData}
+                        applyContract={applyContractPrefill}
+                        unlinkContract={unlinkContract}
+                        onSkip={() => setCurrentStep(2)}
+                      />
+                    )}
+                  </div>
+                )
               )}
 
               {currentStep === 2 && <SupplyChainStep {...stepProps} />}
