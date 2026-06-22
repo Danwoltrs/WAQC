@@ -42,6 +42,13 @@ export interface QualitySampleSummary {
   cupOk: boolean | null // cupping vs spec; null = undetermined
   decision: ApprovalDecision
   reason: string | null // surfaced for rejections only
+  sellerComment: string | null // approval note — rendered ONLY in seller emails
+}
+
+/** Render options. `sellerComment` is true only for seller emails (the note is
+ *  never shown to buyers). */
+export interface QualitySummaryOpts {
+  sellerComment?: boolean
 }
 
 export interface QualitySummaryGroup {
@@ -171,8 +178,11 @@ function screenCellText(s: QualitySampleSummary): string {
   return s.screen.map((r) => `${r.label} ${r.pct}%`).join('   ')
 }
 
+const showsSellerComment = (s: QualitySampleSummary, opts?: QualitySummaryOpts): boolean =>
+  !!opts?.sellerComment && s.decision === 'approved' && !!s.sellerComment && s.sellerComment.trim().length > 0
+
 /** Plain-text block layout — also the fallback body for text-only clients. */
-export function buildQualitySummaryText(groups: QualitySummaryGroup[]): string {
+export function buildQualitySummaryText(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
   const out: string[] = []
   for (const group of groups) {
     out.push(group.heading, '─'.repeat(Math.min(group.heading.length, 40)))
@@ -191,6 +201,9 @@ export function buildQualitySummaryText(groups: QualitySummaryGroup[]): string {
       out.push(`   ${metrics}`)
       if (s.decision === 'rejected' && s.reason && s.reason.trim()) {
         for (const line of s.reason.split('\n')) out.push(`   Reason: ${line.trim()}`)
+      }
+      if (showsSellerComment(s, opts)) {
+        for (const line of s.sellerComment!.split('\n')) out.push(`   Note: ${line.trim()}`)
       }
       out.push('')
     }
@@ -224,7 +237,7 @@ function sampleCellHtml(s: QualitySampleSummary): string {
 }
 
 /** Styled HTML tables (one per group) for the actual email. */
-export function buildQualitySummaryHtml(groups: QualitySummaryGroup[]): string {
+export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
   const blocks: string[] = []
   for (const group of groups) {
     const rows: string[] = []
@@ -248,6 +261,13 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[]): string {
         rows.push(
           `<tr><td colspan="7" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#b91c1c;font-style:italic;font-size:9pt;">` +
             `Reason: ${escapeHtml(s.reason).replace(/\n/g, '<br/>')}` +
+            `</td></tr>`,
+        )
+      }
+      if (showsSellerComment(s, opts)) {
+        rows.push(
+          `<tr><td colspan="7" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#374151;font-size:9pt;">` +
+            `Note: ${escapeHtml(s.sellerComment!).replace(/\n/g, '<br/>')}` +
             `</td></tr>`,
         )
       }
@@ -335,6 +355,20 @@ export async function fetchQualitySampleSummaries(
     if (!qaBySample.has(r.sample_id as string)) qaBySample.set(r.sample_id as string, r)
   }
 
+  // Seller approval note — separate guarded query so a not-yet-applied
+  // migration (missing column) never breaks the whole summary.
+  const sellerCommentBySample = new Map<string, string>()
+  const { data: commentRows, error: commentErr } = await admin
+    .from('samples')
+    .select('id, seller_comment')
+    .in('id', ids)
+  if (!commentErr) {
+    for (const r of (commentRows ?? []) as Array<Record<string, unknown>>) {
+      const c = r.seller_comment
+      if (typeof c === 'string' && c.trim()) sellerCommentBySample.set(r.id as string, c)
+    }
+  }
+
   for (const s of rows) {
     const sampleId = s.id as string
     const decision: ApprovalDecision = s.status === 'rejected' ? 'rejected' : 'approved'
@@ -378,6 +412,7 @@ export async function fetchQualitySampleSummaries(
       cupOk,
       decision,
       reason,
+      sellerComment: sellerCommentBySample.get(sampleId) ?? null,
     })
   }
 

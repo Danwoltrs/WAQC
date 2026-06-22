@@ -224,6 +224,9 @@ export function CuppingValidationModal({
   const [qualitySpecInfo, setQualitySpecInfo] = useState<QualitySpecInfo | null>(null)
   const [finalizing, setFinalizing] = useState(false)
   const [masterCupperId, setMasterCupperId] = useState<string | null>(null)
+  // Optional approval note for the seller — sent ONLY to the seller's email and
+  // recorded on sys, and only when the sample ends up approved.
+  const [sellerComment, setSellerComment] = useState('')
 
   // Master cupper's final decisions (editable on validation screen)
   const [finalScores, setFinalScores] = useState<Record<string, number>>({})
@@ -541,6 +544,7 @@ export function CuppingValidationModal({
           manual_decision: manualDecision,
           override_discrepancies: overrideDiscrepancies,
           validated_by_cupper_id: targetScore?.cupper_id || null,
+          seller_comment: sellerComment.trim() || null,
         }),
       })
 
@@ -1266,6 +1270,22 @@ export function CuppingValidationModal({
           {permissions?.stats && (
             <div className="text-xs text-muted-foreground">
               {permissions.stats.completed_cuppers}/{permissions.stats.assigned_cuppers} {permissions.stats.assigned_cuppers === 1 ? 'cupper' : 'cuppers'} completed
+            </div>
+          )}
+
+          {canFinalize && (
+            <div className="space-y-1">
+              <label className="text-xs font-medium text-muted-foreground">Comment to seller (optional)</label>
+              <textarea
+                value={sellerComment}
+                onChange={(e) => setSellerComment(e.target.value)}
+                rows={2}
+                placeholder="Quality note for the seller/exporter…"
+                className="w-full rounded-lg border border-black/10 bg-transparent px-3 py-2 text-sm dark:border-white/15"
+              />
+              <p className="text-[11px] text-muted-foreground">
+                Sent only to the seller and recorded on the system — not shown to buyers, and only when approved.
+              </p>
             </div>
           )}
 

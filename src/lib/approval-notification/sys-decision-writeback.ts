@@ -18,6 +18,7 @@ export async function writeDecisionToShipmentSamples(
   admin: SupabaseClient,
   sampleId: string,
   userId: string,
+  comments: string | null = null,
 ): Promise<void> {
   try {
     const { data: sample } = await admin
@@ -51,6 +52,7 @@ export async function writeDecisionToShipmentSamples(
       userId,
       today: new Date().toISOString().slice(0, 10),
       certificateUrl: null,
+      comments,
       initials,
     })
   } catch (e) {

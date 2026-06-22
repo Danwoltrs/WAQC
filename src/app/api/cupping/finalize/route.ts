@@ -48,6 +48,11 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json()
     const { session_id, sample_id, notes, manual_decision, validated_by_cupper_id } = body
+    // Optional seller-only approval note; persisted + pushed to sys only on approval.
+    const sellerComment: string | null =
+      typeof body.seller_comment === 'string' && body.seller_comment.trim()
+        ? body.seller_comment.trim()
+        : null
 
     if (!session_id || !sample_id) {
       return NextResponse.json({
@@ -386,9 +391,25 @@ export async function POST(request: NextRequest) {
         }, { status: 500 })
       }
 
+      // Persist the seller-only approval note (approved samples only). Guarded
+      // so a not-yet-applied migration never fails finalization.
+      if (decision === 'approved' && sellerComment) {
+        await supabaseAdmin
+          .from('samples')
+          .update({ seller_comment: sellerComment })
+          .eq('id', sample_id)
+          .then(undefined, () => undefined)
+      }
+
       // Push the decision to the shared sys shipment_samples row immediately
       // (status + approver initials + QC marker), independent of email send.
-      await writeDecisionToShipmentSamples(supabaseAdmin, sample_id, user.id)
+      // On approval the seller comment rides along to sys approval_comments.
+      await writeDecisionToShipmentSamples(
+        supabaseAdmin,
+        sample_id,
+        user.id,
+        decision === 'approved' ? sellerComment : null,
+      )
     }
     // If no grading data, sample stays in 'review' stage (already transitioned above)
 

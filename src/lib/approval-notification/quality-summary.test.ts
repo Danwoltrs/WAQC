@@ -23,6 +23,7 @@ const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
   cupOk: true,
   decision: 'approved',
   reason: null,
+  sellerComment: null,
   ...over,
 })
 
@@ -171,6 +172,26 @@ describe('buildQualitySummaryHtml', () => {
     const html = buildQualitySummaryHtml(groups)
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;')
     expect(html).not.toContain('<b>x</b>')
+  })
+})
+
+describe('seller comment (approval note)', () => {
+  it('shows the note in the seller email (sellerComment opt) for an approved sample', () => {
+    const groups = groupQualitySamples([sample({ sellerComment: 'Slightly woody but within spec.' })], 'qcClient')
+    expect(buildQualitySummaryText(groups, { sellerComment: true })).toContain('Note: Slightly woody but within spec.')
+    expect(buildQualitySummaryHtml(groups, { sellerComment: true })).toContain('Slightly woody but within spec.')
+  })
+  it('omits the note for buyers (no opt)', () => {
+    const groups = groupQualitySamples([sample({ sellerComment: 'Seller-only note.' })], 'seller')
+    expect(buildQualitySummaryText(groups)).not.toContain('Seller-only note.')
+    expect(buildQualitySummaryHtml(groups)).not.toContain('Seller-only note.')
+  })
+  it('does not show a note on a rejected sample even with the opt (approvals only)', () => {
+    const groups = groupQualitySamples(
+      [sample({ decision: 'rejected', sellerComment: 'Should not appear.', reason: 'Out of spec.' })],
+      'qcClient',
+    )
+    expect(buildQualitySummaryText(groups, { sellerComment: true })).not.toContain('Should not appear.')
   })
 })
 

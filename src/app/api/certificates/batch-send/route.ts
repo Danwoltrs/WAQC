@@ -69,8 +69,10 @@ function composeQualityBody(
   groups: ReturnType<typeof groupQualitySamples>,
   opts: { attached: boolean; signatureHtml: string | null; includeSig: boolean },
 ): { text: string; html: string } {
-  const summaryText = buildQualitySummaryText(groups)
-  const summaryHtml = buildQualitySummaryHtml(groups)
+  // Seller note shown to sellers only (the seller email has no attachments).
+  const sumOpts = { sellerComment: !opts.attached }
+  const summaryText = buildQualitySummaryText(groups, sumOpts)
+  const summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
   const sig = opts.includeSig ? opts.signatureHtml : null
   const text = `${coverNote}\n\n${summaryText}${sig ? '' : '\n\nBest regards,\nWolthers & Associates'}`
   const coverHtml = composeBodyHtml(coverNote, null)
