@@ -47,6 +47,61 @@ export interface SupplierScorecardRow {
   bags: number
 }
 
+/** Shape of a `certificates ⋈ samples` row from the report query. */
+export interface RawCertSampleRow {
+  certificate_number: string
+  created_at: string
+  is_rejected: boolean | null
+  compliance_violations: string[] | null
+  sample: {
+    id: string
+    sample_type: string | null
+    client_id: string | null
+    origin: string | null
+    micro_origin: string | null
+    container_nr: string | null
+    ico_number: string | null
+    bag_count: number | null
+    equivalent_60kg_bags: number | null
+    bags_quantity_mt: number | null
+    buyer_contract_nr: string | null
+    exporter: { name: string | null } | null
+    seller: { name: string | null } | null
+    importer: { name: string | null } | null
+    roaster: { name: string | null } | null
+  } | null
+}
+
+/**
+ * Map one joined `certificates ⋈ samples` row to a `WeeklySSCertRow`.
+ * Shared by the Weekly + Bi-Weekly fetchers so their field mapping can't drift.
+ */
+export function mapCertRowToReportRow(
+  c: RawCertSampleRow,
+  ctx: { sankeyType: ClientSankeyType; clientDisplay: string },
+): WeeklySSCertRow {
+  const s = c.sample!
+  const bagsRaw = s.bag_count ?? s.equivalent_60kg_bags ?? null
+  const bags = typeof bagsRaw === 'number' ? Math.round(bagsRaw) : null
+  // For roaster clients with no importer FK, substitute the client name —
+  // the roaster IS the de-facto importer in that case (Ahold style).
+  const importerName = s.importer?.name
+    ?? (ctx.sankeyType === 'roaster' ? ctx.clientDisplay : null)
+  return {
+    approval_date: c.created_at,
+    certificate_number: c.certificate_number,
+    exporter_name: s.exporter?.name ?? null,
+    seller_name: s.seller?.name ?? null,
+    importer_name: importerName,
+    importer_contract_nr: s.buyer_contract_nr ?? null,
+    roaster_name: s.roaster?.name ?? 'Unsold',
+    container_nr: s.container_nr ?? null,
+    ico_marks: s.ico_number ?? null,
+    bags,
+    is_rejected: !!c.is_rejected,
+  }
+}
+
 export interface WeeklySSCertReportData {
   client: {
     id: string
@@ -180,32 +235,9 @@ export async function getWeeklySSCertReportData(
     return true
   })
 
-  const rows: WeeklySSCertRow[] = filtered.map((c: any) => {
-    const s = c.sample
-    const bagsRaw = s.bag_count ?? s.equivalent_60kg_bags ?? null
-    const bags = typeof bagsRaw === 'number' ? Math.round(bagsRaw) : null
-
-    // For roaster clients with no importer FK, substitute the client name —
-    // the roaster IS the de-facto importer in that case (Ahold style).
-    // For other client types we keep "—" so the appendix table shows what's
-    // actually in the data.
-    const importerName = s.importer?.name
-      ?? (sankeyType === 'roaster' ? clientDisplay : null)
-
-    return {
-      approval_date: c.created_at,
-      certificate_number: c.certificate_number,
-      exporter_name: s.exporter?.name ?? null,
-      seller_name: s.seller?.name ?? null,
-      importer_name: importerName,
-      importer_contract_nr: s.buyer_contract_nr ?? null,
-      roaster_name: s.roaster?.name ?? 'Unsold',
-      container_nr: s.container_nr ?? null,
-      ico_marks: s.ico_number ?? null,
-      bags,
-      is_rejected: !!c.is_rejected,
-    }
-  })
+  const rows: WeeklySSCertRow[] = filtered.map((c: any) =>
+    mapCertRowToReportRow(c as RawCertSampleRow, { sankeyType, clientDisplay }),
+  )
 
   const approvedRows = rows.filter(r => !r.is_rejected)
   const rejectedRows = rows.filter(r => r.is_rejected)
@@ -339,7 +371,7 @@ export async function getWeeklySSCertReportData(
  * Anything that doesn't match falls into `Other`; with the patterns
  * below, `Other` should be rare in practice.
  */
-function categorizeViolation(v: string): string {
+export function categorizeViolation(v: string): string {
   if (typeof v !== 'string') return 'Other'
 
   // Named taints / faults: `Taint "Hard": Intensity 5 exceeds maximum (3)`
@@ -390,7 +422,7 @@ function categorizeViolation(v: string): string {
  * scorecard; downstream columns are tinted neutral since their rate
  * is a function of upstream feeders.
  */
-function buildSankey(
+export function buildSankey(
   approvedRows: WeeklySSCertRow[],
   scorecard: SupplierScorecardRow[],
   type: ClientSankeyType,
