@@ -156,9 +156,11 @@ export async function GET(request: NextRequest) {
         quality_code: sample.quality_spec?.quality_code || null,
         // Seller (farm/producer) from seller_id
         seller_name: sellerName,
+        seller_legal_name: sample.seller?.name || sample.seller?.fantasy_name || null,
         seller_country: sample.seller?.country || null,
         // Exporter/Shipper from exporter_id
         exporter_name: exporterName,
+        exporter_legal_name: sample.exporter?.name || sample.exporter?.fantasy_name || null,
         exporter_country: sample.exporter?.country || null,
         // Importer: from DB, or importer_is_qc_client flag, or QC client with importer type
         importer_name: importerLegalName || (sample.importer_is_qc_client ? qcClientName : null) || (isImporterClient ? qcClientName : null),

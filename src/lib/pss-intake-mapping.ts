@@ -25,10 +25,19 @@ export function mapPssToFormData(
   const sameShipper = pss.same_seller_shipper ?? true
   const importerIsQc = pss.importer_is_qc_client ?? true
 
-  // Counterparties (names from the GET's flattened *_name fields)
-  setStr('seller', pss.seller_name)
+  // Legal-name helper: prefers the legal `name` column over fantasy_name so that
+  // seller/shipper values match the dropdown options and the submit-time ilike
+  // lookup against companies.name (which uses the legal name, not fantasy).
+  // The GET /api/samples response provides *_legal_name fields for exactly this purpose.
+  const legalName = (legal: unknown, display: unknown) =>
+    (legal as string | null | undefined) ?? (display as string | null | undefined)
+
+  // Counterparties — seller/shipper use legal name; importer/roaster/end_client/qc_client
+  // stay on the display (fantasy-preferring) *_name field because their dropdowns and
+  // submit-time lookups use the display name.
+  setStr('seller', legalName(pss.seller_legal_name, pss.seller_name))
   set('same_seller_shipper', sameShipper)
-  if (!sameShipper) setStr('shipper', pss.exporter_name)
+  if (!sameShipper) setStr('shipper', legalName(pss.exporter_legal_name, pss.exporter_name))
   setStr('importer', pss.importer_name)
   set('importer_is_qc_client', importerIsQc)
   if (pss.client_id) setStr('client_id', pss.client_id)

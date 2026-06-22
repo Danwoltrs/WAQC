@@ -495,6 +495,9 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     }
   }
 
+  // `linked_pss_sample_id` is cleared via a separate updateFormData call because it is
+  // not tracked in contract_prefilled_fields, so applyContractPrefill({}, []) alone
+  // would not reset it.
   const handleClearPss = () => {
     applyContractPrefill({}, [])
     updateFormData('linked_pss_sample_id', '')

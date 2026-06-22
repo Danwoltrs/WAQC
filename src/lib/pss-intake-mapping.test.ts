@@ -93,4 +93,38 @@ describe('mapPssToFormData', () => {
     expect(prefilled).not.toContain('seller')
     expect(prefilled).not.toContain('ico_number')
   })
+
+  it('uses legal name (seller_legal_name) for seller/shipper when it differs from fantasy', () => {
+    // Companies with a fantasy name that differs from their legal name.
+    // The GET /api/samples response sets seller_legal_name = companies.name (legal),
+    // seller_name = fantasy-preferring. The mapper must use the legal name so the
+    // dropdown and submit-time ilike lookup against companies.name resolves correctly.
+    const pssWithLegal = {
+      ...basePss,
+      seller_name: 'LDC Fantasy',      // fantasy-preferring (what basePss would show)
+      seller_legal_name: 'Louis Dreyfus Company Brasil S.A.', // companies.name (legal)
+      exporter_name: 'COOXUPE Fantasy',
+      exporter_legal_name: 'Cooperativa dos Cafeicultores da Zona de Três Pontas Ltda',
+      same_seller_shipper: false,
+    }
+    const { patch } = mapPssToFormData(pssWithLegal)
+    expect(patch.seller).toBe('Louis Dreyfus Company Brasil S.A.')
+    expect(patch.shipper).toBe('Cooperativa dos Cafeicultores da Zona de Três Pontas Ltda')
+    // Importer must STILL use the display/fantasy name (not changed by this fix)
+    expect(patch.importer).toBe('Acme Importers')
+  })
+
+  it('falls back to seller_name/exporter_name when no legal name field is present', () => {
+    // Simulates older data or a PSS fetched without the legal_name fields
+    // (e.g. unit-test objects that only populate the flattened *_name fields).
+    const pssNoLegal = {
+      ...basePss,
+      seller_legal_name: undefined,
+      exporter_legal_name: undefined,
+      same_seller_shipper: false,
+    }
+    const { patch } = mapPssToFormData(pssNoLegal)
+    expect(patch.seller).toBe('Louis Dreyfus Company')
+    expect(patch.shipper).toBe('COOXUPE')
+  })
 })
