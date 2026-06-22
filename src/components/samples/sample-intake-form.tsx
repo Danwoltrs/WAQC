@@ -1136,27 +1136,30 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
                   />
                 ) : (
                   <div className="space-y-5">
-                    <div className="flex flex-col gap-1.5">
-                      <Label className="text-xs text-muted-foreground">Sample Type *</Label>
-                      <Select value={formData.sample_type} onValueChange={handleStep1TypeChange}>
-                        <SelectTrigger className="w-[260px] h-9">
-                          <SelectValue placeholder="Select type" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
-                          <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
-                          <SelectItem value="type">Type Sample</SelectItem>
-                        </SelectContent>
-                      </Select>
+                    <div className="flex flex-wrap items-start gap-3">
+                      <div className="flex flex-col gap-1.5">
+                        <Label className="text-xs text-muted-foreground">Sample Type *</Label>
+                        <Select value={formData.sample_type} onValueChange={handleStep1TypeChange}>
+                          <SelectTrigger className="w-[260px] h-9">
+                            <SelectValue placeholder="Select type" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="pss">PSS (Pre-Shipment Sample)</SelectItem>
+                            <SelectItem value="ss">SS (Shipment Sample)</SelectItem>
+                            <SelectItem value="type">Type Sample</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      {formData.sample_type === 'ss' && (
+                        <PssLinkStep
+                          formData={formData}
+                          approvedPSSSamples={approvedPSSSamples}
+                          onSelectPss={handleSelectPss}
+                          onClearPss={handleClearPss}
+                        />
+                      )}
                     </div>
-                    {formData.sample_type === 'ss' ? (
-                      <PssLinkStep
-                        formData={formData}
-                        approvedPSSSamples={approvedPSSSamples}
-                        onSelectPss={handleSelectPss}
-                        onClearPss={handleClearPss}
-                      />
-                    ) : (
+                    {formData.sample_type !== 'ss' && (
                       <ContractSearchStep
                         formData={formData}
                         applyContract={applyContractPrefill}
