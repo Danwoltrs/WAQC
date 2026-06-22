@@ -23,9 +23,31 @@ import { Loader2, Download, Send, X, AlertCircle } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
 import { SendReportModal } from './send-report-modal'
 
+export interface ReportKind {
+  reportType: 'weekly_ss' | 'biweekly'
+  previewEndpoint: string  // GET, streams the PDF
+  sendEndpoint: string     // POST, emails it
+  label: string            // human label for titles/subjects
+}
+
+export const WEEKLY_SS_KIND: ReportKind = {
+  reportType: 'weekly_ss',
+  previewEndpoint: '/api/reports/weekly-ss',
+  sendEndpoint: '/api/reports/weekly-ss/send',
+  label: 'Weekly SS Certificates',
+}
+
+export const BIWEEKLY_KIND: ReportKind = {
+  reportType: 'biweekly',
+  previewEndpoint: '/api/reports/biweekly',
+  sendEndpoint: '/api/reports/biweekly/send',
+  label: 'Bi-Weekly Performance',
+}
+
 interface PreviewReportModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  kind: ReportKind
   clientId: string
   clientName: string
   startDate: string
@@ -35,6 +57,7 @@ interface PreviewReportModalProps {
 export function PreviewReportModal({
   open,
   onOpenChange,
+  kind,
   clientId,
   clientName,
   startDate,
@@ -69,7 +92,7 @@ export function PreviewReportModal({
           // End is exclusive — include the selected end day in the window.
           end_date: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
         })
-        const res = await fetch(`/api/reports/weekly-ss?${params.toString()}`)
+        const res = await fetch(`${kind.previewEndpoint}?${params.toString()}`)
         if (!res.ok) {
           const data = await res.json().catch(() => ({} as any))
           throw new Error(data?.error || `Failed to load report (HTTP ${res.status})`)
@@ -97,7 +120,7 @@ export function PreviewReportModal({
       cancelled = true
       if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl)
     }
-  }, [open, clientId, startDate, endDate])
+  }, [open, kind.previewEndpoint, clientId, startDate, endDate])
 
   // Belt-and-suspenders: also revoke the previous URL when state changes.
   useEffect(() => {
@@ -132,7 +155,7 @@ export function PreviewReportModal({
           <DialogHeader className="px-5 py-2 border-b flex-row items-center justify-between space-y-0">
             <div className="flex items-center gap-3">
               <DialogTitle className="text-sm">
-                Weekly SS Certificates · {clientName}
+                {kind.label} · {clientName}
               </DialogTitle>
               <span className="text-xs text-muted-foreground">{startDate} → {endDate}</span>
             </div>
@@ -204,6 +227,7 @@ export function PreviewReportModal({
       <SendReportModal
         open={sendModalOpen}
         onOpenChange={setSendModalOpen}
+        kind={kind}
         clientId={clientId}
         clientName={clientName}
         startDate={startDate}

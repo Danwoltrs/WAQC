@@ -31,13 +31,14 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Loader2, Send, AlertCircle, Mail } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import type { ReportKind } from './preview-report-modal'
 
-const REPORT_TYPE = 'weekly_ss'
 const AUTO_CC_MAILBOX = 'qualitycontrol@wolthers.com'
 
 interface SendReportModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  kind: ReportKind
   clientId: string
   clientName: string
   startDate: string  // YYYY-MM-DD
@@ -64,6 +65,7 @@ function formatDateLabel(iso: string): string {
 export function SendReportModal({
   open,
   onOpenChange,
+  kind,
   clientId,
   clientName,
   startDate,
@@ -75,8 +77,8 @@ export function SendReportModal({
   const defaultSubject = useMemo(() => {
     const start = formatDateLabel(startDate)
     const end = formatDateLabel(endDate)
-    return `${clientName} · Weekly SS Certificates · ${start} – ${end}`
-  }, [clientName, startDate, endDate])
+    return `${clientName} · ${kind.label} · ${start} – ${end}`
+  }, [clientName, kind.label, startDate, endDate])
 
   const [toRaw, setToRaw] = useState('')
   const [ccRaw, setCcRaw] = useState('')
@@ -99,7 +101,7 @@ export function SendReportModal({
     async function load() {
       setLoadingRecipients(true)
       try {
-        const params = new URLSearchParams({ client_id: clientId, report_type: REPORT_TYPE })
+        const params = new URLSearchParams({ client_id: clientId, report_type: kind.reportType })
         const res = await fetch(`/api/reports/recipients?${params.toString()}`)
         if (!res.ok) return  // 401/500 -> just don't pre-fill; user types manually
         const data = await res.json()
@@ -121,7 +123,7 @@ export function SendReportModal({
     }
     load()
     return () => { cancelled = true }
-  }, [open, clientId])
+  }, [open, kind.reportType, clientId])
 
   const toEmails = parseAddresses(toRaw)
   const ccEmails = parseAddresses(ccRaw)
@@ -136,7 +138,7 @@ export function SendReportModal({
       const startIso = new Date(startDate).toISOString()
       const endIso = new Date(new Date(endDate).getTime() + 86400000).toISOString()
 
-      const res = await fetch('/api/reports/weekly-ss/send', {
+      const res = await fetch(kind.sendEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -184,7 +186,7 @@ export function SendReportModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-sm">Send Weekly SS Report</DialogTitle>
+          <DialogTitle className="text-sm">Send {kind.label} Report</DialogTitle>
           <DialogDescription className="text-xs">
             Sends from <span className="font-medium">{AUTO_CC_MAILBOX}</span> on behalf of you.
             {lastSentAt && (
