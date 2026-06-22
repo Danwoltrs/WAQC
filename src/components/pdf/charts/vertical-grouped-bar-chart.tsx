@@ -30,15 +30,21 @@ export function niceAxisMax(max: number): number {
 const fmt = (n: number, metric: 'count' | 'bags') =>
   metric === 'bags' ? n.toLocaleString('en-US') : String(n)
 
+// Width of the leading row-label column in the stats grid. The plot adds a
+// matching leading spacer so each bar group sits directly above its category
+// column in the grid below.
+const LABEL_W = 80
+
 const styles = StyleSheet.create({
   wrap: { width: '100%' },
   plot: { flexDirection: 'row', alignItems: 'flex-end', borderBottomWidth: 1, borderBottomColor: BORDER },
+  plotSpacer: { width: LABEL_W },
   col: { flex: 1, alignItems: 'center', justifyContent: 'flex-end' },
   bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: '100%' },
   bar: { width: 16 },
   grid: { borderWidth: 1, borderColor: BORDER, borderTopWidth: 0 },
   gridRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: BORDER },
-  gridLabel: { width: 80, fontSize: 7, color: '#555', padding: 3, borderRightWidth: 1, borderRightColor: BORDER },
+  gridLabel: { width: LABEL_W, fontSize: 7, color: '#555', padding: 3, borderRightWidth: 1, borderRightColor: BORDER },
   gridCell: { flex: 1, fontSize: 7.5, color: '#222', padding: 3, textAlign: 'center', borderRightWidth: 1, borderRightColor: BORDER },
   catLabel: { flex: 1, fontSize: 7.5, fontWeight: 700, color: '#333', padding: 3, textAlign: 'center', borderRightWidth: 1, borderRightColor: BORDER },
   legend: { flexDirection: 'row', gap: 12, justifyContent: 'center', marginTop: 4 },
@@ -65,6 +71,9 @@ export function VerticalGroupedBarChart({
   return (
     <View style={[styles.wrap, { width }]}>
       <View style={[styles.plot, { height }]}>
+        {/* Leading spacer aligns bar groups with the grid's category columns
+            (which sit after the row-label column). */}
+        <View style={styles.plotSpacer} />
         {categories.map(c => (
           <View key={c.label} style={styles.col}>
             <View style={styles.bars}>
