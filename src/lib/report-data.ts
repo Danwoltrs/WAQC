@@ -65,11 +65,18 @@ export interface RawCertSampleRow {
     equivalent_60kg_bags: number | null
     bags_quantity_mt: number | null
     buyer_contract_nr: string | null
-    exporter: { name: string | null } | null
-    seller: { name: string | null } | null
-    importer: { name: string | null } | null
-    roaster: { name: string | null } | null
+    exporter: { name: string | null; fantasy_name: string | null } | null
+    seller: { name: string | null; fantasy_name: string | null } | null
+    importer: { name: string | null; fantasy_name: string | null } | null
+    roaster: { name: string | null; fantasy_name: string | null } | null
   } | null
+}
+
+/** Prefer a company's fantasy (trade) name, falling back to its legal name. */
+function companyDisplayName(c: { name: string | null; fantasy_name: string | null } | null | undefined): string | null {
+  if (!c) return null
+  const fantasy = c.fantasy_name?.trim()
+  return fantasy || c.name || null
 }
 
 /**
@@ -85,16 +92,16 @@ export function mapCertRowToReportRow(
   const bags = typeof bagsRaw === 'number' ? Math.round(bagsRaw) : null
   // For roaster clients with no importer FK, substitute the client name —
   // the roaster IS the de-facto importer in that case (Ahold style).
-  const importerName = s.importer?.name
+  const importerName = companyDisplayName(s.importer)
     ?? (ctx.sankeyType === 'roaster' ? ctx.clientDisplay : null)
   return {
     approval_date: c.created_at,
     certificate_number: c.certificate_number,
-    exporter_name: s.exporter?.name ?? null,
-    seller_name: s.seller?.name ?? null,
+    exporter_name: companyDisplayName(s.exporter),
+    seller_name: companyDisplayName(s.seller),
     importer_name: importerName,
     importer_contract_nr: s.buyer_contract_nr ?? null,
-    roaster_name: s.roaster?.name ?? 'Unsold',
+    roaster_name: companyDisplayName(s.roaster) ?? 'Unsold',
     container_nr: s.container_nr ?? null,
     ico_marks: s.ico_number ?? null,
     bags,
@@ -209,10 +216,10 @@ export async function getWeeklySSCertReportData(
         equivalent_60kg_bags,
         bags_quantity_mt,
         buyer_contract_nr,
-        exporter:companies!samples_exporter_id_fkey(name),
-        seller:companies!samples_seller_id_fkey(name),
-        importer:companies!samples_importer_id_fkey(name),
-        roaster:companies!samples_roaster_id_fkey(name)
+        exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
+        seller:companies!samples_seller_id_fkey(name,fantasy_name),
+        importer:companies!samples_importer_id_fkey(name,fantasy_name),
+        roaster:companies!samples_roaster_id_fkey(name,fantasy_name)
       )
     `)
     .is('sample_contract_id', null)

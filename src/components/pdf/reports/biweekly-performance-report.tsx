@@ -12,7 +12,6 @@ import React from 'react'
 import { Document, Page, View, Image, Text, StyleSheet } from '@react-pdf/renderer'
 import '@/components/pdf/certificate/certificate-styles'
 import type { BiweeklyPerformanceReportData, BucketAggregate, RegionRow } from '@/lib/reports/biweekly-data'
-import { KpiCard } from '@/components/pdf/charts/kpi-card'
 import { HorizontalBarChart } from '@/components/pdf/charts/horizontal-bar-chart'
 import { SankeyChart } from '@/components/pdf/charts/sankey-chart'
 import { VerticalGroupedBarChart, type GroupedBarCategory } from '@/components/pdf/charts/vertical-grouped-bar-chart'
@@ -63,11 +62,26 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
 
-  kpiStrip: {
+  // Slim inline KPI band — replaces the tall KpiCard strip.
+  kpiBand: {
     flexDirection: 'row',
-    gap: 8,
-    marginBottom: 14,
+    alignItems: 'center',
+    backgroundColor: '#F4F4F2',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 4,
+    marginBottom: 12,
   },
+  kpiItem: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'baseline',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  kpiValue: { fontSize: 13, fontWeight: 700, color: '#222' },
+  kpiLabel: { fontSize: 7.5, color: '#666', textTransform: 'uppercase', letterSpacing: 0.3 },
+  kpiDivider: { width: 1, height: 16, backgroundColor: '#D9D9D6' },
 
   pageFooter: {
     position: 'absolute',
@@ -82,6 +96,9 @@ const styles = StyleSheet.create({
 
   // --- Bi-weekly panels + region tables ---
   panel: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: GRAY_BORDER, borderRadius: 10, padding: 12, marginBottom: 12 },
+  // Importer + Exporter charts side by side within one panel.
+  chartsRow: { flexDirection: 'row', gap: 16 },
+  chartHalf: { flex: 1 },
   twoCol: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   regionPanel: { flex: 1, borderWidth: 1, borderColor: GRAY_BORDER, borderRadius: 10, padding: 10 },
   regionHead: { flexDirection: 'row', backgroundColor: '#F4F4F2', paddingVertical: 4, paddingHorizontal: 6 },
@@ -177,23 +194,45 @@ export function BiweeklyPerformanceReport({ data, wolthersLogoBase64, clientLogo
   const rateColor = (r: number) => (r === 0 ? GREEN : r <= 10 ? '#a9a454' : '#ef4444')
   const reasonRows = (b: BucketAggregate) => b.rejectionReasons.filter(r => r.category !== 'Other').map(r => ({ label: r.category, value: r.count }))
 
+  const KpiBand = ({ b, kind }: { b: BucketAggregate; kind: 'PSS' | 'SS' }) => {
+    const items: { label: string; value: string | number; color?: string }[] = [
+      { label: 'Certs', value: b.totals.evaluated },
+      { label: 'Approved', value: b.totals.approved, color: GREEN },
+      { label: 'Rejected', value: b.totals.rejected, color: b.totals.rejected > 0 ? '#ef4444' : '#222' },
+      { label: 'Rej. rate', value: `${b.totals.rejectionRate}%`, color: rateColor(b.totals.rejectionRate) },
+    ]
+    if (kind === 'SS') items.push({ label: 'Bags', value: b.totals.bagsApproved.toLocaleString('en-US') })
+    return (
+      <View style={styles.kpiBand}>
+        {items.map((it, i) => (
+          <React.Fragment key={it.label}>
+            {i > 0 && <View style={styles.kpiDivider} />}
+            <View style={styles.kpiItem}>
+              <Text style={[styles.kpiValue, it.color ? { color: it.color } : {}]}>{it.value}</Text>
+              <Text style={styles.kpiLabel}>{it.label}</Text>
+            </View>
+          </React.Fragment>
+        ))}
+      </View>
+    )
+  }
+
   const Bucket = ({ b, metric, kind }: { b: BucketAggregate; metric: 'count' | 'bags'; kind: 'PSS' | 'SS' }) => (
     <>
-      <View style={styles.kpiStrip}>
-        <KpiCard label="Certificates" value={b.totals.evaluated} sublabel={`${b.totals.approved} approved · ${b.totals.rejected} rejected`} />
-        <KpiCard label="Approved" value={b.totals.approved} />
-        <KpiCard label="Rejected" value={b.totals.rejected} valueColor={b.totals.rejected > 0 ? '#ef4444' : GREEN} />
-        <KpiCard label="Rejection rate" value={`${b.totals.rejectionRate}%`} valueColor={rateColor(b.totals.rejectionRate)} />
-        {kind === 'SS' && <KpiCard label="Bags approved" value={b.totals.bagsApproved} sublabel="60 kg equivalent" />}
-      </View>
+      <KpiBand b={b} kind={kind} />
 
+      {/* Importer + Exporter side by side in one panel. */}
       <View style={styles.panel}>
-        <Text style={styles.sectionLabel}>Importer {kind}</Text>
-        <VerticalGroupedBarChart categories={metricCats(b.byImporter, metric)} metric={metric} />
-      </View>
-      <View style={styles.panel}>
-        <Text style={styles.sectionLabel}>Exporter {kind}</Text>
-        <VerticalGroupedBarChart categories={metricCats(b.byExporter, metric)} metric={metric} />
+        <View style={styles.chartsRow}>
+          <View style={styles.chartHalf}>
+            <Text style={styles.sectionLabel}>Importer {kind}</Text>
+            <VerticalGroupedBarChart categories={metricCats(b.byImporter, metric)} metric={metric} width={360} />
+          </View>
+          <View style={styles.chartHalf}>
+            <Text style={styles.sectionLabel}>Exporter {kind}</Text>
+            <VerticalGroupedBarChart categories={metricCats(b.byExporter, metric)} metric={metric} width={360} />
+          </View>
+        </View>
       </View>
 
       {reasonRows(b).length > 0 && (
@@ -223,18 +262,20 @@ export function BiweeklyPerformanceReport({ data, wolthersLogoBase64, clientLogo
         {Header}
         <Text style={styles.titleBar}>Shipment Samples · {range}</Text>
         <Bucket b={data.ss} metric="bags" kind="SS" />
+        {Footer('Page 2 of 3 · Shipment Samples')}
+      </Page>
+
+      <Page size="A4" orientation="landscape" style={styles.page}>
+        {Header}
+        <Text style={styles.titleBar}>
+          {data.showSankey ? 'Supply chain & SS certificates' : 'SS certificate appendix'} · {data.ss.totals.approved} approved
+        </Text>
         {data.showSankey && (
           <View style={styles.panel}>
             <Text style={styles.sectionLabel}>Supply chain flow</Text>
             <SankeyChart layout={data.sankey} columnLabels={data.sankeyColumns} />
           </View>
         )}
-        {Footer('Page 2 of 3 · Shipment Samples')}
-      </Page>
-
-      <Page size="A4" orientation="landscape" style={styles.page}>
-        {Header}
-        <Text style={styles.titleBar}>SS certificate appendix · {data.ss.totals.approved} approved</Text>
         <SSCertAppendixTable
           rows={data.ssApprovedRows}
           totals={{ certificate_count: data.ss.totals.approved, bag_count: data.ss.totals.bagsApproved }}

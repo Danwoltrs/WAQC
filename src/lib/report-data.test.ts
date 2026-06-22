@@ -18,19 +18,21 @@ const raw = (over: Partial<RawCertSampleRow> = {}): RawCertSampleRow => ({
     equivalent_60kg_bags: 333,
     bags_quantity_mt: null,
     buyer_contract_nr: 'IR0005918-1',
-    exporter: { name: 'Cooxupe' },
-    seller: { name: 'Cooxupe' },
-    importer: { name: 'Coffee America' },
-    roaster: { name: 'Unsold' },
+    exporter: { name: 'Coop. Regional de Cafeicultores em Guaxupé Ltda.', fantasy_name: 'Cooxupé' },
+    seller: { name: 'Cooxupe', fantasy_name: null },
+    importer: { name: 'Coffee America', fantasy_name: null },
+    roaster: { name: 'Unsold', fantasy_name: null },
   },
   ...over,
 })
 
 describe('mapCertRowToReportRow', () => {
-  it('maps joined cert/sample fields to a report row', () => {
+  it('maps joined cert/sample fields to a report row, preferring fantasy names', () => {
     const row = mapCertRowToReportRow(raw(), { sankeyType: 'final_buyer', clientDisplay: 'Dunkin' })
     expect(row.certificate_number).toBe('BR-000001/26')
-    expect(row.exporter_name).toBe('Cooxupe')
+    // exporter has a fantasy_name → it wins over the long legal name
+    expect(row.exporter_name).toBe('Cooxupé')
+    // importer has no fantasy_name → falls back to legal name
     expect(row.importer_name).toBe('Coffee America')
     expect(row.importer_contract_nr).toBe('IR0005918-1')
     expect(row.bags).toBe(333)

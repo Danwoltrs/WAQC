@@ -227,10 +227,10 @@ export async function getBiweeklyPerformanceReportData(
       sample:samples!certificates_sample_id_fkey(
         id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
         bag_count, equivalent_60kg_bags, bags_quantity_mt, buyer_contract_nr,
-        exporter:companies!samples_exporter_id_fkey(name),
-        seller:companies!samples_seller_id_fkey(name),
-        importer:companies!samples_importer_id_fkey(name),
-        roaster:companies!samples_roaster_id_fkey(name)
+        exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
+        seller:companies!samples_seller_id_fkey(name,fantasy_name),
+        importer:companies!samples_importer_id_fkey(name,fantasy_name),
+        roaster:companies!samples_roaster_id_fkey(name,fantasy_name)
       )
     `)
     .is('sample_contract_id', null)
