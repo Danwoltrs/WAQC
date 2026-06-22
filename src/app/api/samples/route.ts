@@ -52,7 +52,8 @@ export async function GET(request: NextRequest) {
         end_client:companies!samples_end_client_id_fkey(id, name, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
         sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt),
-        sample_recipients(id, status)
+        sample_recipients(id, status),
+        linked_pss:samples!samples_linked_pss_sample_id_fkey(id, tracking_number)
       `)
       .is('deleted_at', null)
       .order('created_at', { ascending: false })
@@ -409,6 +410,7 @@ export async function POST(request: NextRequest) {
           ? body.certifications
           : null,
         sample_type: body.sample_type || null,
+        linked_pss_sample_id: body.linked_pss_sample_id || null,
         shipment_month: body.shipment_month || null,
         bags_quantity_mt: bagsQuantityMt,
         bag_count: bagCount,
