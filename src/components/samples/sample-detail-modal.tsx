@@ -57,6 +57,8 @@ interface EditPermission {
 interface Sample {
   id: string
   tracking_number: string
+  linked_pss_sample_id?: string | null
+  linked_pss?: { id: string; tracking_number: string } | null
   client_id?: string
   seller_id?: string | null
   exporter_id?: string | null
@@ -846,6 +848,14 @@ export function SampleDetailModal({
                       </Badge>
                     ) : null}
                   </div>
+                  {sample.linked_pss?.tracking_number && (
+                    <div className="flex items-center gap-2 mr-8">
+                      <span className="text-xs text-muted-foreground">Linked PSS</span>
+                      <Badge variant="outline" className="text-xs">
+                        {sample.linked_pss.tracking_number}
+                      </Badge>
+                    </div>
+                  )}
                   <div className="flex items-center gap-2 mr-8">
                     <MapPin className="h-4 w-4 text-muted-foreground shrink-0" />
                     {isEditMode ? (
