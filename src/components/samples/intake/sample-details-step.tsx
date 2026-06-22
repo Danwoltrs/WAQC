@@ -26,6 +26,12 @@ export function SampleDetailsStep({ formData, updateFormData, onPhotoUpload }: S
 
   return (
     <div className="space-y-3">
+      {formData.sample_type === 'ss' && !formData.linked_pss_sample_id && (
+        <div className="rounded-2xl p-3 bg-amber-50 dark:bg-amber-950/20 border border-amber-200 dark:border-amber-800 text-xs text-amber-800 dark:text-amber-300">
+          No PSS linked to this shipment sample. Every SS should reference its approved
+          pre-shipment sample — go back to Step 1 to link one, or continue if this is an exception.
+        </div>
+      )}
       {/* Arrival date + linked contract — side by side */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start">
         <div className="space-y-1.5">
