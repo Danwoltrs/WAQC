@@ -62,6 +62,7 @@ export function PssLinkStep({ formData, approvedPSSSamples, onSelectPss, onClear
         }
         searchPlaceholder="Search by certificate #, contract #, supplier..."
         className="h-9 w-[340px]"
+        substringMatch
       />
       <p className="text-xs text-amber-700 dark:text-amber-400">
         No PSS linked yet — link one, or continue if this is an exception.

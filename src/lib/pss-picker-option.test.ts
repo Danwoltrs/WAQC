@@ -86,6 +86,21 @@ describe('buildPssPickerOption', () => {
     expect(buildPssPickerOption(basePss).keywords).toContain('SAN-00042/26')
   })
 
+  it('makes Wolthers and other contract numbers from sub-contracts searchable too', () => {
+    const withSubs = {
+      ...basePss,
+      sample_contracts: [
+        { tracking_number: 'BR-099001/26', wolthers_contract_nr: '40994/26', buyer_contract_nr: 'SUB-B-1' },
+        { wolthers_contract_nr: '40995/26' },
+      ],
+    }
+    const { keywords } = buildPssPickerOption(withSubs)
+    expect(keywords).toContain('40994/26')
+    expect(keywords).toContain('40995/26')
+    expect(keywords).toContain('SUB-B-1')
+    expect(keywords).toContain('BR-099001/26')
+  })
+
   it('makes supplier, exporter, importer names and origin searchable', () => {
     const { keywords } = buildPssPickerOption(basePss)
     expect(keywords).toContain('Comexim')

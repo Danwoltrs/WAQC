@@ -17,6 +17,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '@/components/ui/popover'
+import { substringFilter } from '@/components/ui/searchable-select-filter'
 
 export interface SearchableSelectOption {
   value: string
@@ -39,6 +40,9 @@ interface SearchableSelectProps {
   allowCreate?: boolean
   onCreateNew?: () => void
   createLabel?: string
+  // Use plain substring matching instead of cmdk's default fuzzy scoring. Avoids
+  // misleading subsequence "noise" when options carry many keyword numbers.
+  substringMatch?: boolean
 }
 
 export function SearchableSelect({
@@ -53,6 +57,7 @@ export function SearchableSelect({
   allowCreate = false,
   onCreateNew,
   createLabel = '+ Create New',
+  substringMatch = false,
 }: SearchableSelectProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -85,7 +90,7 @@ export function SearchableSelect({
         </Button>
       </PopoverTrigger>
       <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-        <Command>
+        <Command filter={substringMatch ? substringFilter : undefined}>
           <CommandInput placeholder={searchPlaceholder} />
           <CommandList>
             <CommandEmpty>{emptyMessage}</CommandEmpty>

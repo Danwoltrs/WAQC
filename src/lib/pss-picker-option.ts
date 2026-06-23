@@ -62,6 +62,19 @@ export function buildPssPickerOption(pss: any): SearchableSelectOption {
     str(pss.supplier),
     str(pss.origin),
     str(pss.quality_name),
+    // Sub-contract references — a PSS split across buyers carries its Wolthers /
+    // buyer / tracking numbers on sample_contracts, so fold those in too.
+    ...(Array.isArray(pss.sample_contracts) ? pss.sample_contracts : []).flatMap((c: any) => [
+      str(c?.tracking_number),
+      str(c?.wolthers_contract_nr),
+      str(c?.buyer_contract_nr),
+      str(c?.roaster_contract_nr),
+      str(c?.qc_client_contract_nr),
+      str(c?.end_client_contract_nr),
+      str(c?.supplier_contract_nr),
+      str(c?.ico_number),
+      str(c?.container_nr),
+    ]),
   ].filter((v): v is string => Boolean(v))
 
   return { value: pss.id, label, keywords: [...new Set(keywords)] }
