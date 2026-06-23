@@ -8,6 +8,8 @@ import { RightSidebar } from './right-sidebar'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useAuth } from '@/components/providers/auth-provider'
 import { cn } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
+import { isClientRole } from '@/lib/portal/portal-auth'
 
 const SIDEBAR_MODE_KEY = 'waqc-sidebar-mode'
 
@@ -31,6 +33,18 @@ export function MainLayout({ children }: MainLayoutProps) {
       setSidebarMode(stored)
     }
   }, [])
+
+  // Redirect client-role users to the partner portal
+  useEffect(() => {
+    let active = true
+    ;(async () => {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const { data: profile } = await supabase.from('profiles').select('qc_role').eq('id', user.id).single()
+      if (active && isClientRole((profile as any)?.qc_role)) router.replace('/portal')
+    })()
+    return () => { active = false }
+  }, [router])
 
   const handleSidebarModeChange = (mode: SidebarMode) => {
     setSidebarMode(mode)
