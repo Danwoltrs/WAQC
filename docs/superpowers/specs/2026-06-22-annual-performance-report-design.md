@@ -40,11 +40,14 @@ annual report rather than a spreadsheet, plus a monthly-trend layer and a reject
 4. **Breakdowns: importer · seller · exporter/shipper · region/origin.** All four. Exporter and
    shipper are treated as the same role (`exporter_name`).
 5. **Top rejection reasons this year** is its own section, with a PSS vs SS split.
-6. **Aesthetic: Scandinavian.** Minimal, airy, generous whitespace, muted natural palette (olive
+6. **Whole-year Sankey flow diagram** — a **full-page LANDSCAPE** page showing the year's coffee
+   flow (exporter/shipper → importer → roaster/final-buyer), reusing the Bi-Weekly's `buildSankey`
+   fed with the full year's approved rows. (Reverses the earlier "Sankey out of scope" call.)
+7. **Aesthetic: Scandinavian.** Minimal, airy, generous whitespace, muted natural palette (olive
    `#556b2f`, beige `#efe4d4`, warm grays), one accent only, clean Inter type, very restrained
    charts. NOT a reskin of the Bi-Weekly PDF — its own bespoke generator.
-7. **Year-over-year deltas are OUT of scope for v1** (deferred to v2). Single-year report only.
-8. **`annual` is already in `VALID_REPORT_TYPES`** (`src/lib/reports/recipients.ts:12`) and the
+8. **Year-over-year deltas are OUT of scope for v1** (deferred to v2). Single-year report only.
+9. **`annual` is already in `VALID_REPORT_TYPES`** (`src/lib/reports/recipients.ts:12`) and the
    recipients table keys on `(client_id, report_type)` — **no DB migration needed**.
 
 ## 3. Architecture (Approach A — reuse the Bi-Weekly engine)
@@ -68,8 +71,10 @@ New files:
 Reused as-is (no edits to live reports):
 - `aggregateBucket`, `BucketAggregate`, `GroupPerf`, `RegionRow`, `BiweeklyRow`, `regionBreakdown`
   (`src/lib/reports/biweekly-data.ts`).
-- `mapCertRowToReportRow`, `categorizeViolation`, `companyDisplayName`, row types
+- `mapCertRowToReportRow`, `categorizeViolation`, `companyDisplayName`, `buildSankey`, row types
   (`src/lib/report-data.ts`).
+- `SankeyLayoutResult` and the Sankey layout/render path (`src/lib/charts/sankey-layout.ts` + the
+  `@react-pdf` Sankey component the Bi-Weekly already renders) — drawn on the landscape page.
 
 Rationale for not extracting a shared core (Approach B) or building standalone (Approach C):
 B edits a live report for no new capability (regression risk); C re-implements aggregation and
@@ -142,11 +147,22 @@ interface AnnualPerformanceReportData {
   labsCovered: string[]          // distinct lab names, for cover/methodology
   originsCovered: string[]       // distinct origin countries, for cover/methodology
   monthly: MonthlySeries
+  sankey: SankeyLayoutResult      // whole-year flow, from buildSankey()
+  sankeyColumns: string[]         // column labels (exporter → importer → roaster/final-buyer)
+  showSankey: boolean             // true only when >2 columns resolve (else omit the page)
 }
 ```
 `byOrigin` and `byLab` reuse the same `GroupPerf` shape and `groupBy` helper (keyed on
 `origin` and the resolved lab name respectively). `byLab.length > 1` is the gate for rendering the
 "Assessed by lab" page.
+
+### 4.6 Whole-year Sankey
+Reuse `buildSankey(approvedRows, scorecardFromExporters(ss.byExporter), sankeyType, clientDisplay)`
+exactly as the Bi-Weekly does — but feed it the **full year's approved SS rows** (the trade-relevant
+physical flow; same basis the Bi-Weekly uses). `sankeyType` is derived from the client the same way
+(`importer` if the client is a buyer, else `roaster`, else `final_buyer`). It returns
+`{ layout, columns }`; store as `sankey` / `sankeyColumns`. `showSankey = sankeyColumns.length > 2`
+— with ≤2 columns there is no meaningful flow, so the landscape page is omitted entirely.
 `bySeller` is carried alongside the existing `BucketAggregate` (either by extending the interface
 with an optional `bySeller?` or returning it as a sibling field — implementer's choice in the plan).
 
@@ -177,7 +193,12 @@ A4 portrait, multi-page, per client, one calendar year.
    rate per lab. Omitted entirely for single-lab clients so the page never shows a lone bar.
 9. **The year in motion** — one chart: approval-rate line across 12 months (olive) with monthly
    volume as faint background bars on a secondary axis.
-10. **Closing / methodology** — small print: what counts as a sample, how rates are computed, the
+10. **Year flow (Sankey)** — a **full-page LANDSCAPE** page (the only landscape page in the
+    document): the whole year's coffee flow exporter/shipper → importer → roaster/final-buyer, link
+    width = bag volume. Rendered via the reused `buildSankey` layout + `@react-pdf` Sankey component.
+    Set this page's `<Page orientation="landscape">` (A4 landscape) so it stands alone from the
+    portrait pages. Omitted when `showSankey` is false (≤2 columns).
+11. **Closing / methodology** — small print: what counts as a sample, how rates are computed, the
     period definition, the labs and origins covered, Wolthers footer.
 
 ## 6. Visual system (Scandinavian)
@@ -210,7 +231,6 @@ A4 portrait, multi-page, per client, one calendar year.
 - Excel output.
 - The ADCC "monthly" report (`monthly` enum value stays unused).
 - A literal origin map.
-- Sankey (the Annual is supplier-performance-focused; the Bi-Weekly already carries the Sankey).
 
 ## 9. Open / inherited risks
 
@@ -230,5 +250,7 @@ A4 portrait, multi-page, per client, one calendar year.
 - Cross-check generated numbers for a real client/year against `Performance Year 2025.xlsx`
   (per-exporter APP/REJ/%APP/%REJ and the `TOTAL GERAL` row).
 - Render synthetic data to `/tmp/annual-*.pdf` and rasterize with `pdftoppm -png` to verify layout
-  (text glyphs don't rasterize offline — verify layout, not copy).
+  (text glyphs don't rasterize offline — verify layout, not copy). Confirm the Sankey page renders
+  **landscape** while every other page stays portrait, and that it is omitted when `showSankey` is
+  false.
 - Keep the full vitest suite green (`npx vitest run`); tsc clean.
