@@ -39,6 +39,7 @@ export function MainLayout({ children }: MainLayoutProps) {
     let active = true
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
+      if (!active) return
       if (!user) return
       const { data: profile } = await supabase.from('profiles').select('qc_role').eq('id', user.id).single()
       if (active && isClientRole((profile as any)?.qc_role)) router.replace('/portal')

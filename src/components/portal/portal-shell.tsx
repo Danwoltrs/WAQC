@@ -14,6 +14,7 @@ export function PortalShell({ children }: { children: React.ReactNode }) {
     let active = true
     ;(async () => {
       const { data: { user } } = await supabase.auth.getUser()
+      if (!active) return
       if (!user) { router.replace('/'); return }
       const { data: profile } = await supabase.from('profiles').select('qc_role').eq('id', user.id).single()
       if (!active) return

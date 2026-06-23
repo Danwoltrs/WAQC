@@ -5,7 +5,7 @@ import { PORTAL_NAV } from './portal-nav'
 
 export function PortalTopNav({ pathname, onSignOut }: { pathname: string; onSignOut: () => void }) {
   return (
-    <header className="border-b border-neutral-100 bg-white">
+    <header className="shadow-sm bg-white">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
         <div className="flex items-center gap-8">
           <span className="text-base font-semibold tracking-tight text-neutral-900">Wolthers QC</span>
