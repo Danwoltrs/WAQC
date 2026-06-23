@@ -22,6 +22,6 @@ export function mapSampleRow(row: any): PortalSampleRow {
     sampleType: row.sample_type ?? null,
     stage: row.workflow_stage ?? null,
     status: row.status ?? null,
-    certificateUrl: certified && row.tracking_number ? `/certificate/${trackingNumberToSlug(row.tracking_number)}` : null,
+    certificateUrl: certified && row.tracking_number ? `/api/portal/certificate/${trackingNumberToSlug(row.tracking_number)}/pdf` : null,
   }
 }

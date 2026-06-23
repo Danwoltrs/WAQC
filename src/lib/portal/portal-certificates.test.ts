@@ -17,7 +17,7 @@ describe('mapCertRow', () => {
       trackingNumber: 'BD-036991/26',
       status: 'approved',
       issuedDate: '2026-05-10T12:00:00Z',
-      downloadUrl: '/api/certificate/BD-036991_26/pdf',
+      downloadUrl: '/api/portal/certificate/BD-036991_26/pdf',
     })
   })
 
@@ -35,7 +35,7 @@ describe('mapCertRow', () => {
       trackingNumber: 'BD-036992/26',
       status: 'rejected',
       issuedDate: '2026-05-11T09:00:00Z',
-      downloadUrl: '/api/certificate/BD-036992_26/pdf',
+      downloadUrl: '/api/portal/certificate/BD-036992_26/pdf',
     })
   })
 })

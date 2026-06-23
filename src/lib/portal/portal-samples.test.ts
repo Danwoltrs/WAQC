@@ -11,7 +11,7 @@ describe('mapSampleRow', () => {
     expect(row).toEqual({
       id: 's1', trackingNumber: 'BR-0231/26', origin: 'Brazil', quality: 'GC17',
       sampleType: 'pss', stage: 'certified', status: 'approved',
-      certificateUrl: '/certificate/BR-0231_26',
+      certificateUrl: '/api/portal/certificate/BR-0231_26/pdf',
     })
   })
 

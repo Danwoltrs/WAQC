@@ -18,6 +18,6 @@ export function mapCertRow(row: any): PortalCertRow {
     trackingNumber,
     status: row.is_rejected ? 'rejected' : 'approved',
     issuedDate: row.created_at ?? null,
-    downloadUrl: trackingNumber ? `/api/certificate/${trackingNumberToSlug(trackingNumber)}/pdf` : null,
+    downloadUrl: trackingNumber ? `/api/portal/certificate/${trackingNumberToSlug(trackingNumber)}/pdf` : null,
   }
 }

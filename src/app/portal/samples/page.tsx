@@ -1,6 +1,5 @@
 'use client'
 import { useEffect, useState } from 'react'
-import Link from 'next/link'
 import type { PortalSampleRow } from '@/lib/portal/portal-samples'
 
 export default function PortalSamplesPage() {
@@ -56,7 +55,7 @@ export default function PortalSamplesPage() {
                 <td className="px-5 py-3 text-neutral-600">{r.status ?? '—'}</td>
                 <td className="px-5 py-3">
                   {r.certificateUrl
-                    ? <Link href={r.certificateUrl} className="text-[#556b2f] hover:underline">View</Link>
+                    ? <a href={r.certificateUrl} target="_blank" rel="noopener noreferrer" className="text-[#556b2f] hover:underline">View</a>
                     : <span className="text-neutral-400">—</span>}
                 </td>
               </tr>
