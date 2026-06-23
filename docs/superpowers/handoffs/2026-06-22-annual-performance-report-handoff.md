@@ -5,14 +5,15 @@
 > carries **two ready-to-plan workstreams** the user asked to bundle: (1) the **Annual Performance
 > Report** and (2) the **QR container-traceability after shipment** (Dunkin chain-of-custody).
 
-**Resume point:** The Annual report **spec AND implementation plan are both written and committed**.
-The single next action is to **EXECUTE the plan via `superpowers:subagent-driven-development`** —
-the user explicitly chose subagent-driven execution. Start at **Task 1** of
-[../plans/2026-06-22-annual-performance-report.md](../plans/2026-06-22-annual-performance-report.md)
-(7 TDD tasks, one fresh subagent per task, two-stage review between tasks). The **traceability**
-workstream (spec [../specs/2026-06-22-dunkin-container-traceability-design.md](../specs/2026-06-22-dunkin-container-traceability-design.md))
-is a **separate, parallel** job — approved, still needs its own `writing-plans` pass — do it after
-the Annual unless the user reprioritizes.
+**Resume point:** The Annual report is **BUILT — all 7 plan tasks done, final whole-branch review
+verdict READY TO MERGE, committed to `main` but UNPUSHED**. The next actions are decisions, not
+construction: (1) **push** `688db3d..097f526` when the user okays (project rule: push only when
+asked); (2) **in-app visual QA** — render a real Annual PDF in the running app for a known
+client/year and run the user's render→adjust loop (offline `pdftoppm` can't rasterize font glyphs,
+so typography was NOT visually verified — only layout/structure); (3) resolve the still-open
+**security decision** (bundle a one-pass auth fix across all report families, or keep feature-parity).
+The **traceability** workstream (spec [../specs/2026-06-22-dunkin-container-traceability-design.md](../specs/2026-06-22-dunkin-container-traceability-design.md))
+is a **separate, parallel** job — approved, still needs its own `writing-plans` pass.
 
 ---
 
@@ -63,15 +64,32 @@ Surfaced to Dunkin as a live per-container timeline tracing back to the WAQC cer
 
 | SHA | What |
 |---|---|
-| `2aec164` | **Annual report design spec** — committed (unpushed). Full per-client / cross-lab / cross-origin design. |
+| `2aec164` | **Annual report design spec** (unpushed). Full per-client / cross-lab / cross-origin design. |
 | `8a64254` | Added the whole-year **landscape Sankey** to the Annual spec + synced this handoff. |
-| `21b77a3` | **Annual report implementation plan** — committed (unpushed). 7 TDD tasks; self-reviewed for spec coverage / placeholders / type consistency. |
-| (uncommitted) | **Traceability design spec** — written + approved, **untracked on disk**. |
+| `21b77a3` | **Annual report implementation plan** (unpushed). 7 TDD tasks. |
+| `688db3d` | **Task 1** — export `groupBy` + `scorecardFromExporters` from `biweekly-data.ts` (additive). |
+| `498867a` | **Task 2** — Annual data layer: types + pure aggregation (hero, monthly, seller/origin/lab, Sankey) + unit tests. |
+| `2562040` | **Task 3** — Annual data fetch `getAnnualPerformanceReportData` (per-client, cross-lab, cross-origin year query). 9/9 tests. |
+| `c9be4ae` | **Task 4** — bespoke Scandinavian `@react-pdf` document, 11 pages, landscape Sankey page. |
+| `c3648f6` | **Task 5** — `annual-generator.ts` + GET/send routes (`report_type='annual'`). |
+| `097f526` | **Task 6** — `ANNUAL_KIND` + 3rd dashboard card with year picker. |
+| (no commit) | **Task 7** — smoke render + spreadsheet cross-check: 11 pages, landscape confirmed, grand totals EXACT. |
 | `406e4e7..95e9acc` (prod) | Bi-Weekly Performance Report (report 2) — live, the architectural template the Annual reuses. |
 | (earlier, prod) | Weekly SS Certificates Report (report 1) — live. |
+| (uncommitted) | **Traceability design spec** — approved, still **untracked on disk**. |
 
-**Annual = spec-complete + plan-complete, NO app code yet** → next is execution (Task 1). Traceability
-= spec-complete, plan-pending.
+**Annual = BUILT (all 7 tasks, final review READY TO MERGE) on `main`, UNPUSHED.** 322/322 vitest green,
+tsc clean. Traceability = spec-complete, plan-pending. New files: `src/lib/reports/annual-data.ts`
+(+`.test.ts`), `src/components/pdf/reports/annual-performance-report.tsx`,
+`src/lib/reports/annual-generator.ts`, `src/app/api/reports/annual/route.ts` + `send/route.ts`;
+modified `src/lib/reports/biweekly-data.ts`, `src/components/reports/preview-report-modal.tsx`,
+`send-report-modal.tsx`, `src/app/dashboard/reports/page.tsx`.
+
+**Deferred Minors from final review (none block merge):** (a) BreakdownBlock colors <70% approval red
+(consistent w/ Sankey legend); (b) `showSankey=false` test asserts only `typeof boolean` — worth
+tightening to `.toBe(false)` + a true case; (c) startDate/endDate passed-but-ignored to modal for
+annual; (d) byOrigin/byLab volume label can blend PSS `bag_count` into "bags" (cosmetic; %rate is
+count-based + correct); (e) dead `is_roaster`/`sankey_type` on the data shape.
 
 ### Annual plan task list (execute in order, one subagent each)
 1. Export `groupBy` + `scorecardFromExporters` from `biweekly-data.ts` (additive).
