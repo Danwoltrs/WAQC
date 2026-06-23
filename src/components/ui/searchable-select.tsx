@@ -21,6 +21,10 @@ import {
 export interface SearchableSelectOption {
   value: string
   label: string
+  // Extra terms the search should match without cluttering the visible label
+  // (e.g. certificate/contract numbers, alternate names). cmdk matches the
+  // label plus these keywords.
+  keywords?: string[]
 }
 
 interface SearchableSelectProps {
@@ -90,6 +94,7 @@ export function SearchableSelect({
                 <CommandItem
                   key={option.value}
                   value={option.label}
+                  keywords={option.keywords}
                   onSelect={() => {
                     onValueChange(option.value === value ? '' : option.value)
                     setOpen(false)
