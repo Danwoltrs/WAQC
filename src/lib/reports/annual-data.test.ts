@@ -3,6 +3,7 @@ import {
   buildMonthlySeries,
   computeHero,
   buildAnnualAggregates,
+  toAnnualRow,
 } from './annual-data'
 import type { BiweeklyRow } from './biweekly-data'
 
@@ -110,5 +111,30 @@ describe('buildAnnualAggregates', () => {
     const thin = [row({ is_rejected: false, bags: 100, exporter_name: 'Comexim', importer_name: null })]
     const agg = buildAnnualAggregates([], thin, { sankeyType: 'importer', clientDisplay: 'Test Co' })
     expect(typeof agg.showSankey).toBe('boolean')
+  })
+})
+
+describe('toAnnualRow', () => {
+  it('carries origin, region (micro_origin), lab name, and violations', () => {
+    const raw = {
+      certificate_number: 'BR-1/25',
+      created_at: '2025-06-01T00:00:00Z',
+      is_rejected: false,
+      compliance_violations: ['moisture'],
+      sample: {
+        id: 's1', sample_type: 'ss', client_id: 'c1',
+        origin: 'Brazil', micro_origin: 'Cerrado',
+        bag_count: 320, equivalent_60kg_bags: 320,
+        exporter: { name: 'Comexim', fantasy_name: null },
+        seller: { name: 'Comexim', fantasy_name: null },
+        importer: { name: 'Imp A', fantasy_name: null },
+        roaster: null,
+      },
+    } as any
+    const r = toAnnualRow(raw, { sankeyType: 'importer', clientDisplay: 'Test Co' }, 'Santos')
+    expect(r.origin).toBe('Brazil')
+    expect(r.region).toBe('Cerrado')
+    expect(r.laboratory_name).toBe('Santos')
+    expect((r as any)._violations).toEqual(['moisture'])
   })
 })

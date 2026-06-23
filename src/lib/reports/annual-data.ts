@@ -147,3 +147,99 @@ export function buildAnnualAggregates(
     showSankey: sankeyColumns.length > 2,
   }
 }
+
+/** Map a raw cert row → an AnnualRow, carrying region, origin, lab name, violations. */
+export function toAnnualRow(
+  c: RawCertSampleRow,
+  ctx: { sankeyType: ClientSankeyType; clientDisplay: string },
+  labName: string | null,
+): AnnualRow {
+  const base = mapCertRowToReportRow(c, ctx)
+  const enriched = base as AnnualRow & { _violations?: string[]; created_at?: string }
+  enriched.region = c.sample?.micro_origin ?? null
+  enriched.origin = c.sample?.origin ?? null
+  enriched.laboratory_name = labName
+  enriched.created_at = (c as any).created_at
+  enriched._violations = (c as any).compliance_violations ?? []
+  return enriched
+}
+
+export async function getAnnualPerformanceReportData(
+  supabase: SupabaseClient,
+  params: { clientId: string; year: number },
+): Promise<AnnualPerformanceReportData | null> {
+  const { clientId, year } = params
+  const startDate = `${year}-01-01T00:00:00.000Z`
+  const endDate = `${year + 1}-01-01T00:00:00.000Z`
+
+  const { data: client, error: clientError } = await (supabase as any)
+    .from('companies')
+    .select('id, name, fantasy_name, logo_url, company_types, trading_roles')
+    .eq('id', clientId)
+    .single()
+  if (clientError || !client) {
+    console.error('[annual-data] client not found:', clientId, clientError)
+    return null
+  }
+  const companyTypes: string[] = client.company_types ?? []
+  const tradingRoles: string[] = client.trading_roles ?? []
+  const clientIsRoaster = companyTypes.some(t => typeof t === 'string' && t.toLowerCase() === 'roaster')
+  const clientIsImporter = tradingRoles.includes('buyer')
+  const clientDisplay = client.fantasy_name || client.name
+  const sankeyType: ClientSankeyType = clientIsImporter ? 'importer' : clientIsRoaster ? 'roaster' : 'final_buyer'
+
+  // Lab id → name lookup (small table; load once). Cross-lab is intentional —
+  // we DO NOT filter by laboratory_id.
+  const { data: labs } = await (supabase as any).from('laboratories').select('id, name')
+  const labNameById = new Map<string, string>((labs ?? []).map((l: any) => [l.id, l.name]))
+
+  // Same query shape as the Bi-Weekly, plus sample.laboratory_id. NO lab/origin filter.
+  const { data: certs, error: certsError } = await supabase
+    .from('certificates')
+    .select(`
+      certificate_number,
+      created_at,
+      is_rejected,
+      compliance_violations,
+      sample:samples!certificates_sample_id_fkey(
+        id, sample_type, client_id, origin, micro_origin, laboratory_id, container_nr, ico_number,
+        bag_count, equivalent_60kg_bags, bags_quantity_mt, buyer_contract_nr,
+        exporter:companies!samples_exporter_id_fkey(name,fantasy_name),
+        seller:companies!samples_seller_id_fkey(name,fantasy_name),
+        importer:companies!samples_importer_id_fkey(name,fantasy_name),
+        roaster:companies!samples_roaster_id_fkey(name,fantasy_name)
+      )
+    `)
+    .is('sample_contract_id', null)
+    .gte('created_at', startDate)
+    .lt('created_at', endDate)
+    .order('created_at', { ascending: true })
+
+  if (certsError) {
+    console.error('[annual-data] certificates query failed:', certsError)
+    return null
+  }
+
+  const forClient = (certs || []).filter((c: any) => c.sample && c.sample.client_id === clientId)
+  const shape = (c: any) =>
+    toAnnualRow(c as RawCertSampleRow, { sankeyType, clientDisplay }, labNameById.get(c.sample.laboratory_id) ?? null)
+  const pssRows = forClient.filter((c: any) => c.sample.sample_type === 'pss').map(shape)
+  const ssRows = forClient.filter((c: any) => c.sample.sample_type === 'ss').map(shape)
+
+  // Dominant origin across both buckets (header flag).
+  const originCounts = new Map<string, number>()
+  for (const c of forClient as any[]) {
+    const o = c.sample?.origin
+    if (o) originCounts.set(o, (originCounts.get(o) ?? 0) + 1)
+  }
+  const origin = [...originCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null
+
+  const agg = buildAnnualAggregates(pssRows, ssRows, { sankeyType, clientDisplay })
+
+  return {
+    client: { id: client.id, name: clientDisplay, logo_url: client.logo_url ?? null, is_roaster: clientIsRoaster, sankey_type: sankeyType },
+    period: { year, issued_at: new Date().toISOString() },
+    origin,
+    agg,
+  }
+}
