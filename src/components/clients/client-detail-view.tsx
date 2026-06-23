@@ -22,6 +22,7 @@ import {
 import { format } from 'date-fns'
 import { useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import { ClientInviteDialog } from '@/components/portal/client-invite-dialog'
 import { ClientQualityManager } from './client-quality-manager'
 import { ClientMetricsTab } from './client-metrics-tab'
 import { QcConfigPanel } from './qc-config-panel'
@@ -668,6 +669,7 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
             >
               {client.is_active ? 'Active' : 'Inactive'}
             </span>
+            <ClientInviteDialog companyId={client.id} companyName={displayName} />
             <Button
               variant="outline"
               size="sm"
