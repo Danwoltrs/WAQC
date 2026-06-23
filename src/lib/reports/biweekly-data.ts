@@ -82,7 +82,7 @@ function emptyGroup(name: string): GroupPerf {
   return { name, approvedCount: 0, rejectedCount: 0, approvedBags: 0, rejectedBags: 0, rejectionRate: 0 }
 }
 
-function groupBy(
+export function groupBy(
   rows: BiweeklyRow[],
   keyOf: (r: BiweeklyRow) => string | null,
 ): GroupPerf[] {
@@ -180,7 +180,7 @@ function toBiweeklyRow(
   return enriched
 }
 
-function scorecardFromExporters(perf: GroupPerf[]): SupplierScorecardRow[] {
+export function scorecardFromExporters(perf: GroupPerf[]): SupplierScorecardRow[] {
   return perf.map(g => {
     const total = g.approvedCount + g.rejectedCount
     return {
