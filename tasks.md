@@ -1,7 +1,7 @@
 # Wolthers Coffee QC System - Development Tasks
 
 **Domain:** qc.wolthers.com
-**Last Updated:** October 7, 2025
+**Last Updated:** June 22, 2026
 
 ## Overview
 Comprehensive task tracking for the Wolthers Coffee Quality Control System development. Tasks are organized by feature area with priority levels and completion status.
@@ -341,10 +341,19 @@ Comprehensive task tracking for the Wolthers Coffee Quality Control System devel
 
 ### 10.5 Final Buyer Dashboards [P2]
 - [ ] 10.5.1 Supply chain visibility
-- [ ] 10.5.2 Sankey chart implementation
-- [ ] 10.5.3 Traceability views
-- [ ] 10.5.4 Aggregate quality reports
+- [x] 10.5.2 Sankey chart implementation (exporter→importer→roaster/final-buyer; in Bi-Weekly + Annual reports)
+- [ ] 10.5.3 Traceability views (design approved — Dunkin QR container traceability spec, not yet built)
+- [x] 10.5.4 Aggregate quality reports (Annual Quality Performance Review)
 - [ ] 10.5.5 Supplier performance
+
+### 10.6 Client Reporting Suite [P1] ✅ COMPLETE (June 2026)
+Per-QC-client PDF reports, emailable via Microsoft Graph (house CC enforced server-side), recipients from `qc_certificates`-tagged contacts. All three live in prod.
+- [x] 10.6.1 Weekly SS Certificates report (all approved SS for the week)
+- [x] 10.6.2 Bi-Weekly Performance report (PSS + SS, approved + rejected, rejection reasons, per-importer/exporter/region, conditional Sankey)
+- [x] 10.6.3 Annual Quality Performance Review (cross-lab/cross-origin year report; hero numbers, PSS/SS per-exporter with TOTAL GERAL, top rejection reasons, importer/seller/exporter/origin/lab breakdowns, 12-month trend, full-page landscape whole-year Sankey; Scandinavian style)
+- [x] 10.6.4 Reports dashboard (`/dashboard/reports`) — 3 cards, client picker, per-report period selectors, in-browser PDF preview + send modal
+- [ ] 10.6.5 Report-route security hardening (auth gate on `client_id` + restrict recipients to allowlist + allowlist logo host) — OPEN decision across Weekly/Bi-Weekly/Annual; currently shipped at feature-parity with known inherited findings
+- [ ] 10.6.6 Year-over-year deltas on the Annual report (deferred to v2)
 
 ---
 
