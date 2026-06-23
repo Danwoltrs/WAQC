@@ -5,15 +5,14 @@
 > carries **two ready-to-plan workstreams** the user asked to bundle: (1) the **Annual Performance
 > Report** and (2) the **QR container-traceability after shipment** (Dunkin chain-of-custody).
 
-**Resume point:** The Annual report spec is **approved-in-conversation and committed** (`2aec164`).
-The single next action is to **invoke `superpowers:writing-plans` to turn
-[../specs/2026-06-22-annual-performance-report-design.md](../specs/2026-06-22-annual-performance-report-design.md)
-into an implementation plan**, then execute it. (Optional courtesy first: ask the user for a final
-read of the spec — the brainstorm reached the "user review gate" but the user pivoted to this handoff
-before giving the explicit "looks good, write the plan" sign-off.) The **traceability** workstream
-(spec [../specs/2026-06-22-dunkin-container-traceability-design.md](../specs/2026-06-22-dunkin-container-traceability-design.md))
-is a **separate, parallel** job — also approved, also ready for its own `writing-plans` pass — do it
-after the Annual unless the user reprioritizes.
+**Resume point:** The Annual report **spec AND implementation plan are both written and committed**.
+The single next action is to **EXECUTE the plan via `superpowers:subagent-driven-development`** —
+the user explicitly chose subagent-driven execution. Start at **Task 1** of
+[../plans/2026-06-22-annual-performance-report.md](../plans/2026-06-22-annual-performance-report.md)
+(7 TDD tasks, one fresh subagent per task, two-stage review between tasks). The **traceability**
+workstream (spec [../specs/2026-06-22-dunkin-container-traceability-design.md](../specs/2026-06-22-dunkin-container-traceability-design.md))
+is a **separate, parallel** job — approved, still needs its own `writing-plans` pass — do it after
+the Annual unless the user reprioritizes.
 
 ---
 
@@ -45,10 +44,11 @@ Surfaced to Dunkin as a live per-container timeline tracing back to the WAQC cer
   (nested `wolthers-app/.git`, outer `~/.git` for docs) describes the **other** project and does
   **not** apply here. In WAQC, `src/` + `docs/` are one repo; tests run via **`npx vitest run`**;
   HEAD auto-deploys to Vercel prod. Commit spec/plan/code all to **this** repo.
-- **Branch `main`**, HEAD `2aec164`.
-- **`2aec164` (the Annual spec) is committed locally and is UNPUSHED** (`git log --oneline @{u}..`
-  shows it). It does NOT auto-deploy until pushed; docs-only, so pushing is harmless but **only push
-  when the user asks** (project rule: trunk-based on main, push directly but only when asked).
+- **Branch `main`**, HEAD `21b77a3`.
+- **Three Annual docs commits are local + UNPUSHED** (`git log --oneline @{u}..` shows them):
+  `21b77a3` (plan), `8a64254` (Sankey add + handoff sync), `2aec164` (spec). All docs-only — no app
+  code yet, so nothing deploys. **Only push when the user asks** (project rule: trunk-based on main,
+  push directly but only when asked).
 - **Working tree — untracked, NOT this Annual work:**
   - `docs/superpowers/specs/2026-06-22-dunkin-container-traceability-design.md` — **the traceability
     spec (workstream 2). Approved design, but still UNTRACKED.** Offer to commit it.
@@ -64,11 +64,23 @@ Surfaced to Dunkin as a live per-container timeline tracing back to the WAQC cer
 | SHA | What |
 |---|---|
 | `2aec164` | **Annual report design spec** — committed (unpushed). Full per-client / cross-lab / cross-origin design. |
+| `8a64254` | Added the whole-year **landscape Sankey** to the Annual spec + synced this handoff. |
+| `21b77a3` | **Annual report implementation plan** — committed (unpushed). 7 TDD tasks; self-reviewed for spec coverage / placeholders / type consistency. |
 | (uncommitted) | **Traceability design spec** — written + approved, **untracked on disk**. |
 | `406e4e7..95e9acc` (prod) | Bi-Weekly Performance Report (report 2) — live, the architectural template the Annual reuses. |
 | (earlier, prod) | Weekly SS Certificates Report (report 1) — live. |
 
-**No app code written for either workstream.** Both are spec-complete, plan-pending.
+**Annual = spec-complete + plan-complete, NO app code yet** → next is execution (Task 1). Traceability
+= spec-complete, plan-pending.
+
+### Annual plan task list (execute in order, one subagent each)
+1. Export `groupBy` + `scorecardFromExporters` from `biweekly-data.ts` (additive).
+2. Annual data layer — types + pure aggregation (hero, monthly series, seller/origin/lab, year Sankey) + unit tests.
+3. Annual data fetch — `getAnnualPerformanceReportData` (per-client, cross-lab, cross-origin year query + lab-name lookup).
+4. Bespoke Scandinavian `@react-pdf` document — 11 pages, page 10 landscape Sankey.
+5. Generator + GET/send routes (`report_type='annual'`).
+6. UI — `ANNUAL_KIND` + 3rd dashboard card with year picker.
+7. End-to-end smoke + spreadsheet cross-check (landscape verify + `TOTAL GERAL` math).
 
 ## Locked decisions — Annual report (do NOT relitigate)
 
@@ -162,10 +174,16 @@ batches + blend convergence + roast/NDPC events + Dunkin notifications). Phase 3
 
 ## Next / suggested next-up
 
-1. **(Optional) Confirm the Annual spec with the user**, then **`writing-plans` → plan → execute the Annual report.** Highest value; spec is done and committed.
-2. **Decide the security-fix question** (bundle the report-route auth pass into the Annual plan, or defer). User's call — surfaced, not yet answered.
-3. **Commit the traceability spec** (`docs(spec): Dunkin container traceability`), then **`writing-plans` for traceability Phase 1** (green leg). Separate job; do after the Annual unless reprioritized.
-4. **(Housekeeping)** Push `2aec164` when the user okays it.
+1. **EXECUTE the Annual plan via `superpowers:subagent-driven-development`** — start at Task 1, fresh
+   subagent per task, two-stage review between tasks. This is the resume point. The plan is
+   self-contained (exact file paths + full code in every step); follow it task-by-task. Run
+   `npx vitest run` + `npx tsc --noEmit` as each task's gate.
+2. **Decide the security-fix question** (bundle the report-route auth pass into the Annual route, or
+   defer). User's call — surfaced, not yet answered. The plan does NOT include a security fix; the new
+   Annual route in Task 5 inherits the existing IDOR/mail-relay/SSRF pattern by design.
+3. **Commit the traceability spec** (`docs(spec): Dunkin container traceability`), then `writing-plans`
+   for traceability Phase 1 (green leg). Separate job; after the Annual unless reprioritized.
+4. **(Housekeeping)** Push `2aec164`, `8a64254`, `21b77a3` (+ any execution commits) when the user okays it.
 
 ## Things the user said that should shape future work
 
