@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { cookies } from 'next/headers'
 import { NextRequest, NextResponse } from 'next/server'
 import type { Database } from '@/lib/supabase'
+import { resolveLandingPath } from '@/lib/portal/portal-auth'
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
@@ -97,8 +98,21 @@ export async function GET(request: NextRequest) {
 
     console.log('Setting', cookiesToSet.length, 'cookies on response')
 
+    // Compute destination: when next is the default '/', route by role
+    let destination = next
+    if (next === '/' && user) {
+      const supabaseAdmin = createClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.SUPABASE_SERVICE_ROLE_KEY!,
+        { auth: { autoRefreshToken: false, persistSession: false } }
+      )
+      const { data: profile } = await supabaseAdmin
+        .from('profiles').select('qc_role').eq('id', user.id).maybeSingle()
+      destination = resolveLandingPath((profile as any)?.qc_role)
+    }
+
     // Create redirect response AFTER exchanging code
-    const response = NextResponse.redirect(`${requestUrl.origin}${next}`)
+    const response = NextResponse.redirect(`${requestUrl.origin}${destination}`)
 
     // Set all collected cookies on the response
     for (const cookie of cookiesToSet) {
@@ -225,6 +239,7 @@ async function ensureUserProfile(user: { id: string; email?: string; user_metada
           is_q_grader: invitation.is_q_grader ?? false,
           is_global_admin: invitation.qc_role === 'global_admin' || invitation.qc_role === 'global_quality_admin',
           laboratory_id: invitation.laboratory_id || defaultLab?.id || null,
+          client_id: invitation.company_id || null,
         }, {
           onConflict: 'id',
           ignoreDuplicates: true // Don't error on conflict, just skip
