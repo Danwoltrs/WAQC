@@ -24,6 +24,7 @@ import {
   PreviewReportModal,
   WEEKLY_SS_KIND,
   BIWEEKLY_KIND,
+  ANNUAL_KIND,
   type ReportKind,
 } from '@/components/reports/preview-report-modal'
 import { firstHalf, secondHalf, previousHalfMonth } from '@/lib/reports/periods'
@@ -46,6 +47,8 @@ export default function ReportsPage() {
   const [loadingClients, setLoadingClients] = useState(true)
   const [previewOpen, setPreviewOpen] = useState(false)
   const [activeKind, setActiveKind] = useState<ReportKind | null>(null)
+  const [annualYear, setAnnualYear] = useState<number>(new Date().getFullYear() - 1)
+  const [activeAnnualYear, setActiveAnnualYear] = useState<number>(new Date().getFullYear() - 1)
 
   useEffect(() => {
     let cancelled = false
@@ -160,7 +163,7 @@ export default function ReportsPage() {
         </Card>
 
         {/* Report cards — each has its own date range + preview action. */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           {/* Weekly SS Certificates */}
           <Card className="rounded-[20px]">
             <CardHeader>
@@ -263,6 +266,57 @@ export default function ReportsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Annual Performance Review */}
+          <Card className="rounded-[20px]">
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-[12px] bg-[#556b2f]/10 flex items-center justify-center">
+                  <FileText className="w-4 h-4 text-[#556b2f]" />
+                </div>
+                <div>
+                  <CardTitle className="text-sm">Annual Performance Review</CardTitle>
+                  <CardDescription className="text-xs">
+                    Full-year supplier performance, all labs and origins.
+                  </CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-5">
+              <div className="flex items-center gap-3">
+                <Label className="text-xs text-muted-foreground">Year</Label>
+                <select
+                  className="border rounded-md px-2 py-1 text-sm bg-background"
+                  value={annualYear}
+                  onChange={(e) => setAnnualYear(Number(e.target.value))}
+                >
+                  {[0, 1, 2, 3, 4].map((d) => {
+                    const y = new Date().getFullYear() - d
+                    return <option key={y} value={y}>{y}</option>
+                  })}
+                </select>
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-border/50">
+                <Button
+                  onClick={() => {
+                    if (!clientId) {
+                      toast({ title: 'Pick a client', variant: 'destructive' })
+                      return
+                    }
+                    setActiveKind(ANNUAL_KIND)
+                    setActiveAnnualYear(annualYear)
+                    setPreviewOpen(true)
+                  }}
+                  disabled={!clientId}
+                  className="bg-[#556b2f] hover:bg-[#556b2f]/90"
+                >
+                  <Eye className="w-4 h-4 mr-2" />
+                  Preview report
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
 
@@ -276,6 +330,7 @@ export default function ReportsPage() {
           clientName={clientName}
           startDate={activeKind.reportType === 'biweekly' ? bwStart : startDate}
           endDate={activeKind.reportType === 'biweekly' ? bwEnd : endDate}
+          year={activeKind.reportType === 'annual' ? activeAnnualYear : undefined}
         />
       ) : null}
     </MainLayout>

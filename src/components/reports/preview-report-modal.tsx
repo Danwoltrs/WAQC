@@ -24,7 +24,7 @@ import { useToast } from '@/hooks/use-toast'
 import { SendReportModal } from './send-report-modal'
 
 export interface ReportKind {
-  reportType: 'weekly_ss' | 'biweekly'
+  reportType: 'weekly_ss' | 'biweekly' | 'annual'
   previewEndpoint: string  // GET, streams the PDF
   sendEndpoint: string     // POST, emails it
   label: string            // human label for titles/subjects
@@ -44,6 +44,13 @@ export const BIWEEKLY_KIND: ReportKind = {
   label: 'Bi-Weekly Performance',
 }
 
+export const ANNUAL_KIND: ReportKind = {
+  reportType: 'annual',
+  previewEndpoint: '/api/reports/annual',
+  sendEndpoint: '/api/reports/annual/send',
+  label: 'Annual Performance Review',
+}
+
 interface PreviewReportModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
@@ -52,6 +59,8 @@ interface PreviewReportModalProps {
   clientName: string
   startDate: string
   endDate: string
+  /** Only used when kind.reportType === 'annual' */
+  year?: number
 }
 
 export function PreviewReportModal({
@@ -62,6 +71,7 @@ export function PreviewReportModal({
   clientName,
   startDate,
   endDate,
+  year,
 }: PreviewReportModalProps) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
@@ -75,7 +85,11 @@ export function PreviewReportModal({
   // param change so editing the form and re-opening picks up new data.
   useEffect(() => {
     if (!open) return
-    if (!clientId || !startDate || !endDate) return
+    if (kind.reportType === 'annual') {
+      if (!clientId || !year) return
+    } else {
+      if (!clientId || !startDate || !endDate) return
+    }
 
     let cancelled = false
     let lastObjectUrl: string | null = null
@@ -86,12 +100,14 @@ export function PreviewReportModal({
       setPdfUrl(null)
       setPdfBlob(null)
       try {
-        const params = new URLSearchParams({
-          client_id: clientId,
-          start_date: new Date(startDate).toISOString(),
-          // End is exclusive — include the selected end day in the window.
-          end_date: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
-        })
+        const params = kind.reportType === 'annual'
+          ? new URLSearchParams({ client_id: clientId, year: String(year) })
+          : new URLSearchParams({
+              client_id: clientId,
+              start_date: new Date(startDate).toISOString(),
+              // End is exclusive — include the selected end day in the window.
+              end_date: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
+            })
         const res = await fetch(`${kind.previewEndpoint}?${params.toString()}`)
         if (!res.ok) {
           const data = await res.json().catch(() => ({} as any))
@@ -120,7 +136,7 @@ export function PreviewReportModal({
       cancelled = true
       if (lastObjectUrl) URL.revokeObjectURL(lastObjectUrl)
     }
-  }, [open, kind.previewEndpoint, clientId, startDate, endDate])
+  }, [open, kind.previewEndpoint, kind.reportType, clientId, startDate, endDate, year])
 
   // Belt-and-suspenders: also revoke the previous URL when state changes.
   useEffect(() => {
@@ -157,7 +173,9 @@ export function PreviewReportModal({
               <DialogTitle className="text-sm">
                 {kind.label} · {clientName}
               </DialogTitle>
-              <span className="text-xs text-muted-foreground">{startDate} → {endDate}</span>
+              <span className="text-xs text-muted-foreground">
+                {kind.reportType === 'annual' ? String(year) : `${startDate} → ${endDate}`}
+              </span>
             </div>
             <div className="flex items-center gap-2">
               <Button
@@ -232,6 +250,7 @@ export function PreviewReportModal({
         clientName={clientName}
         startDate={startDate}
         endDate={endDate}
+        year={year}
         onSent={() => {
           // After a successful send the user is usually done — close the
           // whole preview too so they're back at the form.

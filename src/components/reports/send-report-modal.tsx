@@ -43,6 +43,8 @@ interface SendReportModalProps {
   clientName: string
   startDate: string  // YYYY-MM-DD
   endDate: string    // YYYY-MM-DD
+  /** Only used when kind.reportType === 'annual' */
+  year?: number
   /** Called after a successful send so the parent can chain UI updates
    *  (e.g. close the parent preview modal too). */
   onSent?: () => void
@@ -70,15 +72,19 @@ export function SendReportModal({
   clientName,
   startDate,
   endDate,
+  year,
   onSent,
 }: SendReportModalProps) {
   const { toast } = useToast()
 
   const defaultSubject = useMemo(() => {
+    if (kind.reportType === 'annual') {
+      return `${clientName} · ${kind.label} · ${year ?? ''}`
+    }
     const start = formatDateLabel(startDate)
     const end = formatDateLabel(endDate)
     return `${clientName} · ${kind.label} · ${start} – ${end}`
-  }, [clientName, kind.label, startDate, endDate])
+  }, [clientName, kind.label, kind.reportType, startDate, endDate, year])
 
   const [toRaw, setToRaw] = useState('')
   const [ccRaw, setCcRaw] = useState('')
@@ -135,16 +141,21 @@ export function SendReportModal({
     if (!canSend) return
     setSending(true)
     try {
-      const startIso = new Date(startDate).toISOString()
-      const endIso = new Date(new Date(endDate).getTime() + 86400000).toISOString()
+      const basePayload =
+        kind.reportType === 'annual'
+          ? { client_id: clientId, year }
+          : {
+              client_id: clientId,
+              start_date: new Date(startDate).toISOString(),
+              // End is exclusive — include the selected end day in the window.
+              end_date: new Date(new Date(endDate).getTime() + 86400000).toISOString(),
+            }
 
       const res = await fetch(kind.sendEndpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          client_id: clientId,
-          start_date: startIso,
-          end_date: endIso,
+          ...basePayload,
           to: toEmails,
           cc: ccEmails.length > 0 ? ccEmails : undefined,
           bcc: bccEmails.length > 0 ? bccEmails : undefined,
