@@ -419,6 +419,10 @@ export async function POST(request: NextRequest) {
         status: body.status || 'received',
         storage_position: body.storage_position || null,
         wolthers_contract_nr: body.wolthers_contract_nr || null,
+        // FK to the linked sys contract (set when intake links one via search).
+        // More robust than wolthers_contract_nr alone — contract numbers aren't
+        // unique — and lets the approval write-back resolve the contract by id.
+        contract_id: body.contract_id || null,
         seller_contract_nr: body.seller_contract_nr || null,
         shipper_contract_nr: body.shipper_contract_nr || null,
         exporter_contract_nr: body.exporter_contract_nr || null,

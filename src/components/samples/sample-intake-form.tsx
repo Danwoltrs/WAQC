@@ -1159,13 +1159,27 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
                         />
                       )}
                     </div>
-                    {formData.sample_type !== 'ss' && (
-                      <ContractSearchStep
-                        formData={formData}
-                        applyContract={applyContractPrefill}
-                        unlinkContract={unlinkContract}
-                        onSkip={() => setCurrentStep(2)}
-                      />
+                    {/* Contract search: the only path for PSS/Type, and the fallback
+                        for an SS whose PSS isn't in WAQC (legacy). Hidden once an SS
+                        has linked a WAQC PSS — that already carries the contract. */}
+                    {(formData.sample_type !== 'ss' || !formData.linked_pss_sample_id) && (
+                      <>
+                        {formData.sample_type === 'ss' && (
+                          <div className="flex items-center gap-3 pt-1">
+                            <div className="h-px flex-1 bg-border" />
+                            <span className="text-xs text-muted-foreground">
+                              or, if the PSS isn&apos;t in our system, find the contract
+                            </span>
+                            <div className="h-px flex-1 bg-border" />
+                          </div>
+                        )}
+                        <ContractSearchStep
+                          formData={formData}
+                          applyContract={applyContractPrefill}
+                          unlinkContract={unlinkContract}
+                          onSkip={() => setCurrentStep(2)}
+                        />
+                      </>
                     )}
                   </div>
                 )

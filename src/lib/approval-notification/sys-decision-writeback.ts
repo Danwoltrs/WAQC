@@ -23,7 +23,7 @@ export async function writeDecisionToShipmentSamples(
   try {
     const { data: sample } = await admin
       .from('samples')
-      .select('id, tracking_number, status, contract_id, wolthers_contract_nr')
+      .select('id, tracking_number, status, contract_id, wolthers_contract_nr, sample_type')
       .eq('id', sampleId)
       .single()
     const s = sample as {
@@ -31,6 +31,7 @@ export async function writeDecisionToShipmentSamples(
       status: string | null
       contract_id: string | null
       wolthers_contract_nr: string | null
+      sample_type: string | null
     } | null
     if (!s || (s.status !== 'approved' && s.status !== 'rejected') || !s.tracking_number) return
 
@@ -54,6 +55,7 @@ export async function writeDecisionToShipmentSamples(
       certificateUrl: null,
       comments,
       initials,
+      sampleType: s.sample_type ?? 'pss',
     })
   } catch (e) {
     console.error('[sys-decision-writeback] non-fatal:', e)

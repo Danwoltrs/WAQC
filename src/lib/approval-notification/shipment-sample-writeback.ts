@@ -9,23 +9,30 @@ export interface ShipmentSampleRow {
 }
 
 /**
- * Confident match only. Returns the row id to UPDATE, or null (→ the caller
- * INSERTs a correctly-keyed row). We never pick among multiple/ambiguous rows:
- * shipment_samples is shared with sys, so overwriting an arbitrary peer would
- * mis-attribute another sample's approval.
- *   - exact `waqc_ref` === our ref → that row.
- *   - else a SINGLE unclaimed PSS placeholder (waqc_ref empty) → claim it.
- *   - else null (ambiguous or none — insert instead).
+ * Confident match only, scoped to the decision's own sample type. Returns the
+ * row id to UPDATE, or null (→ the caller INSERTs a correctly-keyed row). We
+ * never pick among multiple/ambiguous rows, and never cross sample types:
+ * shipment_samples is shared with sys, so overwriting an arbitrary peer (or the
+ * contract's PSS row when this is an SS decision) would mis-attribute another
+ * sample's approval.
+ *   - exact `waqc_ref` === our ref among rows of `targetType` → that row.
+ *   - else (PSS only) a SINGLE unclaimed PSS placeholder (waqc_ref empty) → claim it.
+ *   - else null (ambiguous, wrong type, or none — insert a fresh row instead).
+ *
+ * SS decisions get no placeholder fallback: sys carries no SS placeholders
+ * (every legacy row is a PSS), so an SS approval either updates its own prior
+ * SS row or inserts a brand-new distinct SS row — it must not touch the PSS.
  */
 export function pickShipmentSampleMatch(
   rows: ShipmentSampleRow[],
   waqcRef: string,
+  targetType: string = 'pss',
 ): string | null {
-  const exact = rows.find((r) => r.waqc_ref === waqcRef)
+  const sameType = rows.filter((r) => (r.sample_type ?? 'pss') === targetType)
+  const exact = sameType.find((r) => r.waqc_ref === waqcRef)
   if (exact) return exact.id
-  const unclaimed = rows.filter(
-    (r) => (r.sample_type ?? 'pss') === 'pss' && !r.waqc_ref,
-  )
+  if (targetType !== 'pss') return null
+  const unclaimed = sameType.filter((r) => !r.waqc_ref)
   return unclaimed.length === 1 ? unclaimed[0].id : null
 }
 
@@ -35,10 +42,14 @@ export interface WritebackUpdateOpts {
   today: string
   certificateUrl: string | null
   waqcRef: string
+  /** When set (e.g. 'qc' for an SS approval), stamps the row's source so sys
+   *  shows it as approved-in-QC. Omitted from the payload when undefined to
+   *  leave the existing PSS write-back behaviour untouched. */
+  source?: string
 }
 
 export function buildWritebackUpdate(opts: WritebackUpdateOpts) {
-  return {
+  const update: Record<string, unknown> = {
     status: opts.decision,
     approved_by: opts.userId,
     approved_date: opts.today,
@@ -47,16 +58,21 @@ export function buildWritebackUpdate(opts: WritebackUpdateOpts) {
     // keyed (idempotent on resend; a no-op when it already matched exactly).
     waqc_ref: opts.waqcRef,
   }
+  if (opts.source) update.source = opts.source
+  return update
 }
 
 export interface WritebackInsertOpts extends WritebackUpdateOpts {
   contractId: string
+  /** Row type to create — defaults to 'pss' to preserve legacy behaviour; an SS
+   *  approval passes 'ss' so a distinct shipment-sample row is created. */
+  sampleType?: string
 }
 
 export function buildWritebackInsert(opts: WritebackInsertOpts) {
-  return {
+  const insert: Record<string, unknown> = {
     contract_id: opts.contractId,
-    sample_type: 'pss',
+    sample_type: opts.sampleType ?? 'pss',
     waqc_ref: opts.waqcRef,
     status: opts.decision,
     approved_by: opts.userId,
@@ -64,6 +80,8 @@ export function buildWritebackInsert(opts: WritebackInsertOpts) {
     certificate_url: opts.certificateUrl,
     created_by: opts.userId,
   }
+  if (opts.source) insert.source = opts.source
+  return insert
 }
 
 /**
@@ -85,18 +103,30 @@ export async function applyShipmentSampleApproval(
     /** Approver initials (e.g. "AN"). Its presence on the row also drives the
      *  sys "approved-in-QC" marker. */
     initials?: string | null
+    /** WAQC sample type ('pss' | 'ss' | …). Defaults to 'pss'. An 'ss' decision
+     *  targets/creates a distinct SS row (never the contract's PSS) and stamps
+     *  source='qc'. */
+    sampleType?: string
   },
 ): Promise<string | null> {
   try {
+    const sampleType = args.sampleType ?? 'pss'
+    // An SS approval marks a distinct, QC-owned shipment-sample row.
+    const source = sampleType === 'ss' ? 'qc' : undefined
+
     const { data: rows } = await admin
       .from('shipment_samples')
       .select('id, waqc_ref, sample_type, created_at')
       .eq('contract_id', args.contractId)
-    const matchId = pickShipmentSampleMatch((rows ?? []) as ShipmentSampleRow[], args.waqcRef)
+    const matchId = pickShipmentSampleMatch(
+      (rows ?? []) as ShipmentSampleRow[],
+      args.waqcRef,
+      sampleType,
+    )
 
     // Don't clobber an existing certificate_url when the caller has none yet
     // (decision-time write-back precedes certificate generation/email send).
-    const update: Record<string, unknown> = buildWritebackUpdate(args)
+    const update: Record<string, unknown> = buildWritebackUpdate({ ...args, source })
     if (args.certificateUrl == null) delete update.certificate_url
 
     let rowId: string | null
@@ -108,11 +138,11 @@ export async function applyShipmentSampleApproval(
       rowId = matchId
     } else {
       console.warn(
-        `[approval] no confident shipment_samples match for contract ${args.contractId} (ref ${args.waqcRef}); inserting a new row`,
+        `[approval] no confident shipment_samples match for contract ${args.contractId} (ref ${args.waqcRef}, type ${sampleType}); inserting a new row`,
       )
       const { data: inserted } = await admin
         .from('shipment_samples')
-        .insert(buildWritebackInsert(args))
+        .insert(buildWritebackInsert({ ...args, sampleType, source }))
         .select('id')
         .single()
       rowId = (inserted as { id: string } | null)?.id ?? null

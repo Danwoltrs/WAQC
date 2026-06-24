@@ -42,6 +42,72 @@ describe('pickShipmentSampleMatch', () => {
   })
 })
 
+describe('pickShipmentSampleMatch — SS sample type', () => {
+  it('matches an existing SS row by exact waqc_ref, ignoring the PSS row', () => {
+    const rows = [
+      r({ id: 'pss', sample_type: 'pss', waqc_ref: 'OLD-PSS/26' }),
+      r({ id: 'ss', sample_type: 'ss', waqc_ref: 'SAN-00060/26' }),
+    ]
+    expect(pickShipmentSampleMatch(rows, 'SAN-00060/26', 'ss')).toBe('ss')
+  })
+  it('never claims a PSS placeholder for an SS decision (→ insert a new SS row)', () => {
+    const rows = [r({ id: 'pss', sample_type: 'pss', waqc_ref: null })]
+    expect(pickShipmentSampleMatch(rows, 'SAN-00060/26', 'ss')).toBeNull()
+  })
+  it('does not hijack a PSS row that happens to share the waqc_ref', () => {
+    const rows = [r({ id: 'pss', sample_type: 'pss', waqc_ref: 'SAN-00060/26' })]
+    expect(pickShipmentSampleMatch(rows, 'SAN-00060/26', 'ss')).toBeNull()
+  })
+  it('returns null when the contract has no SS row yet', () => {
+    const rows = [r({ id: 'pss', sample_type: 'pss', waqc_ref: 'X' })]
+    expect(pickShipmentSampleMatch(rows, 'SAN-00060/26', 'ss')).toBeNull()
+  })
+})
+
+describe('buildWritebackInsert / buildWritebackUpdate — SS marked QC', () => {
+  it('inserts a distinct ss row tagged source=qc', () => {
+    const p = buildWritebackInsert({
+      contractId: 'k1',
+      waqcRef: 'SAN-00060/26',
+      decision: 'approved',
+      userId: 'u1',
+      today: '2026-06-24',
+      certificateUrl: null,
+      sampleType: 'ss',
+      source: 'qc',
+    })
+    expect(p).toEqual({
+      contract_id: 'k1',
+      sample_type: 'ss',
+      source: 'qc',
+      waqc_ref: 'SAN-00060/26',
+      status: 'approved',
+      approved_by: 'u1',
+      approved_date: '2026-06-24',
+      certificate_url: null,
+      created_by: 'u1',
+    })
+  })
+  it('marks an existing row source=qc on update when provided', () => {
+    const p = buildWritebackUpdate({
+      decision: 'approved',
+      userId: 'u1',
+      today: '2026-06-24',
+      certificateUrl: null,
+      waqcRef: 'SAN-00060/26',
+      source: 'qc',
+    })
+    expect(p).toEqual({
+      status: 'approved',
+      approved_by: 'u1',
+      approved_date: '2026-06-24',
+      certificate_url: null,
+      waqc_ref: 'SAN-00060/26',
+      source: 'qc',
+    })
+  })
+})
+
 describe('buildWritebackUpdate / buildWritebackInsert', () => {
   it('builds an approved update payload', () => {
     const p = buildWritebackUpdate({
