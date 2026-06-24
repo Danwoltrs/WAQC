@@ -61,6 +61,7 @@ interface AggregatedScores {
     median: number
     stdDev: number
   }
+  cva_score?: number | null
   defects: {
     taints: string[]
     faults: string[]
@@ -181,7 +182,9 @@ export async function GET(request: NextRequest) {
     }
 
     // Build query
-    let query = supabase
+    // Cast to bypass stale generated types: cva_score / protocol exist in the DB
+    // (migration 20260602110001) but aren't yet in src/lib/database.types.ts.
+    let query = (supabase as any)
       .from('cupping_scores')
       .select(`
         id,
@@ -189,6 +192,8 @@ export async function GET(request: NextRequest) {
         scores,
         defects,
         created_at,
+        cva_score,
+        protocol,
         sample:samples!cupping_scores_sample_id_fkey(
           id,
           tracking_number
@@ -711,12 +716,26 @@ export async function GET(request: NextRequest) {
       return best
     })()
 
+    // Authoritative CVA 0–100 score (SCA-104), if this is a CVA-protocol cupping.
+    // Prefer the master cupper's verified score, else the highest available.
+    const cvaScoreValue: number | null = (() => {
+      const fromMaster = masterCupperId
+        ? ((scores.find((s: any) => s.cupper_id === masterCupperId) as any)?.cva_score)
+        : undefined
+      if (typeof fromMaster === 'number') return fromMaster
+      const vals = (scores as any[])
+        .map((s) => s.cva_score)
+        .filter((v): v is number => typeof v === 'number')
+      return vals.length ? Math.max(...vals) : null
+    })()
+
     const aggregated: AggregatedScores = {
       sample_id: sampleId || scores[0].sample?.id || '',
       sample_tracking_number: scores[0].sample?.tracking_number || 'Unknown',
       total_cuppers: scores.length,
       attributes: attributeStats,
       overall_score: overallStats,
+      cva_score: cvaScoreValue,
       defects: {
         taints: Array.from(allTaints),
         faults: Array.from(allFaults),
