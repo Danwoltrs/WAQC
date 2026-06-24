@@ -3,8 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, Send, X, Save } from 'lucide-react'
-import { ApprovalSendView } from '@/components/samples/approval-send-view'
+import { Loader2, X, Save } from 'lucide-react'
 import { useCertEditor } from './use-cert-editor'
 import { certTypeLabel } from './shared'
 import { InfoStripBand, DetailsEditPanel } from './info-strip'
@@ -48,14 +47,10 @@ export function CertificateEditOverlay({ open, sampleId, onOpenChange, onSaved }
   const { toast } = useToast()
   const ed = useCertEditor(sampleId, open)
   const [panel, setPanel] = useState<Panel>(null)
-  const [showSend, setShowSend] = useState(false)
 
   // Reset transient UI when the overlay opens for a new sample.
   useEffect(() => {
-    if (open) {
-      setPanel(null)
-      setShowSend(false)
-    }
+    if (open) setPanel(null)
   }, [open, sampleId])
 
   // Escape closes the top-most surface (panel first, then overlay).
@@ -63,13 +58,12 @@ export function CertificateEditOverlay({ open, sampleId, onOpenChange, onSaved }
     if (!open) return
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
-      if (showSend) setShowSend(false)
-      else if (panel) setPanel(null)
+      if (panel) setPanel(null)
       else onOpenChange(false)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [open, panel, showSend, onOpenChange])
+  }, [open, panel, onOpenChange])
 
   if (!open) return null
 
@@ -122,10 +116,6 @@ export function CertificateEditOverlay({ open, sampleId, onOpenChange, onSaved }
         </div>
         <div className="flex items-center gap-2">
           {dirty ? <span className="mr-1 text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span> : null}
-          <Button variant="outline" size="sm" onClick={() => setShowSend(true)} disabled={!sample}>
-            <Send className="mr-1.5 h-4 w-4" />
-            Send certificates
-          </Button>
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
             <X className="mr-1.5 h-4 w-4" />
             Cancel
@@ -246,10 +236,6 @@ export function CertificateEditOverlay({ open, sampleId, onOpenChange, onSaved }
               }}
             />
           )}
-
-          {sampleId ? (
-            <ApprovalSendView sampleId={sampleId} open={showSend} onClose={() => setShowSend(false)} />
-          ) : null}
         </>
       )}
     </div>
