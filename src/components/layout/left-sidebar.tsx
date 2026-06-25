@@ -28,12 +28,12 @@ import {
   UserPlus,
   Building2,
   Building,
-  Globe,
   Check,
   PanelLeftClose,
   PanelLeft,
   ChevronsLeftRight
 } from 'lucide-react'
+import { SidebarFooter } from './sidebar-footer'
 import { SampleTin } from '@/components/icons/sample-tin'
 import { CuppingBowl } from '@/components/icons/cupping-bowl'
 import { Grading } from '@/components/icons/grading'
@@ -205,9 +205,11 @@ interface LeftSidebarProps {
   onModeChange: (mode: SidebarMode) => void
   onHoverEnter?: () => void
   onHoverLeave?: () => void
+  unreadNotifications?: number
+  onNotificationsToggle?: () => void
 }
 
-export function LeftSidebar({ isExpanded, sidebarMode, onModeChange, onHoverEnter, onHoverLeave }: LeftSidebarProps) {
+export function LeftSidebar({ isExpanded, sidebarMode, onModeChange, onHoverEnter, onHoverLeave, unreadNotifications = 0, onNotificationsToggle }: LeftSidebarProps) {
   const pathname = usePathname()
   const { permissions, profile } = useAuth()
   const { openIntakeDialog } = useSampleIntake()
@@ -599,6 +601,18 @@ export function LeftSidebar({ isExpanded, sidebarMode, onModeChange, onHoverEnte
       onMouseLeave={sidebarMode === 'hover' ? handleMouseLeave : undefined}
     >
       <div className="flex flex-col h-full">
+        {/* Logo header */}
+        <Link href="/" className={cn('flex items-center border-b border-border h-16 hover:opacity-80 transition-opacity', isExpanded ? 'px-4 gap-3' : 'justify-center')}>
+          <img src="/images/logos/wolthers-logo-black.svg" alt="Wolthers" className="h-7 w-auto dark:hidden" />
+          <img src="/images/logos/wolthers-logo-off-white.svg" alt="Wolthers" className="h-7 w-auto hidden dark:block" />
+          {isExpanded && (
+            <>
+              <div className="h-6 w-px bg-border" />
+              <span className="text-xl font-bold text-foreground">QC</span>
+            </>
+          )}
+        </Link>
+
         {/* Navigation */}
         <nav className="flex-1 space-y-1 p-1 pt-4 overflow-y-auto overflow-x-hidden">
           {/* Main Navigation */}
@@ -622,6 +636,13 @@ export function LeftSidebar({ isExpanded, sidebarMode, onModeChange, onHoverEnte
           )}
         </nav>
 
+        {/* Relocated header controls */}
+        <SidebarFooter
+          isExpanded={isExpanded}
+          unreadNotifications={unreadNotifications}
+          onNotificationsToggle={() => onNotificationsToggle?.()}
+        />
+
         {/* Sidebar Mode Toggle */}
         <div className="border-t border-border p-1">
           <button
@@ -644,32 +665,6 @@ export function LeftSidebar({ isExpanded, sidebarMode, onModeChange, onHoverEnte
               </span>
             )}
           </button>
-        </div>
-
-        {/* Language Selector - Only visible on mobile */}
-        <div className="p-1 border-t border-border lg:hidden">
-          <div className="relative">
-            <button
-              className={cn(
-                'flex items-center text-sm font-medium rounded-xl transition-all w-full',
-                'text-muted-foreground hover:text-foreground hover:bg-accent/50',
-                isExpanded ? 'gap-3 px-3 py-2' : 'justify-center py-2'
-              )}
-            >
-              <div className={cn(
-                'flex items-center justify-center flex-shrink-0',
-                !isExpanded && 'w-14 h-8'
-              )}>
-                <Globe className="h-4 w-4" />
-              </div>
-              {isExpanded && (
-                <>
-                  <span className="truncate">Language</span>
-                  <span className="ml-auto text-xs bg-accent px-2 py-0.5 rounded">EN</span>
-                </>
-              )}
-            </button>
-          </div>
         </div>
       </div>
     </aside>
