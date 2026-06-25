@@ -38,7 +38,7 @@ export function InfoStripBand({
 }) {
   const bagCount = draftSample.bag_count ?? sample.bag_count ?? sample.bags
   const bagWeight = draftSample.bag_weight_kg ?? sample.bag_weight_kg
-  const isPSS = (sample.sample_type || '').toLowerCase() === 'pss'
+  const isPSS = ((draftSample.sample_type ?? sample.sample_type) || '').toLowerCase() === 'pss'
   const tiles: { label: string; value: React.ReactNode }[] = [
     { label: 'Wolthers ref', value: draftSample.wolthers_contract_nr || sample.wolthers_contract_nr || '—' },
     { label: 'Seller ref', value: draftSample.seller_contract_nr || sample.seller_contract_nr || '—' },
