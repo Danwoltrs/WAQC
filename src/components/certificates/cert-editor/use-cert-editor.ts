@@ -55,6 +55,18 @@ export interface CertSample {
   equivalent_60kg_bags?: number
   storage_position?: string
   client_id?: string
+  workflow_stage?: string
+  certificate_status?: string | null
+  certificate_created_at?: string | null
+  seller_contract_nr?: string
+  container_nr?: string
+  ico_number?: string
+  sample_category?: 'qc' | 'other'
+  awb_number?: string | null
+  courier_name?: string | null
+  is_quick_look?: boolean
+  linked_pss?: { id: string; tracking_number: string } | null
+  sample_recipients?: any[]
   [key: string]: any
 }
 
@@ -145,7 +157,7 @@ export interface CertEditorState {
   reload: () => void
 }
 
-export function useCertEditor(sampleId: string | null, open: boolean): CertEditorState {
+export function useCertEditor(sampleId: string | null, open: boolean, contractId?: string | null): CertEditorState {
   const { profile } = useAuth()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -177,7 +189,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
     setError(null)
     try {
       const [sampleRes, qaRes, aggRes, permRes] = await Promise.all([
-        fetch(`/api/samples/${id}`),
+        fetch(`/api/samples/${id}${contractId ? `?contract_id=${contractId}` : ''}`),
         fetch(`/api/samples/${id}/quality-assessment`),
         fetch(`/api/cupping/scores/aggregate?sample_id=${id}`),
         fetch(`/api/cupping/check-edit-permission?sampleId=${id}`),
@@ -306,7 +318,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [contractId])
 
   useEffect(() => {
     if (open && sampleId) {
@@ -318,7 +330,7 @@ export function useCertEditor(sampleId: string | null, open: boolean): CertEdito
       load(sampleId)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, sampleId, reloadKey])
+  }, [open, sampleId, reloadKey, contractId])
 
   const setSampleField = useCallback((field: string, value: any) => {
     setDraft((prev) => ({ ...prev, sample: { ...prev.sample, [field]: value } }))
