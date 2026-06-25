@@ -4,7 +4,7 @@ import {
   BarChart, Bar, Cell, ResponsiveContainer, XAxis, YAxis, Tooltip, CartesianGrid,
 } from 'recharts'
 import {
-  DefectDraft, SCREEN_ORDER, isPrimaryDefect, dominantScreens,
+  DefectDraft, SCREEN_ORDER, isPrimaryDefect, sortDefectsForDisplay, dominantScreens,
   DEFECT_PRIMARY_COLOR, DEFECT_SECONDARY_COLOR, SCREEN_COLOR, SCREEN_DOMINANT_COLOR,
 } from './shared'
 
@@ -21,7 +21,7 @@ function EmptyChart({ label }: { label: string }) {
 
 /** Vertical bar chart of defect counts; primary defects in red, secondary in olive. */
 export function DefectBarChart({ defects, height = 180 }: { defects: DefectDraft[]; height?: number }) {
-  const data = defects
+  const data = sortDefectsForDisplay(defects)
     .filter((d) => d.name.trim())
     .map((d) => ({ name: d.name, count: Number(d.count) || 0, primary: isPrimaryDefect(d.name) }))
   if (data.length === 0) return <EmptyChart label="No defects recorded" />

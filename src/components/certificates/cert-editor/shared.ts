@@ -96,6 +96,21 @@ export function computeDefectTotals(defects: DefectDraft[]): DefectTotals {
   return { total: primary + secondary, primary, secondary }
 }
 
+/**
+ * Display order for defect bars/lists: primary defects first, then secondary,
+ * each group ordered by count descending. Pure — never mutates the input.
+ */
+export function sortDefectsForDisplay(defects: DefectDraft[]): DefectDraft[] {
+  return [...defects].sort((a, b) => {
+    const ap = isPrimaryDefect(a.name) ? 0 : 1
+    const bp = isPrimaryDefect(b.name) ? 0 : 1
+    if (ap !== bp) return ap - bp
+    const ac = Number.isFinite(a.count) ? a.count : 0
+    const bc = Number.isFinite(b.count) ? b.count : 0
+    return bc - ac
+  })
+}
+
 /** Sum of screen grams (used to compute per-sieve percentages). */
 export function screenTotal(screens: Record<string, number>): number {
   return Object.values(screens).reduce((s, v) => s + (Number.isFinite(v) ? v : 0), 0)
