@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { Check, X, Minus } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -24,6 +25,22 @@ function AttributeBar({ name, score, scale }: { name: string; score: number; sca
         <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: CUPPING_COLOR }} />
       </div>
     </div>
+  )
+}
+
+function CupFlag({ label, value }: { label: string; value: boolean | null }) {
+  const Icon = value === true ? Check : value === false ? X : Minus
+  const cls =
+    value === true
+      ? 'border-green-500/40 text-green-600 dark:text-green-400'
+      : value === false
+        ? 'border-red-500/40 text-red-600 dark:text-red-400'
+        : 'border-border text-muted-foreground'
+  return (
+    <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}>
+      <Icon className="h-3 w-3" />
+      {label}
+    </span>
   )
 }
 
@@ -59,6 +76,10 @@ export function CuppingQuadrant({
       lockedReason={lockedReason}
       onEdit={onEdit}
     >
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <CupFlag label="Clean cup" value={draft.cleanCup} />
+        <CupFlag label="Uniform cup" value={draft.uniformCup} />
+      </div>
       <div className="flex gap-5">
         {overall != null ? (
           <div className="shrink-0">
