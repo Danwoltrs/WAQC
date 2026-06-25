@@ -44,7 +44,7 @@ import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
 import { ApprovalSendView } from '@/components/samples/approval-send-view'
 import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
-import { CertificateEditOverlay } from '@/components/certificates/cert-editor'
+import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useAuth } from '@/components/providers/auth-provider'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
 
@@ -1218,7 +1218,7 @@ export default function CertificatesPage() {
           }}
         />
 
-        <CertificateEditOverlay
+        <SampleDetailOverlay
           open={!!editSampleId}
           sampleId={editSampleId}
           onOpenChange={(o) => { if (!o) setEditSampleId(null) }}

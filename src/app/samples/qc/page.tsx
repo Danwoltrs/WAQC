@@ -13,7 +13,7 @@ import {
 } from '@/components/ui/alert-dialog'
 import { SampleIntakeForm } from '@/components/samples/sample-intake-form'
 import { INTAKE_DIALOG_CONTENT_CLASS } from '@/components/samples/sample-intake-dialog'
-import { SampleDetailModal } from '@/components/samples/sample-detail-modal'
+import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
@@ -2237,7 +2237,7 @@ export default function SamplesPage() {
       </AlertDialog>
 
       {/* Sample Detail Modal */}
-      <SampleDetailModal
+      <SampleDetailOverlay
         open={!!detailSampleId}
         onOpenChange={(open) => {
           if (!open) {

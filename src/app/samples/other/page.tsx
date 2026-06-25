@@ -13,7 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { SampleDetailModal } from '@/components/samples/sample-detail-modal'
+import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useSampleIntake } from '@/components/samples/sample-intake-provider'
 import { Check, Clock, Minus, Plus, Search, Send, X } from 'lucide-react'
 import { trackingNumberToSlug } from '@/lib/utils'
@@ -255,7 +255,7 @@ export default function OtherSamplesPage() {
         </Card>
       </div>
 
-      <SampleDetailModal
+      <SampleDetailOverlay
         open={modalOpen}
         onOpenChange={(open) => {
           setModalOpen(open)
