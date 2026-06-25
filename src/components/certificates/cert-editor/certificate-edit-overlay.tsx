@@ -12,6 +12,7 @@ import { ScreenQuadrant, ScreenEditPanel } from './screen-quadrant'
 import { PhysicalQuadrant, PhysicalEditPanel } from './physical-quadrant'
 import { CuppingQuadrant, CuppingEditPanel } from './cupping-quadrant'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
+import { SampleActionsMenu } from './sample-actions'
 
 export interface SampleDetailOverlayProps {
   open: boolean
@@ -135,6 +136,15 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
           ) : null}
         </div>
         <div className="flex items-center gap-2">
+          {sample ? (
+            <SampleActionsMenu
+              sample={sample}
+              contractId={contractId}
+              onSampleUpdated={onSampleUpdated}
+              reload={ed.reload}
+              onClose={() => onOpenChange(false)}
+            />
+          ) : null}
           {dirty ? <span className="mr-1 text-xs text-amber-600 dark:text-amber-400">Unsaved changes</span> : null}
           <Button variant="outline" size="sm" onClick={() => onOpenChange(false)} disabled={saving}>
             <X className="mr-1.5 h-4 w-4" />
