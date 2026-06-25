@@ -17,6 +17,11 @@ const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
   exporterSampleNumber: 'AS 175926',
   sellerContractNr: '42235',
   wolthersContractNr: '42235/26',
+  buyerContractNr: 'DKN-001',
+  trackingNumber: 'BR-42235/26',
+  containerNr: 'MRKU 708.491-7',
+  icoNumber: '013/0456/0789',
+  sampleType: 'ss',
   screen: [],
   defects: null,
   typeOk: true,
@@ -28,18 +33,29 @@ const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
 })
 
 describe('screenRowsFromGrams', () => {
-  it('normalises grams to percentages, sorted high to low with B last', () => {
+  it('normalises grams to percentages, sorted high to low, dropping the pan/below bucket', () => {
     const rows = screenRowsFromGrams({ '18': 45, '17': 53, below: 2 })
     expect(rows).toEqual([
       { label: 'Scr. 18', pct: 45 },
       { label: 'Scr. 17', pct: 53 },
-      { label: 'B', pct: 2 },
     ])
   })
-  it('works when stored as raw grams (normalises by total)', () => {
+  it('parses non-numeric keys ("Screen 16"), sorts high to low, and drops the pan', () => {
+    // legacy data stored keys as "Screen N" — must still parse the number,
+    // sort correctly, and omit the pan ("B") bucket
+    const rows = screenRowsFromGrams({ 'Screen 15': 28, 'Screen 16': 65, B: 7 })
+    expect(rows).toEqual([
+      { label: 'Scr. 16', pct: 65 },
+      { label: 'Scr. 15', pct: 28 },
+    ])
+  })
+  it('keeps the pan in the percentage base but excludes it from the rows', () => {
+    // total = 200 (incl. 4 g pan); screens keep their true proportion
     const rows = screenRowsFromGrams({ '18': 90, '17': 106, pan: 4 })
-    expect(rows[0]).toEqual({ label: 'Scr. 18', pct: 45 })
-    expect(rows[2]).toEqual({ label: 'B', pct: 2 })
+    expect(rows).toEqual([
+      { label: 'Scr. 18', pct: 45 },
+      { label: 'Scr. 17', pct: 53 },
+    ])
   })
   it('returns [] for empty or zero-total input', () => {
     expect(screenRowsFromGrams(null)).toEqual([])
@@ -122,14 +138,13 @@ describe('groupQualitySamples', () => {
 })
 
 describe('buildQualitySummaryText', () => {
-  it('renders ref/both, screen, defects, type/cup, and a reason for rejections', () => {
+  it('renders seller refs (Sample/Wolthers/Seller), screen, defects, type/cup, and a reason', () => {
     const groups = groupQualitySamples(
       [
         sample({
           screen: [
             { label: 'Scr. 18', pct: 45 },
             { label: 'Scr. 17', pct: 53 },
-            { label: 'B', pct: 2 },
           ],
           defects: 4,
         }),
@@ -143,32 +158,101 @@ describe('buildQualitySummaryText', () => {
       ],
       'qcClient',
     )
-    const text = buildQualitySummaryText(groups)
+    const text = buildQualitySummaryText(groups, { audience: 'seller' })
     expect(text).toContain('Dunkin')
-    expect(text).toContain('Sample: AS 175926 / 42235')
+    expect(text).toContain('Sample: SS · BR-42235/26 (AS 175926)') // stage tag + Wolthers # + seller ref
+    expect(text).toContain('Wolthers: 42235/26')
+    expect(text).toContain('Seller Ref: 42235')
+    expect(text).toContain('Container: MRKU 708.491-7 (ICO 013/0456/0789)')
     expect(text).toContain('Scr. 18 45%')
     expect(text).toContain('Defects: 4')
     expect(text).toContain('Type: OK')
     expect(text).toContain('Cup: FAIL')
     expect(text).toContain('Reason: Excess cup faults.')
   })
+  it('renders buyer refs (Sample + Buyer ref) and hides the Wolthers/Seller numbers', () => {
+    const groups = groupQualitySamples([sample({})], 'seller')
+    const text = buildQualitySummaryText(groups, { audience: 'buyer' })
+    expect(text).toContain('Sample: SS · BR-42235/26')
+    expect(text).toContain('Buyer Ref: DKN-001')
+    expect(text).toContain('Container: MRKU 708.491-7')
+    expect(text).not.toContain('Wolthers: 42235/26')
+    expect(text).not.toContain('Seller Ref:')
+  })
+})
+
+describe('Sample cell (seller sample reference sub-line)', () => {
+  it('shows the seller sample reference under the Wolthers number when entered', () => {
+    const groups = groupQualitySamples([sample({ trackingNumber: 'S-00007/26', exporterSampleNumber: 'AS 9' })], 'qcClient')
+    expect(buildQualitySummaryText(groups, { audience: 'seller' })).toContain('Sample: SS · S-00007/26 (AS 9)')
+    const html = buildQualitySummaryHtml(groups, { audience: 'seller' })
+    expect(html).toContain('S-00007/26')
+    expect(html).toContain('AS 9')
+  })
+  it('omits the sub-line (and never the internal sample_number) when no seller reference was entered', () => {
+    const groups = groupQualitySamples([sample({ trackingNumber: 'S-00008/26', exporterSampleNumber: null })], 'qcClient')
+    const text = buildQualitySummaryText(groups, { audience: 'seller' })
+    expect(text).toContain('Sample: SS · S-00008/26')
+    expect(text).not.toContain('S-00008/26 (')
+  })
+})
+
+describe('Container, ICO, and stage tag', () => {
+  it('renders the stage tag in the Sample cell and the ICO under the container', () => {
+    const groups = groupQualitySamples(
+      [sample({ trackingNumber: 'S-9/26', sampleType: 'pss', containerNr: 'TCKU 109.779-2', icoNumber: '99/1' })],
+      'qcClient',
+    )
+    const html = buildQualitySummaryHtml(groups, { audience: 'seller' })
+    expect(html).toContain('PSS · S-9/26')
+    expect(html).toContain('TCKU 109.779-2')
+    expect(html).toContain('ICO 99/1')
+    const text = buildQualitySummaryText(groups, { audience: 'seller' })
+    expect(text).toContain('Sample: PSS · S-9/26')
+    expect(text).toContain('Container: TCKU 109.779-2 (ICO 99/1)')
+  })
+  it('omits the stage prefix when type is null and shows a dash for a missing container', () => {
+    const groups = groupQualitySamples(
+      [sample({ trackingNumber: 'S-10/26', sampleType: null, containerNr: null, icoNumber: null, exporterSampleNumber: null })],
+      'qcClient',
+    )
+    const text = buildQualitySummaryText(groups, { audience: 'seller' })
+    expect(text).toContain('Sample: S-10/26')
+    expect(text).not.toContain(' · S-10/26')
+    expect(text).toContain('Container: —')
+  })
 })
 
 describe('buildQualitySummaryHtml', () => {
-  it('renders a table with OK/FAIL and a colspan reason row', () => {
+  it('renders a seller table (9 cols) with Wolthers/Seller/Container headers and a colspan reason row', () => {
     const groups = groupQualitySamples(
       [sample({ sampleId: 's2', decision: 'rejected', typeOk: false, cupOk: true, reason: 'Defects over spec.' })],
       'qcClient',
     )
-    const html = buildQualitySummaryHtml(groups)
+    const html = buildQualitySummaryHtml(groups, { audience: 'seller' })
     expect(html).toContain('<table')
+    expect(html).toContain('>Wolthers<')
+    expect(html).toContain('>Seller Ref<')
+    expect(html).toContain('>Container<')
     expect(html).toContain('REJECTED')
     expect(html).toContain('FAIL')
-    expect(html).toContain('colspan="7"')
+    expect(html).toContain('colspan="9"')
     expect(html).toContain('Defects over spec.')
   })
+  it('renders a buyer table (8 cols) with Buyer ref + Container, and no Wolthers/Seller columns', () => {
+    const groups = groupQualitySamples(
+      [sample({ sampleId: 's2', decision: 'rejected', reason: 'x' })],
+      'seller',
+    )
+    const html = buildQualitySummaryHtml(groups, { audience: 'buyer' })
+    expect(html).toContain('>Buyer Ref<')
+    expect(html).toContain('>Container<')
+    expect(html).not.toContain('>Wolthers<')
+    expect(html).not.toContain('>Seller Ref<')
+    expect(html).toContain('colspan="8"')
+  })
   it('escapes dynamic values', () => {
-    const groups = groupQualitySamples([sample({ exporterSampleNumber: '<b>x</b>' })], 'qcClient')
+    const groups = groupQualitySamples([sample({ trackingNumber: '<b>x</b>' })], 'qcClient')
     const html = buildQualitySummaryHtml(groups)
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;')
     expect(html).not.toContain('<b>x</b>')

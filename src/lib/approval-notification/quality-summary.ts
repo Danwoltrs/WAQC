@@ -25,7 +25,7 @@ import type { ApprovalDecision } from './types'
 export type GroupBy = 'qcClient' | 'seller'
 
 export interface QualityScreenRow {
-  label: string // "Scr. 18" or "B" (below screen)
+  label: string // "Scr. 18"
   pct: number // 0–100, rounded to a whole number
 }
 
@@ -36,6 +36,11 @@ export interface QualitySampleSummary {
   exporterSampleNumber: string | null
   sellerContractNr: string | null
   wolthersContractNr: string | null
+  buyerContractNr: string | null
+  trackingNumber: string | null // Wolthers per-sample lab/cert number
+  containerNr: string | null
+  icoNumber: string | null
+  sampleType: string | null // pss | ss | type | specialty | stocklot
   screen: QualityScreenRow[]
   defects: number | null // weighted total (primary + secondary), 1 decimal
   typeOk: boolean | null // green grading vs spec; null = undetermined
@@ -49,6 +54,10 @@ export interface QualitySampleSummary {
  *  never shown to buyers). */
 export interface QualitySummaryOpts {
   sellerComment?: boolean
+  /** Which side the email is for — selects the reference columns:
+   *  buyer → Sample + Buyer ref; seller → Sample + Wolthers + Seller ref.
+   *  Defaults to seller. */
+  audience?: 'buyer' | 'seller'
 }
 
 export interface QualitySummaryGroup {
@@ -61,31 +70,36 @@ export interface QualitySummaryGroup {
 /**
  * Screen sizes are stored as raw grams per sieve. Normalise to percentages
  * (works whether the stored values are grams or already percentages — dividing
- * by the total cancels the unit). Numeric sieves render "Scr. N" sorted high to
- * low; a below-screen / pan bucket renders "B" and sorts last.
+ * by the total cancels the unit). Sieves render "Scr. N" sorted high to low.
+ *
+ * The screen number is extracted from any stored key format ("16", "Screen 16",
+ * "screen_16"); percentages are computed against the full total (incl. the pan)
+ * so each sieve keeps its true proportion. The below-smallest-screen / pan
+ * bucket is intentionally OMITTED from the email.
  */
 export function screenRowsFromGrams(screenSizes: Record<string, number> | null | undefined): QualityScreenRow[] {
   if (!screenSizes || typeof screenSizes !== 'object') return []
   const entries = Object.entries(screenSizes).filter(([, v]) => typeof v === 'number' && v >= 0)
   const total = entries.reduce((sum, [, v]) => sum + (v || 0), 0)
   if (total <= 0) return []
-  const rows = entries.map(([key, grams]) => {
+  const rows: Array<QualityScreenRow & { sortKey: number }> = []
+  for (const [key, grams] of entries) {
     const trimmed = String(key).trim()
-    const isNumeric = /^\d+(\.\d+)?$/.test(trimmed)
     const lower = trimmed.toLowerCase()
     const isBelow =
-      !isNumeric &&
-      (lower === 'b' ||
-        lower.includes('below') ||
-        lower.includes('pan') ||
-        lower.includes('fundo') ||
-        lower.startsWith('<'))
-    return {
-      label: isNumeric ? `Scr. ${trimmed}` : isBelow ? 'B' : trimmed,
+      lower === 'b' ||
+      lower.includes('below') ||
+      lower.includes('pan') ||
+      lower.includes('fundo') ||
+      lower.startsWith('<')
+    if (isBelow) continue // pan / below-smallest-screen bucket is not shown in the email
+    const numMatch = trimmed.match(/\d+(\.\d+)?/)
+    rows.push({
+      label: numMatch ? `Scr. ${numMatch[0]}` : trimmed,
       pct: Math.round(((grams || 0) / total) * 100),
-      sortKey: isNumeric ? Number(trimmed) : -Infinity,
-    }
-  })
+      sortKey: numMatch ? Number(numMatch[0]) : -Infinity,
+    })
+  }
   rows.sort((a, b) => b.sortKey - a.sortKey)
   return rows.map(({ label, pct }) => ({ label, pct }))
 }
@@ -168,9 +182,70 @@ export function groupQualitySamples(list: QualitySampleSummary[], by: GroupBy): 
 
 const okText = (v: boolean | null): string => (v === null ? '—' : v ? 'OK' : 'FAIL')
 
-function refCellText(s: QualitySampleSummary): string {
-  const parts = [s.exporterSampleNumber, s.sellerContractNr].filter((p): p is string => !!p && p.trim().length > 0)
-  return parts.length ? parts.join(' / ') : '—'
+interface RefColumn {
+  header: string
+  value: (s: QualitySampleSummary) => string
+  /** Optional second line under the main value (e.g. the seller's sample ref). */
+  sub?: (s: QualitySampleSummary) => string | null
+}
+
+/**
+ * Reference columns shown before Screen, chosen by audience:
+ *   buyer  → Sample (Wolthers #) + Buyer ref
+ *   seller → Sample (Wolthers #) + Wolthers contract # + Seller ref
+ * "Sample" is the per-sample Wolthers tracking/cert number (always present), with
+ * the seller's own sample reference (exporter_sample_number, when entered at
+ * intake) on a second line. The internal auto sample_number is never shown.
+ * Buyers don't see the internal Wolthers contract number.
+ */
+/** Short uppercase stage label (PSS / SS / Stocklot / …) from the sample type. */
+function sampleTypeLabel(t: string | null): string | null {
+  if (!t || !t.trim()) return null
+  const key = t.trim().toLowerCase()
+  const map: Record<string, string> = {
+    pss: 'PSS',
+    ss: 'SS',
+    type: 'Type',
+    specialty: 'Specialty',
+    stocklot: 'Stocklot',
+  }
+  return map[key] ?? key.toUpperCase()
+}
+
+function refColumns(audience: 'buyer' | 'seller'): RefColumn[] {
+  // "Sample" leads with the stage tag (PSS/SS/Stocklot) + the Wolthers tracking/
+  // cert number, with the seller's own sample reference on a second line.
+  const sample: RefColumn = {
+    header: 'Sample',
+    value: (s) => {
+      const num = s.trackingNumber ?? '—'
+      const stage = sampleTypeLabel(s.sampleType)
+      return stage ? `${stage} · ${num}` : num
+    },
+    sub: (s) => s.exporterSampleNumber,
+  }
+  // Container + ICO are shown to both sides (traceability). Container is the
+  // per-shipment identifier; the ICO number rides as a labelled second line.
+  const container: RefColumn = {
+    header: 'Container',
+    value: (s) => s.containerNr ?? '—',
+    sub: (s) => (s.icoNumber && s.icoNumber.trim() ? `ICO ${s.icoNumber.trim()}` : null),
+  }
+  const audienceCols: RefColumn[] =
+    audience === 'buyer'
+      ? [sample, { header: 'Buyer Ref', value: (s) => s.buyerContractNr ?? '—' }]
+      : [
+          sample,
+          { header: 'Wolthers', value: (s) => s.wolthersContractNr ?? '—' },
+          { header: 'Seller Ref', value: (s) => s.sellerContractNr ?? '—' },
+        ]
+  return [...audienceCols, container]
+}
+
+/** Text form of a ref cell: "value (sub)" when a sub-reference is present. */
+function refCellText(c: RefColumn, s: QualitySampleSummary): string {
+  const sub = c.sub?.(s)
+  return sub && sub.trim() ? `${c.value(s)} (${sub.trim()})` : c.value(s)
 }
 
 function screenCellText(s: QualitySampleSummary): string {
@@ -183,13 +258,14 @@ const showsSellerComment = (s: QualitySampleSummary, opts?: QualitySummaryOpts):
 
 /** Plain-text block layout — also the fallback body for text-only clients. */
 export function buildQualitySummaryText(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
+  const refCols = refColumns(opts?.audience ?? 'seller')
   const out: string[] = []
   for (const group of groups) {
     out.push(group.heading, '─'.repeat(Math.min(group.heading.length, 40)))
     for (const s of group.samples) {
-      const wolthers = s.wolthersContractNr ? `Wolthers: ${s.wolthersContractNr}` : ''
       const result = s.decision === 'rejected' ? 'REJECTED' : 'APPROVED'
-      out.push(`Sample: ${refCellText(s)}      ${wolthers}      ${result}`)
+      const refs = refCols.map((c) => `${c.header}: ${refCellText(c, s)}`).join('      ')
+      out.push(`${refs}      ${result}`)
       if (s.screen.length) out.push(`   ${screenCellText(s)}`)
       const metrics = [
         s.defects != null ? `Defects: ${s.defects}` : null,
@@ -219,6 +295,13 @@ const TH_STYLE = 'text-align:left;padding:6px 8px;background:#556b2f;color:#ffff
 const TD_STYLE = 'padding:6px 8px;border-bottom:1px solid rgba(0,0,0,0.08);vertical-align:top;'
 const SUB_STYLE = 'color:#6b7280;font-size:9pt;'
 
+/** HTML form of a ref cell: main value with an optional muted second line. */
+function refCellHtml(c: RefColumn, s: QualitySampleSummary): string {
+  const sub = c.sub?.(s)
+  const subHtml = sub && sub.trim() ? `<div style="${SUB_STYLE}">${escapeHtml(sub.trim())}</div>` : ''
+  return `<div>${escapeHtml(c.value(s))}</div>${subHtml}`
+}
+
 function okHtml(v: boolean | null): string {
   if (v === null) return `<span style="color:#6b7280;">—</span>`
   const color = v ? '#22c55e' : '#ef4444'
@@ -230,14 +313,10 @@ function screenCellHtml(s: QualitySampleSummary): string {
   return s.screen.map((r) => `${escapeHtml(r.label)} ${r.pct}%`).join('<br/>')
 }
 
-function sampleCellHtml(s: QualitySampleSummary): string {
-  const top = s.exporterSampleNumber ?? s.sellerContractNr ?? '—'
-  const sub = s.exporterSampleNumber && s.sellerContractNr ? s.sellerContractNr : ''
-  return `<div>${escapeHtml(top)}</div>${sub ? `<div style="${SUB_STYLE}">${escapeHtml(sub)}</div>` : ''}`
-}
-
 /** Styled HTML tables (one per group) for the actual email. */
 export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: QualitySummaryOpts): string {
+  const refCols = refColumns(opts?.audience ?? 'seller')
+  const colCount = refCols.length + 5 // ref columns + Screen, Def., Type, Cup, Result
   const blocks: string[] = []
   for (const group of groups) {
     const rows: string[] = []
@@ -246,10 +325,10 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
         s.decision === 'rejected'
           ? `<span style="color:#ef4444;font-weight:600;">REJECTED</span>`
           : `<span style="color:#22c55e;font-weight:600;">APPROVED</span>`
+      const refTds = refCols.map((c) => `<td style="${TD_STYLE}">${refCellHtml(c, s)}</td>`).join('')
       rows.push(
         `<tr>` +
-          `<td style="${TD_STYLE}">${sampleCellHtml(s)}</td>` +
-          `<td style="${TD_STYLE}">${escapeHtml(s.wolthersContractNr ?? '—')}</td>` +
+          refTds +
           `<td style="${TD_STYLE}">${screenCellHtml(s)}</td>` +
           `<td style="${TD_STYLE}">${s.defects != null ? s.defects : '—'}</td>` +
           `<td style="${TD_STYLE}">${okHtml(s.typeOk)}</td>` +
@@ -259,30 +338,29 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
       )
       if (s.decision === 'rejected' && s.reason && s.reason.trim()) {
         rows.push(
-          `<tr><td colspan="7" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#b91c1c;font-style:italic;font-size:9pt;">` +
+          `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#b91c1c;font-style:italic;font-size:9pt;">` +
             `Reason: ${escapeHtml(s.reason).replace(/\n/g, '<br/>')}` +
             `</td></tr>`,
         )
       }
       if (showsSellerComment(s, opts)) {
         rows.push(
-          `<tr><td colspan="7" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#374151;font-size:9pt;">` +
+          `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#374151;font-size:9pt;">` +
             `Note: ${escapeHtml(s.sellerComment!).replace(/\n/g, '<br/>')}` +
             `</td></tr>`,
         )
       }
     }
+    const headerThs =
+      refCols.map((c) => `<th style="${TH_STYLE}">${escapeHtml(c.header)}</th>`).join('') +
+      `<th style="${TH_STYLE}">Screen</th>` +
+      `<th style="${TH_STYLE}">Def.</th>` +
+      `<th style="${TH_STYLE}">Type</th>` +
+      `<th style="${TH_STYLE}">Cup</th>` +
+      `<th style="${TH_STYLE}">Result</th>`
     blocks.push(
       `<div style="font-weight:600;font-size:11pt;margin:14px 0 4px;color:#556b2f;font-family:Helvetica,Arial,sans-serif;">${escapeHtml(group.heading)}</div>` +
-        `<table style="${TABLE_STYLE}"><thead><tr>` +
-        `<th style="${TH_STYLE}">Sample</th>` +
-        `<th style="${TH_STYLE}">Wolthers</th>` +
-        `<th style="${TH_STYLE}">Screen</th>` +
-        `<th style="${TH_STYLE}">Def.</th>` +
-        `<th style="${TH_STYLE}">Type</th>` +
-        `<th style="${TH_STYLE}">Cup</th>` +
-        `<th style="${TH_STYLE}">Result</th>` +
-        `</tr></thead><tbody>${rows.join('')}</tbody></table>`,
+        `<table style="${TABLE_STYLE}"><thead><tr>${headerThs}</tr></thead><tbody>${rows.join('')}</tbody></table>`,
     )
   }
   return blocks.join('')
@@ -327,7 +405,7 @@ export async function fetchQualitySampleSummaries(
   const { data: samples } = await admin
     .from('samples')
     .select(
-      'id, exporter_sample_number, seller_contract_nr, wolthers_contract_nr, client_id, seller_id, status, quality_spec_id',
+      'id, exporter_sample_number, seller_contract_nr, wolthers_contract_nr, buyer_contract_nr, tracking_number, container_nr, ico_number, sample_type, client_id, seller_id, status, quality_spec_id',
     )
     .in('id', ids)
   const rows = (samples ?? []) as Array<Record<string, unknown>>
@@ -404,6 +482,11 @@ export async function fetchQualitySampleSummaries(
       exporterSampleNumber: (s.exporter_sample_number as string) ?? null,
       sellerContractNr: (s.seller_contract_nr as string) ?? null,
       wolthersContractNr: (s.wolthers_contract_nr as string) ?? null,
+      buyerContractNr: (s.buyer_contract_nr as string) ?? null,
+      trackingNumber: (s.tracking_number as string) ?? null,
+      containerNr: (s.container_nr as string) ?? null,
+      icoNumber: (s.ico_number as string) ?? null,
+      sampleType: (s.sample_type as string) ?? null,
       screen: screenRowsFromGrams(
         greenBean ? ((greenBean as Record<string, unknown>).screen_sizes as Record<string, number>) : null,
       ),

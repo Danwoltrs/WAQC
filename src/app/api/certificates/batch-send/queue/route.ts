@@ -252,8 +252,10 @@ export async function GET(req: NextRequest) {
       if (list.length === 0) continue
       const attached = u.side === 'buyer'
       const groups = groupQualitySamples(list, u.side === 'seller' ? 'qcClient' : 'seller')
-      // Seller note is shown to sellers only (never buyers).
-      const sumOpts = { sellerComment: !attached }
+      // Seller note is shown to sellers only (never buyers). Audience selects the
+      // reference columns (buyer: Sample + Buyer ref; seller: Sample + Wolthers + Seller ref).
+      const audience: 'buyer' | 'seller' = attached ? 'buyer' : 'seller'
+      const sumOpts = { sellerComment: !attached, audience }
       u.body = buildQualityCoverNote(u.greeting, attached)
       u.subject = buildQualitySummarySubject(groups, attached)
       u.summaryText = buildQualitySummaryText(groups, sumOpts)

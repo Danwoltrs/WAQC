@@ -70,7 +70,10 @@ function composeQualityBody(
   opts: { attached: boolean; signatureHtml: string | null; includeSig: boolean },
 ): { text: string; html: string } {
   // Seller note shown to sellers only (the seller email has no attachments).
-  const sumOpts = { sellerComment: !opts.attached }
+  // Audience selects the reference columns: buyers see Sample + Buyer ref;
+  // sellers see Sample + Wolthers + Seller ref.
+  const audience: 'buyer' | 'seller' = opts.attached ? 'buyer' : 'seller'
+  const sumOpts = { sellerComment: !opts.attached, audience }
   const summaryText = buildQualitySummaryText(groups, sumOpts)
   const summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
   const sig = opts.includeSig ? opts.signatureHtml : null
