@@ -13,6 +13,7 @@ import { PhysicalQuadrant, PhysicalEditPanel } from './physical-quadrant'
 import { CuppingQuadrant, CuppingEditPanel } from './cupping-quadrant'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { SampleActionsMenu } from './sample-actions'
+import { OtherSections } from './other-sections'
 
 export interface SampleDetailOverlayProps {
   open: boolean
@@ -174,35 +175,39 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
 
           {/* Quadrant dashboard */}
           <div className="flex-1 overflow-y-auto p-5">
-            <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-2">
-              <DefectsQuadrant
-                defects={draft.defects}
-                locked={!ed.canEditQuality}
-                lockedReason={ed.qualityLockMessage}
-                onEdit={() => setPanel('defects')}
-              />
-              <ScreenQuadrant
-                screens={draft.screens}
-                locked={!ed.canEditQuality}
-                lockedReason={ed.qualityLockMessage}
-                onEdit={() => setPanel('screen')}
-              />
-              <PhysicalQuadrant
-                draft={draft}
-                locked={!ed.canEditQuality}
-                lockedReason={ed.qualityLockMessage}
-                onEdit={() => setPanel('physical')}
-              />
-              <CuppingQuadrant
-                draft={draft}
-                isCVA={ed.isCVA}
-                cvaScore={ed.cvaScore}
-                cvaMinScore={ed.cvaMinScore}
-                locked={!ed.canEditQuality}
-                lockedReason={ed.qualityLockMessage}
-                onEdit={() => setPanel('cupping')}
-              />
-            </div>
+            {sample.sample_category === 'other' ? (
+              <OtherSections sample={sample} onRecipientsChange={ed.reload} />
+            ) : (
+              <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-2">
+                <DefectsQuadrant
+                  defects={draft.defects}
+                  locked={!ed.canEditQuality}
+                  lockedReason={ed.qualityLockMessage}
+                  onEdit={() => setPanel('defects')}
+                />
+                <ScreenQuadrant
+                  screens={draft.screens}
+                  locked={!ed.canEditQuality}
+                  lockedReason={ed.qualityLockMessage}
+                  onEdit={() => setPanel('screen')}
+                />
+                <PhysicalQuadrant
+                  draft={draft}
+                  locked={!ed.canEditQuality}
+                  lockedReason={ed.qualityLockMessage}
+                  onEdit={() => setPanel('physical')}
+                />
+                <CuppingQuadrant
+                  draft={draft}
+                  isCVA={ed.isCVA}
+                  cvaScore={ed.cvaScore}
+                  cvaMinScore={ed.cvaMinScore}
+                  locked={!ed.canEditQuality}
+                  lockedReason={ed.qualityLockMessage}
+                  onEdit={() => setPanel('cupping')}
+                />
+              </div>
+            )}
 
             <div className="mx-auto mt-5 max-w-6xl">
               <SupplyChainEditTable
