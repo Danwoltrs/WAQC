@@ -95,6 +95,7 @@ interface Certificate {
     seller?: {
       id: string
       name: string
+      fantasy_name: string | null
     }
     quality_spec_id: string | null
     quality_spec?: {
@@ -786,6 +787,9 @@ export default function CertificatesPage() {
                         </button>
                       </th>
                       <th className="py-3 px-4 text-left">
+                        <span className="font-medium text-sm">Seller</span>
+                      </th>
+                      <th className="py-3 px-4 text-left">
                         <button
                           className="flex items-center font-medium text-sm hover:text-primary"
                           onClick={() => handleSort('origin')}
@@ -855,6 +859,9 @@ export default function CertificatesPage() {
                         </td>
                         <td className="py-3 px-4">
                           {getClientName(cert)}
+                        </td>
+                        <td className="py-3 px-4">
+                          {cert.sample?.seller?.fantasy_name || cert.sample?.seller?.name || '-'}
                         </td>
                         <td className="py-3 px-4">
                           {cert.sample?.origin || '-'}

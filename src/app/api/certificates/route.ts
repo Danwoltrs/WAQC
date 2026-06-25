@@ -96,7 +96,8 @@ export async function GET(request: NextRequest) {
           ),
           seller:companies!samples_seller_id_fkey(
             id,
-            name
+            name,
+            fantasy_name
           ),
           quality_spec:client_qualities!samples_quality_spec_id_fkey(
             id,

@@ -158,8 +158,8 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
   const showSellerDivider = !!current && current.side === 'seller' && index === buyerCount && buyerCount > 0
 
   return (
-    <div className="fixed inset-0 z-50 overflow-auto bg-white dark:bg-[#2A2A2A]">
-      <div className="flex h-12 items-center justify-between border-b border-black/10 px-4 dark:border-white/15">
+    <div className="fixed inset-0 z-50 flex flex-col bg-white dark:bg-[#2A2A2A]">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-black/10 px-4 dark:border-white/15">
         <h2 className="text-sm font-semibold">Send unsent certificates</h2>
         <button onClick={onClose} className="text-sm opacity-60 hover:opacity-100">Close</button>
       </div>
@@ -192,99 +192,115 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
           <button onClick={finish} className="mt-4 rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white">Close</button>
         </div>
       ) : (
-        <div className="mx-auto max-w-3xl space-y-4 p-4">
-          {showSellerDivider && (
-            <div className="rounded-lg bg-black/5 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide dark:bg-white/10">
-              Now sending to SELLERS
+        <>
+          {/* Scrollable body: email on the left, quality summary on the right. */}
+          <div className="flex-1 overflow-auto">
+            <div className="mx-auto max-w-7xl p-4">
+              {showSellerDivider && (
+                <div className="mb-4 rounded-lg bg-black/5 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide dark:bg-white/10">
+                  Now sending to SELLERS
+                </div>
+              )}
+              <div className="mb-3 flex items-center justify-between">
+                <div className="text-xs font-semibold uppercase tracking-wide opacity-60">{headerLabel()}</div>
+                <div className="text-xs opacity-50">{results.length} sent · {units.length - index} remaining</div>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-3">
+                {/* Left: the email */}
+                <div className="space-y-4 lg:col-span-1">
+                  <RecipientPanel
+                    title={`${current.companyName} (${current.side})`}
+                    to={current.to}
+                    cc={current.cc}
+                    body={current.body}
+                    onChange={(next) => patchCurrent({ to: next.to, cc: next.cc, body: next.body })}
+                  />
+
+                  {current.to.length === 0 && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      No QC-certificate recipients are configured for {current.companyName}. Add a contact with the
+                      &ldquo;QC certificates&rdquo; send-flag in sys.wolthers.com, or enter a recipient above.
+                    </p>
+                  )}
+
+                  {!current.noAttachments && (
+                    <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+                        {current.samples.length} certificate{current.samples.length === 1 ? '' : 's'} attached
+                      </div>
+                      <ul className="space-y-1 text-sm">
+                        {current.samples.map((s) => (
+                          <li key={s.sampleId} className="flex items-center gap-2">
+                            <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-[#556b2f]'}>
+                              {s.decision === 'rejected' ? 'Rejected' : 'Approved'}
+                            </span>
+                            <span className="opacity-80">
+                              {[s.containerNr && `Container ${s.containerNr}`, s.certNumber && `Cert ${s.certNumber}`, s.contractNumber && `Contract ${s.contractNumber}`]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={includeSignature} onChange={(e) => setIncludeSignature(e.target.checked)} />
+                    Include HTML signature
+                  </label>
+                </div>
+
+                {/* Right: the quality summary */}
+                <div className="lg:col-span-2">
+                  {current.summaryHtml && (
+                    <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
+                      <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
+                        Quality summary{current.noAttachments ? ' — no certificates attached' : ''}
+                      </div>
+                      <div
+                        className="overflow-auto rounded-lg bg-white p-3 text-sm text-black"
+                        dangerouslySetInnerHTML={{ __html: current.summaryHtml }}
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {error && <p className="mt-4 text-sm text-red-500">{error}</p>}
             </div>
-          )}
-          <div className="flex items-center justify-between">
-            <div className="text-xs font-semibold uppercase tracking-wide opacity-60">{headerLabel()}</div>
-            <div className="text-xs opacity-50">{results.length} sent · {units.length - index} remaining</div>
           </div>
 
-          <RecipientPanel
-            title={`${current.companyName} (${current.side})`}
-            to={current.to}
-            cc={current.cc}
-            body={current.body}
-            onChange={(next) => patchCurrent({ to: next.to, cc: next.cc, body: next.body })}
-          />
-
-          {current.to.length === 0 && (
-            <p className="text-xs text-amber-600 dark:text-amber-400">
-              No QC-certificate recipients are configured for {current.companyName}. Add a contact with the
-              &ldquo;QC certificates&rdquo; send-flag in sys.wolthers.com, or enter a recipient above.
-            </p>
-          )}
-
-          {current.summaryHtml && (
-            <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
-                Quality summary{current.noAttachments ? ' — no certificates attached' : ''}
-              </div>
-              <div
-                className="overflow-auto rounded-lg bg-white p-3 text-sm text-black"
-                dangerouslySetInnerHTML={{ __html: current.summaryHtml }}
-              />
-            </div>
-          )}
-
-          {!current.noAttachments && (
-            <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
-              <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
-                {current.samples.length} certificate{current.samples.length === 1 ? '' : 's'} attached
-              </div>
-              <ul className="space-y-1 text-sm">
-                {current.samples.map((s) => (
-                  <li key={s.sampleId} className="flex items-center gap-2">
-                    <span className={s.decision === 'rejected' ? 'text-red-500' : 'text-[#556b2f]'}>
-                      {s.decision === 'rejected' ? 'Rejected' : 'Approved'}
-                    </span>
-                    <span className="opacity-80">
-                      {[s.containerNr && `Container ${s.containerNr}`, s.certNumber && `Cert ${s.certNumber}`, s.contractNumber && `Contract ${s.contractNumber}`]
-                        .filter(Boolean)
-                        .join(' · ')}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          <label className="flex items-center gap-2 text-sm">
-            <input type="checkbox" checked={includeSignature} onChange={(e) => setIncludeSignature(e.target.checked)} />
-            Include HTML signature
-          </label>
-
-          {error && <p className="text-sm text-red-500">{error}</p>}
-
-          <div className="flex items-center justify-between">
-            <button
-              onClick={skipCurrent}
-              disabled={sending || sendingAll}
-              className="rounded-lg border border-black/10 px-4 py-2 text-sm disabled:opacity-50 dark:border-white/15"
-            >
-              Skip
-            </button>
-            <div className="flex gap-2">
+          {/* Fixed footer: Skip / Send always visible without scrolling. */}
+          <div className="shrink-0 border-t border-black/10 bg-white px-4 py-3 dark:border-white/15 dark:bg-[#2A2A2A]">
+            <div className="mx-auto flex max-w-7xl items-center justify-between">
               <button
-                onClick={sendAllRemaining}
+                onClick={skipCurrent}
                 disabled={sending || sendingAll}
-                className="rounded-lg border border-[#556b2f] px-4 py-2 text-sm text-[#556b2f] disabled:opacity-50"
+                className="rounded-lg border border-black/10 px-4 py-2 text-sm disabled:opacity-50 dark:border-white/15"
               >
-                {sendingAll ? 'Sending…' : 'Send all remaining without review'}
+                Skip
               </button>
-              <button
-                onClick={sendCurrent}
-                disabled={sending || sendingAll || current.to.length === 0}
-                className="rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white disabled:opacity-50"
-              >
-                {sending ? 'Sending…' : 'Send'}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={sendAllRemaining}
+                  disabled={sending || sendingAll}
+                  className="rounded-lg border border-[#556b2f] px-4 py-2 text-sm text-[#556b2f] disabled:opacity-50"
+                >
+                  {sendingAll ? 'Sending…' : 'Send all remaining without review'}
+                </button>
+                <button
+                  onClick={sendCurrent}
+                  disabled={sending || sendingAll || current.to.length === 0}
+                  className="rounded-lg bg-[#556b2f] px-4 py-2 text-sm text-white disabled:opacity-50"
+                >
+                  {sending ? 'Sending…' : 'Send'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        </>
       )}
     </div>
   )
