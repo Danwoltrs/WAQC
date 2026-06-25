@@ -1360,7 +1360,7 @@ export default function SamplesPage() {
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr className="border-b border-border bg-muted/30">
-                      <th className="text-left py-2.5 px-3" style={{ width: 32 }}>
+                      <th className="text-left py-2.5 px-3" style={{ width: 40 }}>
                         <Checkbox
                           className="h-3.5 w-3.5 rounded-[3px]"
                           checked={selectedSamples.size === samples.length && samples.length > 0}
@@ -1402,7 +1402,7 @@ export default function SamplesPage() {
                         <ContextMenuTrigger asChild>
                           <tr className="group border-b border-border hover:bg-accent/40 transition-colors">
                             <td className="py-2 px-3 align-middle">
-                              <div className="flex flex-col items-center gap-0.5">
+                              <div className="flex flex-col items-start gap-0.5">
                                 <Checkbox
                                   className="h-3.5 w-3.5 rounded-[3px]"
                                   checked={selectedSamples.has(sample.id)}

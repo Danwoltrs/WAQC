@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { PDFDownloadLink } from '@react-pdf/renderer'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { pdf } from '@react-pdf/renderer'
+import { Printer, Download } from 'lucide-react'
 import QRCode from 'qrcode'
+import { cn } from '@/lib/utils'
 import {
   Dialog,
   DialogContent,
@@ -114,8 +116,14 @@ export function PrintCuppingCardsDialog({
   const [fullSamples, setFullSamples] = useState<Sample[]>([])
   const [loading, setLoading] = useState(false)
   const [isReadyForDownload, setIsReadyForDownload] = useState(false)
-  const [pdfKey, setPdfKey] = useState(0) // Force PDF regeneration only when needed
   const [subContracts, setSubContracts] = useState<any[]>([])
+  // In-dialog print viewer: cards are rendered to a blob and shown in an iframe
+  // for direct printing — they are NOT auto-saved to disk (saving is opt-in).
+  const [activeDocIndex, setActiveDocIndex] = useState(0)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewLoading, setPreviewLoading] = useState(false)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+  const iframeRef = useRef<HTMLIFrameElement>(null)
 
   const toggleVisibility = (key: keyof SampleVisibilitySettings) => {
     const newValue = !visibility[key]
@@ -141,6 +149,9 @@ export function PrintCuppingCardsDialog({
       setFullSamples([])
       setResolvedCuppers([])
       setIsReadyForDownload(false)
+      setActiveDocIndex(0)
+      setPreviewUrl(null)
+      setPreviewError(null)
     }
   }, [open, samples.length])
 
@@ -394,7 +405,6 @@ export function PrintCuppingCardsDialog({
       }
 
       setIsReadyForDownload(true)
-      setPdfKey(prev => prev + 1) // Increment key to trigger PDF regeneration
       console.log('✅ Cards generated successfully:', cards.length)
       console.log('📊 Card data ready for PDF:', cards)
     } catch (error) {
@@ -499,18 +509,109 @@ export function PrintCuppingCardsDialog({
     return docs
   }, [isReadyForDownload, cardData, outputFormat, effectiveCuppers, numCuppers, cvaCopies, visibility.showQuality, visibility.showBuyer, visibility.showSupplier, visibility.showExporter])
 
+  // Once cards are generated we switch the dialog into a print-preview viewer.
+  const showPreview = isReadyForDownload && documents.length > 0
+  const activeDoc = documents[activeDocIndex] ?? documents[0]
+
+  // Render the active document to a blob URL for the iframe preview (and for the
+  // optional "Save PDF" link). Nothing is downloaded automatically.
+  useEffect(() => {
+    if (!showPreview || !activeDoc) {
+      setPreviewUrl(null)
+      return
+    }
+    let cancelled = false
+    let createdUrl: string | null = null
+    setPreviewLoading(true)
+    setPreviewError(null)
+    setPreviewUrl(null)
+    pdf(activeDoc.document)
+      .toBlob()
+      .then((blob) => {
+        if (cancelled) return
+        createdUrl = URL.createObjectURL(blob)
+        setPreviewUrl(createdUrl)
+        setPreviewLoading(false)
+      })
+      .catch((err) => {
+        if (cancelled) return
+        console.error('Failed to render cupping card preview:', err)
+        setPreviewError(err instanceof Error ? err.message : 'Unknown error')
+        setPreviewLoading(false)
+      })
+    return () => {
+      cancelled = true
+      if (createdUrl) URL.revokeObjectURL(createdUrl)
+    }
+  }, [showPreview, activeDoc])
+
+  // Trigger the browser print dialog for the previewed PDF without saving it.
+  const handlePrintPreview = () => {
+    const frame = iframeRef.current
+    if (!frame) return
+    try {
+      frame.contentWindow?.focus()
+      frame.contentWindow?.print()
+    } catch (err) {
+      console.error('Unable to trigger print on preview:', err)
+      // Fallback: open the PDF in a new tab where the user can print manually.
+      if (previewUrl) window.open(previewUrl, '_blank')
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px]">
+      <DialogContent className={showPreview ? 'sm:max-w-[920px]' : 'sm:max-w-[600px]'}>
         <DialogHeader>
           <DialogTitle>Print Cupping Cards</DialogTitle>
           <DialogDescription>
-            Configure and print cupping cards for {samples.length} sample
-            {samples.length !== 1 ? 's' : ''}
+            {showPreview
+              ? `Review and print ${samples.length} cupping card${samples.length !== 1 ? 's' : ''} — saving is optional.`
+              : `Configure and print cupping cards for ${samples.length} sample${samples.length !== 1 ? 's' : ''}`}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
+          {showPreview ? (
+            <div className="flex flex-col gap-3">
+              {documents.length > 1 && (
+                <div className="flex items-center gap-2">
+                  {documents.map((doc, i) => (
+                    <button
+                      key={doc.key}
+                      type="button"
+                      onClick={() => setActiveDocIndex(i)}
+                      className={cn(
+                        'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                        i === activeDocIndex
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-muted-foreground hover:bg-accent'
+                      )}
+                    >
+                      {doc.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="relative h-[68vh] w-full overflow-hidden rounded-md border bg-muted/20">
+                {previewUrl && !previewLoading ? (
+                  <iframe
+                    ref={iframeRef}
+                    src={previewUrl}
+                    title="Cupping cards preview"
+                    className="h-full w-full"
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
+                    {previewError
+                      ? `Could not build preview: ${previewError}`
+                      : 'Preparing preview…'}
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : (
+          <>
           {/* Selected Samples Preview */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold">
@@ -748,51 +849,49 @@ export function PrintCuppingCardsDialog({
             </div>
           </div>
           )}
+          </>
+          )}
         </div>
 
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)}>
-            Cancel
-          </Button>
-          {isReadyForDownload && documents.length > 0 ? (
-            documents.map((doc) => (
-              <PDFDownloadLink
-                key={`${doc.key}-${pdfKey}`}
-                document={doc.document}
-                fileName={doc.fileName}
-              >
-                {({ loading, error }) => {
-                  if (error) {
-                    console.error(`🔴 PDFDownloadLink error (${doc.key}):`, error)
-                    console.error('Card data at error time:', cardData)
-                    console.error('Output format:', outputFormat)
-                  }
-                  return (
-                    <Button
-                      disabled={loading || !!error}
-                      onClick={() => {
-                        // Auto-close after download starts — only when this is the sole document
-                        if (!loading && !error && documents.length === 1) {
-                          setTimeout(() => {
-                            onOpenChange(false)
-                          }, 500)
-                        }
-                      }}
-                    >
-                      {loading ? 'Generating PDF...' : error ? `Error - ${error.message || 'Try Again'}` : `Download ${doc.label}`}
-                    </Button>
-                  )
-                }}
-              </PDFDownloadLink>
-            ))
+          {showPreview ? (
+            <div className="flex w-full items-center justify-between gap-2">
+              <Button variant="ghost" onClick={() => onOpenChange(false)}>
+                Close
+              </Button>
+              <div className="flex items-center gap-2">
+                {previewUrl ? (
+                  <Button variant="outline" asChild>
+                    <a href={previewUrl} download={activeDoc?.fileName}>
+                      <Download className="mr-2 h-4 w-4" />
+                      Save PDF
+                    </a>
+                  </Button>
+                ) : (
+                  <Button variant="outline" disabled>
+                    <Download className="mr-2 h-4 w-4" />
+                    Save PDF
+                  </Button>
+                )}
+                <Button onClick={handlePrintPreview} disabled={!previewUrl}>
+                  <Printer className="mr-2 h-4 w-4" />
+                  Print
+                </Button>
+              </div>
+            </div>
           ) : (
-            <Button onClick={handlePrint} disabled={isGenerating || loading}>
-              {loading
-                ? 'Loading...'
-                : isGenerating
-                ? 'Generating...'
-                : `Print ${samples.length} Card${samples.length !== 1 ? 's' : ''}`}
-            </Button>
+            <>
+              <Button variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handlePrint} disabled={isGenerating || loading}>
+                {loading
+                  ? 'Loading...'
+                  : isGenerating
+                  ? 'Generating...'
+                  : `Print ${samples.length} Card${samples.length !== 1 ? 's' : ''}`}
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>
