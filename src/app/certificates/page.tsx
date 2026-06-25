@@ -199,6 +199,17 @@ export default function CertificatesPage() {
     results: Array<{ email: string; name: string; type: string; success: boolean; error?: string }>
   } | null>(null)
 
+  // Consume command-palette deep links: ?open=<sampleId> opens the certificate
+  // editor (keyed by sample id), ?q=<text> prefills the search box. Runs once on mount.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const open = params.get('open')
+    const q = params.get('q')
+    if (q) setSearchQuery(q)
+    if (open) setEditSampleId(open)
+    if (open || q) window.history.replaceState(null, '', window.location.pathname)
+  }, [])
+
   useEffect(() => {
     loadCertificates()
   }, [])
