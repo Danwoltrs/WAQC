@@ -15,6 +15,12 @@ const BAG_TYPES: Record<string, string> = {
   bulk: 'Bulk',
 }
 
+const SAMPLE_TYPES: { value: string; label: string }[] = [
+  { value: 'pss', label: 'PSS' },
+  { value: 'ss', label: 'SS' },
+  { value: 'stocklot', label: 'Stocklot' },
+]
+
 function bagTypeLabel(v?: string | null): string {
   if (!v) return '—'
   return BAG_TYPES[v] || v
@@ -118,6 +124,31 @@ export function DetailsEditPanel({
             ) : null}
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Sample type">
+              <Select
+                value={(form.sample_type || '').toString()}
+                onValueChange={(v) => set('sample_type', v)}
+                disabled={lockedQuality}
+              >
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select type" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(() => {
+                    const cur = (form.sample_type || '').toString()
+                    const opts = [...SAMPLE_TYPES]
+                    if (cur && !opts.some((t) => t.value === cur)) {
+                      opts.push({ value: cur, label: cur.charAt(0).toUpperCase() + cur.slice(1) })
+                    }
+                    return opts
+                  })().map((t) => (
+                    <SelectItem key={t.value} value={t.value}>
+                      {t.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
             <Field label="Origin">
               <Input value={form.origin ?? ''} onChange={(e) => set('origin', e.target.value)} disabled={lockedQuality} className="h-9" />
             </Field>

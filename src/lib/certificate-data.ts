@@ -1082,6 +1082,8 @@ function getDefectWeight(name: string): number {
  * 1. counts format: {counts: {defectName: count}, primary: 0, secondary: 19.04}
  * 2. array format: [{name, count, category}]
  * 3. object format: {primary: [...], secondary: [...]}
+ * 4. defect_list format: {defect_list: [{name, count}], primary, secondary, total}
+ *    (cert/quality editors — bare primary/secondary are raw, recomputed as weighted here)
  *
  * Returns defects with rawCount, weight, and weightedCount for display
  * Uses pre-calculated totals from data when available
@@ -1121,6 +1123,27 @@ function parseDefects(defectsData: unknown): GreenBeanAnalysis['defects'] {
     if (hasPreCalcTotals) {
       totalPrimary = defects.primary as number
       totalSecondary = defects.secondary as number
+    }
+  }
+  // Handle defect_list format: {defect_list: [{name, count}], primary, secondary, total}
+  // (written by the certificate / quality editors). The bare primary/secondary here are
+  // RAW summed counts, NOT weighted totals — so we recompute weighted totals from the list
+  // by name (like the counts format) rather than trusting them.
+  else if (Array.isArray(defects.defect_list)) {
+    for (const d of defects.defect_list as Array<{ name?: string; count?: number }>) {
+      if (d.name && typeof d.count === 'number' && d.count > 0) {
+        const name = d.name
+        const weight = getDefectWeight(name)
+        const weightedCount = d.count * weight
+        const isPrimary = PRIMARY_DEFECTS.some(pd => name.toLowerCase().includes(pd.toLowerCase()))
+        if (isPrimary) {
+          primary.push({ name, rawCount: d.count, weight, weightedCount })
+          totalPrimary += weightedCount
+        } else {
+          secondary.push({ name, rawCount: d.count, weight, weightedCount })
+          totalSecondary += weightedCount
+        }
+      }
     }
   }
   // Handle array format

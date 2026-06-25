@@ -102,7 +102,7 @@ export function CertificateEditOverlay({ open, sampleId, onOpenChange, onSaved }
             ) : null}
             {sample ? (
               <span className="rounded-full border border-border px-2 py-0.5 text-xs font-medium text-muted-foreground">
-                {certTypeLabel(sample.sample_type, ed.isCVA)}
+                {certTypeLabel(draft.sample.sample_type ?? sample.sample_type, ed.isCVA)}
               </span>
             ) : null}
           </div>
