@@ -38,14 +38,19 @@ export function InfoStripBand({
 }) {
   const bagCount = draftSample.bag_count ?? sample.bag_count ?? sample.bags
   const bagWeight = draftSample.bag_weight_kg ?? sample.bag_weight_kg
+  const isPSS = (sample.sample_type || '').toLowerCase() === 'pss'
   const tiles: { label: string; value: React.ReactNode }[] = [
     { label: 'Wolthers ref', value: draftSample.wolthers_contract_nr || sample.wolthers_contract_nr || '—' },
     { label: 'Seller ref', value: draftSample.seller_contract_nr || sample.seller_contract_nr || '—' },
-    { label: 'Importer', value: sample.importer_name || '—' },
     { label: 'Quantity', value: bagCount ? `${bagCount} × ${bagWeight ?? '—'} kg` : '—' },
     { label: 'Bag type', value: bagTypeLabel(draftSample.bag_type ?? sample.bag_type) },
-    { label: 'Exporter sample #', value: draftSample.exporter_sample_number || sample.exporter_sample_number || '—' },
   ]
+  if (isPSS) {
+    tiles.push({ label: 'Exporter sample #', value: draftSample.exporter_sample_number || sample.exporter_sample_number || '—' })
+  } else {
+    tiles.push({ label: 'Container', value: draftSample.container_nr || sample.container_nr || '—' })
+    tiles.push({ label: 'ICO #', value: draftSample.ico_number || sample.ico_number || '—' })
+  }
   return (
     <div className="grid grid-cols-2 divide-x divide-y divide-border border-b border-border sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
       {tiles.map((t) => (
