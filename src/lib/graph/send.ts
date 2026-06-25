@@ -103,6 +103,10 @@ async function throwGraphError(
   } catch {
     details = await res.text().catch(() => null)
   }
+  // Log the full Graph error (incl. innerError + request-id) so failures like
+  // 403 ErrorAccessDenied can be diagnosed from server logs, not just the terse
+  // "<context>: 403 ErrorAccessDenied" string surfaced to callers.
+  console.error(`[graph] ${context}:`, res.status, graphCode, JSON.stringify(details))
   throw new GraphSendError(
     `${context}: ${res.status} ${graphCode ?? ''}`.trim(),
     res.status,
@@ -162,7 +166,17 @@ function buildMessagePayload(params: GraphSendParams) {
   // address (e.g. a personal gmail used as a profile email) makes Graph reject
   // the send with 403 ErrorAccessDenied. For non-tenant senders, omit `sender`
   // so the message goes out plainly as the mailbox itself.
-  if (params.senderEmail && /@wolthers\.com$/i.test(params.senderEmail)) {
+  // Diagnostic kill-switch: set MICROSOFT_GRAPH_DISABLE_SENDER=true to stop
+  // stamping the on-behalf-of sender and send plainly as the mailbox itself.
+  // Lets us isolate whether a 403 ErrorAccessDenied comes from the on-behalf-of
+  // sender stamp (the app acting for another mailbox) vs the QC mailbox's own
+  // Mail.Send authorization (app-permission consent / Exchange app access policy).
+  const onBehalfDisabled = process.env.MICROSOFT_GRAPH_DISABLE_SENDER === 'true'
+  if (
+    !onBehalfDisabled &&
+    params.senderEmail &&
+    /@wolthers\.com$/i.test(params.senderEmail)
+  ) {
     msg.sender = {
       emailAddress: {
         address: params.senderEmail,
