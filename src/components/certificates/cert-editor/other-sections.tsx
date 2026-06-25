@@ -10,7 +10,7 @@ export function OtherSections({ sample, onRecipientsChange }: { sample: CertSamp
     <div className="mx-auto max-w-6xl space-y-5">
       {showLogistics ? (
         <Card>
-          <CardContent className="pt-4 pb-4">
+          <CardContent className="py-4">
             <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-3">
               <div>
                 <div className="text-xs text-muted-foreground">AWB</div>

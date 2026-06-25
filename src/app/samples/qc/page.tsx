@@ -2236,7 +2236,7 @@ export default function SamplesPage() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Sample Detail Modal */}
+      {/* Sample Detail Overlay */}
       <SampleDetailOverlay
         open={!!detailSampleId}
         onOpenChange={(open) => {

@@ -32,9 +32,9 @@ function CupFlag({ label, value }: { label: string; value: boolean | null }) {
   const Icon = value === true ? Check : value === false ? X : Minus
   const cls =
     value === true
-      ? 'border-green-500/40 text-green-600 dark:text-green-400'
+      ? 'border-green-500/40 dark:border-green-500/50 text-green-600 dark:text-green-400'
       : value === false
-        ? 'border-red-500/40 text-red-600 dark:text-red-400'
+        ? 'border-red-500/40 dark:border-red-500/50 text-red-600 dark:text-red-400'
         : 'border-border text-muted-foreground'
   return (
     <span className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium ${cls}`}>

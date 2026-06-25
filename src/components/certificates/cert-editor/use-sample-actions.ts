@@ -113,6 +113,7 @@ export function useSampleActions({
       setQrCodeDataUrl(dataUrl)
     } catch (error) {
       console.error('Error generating QR code:', error)
+      toast({ title: 'QR code failed', description: 'Could not generate the QR code.', variant: 'destructive' })
     } finally {
       setGeneratingQr(false)
     }
@@ -210,6 +211,7 @@ export function useSampleActions({
   const handleGenerateCertificate = async () => {
     try {
       setGeneratingCertificate(true)
+      // Generation is mother-cert based — intentionally no contract_id (unlike view/download).
       const createRes = await fetch(`/api/samples/${sample.id}/certificate`, { method: 'POST' })
       if (!createRes.ok) {
         const data = await createRes.json()
@@ -235,9 +237,12 @@ export function useSampleActions({
       if (response.ok) {
         const blob = await response.blob()
         setPreviewPdfUrl(window.URL.createObjectURL(blob))
+      } else {
+        toast({ title: 'Preview failed', description: 'Could not load the certificate preview.', variant: 'destructive' })
       }
     } catch (error) {
       console.error('Error loading certificate preview:', error)
+      toast({ title: 'Preview failed', description: 'Could not load the certificate preview.', variant: 'destructive' })
     } finally {
       setPreviewLoading(false)
     }
