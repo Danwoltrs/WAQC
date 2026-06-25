@@ -290,7 +290,7 @@ describe('Container, ICO, and stage tag', () => {
 })
 
 describe('buildQualitySummaryHtml', () => {
-  it('renders a seller table (9 cols) with Wolthers/Seller/Container headers and a colspan reason row', () => {
+  it('renders a seller table with Wolthers/Seller/Container headers and the reason under REJECTED', () => {
     const groups = groupQualitySamples(
       [sample({ sampleId: 's2', decision: 'rejected', typeOk: false, cupOk: true, reason: 'Defects over spec.' })],
       'qcClient',
@@ -300,14 +300,17 @@ describe('buildQualitySummaryHtml', () => {
     expect(html).toContain('>Wolthers<')
     expect(html).toContain('>Seller Ref<')
     expect(html).toContain('>Container<')
-    expect(html).toContain('REJECTED')
     expect(html).toContain('FAIL')
-    expect(html).toContain('colspan="9"')
+    // Reason sits in the Result cell directly under REJECTED — not a separate
+    // full-width row and without a "Reason:" label.
+    expect(html).toContain('REJECTED</span><div')
     expect(html).toContain('Defects over spec.')
+    expect(html).not.toContain('Reason:')
+    expect(html).not.toContain('colspan')
   })
-  it('renders a buyer table (8 cols) with Buyer ref + Container, and no Wolthers/Seller columns', () => {
+  it('renders a buyer table with Buyer ref + Container and no Wolthers/Seller columns', () => {
     const groups = groupQualitySamples(
-      [sample({ sampleId: 's2', decision: 'rejected', reason: 'x' })],
+      [sample({ sampleId: 's2', decision: 'rejected', reason: 'Out of spec.' })],
       'seller',
     )
     const html = buildQualitySummaryHtml(groups, { audience: 'buyer' })
@@ -315,7 +318,8 @@ describe('buildQualitySummaryHtml', () => {
     expect(html).toContain('>Container<')
     expect(html).not.toContain('>Wolthers<')
     expect(html).not.toContain('>Seller Ref<')
-    expect(html).toContain('colspan="8"')
+    expect(html).toContain('REJECTED</span><div')
+    expect(html).toContain('Out of spec.')
   })
   it('escapes dynamic values', () => {
     const groups = groupQualitySamples([sample({ exporterSampleNumber: '<b>x</b>' })], 'qcClient')

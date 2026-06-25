@@ -384,9 +384,14 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
   for (const group of groups) {
     const rows: string[] = []
     for (const s of group.samples) {
+      // The rejection reason sits in the Result cell, directly under REJECTED.
+      const reasonHtml =
+        s.decision === 'rejected' && s.reason && s.reason.trim()
+          ? `<div style="color:#b91c1c;font-style:italic;font-size:9pt;margin-top:3px;">${escapeHtml(s.reason).replace(/\n/g, '<br/>')}</div>`
+          : ''
       const result =
         s.decision === 'rejected'
-          ? `<span style="color:#ef4444;font-weight:600;">REJECTED</span>`
+          ? `<span style="color:#ef4444;font-weight:600;">REJECTED</span>${reasonHtml}`
           : `<span style="color:#22c55e;font-weight:600;">APPROVED</span>`
       const refTds = refCols.map((c) => `<td style="${TD_STYLE}">${refCellHtml(c, s)}</td>`).join('')
       rows.push(
@@ -399,13 +404,6 @@ export function buildQualitySummaryHtml(groups: QualitySummaryGroup[], opts?: Qu
           `<td style="${TD_STYLE}">${result}</td>` +
           `</tr>`,
       )
-      if (s.decision === 'rejected' && s.reason && s.reason.trim()) {
-        rows.push(
-          `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#b91c1c;font-style:italic;font-size:9pt;">` +
-            `Reason: ${escapeHtml(s.reason).replace(/\n/g, '<br/>')}` +
-            `</td></tr>`,
-        )
-      }
       if (showsSellerComment(s, opts)) {
         rows.push(
           `<tr><td colspan="${colCount}" style="padding:2px 8px 8px;border-bottom:1px solid rgba(0,0,0,0.08);color:#374151;font-size:9pt;">` +
