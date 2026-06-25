@@ -303,6 +303,17 @@ export default function SamplesPage() {
   // Check if user is global admin
   const isGlobalAdmin = profile?.is_global_admin || profile?.qc_role === 'global_admin'
 
+  // Consume command-palette deep links: ?open=<sampleId> opens the detail modal,
+  // ?q=<text> prefills the search box. Runs once on mount.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const open = params.get('open')
+    const q = params.get('q')
+    if (q) setSearchQuery(q)
+    if (open) setDetailSampleId(open)
+    if (open || q) window.history.replaceState(null, '', window.location.pathname)
+  }, [])
+
   useEffect(() => {
     loadSamples()
     // eslint-disable-next-line react-hooks/exhaustive-deps
