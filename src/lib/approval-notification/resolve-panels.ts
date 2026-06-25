@@ -23,6 +23,14 @@ export const HOUSE_CC = 'wolthers@wolthers.com'
 
 const isInternal = (email: string): boolean => /@wolthers\.com$/i.test(email)
 
+/** First name only (first whitespace token), for a friendlier greeting; null when
+ *  there's no usable name. A contact's nickname (when set) is preferred over this. */
+function firstName(full: string | null): string | null {
+  const trimmed = full?.trim()
+  if (!trimmed) return null
+  return trimmed.split(/\s+/)[0]
+}
+
 const toChip = (r: ContactRow): RecipientChip => ({
   email: r.email as string,
   name: r.name,
@@ -92,8 +100,12 @@ export function resolvePanel(
   const ccGroupRows = individuals.length > 0 ? groupInboxes : []
   const to = toRows.map(toChip)
 
+  // Greet by nickname if the contact has one, else just their FIRST name
+  // ("Dear Sven," not "Dear Sven Drillenburg,").
   const greetSource = to.find((c) => !c.isGroupMailbox)
-  const greeting = greetSource ? greetSource.nickname ?? greetSource.name ?? fallbackTeam : fallbackTeam
+  const greeting = greetSource
+    ? greetSource.nickname?.trim() || firstName(greetSource.name) || fallbackTeam
+    : fallbackTeam
 
   const cc = baseCc()
   const seen = new Set<string>(cc.map((c) => c.email.toLowerCase()).concat(to.map((c) => c.email.toLowerCase())))

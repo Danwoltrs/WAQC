@@ -37,7 +37,7 @@ export interface QualitySampleSummary {
   sellerContractNr: string | null
   wolthersContractNr: string | null
   buyerContractNr: string | null
-  trackingNumber: string | null // Wolthers per-sample lab/cert number
+  certificateNumber: string | null // official cert number (BR-…/26); fallback Sample ref
   containerNr: string | null
   icoNumber: string | null
   sampleType: string | null // pss | ss | type | specialty | stocklot
@@ -155,6 +155,63 @@ export function classifyStageResults(input: {
   return { typeOk: null, cupOk: null }
 }
 
+interface DefectEntry {
+  name?: string
+  intensity?: number
+}
+export interface ResolvedDefects {
+  taints?: DefectEntry[]
+  faults?: DefectEntry[]
+}
+
+// Compliance lines that only COUNT taints/faults ("Cupping faults: 1 exceeds…",
+// "Zero tolerance: …") — dropped when we already list the named defects, so the
+// reason doesn't say both "Hard (riado)" and "Cupping faults: 1".
+const TF_COUNT_VIOLATION = /^(Cupping taints|Cupping faults|Zero tolerance|Combined)/i
+
+/**
+ * Human-readable "why it failed" for a rejected sample. Combines, in order:
+ *   1. the named cup faults/taints from the authoritative resolved set, shown
+ *      concisely as `name (intensity)` — e.g. `Hard (riado) (3)`;
+ *   2. the compliance engine's spec violations (attribute below min, defects over
+ *      limit, screen, moisture, quakers) — minus the generic taint/fault counts
+ *      already named in (1);
+ *   3. any free-text grading/cupping note the lab wrote.
+ * Returns null when there's nothing concrete to show.
+ */
+export function buildRejectionReason(input: {
+  violations: string[]
+  resolvedDefects: ResolvedDefects | null
+  cuppingComment: string
+  gradingComment: string
+}): string | null {
+  const lines: string[] = []
+  const named = (list?: DefectEntry[]): string[] =>
+    (list ?? [])
+      .map((d) => {
+        const n = d?.name?.trim()
+        if (!n) return null
+        return typeof d.intensity === 'number' ? `${n} (${d.intensity})` : n
+      })
+      .filter((s): s is string => !!s)
+
+  // Named cup defects (faults + taints) shown concisely, e.g. "Hard (riado) (3)".
+  const defects = [...named(input.resolvedDefects?.faults), ...named(input.resolvedDefects?.taints)]
+  if (defects.length) lines.push(defects.join(', '))
+
+  const haveNamed = defects.length > 0
+  for (const v of input.violations) {
+    if (haveNamed && TF_COUNT_VIOLATION.test(v)) continue
+    if (v.trim()) lines.push(v.trim())
+  }
+
+  const note = [input.cuppingComment, input.gradingComment].filter(Boolean).join('\n')
+  if (note.trim()) lines.push(note.trim())
+
+  const joined = lines.join('\n').trim()
+  return joined || null
+}
+
 /** Group samples by the chosen party (QC client or seller), ordered by heading;
  *  within a group, approvals first then by reference. */
 export function groupQualitySamples(list: QualitySampleSummary[], by: GroupBy): QualitySummaryGroup[] {
@@ -191,12 +248,14 @@ interface RefColumn {
 
 /**
  * Reference columns shown before Screen, chosen by audience:
- *   buyer  → Sample (Wolthers #) + Buyer ref
- *   seller → Sample (Wolthers #) + Wolthers contract # + Seller ref
- * "Sample" is the per-sample Wolthers tracking/cert number (always present), with
- * the seller's own sample reference (exporter_sample_number, when entered at
- * intake) on a second line. The internal auto sample_number is never shown.
- * Buyers don't see the internal Wolthers contract number.
+ *   buyer  → Sample + Buyer ref
+ *   seller → Sample + Wolthers contract # + Seller ref
+ * "Sample" is the seller/shipper's OWN sample reference (exporter_sample_number,
+ * entered at intake), prefixed with the stage tag (PSS/SS/Stocklot). When no
+ * seller reference was entered it falls back to the official certificate number
+ * (BR-…/26). The internal Wolthers lab number (samples.tracking_number, e.g.
+ * SAN-00101/26) is an internal identifier and is NEVER shown to buyers or sellers.
+ * Buyers also don't see the Wolthers contract number.
  */
 /** Short uppercase stage label (PSS / SS / Stocklot / …) from the sample type. */
 function sampleTypeLabel(t: string | null): string | null {
@@ -213,16 +272,20 @@ function sampleTypeLabel(t: string | null): string | null {
 }
 
 function refColumns(audience: 'buyer' | 'seller'): RefColumn[] {
-  // "Sample" leads with the stage tag (PSS/SS/Stocklot) + the Wolthers tracking/
-  // cert number, with the seller's own sample reference on a second line.
+  // "Sample" shows the stage tag (PSS/SS/Stocklot) + a reference. Preference:
+  //   1. the seller/shipper's OWN sample reference (exporter_sample_number)
+  //   2. else the official certificate number (BR-…/26)
+  // The internal Wolthers lab number (tracking_number, SAN-…/26) is intentionally
+  // never shown — it must not leak to buyers or sellers. Falls back to the stage
+  // alone (then "—") when neither reference exists.
   const sample: RefColumn = {
     header: 'Sample',
     value: (s) => {
-      const num = s.trackingNumber ?? '—'
+      const ref = s.exporterSampleNumber?.trim() || s.certificateNumber?.trim()
       const stage = sampleTypeLabel(s.sampleType)
-      return stage ? `${stage} · ${num}` : num
+      if (stage && ref) return `${stage} · ${ref}`
+      return ref || stage || '—'
     },
-    sub: (s) => s.exporterSampleNumber,
   }
   // Container + ICO are shown to both sides (traceability). Container is the
   // per-shipment identifier; the ICO number rides as a labelled second line.
@@ -405,7 +468,7 @@ export async function fetchQualitySampleSummaries(
   const { data: samples } = await admin
     .from('samples')
     .select(
-      'id, exporter_sample_number, seller_contract_nr, wolthers_contract_nr, buyer_contract_nr, tracking_number, container_nr, ico_number, sample_type, client_id, seller_id, status, quality_spec_id',
+      'id, exporter_sample_number, seller_contract_nr, wolthers_contract_nr, buyer_contract_nr, container_nr, ico_number, sample_type, client_id, seller_id, status, quality_spec_id',
     )
     .in('id', ids)
   const rows = (samples ?? []) as Array<Record<string, unknown>>
@@ -425,12 +488,27 @@ export async function fetchQualitySampleSummaries(
 
   const { data: qaRows } = await admin
     .from('quality_assessments')
-    .select('sample_id, green_bean_data, grading_comments, cupping_comments, created_at')
+    .select('sample_id, green_bean_data, grading_comments, cupping_comments, resolved_defects, created_at')
     .in('sample_id', ids)
     .order('created_at', { ascending: false })
   const qaBySample = new Map<string, Record<string, unknown>>()
   for (const r of (qaRows ?? []) as Array<Record<string, unknown>>) {
     if (!qaBySample.has(r.sample_id as string)) qaBySample.set(r.sample_id as string, r)
+  }
+
+  // Official certificate number (mother cert, sample_contract_id IS NULL) — shown
+  // as the Sample reference when the seller/shipper didn't enter their own sample
+  // number. Never the internal tracking number.
+  const certNumberBySample = new Map<string, string>()
+  const { data: certRows } = await admin
+    .from('certificates')
+    .select('sample_id, certificate_number')
+    .in('sample_id', ids)
+    .is('sample_contract_id', null)
+  for (const r of (certRows ?? []) as Array<Record<string, unknown>>) {
+    const sid = r.sample_id as string
+    const n = r.certificate_number
+    if (typeof n === 'string' && n.trim() && !certNumberBySample.has(sid)) certNumberBySample.set(sid, n)
   }
 
   // Seller approval note — separate guarded query so a not-yet-applied
@@ -454,11 +532,11 @@ export async function fetchQualitySampleSummaries(
     const greenBean = qa?.green_bean_data ?? null
     const gradingComment = String(qa?.grading_comments ?? '').trim()
     const cuppingComment = String(qa?.cupping_comments ?? '').trim()
-    const reason =
-      decision === 'rejected' ? [cuppingComment, gradingComment].filter(Boolean).join('\n') || null : null
+    const resolvedDefects = (qa?.resolved_defects as ResolvedDefects | null) ?? null
 
     let typeOk: boolean | null = true
     let cupOk: boolean | null = true
+    let reason: string | null = null
     if (decision === 'rejected') {
       let violations: string[] = []
       try {
@@ -473,6 +551,7 @@ export async function fetchQualitySampleSummaries(
         hasGradingComment: !!gradingComment,
         hasCuppingComment: !!cuppingComment,
       }))
+      reason = buildRejectionReason({ violations, resolvedDefects, cuppingComment, gradingComment })
     }
 
     out.set(sampleId, {
@@ -483,7 +562,7 @@ export async function fetchQualitySampleSummaries(
       sellerContractNr: (s.seller_contract_nr as string) ?? null,
       wolthersContractNr: (s.wolthers_contract_nr as string) ?? null,
       buyerContractNr: (s.buyer_contract_nr as string) ?? null,
-      trackingNumber: (s.tracking_number as string) ?? null,
+      certificateNumber: certNumberBySample.get(sampleId) ?? null,
       containerNr: (s.container_nr as string) ?? null,
       icoNumber: (s.ico_number as string) ?? null,
       sampleType: (s.sample_type as string) ?? null,

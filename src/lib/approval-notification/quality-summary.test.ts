@@ -7,6 +7,7 @@ import {
   buildQualitySummaryText,
   buildQualitySummaryHtml,
   buildQualitySummarySubject,
+  buildRejectionReason,
   type QualitySampleSummary,
 } from './quality-summary'
 
@@ -18,7 +19,7 @@ const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
   sellerContractNr: '42235',
   wolthersContractNr: '42235/26',
   buyerContractNr: 'DKN-001',
-  trackingNumber: 'BR-42235/26',
+  certificateNumber: null,
   containerNr: 'MRKU 708.491-7',
   icoNumber: '013/0456/0789',
   sampleType: 'ss',
@@ -104,6 +105,49 @@ describe('classifyStageResults', () => {
   })
 })
 
+describe('buildRejectionReason', () => {
+  it('names the cup faults/taints concisely as name (intensity)', () => {
+    const r = buildRejectionReason({
+      violations: [],
+      resolvedDefects: { faults: [{ name: 'Hard (riado)', intensity: 3 }], taints: [{ name: 'Fermented' }] },
+      cuppingComment: '',
+      gradingComment: '',
+    })
+    expect(r).toContain('Hard (riado) (3)')
+    expect(r).toContain('Fermented')
+    expect(r).not.toContain('intensity')
+    expect(r).not.toContain('Cup faults:')
+  })
+  it('keeps spec violations but drops the generic taint/fault counts already named', () => {
+    const r = buildRejectionReason({
+      violations: ['Cupping faults: 1 exceeds limit (0)', 'Flavor: 5.50 is below minimum (6)'],
+      resolvedDefects: { faults: [{ name: 'Hard (riado)', intensity: 3 }] },
+      cuppingComment: '',
+      gradingComment: '',
+    })
+    expect(r).toContain('Hard (riado) (3)')
+    expect(r).toContain('Flavor: 5.50 is below minimum (6)')
+    expect(r).not.toContain('Cupping faults: 1')
+  })
+  it('keeps the generic taint/fault counts when there are no named defects', () => {
+    const r = buildRejectionReason({
+      violations: ['Cupping faults: 1 exceeds limit (0)'],
+      resolvedDefects: null,
+      cuppingComment: '',
+      gradingComment: '',
+    })
+    expect(r).toContain('Cupping faults: 1 exceeds limit (0)')
+  })
+  it('appends the free-text grading/cupping note and returns null when empty', () => {
+    expect(
+      buildRejectionReason({ violations: [], resolvedDefects: null, cuppingComment: 'Strong phenolic note.', gradingComment: '' }),
+    ).toBe('Strong phenolic note.')
+    expect(
+      buildRejectionReason({ violations: [], resolvedDefects: null, cuppingComment: '', gradingComment: '' }),
+    ).toBeNull()
+  })
+})
+
 describe('groupQualitySamples', () => {
   it('groups a seller email by QC client, ordered by name', () => {
     const groups = groupQualitySamples(
@@ -160,7 +204,8 @@ describe('buildQualitySummaryText', () => {
     )
     const text = buildQualitySummaryText(groups, { audience: 'seller' })
     expect(text).toContain('Dunkin')
-    expect(text).toContain('Sample: SS · BR-42235/26 (AS 175926)') // stage tag + Wolthers # + seller ref
+    expect(text).toContain('Sample: SS · AS 175926') // stage tag + seller/shipper sample ref (never the internal lab #)
+    expect(text).not.toContain('BR-42235/26')
     expect(text).toContain('Wolthers: 42235/26')
     expect(text).toContain('Seller Ref: 42235')
     expect(text).toContain('Container: MRKU 708.491-7 (ICO 013/0456/0789)')
@@ -173,7 +218,7 @@ describe('buildQualitySummaryText', () => {
   it('renders buyer refs (Sample + Buyer ref) and hides the Wolthers/Seller numbers', () => {
     const groups = groupQualitySamples([sample({})], 'seller')
     const text = buildQualitySummaryText(groups, { audience: 'buyer' })
-    expect(text).toContain('Sample: SS · BR-42235/26')
+    expect(text).toContain('Sample: SS · AS 175926')
     expect(text).toContain('Buyer Ref: DKN-001')
     expect(text).toContain('Container: MRKU 708.491-7')
     expect(text).not.toContain('Wolthers: 42235/26')
@@ -181,44 +226,65 @@ describe('buildQualitySummaryText', () => {
   })
 })
 
-describe('Sample cell (seller sample reference sub-line)', () => {
-  it('shows the seller sample reference under the Wolthers number when entered', () => {
-    const groups = groupQualitySamples([sample({ trackingNumber: 'S-00007/26', exporterSampleNumber: 'AS 9' })], 'qcClient')
-    expect(buildQualitySummaryText(groups, { audience: 'seller' })).toContain('Sample: SS · S-00007/26 (AS 9)')
+describe('Sample cell (seller/shipper sample reference)', () => {
+  it('shows the seller/shipper sample reference as the Sample value when entered', () => {
+    const groups = groupQualitySamples([sample({ exporterSampleNumber: 'AS 9' })], 'qcClient')
+    expect(buildQualitySummaryText(groups, { audience: 'seller' })).toContain('Sample: SS · AS 9')
     const html = buildQualitySummaryHtml(groups, { audience: 'seller' })
-    expect(html).toContain('S-00007/26')
     expect(html).toContain('AS 9')
   })
-  it('omits the sub-line (and never the internal sample_number) when no seller reference was entered', () => {
-    const groups = groupQualitySamples([sample({ trackingNumber: 'S-00008/26', exporterSampleNumber: null })], 'qcClient')
+  it('falls back to the certificate number (never the internal lab number) when no seller reference was entered', () => {
+    const groups = groupQualitySamples(
+      [sample({ exporterSampleNumber: null, certificateNumber: 'BR-037065/26' })],
+      'qcClient',
+    )
     const text = buildQualitySummaryText(groups, { audience: 'seller' })
-    expect(text).toContain('Sample: SS · S-00008/26')
-    expect(text).not.toContain('S-00008/26 (')
+    expect(text).toContain('Sample: SS · BR-037065/26')
+  })
+  it('prefers the seller reference over the certificate number when both exist', () => {
+    const groups = groupQualitySamples(
+      [sample({ exporterSampleNumber: 'AS 9', certificateNumber: 'BR-037065/26' })],
+      'qcClient',
+    )
+    const text = buildQualitySummaryText(groups, { audience: 'seller' })
+    expect(text).toContain('Sample: SS · AS 9')
+    expect(text).not.toContain('BR-037065/26')
+  })
+  it('falls back to the stage tag when neither a seller reference nor a certificate exists', () => {
+    const groups = groupQualitySamples([sample({ exporterSampleNumber: null, certificateNumber: null })], 'qcClient')
+    const text = buildQualitySummaryText(groups, { audience: 'seller' })
+    expect(text).toContain('Sample: SS')
+    expect(text).not.toContain('SS · ') // no reference appended when none entered
+  })
+  it('shows the reference without a stage prefix when the type is null', () => {
+    const groups = groupQualitySamples([sample({ sampleType: null, exporterSampleNumber: 'AS 9' })], 'qcClient')
+    const text = buildQualitySummaryText(groups, { audience: 'seller' })
+    expect(text).toContain('Sample: AS 9')
+    expect(text).not.toContain('· AS 9')
   })
 })
 
 describe('Container, ICO, and stage tag', () => {
   it('renders the stage tag in the Sample cell and the ICO under the container', () => {
     const groups = groupQualitySamples(
-      [sample({ trackingNumber: 'S-9/26', sampleType: 'pss', containerNr: 'TCKU 109.779-2', icoNumber: '99/1' })],
+      [sample({ sampleType: 'pss', exporterSampleNumber: 'AS 9', containerNr: 'TCKU 109.779-2', icoNumber: '99/1' })],
       'qcClient',
     )
     const html = buildQualitySummaryHtml(groups, { audience: 'seller' })
-    expect(html).toContain('PSS · S-9/26')
+    expect(html).toContain('PSS · AS 9')
     expect(html).toContain('TCKU 109.779-2')
     expect(html).toContain('ICO 99/1')
     const text = buildQualitySummaryText(groups, { audience: 'seller' })
-    expect(text).toContain('Sample: PSS · S-9/26')
+    expect(text).toContain('Sample: PSS · AS 9')
     expect(text).toContain('Container: TCKU 109.779-2 (ICO 99/1)')
   })
-  it('omits the stage prefix when type is null and shows a dash for a missing container', () => {
+  it('shows a dash when neither stage nor reference is present, and a dash for a missing container', () => {
     const groups = groupQualitySamples(
-      [sample({ trackingNumber: 'S-10/26', sampleType: null, containerNr: null, icoNumber: null, exporterSampleNumber: null })],
+      [sample({ sampleType: null, containerNr: null, icoNumber: null, exporterSampleNumber: null })],
       'qcClient',
     )
     const text = buildQualitySummaryText(groups, { audience: 'seller' })
-    expect(text).toContain('Sample: S-10/26')
-    expect(text).not.toContain(' · S-10/26')
+    expect(text).toContain('Sample: —')
     expect(text).toContain('Container: —')
   })
 })
@@ -252,7 +318,7 @@ describe('buildQualitySummaryHtml', () => {
     expect(html).toContain('colspan="8"')
   })
   it('escapes dynamic values', () => {
-    const groups = groupQualitySamples([sample({ trackingNumber: '<b>x</b>' })], 'qcClient')
+    const groups = groupQualitySamples([sample({ exporterSampleNumber: '<b>x</b>' })], 'qcClient')
     const html = buildQualitySummaryHtml(groups)
     expect(html).toContain('&lt;b&gt;x&lt;/b&gt;')
     expect(html).not.toContain('<b>x</b>')

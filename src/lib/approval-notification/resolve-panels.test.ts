@@ -28,6 +28,14 @@ describe('resolvePanel', () => {
     expect(p.cc.some((c) => c.email === HOUSE_CC)).toBe(true)
   })
 
+  it('greets by FIRST name only when the contact has no nickname', () => {
+    const rows = [
+      row({ email: 'sven@buyer.com', name: 'Sven Drillenburg', nickname: null, routing_purposes: ['qc_certificates'] }),
+    ]
+    const p = resolvePanel(rows, 'C1', 'Ahold', QC)
+    expect(p.greeting).toBe('Sven')
+  })
+
   it('does NOT fall back to a primary/first contact when none are tagged', () => {
     const rows = [
       row({ email: 'first@buyer.com', name: 'First' }),
