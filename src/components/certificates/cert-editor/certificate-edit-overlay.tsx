@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
-import { Loader2, X, Save } from 'lucide-react'
+import { Loader2, X, Save, MapPin } from 'lucide-react'
 import { useCertEditor } from './use-cert-editor'
 import { certTypeLabel } from './shared'
 import { InfoStripBand, DetailsEditPanel } from './info-strip'
@@ -12,12 +12,18 @@ import { ScreenQuadrant, ScreenEditPanel } from './screen-quadrant'
 import { PhysicalQuadrant, PhysicalEditPanel } from './physical-quadrant'
 import { CuppingQuadrant, CuppingEditPanel } from './cupping-quadrant'
 
-export interface CertificateEditOverlayProps {
+export interface SampleDetailOverlayProps {
   open: boolean
   sampleId: string | null
   onOpenChange: (open: boolean) => void
   /** Fired after a successful save so the underlying list can refetch in place. */
   onSaved?: () => void
+  /** Same as onSaved — the samples pages use this name. Both fire. */
+  onSampleUpdated?: () => void
+  /** Sub-contract context: when set, parties are read-only and the sample loads with ?contract_id. */
+  contractId?: string | null
+  /** Open straight into the "Edit details" panel (the samples list's context-menu "Edit"). */
+  startInEditMode?: boolean
 }
 
 type Panel = 'defects' | 'screen' | 'physical' | 'cupping' | 'details' | null
@@ -43,15 +49,21 @@ function formatDate(iso?: string): string {
   }
 }
 
-export function CertificateEditOverlay({ open, sampleId, onOpenChange, onSaved }: CertificateEditOverlayProps) {
+export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onSampleUpdated, contractId, startInEditMode }: SampleDetailOverlayProps) {
   const { toast } = useToast()
-  const ed = useCertEditor(sampleId, open)
+  const ed = useCertEditor(sampleId, open, contractId)
   const [panel, setPanel] = useState<Panel>(null)
 
   // Reset transient UI when the overlay opens for a new sample.
   useEffect(() => {
     if (open) setPanel(null)
   }, [open, sampleId])
+
+  // The samples list's context-menu "Edit" opens straight into the details editor.
+  useEffect(() => {
+    if (open && startInEditMode && ed.sample && !ed.loading) setPanel('details')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, startInEditMode, ed.sample, ed.loading])
 
   // Escape closes the top-most surface (panel first, then overlay).
   useEffect(() => {
@@ -75,6 +87,7 @@ export function CertificateEditOverlay({ open, sampleId, onOpenChange, onSaved }
       if (ok) {
         toast({ title: 'Changes saved' })
         onSaved?.()
+        onSampleUpdated?.()
         onOpenChange(false)
       }
     } catch (e) {
@@ -106,9 +119,15 @@ export function CertificateEditOverlay({ open, sampleId, onOpenChange, onSaved }
               </span>
             ) : null}
           </div>
+          {sample?.storage_position ? (
+            <div className="mt-1 inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <MapPin className="h-3.5 w-3.5" />
+              {sample.storage_position}
+            </div>
+          ) : null}
           {sample ? (
             <div className="mt-0.5 truncate text-xs text-muted-foreground">
-              {[sample.origin, sample.quality_name, `Created ${formatDate(sample.created_at)}`]
+              {[sample.origin, sample.micro_origin, sample.quality_name, `Created ${formatDate(sample.created_at)}`]
                 .filter(Boolean)
                 .join(' · ')}
             </div>
