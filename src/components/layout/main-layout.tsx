@@ -2,8 +2,9 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { Header } from './header'
+import { Menu } from 'lucide-react'
 import { LeftSidebar, type SidebarMode } from './left-sidebar'
+import { CommandPalette } from '@/components/command-palette/command-palette'
 import { RightSidebar } from './right-sidebar'
 import { useNotifications } from '@/hooks/use-notifications'
 import { useAuth } from '@/components/providers/auth-provider'
@@ -24,6 +25,7 @@ export function MainLayout({ children }: MainLayoutProps) {
   const [hoverExpanded, setHoverExpanded] = useState(false)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [notificationsSidebarOpen, setNotificationsSidebarOpen] = useState(false)
+  const [commandOpen, setCommandOpen] = useState(false)
   const { unreadCount } = useNotifications({ unreadOnly: true, limit: 100 })
 
   // Load sidebar mode from localStorage
@@ -46,6 +48,18 @@ export function MainLayout({ children }: MainLayoutProps) {
     })()
     return () => { active = false }
   }, [router])
+
+  // Global Ctrl/Cmd+K opens the command palette.
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setCommandOpen((v) => !v)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   const handleSidebarModeChange = (mode: SidebarMode) => {
     setSidebarMode(mode)
@@ -76,14 +90,17 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   return (
     <div className="h-screen flex flex-col bg-background">
-      {/* Header */}
-      <Header
-        onMenuToggle={() => setMobileMenuOpen(!mobileMenuOpen)}
-        isMenuOpen={mobileMenuOpen}
-        onNotificationsToggle={() => setNotificationsSidebarOpen(!notificationsSidebarOpen)}
-        isNotificationsOpen={notificationsSidebarOpen}
-        unreadNotifications={unreadCount}
-      />
+      {/* Floating mobile menu button (no header on mobile) */}
+      {!mobileMenuOpen && (
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          aria-label="Open menu"
+          className="lg:hidden fixed top-3 left-3 z-30 h-10 w-10 rounded-full bg-background border border-border shadow-md flex items-center justify-center text-foreground"
+        >
+          <Menu className="h-5 w-5" />
+        </button>
+      )}
 
       {/* Main content area */}
       <div className="flex-1 flex overflow-hidden">
@@ -98,6 +115,8 @@ export function MainLayout({ children }: MainLayoutProps) {
             onModeChange={handleSidebarModeChange}
             onHoverEnter={() => { if (sidebarMode === 'hover') setHoverExpanded(true) }}
             onHoverLeave={() => { if (sidebarMode === 'hover') setHoverExpanded(false) }}
+            unreadNotifications={unreadCount}
+            onNotificationsToggle={() => setNotificationsSidebarOpen(!notificationsSidebarOpen)}
           />
         </div>
 
@@ -108,15 +127,19 @@ export function MainLayout({ children }: MainLayoutProps) {
               className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 lg:hidden"
               onClick={() => setMobileMenuOpen(false)}
             />
-            <div className="fixed left-0 top-16 bottom-0 w-64 z-50 lg:hidden">
-              <LeftSidebar isExpanded={true} sidebarMode="expanded" onModeChange={handleSidebarModeChange} />
+            <div className="fixed left-0 top-0 bottom-0 w-64 z-50 lg:hidden">
+              <LeftSidebar
+                isExpanded={true}
+                sidebarMode="expanded"
+                onModeChange={handleSidebarModeChange}
+                unreadNotifications={unreadCount}
+                onNotificationsToggle={() => setNotificationsSidebarOpen(!notificationsSidebarOpen)}
+              />
             </div>
           </>
         )}
 
-        {/* Main Content — left-aligned to the sidebar with a wide cap so content
-            doesn't sprawl on ultra-wide monitors. Pages still set their own max
-            width on top of this. */}
+        {/* Main Content */}
         <main className="flex-1 overflow-hidden flex flex-col">
           <div className="flex-1 overflow-auto">
             <div className="max-w-[1400px]">
@@ -138,6 +161,9 @@ export function MainLayout({ children }: MainLayoutProps) {
           </div>
         </>
       )}
+
+      {/* Command palette (Ctrl/Cmd+K) */}
+      <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
   )
 }
