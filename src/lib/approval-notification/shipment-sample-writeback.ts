@@ -5,35 +5,115 @@ export interface ShipmentSampleRow {
   id: string
   waqc_ref: string | null
   sample_type: string | null
+  /**
+   * Container-split batch this leaf belongs to (sys `sample_groups`). When a
+   * contract's QC sample is split into N notional containers, sys holds N leaf
+   * rows that share one `group_id` (the "per sub" master). A single decision
+   * must claim ALL of them, not just one — picking one and inserting for the
+   * rest is exactly what stranded the per-container rows for manual entry.
+   */
+  group_id?: string | null
   created_at: string
 }
 
+export interface WritebackTargets {
+  /**
+   * Row ids to UPDATE/claim. More than one when the contract's sample is a
+   * container-split group (one leaf per container). Empty → consult `insert`.
+   */
+  updateIds: string[]
+  /**
+   * true  → no existing row is ours; INSERT a fresh, correctly-keyed row.
+   * false with empty `updateIds` → SKIP: same-type rows exist but none are
+   * confidently ours, so we neither clobber a peer nor create a phantom
+   * duplicate; a human resolves it.
+   */
+  insert: boolean
+}
+
 /**
- * Confident match only, scoped to the decision's own sample type. Returns the
- * row id to UPDATE, or null (→ the caller INSERTs a correctly-keyed row). We
- * never pick among multiple/ambiguous rows, and never cross sample types:
- * shipment_samples is shared with sys, so overwriting an arbitrary peer (or the
- * contract's PSS row when this is an SS decision) would mis-attribute another
- * sample's approval.
- *   - exact `waqc_ref` === our ref among rows of `targetType` → that row.
- *   - else (PSS only) a SINGLE unclaimed PSS placeholder (waqc_ref empty) → claim it.
- *   - else null (ambiguous, wrong type, or none — insert a fresh row instead).
+ * Decide which shipment_samples rows a decision should touch, scoped to its own
+ * sample type. shipment_samples is shared with sys, so we never overwrite a peer
+ * (a row claimed by a different waqc_ref) and never cross sample types. The intent
+ * is "claim MY ref's set of rows in full" — every per-container leaf of the
+ * contract's split, idempotently — rather than "match exactly one row".
  *
- * SS decisions get no placeholder fallback: sys carries no SS placeholders
- * (every legacy row is a PSS), so an SS approval either updates its own prior
- * SS row or inserts a brand-new distinct SS row — it must not touch the PSS.
+ *   - SS decision → update our own prior SS row(s) by exact ref, else INSERT a
+ *     distinct SS row (sys carries no SS placeholders; never touch a PSS row).
+ *   - PSS, contract has no PSS row at all → INSERT a fresh PSS row.
+ *   - PSS otherwise → claim a SET of rows:
+ *       · every row already carrying our exact ref (idempotent resend);
+ *       · plus any still-unclaimed leaf of a group we already partly hold (so a
+ *         group that grew between runs is re-completed);
+ *       · plus — when we hold no group leaf yet — the contract's SINGLE unclaimed
+ *         container-split group, claiming ALL its leaves. This also SELF-HEALS the
+ *         old bug: a stray standalone row carrying our ref (a phantom a prior buggy
+ *         run inserted) no longer blocks the real per-container leaves;
+ *       · else a single unclaimed standalone placeholder.
+ *     If the set is still empty (every row claimed by other refs, or an ambiguous
+ *     multi-group / multi-standalone mix) → SKIP: never phantom-insert, never
+ *     clobber a peer. A human resolves it.
  */
-export function pickShipmentSampleMatch(
+export function selectShipmentSampleTargets(
   rows: ShipmentSampleRow[],
   waqcRef: string,
   targetType: string = 'pss',
-): string | null {
+): WritebackTargets {
   const sameType = rows.filter((r) => (r.sample_type ?? 'pss') === targetType)
-  const exact = sameType.find((r) => r.waqc_ref === waqcRef)
-  if (exact) return exact.id
-  if (targetType !== 'pss') return null
+  const exact = sameType.filter((r) => r.waqc_ref === waqcRef)
+
+  if (targetType !== 'pss') {
+    return exact.length > 0
+      ? { updateIds: exact.map((r) => r.id), insert: false }
+      : { updateIds: [], insert: true }
+  }
+  if (sameType.length === 0) return { updateIds: [], insert: true }
+
   const unclaimed = sameType.filter((r) => !r.waqc_ref)
-  return unclaimed.length === 1 ? unclaimed[0].id : null
+  const unclaimedGroupIds = [...new Set(unclaimed.filter((r) => r.group_id).map((r) => r.group_id as string))]
+  const unclaimedStandalone = unclaimed.filter((r) => !r.group_id)
+
+  const targets = new Set<string>(exact.map((r) => r.id))
+
+  // Re-complete any container-split group we already partly hold (leaves added
+  // after our first write), so the group stays whole across resends.
+  const heldGroupIds = new Set(exact.filter((r) => r.group_id).map((r) => r.group_id as string))
+  for (const row of unclaimed) {
+    if (row.group_id && heldGroupIds.has(row.group_id)) targets.add(row.id)
+  }
+
+  // Primary claim: hold no group leaf yet → adopt the contract's single unclaimed
+  // container-split group (all its per-container leaves). Self-heals a phantom
+  // standalone that carries our ref but isn't a real container leaf.
+  if (heldGroupIds.size === 0 && unclaimedGroupIds.length === 1 && unclaimedStandalone.length === 0) {
+    for (const row of unclaimed) {
+      if (row.group_id === unclaimedGroupIds[0]) targets.add(row.id)
+    }
+  }
+
+  // No group in play and exactly one unclaimed standalone placeholder → claim it.
+  if (targets.size === 0 && unclaimedGroupIds.length === 0 && unclaimedStandalone.length === 1) {
+    targets.add(unclaimedStandalone[0].id)
+  }
+
+  return { updateIds: [...targets], insert: false }
+}
+
+/**
+ * Compose the sys `rejection_reason` from a sample's cup/green comments so
+ * logistics need not retype it — e.g. "CUP: 1 COPO SUJO", or
+ * "CUP: … | GREEN: …" when both stages carry a note. Null when neither is set.
+ */
+export function buildRejectionReason(opts: {
+  cuppingComment?: string | null
+  gradingComment?: string | null
+}): string | null {
+  const cup = (opts.cuppingComment ?? '').trim()
+  const green = (opts.gradingComment ?? '').trim()
+  const parts: string[] = []
+  if (cup) parts.push(`CUP: ${cup}`)
+  if (green) parts.push(`GREEN: ${green}`)
+  return parts.length > 0 ? parts.join(' | ') : null
 }
 
 export interface WritebackUpdateOpts {
@@ -85,10 +165,12 @@ export function buildWritebackInsert(opts: WritebackInsertOpts) {
 }
 
 /**
- * I/O wrapper: find/create the contract's shipment_samples row and mark it
- * approved/rejected. Best-effort optional columns (approval_comments) are set
- * in a second guarded update so a missing column never fails the send.
- * Returns the affected row id, or null on failure (non-fatal to the caller).
+ * I/O wrapper: find/create the contract's shipment_samples row(s) and mark them
+ * approved/rejected. A container-split sample claims EVERY leaf of its batch in
+ * one update — so a rejection lands on all per-container rows, not just one.
+ * Best-effort optional columns (approval_comments, rejection_reason) are set in
+ * a second guarded update so a missing column never fails the send.
+ * Returns the first affected row id, or null on skip/failure (non-fatal).
  */
 export async function applyShipmentSampleApproval(
   admin: SupabaseClient,
@@ -100,6 +182,9 @@ export async function applyShipmentSampleApproval(
     today: string
     certificateUrl: string | null
     comments?: string | null
+    /** Rejection reason (e.g. "CUP: 1 COPO SUJO"). Written to `rejection_reason`
+     *  on rejections only, so logistics need not retype it on sys. */
+    reason?: string | null
     /** Approver initials (e.g. "AN"). Its presence on the row also drives the
      *  sys "approved-in-QC" marker. */
     initials?: string | null
@@ -116,9 +201,9 @@ export async function applyShipmentSampleApproval(
 
     const { data: rows } = await admin
       .from('shipment_samples')
-      .select('id, waqc_ref, sample_type, created_at')
+      .select('id, waqc_ref, sample_type, group_id, created_at')
       .eq('contract_id', args.contractId)
-    const matchId = pickShipmentSampleMatch(
+    const targets = selectShipmentSampleTargets(
       (rows ?? []) as ShipmentSampleRow[],
       args.waqcRef,
       sampleType,
@@ -129,41 +214,47 @@ export async function applyShipmentSampleApproval(
     const update: Record<string, unknown> = buildWritebackUpdate({ ...args, source })
     if (args.certificateUrl == null) delete update.certificate_url
 
-    let rowId: string | null
-    if (matchId) {
+    let rowIds: string[]
+    if (targets.updateIds.length > 0) {
       await admin
         .from('shipment_samples')
         .update(update)
-        .eq('id', matchId)
-      rowId = matchId
-    } else {
-      console.warn(
-        `[approval] no confident shipment_samples match for contract ${args.contractId} (ref ${args.waqcRef}, type ${sampleType}); inserting a new row`,
-      )
+        .in('id', targets.updateIds)
+      rowIds = targets.updateIds
+    } else if (targets.insert) {
       const { data: inserted } = await admin
         .from('shipment_samples')
         .insert(buildWritebackInsert({ ...args, sampleType, source }))
         .select('id')
         .single()
-      rowId = (inserted as { id: string } | null)?.id ?? null
+      const id = (inserted as { id: string } | null)?.id ?? null
+      rowIds = id ? [id] : []
+    } else {
+      console.warn(
+        `[approval] no confident shipment_samples target for contract ${args.contractId} (ref ${args.waqcRef}, type ${sampleType}); left for manual handling`,
+      )
+      return null
     }
 
     // Optional columns set in a second guarded update so a missing column never
-    // fails the core write-back: approval_comments, the approver initials (which
-    // also marks the row as approved-in-QC for sys), and an explicit
-    // rejected_date for rejections.
+    // fails the core write-back: approval_comments (approval seller note), the
+    // approver initials (which also marks the row as approved-in-QC for sys),
+    // and on rejection an explicit rejected_date + the rejection_reason.
     const optional: Record<string, unknown> = {}
     if (args.comments) optional.approval_comments = args.comments
     if (args.initials) optional.approved_by_initials = args.initials
-    if (args.decision === 'rejected') optional.rejected_date = args.today
-    if (rowId && Object.keys(optional).length > 0) {
+    if (args.decision === 'rejected') {
+      optional.rejected_date = args.today
+      if (args.reason) optional.rejection_reason = args.reason
+    }
+    if (rowIds.length > 0 && Object.keys(optional).length > 0) {
       await admin
         .from('shipment_samples')
         .update(optional)
-        .eq('id', rowId)
+        .in('id', rowIds)
         .then(undefined, () => undefined)
     }
-    return rowId
+    return rowIds[0] ?? null
   } catch (e) {
     console.error('[approval] shipment_samples write-back failed (non-fatal):', e)
     return null
