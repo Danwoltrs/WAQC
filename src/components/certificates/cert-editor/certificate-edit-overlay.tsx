@@ -11,6 +11,7 @@ import { DefectsQuadrant, DefectsEditPanel } from './defects-quadrant'
 import { ScreenQuadrant, ScreenEditPanel } from './screen-quadrant'
 import { PhysicalQuadrant, PhysicalEditPanel } from './physical-quadrant'
 import { CuppingQuadrant, CuppingEditPanel } from './cupping-quadrant'
+import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 
 export interface SampleDetailOverlayProps {
   open: boolean
@@ -190,6 +191,17 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
                 locked={!ed.canEditQuality}
                 lockedReason={ed.qualityLockMessage}
                 onEdit={() => setPanel('cupping')}
+              />
+            </div>
+
+            <div className="mx-auto mt-5 max-w-6xl">
+              <SupplyChainEditTable
+                sample={sample as any}
+                isEditMode={false}
+                forceReadOnly={!!contractId}
+                formData={draft.sample}
+                onFormChange={() => {}}
+                onEditClick={contractId ? undefined : () => setPanel('details')}
               />
             </div>
           </div>
