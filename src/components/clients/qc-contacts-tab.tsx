@@ -195,7 +195,7 @@ export function QcContactsTab({ companyId, companyName }: { companyId: string; c
             <Field label="Email">
               <Input value={draft.email} onChange={(e) => setDraft({ ...draft, email: e.target.value })} placeholder="name@company.com" />
               {isInternal(draft.email) && (
-                <p className="mt-1 text-[12px] text-amber-600">
+                <p className="mt-1 text-[12px] text-amber-600 dark:text-amber-400">
                   Internal Wolthers address — always CC&apos;d as head office; it won&apos;t appear as a recipient.
                 </p>
               )}
@@ -228,7 +228,7 @@ export function QcContactsTab({ companyId, companyName }: { companyId: string; c
             )}
 
             {error && (
-              <div className="flex items-center gap-1.5 text-[12px] text-red-600">
+              <div className="flex items-center gap-1.5 text-[12px] text-red-600 dark:text-red-400">
                 <AlertCircle className="h-3.5 w-3.5" /> {error}
               </div>
             )}
@@ -236,7 +236,7 @@ export function QcContactsTab({ companyId, companyName }: { companyId: string; c
             <div className="flex items-center justify-between pt-2">
               {draft.id ? (
                 <button type="button" onClick={remove} disabled={saving}
-                  className="inline-flex items-center gap-1 text-[13px] text-red-600 hover:underline disabled:opacity-50">
+                  className="inline-flex items-center gap-1 text-[13px] text-red-600 dark:text-red-400 hover:underline disabled:opacity-50">
                   <Trash2 className="h-3.5 w-3.5" /> Remove from QC certificates
                 </button>
               ) : <span />}
