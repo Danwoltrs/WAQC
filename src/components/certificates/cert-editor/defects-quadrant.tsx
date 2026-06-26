@@ -13,12 +13,14 @@ export function DefectsQuadrant({
   defects,
   locked,
   lockedReason,
+  readOnly,
   onEdit,
 }: {
   defects: DefectDraft[]
   locked?: boolean
   lockedReason?: string | null
-  onEdit: () => void
+  readOnly?: boolean
+  onEdit?: () => void
 }) {
   const totals = computeDefectTotals(defects)
   return (
@@ -33,6 +35,7 @@ export function DefectsQuadrant({
       }
       locked={locked}
       lockedReason={lockedReason}
+      readOnly={readOnly}
       onEdit={onEdit}
     >
       <DefectBarChart defects={defects} />

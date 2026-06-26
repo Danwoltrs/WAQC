@@ -15,6 +15,7 @@ export function QuadrantCard({
   summary,
   locked,
   lockedReason,
+  readOnly,
   onEdit,
   children,
 }: {
@@ -23,10 +24,11 @@ export function QuadrantCard({
   summary?: ReactNode
   locked?: boolean
   lockedReason?: string | null
+  readOnly?: boolean
   onEdit?: () => void
   children: ReactNode
 }) {
-  const clickable = !locked && !!onEdit
+  const clickable = !locked && !readOnly && !!onEdit
   return (
     <div
       role={clickable ? 'button' : undefined}

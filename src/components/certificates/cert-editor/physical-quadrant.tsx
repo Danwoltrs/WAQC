@@ -36,12 +36,14 @@ export function PhysicalQuadrant({
   draft,
   locked,
   lockedReason,
+  readOnly,
   onEdit,
 }: {
   draft: Physical
   locked?: boolean
   lockedReason?: string | null
-  onEdit: () => void
+  readOnly?: boolean
+  onEdit?: () => void
 }) {
   return (
     <QuadrantCard
@@ -54,6 +56,7 @@ export function PhysicalQuadrant({
       }
       locked={locked}
       lockedReason={lockedReason}
+      readOnly={readOnly}
       onEdit={onEdit}
     >
       <div className="grid grid-cols-2 gap-3">

@@ -10,12 +10,14 @@ export function ScreenQuadrant({
   screens,
   locked,
   lockedReason,
+  readOnly,
   onEdit,
 }: {
   screens: Record<string, number>
   locked?: boolean
   lockedReason?: string | null
-  onEdit: () => void
+  readOnly?: boolean
+  onEdit?: () => void
 }) {
   const dom = dominantScreens(screens)
   return (
@@ -24,6 +26,7 @@ export function ScreenQuadrant({
       meta={dom.length ? <span>Dominant: {dom.join(' · ')}</span> : <span>No data</span>}
       locked={locked}
       lockedReason={lockedReason}
+      readOnly={readOnly}
       onEdit={onEdit}
     >
       <ScreenBarChart screens={screens} />

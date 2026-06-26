@@ -51,6 +51,7 @@ export function CuppingQuadrant({
   cvaMinScore,
   locked,
   lockedReason,
+  readOnly,
   onEdit,
 }: {
   draft: CuppingDraft
@@ -59,7 +60,8 @@ export function CuppingQuadrant({
   cvaMinScore?: number | null
   locked?: boolean
   lockedReason?: string | null
-  onEdit: () => void
+  readOnly?: boolean
+  onEdit?: () => void
 }) {
   const entries = Object.entries(draft.cupping)
   // Fixed conventional scale so identical scores read the same across samples
@@ -74,6 +76,7 @@ export function CuppingQuadrant({
       meta={<span>{isCVA ? 'CVA score' : 'Sensory profile'}</span>}
       locked={locked}
       lockedReason={lockedReason}
+      readOnly={readOnly}
       onEdit={onEdit}
     >
       <div className="mb-3 flex flex-wrap items-center gap-2">
