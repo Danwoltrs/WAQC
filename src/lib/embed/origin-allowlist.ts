@@ -1,7 +1,8 @@
 export const EMBED_PARENT_ALLOWLIST: string[] = [
   'https://sys.wolthers.com',
-  'https://*.vercel.app',
-  ...(process.env.NODE_ENV !== 'production' ? ['http://localhost:3000'] : []),
+  ...(process.env.NODE_ENV !== 'production'
+    ? ['http://localhost:3000', 'http://localhost:3001']
+    : []),
 ]
 
 export function isAllowedOrigin(origin: string, allowlist: string[]): boolean {

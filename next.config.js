@@ -12,9 +12,35 @@ const nextConfig = {
 
   // Add security headers
   async headers() {
+    const isProd = process.env.NODE_ENV === 'production'
+    const embedCsp = isProd
+      ? "frame-ancestors 'self' https://sys.wolthers.com"
+      : "frame-ancestors 'self' https://sys.wolthers.com http://localhost:*"
+
     return [
+      // Embed routes: CSP frame-ancestors only — NO X-Frame-Options (it would block the iframe).
+      // These blocks are listed first; Next.js merges ALL matching source blocks, so we must
+      // keep X-Frame-Options out of the /embed/* and /api/embed/* sources entirely and rely
+      // on the negative-lookahead on the global block below to prevent it leaking there too.
       {
-        source: '/:path*',
+        source: '/embed/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Content-Security-Policy', value: embedCsp },
+        ],
+      },
+      {
+        source: '/api/embed/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Content-Security-Policy', value: embedCsp },
+        ],
+      },
+      // Global security headers for all non-embed paths.
+      // The negative-lookahead excludes /embed/* and /api/embed/* so X-Frame-Options is
+      // never sent on embed routes (those must be iframeable by sys.wolthers.com).
+      {
+        source: '/((?!embed/|api/embed/).*)',
         headers: [
           {
             key: 'X-DNS-Prefetch-Control',

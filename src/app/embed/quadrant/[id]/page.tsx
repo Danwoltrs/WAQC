@@ -263,6 +263,9 @@ export default function QuadrantEmbedPage() {
 
   const [state, setState] = useState<State>({ phase: 'waiting' })
   const rootRef = useRef<HTMLDivElement>(null)
+  // Phase guard: tracks whether auth processing has started so a second waqc-embed-auth
+  // message from the parent is a no-op. Using a ref avoids introducing a re-render cycle.
+  const authStartedRef = useRef(false)
 
   // 1) Apply theme class on documentElement (matches ThemeProvider behaviour in
   //    src/components/providers/theme-provider.tsx lines 30-33: toggles 'dark' on root).
@@ -287,6 +290,9 @@ export default function QuadrantEmbedPage() {
       if (!isAllowedOrigin(e.origin, EMBED_PARENT_ALLOWLIST)) return
       const msg = e.data as { type?: string; accessToken?: string } | null
       if (msg?.type !== 'waqc-embed-auth' || !msg.accessToken) return
+      // Phase guard: once loading or ready, ignore further auth messages (idempotent).
+      if (authStartedRef.current) return
+      authStartedRef.current = true
 
       setState({ phase: 'loading' })
       try {
