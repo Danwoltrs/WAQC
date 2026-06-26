@@ -4,6 +4,7 @@ import {
   companyLegalName,
   companyDisplayName,
   mapContractToFormData,
+  normalizeCertifications,
   type ContractWithParties,
   type ContractResolution,
   type ContractCompany,
@@ -185,5 +186,26 @@ describe('mapContractToFormData — quality spec prefill', () => {
     const { patch, prefilled } = mapContractToFormData(c, baseResolution)
     expect(patch.quality_spec_id).toBeUndefined()
     expect(prefilled).not.toContain('quality_spec_id')
+  })
+})
+
+describe('normalizeCertifications', () => {
+  it('maps short codes to canonical names', () => {
+    expect(normalizeCertifications(['ra', 'ft', 'flo', 'organic', 'eudr'])).toEqual(
+      ['Rainforest Alliance', 'Fair Trade', 'FLO Fair Trade', 'Organic', 'EUDR'],
+    )
+  })
+  it('normalizes hyphens/spaces/case', () => {
+    expect(normalizeCertifications(['Fair-Trade', 'fair trade', 'RFA'])).toEqual(['Fair Trade', 'Rainforest Alliance'])
+  })
+  it('passes through already-canonical values', () => {
+    expect(normalizeCertifications(['Organic', 'EUDR'])).toEqual(['Organic', 'EUDR'])
+  })
+  it('drops unknown codes', () => {
+    expect(normalizeCertifications(['organic', 'totally-made-up'])).toEqual(['Organic'])
+  })
+  it('returns [] for a non-array', () => {
+    expect(normalizeCertifications(null)).toEqual([])
+    expect(normalizeCertifications('organic')).toEqual([])
   })
 })

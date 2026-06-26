@@ -102,6 +102,28 @@ function isPlaceholderName(name: string | null | undefined): boolean {
 }
 
 /**
+ * Normalize a contract's raw `certifications` (jsonb short codes) to WAQC's
+ * canonical vocabulary. Pure. Shared by the intake mapping and the
+ * /api/samples/[id]/contract-certifications endpoint.
+ */
+export function normalizeCertifications(raw: unknown): string[] {
+  const knownCerts = ['Rainforest Alliance', 'Fair Trade', 'FLO Fair Trade', 'Organic', 'EUDR']
+  const certMap: Record<string, string> = {
+    ra: 'Rainforest Alliance', rainforest: 'Rainforest Alliance', rainforest_alliance: 'Rainforest Alliance', rfa: 'Rainforest Alliance',
+    ft: 'Fair Trade', fairtrade: 'Fair Trade', fair_trade: 'Fair Trade',
+    flo: 'FLO Fair Trade',
+    organic: 'Organic', org: 'Organic',
+    eudr: 'EUDR', eu_deforestation: 'EUDR',
+  }
+  if (!Array.isArray(raw)) return []
+  const mapped = (raw as unknown[])
+    .filter((x): x is string => typeof x === 'string')
+    .map((s) => certMap[s.toLowerCase().replace(/[-\s]/g, '_')] ?? s)
+    .filter((s) => knownCerts.includes(s))
+  return [...new Set(mapped)]
+}
+
+/**
  * Build a SelectedContract from a fully joined contract row. Used by the badge.
  */
 export function toSelectedContract(c: ContractWithParties): SelectedContract {
@@ -199,32 +221,9 @@ export function mapContractToFormData(
     set('shipment_month', c.shipment_period_start.slice(0, 7))
   }
 
-  // Certifications — map short codes (as used in contracts.certifications jsonb) to
-  // WAQC's vocabulary. Key formats mirror src/components/pdf/certificate/certificate-quality-description.tsx
-  // (the existing source of truth for cert-code normalisation).
-  const knownCerts = ['Rainforest Alliance', 'Fair Trade', 'FLO Fair Trade', 'Organic', 'EUDR']
-  const certMap: Record<string, string> = {
-    ra: 'Rainforest Alliance',
-    rainforest: 'Rainforest Alliance',
-    rainforest_alliance: 'Rainforest Alliance',
-    rfa: 'Rainforest Alliance',
-    ft: 'Fair Trade',
-    fairtrade: 'Fair Trade',
-    fair_trade: 'Fair Trade',
-    flo: 'FLO Fair Trade',
-    organic: 'Organic',
-    org: 'Organic',
-    eudr: 'EUDR',
-    eu_deforestation: 'EUDR',
-  }
-  if (Array.isArray(c.certifications)) {
-    const mapped = (c.certifications as unknown[])
-      .filter((x): x is string => typeof x === 'string')
-      .map(s => certMap[s.toLowerCase().replace(/[-\s]/g, '_')] ?? s)
-      .filter(s => knownCerts.includes(s))
-    const unique = [...new Set(mapped)]
-    if (unique.length > 0) set('certifications', unique)
-  }
+  // Certifications — normalized via the shared helper (see normalizeCertifications).
+  const certs = normalizeCertifications(c.certifications)
+  if (certs.length > 0) set('certifications', certs)
 
   return { patch, prefilled }
 }
