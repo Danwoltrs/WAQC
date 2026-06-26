@@ -8,6 +8,9 @@ import { EditPanel } from './ui-parts'
 import { CertSample, QualityOption } from './use-cert-editor'
 import { PROCESSING_METHODS } from '@/components/samples/intake/constants'
 import { CertificationsField } from './certifications-field'
+import { InlineEdit } from './inline-edit'
+import { CropYearField } from './crop-year-field'
+import { ProcessingField } from './processing-field'
 
 const BAG_TYPES: Record<string, string> = {
   jute_bag: 'Jute Bag',
@@ -68,50 +71,112 @@ export function InfoStripBand({
   )
 }
 
-/** Compact attributes band under the strip: crop · processing · certifications. Click opens the edit panel. */
+/** Compact attributes band under the strip: crop · processing · certifications, each inline-editable. */
 export function AttributesLine({
   sample,
   draftSample,
-  onEdit,
+  onFieldChange,
+  distinctProcessing,
+  onEditAll,
 }: {
   sample: CertSample
   draftSample: Record<string, any>
-  onEdit: () => void
+  onFieldChange: (field: string, value: any) => void
+  distinctProcessing: string[]
+  onEditAll: () => void
 }) {
-  const crop = draftSample.crop_year ?? sample.crop_year
-  const processing = draftSample.processing_method ?? sample.processing_method
+  const crop = ((draftSample.crop_year ?? sample.crop_year) || '') as string
+  const processing = ((draftSample.processing_method ?? sample.processing_method) || '') as string
   const certs: string[] = Array.isArray(draftSample.certifications)
     ? draftSample.certifications
     : Array.isArray(sample.certifications)
       ? sample.certifications
       : []
+
+  const labelCls = 'text-[11px] uppercase tracking-wide text-muted-foreground'
+  const valueCls = 'text-sm font-medium text-foreground'
+
   return (
-    <button
-      onClick={onEdit}
-      className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-left transition-colors hover:bg-muted/40"
-    >
-      <span className="flex items-center gap-1.5">
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Crop</span>
-        <span className="text-sm font-medium text-foreground">{crop || '—'}</span>
-      </span>
-      <span className="text-muted-foreground">·</span>
-      <span className="flex items-center gap-1.5">
-        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Processing</span>
-        <span className="text-sm font-medium text-foreground">{processing || '—'}</span>
-      </span>
-      <span className="text-muted-foreground">·</span>
-      <span className="flex flex-wrap items-center gap-1">
-        {certs.length ? (
-          certs.map((c) => (
-            <span key={c} className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-foreground">
-              {c}
-            </span>
-          ))
-        ) : (
-          <span className="text-[11px] text-muted-foreground">No certifications</span>
+    <div className="flex w-full flex-wrap items-center gap-x-3 gap-y-1 border-b border-border px-3 py-2">
+      <InlineEdit
+        display={
+          <span className="flex items-center gap-1.5">
+            <span className={labelCls}>Crop</span>
+            <span className={valueCls}>{crop || '—'}</span>
+          </span>
+        }
+      >
+        {(close) => (
+          <CropYearField
+            value={crop}
+            onChange={(v) => {
+              onFieldChange('crop_year', v)
+              close()
+            }}
+          />
         )}
-      </span>
-    </button>
+      </InlineEdit>
+
+      <span className="text-muted-foreground">·</span>
+
+      <InlineEdit
+        display={
+          <span className="flex items-center gap-1.5">
+            <span className={labelCls}>Processing</span>
+            <span className={valueCls}>{processing || '—'}</span>
+          </span>
+        }
+      >
+        {(close) => (
+          <ProcessingField
+            value={processing}
+            distinct={distinctProcessing}
+            onChange={(v) => {
+              onFieldChange('processing_method', v)
+              close()
+            }}
+          />
+        )}
+      </InlineEdit>
+
+      <span className="text-muted-foreground">·</span>
+
+      <InlineEdit
+        contentClassName="w-72 p-3"
+        display={
+          <span className="flex flex-wrap items-center gap-1">
+            {certs.length ? (
+              certs.map((c, i) => (
+                <span
+                  key={`${c}-${i}`}
+                  className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-foreground"
+                >
+                  {c}
+                </span>
+              ))
+            ) : (
+              <span className="text-[11px] text-muted-foreground">No certifications</span>
+            )}
+          </span>
+        }
+      >
+        {() => (
+          <CertificationsField
+            sampleId={sample.id}
+            value={certs}
+            onChange={(next) => onFieldChange('certifications', next)}
+          />
+        )}
+      </InlineEdit>
+
+      <button
+        type="button"
+        onClick={onEditAll}
+        className="ml-auto text-[11px] text-muted-foreground underline-offset-2 transition-colors hover:text-foreground hover:underline"
+      >
+        Edit all details
+      </button>
+    </div>
   )
 }
 

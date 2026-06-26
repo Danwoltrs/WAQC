@@ -14,6 +14,7 @@ import { CuppingQuadrant, CuppingEditPanel } from './cupping-quadrant'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { SampleActionsMenu } from './sample-actions'
 import { OtherSections } from './other-sections'
+import { useSampleVocabularies } from './use-sample-vocabularies'
 
 export interface SampleDetailOverlayProps {
   open: boolean
@@ -55,6 +56,7 @@ function formatDate(iso?: string): string {
 export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onSampleUpdated, contractId, startInEditMode }: SampleDetailOverlayProps) {
   const { toast } = useToast()
   const ed = useCertEditor(sampleId, open, contractId)
+  const { processingMethods } = useSampleVocabularies(open)
   const [panel, setPanel] = useState<Panel>(null)
 
   // Reset transient UI when the overlay opens for a new sample.
@@ -172,7 +174,13 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
       ) : (
         <>
           <InfoStripBand sample={sample} draftSample={draft.sample} onEdit={() => setPanel('details')} />
-          <AttributesLine sample={sample} draftSample={draft.sample} onEdit={() => setPanel('details')} />
+          <AttributesLine
+            sample={sample}
+            draftSample={draft.sample}
+            onFieldChange={ed.setSampleField}
+            distinctProcessing={processingMethods}
+            onEditAll={() => setPanel('details')}
+          />
 
           {/* Quadrant dashboard */}
           <div className="flex-1 overflow-y-auto p-5">
