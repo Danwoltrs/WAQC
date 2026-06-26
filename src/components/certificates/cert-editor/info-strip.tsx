@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Lock, Pencil } from 'lucide-react'
+import { Lock } from 'lucide-react'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { EditPanel } from './ui-parts'
 import { CertSample, QualityOption } from './use-cert-editor'
@@ -57,13 +57,10 @@ export function InfoStripBand({
         <button
           key={t.label}
           onClick={onEdit}
-          className="group flex flex-col items-start gap-0.5 px-4 py-3 text-left transition-colors hover:bg-muted/40"
+          className="flex flex-col items-start gap-0.5 px-4 py-2 text-left transition-colors hover:bg-muted/40"
         >
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.label}</span>
           <span className="text-sm font-medium text-foreground">{t.value}</span>
-          <span className="inline-flex items-center gap-1 text-[11px] text-primary opacity-0 transition-opacity group-hover:opacity-100">
-            <Pencil className="h-3 w-3" /> Edit
-          </span>
         </button>
       ))}
     </div>
