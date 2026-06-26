@@ -78,9 +78,17 @@ export const ALWAYS_EDITABLE_FIELDS: ReadonlySet<string> = new Set([
   'bags_quantity_mt',
   'bag_count',
   'equivalent_60kg_bags',
-  // Commodity attributes (non-quality, per owner 2026-06-25)
+  // Commodity / quality metadata (non-grading, per owner 2026-06-25)
+  // These describe the coffee, not its assessment results — they sometimes arrive
+  // after the certificate is issued, so they stay editable.
   'crop_year',
   'certifications',
+  'origin',
+  'micro_origin',
+  'processing_method',
+  'sample_type',
+  'quality_spec_id',
+  'quality_name',
   // Workflow / assignment
   'workflow_stage',
   'status',
@@ -89,16 +97,17 @@ export const ALWAYS_EDITABLE_FIELDS: ReadonlySet<string> = new Set([
 ])
 
 /**
- * Fields frozen after the 7-day window — quality content that defines the certificate.
+ * Fields on the `samples` record frozen after the 7-day window.
+ *
+ * Per owner (2026-06-25): only GRADING (green-bean analysis) and CUPPING results
+ * lock 7 days after certification — and those are enforced separately by
+ * computeContentLock() on the /quality-assessment and /cupping-score routes, not
+ * via this set. Every descriptive field on the sample record (origin, processing
+ * method, quality, sample type, crop year, certifications, logistics, …) stays
+ * editable, because that information sometimes arrives after the certificate is
+ * issued. This set is therefore intentionally empty.
  */
-export const LOCK_SENSITIVE_FIELDS: ReadonlySet<string> = new Set([
-  'quality_spec_id',
-  'quality_name',
-  'origin',
-  'micro_origin',
-  'processing_method',
-  'sample_type',
-])
+export const LOCK_SENSITIVE_FIELDS: ReadonlySet<string> = new Set([])
 
 /** Master cuppers and global admins are the only sample editors. */
 export function isSampleEditor(profile: EditorProfile | null | undefined): boolean {

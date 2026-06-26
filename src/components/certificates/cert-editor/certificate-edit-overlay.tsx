@@ -274,8 +274,6 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
               sample={sample}
               draftSample={draft.sample}
               qualityOptions={ed.qualityOptions}
-              lockedQuality={!ed.canEditQuality}
-              lockedReason={ed.qualityLockMessage}
               onCancel={() => setPanel(null)}
               onApply={(form) => {
                 ed.setDraft((prev) => ({ ...prev, sample: { ...prev.sample, ...form } }))

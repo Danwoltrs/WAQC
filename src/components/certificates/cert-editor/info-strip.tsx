@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Lock } from 'lucide-react'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { EditPanel } from './ui-parts'
 import { CertSample, QualityOption } from './use-cert-editor'
@@ -131,8 +130,6 @@ export function DetailsEditPanel({
   sample,
   draftSample,
   qualityOptions,
-  lockedQuality,
-  lockedReason,
   saving,
   onCancel,
   onApply,
@@ -141,9 +138,6 @@ export function DetailsEditPanel({
   sample: CertSample
   draftSample: Record<string, any>
   qualityOptions: QualityOption[]
-  /** When quality content is locked (7 days post-cert), lock-sensitive commodity fields freeze. */
-  lockedQuality?: boolean
-  lockedReason?: string | null
   saving?: boolean
   onCancel: () => void
   onApply: (next: Record<string, any>) => void
@@ -160,18 +154,10 @@ export function DetailsEditPanel({
         </div>
 
         <div>
-          <div className="mb-2 flex items-center gap-2 text-sm font-medium text-foreground">
-            Commodity
-            {lockedQuality ? (
-              <span className="inline-flex items-center gap-1 text-[11px] font-normal text-amber-600 dark:text-amber-400">
-                <Lock className="h-3 w-3" />
-                {lockedReason || 'Locked after certification'}
-              </span>
-            ) : null}
-          </div>
+          <div className="mb-2 text-sm font-medium text-foreground">Commodity</div>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Sample type">
-              <Select value={(form.sample_type || '').toString()} onValueChange={(v) => set('sample_type', v)} disabled={lockedQuality}>
+              <Select value={(form.sample_type || '').toString()} onValueChange={(v) => set('sample_type', v)}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
@@ -190,13 +176,13 @@ export function DetailsEditPanel({
               </Select>
             </Field>
             <Field label="Origin">
-              <Input value={form.origin ?? ''} onChange={(e) => set('origin', e.target.value)} disabled={lockedQuality} className="h-9" />
+              <Input value={form.origin ?? ''} onChange={(e) => set('origin', e.target.value)} className="h-9" />
             </Field>
             <Field label="Micro origin">
-              <Input value={form.micro_origin ?? ''} onChange={(e) => set('micro_origin', e.target.value)} disabled={lockedQuality} className="h-9" />
+              <Input value={form.micro_origin ?? ''} onChange={(e) => set('micro_origin', e.target.value)} className="h-9" />
             </Field>
             <Field label="Quality">
-              <Select value={form.quality_spec_id || ''} onValueChange={(v) => set('quality_spec_id', v)} disabled={lockedQuality}>
+              <Select value={form.quality_spec_id || ''} onValueChange={(v) => set('quality_spec_id', v)}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Select quality" />
                 </SelectTrigger>
@@ -211,7 +197,7 @@ export function DetailsEditPanel({
               </Select>
             </Field>
             <Field label="Processing">
-              <Select value={(form.processing_method || '').toString()} onValueChange={(v) => set('processing_method', v)} disabled={lockedQuality}>
+              <Select value={(form.processing_method || '').toString()} onValueChange={(v) => set('processing_method', v)}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Select processing" />
                 </SelectTrigger>
