@@ -3,7 +3,7 @@ import type { ApprovalDecision } from './types'
 import { resolveSampleContract } from './contract-resolver'
 import { applyShipmentSampleApproval } from './shipment-sample-writeback'
 import { fetchQualitySampleSummaries } from './quality-summary'
-import { getInitials } from './batch-send'
+import { initialsFromProfile } from './initials'
 
 /**
  * Push an approval/rejection decision to the shared sys `shipment_samples` table
@@ -48,11 +48,12 @@ export async function writeDecisionToShipmentSamples(
 
     const { data: profile } = await admin
       .from('profiles')
-      .select('full_name')
+      .select('first_name, last_name, full_name')
       .eq('id', userId)
       .maybeSingle()
-    const fullName = (profile as { full_name?: string | null } | null)?.full_name ?? null
-    const initials = fullName ? getInitials(fullName) : null
+    const initials = initialsFromProfile(
+      (profile as { first_name?: string | null; last_name?: string | null; full_name?: string | null } | null) ?? {},
+    )
 
     // Rejection reason — the SAME rich reason shown on the approval/rejection
     // email: named cup faults/taints ("Hard (riado) (3)"), the compliance spec
