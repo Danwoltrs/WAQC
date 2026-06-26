@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
+import { isStaffSampleManager } from '@/lib/auth/sample-access'
 import { QC_CERTIFICATES_PURPOSE } from '@/lib/approval-notification/resolve-panels'
 import { splitQcContacts, QC_CONTACT_COLUMNS, type QcContactRecord } from '@/lib/qc-contacts/tags'
 import { upsertQcRecipient } from '@/lib/qc-contacts/upsert'
@@ -17,6 +18,9 @@ export async function GET(_request: NextRequest, { params }: { params: Promise<{
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isStaffSampleManager(supabase, user.id))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const { data, error } = await adminClient()
     .from('contacts')
@@ -37,6 +41,9 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const supabase = await createClient()
   const { data: { user }, error: authError } = await supabase.auth.getUser()
   if (authError || !user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!(await isStaffSampleManager(supabase, user.id))) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
 
   const body = (await request.json().catch(() => null)) as {
     email?: string; name?: string | null; nickname?: string | null; isGroup?: boolean

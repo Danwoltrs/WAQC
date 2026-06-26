@@ -158,6 +158,8 @@ export function QcContactsTab({ companyId, companyName }: { companyId: string; c
           <div className="flex items-center gap-2 px-2 py-6 text-[13px] text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" /> Loading…
           </div>
+        ) : error ? (
+          <div className="px-2 py-6 text-[13px] text-red-600 dark:text-red-400">{error}</div>
         ) : total === 0 ? (
           <div className="px-2 py-6 text-[13px] text-muted-foreground">
             No one at {companyName} receives QC certificates yet.
