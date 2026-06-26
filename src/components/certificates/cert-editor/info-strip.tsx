@@ -7,6 +7,8 @@ import { Lock } from 'lucide-react'
 import { SupplyChainEditTable } from '@/components/samples/supply-chain-edit-table'
 import { EditPanel } from './ui-parts'
 import { CertSample, QualityOption } from './use-cert-editor'
+import { PROCESSING_METHODS } from '@/components/samples/intake/constants'
+import { CertificationsField } from './certifications-field'
 
 const BAG_TYPES: Record<string, string> = {
   jute_bag: 'Jute Bag',
@@ -154,12 +156,7 @@ export function DetailsEditPanel({
       <div className="space-y-6">
         <div>
           <div className="mb-2 text-sm font-medium text-foreground">Supply chain</div>
-          <SupplyChainEditTable
-            sample={sample as any}
-            isEditMode
-            formData={form}
-            onFormChange={set}
-          />
+          <SupplyChainEditTable sample={sample as any} isEditMode formData={form} onFormChange={set} />
         </div>
 
         <div>
@@ -174,11 +171,7 @@ export function DetailsEditPanel({
           </div>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Sample type">
-              <Select
-                value={(form.sample_type || '').toString()}
-                onValueChange={(v) => set('sample_type', v)}
-                disabled={lockedQuality}
-              >
+              <Select value={(form.sample_type || '').toString()} onValueChange={(v) => set('sample_type', v)} disabled={lockedQuality}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Select type" />
                 </SelectTrigger>
@@ -191,9 +184,7 @@ export function DetailsEditPanel({
                     }
                     return opts
                   })().map((t) => (
-                    <SelectItem key={t.value} value={t.value}>
-                      {t.label}
-                    </SelectItem>
+                    <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -205,11 +196,7 @@ export function DetailsEditPanel({
               <Input value={form.micro_origin ?? ''} onChange={(e) => set('micro_origin', e.target.value)} disabled={lockedQuality} className="h-9" />
             </Field>
             <Field label="Quality">
-              <Select
-                value={form.quality_spec_id || ''}
-                onValueChange={(v) => set('quality_spec_id', v)}
-                disabled={lockedQuality}
-              >
+              <Select value={form.quality_spec_id || ''} onValueChange={(v) => set('quality_spec_id', v)} disabled={lockedQuality}>
                 <SelectTrigger className="h-9">
                   <SelectValue placeholder="Select quality" />
                 </SelectTrigger>
@@ -224,28 +211,57 @@ export function DetailsEditPanel({
               </Select>
             </Field>
             <Field label="Processing">
-              <Input
-                value={form.processing_method ?? ''}
-                onChange={(e) => set('processing_method', e.target.value)}
-                placeholder="e.g. Washed, Natural"
-                disabled={lockedQuality}
-                className="h-9"
-              />
+              <Select value={(form.processing_method || '').toString()} onValueChange={(v) => set('processing_method', v)} disabled={lockedQuality}>
+                <SelectTrigger className="h-9">
+                  <SelectValue placeholder="Select processing" />
+                </SelectTrigger>
+                <SelectContent>
+                  {(() => {
+                    const cur = (form.processing_method || '').toString()
+                    const opts = [...PROCESSING_METHODS]
+                    if (cur && !opts.includes(cur)) opts.push(cur)
+                    return opts
+                  })().map((p) => (
+                    <SelectItem key={p} value={p}>{p}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Crop year">
+              <Input value={form.crop_year ?? ''} onChange={(e) => set('crop_year', e.target.value)} placeholder="e.g. 25/26" className="h-9" />
             </Field>
             <Field label="Exporter sample #">
-              <Input
-                value={form.exporter_sample_number ?? ''}
-                onChange={(e) => set('exporter_sample_number', e.target.value)}
-                className="h-9"
-              />
+              <Input value={form.exporter_sample_number ?? ''} onChange={(e) => set('exporter_sample_number', e.target.value)} className="h-9" />
+            </Field>
+            <Field label="Supplier (farm / coop)">
+              <Input value={form.supplier ?? ''} onChange={(e) => set('supplier', e.target.value)} className="h-9" />
+            </Field>
+          </div>
+        </div>
+
+        <div>
+          <div className="mb-2 text-sm font-medium text-foreground">Certifications</div>
+          <CertificationsField
+            sampleId={sample.id}
+            value={Array.isArray(form.certifications) ? form.certifications : []}
+            onChange={(next) => set('certifications', next)}
+          />
+        </div>
+
+        <div>
+          <div className="mb-2 text-sm font-medium text-foreground">Logistics</div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            <Field label="Container #">
+              <Input value={form.container_nr ?? ''} onChange={(e) => set('container_nr', e.target.value)} className="h-9 font-mono" />
+            </Field>
+            <Field label="ICO #">
+              <Input value={form.ico_number ?? ''} onChange={(e) => set('ico_number', e.target.value)} className="h-9 font-mono" />
+            </Field>
+            <Field label="Shipment month">
+              <Input type="month" value={form.shipment_month ?? ''} onChange={(e) => set('shipment_month', e.target.value)} className="h-9" />
             </Field>
             <Field label="Warehouse location">
-              <Input
-                value={form.storage_position ?? ''}
-                onChange={(e) => set('storage_position', e.target.value)}
-                placeholder="e.g. A1-B2"
-                className="h-9"
-              />
+              <Input value={form.storage_position ?? ''} onChange={(e) => set('storage_position', e.target.value)} placeholder="e.g. A1-B2" className="h-9" />
             </Field>
           </div>
         </div>
@@ -254,25 +270,10 @@ export function DetailsEditPanel({
           <div className="mb-2 text-sm font-medium text-foreground">Quantity</div>
           <div className="grid gap-4 sm:grid-cols-3">
             <Field label="Bag count">
-              <Input
-                type="number"
-                min="0"
-                inputMode="numeric"
-                value={form.bag_count ?? ''}
-                onChange={(e) => set('bag_count', e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)}
-                className="h-9"
-              />
+              <Input type="number" min="0" inputMode="numeric" value={form.bag_count ?? ''} onChange={(e) => set('bag_count', e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)} className="h-9" />
             </Field>
             <Field label="Bag weight (kg)">
-              <Input
-                type="number"
-                min="0"
-                step="0.1"
-                inputMode="decimal"
-                value={form.bag_weight_kg ?? ''}
-                onChange={(e) => set('bag_weight_kg', e.target.value === '' ? null : parseFloat(e.target.value) || 0)}
-                className="h-9"
-              />
+              <Input type="number" min="0" step="0.1" inputMode="decimal" value={form.bag_weight_kg ?? ''} onChange={(e) => set('bag_weight_kg', e.target.value === '' ? null : parseFloat(e.target.value) || 0)} className="h-9" />
             </Field>
             <Field label="Bag type">
               <Select value={form.bag_type || ''} onValueChange={(v) => set('bag_type', v)}>
@@ -281,9 +282,7 @@ export function DetailsEditPanel({
                 </SelectTrigger>
                 <SelectContent>
                   {Object.entries(BAG_TYPES).map(([v, label]) => (
-                    <SelectItem key={v} value={v}>
-                      {label}
-                    </SelectItem>
+                    <SelectItem key={v} value={v}>{label}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
