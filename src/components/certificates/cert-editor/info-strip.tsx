@@ -67,6 +67,53 @@ export function InfoStripBand({
   )
 }
 
+/** Compact attributes band under the strip: crop · processing · certifications. Click opens the edit panel. */
+export function AttributesLine({
+  sample,
+  draftSample,
+  onEdit,
+}: {
+  sample: CertSample
+  draftSample: Record<string, any>
+  onEdit: () => void
+}) {
+  const crop = draftSample.crop_year ?? sample.crop_year
+  const processing = draftSample.processing_method ?? sample.processing_method
+  const certs: string[] = Array.isArray(draftSample.certifications)
+    ? draftSample.certifications
+    : Array.isArray(sample.certifications)
+      ? sample.certifications
+      : []
+  return (
+    <button
+      onClick={onEdit}
+      className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 border-b border-border px-4 py-2 text-left transition-colors hover:bg-muted/40"
+    >
+      <span className="flex items-center gap-1.5">
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Crop</span>
+        <span className="text-sm font-medium text-foreground">{crop || '—'}</span>
+      </span>
+      <span className="text-muted-foreground">·</span>
+      <span className="flex items-center gap-1.5">
+        <span className="text-[11px] uppercase tracking-wide text-muted-foreground">Processing</span>
+        <span className="text-sm font-medium text-foreground">{processing || '—'}</span>
+      </span>
+      <span className="text-muted-foreground">·</span>
+      <span className="flex flex-wrap items-center gap-1">
+        {certs.length ? (
+          certs.map((c) => (
+            <span key={c} className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-foreground">
+              {c}
+            </span>
+          ))
+        ) : (
+          <span className="text-[11px] text-muted-foreground">No certifications</span>
+        )}
+      </span>
+    </button>
+  )
+}
+
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-1">

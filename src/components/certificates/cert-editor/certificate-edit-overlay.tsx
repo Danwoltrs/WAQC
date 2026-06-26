@@ -6,7 +6,7 @@ import { useToast } from '@/hooks/use-toast'
 import { Loader2, X, Save, MapPin } from 'lucide-react'
 import { useCertEditor } from './use-cert-editor'
 import { certTypeLabel } from './shared'
-import { InfoStripBand, DetailsEditPanel } from './info-strip'
+import { InfoStripBand, AttributesLine, DetailsEditPanel } from './info-strip'
 import { DefectsQuadrant, DefectsEditPanel } from './defects-quadrant'
 import { ScreenQuadrant, ScreenEditPanel } from './screen-quadrant'
 import { PhysicalQuadrant, PhysicalEditPanel } from './physical-quadrant'
@@ -172,6 +172,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
       ) : (
         <>
           <InfoStripBand sample={sample} draftSample={draft.sample} onEdit={() => setPanel('details')} />
+          <AttributesLine sample={sample} draftSample={draft.sample} onEdit={() => setPanel('details')} />
 
           {/* Quadrant dashboard */}
           <div className="flex-1 overflow-y-auto p-5">
