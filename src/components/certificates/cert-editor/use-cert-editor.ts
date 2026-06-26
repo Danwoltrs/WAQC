@@ -17,6 +17,7 @@ const COMMERCIAL_FIELDS = [
   'wolthers_contract_nr', 'seller_contract_nr', 'shipper_contract_nr', 'exporter_contract_nr',
   'buyer_contract_nr', 'roaster_contract_nr', 'qc_client_contract_nr', 'end_client_contract_nr',
   'supplier_contract_nr', 'ico_number', 'container_nr', 'processing_method', 'micro_origin',
+  'crop_year', 'certifications', 'shipment_month', 'supplier',
   // NOTE: tracking_number is deliberately NOT here — it has no editor control and a
   // PATCH of it cascades a (permanent, gap-free) certificate-number rename.
   'origin', 'sample_type', 'exporter_sample_number', 'storage_position',
@@ -67,6 +68,10 @@ export interface CertSample {
   is_quick_look?: boolean
   linked_pss?: { id: string; tracking_number: string } | null
   sample_recipients?: any[]
+  crop_year?: string
+  certifications?: string[]
+  shipment_month?: string
+  supplier?: string
   [key: string]: any
 }
 
