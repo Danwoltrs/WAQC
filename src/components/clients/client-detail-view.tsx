@@ -25,6 +25,7 @@ import { Button } from '@/components/ui/button'
 import { ClientInviteDialog } from '@/components/portal/client-invite-dialog'
 import { ClientQualityManager } from './client-quality-manager'
 import { ClientMetricsTab } from './client-metrics-tab'
+import { QcContactsTab } from './qc-contacts-tab'
 import { QcConfigPanel } from './qc-config-panel'
 import { DEFAULT_CERTIFICATE_PATTERN } from '@/types/certificate-pattern'
 import { cn } from '@/lib/utils'
@@ -759,6 +760,9 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
           <TabsTrigger value="metrics" className="px-4 py-1.5 text-[13px] rounded-[7px] data-[state=active]:shadow-sm">
             Metrics
           </TabsTrigger>
+          <TabsTrigger value="contacts" className="px-4 py-1.5 text-[13px] rounded-[7px] data-[state=active]:shadow-sm">
+            Contacts
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="specs" className="space-y-4 mt-4">
@@ -783,6 +787,10 @@ export function ClientDetailView({ clientId }: ClientDetailViewProps) {
             sampleMetrics={sampleMetrics}
             samples={samples}
           />
+        </TabsContent>
+
+        <TabsContent value="contacts" className="space-y-4 mt-4">
+          <QcContactsTab companyId={client.id} companyName={client.fantasy_name || client.company} />
         </TabsContent>
       </Tabs>
 
