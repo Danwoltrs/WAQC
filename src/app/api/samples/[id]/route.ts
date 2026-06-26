@@ -1,12 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { Database } from '@/lib/database.types'
 import { isUUID, slugToTrackingNumber } from '@/lib/utils'
 import { resolveSampleId } from '@/lib/sample-utils'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
+import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
+
+// Admin client bypasses RLS to re-sync the shared sys shipment_samples rows.
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } },
+)
 
 /**
  * GET /api/samples/[id]
@@ -454,6 +463,12 @@ export async function PATCH(
         // Non-blocking: sample update still succeeded
       }
     }
+
+    // Re-sync the shared sys shipment_samples rows instantly so sys.wolthers.com
+    // reflects any change to an already-decided sample (status / tracking number /
+    // reason). Self-guards (no-op unless the sample is approved/rejected) and is
+    // sync-only, preserving the original approver + decision date. Best-effort.
+    await writeDecisionToShipmentSamples(supabaseAdmin, id, user.id, null, { syncOnly: true })
 
     return NextResponse.json({ sample })
   } catch (error) {

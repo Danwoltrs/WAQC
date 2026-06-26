@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase-server'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
+import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
+
+// Admin client bypasses RLS to re-sync the shared sys shipment_samples rows.
+const supabaseAdmin = createSupabaseClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!,
+  { auth: { autoRefreshToken: false, persistSession: false } },
+)
 
 /**
  * Only master cuppers / global admins may edit a sample's sub-contracts.
@@ -259,6 +268,10 @@ export async function POST(
       // Non-fatal: sub-contract was still created
     }
 
+    // Re-sync sys instantly: a new sub-contract on a decided sample propagates
+    // the decision (+ reason) to its sys leaves. Self-guarded + sync-only.
+    await writeDecisionToShipmentSamples(supabaseAdmin, sampleId, user.id, null, { syncOnly: true })
+
     return NextResponse.json({ contract }, { status: 201 })
   } catch (error: any) {
     console.error('Error in POST /api/samples/[id]/contracts:', error)
@@ -324,6 +337,9 @@ export async function PATCH(
     // Every editable sub-contract field renders on the sub-contract certificate,
     // so a successful update invalidates the sample's cached cert PDFs.
     invalidateCertificatePdf(supabase, sampleId).catch(() => {})
+
+    // Re-sync sys instantly so an edited sub-contract reflects on its sys leaves.
+    await writeDecisionToShipmentSamples(supabaseAdmin, sampleId, user.id, null, { syncOnly: true })
 
     return NextResponse.json({ contract })
   } catch (error: any) {

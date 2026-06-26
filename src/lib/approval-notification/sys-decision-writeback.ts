@@ -29,6 +29,7 @@ export async function writeDecisionToShipmentSamples(
   sampleId: string,
   userId: string,
   comments: string | null = null,
+  opts: { syncOnly?: boolean } = {},
 ): Promise<void> {
   try {
     const { data: sample } = await admin
@@ -70,7 +71,10 @@ export async function writeDecisionToShipmentSamples(
     const decision = s.status as ApprovalDecision
     const sampleType = s.sample_type ?? 'pss'
     const today = new Date().toISOString().slice(0, 10)
-    const base = { decision, userId, today, certificateUrl: null, comments, reason, initials, sampleType }
+    const base = {
+      decision, userId, today, certificateUrl: null, comments, reason, initials, sampleType,
+      syncOnly: opts.syncOnly,
+    }
 
     // One write per resolved sys contract; dedupe so the mother and a sub that
     // share a contract don't double-claim the same rows.

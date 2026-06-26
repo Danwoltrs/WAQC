@@ -8,6 +8,7 @@ import {
   buildQualitySummaryHtml,
   buildQualitySummarySubject,
   buildRejectionReason,
+  compactDefectViolations,
   type QualitySampleSummary,
 } from './quality-summary'
 
@@ -145,6 +146,52 @@ describe('buildRejectionReason', () => {
     expect(
       buildRejectionReason({ violations: [], resolvedDefects: null, cuppingComment: '', gradingComment: '' }),
     ).toBeNull()
+  })
+  it('collapses redundant defect-count lines to one terse "Defects: N (max M)"', () => {
+    const r = buildRejectionReason({
+      violations: ['Secondary defects: 45 exceeds limit (30)', 'Total defects: 45 exceeds limit (30)'],
+      resolvedDefects: null,
+      cuppingComment: '',
+      gradingComment: '',
+    })
+    expect(r).toBe('Defects: 45 (max 30)')
+  })
+})
+
+describe('compactDefectViolations', () => {
+  it('prefers the Total breach and drops the redundant Secondary duplicate', () => {
+    expect(
+      compactDefectViolations([
+        'Secondary defects: 45 exceeds limit (30)',
+        'Total defects: 45 exceeds limit (30)',
+      ]),
+    ).toEqual(['Defects: 45 (max 30)'])
+  })
+  it('shortens a single defect line and leaves non-defect violations untouched, in place', () => {
+    expect(
+      compactDefectViolations([
+        'Flavor: 5.50 is below minimum (6)',
+        'Total defects: 45 exceeds limit (30)',
+        'Moisture: 13% exceeds maximum (12%)',
+      ]),
+    ).toEqual([
+      'Flavor: 5.50 is below minimum (6)',
+      'Defects: 45 (max 30)',
+      'Moisture: 13% exceeds maximum (12%)',
+    ])
+  })
+  it('keeps distinct primary/secondary breaches when there is no Total line', () => {
+    expect(
+      compactDefectViolations([
+        'Primary defects: 16 exceeds limit (15)',
+        'Secondary defects: 31 exceeds limit (30)',
+      ]),
+    ).toEqual(['Defects: 16 (max 15)', 'Defects: 31 (max 30)'])
+  })
+  it('passes through when there are no defect-count violations', () => {
+    expect(compactDefectViolations(['Flavor: 5.50 is below minimum (6)'])).toEqual([
+      'Flavor: 5.50 is below minimum (6)',
+    ])
   })
 })
 

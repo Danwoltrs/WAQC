@@ -99,23 +99,6 @@ export function selectShipmentSampleTargets(
   return { updateIds: [...targets], insert: false }
 }
 
-/**
- * Compose the sys `rejection_reason` from a sample's cup/green comments so
- * logistics need not retype it — e.g. "CUP: 1 COPO SUJO", or
- * "CUP: … | GREEN: …" when both stages carry a note. Null when neither is set.
- */
-export function buildRejectionReason(opts: {
-  cuppingComment?: string | null
-  gradingComment?: string | null
-}): string | null {
-  const cup = (opts.cuppingComment ?? '').trim()
-  const green = (opts.gradingComment ?? '').trim()
-  const parts: string[] = []
-  if (cup) parts.push(`CUP: ${cup}`)
-  if (green) parts.push(`GREEN: ${green}`)
-  return parts.length > 0 ? parts.join(' | ') : null
-}
-
 export interface WritebackUpdateOpts {
   decision: ApprovalDecision
   userId: string
@@ -126,17 +109,26 @@ export interface WritebackUpdateOpts {
    *  shows it as approved-in-QC. Omitted from the payload when undefined to
    *  leave the existing PSS write-back behaviour untouched. */
   source?: string
+  /** Re-sync after a post-decision EDIT (not a fresh decision). Keeps the
+   *  original decision attribution on sys — the approver and decision date are
+   *  left untouched (an editor is not the approver) — while status / waqc_ref /
+   *  reason are refreshed. */
+  syncOnly?: boolean
 }
 
 export function buildWritebackUpdate(opts: WritebackUpdateOpts) {
   const update: Record<string, unknown> = {
     status: opts.decision,
-    approved_by: opts.userId,
-    approved_date: opts.today,
     certificate_url: opts.certificateUrl,
     // Claim/confirm the WAQC ref so a matched empty placeholder becomes exactly
     // keyed (idempotent on resend; a no-op when it already matched exactly).
     waqc_ref: opts.waqcRef,
+  }
+  // A pure edit re-sync must not re-stamp the approver/date (the editor isn't
+  // the approver); a real decision sets them.
+  if (!opts.syncOnly) {
+    update.approved_by = opts.userId
+    update.approved_date = opts.today
   }
   if (opts.source) update.source = opts.source
   return update
@@ -192,6 +184,9 @@ export async function applyShipmentSampleApproval(
      *  targets/creates a distinct SS row (never the contract's PSS) and stamps
      *  source='qc'. */
     sampleType?: string
+    /** Post-edit re-sync (not a fresh decision): refresh status / waqc_ref /
+     *  reason but preserve the original approver, decision date and QC initials. */
+    syncOnly?: boolean
   },
 ): Promise<string | null> {
   try {
@@ -242,9 +237,11 @@ export async function applyShipmentSampleApproval(
     // and on rejection an explicit rejected_date + the rejection_reason.
     const optional: Record<string, unknown> = {}
     if (args.comments) optional.approval_comments = args.comments
-    if (args.initials) optional.approved_by_initials = args.initials
+    // Preserve the original approver/date on a pure edit re-sync; refresh the
+    // reason (it may have changed) either way.
+    if (!args.syncOnly && args.initials) optional.approved_by_initials = args.initials
     if (args.decision === 'rejected') {
-      optional.rejected_date = args.today
+      if (!args.syncOnly) optional.rejected_date = args.today
       if (args.reason) optional.rejection_reason = args.reason
     }
     if (rowIds.length > 0 && Object.keys(optional).length > 0) {

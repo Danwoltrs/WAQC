@@ -1,7 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
   selectShipmentSampleTargets,
-  buildRejectionReason,
   buildWritebackUpdate,
   buildWritebackInsert,
   type ShipmentSampleRow,
@@ -125,23 +124,6 @@ describe('selectShipmentSampleTargets — SS sample type', () => {
   })
 })
 
-describe('buildRejectionReason', () => {
-  it('prefixes a cup-only reason with CUP:', () => {
-    expect(buildRejectionReason({ cuppingComment: '1 COPO SUJO' })).toBe('CUP: 1 COPO SUJO')
-  })
-  it('prefixes a green-only reason with GREEN:', () => {
-    expect(buildRejectionReason({ gradingComment: 'screen out of spec' })).toBe('GREEN: screen out of spec')
-  })
-  it('joins both stages when both carry a note', () => {
-    expect(buildRejectionReason({ cuppingComment: '1 COPO SUJO', gradingComment: 'PVA high' })).toBe(
-      'CUP: 1 COPO SUJO | GREEN: PVA high',
-    )
-  })
-  it('returns null when neither comment is present', () => {
-    expect(buildRejectionReason({ cuppingComment: '  ', gradingComment: null })).toBeNull()
-  })
-})
-
 describe('buildWritebackInsert / buildWritebackUpdate — SS marked QC', () => {
   it('inserts a distinct ss row tagged source=qc', () => {
     const p = buildWritebackInsert({
@@ -202,6 +184,23 @@ describe('buildWritebackUpdate / buildWritebackInsert', () => {
       certificate_url: 'path/cert.pdf',
       waqc_ref: 'BR-036991/26',
     })
+  })
+  it('omits approver + decision date on a sync-only edit re-sync', () => {
+    const p = buildWritebackUpdate({
+      decision: 'rejected',
+      userId: 'editor-1',
+      today: '2026-06-26',
+      certificateUrl: null,
+      waqcRef: 'SAN-00081/26',
+      syncOnly: true,
+    })
+    expect(p).toEqual({
+      status: 'rejected',
+      certificate_url: null,
+      waqc_ref: 'SAN-00081/26',
+    })
+    expect(p).not.toHaveProperty('approved_by')
+    expect(p).not.toHaveProperty('approved_date')
   })
   it('builds an insert payload with contract link and waqc_ref', () => {
     const p = buildWritebackInsert({

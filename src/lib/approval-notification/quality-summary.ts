@@ -169,6 +169,48 @@ export interface ResolvedDefects {
 // reason doesn't say both "Hard (riado)" and "Cupping faults: 1".
 const TF_COUNT_VIOLATION = /^(Cupping taints|Cupping faults|Zero tolerance|Combined)/i
 
+// Green-grading defect-count lines, e.g. "Total defects: 45 exceeds limit (30)".
+const DEFECT_COUNT_VIOLATION = /^(Primary|Secondary|Total) defects: (\d+) exceeds limit \((\d+)\)$/
+
+/**
+ * Collapse the verbose, often-redundant defect-count violations into a terse
+ * "Defects: N (max M)". With no primary defects the engine emits Secondary AND
+ * Total with the same number — printed twice it overflows the cell. We keep the
+ * Total breach when present (it subsumes the sub-categories), else one line per
+ * distinct count/limit. Non-defect violations pass through untouched, in place.
+ */
+export function compactDefectViolations(violations: string[]): string[] {
+  const parsed = violations
+    .map((v) => v.match(DEFECT_COUNT_VIOLATION))
+    .filter((m): m is RegExpMatchArray => !!m)
+    .map((m) => ({ count: Number(m[2]), limit: Number(m[3]), isTotal: m[1] === 'Total' }))
+  if (parsed.length === 0) return violations
+
+  const total = parsed.find((d) => d.isTotal)
+  const seen = new Set<string>()
+  const chosen = (total ? [total] : parsed).filter((d) => {
+    const key = `${d.count}/${d.limit}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  const defectLines = chosen.map((d) => `Defects: ${d.count} (max ${d.limit})`)
+
+  let emitted = false
+  const out: string[] = []
+  for (const v of violations) {
+    if (DEFECT_COUNT_VIOLATION.test(v)) {
+      if (!emitted) {
+        out.push(...defectLines)
+        emitted = true
+      }
+      continue
+    }
+    out.push(v)
+  }
+  return out
+}
+
 /**
  * Human-readable "why it failed" for a rejected sample. Combines, in order:
  *   1. the named cup faults/taints from the authoritative resolved set, shown
@@ -200,7 +242,7 @@ export function buildRejectionReason(input: {
   if (defects.length) lines.push(defects.join(', '))
 
   const haveNamed = defects.length > 0
-  for (const v of input.violations) {
+  for (const v of compactDefectViolations(input.violations)) {
     if (haveNamed && TF_COUNT_VIOLATION.test(v)) continue
     if (v.trim()) lines.push(v.trim())
   }
