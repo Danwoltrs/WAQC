@@ -32,4 +32,6 @@ export interface ApprovalPrefill {
   sample: ApprovalSampleFields
   panels: { seller: PanelPrefill; buyer: PanelPrefill }
   certificateAvailable: boolean
+  sellerId: string | null
+  buyerId: string | null
 }

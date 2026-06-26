@@ -21,6 +21,8 @@ const prefill: ApprovalPrefill = {
     buyer: { greeting: 'Regula', to: [{ email: 'regula@blaser.com', name: 'Regula', nickname: null, isGroupMailbox: false }], cc: [{ email: 'qualitycontrol@wolthers.com', name: 'Quality Control', nickname: null, isGroupMailbox: false }] },
   },
   certificateAvailable: true,
+  sellerId: null,
+  buyerId: null,
 }
 
 beforeEach(() => {

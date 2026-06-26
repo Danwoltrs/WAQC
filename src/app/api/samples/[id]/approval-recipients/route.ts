@@ -125,6 +125,8 @@ export async function GET(
       buyer: resolvePanel(rows, ctx.buyerId, nameOf(ctx.buyerId), QC_MAILBOX),
     },
     certificateAvailable: !!cert,
+    sellerId: ctx.sellerId,
+    buyerId: ctx.buyerId,
   }
   return NextResponse.json(payload)
 }
