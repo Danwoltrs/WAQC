@@ -113,11 +113,22 @@ describe('buildBatchUnits', () => {
     expect(units.find((u) => u.side === 'seller')?.samples.some((s) => s.sampleId === 's1')).toBe(true)
   })
 
-  it('skips a company with no resolvable TO recipient', () => {
+  it('emits a company with no resolvable TO recipient, flagged needsRecipients', () => {
     const noTo = new Map(panels)
     noTo.set('buyerA', panel('Alpha team', []))
     const units = buildBatchUnits(samples, new Map(), noTo, names)
-    expect(units.find((u) => u.companyId === 'buyerA')).toBeUndefined()
+    const alpha = units.find((u) => u.companyId === 'buyerA')
+    expect(alpha).toBeDefined()
+    expect(alpha!.to).toEqual([])
+    expect(alpha!.needsRecipients).toBe(true)
+    // It still carries its samples and a greeting so the composer can render it.
+    expect(alpha!.samples.map((s) => s.sampleId)).toEqual(['s2'])
+    expect(alpha!.greeting).toBe('Alpha team')
+  })
+
+  it('flags units with recipients as needsRecipients=false', () => {
+    const units = buildBatchUnits(samples, new Map(), panels, names)
+    expect(units.every((u) => u.needsRecipients === false)).toBe(true)
   })
 
   it('skips a side with no company', () => {

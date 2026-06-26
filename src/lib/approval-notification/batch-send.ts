@@ -115,13 +115,18 @@ export interface BatchUnit {
   summaryHtml?: string
   // True for seller units: certificates are NOT attached (sellers don't pay).
   noAttachments?: boolean
+  // True when this (company, side) has no resolvable TO recipient. The unit is
+  // still emitted so the composer surfaces it as a capture step; Send stays
+  // blocked until the sender adds at least one recipient.
+  needsRecipients: boolean
 }
 
 /**
  * Pure: build the ordered send queue. One unit per (company, side); a
  * (sample, side) pair already sent (per `sendStatus`) is dropped. Companies with
- * no resolvable TO recipient are skipped. Order: all buyer units (by company
- * name), then all seller units (by company name).
+ * no resolvable TO recipient are still emitted, flagged `needsRecipients`, so the
+ * composer can capture one. Order: all buyer units (by company name), then all
+ * seller units (by company name).
  */
 export function buildBatchUnits(
   samples: BatchSampleInput[],
@@ -150,19 +155,22 @@ export function buildBatchUnits(
     const sideUnits: BatchUnit[] = []
     for (const [companyId, sampleLines] of bucket) {
       const panel = panelsByCompany.get(companyId)
-      if (!panel || panel.to.length === 0) continue
       const companyName = companyNameById.get(companyId) ?? companyId
-      const tmpl = { greeting: panel.greeting, side, lines: sampleLines }
+      const to = panel ? panel.to.map((c) => c.email) : []
+      const cc = panel ? panel.cc.map((c) => c.email) : []
+      const greeting = panel?.greeting ?? `${companyName} team`
+      const tmpl = { greeting, side, lines: sampleLines }
       sideUnits.push({
         side,
         companyId,
         companyName,
-        greeting: panel.greeting,
-        to: panel.to.map((c) => c.email),
-        cc: panel.cc.map((c) => c.email),
+        greeting,
+        to,
+        cc,
         subject: buildBatchApprovalSubject(tmpl),
         body: buildBatchApprovalBody(tmpl),
         samples: sampleLines,
+        needsRecipients: to.length === 0,
       })
     }
     sideUnits.sort((a, b) => a.companyName.localeCompare(b.companyName))
