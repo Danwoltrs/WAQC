@@ -78,6 +78,9 @@ export const ALWAYS_EDITABLE_FIELDS: ReadonlySet<string> = new Set([
   'bags_quantity_mt',
   'bag_count',
   'equivalent_60kg_bags',
+  // Commodity attributes (non-quality, per owner 2026-06-25)
+  'crop_year',
+  'certifications',
   // Workflow / assignment
   'workflow_stage',
   'status',
@@ -93,9 +96,7 @@ export const LOCK_SENSITIVE_FIELDS: ReadonlySet<string> = new Set([
   'quality_name',
   'origin',
   'micro_origin',
-  'crop_year',
   'processing_method',
-  'certifications',
   'sample_type',
 ])
 
