@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { RecipientPanel } from '@/components/samples/approval/recipient-panel'
+import { RecipientCaptureForm } from '@/components/samples/approval/recipient-capture'
 import type { BatchUnit } from '@/lib/approval-notification/batch-send'
 
 interface Props {
@@ -132,6 +133,12 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
     for (let i = index; i < units.length; i++) {
       const unit = units[i]
       setIndex(i)
+      if (unit.to.length === 0) {
+        // Can't send a unit with no recipient; leave it for manual capture.
+        collected.push({ companyId: unit.companyId, side: unit.side, ok: false, failed: unit.samples.length })
+        setResults((prev) => [...prev, collected[collected.length - 1]])
+        continue
+      }
       try {
         const r = await postUnit(unit)
         collected.push({ companyId: unit.companyId, side: unit.side, ok: r.ok, failed: r.failed })
@@ -218,10 +225,11 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
                   />
 
                   {current.to.length === 0 && (
-                    <p className="text-xs text-amber-600 dark:text-amber-400">
-                      No QC-certificate recipients are configured for {current.companyName}. Add a contact with the
-                      &ldquo;QC certificates&rdquo; send-flag in sys.wolthers.com, or enter a recipient above.
-                    </p>
+                    <RecipientCaptureForm
+                      companyId={current.companyId}
+                      companyName={current.companyName}
+                      onAdd={(email) => patchCurrent({ to: [...current.to, email] })}
+                    />
                   )}
 
                   {!current.noAttachments && (
