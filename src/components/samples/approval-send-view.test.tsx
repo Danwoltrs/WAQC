@@ -65,3 +65,35 @@ describe('ApprovalSendView', () => {
     expect(payload.includeCertificate).toBe(true)
   })
 })
+
+describe('ApprovalSendView capture', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (String(url).includes('/approval-recipients')) {
+        return {
+          ok: true,
+          json: async () => ({
+            sample: {
+              trackingNumber: 'BR-1/26', sampleType: 'pss', status: 'approved', contractNumber: '100/26',
+              sampleCode: null, awb: null, courier: null, sellerReference: null, buyerReference: null, comments: null,
+            },
+            panels: {
+              seller: { greeting: 'Seller team', to: [{ email: 's@seller.com', name: null, nickname: null, isGroupMailbox: false }], cc: [] },
+              buyer: { greeting: 'buyer team', to: [], cc: [] },
+            },
+            certificateAvailable: false,
+            sellerId: 'sellerCo',
+            buyerId: 'buyerCo',
+          }),
+        } as Response
+      }
+      return { ok: false, json: async () => ({ error: 'unexpected' }) } as Response
+    }))
+  })
+
+  it('shows the capture form for the empty buyer side and persists to its company', async () => {
+    render(<ApprovalSendView sampleId="smp1" open onClose={() => {}} />)
+    await waitFor(() => expect(screen.getByPlaceholderText('name@company.com')).toBeInTheDocument())
+    expect(screen.getByLabelText(/save as a QC-certificate recipient/i)).toBeInTheDocument()
+  })
+})

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { RecipientPanel, type PanelState } from './approval/recipient-panel'
+import { RecipientCaptureForm } from './approval/recipient-capture'
 import { CertificatePreview } from './approval/certificate-preview'
 import {
   buildSampleApprovedSubject,
@@ -19,6 +20,7 @@ interface Props {
 interface PanelWithSide extends PanelState {
   side: ApprovalSide
   subject: string
+  companyId: string | null
 }
 
 export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
@@ -43,6 +45,7 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
         const fields = p.sample
         const make = (side: ApprovalSide, title: string): PanelWithSide => {
           const panel = side === 'seller' ? p.panels.seller : p.panels.buyer
+          const companyId = side === 'seller' ? p.sellerId : p.buyerId
           const tmplInput = {
             decision: fields.status,
             greeting: panel.greeting,
@@ -59,6 +62,7 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
           return {
             side,
             title,
+            companyId,
             to: panel.to.map((c) => c.email),
             cc: panel.cc.map((c) => c.email),
             subject: buildSampleApprovedSubject(tmplInput),
@@ -126,14 +130,22 @@ export function ApprovalSendView({ sampleId, open, onClose, onSent }: Props) {
         <div className="grid h-[calc(100vh-3rem)] grid-cols-1 gap-4 overflow-auto p-4 lg:grid-cols-2">
           <div className="space-y-4">
             {panels.map((p, i) => (
-              <RecipientPanel
-                key={p.side}
-                title={p.title}
-                to={p.to}
-                cc={p.cc}
-                body={p.body}
-                onChange={(next) => updatePanel(i, next)}
-              />
+              <div key={p.side} className="space-y-2">
+                <RecipientPanel
+                  title={p.title}
+                  to={p.to}
+                  cc={p.cc}
+                  body={p.body}
+                  onChange={(next) => updatePanel(i, next)}
+                />
+                {p.to.length === 0 && (
+                  <RecipientCaptureForm
+                    companyId={p.companyId}
+                    companyName={p.title}
+                    onAdd={(email) => updatePanel(i, { ...p, to: [...p.to, email] })}
+                  />
+                )}
+              </div>
             ))}
             <p className="text-xs italic opacity-50">Each recipient sees only their own greeting on send.</p>
             <label className="flex items-center gap-2 text-sm">
