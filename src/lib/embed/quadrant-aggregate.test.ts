@@ -4,9 +4,8 @@
 import { describe, it, expect } from 'vitest'
 import { aggregateQuadrant, loadSampleOwnership } from './quadrant-aggregate'
 
-// Minimal Supabase query-builder stub.
-// Supports: .from(table).select(...).eq(...).is(...).maybeSingle()
-// and       .from(table).select(...).eq(...).then(cb)
+// Minimal Supabase query-builder stub. Every filter/order method returns the
+// builder so arbitrary chains resolve; maybeSingle()/then() resolve to rows[table].
 function fakeClient(rows: Record<string, any>) {
   return {
     from(table: string) {
@@ -15,6 +14,10 @@ function fakeClient(rows: Record<string, any>) {
         select() { return builder },
         eq() { return builder },
         is() { return builder },
+        in() { return builder },
+        contains() { return builder },
+        order() { return builder },
+        limit() { return builder },
         maybeSingle() {
           return Promise.resolve({ data: rows[table] ?? null, error: null })
         },
@@ -68,7 +71,7 @@ describe('aggregateQuadrant', () => {
     const out = await aggregateQuadrant(client as any, 'uuid-1')
     expect(out).not.toBeNull()
     expect(out!.sample.tracking_number).toBe('SAN-1')
-    expect(out!.qualityAssessment.green_bean_data.moisture).toBe(11)
+    expect(out!.qualityAssessment!.green_bean_data!.moisture).toBe(11)
   })
 
   it('cupping is null when no scores exist', async () => {
@@ -84,6 +87,95 @@ describe('aggregateQuadrant', () => {
     const out = await aggregateQuadrant(client as any, 'uuid-1')
     expect(out).not.toBeNull()
     expect(out!.cupping).toBeNull()
+  })
+
+  it('scopes cupping to the active session assigned cuppers (excludes removed cuppers)', async () => {
+    // Session assigns only cupper "keep". A stray score from a removed cupper
+    // "drop" must NOT influence the aggregate — mirrors aggregate/route.ts filter.
+    const sample = {
+      id: 'uuid-1',
+      tracking_number: 'SAN-1',
+      deleted_at: null,
+      client_id: 'c1',
+      end_client_id: null,
+      quality_spec_id: null,
+    }
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: {
+        id: 'sess-1',
+        cupper_ids: ['keep'],
+        master_cupper_id: null,
+      },
+      cupping_scores: [
+        { id: 's1', cupper_id: 'keep', scores: { Acidity: 8 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+        { id: 's2', cupper_id: 'drop', scores: { Acidity: 2 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+      ],
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping).not.toBeNull()
+    // Only the assigned cupper counted → total_cuppers 1, mean = 8 (not (8+2)/2).
+    expect(out!.cupping!.total_cuppers).toBe(1)
+    expect(out!.cupping!.attributes.Acidity.mean).toBe(8)
+    expect(out!.cupping!.attributes.Acidity.finalScore).toBe(8)
+  })
+
+  it('applies per-attribute increment from the quality spec (not fixed 0.25)', async () => {
+    // Spec increment of 1 → mean 8.4 rounds to 8 (0.25 increment would give 8.5).
+    const sample = {
+      id: 'uuid-1',
+      tracking_number: 'SAN-1',
+      deleted_at: null,
+      client_id: 'c1',
+      end_client_id: null,
+      quality_spec_id: 'spec-1',
+    }
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      client_qualities: {
+        custom_parameters: {
+          cupping_attributes: [
+            { attribute: 'Body', scale: { type: 'numeric', increment: 1 } },
+          ],
+        },
+        template: null,
+      },
+      cupping_scores: [
+        { id: 's1', cupper_id: 'a', scores: { Body: 8.2 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+        { id: 's2', cupper_id: 'b', scores: { Body: 8.6 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+      ],
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping!.attributes.Body.increment).toBe(1)
+    // mean 8.4 rounded to nearest 1 → 8
+    expect(out!.cupping!.attributes.Body.finalScore).toBe(8)
+  })
+
+  it('flags a defect-presence discrepancy when cuppers disagree on existence', async () => {
+    // Cupper "Ana" reports a "woody" taint; cupper "Bob" does not → presence
+    // discrepancy. Mirrors aggregate/route.ts "Only identified by ..." flag.
+    const sample = {
+      id: 'uuid-1',
+      tracking_number: 'SAN-1',
+      deleted_at: null,
+      client_id: 'c1',
+      end_client_id: null,
+      quality_spec_id: null,
+    }
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a', 'b'], master_cupper_id: null },
+      cupping_scores: [
+        { id: 's1', cupper_id: 'a', scores: { Acidity: 8 }, defects: { taints: ['woody'] }, created_at: '2026-01-01', cupper: { id: 'a', full_name: 'Ana' }, sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+        { id: 's2', cupper_id: 'b', scores: { Acidity: 8 }, defects: { taints: [] }, created_at: '2026-01-01', cupper: { id: 'b', full_name: 'Bob' }, sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+      ],
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping!.hasDiscrepancies).toBe(true)
+    expect(out!.cupping!.discrepancy_flags).toContain(
+      'Defect (Taint) "woody": Only identified by Ana (1/2 cuppers)'
+    )
   })
 })
 

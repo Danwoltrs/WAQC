@@ -90,6 +90,10 @@ interface QueryBuilder {
   select(cols?: string): QueryBuilder
   eq(col: string, val: unknown): QueryBuilder
   is(col: string, val: unknown): QueryBuilder
+  in(col: string, vals: unknown[]): QueryBuilder
+  contains(col: string, val: unknown): QueryBuilder
+  order(col: string, opts?: { ascending?: boolean }): QueryBuilder
+  limit(n: number): QueryBuilder
   maybeSingle(): Promise<{ data: unknown; error: unknown }>
   then<T>(res: (result: { data: unknown; error: unknown }) => T): Promise<T>
 }
@@ -143,6 +147,8 @@ function aggregateCuppingScores(
   }>,
   sampleId: string,
   masterCupperId: string | null,
+  attributeIncrements: Record<string, number>,
+  activeSessionCupperIds: string[] | null,
 ): QuadrantCupping {
   // ---- Attributes ----
   const allAttributes = new Set<string>()
@@ -171,13 +177,21 @@ function aggregateCuppingScores(
     const range = stats.max - stats.min
     const outliers = range > MAX_DISCREPANCY ? Array.from(cupperValues.keys()) : []
 
+    // Per-attribute increment from the quality spec, matched case-insensitively —
+    // identical to aggregate/route.ts lines 285-293. Falls back to DEFAULT_INCREMENT.
+    let increment = DEFAULT_INCREMENT
+    const lowerAttr = attribute.toLowerCase()
+    for (const [key, inc] of Object.entries(attributeIncrements)) {
+      if (key.toLowerCase() === lowerAttr) { increment = inc; break }
+    }
+
     const masterScore = masterCupperId
       ? scores.find(s => s.cupper_id === masterCupperId)
       : undefined
     const masterVal = masterScore?.scores?.[attribute]
     const finalScore = roundToIncrement(
       (masterVal !== undefined && masterVal !== null) ? masterVal : stats.mean,
-      DEFAULT_INCREMENT,
+      increment,
     )
 
     attributeStats[attribute] = {
@@ -187,12 +201,13 @@ function aggregateCuppingScores(
       outliers,
       finalScore,
       range,
-      increment: DEFAULT_INCREMENT,
+      increment,
     }
 
     if (outliers.length > 0) {
+      // Verbatim match to aggregate/route.ts line 322.
       discrepancyFlags.push(
-        `${attribute}: Discrepancy of ${range.toFixed(2)} points (Range: ${stats.min.toFixed(2)} - ${stats.max.toFixed(2)})`
+        `${attribute}: Discrepancy of ${range.toFixed(2)} points exceeds 0.5 limit (Range: ${stats.min.toFixed(2)} - ${stats.max.toFixed(2)})`
       )
     }
   }
@@ -208,6 +223,9 @@ function aggregateCuppingScores(
   const allFaults = new Set<string>()
   const taintLevels = new Map<string, Map<string, number>>()
   const faultLevels = new Map<string, Map<string, number>>()
+  // Per-cupper taint/fault sets — needed for defect-PRESENCE discrepancy detection
+  // (aggregate/route.ts lines 383-507 build this, lines 582-620 cross-compare it).
+  const cupperDefects = new Map<string, { taints: Set<string>; faults: Set<string> }>()
 
   function extractName(item: unknown): string | null {
     if (typeof item === 'string') return item
@@ -223,15 +241,22 @@ function aggregateCuppingScores(
     const cupperName = score.cupper?.full_name || score.cupper_id || 'Unknown'
     const defects = (score.defects || {}) as Record<string, unknown>
 
+    if (!cupperDefects.has(cupperName)) {
+      cupperDefects.set(cupperName, { taints: new Set(), faults: new Set() })
+    }
+    const cupperDefectSet = cupperDefects.get(cupperName)!
+
     function processItems(
       items: unknown[],
       targetSet: Set<string>,
       levelsMap: Map<string, Map<string, number>>,
+      cupperSet: Set<string>,
     ) {
       for (const item of items) {
         const name = extractName(item)
         if (!name) continue
         targetSet.add(name)
+        cupperSet.add(name)
         const intensity = (item && typeof item === 'object') ? Number((item as Record<string, unknown>).intensity || (item as Record<string, unknown>).level || 0) : 0
         if (intensity > 0) {
           if (!levelsMap.has(name)) levelsMap.set(name, new Map())
@@ -240,14 +265,15 @@ function aggregateCuppingScores(
       }
     }
 
-    if (Array.isArray(defects.taints)) processItems(defects.taints as unknown[], allTaints, taintLevels)
-    if (Array.isArray(defects.faults)) processItems(defects.faults as unknown[], allFaults, faultLevels)
+    if (Array.isArray(defects.taints)) processItems(defects.taints as unknown[], allTaints, taintLevels, cupperDefectSet.taints)
+    if (Array.isArray(defects.faults)) processItems(defects.faults as unknown[], allFaults, faultLevels, cupperDefectSet.faults)
 
     // Legacy taints_with_levels / faults_with_levels
     if (Array.isArray(defects.taints_with_levels)) {
       for (const t of defects.taints_with_levels as Array<{ name: string; level?: number }>) {
         if (!t.name) continue
         allTaints.add(t.name)
+        cupperDefectSet.taints.add(t.name)
         if (t.level && t.level > 0) {
           if (!taintLevels.has(t.name)) taintLevels.set(t.name, new Map())
           taintLevels.get(t.name)!.set(cupperName, t.level)
@@ -258,6 +284,7 @@ function aggregateCuppingScores(
       for (const f of defects.faults_with_levels as Array<{ name: string; level?: number }>) {
         if (!f.name) continue
         allFaults.add(f.name)
+        cupperDefectSet.faults.add(f.name)
         if (f.level && f.level > 0) {
           if (!faultLevels.has(f.name)) faultLevels.set(f.name, new Map())
           faultLevels.get(f.name)!.set(cupperName, f.level)
@@ -266,12 +293,15 @@ function aggregateCuppingScores(
     }
   }
 
-  // ---- Defect level stats (serialized) ----
+  // ---- Defect level stats (serialized) + level-discrepancy flags ----
+  // Mirrors aggregate/route.ts lines 519-579: push a flag for any defect whose
+  // level range across cuppers exceeds 0.5.
   const defectLevelStats: QuadrantCupping['defect_levels'] = []
   function buildDefectLevelStats(
     levelsMap: Map<string, Map<string, number>>,
     type: 'taint' | 'fault',
   ) {
+    const label = type === 'taint' ? 'Taint' : 'Fault'
     levelsMap.forEach((cupperLevels, defectName) => {
       if (cupperLevels.size <= 1) return
       const levels = Array.from(cupperLevels.values())
@@ -285,10 +315,48 @@ function aggregateCuppingScores(
         range,
         outliers: hasDiscrepancy ? Array.from(cupperLevels.keys()) : [],
       })
+
+      if (hasDiscrepancy) {
+        const levelDetails = Array.from(cupperLevels.entries())
+          .map(([cupper, level]) => `${cupper}: ${level}`)
+          .join(', ')
+        discrepancyFlags.push(
+          `Defect Level (${label}) "${defectName}": Discrepancy of ${range.toFixed(1)} exceeds 0.5 limit (${levelDetails})`
+        )
+      }
     })
   }
   buildDefectLevelStats(taintLevels, 'taint')
   buildDefectLevelStats(faultLevels, 'fault')
+
+  // ---- Defect-PRESENCE discrepancy flags (route lines 582-620) ----
+  // When cuppers disagree on whether a defect exists at all.
+  if (cupperDefects.size > 1) {
+    const emitPresence = (
+      names: Set<string>,
+      pick: (d: { taints: Set<string>; faults: Set<string> }) => Set<string>,
+      levelsMap: Map<string, Map<string, number>>,
+      label: 'Taint' | 'Fault',
+    ) => {
+      names.forEach((name) => {
+        const cuppersWith = Array.from(cupperDefects.entries())
+          .filter(([, d]) => pick(d).has(name))
+          .map(([cupper]) => cupper)
+        if (cuppersWith.length > 0 && cuppersWith.length < cupperDefects.size) {
+          const levelInfo = levelsMap.has(name)
+            ? ` - Intensity: ${Array.from(levelsMap.get(name)!.entries())
+                .map(([c, l]) => `${c}: ${l}`)
+                .join(', ')}`
+            : ''
+          discrepancyFlags.push(
+            `Defect (${label}) "${name}": Only identified by ${cuppersWith.join(', ')} (${cuppersWith.length}/${cupperDefects.size} cuppers)${levelInfo}`
+          )
+        }
+      })
+    }
+    emitPresence(allTaints, (d) => d.taints, taintLevels, 'Taint')
+    emitPresence(allFaults, (d) => d.faults, faultLevels, 'Fault')
+  }
 
   // ---- CVA score ----
   const cvaScoreValue: number | null = (() => {
@@ -315,6 +383,16 @@ function aggregateCuppingScores(
     for (const [d, n] of counts) if (n > bestN) { best = d; bestN = n }
     return best
   })()
+
+  // ---- Single-cupper warning (route lines 749-756) ----
+  // Only warn when the session intended multiple cuppers; a deliberate 1-cupper
+  // session does not warn.
+  const isSingleCupperSession = activeSessionCupperIds !== null && activeSessionCupperIds.length === 1
+  if (scores.length < 2 && !isSingleCupperSession) {
+    discrepancyFlags.push(
+      'Warning: Only 1 cupper scored this sample. Minimum 2 cuppers recommended.'
+    )
+  }
 
   return {
     sample_id: sampleId,
@@ -409,10 +487,90 @@ export async function aggregateQuadrant(
   const qualityAssessment = qaData as QuadrantQualityAssessment | null
 
   // --- 3. Cupping aggregate (mirrors GET /api/cupping/scores/aggregate) ---
-  // The aggregate route filters by the active session's cupper_ids; here we skip
-  // that session-scoping because the embed is read-only and has no session concept.
-  // We use maybeSingle for a single-row stub but the real table returns multiple
-  // rows (one per cupper). The then() form lets the stub work too.
+  // SOURCE OF TRUTH: src/app/api/cupping/scores/aggregate/route.ts. The route
+  // exports no reusable function and tangles the core math with auth/privacy/
+  // response handling, so the behaviors below are replicated faithfully. Any
+  // change to the route's session-scoping, master-cupper resolution, or per-
+  // attribute increment lookup MUST be mirrored here or the embed will diverge
+  // from the cert editor / certificate.
+  const cupping = await aggregateSampleCupping(serviceClient, sampleId)
+
+  return { sample, qualityAssessment, cupping }
+}
+
+/**
+ * Resolve the active cupping session, master cupper, and per-attribute increments,
+ * then aggregate the sample's cupping scores. Mirrors aggregate/route.ts lines
+ * 118-182 (session + increment resolution) and 230-237 (assigned-cupper filter).
+ */
+async function aggregateSampleCupping(
+  serviceClient: ServiceClient,
+  sampleId: string,
+): Promise<QuadrantCupping | null> {
+  // ---- Active session + master cupper (route lines 124-152) ----
+  let activeSessionCupperIds: string[] | null = null
+  let masterCupperId: string | null = null
+
+  const { data: activeSession } = await serviceClient
+    .from('cupping_sessions')
+    .select('id, cupper_ids, master_cupper_id')
+    .contains('sample_ids', [sampleId])
+    .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  const session = activeSession as { cupper_ids?: string[]; master_cupper_id?: string | null } | null
+  if (session?.cupper_ids) activeSessionCupperIds = session.cupper_ids
+  if (session?.master_cupper_id) {
+    masterCupperId = session.master_cupper_id
+  } else if (activeSessionCupperIds && activeSessionCupperIds.length > 0) {
+    // No master on the session — promote an assigned cupper whose profile flags one.
+    const { data: cupperProfiles } = await serviceClient
+      .from('profiles')
+      .select('id, is_master_cupper')
+      .in('id', activeSessionCupperIds)
+      .eq('is_master_cupper', true)
+      .limit(1)
+      .maybeSingle()
+    const mc = cupperProfiles as { id?: string } | { id?: string }[] | null
+    if (Array.isArray(mc)) {
+      if (mc.length > 0 && mc[0].id) masterCupperId = mc[0].id
+    } else if (mc?.id) {
+      masterCupperId = mc.id
+    }
+  }
+
+  // ---- Per-attribute increments from the quality spec (route lines 154-182) ----
+  const attributeIncrements: Record<string, number> = {}
+  const { data: sampleSpec } = await serviceClient
+    .from('samples')
+    .select('quality_spec_id')
+    .eq('id', sampleId)
+    .maybeSingle()
+
+  const specId = (sampleSpec as { quality_spec_id?: string | null } | null)?.quality_spec_id
+  if (specId) {
+    const { data: specData } = await serviceClient
+      .from('client_qualities')
+      .select('custom_parameters, template:quality_templates(parameters)')
+      .eq('id', specId)
+      .maybeSingle()
+
+    if (specData) {
+      const sd = specData as { custom_parameters?: any; template?: { parameters?: any } | null }
+      const params = sd.custom_parameters || sd.template?.parameters
+      if (params?.cupping_attributes && Array.isArray(params.cupping_attributes)) {
+        for (const attr of params.cupping_attributes) {
+          if (attr.attribute && attr.scale?.type === 'numeric' && attr.scale?.increment) {
+            attributeIncrements[attr.attribute] = attr.scale.increment
+          }
+        }
+      }
+    }
+  }
+
+  // ---- Cupping scores (route lines 187-213) ----
   const { data: cuppingData } = await (serviceClient
     .from('cupping_scores')
     .select(`
@@ -429,19 +587,27 @@ export async function aggregateQuadrant(
     .eq('sample_id', sampleId) as any)
 
   // cuppingData may be null (no scores), a single row (test stub), or an array
-  const rawScores: unknown[] = !cuppingData
+  const allScores: any[] = !cuppingData
     ? []
     : Array.isArray(cuppingData)
       ? cuppingData
       : [cuppingData]
 
-  const cupping: QuadrantCupping | null = rawScores.length === 0
-    ? null
-    : aggregateCuppingScores(
-        rawScores as Parameters<typeof aggregateCuppingScores>[0],
-        sampleId,
-        null, // No master cupper resolution in embed — returns mean-based finalScore
-      )
+  if (allScores.length === 0) return null
 
-  return { sample, qualityAssessment, cupping }
+  // ---- Assigned-cupper filter (route lines 233-244) ----
+  // Keep OCR scores (null cupper_id) and scores from currently-assigned cuppers.
+  const scores = activeSessionCupperIds
+    ? allScores.filter(s => s.cupper_id === null || activeSessionCupperIds!.includes(s.cupper_id))
+    : allScores
+
+  if (scores.length === 0) return null
+
+  return aggregateCuppingScores(
+    scores as Parameters<typeof aggregateCuppingScores>[0],
+    sampleId,
+    masterCupperId,
+    attributeIncrements,
+    activeSessionCupperIds,
+  )
 }
