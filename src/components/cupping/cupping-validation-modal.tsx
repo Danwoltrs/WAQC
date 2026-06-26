@@ -17,7 +17,6 @@ import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { AlertCircle, CheckCircle2, Loader2, FileCheck, Check, XCircle, Lock, Plus } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
-import { ApprovalSendView } from '@/components/samples/approval-send-view'
 
 interface AttributeStats {
   mean: number
@@ -125,86 +124,6 @@ function snapToIncrement(value: number, increment: number): number {
   return Math.round(value / increment) * increment
 }
 
-// Helper function to download a single certificate PDF
-async function downloadSingleCertificate(sampleId: string, trackingNumber: string): Promise<boolean> {
-  try {
-    const response = await fetch(`/api/samples/${sampleId}/certificate`)
-
-    if (!response.ok) {
-      throw new Error('Failed to generate certificate')
-    }
-
-    const blob = await response.blob()
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${trackingNumber.replace(/\//g, '_')}.pdf`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-
-    return true
-  } catch (error) {
-    console.error('Error downloading certificate:', error)
-    return false
-  }
-}
-
-// Helper function to download ALL certificates (mother + sub-contracts) for a sample
-async function downloadAllCertificates(sampleId: string, trackingNumber: string): Promise<{ success: boolean; count: number }> {
-  try {
-    // Fetch all certificate IDs for this sample (mother + sub-contracts)
-    const certsResponse = await fetch(`/api/certificates?sample_id=${sampleId}`)
-    if (!certsResponse.ok) {
-      // Fallback to single download
-      const success = await downloadSingleCertificate(sampleId, trackingNumber)
-      return { success, count: success ? 1 : 0 }
-    }
-
-    const certsData = await certsResponse.json()
-    const certificateIds: string[] = (certsData.certificates || []).map((c: { id: string }) => c.id)
-
-    if (certificateIds.length === 0) {
-      // No certificates found, try single download as fallback
-      const success = await downloadSingleCertificate(sampleId, trackingNumber)
-      return { success, count: success ? 1 : 0 }
-    }
-
-    if (certificateIds.length === 1) {
-      // Only one certificate (no sub-contracts), download directly
-      const success = await downloadSingleCertificate(sampleId, trackingNumber)
-      return { success, count: success ? 1 : 0 }
-    }
-
-    // Multiple certificates — use bulk download (ZIP)
-    const bulkResponse = await fetch('/api/certificates/bulk-download', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ certificateIds }),
-    })
-
-    if (!bulkResponse.ok) {
-      throw new Error('Failed to generate bulk certificates')
-    }
-
-    const blob = await bulkResponse.blob()
-    const url = window.URL.createObjectURL(blob)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${trackingNumber.replace(/\//g, '_')}-certificates.zip`
-    document.body.appendChild(link)
-    link.click()
-    document.body.removeChild(link)
-    window.URL.revokeObjectURL(url)
-
-    return { success: true, count: certificateIds.length }
-  } catch (error) {
-    console.error('Error downloading certificates:', error)
-    return { success: false, count: 0 }
-  }
-}
-
 export function CuppingValidationModal({
   open,
   onOpenChange,
@@ -216,7 +135,6 @@ export function CuppingValidationModal({
 }: CuppingValidationModalProps) {
   const { toast } = useToast()
   const [loading, setLoading] = useState(false)
-  const [approvalSendOpen, setApprovalSendOpen] = useState(false)
   const [aggregated, setAggregated] = useState<AggregatedScores | null>(null)
   const [individualScores, setIndividualScores] = useState<IndividualScore[]>([])
   const [consolidatedDefects, setConsolidatedDefects] = useState<ConsolidatedDefect[]>([])
@@ -582,43 +500,12 @@ export function CuppingValidationModal({
         }, 500)
       }
 
-      // Auto-download all certificates (mother + sub-contracts)
-      if (!isPending && sampleId) {
-        const trackingNumber = sampleTrackingNumber || aggregated?.sample_tracking_number || 'unknown'
-        const { success: downloadSuccess, count } = await downloadAllCertificates(sampleId, trackingNumber)
-
-        if (downloadSuccess) {
-          toast({
-            title: count > 1 ? 'Certificates Downloaded' : 'Certificate Downloaded',
-            description: count > 1
-              ? `${count} certificates for ${trackingNumber} have been downloaded as a ZIP.`
-              : `Certificate for ${trackingNumber} has been downloaded.`,
-          })
-        } else {
-          toast({
-            title: 'Download Failed',
-            description: 'Certificate was created but download failed. You can download it from the sample page.',
-            variant: 'destructive',
-          })
-        }
-      }
-
-      // Contract-linked samples: open the approval composer to notify
-      // buyer/seller/logistics. Keep this modal mounted behind it; the close
-      // happens when the composer closes. The prefill route 400s for
-      // non-contract-linked samples, so r.ok is the gate.
-      if (!isPending && sampleId && (isApproved || data.decision === 'rejected')) {
-        try {
-          const r = await fetch(`/api/samples/${sampleId}/approval-recipients`)
-          if (r.ok) {
-            setApprovalSendOpen(true)
-            return
-          }
-        } catch {
-          /* not contract-linked or unavailable — fall through to normal close */
-        }
-      }
-
+      // No local download and no email here. The certificate record is created
+      // server-side at finalize, and the PDF is regenerated on the fly whenever
+      // it's previewed, downloaded, or batch-emailed — nothing is kept on the PC.
+      // The decision is written back to sys at finalize time, the toast above
+      // confirms it, and Anderson sends all pending certificates at end of day
+      // via the batch "Send unsent certificates" flow.
       onFinalize?.()
       onOpenChange(false)
     } catch (error) {
@@ -872,7 +759,6 @@ export function CuppingValidationModal({
     .filter(s => !s.is_master_cupper && !s.is_own_score)
 
   return (
-    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
@@ -1387,17 +1273,5 @@ export function CuppingValidationModal({
         </DialogFooter>
       </DialogContent>
     </Dialog>
-    {sampleId && (
-      <ApprovalSendView
-        sampleId={sampleId}
-        open={approvalSendOpen}
-        onClose={() => {
-          setApprovalSendOpen(false)
-          onFinalize?.()
-          onOpenChange(false)
-        }}
-      />
-    )}
-    </>
   )
 }

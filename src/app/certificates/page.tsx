@@ -42,8 +42,8 @@ import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import { OverrideStatusDialog } from '@/components/certificates/override-status-dialog'
-import { ApprovalSendView } from '@/components/samples/approval-send-view'
 import { BatchApprovalSendView } from '@/components/certificates/batch-approval-send-view'
+import { useToast } from '@/hooks/use-toast'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useAuth } from '@/components/providers/auth-provider'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
@@ -162,6 +162,7 @@ const parseTrackingNumber = (trackingNumber: string): string => {
 }
 
 export default function CertificatesPage() {
+  const { toast } = useToast()
   const [certificates, setCertificates] = useState<Certificate[]>([])
   const [clients, setClients] = useState<Client[]>([])
   const [qualities, setQualities] = useState<Quality[]>([])
@@ -498,7 +499,6 @@ export default function CertificatesPage() {
 
   // Override dialog state
   const [overrideCertificate, setOverrideCertificate] = useState<Certificate | null>(null)
-  const [approvalSampleId, setApprovalSampleId] = useState<string | null>(null)
 
   // Certificate preview modal state
   const [previewCertificate, setPreviewCertificate] = useState<Certificate | null>(null)
@@ -1183,21 +1183,11 @@ export default function CertificatesPage() {
             currentlyRejected={!!overrideCertificate.is_rejected}
             onSuccess={() => {
               loadCertificates()
-              if (overrideCertificate?.sample_id) {
-                const sid = overrideCertificate.sample_id
-                fetch(`/api/samples/${sid}/approval-recipients`)
-                  .then((r) => { if (r.ok) setApprovalSampleId(sid) })
-                  .catch(() => {})
-              }
+              // No approval email is sent here — the decision is recorded and
+              // written back to sys by the override route. Anderson sends all
+              // pending certificates at end of day via "Send unsent certificates".
+              toast({ title: 'Status updated' })
             }}
-          />
-        )}
-
-        {approvalSampleId && (
-          <ApprovalSendView
-            sampleId={approvalSampleId}
-            open={!!approvalSampleId}
-            onClose={() => setApprovalSampleId(null)}
           />
         )}
 
