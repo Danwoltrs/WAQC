@@ -16,7 +16,7 @@
  * Identifier header shows only wolthers_contract_nr / certificate_number / party names.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
 import { isAllowedOrigin, EMBED_PARENT_ALLOWLIST } from '@/lib/embed/origin-allowlist'
 import {
@@ -58,6 +58,8 @@ interface QuadrantData {
       type: 'taint' | 'fault'
       levels: Record<string, number>
     }>
+    isCVA: boolean
+    cvaMinScore: number | null
     [key: string]: unknown
   } | null
 }
@@ -264,7 +266,10 @@ export default function QuadrantEmbedPage() {
 
   // 1) Apply theme class on documentElement (matches ThemeProvider behaviour in
   //    src/components/providers/theme-provider.tsx lines 30-33: toggles 'dark' on root).
-  useEffect(() => {
+  //    useLayoutEffect (not useEffect) so the embed's ?theme= wins over the root
+  //    ThemeProvider with no flash — it runs synchronously after DOM mutations,
+  //    after the provider's own (passive) effect has settled the class.
+  useLayoutEffect(() => {
     const root = window.document.documentElement
     root.classList.remove('light', 'dark')
     root.classList.add(theme)
@@ -342,9 +347,9 @@ export default function QuadrantEmbedPage() {
             />
             <CuppingQuadrant
               draft={draft}
-              isCVA={false}
+              isCVA={state.data.cupping?.isCVA ?? false}
               cvaScore={state.data.cupping?.cva_score ?? null}
-              cvaMinScore={null}
+              cvaMinScore={state.data.cupping?.cvaMinScore ?? null}
               readOnly
             />
           </div>

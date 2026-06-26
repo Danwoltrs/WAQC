@@ -74,6 +74,17 @@ export interface QuadrantCupping {
   hasDiscrepancies: boolean
   discrepancy_flags: string[]
   flavor_descriptor: string | null
+  /**
+   * CVA methodology flag — mirrors the cert editor's rule
+   * (use-cert-editor.ts:299): client_quality.template.methodology === 'cva'.
+   * Drives the CuppingQuadrant scale (9 for CVA, 10 for SCA) and label.
+   */
+  isCVA: boolean
+  /**
+   * Minimum passing CVA score — mirrors use-cert-editor.ts:300
+   * (template.cva_min_score). Null when absent or not a CVA spec.
+   */
+  cvaMinScore: number | null
 }
 
 export interface QuadrantPayload {
@@ -149,6 +160,8 @@ function aggregateCuppingScores(
   masterCupperId: string | null,
   attributeIncrements: Record<string, number>,
   activeSessionCupperIds: string[] | null,
+  isCVA: boolean,
+  cvaMinScore: number | null,
 ): QuadrantCupping {
   // ---- Attributes ----
   const allAttributes = new Set<string>()
@@ -406,6 +419,8 @@ function aggregateCuppingScores(
     hasDiscrepancies: discrepancyFlags.length > 0,
     discrepancy_flags: discrepancyFlags,
     flavor_descriptor: flavorDescriptor,
+    isCVA,
+    cvaMinScore,
   }
 }
 
@@ -541,8 +556,15 @@ async function aggregateSampleCupping(
     }
   }
 
-  // ---- Per-attribute increments from the quality spec (route lines 154-182) ----
+  // ---- Per-attribute increments + CVA flag from the quality spec ----
+  // Increments mirror aggregate/route.ts lines 154-182. The CVA flag + min score
+  // mirror the cert editor (use-cert-editor.ts:298-300): the editor fetches
+  // /api/client-qualities/[id] and reads client_quality.template.methodology ===
+  // 'cva' and template.cva_min_score. Both fields live on quality_templates
+  // (confirmed in api/client-qualities/[id]/route.ts:31), so we select them here.
   const attributeIncrements: Record<string, number> = {}
+  let isCVA = false
+  let cvaMinScore: number | null = null
   const { data: sampleSpec } = await serviceClient
     .from('samples')
     .select('quality_spec_id')
@@ -553,12 +575,15 @@ async function aggregateSampleCupping(
   if (specId) {
     const { data: specData } = await serviceClient
       .from('client_qualities')
-      .select('custom_parameters, template:quality_templates(parameters)')
+      .select('custom_parameters, template:quality_templates(parameters, methodology, cva_min_score)')
       .eq('id', specId)
       .maybeSingle()
 
     if (specData) {
-      const sd = specData as { custom_parameters?: any; template?: { parameters?: any } | null }
+      const sd = specData as {
+        custom_parameters?: any
+        template?: { parameters?: any; methodology?: string | null; cva_min_score?: number | null } | null
+      }
       const params = sd.custom_parameters || sd.template?.parameters
       if (params?.cupping_attributes && Array.isArray(params.cupping_attributes)) {
         for (const attr of params.cupping_attributes) {
@@ -567,6 +592,9 @@ async function aggregateSampleCupping(
           }
         }
       }
+      // CVA derivation — identical rule to use-cert-editor.ts:298-300.
+      if (sd.template?.methodology === 'cva') isCVA = true
+      if (typeof sd.template?.cva_min_score === 'number') cvaMinScore = sd.template.cva_min_score
     }
   }
 
@@ -609,5 +637,7 @@ async function aggregateSampleCupping(
     masterCupperId,
     attributeIncrements,
     activeSessionCupperIds,
+    isCVA,
+    cvaMinScore,
   )
 }

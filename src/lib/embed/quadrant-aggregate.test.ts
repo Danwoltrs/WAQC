@@ -152,6 +152,58 @@ describe('aggregateQuadrant', () => {
     expect(out!.cupping!.attributes.Body.finalScore).toBe(8)
   })
 
+  it('derives isCVA + cvaMinScore from a CVA quality spec template', async () => {
+    // Mirrors the cert editor (use-cert-editor.ts:298-300): template.methodology
+    // === 'cva' → isCVA true; template.cva_min_score surfaces as cvaMinScore.
+    const sample = {
+      id: 'uuid-1',
+      tracking_number: 'SAN-1',
+      deleted_at: null,
+      client_id: 'c1',
+      end_client_id: null,
+      quality_spec_id: 'spec-1',
+    }
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a'], master_cupper_id: null },
+      client_qualities: {
+        custom_parameters: null,
+        template: { parameters: null, methodology: 'cva', cva_min_score: 80 },
+      },
+      cupping_scores: [
+        { id: 's1', cupper_id: 'a', scores: { Acidity: 8 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+      ],
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping!.isCVA).toBe(true)
+    expect(out!.cupping!.cvaMinScore).toBe(80)
+  })
+
+  it('isCVA is false for a non-CVA (SCA) quality spec template', async () => {
+    const sample = {
+      id: 'uuid-1',
+      tracking_number: 'SAN-1',
+      deleted_at: null,
+      client_id: 'c1',
+      end_client_id: null,
+      quality_spec_id: 'spec-1',
+    }
+    const client = fakeClient({
+      samples: sample,
+      cupping_sessions: { id: 'sess-1', cupper_ids: ['a'], master_cupper_id: null },
+      client_qualities: {
+        custom_parameters: null,
+        template: { parameters: null, methodology: 'sca', cva_min_score: null },
+      },
+      cupping_scores: [
+        { id: 's1', cupper_id: 'a', scores: { Acidity: 8 }, defects: {}, created_at: '2026-01-01', sample: { id: 'uuid-1', tracking_number: 'SAN-1' } },
+      ],
+    })
+    const out = await aggregateQuadrant(client as any, 'uuid-1')
+    expect(out!.cupping!.isCVA).toBe(false)
+    expect(out!.cupping!.cvaMinScore).toBeNull()
+  })
+
   it('flags a defect-presence discrepancy when cuppers disagree on existence', async () => {
     // Cupper "Ana" reports a "woody" taint; cupper "Bob" does not → presence
     // discrepancy. Mirrors aggregate/route.ts "Only identified by ..." flag.
