@@ -173,7 +173,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
         </div>
       ) : (
         <>
-          <InfoStripBand sample={sample} draftSample={draft.sample} onEdit={() => setPanel('details')} />
+          <InfoStripBand sample={sample} draftSample={draft.sample} onFieldChange={ed.setSampleField} />
           <AttributesLine
             sample={sample}
             draftSample={draft.sample}

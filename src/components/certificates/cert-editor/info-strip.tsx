@@ -30,42 +30,209 @@ function bagTypeLabel(v?: string | null): string {
   return BAG_TYPES[v] || v
 }
 
-/** Read-only details band beneath the topbar — clickable tiles open the edit panel. */
+/** Single-line text editor for a tile; commits on Enter or blur. */
+function InlineTextEditor({
+  value,
+  onCommit,
+  mono,
+}: {
+  value: string
+  onCommit: (v: string) => void
+  mono?: boolean
+}) {
+  const [v, setV] = useState(value)
+  return (
+    <Input
+      autoFocus
+      value={v}
+      onChange={(e) => setV(e.target.value)}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault()
+          onCommit(v)
+        }
+      }}
+      onBlur={() => onCommit(v)}
+      className={`h-8 w-48 ${mono ? 'font-mono' : ''}`}
+    />
+  )
+}
+
+/** Bag-type option list (value → label). */
+function BagTypeEditor({ onSelect }: { onSelect: (value: string) => void }) {
+  return (
+    <div className="flex w-48 flex-col gap-0.5">
+      {Object.entries(BAG_TYPES).map(([val, label]) => (
+        <button
+          key={val}
+          type="button"
+          onClick={() => onSelect(val)}
+          className="rounded-md px-2 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:bg-muted/60"
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+/** Quantity editor: bag count + weight; stays open while typing. */
+function QuantityEditor({
+  draftSample,
+  sample,
+  onFieldChange,
+}: {
+  draftSample: Record<string, any>
+  sample: CertSample
+  onFieldChange: (field: string, value: any) => void
+}) {
+  const count = draftSample.bag_count ?? sample.bag_count ?? sample.bags ?? ''
+  const weight = draftSample.bag_weight_kg ?? sample.bag_weight_kg ?? ''
+  return (
+    <div className="flex w-56 flex-col gap-2 p-2">
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-muted-foreground">Bag count</label>
+        <Input
+          type="number"
+          min="0"
+          inputMode="numeric"
+          value={count}
+          onChange={(e) => onFieldChange('bag_count', e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)}
+          className="h-8"
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label className="text-xs text-muted-foreground">Bag weight (kg)</label>
+        <Input
+          type="number"
+          min="0"
+          step="0.1"
+          inputMode="decimal"
+          value={weight}
+          onChange={(e) => onFieldChange('bag_weight_kg', e.target.value === '' ? null : parseFloat(e.target.value) || 0)}
+          className="h-8"
+        />
+      </div>
+    </div>
+  )
+}
+
+/** Details band beneath the topbar — each tile is inline-editable. */
 export function InfoStripBand({
   sample,
   draftSample,
-  onEdit,
+  onFieldChange,
 }: {
   sample: CertSample
   draftSample: Record<string, any>
-  onEdit: () => void
+  onFieldChange: (field: string, value: any) => void
 }) {
   const bagCount = draftSample.bag_count ?? sample.bag_count ?? sample.bags
   const bagWeight = draftSample.bag_weight_kg ?? sample.bag_weight_kg
   const isPSS = ((draftSample.sample_type ?? sample.sample_type) || '').toLowerCase() === 'pss'
-  const tiles: { label: string; value: React.ReactNode }[] = [
-    { label: 'Wolthers ref', value: draftSample.wolthers_contract_nr || sample.wolthers_contract_nr || '—' },
-    { label: 'Seller ref', value: draftSample.seller_contract_nr || sample.seller_contract_nr || '—' },
-    { label: 'Quantity', value: bagCount ? `${bagCount} × ${bagWeight ?? '—'} kg` : '—' },
-    { label: 'Bag type', value: bagTypeLabel(draftSample.bag_type ?? sample.bag_type) },
+
+  type Tile = { label: string; value: React.ReactNode; edit: (close: () => void) => React.ReactNode }
+  const tiles: Tile[] = [
+    {
+      label: 'Wolthers ref',
+      value: draftSample.wolthers_contract_nr || sample.wolthers_contract_nr || '—',
+      edit: (close) => (
+        <InlineTextEditor
+          value={(draftSample.wolthers_contract_nr ?? sample.wolthers_contract_nr ?? '') as string}
+          onCommit={(v) => {
+            onFieldChange('wolthers_contract_nr', v)
+            close()
+          }}
+        />
+      ),
+    },
+    {
+      label: 'Seller ref',
+      value: draftSample.seller_contract_nr || sample.seller_contract_nr || '—',
+      edit: (close) => (
+        <InlineTextEditor
+          value={(draftSample.seller_contract_nr ?? sample.seller_contract_nr ?? '') as string}
+          onCommit={(v) => {
+            onFieldChange('seller_contract_nr', v)
+            close()
+          }}
+        />
+      ),
+    },
+    {
+      label: 'Quantity',
+      value: bagCount ? `${bagCount} × ${bagWeight ?? '—'} kg` : '—',
+      edit: () => <QuantityEditor draftSample={draftSample} sample={sample} onFieldChange={onFieldChange} />,
+    },
+    {
+      label: 'Bag type',
+      value: bagTypeLabel(draftSample.bag_type ?? sample.bag_type),
+      edit: (close) => (
+        <BagTypeEditor
+          onSelect={(v) => {
+            onFieldChange('bag_type', v)
+            close()
+          }}
+        />
+      ),
+    },
   ]
   if (isPSS) {
-    tiles.push({ label: 'Exporter sample #', value: draftSample.exporter_sample_number || sample.exporter_sample_number || '—' })
+    tiles.push({
+      label: 'Exporter sample #',
+      value: draftSample.exporter_sample_number || sample.exporter_sample_number || '—',
+      edit: (close) => (
+        <InlineTextEditor
+          value={(draftSample.exporter_sample_number ?? sample.exporter_sample_number ?? '') as string}
+          onCommit={(v) => {
+            onFieldChange('exporter_sample_number', v)
+            close()
+          }}
+        />
+      ),
+    })
   } else {
-    tiles.push({ label: 'Container', value: draftSample.container_nr || sample.container_nr || '—' })
-    tiles.push({ label: 'ICO #', value: draftSample.ico_number || sample.ico_number || '—' })
+    tiles.push({
+      label: 'Container',
+      value: draftSample.container_nr || sample.container_nr || '—',
+      edit: (close) => (
+        <InlineTextEditor
+          value={(draftSample.container_nr ?? sample.container_nr ?? '') as string}
+          mono
+          onCommit={(v) => {
+            onFieldChange('container_nr', v)
+            close()
+          }}
+        />
+      ),
+    })
+    tiles.push({
+      label: 'ICO #',
+      value: draftSample.ico_number || sample.ico_number || '—',
+      edit: (close) => (
+        <InlineTextEditor
+          value={(draftSample.ico_number ?? sample.ico_number ?? '') as string}
+          mono
+          onCommit={(v) => {
+            onFieldChange('ico_number', v)
+            close()
+          }}
+        />
+      ),
+    })
   }
+
   return (
     <div className="grid grid-cols-2 divide-x divide-y divide-border border-b border-border sm:grid-cols-3 lg:grid-cols-6 lg:divide-y-0">
       {tiles.map((t) => (
-        <button
-          key={t.label}
-          onClick={onEdit}
-          className="flex flex-col items-start gap-0.5 px-4 py-2 text-left transition-colors hover:bg-muted/40"
-        >
+        <div key={t.label} className="flex flex-col items-start gap-0.5 px-4 py-2">
           <span className="text-[11px] uppercase tracking-wide text-muted-foreground">{t.label}</span>
-          <span className="text-sm font-medium text-foreground">{t.value}</span>
-        </button>
+          <InlineEdit
+            display={<span className="text-sm font-medium text-foreground">{t.value}</span>}
+          >
+            {t.edit}
+          </InlineEdit>
+        </div>
       ))}
     </div>
   )
