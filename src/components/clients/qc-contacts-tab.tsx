@@ -5,6 +5,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { Plus, Trash2, User, Users, Loader2, AlertCircle } from 'lucide-react'
+import { SearchableSelect } from '@/components/ui/searchable-select'
+import { usePickableContacts } from '@/lib/qc-contacts/use-pickable-contacts'
 
 interface QcContact {
   id: string
@@ -65,6 +67,8 @@ export function QcContactsTab({ companyId, companyName }: { companyId: string; c
   const [draft, setDraft] = useState<Draft | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [adding, setAdding] = useState(false) // showing the pick combobox
+  const { options: pickOptions, byId: pickById } = usePickableContacts(companyId)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -87,6 +91,31 @@ export function QcContactsTab({ companyId, companyName }: { companyId: string; c
   const startAdd = () => { setError(null); setDraft(emptyDraft()) }
   const startEdit = (c: QcContact) => { setError(null); setDraft(toDraft(c)) }
   const discard = () => { setError(null); setDraft(null) }
+
+  const startPick = () => { setError(null); setDraft(null); setAdding(true) }
+
+  const pickExisting = async (id: string) => {
+    const c = id ? pickById[id] : undefined
+    if (!c) return
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/companies/${companyId}/qc-contacts`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: c.email, name: c.name || null, nickname: c.nickname, isGroup: c.isGroup }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to add contact')
+      setAdding(false)
+      await load()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to add contact')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const addNew = () => { setAdding(false); startAdd() }
 
   const save = async () => {
     if (!draft) return
@@ -150,7 +179,7 @@ export function QcContactsTab({ companyId, companyName }: { companyId: string; c
           <span className="text-[12px] font-medium uppercase tracking-wide text-muted-foreground">
             Recipients ({total})
           </span>
-          <Button variant="outline" size="sm" onClick={startAdd} className="h-7 gap-1 rounded-[8px] text-[12px]">
+          <Button variant="outline" size="sm" onClick={startPick} className="h-7 gap-1 rounded-[8px] text-[12px]">
             <Plus className="h-3.5 w-3.5" /> Add
           </Button>
         </div>
@@ -178,7 +207,36 @@ export function QcContactsTab({ companyId, companyName }: { companyId: string; c
 
       {/* Right pane */}
       <div className="rounded-[14px] border border-border/60 p-4">
-        {!draft ? (
+        {adding ? (
+          <div className="max-w-xl space-y-3">
+            <div className="text-[14px] font-semibold">Add a QC-certificate recipient</div>
+            <p className="text-[12px] text-muted-foreground">
+              Pick someone already on file for {companyName}, or add a brand-new contact.
+            </p>
+            <SearchableSelect
+              options={pickOptions}
+              value=""
+              onValueChange={pickExisting}
+              substringMatch
+              allowCreate
+              onCreateNew={addNew}
+              createLabel="+ Add new contact"
+              placeholder="Choose an existing contact…"
+              searchPlaceholder="Search contacts…"
+              emptyMessage="No other contacts on file."
+            />
+            {error && (
+              <div className="flex items-center gap-1.5 text-[12px] text-red-600 dark:text-red-400">
+                <AlertCircle className="h-3.5 w-3.5" /> {error}
+              </div>
+            )}
+            <div>
+              <button type="button" onClick={() => setAdding(false)} className="text-[13px] text-muted-foreground hover:underline">
+                Cancel
+              </button>
+            </div>
+          </div>
+        ) : !draft ? (
           <div className="flex h-full items-center justify-center py-10 text-[13px] text-muted-foreground">
             Select a recipient, or add one to receive QC certificates.
           </div>

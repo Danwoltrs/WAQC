@@ -18,6 +18,11 @@ const listResponse = {
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
     const u = String(url)
+    if (u.endsWith('/contacts') && (!init || !init.method || init.method === 'GET')) {
+      return { ok: true, json: async () => ({ contacts: [
+        { id: 'p1', name: 'Pim de Vries', nickname: null, email: 'pim@ahold.nl', isGroup: false },
+      ] }) } as Response
+    }
     if (u.endsWith('/qc-contacts') && (!init || !init.method || init.method === 'GET')) {
       return { ok: true, json: async () => listResponse } as Response
     }
@@ -37,15 +42,32 @@ describe('QcContactsTab', () => {
     expect(screen.getByText('Group inboxes')).toBeInTheDocument()
   })
 
-  it('adds a recipient via POST', async () => {
+  it('adds a NEW recipient via POST (through the picker create path)', async () => {
     render(<QcContactsTab companyId="co1" companyName="Ahold" />)
     await waitFor(() => expect(screen.getByText('Joost Pollmann')).toBeInTheDocument())
-    fireEvent.click(screen.getByRole('button', { name: /add/i }))
+    fireEvent.click(screen.getByRole('button', { name: /^add$/i }))
+    // Open the combobox popover to reveal the "+ Add new contact" option
+    fireEvent.click(screen.getByRole('combobox'))
+    await waitFor(() => expect(screen.getByText(/add new contact/i)).toBeInTheDocument())
+    fireEvent.mouseDown(screen.getByText(/add new contact/i))
     fireEvent.change(screen.getByPlaceholderText('name@company.com'), { target: { value: 'new@ahold.nl' } })
     fireEvent.click(screen.getByRole('button', { name: /^save$/i }))
+    await waitFor(() =>
+      expect((fetch as any).mock.calls.some((c: any[]) => String(c[0]).endsWith('/qc-contacts') && c[1]?.method === 'POST')).toBe(true),
+    )
+  })
+
+  it('tags an existing contact picked from the combobox', async () => {
+    render(<QcContactsTab companyId="co1" companyName="Ahold" />)
+    await waitFor(() => expect(screen.getByText('Joost Pollmann')).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /^add$/i }))
+    fireEvent.click(screen.getByRole('combobox'))
+    await waitFor(() => expect(screen.getByText(/Pim de Vries — pim@ahold\.nl/)).toBeInTheDocument())
+    fireEvent.click(screen.getByText(/Pim de Vries — pim@ahold\.nl/))
     await waitFor(() => {
-      const calls = (globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls
-      expect(calls.some((c) => String(c[0]).endsWith('/qc-contacts') && (c[1] as RequestInit | undefined)?.method === 'POST')).toBe(true)
+      const post = (fetch as any).mock.calls.find((c: any[]) => String(c[0]).endsWith('/qc-contacts') && c[1]?.method === 'POST')
+      expect(post).toBeTruthy()
+      expect(JSON.parse(post[1].body)).toMatchObject({ email: 'pim@ahold.nl' })
     })
   })
 })
