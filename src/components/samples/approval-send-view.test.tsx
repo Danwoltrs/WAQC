@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { ApprovalSendView } from './approval-send-view'
 import type { ApprovalPrefill } from '@/lib/approval-notification/types'
 
@@ -87,13 +87,18 @@ describe('ApprovalSendView capture', () => {
           }),
         } as Response
       }
+      if (String(url).endsWith('/contacts')) {
+        return { ok: true, json: async () => ({ contacts: [] }) } as Response
+      }
       return { ok: false, json: async () => ({ error: 'unexpected' }) } as Response
     }))
   })
 
   it('shows the capture form for the empty buyer side and persists to its company', async () => {
     render(<ApprovalSendView sampleId="smp1" open onClose={() => {}} />)
-    await waitFor(() => expect(screen.getByPlaceholderText('name@company.com')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: /add a new email instead/i })).toBeInTheDocument())
+    fireEvent.click(screen.getByRole('button', { name: /add a new email instead/i }))
+    expect(screen.getByPlaceholderText('name@company.com')).toBeInTheDocument()
     expect(screen.getByLabelText(/save as a QC-certificate recipient/i)).toBeInTheDocument()
   })
 })

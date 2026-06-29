@@ -15,6 +15,9 @@ beforeEach(() => {
     if (String(url).includes('/batch-send/queue')) {
       return { ok: true, json: async () => ({ units: [emptyUnit], skipped: { noContract: 0, noRecipients: 0 } }) } as Response
     }
+    if (String(url).endsWith('/contacts')) {
+      return { ok: true, json: async () => ({ contacts: [] }) } as Response
+    }
     return { ok: false, json: async () => ({ error: 'unexpected' }) } as Response
   }))
 })
@@ -22,9 +25,11 @@ beforeEach(() => {
 describe('BatchApprovalSendView capture', () => {
   it('shows the capture form for a needsRecipients unit and unlocks Send after adding', async () => {
     render(<BatchApprovalSendView open range={{ from: '2026-06-01', to: '2026-06-30' }} onClose={() => {}} />)
-    await waitFor(() => expect(screen.getByPlaceholderText('name@company.com')).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByRole('button', { name: /add a new email instead/i })).toBeInTheDocument())
     const send = screen.getByRole('button', { name: /^send$/i }) as HTMLButtonElement
     expect(send.disabled).toBe(true)
+    fireEvent.click(screen.getByRole('button', { name: /add a new email instead/i }))
+    await waitFor(() => expect(screen.getByPlaceholderText('name@company.com')).toBeInTheDocument())
     fireEvent.change(screen.getByPlaceholderText('name@company.com'), { target: { value: 'buyer@ahold.nl' } })
     fireEvent.click(screen.getByRole('button', { name: /add recipient/i }))
     await waitFor(() => expect((screen.getByRole('button', { name: /^send$/i }) as HTMLButtonElement).disabled).toBe(false))
