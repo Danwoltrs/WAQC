@@ -8,6 +8,7 @@ import {
   type SendStatusRow,
 } from '@/lib/approval-notification/batch-send'
 import { sanitizeOrTerm, buildOrIlike } from '@/lib/search/or-filter'
+import { buildCertificateSearchOr } from '@/lib/search/cert-search-filter'
 
 // Reference/number fields a cert is searchable by, on the sample itself AND on any of
 // its sub-contracts (a mother sample spanning several contracts is keyed in
@@ -146,10 +147,12 @@ export async function GET(request: NextRequest) {
     }
 
     // Server-side search — resolve matches BEFORE paginating so a certificate outside
-    // the first page window is still found. Matches the certificate number / issued_to
-    // directly, any sample OR sub-contract reference number (Wolthers contract, buyer /
-    // seller / supplier / shipper refs, tracking, ICO, container, exporter sample #),
-    // and the QC client's name.
+    // the first page window is still found. Matching is CERTIFICATE-granular: a cert is
+    // returned only when the cert itself is for the matched contract/reference — a mother
+    // cert on the SAMPLE's own fields, a sub-contract cert on THAT sub-contract's fields —
+    // so a contract-number search returns that contract's certs (across earlier/rejected
+    // samples too) but never a sibling sub-contract of the same mother sample carrying a
+    // different contract number. A client-name match stays broad (all the client's certs).
     if (search) {
       const safeQ = sanitizeOrTerm(search)
       if (safeQ.length >= 1) {
@@ -161,19 +164,19 @@ export async function GET(request: NextRequest) {
         const COMPANY_SCAN_LIMIT = 200
         const [sampleRes, subRes, companyRes] = await Promise.all([
           (supabase as any).from('samples').select('id').or(buildOrIlike(SEARCH_FIELDS, safeQ)).limit(SAMPLE_SCAN_LIMIT),
-          (supabase as any).from('sample_contracts').select('sample_id').or(buildOrIlike(SEARCH_FIELDS, safeQ)).limit(SAMPLE_SCAN_LIMIT),
+          (supabase as any).from('sample_contracts').select('id').or(buildOrIlike(SEARCH_FIELDS, safeQ)).limit(SAMPLE_SCAN_LIMIT),
           (supabase as any).from('companies').select('id').or(`name.ilike.${like},fantasy_name.ilike.${like}`).limit(COMPANY_SCAN_LIMIT),
         ])
-        const sampleIds = new Set<string>()
-        for (const r of (sampleRes.data ?? []) as Array<{ id: string }>) sampleIds.add(r.id)
-        for (const r of (subRes.data ?? []) as Array<{ sample_id: string | null }>) if (r.sample_id) sampleIds.add(r.sample_id)
+        const motherSampleIds = [...new Set(((sampleRes.data ?? []) as Array<{ id: string }>).map((r) => r.id))]
+        const subContractIds = [...new Set(((subRes.data ?? []) as Array<{ id: string }>).map((r) => r.id))]
         const companyIds = ((companyRes.data ?? []) as Array<{ id: string }>).map((r) => r.id)
+        let clientSampleIds: string[] = []
         let clientScanTruncated = false
         if (companyIds.length > 0) {
           const { data: clientSamples } = await (supabase as any)
             .from('samples').select('id').in('client_id', companyIds).limit(SAMPLE_SCAN_LIMIT)
           const rows = (clientSamples ?? []) as Array<{ id: string }>
-          for (const r of rows) sampleIds.add(r.id)
+          clientSampleIds = rows.map((r) => r.id)
           clientScanTruncated = rows.length >= SAMPLE_SCAN_LIMIT
         }
         // Warn (don't silently drop) if any scan hit its cap — the result set may be
@@ -187,9 +190,7 @@ export async function GET(request: NextRequest) {
             `[certificates] search "${safeQ}" hit a ${SAMPLE_SCAN_LIMIT}-row scan cap; results may be incomplete. Narrow the query.`,
           )
         }
-        const orParts = [`certificate_number.ilike.${like}`, `issued_to.ilike.${like}`]
-        if (sampleIds.size > 0) orParts.push(`sample_id.in.(${[...sampleIds].join(',')})`)
-        query = query.or(orParts.join(','))
+        query = query.or(buildCertificateSearchOr(like, { motherSampleIds, subContractIds, clientSampleIds }))
       }
     }
 
