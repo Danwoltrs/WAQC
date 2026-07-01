@@ -70,11 +70,29 @@ export async function POST(request: NextRequest) {
           const currentStage = sampleData.workflow_stage || 'received'
           console.log(`Sample ${sampleData.tracking_number}: current stage = ${currentStage}, type = ${sampleData.sample_type}`)
 
+          // This route runs ONLY when cupping cards are printed, so always record the
+          // print via cards_printed_at (if not already stamped) for every sample type
+          // and stage. Reprinting a specialty or certified/rejected sample must never
+          // fail just because the sample didn't (or won't) move to 'analysis'.
+          const stampCardsPrinted = async () => {
+            if (sampleData.cards_printed_at) return null
+            const { error } = await supabaseAdmin
+              .from('samples')
+              .update({ cards_printed_at: new Date().toISOString() })
+              .eq('id', id)
+            return error
+          }
+
           // For PSS/SS/Type samples: received → analysis (green grading + cupping together)
-          // For Specialty samples: received → (stay received until manually moved to roasting)
+          // For Specialty samples: stay 'received' (roasting is done manually) — but the
+          // cupping cards were still printed, so record it.
           if (sampleData.sample_type === 'specialty') {
-            // Specialty samples stay at 'received' - roasting is done manually when ready
-            console.log(`Sample ${sampleData.tracking_number} is specialty type - staying at received stage for manual roasting`)
+            const stampError = await stampCardsPrinted()
+            if (stampError) {
+              console.error(`❌ Failed to stamp cards_printed_at for specialty ${sampleData.tracking_number}:`, stampError)
+              return { id, success: false, error: stampError.message }
+            }
+            console.log(`Sample ${sampleData.tracking_number} is specialty - stays at received; cards_printed_at recorded`)
             return { id, success: true, message: 'Specialty sample - roasting must be done manually' }
           }
 
@@ -129,30 +147,18 @@ export async function POST(request: NextRequest) {
 
             console.log(`✅ Sample ${sampleData.tracking_number} moved to analysis stage`)
             return { id, success: true, final_stage: 'analysis' }
-          } else if (currentStage === 'analysis') {
-            // Already advanced (e.g. the cupper-assign step moved it here first).
-            // This route is only ever called when cupping cards are printed, so
-            // still stamp cards_printed_at if it's missing — otherwise the print
-            // never gets recorded and the "Scan Cupping Cards" gate stays off.
-            if (!sampleData.cards_printed_at) {
-              const { error: stampError } = await supabaseAdmin
-                .from('samples')
-                .update({ cards_printed_at: new Date().toISOString() })
-                .eq('id', id)
-
-              if (stampError) {
-                console.error(`❌ Failed to stamp cards_printed_at for ${sampleData.tracking_number}:`, stampError)
-                return { id, success: false, error: stampError.message }
-              }
-              console.log(`✅ Stamped cards_printed_at for already-analysis sample ${sampleData.tracking_number}`)
-              return { id, success: true, message: 'Already at analysis stage; cards_printed_at stamped' }
-            }
-            console.log(`Sample ${sampleData.tracking_number} already at analysis stage`)
-            return { id, success: true, message: 'Already at analysis stage' }
-          } else {
-            console.log(`Sample ${sampleData.tracking_number} at unexpected stage ${currentStage}`)
-            return { id, success: false, error: `Sample at unexpected stage: ${currentStage}` }
           }
+
+          // Any later stage (analysis, roasting, review, certified, rejected): the
+          // sample already moved on, so this is a reprint. Record the print if it
+          // wasn't already recorded, and never fail just because of the stage.
+          const stampError = await stampCardsPrinted()
+          if (stampError) {
+            console.error(`❌ Failed to stamp cards_printed_at for ${sampleData.tracking_number} (stage ${currentStage}):`, stampError)
+            return { id, success: false, error: stampError.message }
+          }
+          console.log(`Sample ${sampleData.tracking_number} at stage ${currentStage}; cards_printed_at recorded (reprint)`)
+          return { id, success: true, message: `Reprint recorded at stage ${currentStage}` }
         } catch (error) {
           console.error(`Error processing sample ${id}:`, error)
           return { id, success: false, error: String(error) }

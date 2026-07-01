@@ -18,6 +18,7 @@ import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dial
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
+import { canReprintCuppingCards } from '@/lib/cupping/reprint'
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
 import { DuplicateCountPopover, type DuplicateBagOverride } from '@/components/samples/duplicate-count-popover'
 import { useToast } from '@/hooks/use-toast'
@@ -101,6 +102,7 @@ interface Sample {
   sample_type?: 'pss' | 'ss' | 'type'
   status: string
   workflow_stage?: string
+  cards_printed_at?: string | null
   storage_position?: string
   bags_quantity_mt?: number
   wolthers_contract_nr?: string
@@ -1096,6 +1098,9 @@ export default function SamplesPage() {
   const hasCertifiedSelected = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && (s.workflow_stage === 'certified' || s.workflow_stage === 'rejected'))
   // Check if any selected sample already has cuppers (workflow moved past 'received')
   const selectedHaveCuppers = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && s.workflow_stage && s.workflow_stage !== 'received')
+  // Reprint follows the "cards were printed" signal, not stage — always available
+  // (and never disabled) once cards exist, including certified/rejected samples.
+  const selectedCanReprint = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && canReprintCuppingCards(s))
 
   return (
     <>
@@ -1135,11 +1140,11 @@ export default function SamplesPage() {
                     </div>
                   )}
 
-                  {/* Print Actions - Only shown after cuppers assigned */}
-                  {(cuppersAssigned || selectedHaveCuppers) && (
+                  {/* Print Actions - available once cards exist (or cuppers assigned) */}
+                  {(cuppersAssigned || selectedHaveCuppers || selectedCanReprint) && (
                     <>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
+                      <DropdownMenuItem onClick={handleBulkPrintCuppingCards}>
                         <FileText className="h-4 w-4 mr-2" />
                         Reprint Cupping Cards
                       </DropdownMenuItem>
@@ -1690,6 +1695,7 @@ export default function SamplesPage() {
                             // Use workflow_stage as primary indicator: 'received' = not yet assigned
                             const sampleHasCuppers = sample.workflow_stage !== 'received' && sample.workflow_stage !== undefined
                             const hasCuppers = selectedSamples.size > 1 ? (cuppersAssigned || selectedHaveCuppers) : sampleHasCuppers
+                            const canReprint = selectedSamples.size > 1 ? selectedCanReprint : canReprintCuppingCards(sample)
                             const singleAssignment = sampleCupperMap[sample.id]
                             const cupperNames = selectedSamples.size > 1
                               ? assignedCuppers.map(c => c.full_name?.split(' ')[0]).join(', ')
@@ -1710,10 +1716,9 @@ export default function SamplesPage() {
                                     Certified/rejected sample selected
                                   </div>
                                 )}
-                                {hasCuppers && (
+                                {canReprint && (
                                   <ContextMenuItem
                                     onClick={() => selectedSamples.size > 1 ? handleBulkPrintCuppingCards() : handleSingleSampleReprintCards(sample)}
-                                    disabled={hasCertifiedSelected}
                                   >
                                     <FileText className="h-4 w-4 mr-2" />
                                     Reprint Cupping Cards
@@ -2018,8 +2023,8 @@ export default function SamplesPage() {
                   Certified/rejected sample selected
                 </div>
               )}
-              {(cuppersAssigned || selectedHaveCuppers) && (
-                <ContextMenuItem onClick={handleBulkPrintCuppingCards} disabled={hasCertifiedSelected}>
+              {(cuppersAssigned || selectedHaveCuppers || selectedCanReprint) && (
+                <ContextMenuItem onClick={handleBulkPrintCuppingCards}>
                   <FileText className="h-4 w-4 mr-2" />
                   Reprint Cupping Cards
                 </ContextMenuItem>
