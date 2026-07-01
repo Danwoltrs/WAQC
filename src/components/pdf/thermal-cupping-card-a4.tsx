@@ -81,15 +81,22 @@ const CUT_BORDER = '2pt solid #000000'
 const INNER_BORDER = '0.5pt solid #000000'
 const INNER_BORDER_LIGHT = '0.5pt solid #CCCCCC'
 
-// A4 = 842pt tall. 4 rows = 210.5pt each. 2 columns = 50% width each.
-const CARD_HEIGHT = '210.5pt'
+// A4 = 595.28 × 841.89pt. The whole 2×4 grid is inset by PAGE_MARGIN so the
+// outer cards never land inside a printer's non-printable margin (which was
+// physically clipping the top-right contract numbers on the edge cards).
+// CARD_HEIGHT is derived from the padded content area so all 8 cards still fit
+// on a single page.
+const PAGE_MARGIN = 22 // pt (~7.8mm safe area — covers typical office printers)
+const A4_HEIGHT = 841.89
+// Small slack (−1pt) so floating-point rounding never spills row 4 onto page 2.
+const CARD_HEIGHT = (A4_HEIGHT - PAGE_MARGIN * 2) / 4 - 1 // ≈ 198.47pt
 
 const styles = StyleSheet.create({
   page: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     backgroundColor: '#FFFFFF',
-    padding: '0pt',
+    padding: PAGE_MARGIN,
     position: 'relative',
   },
   cardContainer: {
@@ -141,11 +148,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: '2pt',
     right: '2pt',
+    // Bound the block so long / multiple contract numbers wrap instead of
+    // overlapping the company name or running off the card edge.
+    maxWidth: '45%',
     alignItems: 'flex-end',
   },
   contractNr: {
-    fontSize: 8,
+    fontSize: 7,
     fontWeight: 'bold',
+    textAlign: 'right',
   },
   printDateRow: {
     flexDirection: 'row',

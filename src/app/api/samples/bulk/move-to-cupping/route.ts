@@ -22,6 +22,7 @@ interface SampleData {
   tracking_number: string
   workflow_stage: string | null
   sample_type: SampleType
+  cards_printed_at: string | null
 }
 
 /**
@@ -55,7 +56,7 @@ export async function POST(request: NextRequest) {
           // Get current sample state
           const { data: sample, error: fetchError } = await supabase
             .from('samples')
-            .select('id, tracking_number, workflow_stage, sample_type')
+            .select('id, tracking_number, workflow_stage, sample_type, cards_printed_at')
             .eq('id', id)
             .single()
 
@@ -129,6 +130,23 @@ export async function POST(request: NextRequest) {
             console.log(`✅ Sample ${sampleData.tracking_number} moved to analysis stage`)
             return { id, success: true, final_stage: 'analysis' }
           } else if (currentStage === 'analysis') {
+            // Already advanced (e.g. the cupper-assign step moved it here first).
+            // This route is only ever called when cupping cards are printed, so
+            // still stamp cards_printed_at if it's missing — otherwise the print
+            // never gets recorded and the "Scan Cupping Cards" gate stays off.
+            if (!sampleData.cards_printed_at) {
+              const { error: stampError } = await supabaseAdmin
+                .from('samples')
+                .update({ cards_printed_at: new Date().toISOString() })
+                .eq('id', id)
+
+              if (stampError) {
+                console.error(`❌ Failed to stamp cards_printed_at for ${sampleData.tracking_number}:`, stampError)
+                return { id, success: false, error: stampError.message }
+              }
+              console.log(`✅ Stamped cards_printed_at for already-analysis sample ${sampleData.tracking_number}`)
+              return { id, success: true, message: 'Already at analysis stage; cards_printed_at stamped' }
+            }
             console.log(`Sample ${sampleData.tracking_number} already at analysis stage`)
             return { id, success: true, message: 'Already at analysis stage' }
           } else {

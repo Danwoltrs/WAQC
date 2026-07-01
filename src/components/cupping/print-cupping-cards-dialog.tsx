@@ -124,6 +124,13 @@ export function PrintCuppingCardsDialog({
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
   const iframeRef = useRef<HTMLIFrameElement>(null)
+  // Reprint support: the preview stays open after printing so a jammed / missed
+  // sheet can be re-run without re-selecting. The batch advances to 'analysis'
+  // (and stamps cards_printed_at) only on the FIRST confirmed print — never on
+  // preview generation.
+  const [hasPrinted, setHasPrinted] = useState(false)
+  const stageCommittedRef = useRef(false)
+  const stageCommitInFlightRef = useRef(false)
 
   const toggleVisibility = (key: keyof SampleVisibilitySettings) => {
     const newValue = !visibility[key]
@@ -133,14 +140,19 @@ export function PrintCuppingCardsDialog({
 
   // Locally resolved cuppers (fetched from session if not passed as prop)
   const [resolvedCuppers, setResolvedCuppers] = useState<Cupper[]>([])
+  // True while the session-cupper fetch is in flight — Print is blocked until it
+  // resolves so cupper name cells never print blank due to a race.
+  const [cuppersLoading, setCuppersLoading] = useState(false)
   const effectiveCuppers = assignedCuppers.length > 0 ? assignedCuppers : resolvedCuppers
 
   // Load full sample data with relations when dialog opens
   useEffect(() => {
     if (open && samples.length > 0 && fullSamples.length === 0) {
       loadFullSampleData()
-      // If no cuppers were passed, try to fetch them from the cupping session
+      // If no cuppers were passed, try to fetch them from the cupping session.
+      // Flag loading so Print can't fire before names resolve (blank name cells).
       if (assignedCuppers.length === 0) {
+        setCuppersLoading(true)
         fetchCuppersFromSession()
       }
     } else if (!open) {
@@ -148,10 +160,14 @@ export function PrintCuppingCardsDialog({
       setCardData(null)
       setFullSamples([])
       setResolvedCuppers([])
+      setCuppersLoading(false)
       setIsReadyForDownload(false)
       setActiveDocIndex(0)
       setPreviewUrl(null)
       setPreviewError(null)
+      setHasPrinted(false)
+      stageCommittedRef.current = false
+      stageCommitInFlightRef.current = false
     }
   }, [open, samples.length])
 
@@ -201,6 +217,8 @@ export function PrintCuppingCardsDialog({
       }
     } catch (error) {
       console.error('Error fetching cuppers from session:', error)
+    } finally {
+      setCuppersLoading(false)
     }
   }
 
@@ -395,15 +413,10 @@ export function PrintCuppingCardsDialog({
 
       setCardData(cards)
 
-      // Update sample statuses to 'cupping' after successful card generation
-      const sampleIds = samplesToUse.map(s => s.id)
-      const updateSuccess = await updateSampleStatuses(sampleIds)
-
-      if (updateSuccess && onSuccess) {
-        // Call success callback to refresh the samples list
-        onSuccess()
-      }
-
+      // NOTE: sample stage is deliberately NOT advanced here. Generating the
+      // preview must be side-effect free so a jam/cancel before printing leaves
+      // the batch untouched. The stage move + cards_printed_at stamp happen on
+      // the first confirmed print (see handlePrintPreview).
       setIsReadyForDownload(true)
       console.log('✅ Cards generated successfully:', cards.length)
       console.log('📊 Card data ready for PDF:', cards)
@@ -421,9 +434,10 @@ export function PrintCuppingCardsDialog({
 
   // Handle print button click
   const handlePrint = () => {
-    // Ensure we have full sample data before generating
-    if (loading || fullSamples.length === 0) {
-      console.warn('Cannot generate cards: sample data still loading')
+    // Ensure we have full sample data AND resolved cuppers before generating,
+    // otherwise cupper name cells can print blank (session resolution is async).
+    if (loading || cuppersLoading || fullSamples.length === 0) {
+      console.warn('Cannot generate cards: sample/cupper data still loading')
       return
     }
     setIsReadyForDownload(false)
@@ -549,6 +563,10 @@ export function PrintCuppingCardsDialog({
   const handlePrintPreview = () => {
     const frame = iframeRef.current
     if (!frame) return
+
+    // Fire the physical print FIRST — it must never be gated on the network, so a
+    // slow / hung status update on a laggy lab connection can't delay or swallow
+    // the actual print.
     try {
       frame.contentWindow?.focus()
       frame.contentWindow?.print()
@@ -557,10 +575,42 @@ export function PrintCuppingCardsDialog({
       // Fallback: open the PDF in a new tab where the user can print manually.
       if (previewUrl) window.open(previewUrl, '_blank')
     }
+    setHasPrinted(true)
+
+    // Advance the batch to 'analysis' + stamp cards_printed_at on the FIRST
+    // confirmed print, fire-and-forget. The in-flight ref guards a rapid
+    // double-click from firing two commits; a failed commit is retried on the
+    // next print (stageCommittedRef only flips on success).
+    if (
+      !stageCommittedRef.current &&
+      !stageCommitInFlightRef.current &&
+      cardData &&
+      cardData.length > 0
+    ) {
+      stageCommitInFlightRef.current = true
+      const ids = cardData.map(c => c.sample_id)
+      updateSampleStatuses(ids)
+        .then(ok => {
+          if (ok) stageCommittedRef.current = true
+        })
+        .finally(() => {
+          stageCommitInFlightRef.current = false
+        })
+    }
+  }
+
+  // Close the dialog; refresh the parent list if the batch was printed (its stage
+  // advanced, so the list must reflect the move). hasPrinted is set synchronously
+  // on print, so this is reliable even though the commit itself is fire-and-forget.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && hasPrinted) {
+      onSuccess?.()
+    }
+    onOpenChange(next)
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className={showPreview ? 'sm:max-w-[920px]' : 'sm:max-w-[600px]'}>
         <DialogHeader>
           <DialogTitle>Print Cupping Cards</DialogTitle>
@@ -726,6 +776,13 @@ export function PrintCuppingCardsDialog({
           {/* Number of Cuppers - Only show if no cuppers are assigned */}
           {effectiveCuppers.length === 0 && (
             <div className="space-y-2">
+              {!cuppersLoading && (
+                <p className="rounded-md border bg-muted/40 px-3 py-2 text-xs text-muted-foreground">
+                  No cuppers are assigned to these samples — the name cells will
+                  print blank for handwriting. Assign cuppers first if you want
+                  names pre-filled.
+                </p>
+              )}
               <Label htmlFor="num-cuppers">Number of Cuppers (Rows on card)</Label>
               <Select value={numCuppers} onValueChange={setNumCuppers} disabled={isReadyForDownload}>
                 <SelectTrigger id="num-cuppers" disabled={isReadyForDownload}>
@@ -856,9 +913,19 @@ export function PrintCuppingCardsDialog({
         <DialogFooter>
           {showPreview ? (
             <div className="flex w-full items-center justify-between gap-2">
-              <Button variant="ghost" onClick={() => onOpenChange(false)}>
-                Close
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant={hasPrinted ? 'default' : 'ghost'}
+                  onClick={() => handleOpenChange(false)}
+                >
+                  Done
+                </Button>
+                {hasPrinted && (
+                  <span className="text-xs text-muted-foreground">
+                    Reprint as many times as you need, then click Done.
+                  </span>
+                )}
+              </div>
               <div className="flex items-center gap-2">
                 {previewUrl ? (
                   <Button variant="outline" asChild>
@@ -873,20 +940,26 @@ export function PrintCuppingCardsDialog({
                     Save PDF
                   </Button>
                 )}
-                <Button onClick={handlePrintPreview} disabled={!previewUrl}>
+                <Button
+                  variant={hasPrinted ? 'outline' : 'default'}
+                  onClick={handlePrintPreview}
+                  disabled={!previewUrl}
+                >
                   <Printer className="mr-2 h-4 w-4" />
-                  Print
+                  {hasPrinted ? 'Print again' : 'Print'}
                 </Button>
               </div>
             </div>
           ) : (
             <>
-              <Button variant="outline" onClick={() => onOpenChange(false)}>
+              <Button variant="outline" onClick={() => handleOpenChange(false)}>
                 Cancel
               </Button>
-              <Button onClick={handlePrint} disabled={isGenerating || loading}>
+              <Button onClick={handlePrint} disabled={isGenerating || loading || cuppersLoading}>
                 {loading
                   ? 'Loading...'
+                  : cuppersLoading
+                  ? 'Loading cuppers…'
                   : isGenerating
                   ? 'Generating...'
                   : `Print ${samples.length} Card${samples.length !== 1 ? 's' : ''}`}
