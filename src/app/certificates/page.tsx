@@ -211,20 +211,33 @@ export default function CertificatesPage() {
     if (open || q) window.history.replaceState(null, '', window.location.pathname)
   }, [])
 
+  // Search runs server-side (across all certificates, not just a loaded window), so
+  // reload when the query changes. Debounced while typing; immediate for the initial
+  // (empty) load.
   useEffect(() => {
-    loadCertificates()
-  }, [])
+    const handle = setTimeout(() => {
+      loadCertificates(searchQuery)
+    }, searchQuery ? 300 : 0)
+    return () => clearTimeout(handle)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchQuery])
 
-  const loadCertificates = async () => {
+  const loadCertificates = async (search: string = '') => {
     try {
       setLoading(true)
-      const response = await fetch('/api/certificates')
+      const trimmed = search.trim()
+      const qs = trimmed ? `?search=${encodeURIComponent(trimmed)}` : ''
+      const response = await fetch(`/api/certificates${qs}`)
       const data = await response.json()
 
       if (response.ok) {
         setCertificates(data.certificates || [])
-        setClients(data.clients || [])
-        setQualities(data.qualities || [])
+        // A search response carries only the matched subset — keep the client/quality
+        // filter dropdowns stable during search; repopulate them on unfiltered loads.
+        if (!trimmed) {
+          setClients(data.clients || [])
+          setQualities(data.qualities || [])
+        }
       } else {
         console.error('Failed to load certificates:', data.error)
       }
@@ -235,30 +248,10 @@ export default function CertificatesPage() {
     }
   }
 
-  // Filter and sort certificates
+  // Filter and sort certificates. Text search is applied server-side (see
+  // loadCertificates); the filters below refine the returned set.
   const filteredCertificates = useMemo(() => {
     let result = [...certificates]
-
-    // Search filter - searches across certificate number, client, sample number,
-    // wolthers contract, seller/shipper, exporter, ICO, container, tracking number
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase()
-      result = result.filter(cert =>
-        cert.certificate_number.toLowerCase().includes(query) ||
-        cert.issued_to?.toLowerCase().includes(query) ||
-        cert.sample?.tracking_number?.toLowerCase().includes(query) ||
-        cert.sample?.client?.name?.toLowerCase().includes(query) ||
-        cert.sample?.client?.company?.toLowerCase().includes(query) ||
-        cert.sample?.client?.fantasy_name?.toLowerCase().includes(query) ||
-        cert.sample?.origin?.toLowerCase().includes(query) ||
-        cert.sample?.wolthers_contract_nr?.toLowerCase().includes(query) ||
-        cert.sample?.exporter_sample_number?.toLowerCase().includes(query) ||
-        cert.sample?.ico_number?.toLowerCase().includes(query) ||
-        cert.sample?.container_nr?.toLowerCase().includes(query) ||
-        cert.sample?.exporter?.name?.toLowerCase().includes(query) ||
-        cert.sample?.seller?.name?.toLowerCase().includes(query)
-      )
-    }
 
     // Status filter
     if (statusFilter && statusFilter !== 'all') {
@@ -324,7 +317,9 @@ export default function CertificatesPage() {
     })
 
     return result
-  }, [certificates, searchQuery, statusFilter, clientFilter, qualityFilter, dateFrom, dateTo, sortField, sortOrder])
+    // searchQuery is intentionally omitted: text search is applied server-side (see
+    // loadCertificates), so this memo depends only on the returned rows + local filters.
+  }, [certificates, statusFilter, clientFilter, qualityFilter, dateFrom, dateTo, sortField, sortOrder])
 
   // Handle column sort
   const handleSort = (field: SortField) => {
@@ -1182,7 +1177,7 @@ export default function CertificatesPage() {
             certificateNumber={overrideCertificate.certificate_number}
             currentlyRejected={!!overrideCertificate.is_rejected}
             onSuccess={() => {
-              loadCertificates()
+              loadCertificates(searchQuery)
               // No approval email is sent here — the decision is recorded and
               // written back to sys by the override route. Anderson sends all
               // pending certificates at end of day via "Send unsent certificates".
@@ -1195,7 +1190,7 @@ export default function CertificatesPage() {
           open={showBatchSend}
           range={{ from: dateFrom, to: dateTo }}
           onClose={() => setShowBatchSend(false)}
-          onSent={() => loadCertificates()}
+          onSent={() => loadCertificates(searchQuery)}
         />
 
         <BatchApprovalSendView
@@ -1203,7 +1198,7 @@ export default function CertificatesPage() {
           selection={batchSelection ?? undefined}
           onClose={() => setBatchSelection(null)}
           onSent={() => {
-            loadCertificates()
+            loadCertificates(searchQuery)
             setSelectedCertificates(new Set())
           }}
         />
@@ -1212,7 +1207,7 @@ export default function CertificatesPage() {
           open={!!editSampleId}
           sampleId={editSampleId}
           onOpenChange={(o) => { if (!o) setEditSampleId(null) }}
-          onSaved={() => loadCertificates()}
+          onSaved={() => loadCertificates(searchQuery)}
         />
 
         {/* Single Certificate Email Dialog */}

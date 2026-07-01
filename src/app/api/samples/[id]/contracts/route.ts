@@ -272,6 +272,11 @@ export async function POST(
     // the decision (+ reason) to its sys leaves. Self-guarded + sync-only.
     await writeDecisionToShipmentSamples(supabaseAdmin, sampleId, user.id, null, { syncOnly: true })
 
+    // Note: the sub-contract's seller/buyer references are what the user entered here;
+    // the certificate reflects the current sys value at render time via read-through
+    // (see certificate-data.ts), so we deliberately do NOT overwrite the just-saved
+    // input from sys on create.
+
     return NextResponse.json({ contract }, { status: 201 })
   } catch (error: any) {
     console.error('Error in POST /api/samples/[id]/contracts:', error)
@@ -340,6 +345,10 @@ export async function PATCH(
 
     // Re-sync sys instantly so an edited sub-contract reflects on its sys leaves.
     await writeDecisionToShipmentSamples(supabaseAdmin, sampleId, user.id, null, { syncOnly: true })
+
+    // Note: we do NOT overwrite the just-edited references from sys here — the user's
+    // manual edit stands, and the certificate still shows the current sys value at
+    // render time via read-through (see certificate-data.ts).
 
     return NextResponse.json({ contract })
   } catch (error: any) {

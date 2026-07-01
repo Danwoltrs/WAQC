@@ -7,6 +7,22 @@ import {
   getInitials,
   type SendStatusRow,
 } from '@/lib/approval-notification/batch-send'
+import { sanitizeOrTerm, buildOrIlike } from '@/lib/search/or-filter'
+
+// Reference/number fields a cert is searchable by, on the sample itself AND on any of
+// its sub-contracts (a mother sample spanning several contracts is keyed in
+// `sample_contracts`, so its splits' numbers must resolve back to the parent cert).
+const SEARCH_FIELDS = [
+  'tracking_number',
+  'wolthers_contract_nr',
+  'seller_contract_nr',
+  'buyer_contract_nr',
+  'supplier_contract_nr',
+  'shipper_contract_nr',
+  'exporter_sample_number',
+  'ico_number',
+  'container_nr',
+]
 
 const PRIOR_SOURCES = new Set(['sample_approval', 'batch_approval'])
 const adminClient = () =>
@@ -67,6 +83,8 @@ export async function GET(request: NextRequest) {
           ico_number,
           container_nr,
           wolthers_contract_nr,
+          seller_contract_nr,
+          buyer_contract_nr,
           contract_id,
           exporter_id,
           importer_id,
@@ -127,6 +145,54 @@ export async function GET(request: NextRequest) {
       query = query.lte('created_at', dateTo + 'T23:59:59')
     }
 
+    // Server-side search — resolve matches BEFORE paginating so a certificate outside
+    // the first page window is still found. Matches the certificate number / issued_to
+    // directly, any sample OR sub-contract reference number (Wolthers contract, buyer /
+    // seller / supplier / shipper refs, tracking, ICO, container, exporter sample #),
+    // and the QC client's name.
+    if (search) {
+      const safeQ = sanitizeOrTerm(search)
+      if (safeQ.length >= 1) {
+        const like = `%${safeQ}%`
+        // Bound each resolution query. Reference-number searches (the primary use)
+        // match a handful of rows; these caps only bite on very broad substrings, in
+        // which case we warn rather than silently drop matches.
+        const SAMPLE_SCAN_LIMIT = 2000
+        const COMPANY_SCAN_LIMIT = 200
+        const [sampleRes, subRes, companyRes] = await Promise.all([
+          (supabase as any).from('samples').select('id').or(buildOrIlike(SEARCH_FIELDS, safeQ)).limit(SAMPLE_SCAN_LIMIT),
+          (supabase as any).from('sample_contracts').select('sample_id').or(buildOrIlike(SEARCH_FIELDS, safeQ)).limit(SAMPLE_SCAN_LIMIT),
+          (supabase as any).from('companies').select('id').or(`name.ilike.${like},fantasy_name.ilike.${like}`).limit(COMPANY_SCAN_LIMIT),
+        ])
+        const sampleIds = new Set<string>()
+        for (const r of (sampleRes.data ?? []) as Array<{ id: string }>) sampleIds.add(r.id)
+        for (const r of (subRes.data ?? []) as Array<{ sample_id: string | null }>) if (r.sample_id) sampleIds.add(r.sample_id)
+        const companyIds = ((companyRes.data ?? []) as Array<{ id: string }>).map((r) => r.id)
+        let clientScanTruncated = false
+        if (companyIds.length > 0) {
+          const { data: clientSamples } = await (supabase as any)
+            .from('samples').select('id').in('client_id', companyIds).limit(SAMPLE_SCAN_LIMIT)
+          const rows = (clientSamples ?? []) as Array<{ id: string }>
+          for (const r of rows) sampleIds.add(r.id)
+          clientScanTruncated = rows.length >= SAMPLE_SCAN_LIMIT
+        }
+        // Warn (don't silently drop) if any scan hit its cap — the result set may be
+        // incomplete for this (unusually broad) search term.
+        if (
+          (sampleRes.data?.length ?? 0) >= SAMPLE_SCAN_LIMIT ||
+          (subRes.data?.length ?? 0) >= SAMPLE_SCAN_LIMIT ||
+          clientScanTruncated
+        ) {
+          console.warn(
+            `[certificates] search "${safeQ}" hit a ${SAMPLE_SCAN_LIMIT}-row scan cap; results may be incomplete. Narrow the query.`,
+          )
+        }
+        const orParts = [`certificate_number.ilike.${like}`, `issued_to.ilike.${like}`]
+        if (sampleIds.size > 0) orParts.push(`sample_id.in.(${[...sampleIds].join(',')})`)
+        query = query.or(orParts.join(','))
+      }
+    }
+
     // Sort
     const ascending = sortOrder === 'asc'
     query = query.order(sortBy, { ascending })
@@ -141,25 +207,8 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to fetch certificates' }, { status: 500 })
     }
 
-    // Filter by search (certificate number, sample tracking number, client name)
+    // Search is now applied server-side (above), across all rows — not just this page.
     let filtered = certificates || []
-    if (search) {
-      const searchLower = search.toLowerCase()
-      filtered = filtered.filter((cert) => {
-        const sample = cert.sample as {
-          tracking_number?: string
-          client?: { name?: string; company?: string; fantasy_name?: string }
-        } | null
-        return (
-          cert.certificate_number.toLowerCase().includes(searchLower) ||
-          cert.issued_to?.toLowerCase().includes(searchLower) ||
-          sample?.tracking_number?.toLowerCase().includes(searchLower) ||
-          sample?.client?.name?.toLowerCase().includes(searchLower) ||
-          sample?.client?.company?.toLowerCase().includes(searchLower) ||
-          sample?.client?.fantasy_name?.toLowerCase().includes(searchLower)
-        )
-      })
-    }
 
     // Filter by client ID
     if (clientId) {

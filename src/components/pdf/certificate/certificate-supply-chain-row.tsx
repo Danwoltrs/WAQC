@@ -98,9 +98,12 @@ function mergeEntities(
     )
 
     if (existing) {
-      // Merge: combine labels (e.g. "Seller / Shipper"), add contracts
+      // Merge: combine labels (e.g. "Seller / Shipper"), add contracts.
+      // Dedup: when e.g. seller and exporter are the same company and carry the same
+      // reference, only print one "Ref:" line (avoids a doubled reference now that the
+      // seller ref is read through from sys while the exporter ref stays stored).
       existing.label = `${existing.label} / ${label}`
-      if (entity.contract) {
+      if (entity.contract && !existing.contracts.some(c => c.trim().toLowerCase() === entity.contract!.trim().toLowerCase())) {
         existing.contracts.push(entity.contract)
       }
     } else {

@@ -5,6 +5,8 @@
 
 import { createClient } from '@/lib/supabase-server'
 import { getCountryName } from '@/lib/country-flags'
+import { resolveSupplyRefs } from '@/lib/certificate-supply-refs'
+import { fetchSysContractRefs } from '@/lib/contract-ref-sync'
 
 // Type definitions for certificate data
 export interface SupplyChainEntity {
@@ -221,6 +223,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       created_at,
       status,
       wolthers_contract_nr,
+      contract_id,
       exporter_contract_nr,
       roaster_contract_nr,
       buyer_contract_nr,
@@ -745,13 +748,23 @@ export async function getCertificateData(sampleId: string, contractId?: string):
   const displayName = (d: { fantasy_name?: string | null; name?: string | null } | null | undefined): string | null =>
     d?.fantasy_name ?? d?.name ?? null
 
+  // Read-through: sys.wolthers is the source of truth for a contract's seller (Ecom)
+  // and buyer references. Resolve the mother sample's linked contract so the cert
+  // always shows the CURRENT value even if the stored copy drifted after intake — a
+  // pure read, no DB writes, so every viewer (not just editors) sees the right number.
+  // Sub-contract certs resolve their own contract below (contractId branch).
+  const sysMotherRefs = await fetchSysContractRefs(supabase, {
+    contractId: (sample as any).contract_id ?? null,
+    contractNumber: sample.wolthers_contract_nr ?? null,
+  })
+
   // Build supplier entity (farm/coop from seller_id)
   // supplier_type indicates "farm" or "coop"
   const supplierEntity: SupplyChainEntity = {
     id: sellerResult.data?.id ?? null,
     name: displayName(sellerResult.data),
     country: sellerResult.data?.country ?? null,
-    contract: sample.seller_contract_nr ?? null,
+    contract: sysMotherRefs?.seller_reference ?? sample.seller_contract_nr ?? null,
     address: null, // Address not yet in exporters table
   }
 
@@ -790,6 +803,9 @@ export async function getCertificateData(sampleId: string, contractId?: string):
     bag_type: string | null
     bags_quantity_mt: number | null
     equivalent_60kg_bags: number | null
+    // Per-split supply-side reference (the seller's sample number) — the seller and
+    // shipper "Ref:" values are applied directly onto supplierEntity/shipperEntity below.
+    exporterSampleNumber: string | null
     certificateData: NonNullable<CertificateData['certificate']> & { is_rejected?: boolean | null }
   } | null = null
 
@@ -807,6 +823,19 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       .single()
 
     if (contract) {
+      // Per-split supply-side references: a sub-contract cert must show THIS split's own
+      // seller (Ecom) / shipper reference and sample number, not the mother sample's.
+      // The buy-side entities are overridden further below via contractOverride.
+      const supplyRefs = resolveSupplyRefs({ sample, contract })
+      // Read-through the split's OWN linked sys contract (source of truth), falling
+      // back to the stored split value then the mother sample. No DB writes.
+      const sysSubRefs = await fetchSysContractRefs(supabase, {
+        contractId: (contract as any).contract_id ?? null,
+        contractNumber: contract.wolthers_contract_nr ?? null,
+      })
+      supplierEntity.contract = sysSubRefs?.seller_reference ?? supplyRefs.sellerContract
+      shipperEntity.contract = supplyRefs.shipperContract
+
       const scQcClient: any = contract.qc_client || client
       const scQcClientName = scQcClient?.fantasy_name ?? scQcClient?.name ?? null
       const scIsImporterClient = (scQcClient?.trading_roles ?? []).includes('buyer')
@@ -827,7 +856,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
           id: contract.importer?.id ?? null,
           name: displayName(contract.importer) ?? (contract.importer_is_qc_client ? scQcClientName : null) ?? (scIsImporterClient ? scQcClientName : null),
           country: contract.importer?.country ?? null,
-          contract: contract.buyer_contract_nr ?? null,
+          contract: sysSubRefs?.buyer_reference ?? contract.buyer_contract_nr ?? null,
           address: null,
         },
         roasterEntity: {
@@ -859,6 +888,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         bag_type: contract.bag_type ?? null,
         bags_quantity_mt: contract.bags_quantity_mt ?? null,
         equivalent_60kg_bags: contract.equivalent_60kg_bags ?? null,
+        exporterSampleNumber: supplyRefs.exporterSampleNumber,
         certificateData: scCert
           ? {
               id: scCert.id,
@@ -904,7 +934,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
       shipment_month: sample.shipment_month,
       ico_number: contractOverride?.ico_number ?? sample.ico_number,
       container_nr: contractOverride?.container_nr ?? sample.container_nr,
-      exporter_sample_number: sample.exporter_sample_number ?? null,
+      exporter_sample_number: contractOverride?.exporterSampleNumber ?? sample.exporter_sample_number ?? null,
       created_at: sample.created_at,
       // Use certificate's is_rejected flag as authoritative source for status
       // (override route updates certificate but sample update may fail due to RLS)
@@ -929,7 +959,7 @@ export async function getCertificateData(sampleId: string, contractId?: string):
         // Use importer from DB, or fall back to client if they're an importer type or importer_is_qc_client flag is set
         name: displayName(importerResult.data) ?? ((isImporterClient || sample.importer_is_qc_client) ? (client?.fantasy_name ?? client?.company ?? null) : null),
         country: importerResult.data?.country ?? client?.country ?? null,
-        contract: sample.buyer_contract_nr ?? null,
+        contract: sysMotherRefs?.buyer_reference ?? sample.buyer_contract_nr ?? null,
         address: null, // Address not yet in importers table
       },
       roaster: contractOverride?.roasterEntity ?? {

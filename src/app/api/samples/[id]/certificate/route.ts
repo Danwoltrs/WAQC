@@ -42,6 +42,11 @@ export async function GET(
     }
     console.log('[Certificate] Generating PDF for sample:', id)
 
+    // NOTE: the certificate always shows the CURRENT sys.wolthers seller/buyer
+    // references via read-through in getCertificateData() — no write is performed on
+    // this read path, so any authenticated viewer gets the right numbers without
+    // triggering (editor-only) database writes.
+
     // Check for sub-contract certificate request
     const contractId = request.nextUrl.searchParams.get('contract_id')
 

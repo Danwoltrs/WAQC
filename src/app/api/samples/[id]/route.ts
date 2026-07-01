@@ -7,6 +7,7 @@ import { resolveSampleId } from '@/lib/sample-utils'
 import { invalidateCertificatePdf } from '@/lib/certificate-storage'
 import { authorizeSampleEdit } from '@/lib/sample-edit-permissions'
 import { writeDecisionToShipmentSamples } from '@/lib/approval-notification/sys-decision-writeback'
+import { refreshMotherRefsFromSys } from '@/lib/contract-ref-sync'
 
 type SampleUpdate = Database['public']['Tables']['samples']['Update']
 
@@ -469,6 +470,20 @@ export async function PATCH(
     // reason). Self-guards (no-op unless the sample is approved/rejected) and is
     // sync-only, preserving the original approver + decision date. Best-effort.
     await writeDecisionToShipmentSamples(supabaseAdmin, id, user.id, null, { syncOnly: true })
+
+    // Keep the mother sample's stored seller/buyer references in step with sys for
+    // list/search views — but NOT when the user explicitly changed a reference in this
+    // request (respect the deliberate manual edit). Certificate display already uses
+    // the live sys value via read-through, so this write only affects search freshness.
+    const editedRefsManually =
+      body.seller_contract_nr !== undefined || body.buyer_contract_nr !== undefined
+    if (!editedRefsManually) {
+      try {
+        await refreshMotherRefsFromSys(id, { admin: supabaseAdmin })
+      } catch (e) {
+        console.warn('[sample PATCH] contract-ref refresh failed (non-fatal):', e)
+      }
+    }
 
     return NextResponse.json({ sample })
   } catch (error) {
