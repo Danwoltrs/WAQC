@@ -295,7 +295,9 @@ export async function POST(req: NextRequest) {
           const { error: docErr } = await supabase.from('documents').insert({
             contract_id: v.contractId,
             document_type_id: (dt as any)?.id ?? null,
-            file_name: `${v.tracking}.pdf`,
+            // Certificate-number based (buildCertificateFilename) — lab tracking
+            // numbers must never surface on sys.
+            file_name: v.attachment.name,
             storage_path: storagePath,
             mime_type: 'application/pdf',
             file_size: v.attachment.bytes.byteLength,
