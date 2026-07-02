@@ -89,8 +89,9 @@ export async function buildCertificatePdfResponse(
       }
     }
 
-    // Generate PDF on the fly
-    const certificateData = await getCertificateData(sample.id)
+    // Generate PDF on the fly. Pass the service-role client through — this is
+    // a public endpoint, so the default cookie client would be blocked by RLS.
+    const certificateData = await getCertificateData(sample.id, undefined, supabaseService)
     if (!certificateData) {
       return NextResponse.json({ error: 'Certificate data not available' }, { status: 500 })
     }

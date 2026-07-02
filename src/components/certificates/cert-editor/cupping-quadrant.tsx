@@ -2,6 +2,14 @@
 
 import { useState } from 'react'
 import { Check, X, Minus } from 'lucide-react'
+import {
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
+  ResponsiveContainer,
+} from 'recharts'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -12,6 +20,17 @@ type CuppingDraft = Pick<
   CertDraft,
   'cupping' | 'cupProfile' | 'cleanCup' | 'uniformCup' | 'cuppingComments' | 'gradingComments'
 >
+
+// Flavor descriptor is a TEXT attribute that leaks into the aggregated cupping
+// map — it has no numeric score and must not appear in the sensory graph.
+const isFlavorDescriptor = (name: string) => /flavou?r[\s_-]*descriptor/i.test(name)
+
+/** Numeric sensory attributes only — what the spider graph (and bars) can plot. */
+function scoreEntries(cupping: Record<string, number>): Array<[string, number]> {
+  return Object.entries(cupping).filter(
+    ([name, score]) => !isFlavorDescriptor(name) && Number.isFinite(score),
+  )
+}
 
 function AttributeBar({ name, score, scale }: { name: string; score: number; scale: number }) {
   const pct = Math.max(0, Math.min(100, (score / scale) * 100))
@@ -24,6 +43,35 @@ function AttributeBar({ name, score, scale }: { name: string; score: number; sca
       <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: CUPPING_COLOR }} />
       </div>
+    </div>
+  )
+}
+
+/** Spider (radar) view of the sensory attributes. Axis labels carry the score
+ *  so no tooltip is needed; the radius is fixed to the grading scale so the
+ *  same scores read identically across samples. */
+function SensorySpider({ entries, scale }: { entries: Array<[string, number]>; scale: number }) {
+  const data = entries.map(([name, score]) => ({
+    label: `${name} · ${score}`,
+    score,
+  }))
+  return (
+    <div className="h-[240px] w-full text-muted-foreground">
+      <ResponsiveContainer width="100%" height="100%">
+        <RadarChart data={data} outerRadius="70%">
+          <PolarGrid stroke="currentColor" strokeOpacity={0.18} />
+          <PolarAngleAxis dataKey="label" tick={{ fill: 'currentColor', fontSize: 11 }} />
+          <PolarRadiusAxis domain={[0, scale]} tick={false} axisLine={false} />
+          <Radar
+            dataKey="score"
+            stroke={CUPPING_COLOR}
+            fill={CUPPING_COLOR}
+            fillOpacity={0.25}
+            strokeWidth={2}
+            isAnimationActive={false}
+          />
+        </RadarChart>
+      </ResponsiveContainer>
     </div>
   )
 }
@@ -63,7 +111,7 @@ export function CuppingQuadrant({
   readOnly?: boolean
   onEdit?: () => void
 }) {
-  const entries = Object.entries(draft.cupping)
+  const entries = scoreEntries(draft.cupping)
   // Fixed conventional scale so identical scores read the same across samples
   // (CVA section impressions are on a 0–9 scale; SCA attributes 0–10).
   const scale = isCVA ? 9 : 10
@@ -98,11 +146,18 @@ export function CuppingQuadrant({
             ) : null}
           </div>
         ) : null}
-        <div className="flex-1 space-y-2.5">
+        <div className="min-w-0 flex-1">
           {entries.length === 0 ? (
             <div className="py-6 text-xs text-muted-foreground">No cupping scores recorded</div>
+          ) : entries.length < 3 ? (
+            // A radar needs 3+ axes to read as a shape — fall back to bars.
+            <div className="space-y-2.5">
+              {entries.map(([name, score]) => (
+                <AttributeBar key={name} name={name} score={score} scale={scale} />
+              ))}
+            </div>
           ) : (
-            entries.map(([name, score]) => <AttributeBar key={name} name={name} score={score} scale={scale} />)
+            <SensorySpider entries={entries} scale={scale} />
           )}
         </div>
       </div>
@@ -142,7 +197,7 @@ export function CuppingEditPanel({
     })
   }
 
-  const attrs = Object.entries(draft.cupping)
+  const attrs = scoreEntries(draft.cupping)
 
   return (
     <EditPanel open={open} title="Edit cupping / sensory" onCancel={onCancel} onSave={apply} saving={saving} wide>

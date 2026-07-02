@@ -21,7 +21,7 @@ export async function renderCertificatePdfBuffer(
   supabase: SupabaseClient,
   sampleId: string,
 ): Promise<Buffer | null> {
-  const certificateData = await getCertificateData(sampleId)
+  const certificateData = await getCertificateData(sampleId, undefined, supabase)
   if (!certificateData) return null
 
   let wolthersLogoBase64: string | undefined

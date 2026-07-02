@@ -192,10 +192,21 @@ function resolveStatus(
 }
 
 /**
- * Fetch all data needed for certificate generation
+ * Fetch all data needed for certificate generation.
+ *
+ * `supabaseClient` lets callers inject their own Supabase client. The PUBLIC
+ * PDF route must pass its service-role client: the default cookie-based server
+ * client has no session on an unauthenticated request, so RLS returns zero
+ * rows and the certificate 500s with "Certificate data not available".
  */
-export async function getCertificateData(sampleId: string, contractId?: string): Promise<CertificateData | null> {
-  const supabase = await createClient()
+export async function getCertificateData(
+  sampleId: string,
+  contractId?: string,
+  supabaseClient?: import('@supabase/supabase-js').SupabaseClient,
+): Promise<CertificateData | null> {
+  const supabase = (supabaseClient ?? (await createClient())) as Awaited<
+    ReturnType<typeof createClient>
+  >
 
   // Fetch sample with related data.
   // Cast to `any` until generated DB types pick up the certifications column
