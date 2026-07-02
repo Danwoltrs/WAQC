@@ -338,7 +338,10 @@ export default function QuadrantEmbedPage() {
       ) : draft && state.data ? (
         <>
           <SafeHeader sample={state.data.sample} />
-          <div className="grid gap-5 lg:grid-cols-2">
+          {/* md: not lg: — inside the sys modal the iframe is ~1000px wide,
+              below the lg breakpoint; md keeps the two-column quadrant that
+              mirrors the WAQC sample page while phones stay single-column. */}
+          <div className="grid gap-5 md:grid-cols-2">
             <DefectsQuadrant
               defects={draft.defects}
               readOnly

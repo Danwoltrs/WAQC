@@ -5,7 +5,17 @@ import { NextResponse, type NextRequest } from 'next/server'
 const PUBLIC_ROUTES = ['/', '/auth/callback', '/auth/accept-invite']
 
 function isPublicRoute(pathname: string): boolean {
-  return PUBLIC_ROUTES.includes(pathname) || pathname.startsWith('/api/') || pathname.startsWith('/certificate/')
+  // /embed/* pages carry no session of their own — they authenticate via a
+  // sys.wolthers.com access token handed over by postMessage, and their API
+  // (/api/embed/*) enforces it. Redirecting them to '/' breaks the iframe:
+  // '/' is served with X-Frame-Options: SAMEORIGIN, so sys sees an eternal
+  // "Loading..." whenever the viewer lacks a qc.wolthers.com cookie.
+  return (
+    PUBLIC_ROUTES.includes(pathname) ||
+    pathname.startsWith('/api/') ||
+    pathname.startsWith('/certificate/') ||
+    pathname.startsWith('/embed/')
+  )
 }
 
 export async function middleware(request: NextRequest) {

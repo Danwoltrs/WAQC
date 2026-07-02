@@ -80,7 +80,7 @@ export async function POST(
 
   const { data: sample } = await supabase
     .from('samples')
-    .select('id, tracking_number, status, contract_id, wolthers_contract_nr, buyer_contract_nr')
+    .select('id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr')
     .eq('id', id)
     .single()
   if (!sample) return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
@@ -181,9 +181,11 @@ export async function POST(
 
   const anySent = results.some((r) => r.ok)
 
-  // Annex the certificate to the sys contract Docs once.
+  // Annex the certificate to the sys contract Docs once. NOT gated on send
+  // success — the certificate exists regardless of whether an email went out,
+  // and the Docs tab should always carry it.
   let certificatePath: string | null = null
-  if (anySent && attachment) {
+  if (attachment) {
     try {
       const { data: dt } = await supabase
         .from('document_types')
@@ -195,25 +197,45 @@ export async function POST(
       await supabase.storage
         .from('logistics-documents')
         .upload(storagePath, Buffer.from(attachment.bytes), { contentType: 'application/pdf', upsert: true })
-      await supabase.from('documents').insert({
-        contract_id: contractId,
-        document_type_id: (dt as any)?.id ?? null,
-        file_name: `${tracking}.pdf`,
-        storage_path: storagePath,
-        mime_type: 'application/pdf',
-        file_size: attachment.bytes.byteLength,
-        source: 'manual',
-        status: 'confirmed',
-        created_by: user.id,
-      })
+      // Resend guard: the storage path is deterministic per contract+tracking,
+      // so an existing documents row means this cert is already annexed (the
+      // upsert above refreshed the file bytes).
+      const { data: existingDoc } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('storage_path', storagePath)
+        .is('archived_at', null)
+        .maybeSingle()
+      if (!existingDoc) {
+        // source 'outbound' + status 'forwarded' is the sys convention for
+        // system-generated docs sent to counterparties (see sys contracts/send);
+        // 'confirmed' is NOT an allowed documents.status and the insert would
+        // silently violate the CHECK constraint.
+        const { error: docErr } = await supabase.from('documents').insert({
+          contract_id: contractId,
+          document_type_id: (dt as any)?.id ?? null,
+          file_name: `${tracking}.pdf`,
+          storage_path: storagePath,
+          mime_type: 'application/pdf',
+          file_size: attachment.bytes.byteLength,
+          source: 'outbound',
+          status: 'forwarded',
+          created_by: user.id,
+        })
+        if (docErr) {
+          console.error('[notify-approval] documents insert failed (non-fatal):', docErr)
+        }
+      }
       certificatePath = storagePath
     } catch (e) {
       console.error('[notify-approval] annex failed (non-fatal):', e)
     }
   }
 
-  // Mark the sys shipment_samples row approved (insert if missing).
-  if (anySent) {
+  // Mark the sys shipment_samples row approved (insert if missing). When no
+  // email actually went out we still persist the certificate_url (syncOnly
+  // keeps the decision-time approver/date stamped by the instant write-back).
+  if (anySent || certificatePath) {
     await applyShipmentSampleApproval(supabase, {
       contractId,
       waqcRef: tracking,
@@ -223,6 +245,10 @@ export async function POST(
       certificateUrl: certificatePath,
       comments: body.comments ?? null,
       initials: senderName ? getInitials(senderName) : null,
+      // Without the type, the write-back defaults to 'pss' and an SS send
+      // claims/clobbers the contract's PSS row on sys.
+      sampleType: (s.sample_type as string) ?? 'pss',
+      syncOnly: !anySent,
     })
   }
 

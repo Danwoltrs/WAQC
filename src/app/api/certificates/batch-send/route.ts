@@ -44,6 +44,10 @@ interface Valid {
   sampleId: string
   tracking: string
   decision: ApprovalDecision
+  /** WAQC sample_type ('pss' | 'ss' | …). MUST reach the sys write-back:
+   *  applyShipmentSampleApproval defaults to 'pss', so an SS send without it
+   *  claims/clobbers the contract's PSS row on sys. */
+  sampleType: string
   contractId: string
   buyerId: string | null
   sellerId: string | null
@@ -124,7 +128,7 @@ export async function POST(req: NextRequest) {
     }
     const { data: sample } = await supabase
       .from('samples')
-      .select('id, tracking_number, status, contract_id, wolthers_contract_nr, buyer_contract_nr')
+      .select('id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr')
       .eq('id', sampleId)
       .single()
     const s = sample as any
@@ -176,6 +180,7 @@ export async function POST(req: NextRequest) {
       sampleId,
       tracking: s.tracking_number as string,
       decision: s.status as ApprovalDecision,
+      sampleType: (s.sample_type as string) ?? 'pss',
       contractId: ctx.contractId,
       buyerId: ctx.buyerId,
       sellerId: ctx.sellerId,
@@ -273,17 +278,35 @@ export async function POST(req: NextRequest) {
         await supabase.storage
           .from('logistics-documents')
           .upload(storagePath, Buffer.from(v.attachment.bytes), { contentType: 'application/pdf', upsert: true })
-        await supabase.from('documents').insert({
-          contract_id: v.contractId,
-          document_type_id: (dt as any)?.id ?? null,
-          file_name: `${v.tracking}.pdf`,
-          storage_path: storagePath,
-          mime_type: 'application/pdf',
-          file_size: v.attachment.bytes.byteLength,
-          source: 'manual',
-          status: 'confirmed',
-          created_by: user.id,
-        })
+        // Resend guard: deterministic storage path per contract+tracking — an
+        // existing documents row means the cert is already annexed (the upsert
+        // above refreshed the file bytes).
+        const { data: existingDoc } = await supabase
+          .from('documents')
+          .select('id')
+          .eq('storage_path', storagePath)
+          .is('archived_at', null)
+          .maybeSingle()
+        if (!existingDoc) {
+          // source 'outbound' + status 'forwarded' is the sys convention for
+          // system-generated docs sent to counterparties; 'confirmed' is NOT an
+          // allowed documents.status (CHECK constraint) and used to make this
+          // insert silently fail.
+          const { error: docErr } = await supabase.from('documents').insert({
+            contract_id: v.contractId,
+            document_type_id: (dt as any)?.id ?? null,
+            file_name: `${v.tracking}.pdf`,
+            storage_path: storagePath,
+            mime_type: 'application/pdf',
+            file_size: v.attachment.bytes.byteLength,
+            source: 'outbound',
+            status: 'forwarded',
+            created_by: user.id,
+          })
+          if (docErr) {
+            console.error('[batch-send] documents insert failed (non-fatal):', docErr)
+          }
+        }
         certificatePath = storagePath
       } catch (e) {
         console.error('[batch-send] annex failed (non-fatal):', e)
@@ -297,6 +320,7 @@ export async function POST(req: NextRequest) {
         today,
         certificateUrl: certificatePath,
         initials: senderName ? getInitials(senderName) : null,
+        sampleType: v.sampleType,
       })
     }
 

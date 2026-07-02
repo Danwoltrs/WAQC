@@ -36,11 +36,21 @@ const nextConfig = {
           { key: 'Content-Security-Policy', value: embedCsp },
         ],
       },
-      // Global security headers for all non-embed paths.
-      // The negative-lookahead excludes /embed/* and /api/embed/* so X-Frame-Options is
-      // never sent on embed routes (those must be iframeable by sys.wolthers.com).
+      // Public certificate PDFs are displayed inside a sys.wolthers.com viewer
+      // dialog (iframe) — same framing rules as the embed routes.
       {
-        source: '/((?!embed/|api/embed/).*)',
+        source: '/api/certificate/:path*',
+        headers: [
+          { key: 'X-Content-Type-Options', value: 'nosniff' },
+          { key: 'Content-Security-Policy', value: embedCsp },
+        ],
+      },
+      // Global security headers for all non-embed paths.
+      // The negative-lookahead excludes /embed/*, /api/embed/* and /api/certificate/*
+      // so X-Frame-Options is never sent on routes that must be iframeable by
+      // sys.wolthers.com.
+      {
+        source: '/((?!embed/|api/embed/|api/certificate/).*)',
         headers: [
           {
             key: 'X-DNS-Prefetch-Control',
