@@ -1,10 +1,10 @@
 /**
- * POST /api/reports/weekly-ss/send — emails the SS Report PDF via Graph.
+ * POST /api/reports/pss/send — emails the PSS Report PDF via Graph.
  */
 import { NextRequest } from 'next/server'
 import { handleReportSend } from '@/lib/reports/report-routes'
 
-const CONFIG = { buckets: ['ss' as const], filenameLabel: 'SS', reportType: 'weekly_ss', subjectLabel: 'SS Report' }
+const CONFIG = { buckets: ['pss' as const], filenameLabel: 'PSS', reportType: 'pss', subjectLabel: 'PSS Report' }
 
 export async function POST(request: NextRequest) {
   return handleReportSend(request, CONFIG)

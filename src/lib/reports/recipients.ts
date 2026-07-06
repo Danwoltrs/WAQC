@@ -9,7 +9,7 @@
  * endpoint import from here.
  */
 
-export const VALID_REPORT_TYPES = new Set(['weekly_ss', 'biweekly', 'monthly', 'annual'])
+export const VALID_REPORT_TYPES = new Set(['weekly_ss', 'pss', 'biweekly', 'monthly', 'annual'])
 
 /**
  * Upsert the recipient set for (client_id, report_type), replacing
