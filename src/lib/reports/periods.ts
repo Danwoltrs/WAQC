@@ -36,3 +36,34 @@ export function previousHalfMonth(today: Date): { start: string; end: string } {
   // We're in the 2nd half → previous completed half is this month's 1st half.
   return firstHalf(y, m)
 }
+
+// --- Work-week helpers ---
+// "Work week" = Monday through Friday — the weekly reports were always cut
+// on Friday for the just-completed Mon–Fri block. `today` is injectable for
+// tests; date math is done in UTC on the ISO date so results are stable
+// across timezones.
+
+function toIsoDate(d: Date): string {
+  return d.toISOString().slice(0, 10)
+}
+
+export function getCurrentWorkWeek(today: Date = new Date()): { start: string; end: string } {
+  const d = new Date(today)
+  const day = d.getUTCDay() // 0=Sun, 1=Mon, ...
+  const offsetToMonday = day === 0 ? -6 : -(day - 1)
+  const monday = new Date(d)
+  monday.setUTCDate(d.getUTCDate() + offsetToMonday)
+  const friday = new Date(monday)
+  friday.setUTCDate(monday.getUTCDate() + 4)
+  return { start: toIsoDate(monday), end: toIsoDate(friday) }
+}
+
+export function getPreviousWorkWeek(today: Date = new Date()): { start: string; end: string } {
+  const { start } = getCurrentWorkWeek(today)
+  const thisMonday = new Date(start)
+  const prevMonday = new Date(thisMonday)
+  prevMonday.setUTCDate(thisMonday.getUTCDate() - 7)
+  const prevFriday = new Date(prevMonday)
+  prevFriday.setUTCDate(prevMonday.getUTCDate() + 4)
+  return { start: toIsoDate(prevMonday), end: toIsoDate(prevFriday) }
+}

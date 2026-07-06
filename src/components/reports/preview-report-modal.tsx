@@ -24,7 +24,7 @@ import { useToast } from '@/hooks/use-toast'
 import { SendReportModal } from './send-report-modal'
 
 export interface ReportKind {
-  reportType: 'weekly_ss' | 'biweekly' | 'annual'
+  reportType: 'weekly_ss' | 'pss' | 'biweekly' | 'annual'
   previewEndpoint: string  // GET, streams the PDF
   sendEndpoint: string     // POST, emails it
   label: string            // human label for titles/subjects
@@ -34,14 +34,21 @@ export const WEEKLY_SS_KIND: ReportKind = {
   reportType: 'weekly_ss',
   previewEndpoint: '/api/reports/weekly-ss',
   sendEndpoint: '/api/reports/weekly-ss/send',
-  label: 'Weekly SS Certificates',
+  label: 'SS Report',
+}
+
+export const PSS_KIND: ReportKind = {
+  reportType: 'pss',
+  previewEndpoint: '/api/reports/pss',
+  sendEndpoint: '/api/reports/pss/send',
+  label: 'PSS Report',
 }
 
 export const BIWEEKLY_KIND: ReportKind = {
   reportType: 'biweekly',
   previewEndpoint: '/api/reports/biweekly',
   sendEndpoint: '/api/reports/biweekly/send',
-  label: 'Bi-Weekly Performance',
+  label: 'SS+PSS Report',
 }
 
 export const ANNUAL_KIND: ReportKind = {
