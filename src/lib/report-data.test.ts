@@ -37,6 +37,7 @@ describe('mapCertRowToReportRow', () => {
     expect(row.importer_name).toBe('Coffee America')
     expect(row.importer_contract_nr).toBe('IR0005918-1')
     expect(row.bags).toBe(333)
+    expect(row.mt).toBe(20.0)
     expect(row.is_rejected).toBe(false)
   })
 

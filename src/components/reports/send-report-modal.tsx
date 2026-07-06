@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Send-by-email modal for a Weekly SS report.
+ * Send-by-email modal for a report.
  *
  * Behavior:
  *   - On open: fetches /api/reports/recipients?client_id=...&report_type=weekly_ss
@@ -197,7 +197,7 @@ export function SendReportModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle className="text-sm">Send {kind.label} Report</DialogTitle>
+          <DialogTitle className="text-sm">Send {kind.label}</DialogTitle>
           <DialogDescription className="text-xs">
             Sends from <span className="font-medium">{AUTO_CC_MAILBOX}</span> on behalf of you.
             {lastSentAt && (

@@ -61,7 +61,7 @@ const base = (over: Partial<PerformanceReportData> = {}): PerformanceReportData 
 })
 
 describe('PerformanceReport', () => {
-  it('renders SS+PSS (4 pages) with Sankey', async () => {
+  it('renders SS+PSS with Sankey (multi-page)', async () => {
     const buf = await renderToBuffer(React.createElement(PerformanceReport, { data: base() }) as any)
     expect(buf.length).toBeGreaterThan(1000)
   })
