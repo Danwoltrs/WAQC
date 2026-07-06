@@ -7,7 +7,7 @@ import React from 'react'
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer'
 import '@/components/pdf/certificate/certificate-styles'
 import type { AnnualPerformanceReportData } from '@/lib/reports/annual-data'
-import type { GroupPerf } from '@/lib/reports/biweekly-data'
+import type { GroupPerf } from '@/lib/reports/performance-data'
 import { HorizontalBarChart } from '@/components/pdf/charts/horizontal-bar-chart'
 import { SankeyChart } from '@/components/pdf/charts/sankey-chart'
 

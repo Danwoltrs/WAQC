@@ -5,10 +5,10 @@ import {
   buildAnnualAggregates,
   toAnnualRow,
 } from './annual-data'
-import type { BiweeklyRow } from './biweekly-data'
+import type { PerformanceRow } from './performance-data'
 
 // Minimal row factory — only the fields the aggregation reads.
-function row(p: Partial<BiweeklyRow> & { is_rejected: boolean } & Record<string, unknown>): BiweeklyRow {
+function row(p: Partial<PerformanceRow> & { is_rejected: boolean } & Record<string, unknown>): PerformanceRow {
   return {
     certificate_number: 'X',
     is_rejected: p.is_rejected,
@@ -20,7 +20,7 @@ function row(p: Partial<BiweeklyRow> & { is_rejected: boolean } & Record<string,
     created_at: p.created_at ?? '2025-01-15T00:00:00Z',
     origin: (p as any).origin ?? null,
     laboratory_name: (p as any).laboratory_name ?? null,
-  } as unknown as BiweeklyRow
+  } as unknown as PerformanceRow
 }
 
 describe('computeHero', () => {
@@ -29,8 +29,8 @@ describe('computeHero', () => {
     const ssRows = [row({ is_rejected: false, bags: 600 }), row({ is_rejected: false, bags: 400 })]
     // aggregateBucket is imported inside annual-data; here we feed its outputs:
     const hero = computeHero(
-      { totals: { evaluated: 2, approved: 1, rejected: 1, rejectionRate: 50, bagsApproved: 0 } } as any,
-      { totals: { evaluated: 2, approved: 2, rejected: 0, rejectionRate: 0, bagsApproved: 1000 } } as any,
+      { totals: { evaluated: 2, approved: 1, rejected: 1, rejectionRate: 50, bagsApproved: 0, mtApproved: 0 } } as any,
+      { totals: { evaluated: 2, approved: 2, rejected: 0, rejectionRate: 0, bagsApproved: 1000, mtApproved: 0 } } as any,
     )
     expect(hero.samplesEvaluated).toBe(4)
     expect(hero.rejections).toBe(1)
@@ -41,8 +41,8 @@ describe('computeHero', () => {
 
   it('is zero-safe with no samples', () => {
     const hero = computeHero(
-      { totals: { evaluated: 0, approved: 0, rejected: 0, rejectionRate: 0, bagsApproved: 0 } } as any,
-      { totals: { evaluated: 0, approved: 0, rejected: 0, rejectionRate: 0, bagsApproved: 0 } } as any,
+      { totals: { evaluated: 0, approved: 0, rejected: 0, rejectionRate: 0, bagsApproved: 0, mtApproved: 0 } } as any,
+      { totals: { evaluated: 0, approved: 0, rejected: 0, rejectionRate: 0, bagsApproved: 0, mtApproved: 0 } } as any,
     )
     expect(hero.overallApprovalRate).toBe(0)
     expect(hero.samplesEvaluated).toBe(0)

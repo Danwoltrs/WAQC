@@ -1,4 +1,4 @@
-/** Annual report generator — mirrors biweekly-generator (asset loading, renderToBuffer). */
+/** Annual report generator — mirrors performance-generator (asset loading, renderToBuffer). */
 import React from 'react'
 import fs from 'fs'
 import path from 'path'

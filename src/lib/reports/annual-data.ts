@@ -1,9 +1,9 @@
 /**
  * Annual Quality Performance Review — data layer.
  *
- * Reuses the Bi-Weekly engine (aggregateBucket + helpers) over a full
+ * Reuses the performance engine (aggregateBucket + helpers) over a full
  * calendar-year window for ONE QC client, across ALL labs and ALL origins.
- * Adds the pieces the Bi-Weekly lacks: a seller breakdown, by-origin and
+ * Adds the pieces the period report lacks: a seller breakdown, by-origin and
  * by-lab breakdowns, a 12-month trend series, and a whole-year Sankey.
  *
  * The Supabase fetch lives in getAnnualPerformanceReportData (below); the pure
@@ -14,10 +14,10 @@ import {
   aggregateBucket,
   groupBy,
   scorecardFromExporters,
-  type BiweeklyRow,
+  type PerformanceRow,
   type GroupPerf,
   type BucketAggregate,
-} from '@/lib/reports/biweekly-data'
+} from '@/lib/reports/performance-data'
 import {
   buildSankey,
   mapCertRowToReportRow,
@@ -30,8 +30,8 @@ const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 const round = (n: number) => Math.round(n)
 const pct = (part: number, whole: number) => (whole > 0 ? round((part / whole) * 100) : 0)
 
-/** A BiweeklyRow extended with the fields the Annual groups on. */
-export type AnnualRow = BiweeklyRow & { origin: string | null; laboratory_name: string | null }
+/** A PerformanceRow extended with the fields the Annual groups on. */
+export type AnnualRow = PerformanceRow & { origin: string | null; laboratory_name: string | null }
 
 export interface MonthlyPoint {
   month: number          // 1-12
@@ -88,11 +88,11 @@ export function computeHero(pss: BucketAggregate, ss: BucketAggregate): AnnualHe
   }
 }
 
-export function buildMonthlySeries(pssRows: BiweeklyRow[], ssRows: BiweeklyRow[]): MonthlySeries {
+export function buildMonthlySeries(pssRows: PerformanceRow[], ssRows: PerformanceRow[]): MonthlySeries {
   const series: MonthlySeries = MONTH_LABELS.map((label, i) => ({
     month: i + 1, label, evaluated: 0, approved: 0, rejected: 0, approvalRate: 0, bagsApproved: 0,
   }))
-  const add = (rows: BiweeklyRow[], countBags: boolean) => {
+  const add = (rows: PerformanceRow[], countBags: boolean) => {
     for (const r of rows) {
       const created = (r as any).created_at as string | undefined
       if (!created) continue
@@ -113,8 +113,8 @@ export function buildMonthlySeries(pssRows: BiweeklyRow[], ssRows: BiweeklyRow[]
 }
 
 export function buildAnnualAggregates(
-  pssRows: BiweeklyRow[],
-  ssRows: BiweeklyRow[],
+  pssRows: PerformanceRow[],
+  ssRows: PerformanceRow[],
   opts: { sankeyType: ClientSankeyType; clientDisplay: string },
 ): AnnualAggregates {
   const pss = aggregateBucket(pssRows, 'count')
