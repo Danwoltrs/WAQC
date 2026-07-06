@@ -28,6 +28,7 @@ export interface WeeklySSCertRow {
   container_nr: string | null
   ico_marks: string | null         // ICO mark numbers from sample
   bags: number | null
+  mt: number | null               // metric tons, 1 decimal (same source as bags)
   is_rejected: boolean
 }
 
@@ -62,6 +63,7 @@ export interface RawCertSampleRow {
     container_nr: string | null
     ico_number: string | null
     bag_count: number | null
+    bag_weight_kg: number | null
     equivalent_60kg_bags: number | null
     bags_quantity_mt: number | null
     buyer_contract_nr: string | null
@@ -80,6 +82,29 @@ function companyDisplayName(c: { name: string | null; fantasy_name: string | nul
 }
 
 /**
+ * Best-available total weight → 60kg-equivalent bags + metric tons.
+ *
+ * Fixes the big-bag bug: a 20 x 1000kg contract must report ~333 bags,
+ * not 20. Priority: stored 60kg equivalent → physical count x actual
+ * bag weight (handles 59kg and 1000kg bags) → stored MT → assume 60kg.
+ */
+export function computeBagsAndMt(s: {
+  bag_count: number | null
+  bag_weight_kg: number | null
+  equivalent_60kg_bags: number | null
+  bags_quantity_mt: number | null
+}): { bags: number | null; mt: number | null } {
+  const kg =
+    s.equivalent_60kg_bags != null ? s.equivalent_60kg_bags * 60
+    : s.bag_count != null && s.bag_weight_kg != null ? s.bag_count * s.bag_weight_kg
+    : s.bags_quantity_mt != null ? s.bags_quantity_mt * 1000
+    : s.bag_count != null ? s.bag_count * 60
+    : null
+  if (kg == null) return { bags: null, mt: null }
+  return { bags: Math.round(kg / 60), mt: Math.round(kg / 100) / 10 }
+}
+
+/**
  * Map one joined `certificates ⋈ samples` row to a `WeeklySSCertRow`.
  * Shared by the Weekly + Bi-Weekly fetchers so their field mapping can't drift.
  */
@@ -88,8 +113,12 @@ export function mapCertRowToReportRow(
   ctx: { sankeyType: ClientSankeyType; clientDisplay: string },
 ): WeeklySSCertRow {
   const s = c.sample!
-  const bagsRaw = s.bag_count ?? s.equivalent_60kg_bags ?? null
-  const bags = typeof bagsRaw === 'number' ? Math.round(bagsRaw) : null
+  const { bags, mt } = computeBagsAndMt({
+    bag_count: s.bag_count ?? null,
+    bag_weight_kg: s.bag_weight_kg ?? null,
+    equivalent_60kg_bags: s.equivalent_60kg_bags ?? null,
+    bags_quantity_mt: s.bags_quantity_mt ?? null,
+  })
   // For roaster clients with no importer FK, substitute the client name —
   // the roaster IS the de-facto importer in that case (Ahold style).
   const importerName = companyDisplayName(s.importer)
@@ -105,6 +134,7 @@ export function mapCertRowToReportRow(
     container_nr: s.container_nr ?? null,
     ico_marks: s.ico_number ?? null,
     bags,
+    mt,
     is_rejected: !!c.is_rejected,
   }
 }
@@ -213,6 +243,7 @@ export async function getWeeklySSCertReportData(
         container_nr,
         ico_number,
         bag_count,
+        bag_weight_kg,
         equivalent_60kg_bags,
         bags_quantity_mt,
         buyer_contract_nr,

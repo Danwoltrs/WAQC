@@ -12,6 +12,7 @@ const row = (over: Partial<BiweeklyRow> = {}): BiweeklyRow => ({
   container_nr: 'C1',
   ico_marks: '001',
   bags: 333,
+  mt: 20.0,
   is_rejected: false,
   region: 'Cerrado',
   ...over,
