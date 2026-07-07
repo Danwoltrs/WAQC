@@ -29,7 +29,8 @@ import {
 import { OtherSampleIntake } from './intake/other-sample-intake'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { mapPssToFormData } from '@/lib/pss-intake-mapping'
+import { mapPssToFormData, mapSubContractOverride } from '@/lib/pss-intake-mapping'
+import { resolvePssSelection } from '@/lib/pss-picker-option'
 
 // Timeout wrapper to prevent infinite hangs on Supabase queries
 async function withTimeout<T>(
@@ -485,23 +486,35 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
     })
   }
 
-  // SS → PSS: selecting a PSS prefills every shared field via the same prefill-tracking
-  // machinery as contracts, so edits clear per-field and reselecting resets stale values.
-  const handleSelectPss = (id: string) => {
-    updateFormData('linked_pss_sample_id', id)
-    const pss = approvedPSSSamples.find((s: any) => s.id === id)
-    if (pss) {
-      const { patch, prefilled } = mapPssToFormData(pss)
-      applyContractPrefill(patch, prefilled)
+  // SS → PSS: selecting a mother PSS or a specific sub-contract prefills every
+  // shared field via the same prefill-tracking machinery as contracts, so edits
+  // clear per-field and reselecting resets stale values. A sub-contract keeps
+  // linked_pss_sample_id on the mother and pins the exact leaf via
+  // linked_pss_sample_contract_id, layering its per-leaf overrides on top.
+  const handleSelectPss = (value: string) => {
+    const sel = resolvePssSelection(approvedPSSSamples, value)
+    if (!sel) return
+    updateFormData('linked_pss_sample_id', sel.mother.id)
+    updateFormData('linked_pss_sample_contract_id', sel.subContract ? sel.subContract.id : '')
+    const base = mapPssToFormData(sel.mother)
+    if (sel.subContract) {
+      const override = mapSubContractOverride(sel.subContract)
+      applyContractPrefill(
+        { ...base.patch, ...override.patch },
+        [...base.prefilled, ...override.prefilled]
+      )
+    } else {
+      applyContractPrefill(base.patch, base.prefilled)
     }
   }
 
-  // `linked_pss_sample_id` is cleared via a separate updateFormData call because it is
-  // not tracked in contract_prefilled_fields, so applyContractPrefill({}, []) alone
-  // would not reset it.
+  // linked_pss_sample_id / linked_pss_sample_contract_id are cleared via separate
+  // updateFormData calls because they are not tracked in contract_prefilled_fields,
+  // so applyContractPrefill({}, []) alone would not reset them.
   const handleClearPss = () => {
     applyContractPrefill({}, [])
     updateFormData('linked_pss_sample_id', '')
+    updateFormData('linked_pss_sample_contract_id', '')
   }
 
   // Step-1 sample-type change: leaving SS clears any linked PSS + its prefill.
@@ -792,6 +805,8 @@ export function SampleIntakeForm({ onSuccess, asDialog = false }: SampleIntakeFo
           formData.linked_pss_sample_id && formData.linked_pss_sample_id !== 'none'
             ? formData.linked_pss_sample_id
             : undefined,
+        linked_pss_sample_contract_id:
+          formData.linked_pss_sample_contract_id || undefined,
         quality_spec_id: formData.quality_spec_id || undefined,
         quality_name: formData.quality_name ? formData.quality_name.trim() : undefined,
         hide_exporter_on_label: formData.hide_exporter_on_label || false,
