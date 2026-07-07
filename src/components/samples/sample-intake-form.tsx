@@ -94,6 +94,7 @@ const initialFormData: FormData = {
   processing_method: '',
   sample_type: '',
   linked_pss_sample_id: '',
+  linked_pss_sample_contract_id: '',
   quality_spec_id: '',
   quality_name: '',
   hide_exporter_on_label: false,

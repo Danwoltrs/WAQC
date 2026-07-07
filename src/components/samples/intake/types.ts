@@ -76,6 +76,7 @@ export interface FormData {
   processing_method: string
   sample_type: 'pss' | 'ss' | 'type' | 'stocklot' | ''
   linked_pss_sample_id: string
+  linked_pss_sample_contract_id: string
   quality_spec_id: string
   quality_name: string
   hide_exporter_on_label: boolean
