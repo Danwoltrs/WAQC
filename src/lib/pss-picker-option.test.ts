@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildPssPickerOption, pssOfficialRef } from './pss-picker-option'
+import { buildPssPickerOption, buildPssPickerOptions, pssOfficialRef, subContractRef, resolvePssSelection } from './pss-picker-option'
 
 // Mirrors the flattened PSS shape returned by GET /api/samples. A real person
 // references an approved PSS by its certificate number, contract number, the
@@ -86,21 +86,6 @@ describe('buildPssPickerOption', () => {
     expect(buildPssPickerOption(basePss).keywords).toContain('SAN-00042/26')
   })
 
-  it('makes Wolthers and other contract numbers from sub-contracts searchable too', () => {
-    const withSubs = {
-      ...basePss,
-      sample_contracts: [
-        { tracking_number: 'BR-099001/26', wolthers_contract_nr: '40994/26', buyer_contract_nr: 'SUB-B-1' },
-        { wolthers_contract_nr: '40995/26' },
-      ],
-    }
-    const { keywords } = buildPssPickerOption(withSubs)
-    expect(keywords).toContain('40994/26')
-    expect(keywords).toContain('40995/26')
-    expect(keywords).toContain('SUB-B-1')
-    expect(keywords).toContain('BR-099001/26')
-  })
-
   it('makes supplier, exporter, importer names and origin searchable', () => {
     const { keywords } = buildPssPickerOption(basePss)
     expect(keywords).toContain('Comexim')
@@ -135,5 +120,91 @@ describe('buildPssPickerOption', () => {
     expect(keywords).not.toContain('')
     expect(keywords).toContain('SAN-00099/26')
     expect(keywords).toContain('Colombia')
+  })
+})
+
+const motherWithSubs = {
+  ...basePss,
+  id: 'pss-1',
+  origin: 'Brazil',
+  sub_contracts: [
+    {
+      id: 'sc-9',
+      certificate_number: 'BR-036995/26',
+      tracking_number: 'BR-036995/26',
+      importer_name: 'Leaf Importer',
+      roaster_name: 'Leaf Roaster',
+      qc_client_name: 'Dunkin',
+      buyer_contract_nr: 'LB-1',
+      wolthers_contract_nr: '40995/26',
+      ico_number: '999888777',
+      container_nr: 'LEAFU7654321',
+    },
+    {
+      id: 'sc-10',
+      certificate_number: null,
+      tracking_number: 'BR-036996/26',
+      importer_name: 'Second Leaf Importer',
+    },
+  ],
+}
+
+describe('buildPssPickerOptions', () => {
+  it('emits the mother row plus one row per sub-contract', () => {
+    const opts = buildPssPickerOptions(motherWithSubs)
+    expect(opts).toHaveLength(3)
+    expect(opts[0].value).toBe('pss-1')
+    expect(opts[1].value).toBe('sc-9')
+    expect(opts[2].value).toBe('sc-10')
+  })
+
+  it('leads a leaf row with its own cert number, then buyer and mother origin', () => {
+    const opts = buildPssPickerOptions(motherWithSubs)
+    expect(opts[1].label).toBe('BR-036995/26 · Leaf Importer · Brazil')
+  })
+
+  it('falls back to the leaf tracking number when it has no minted cert', () => {
+    const opts = buildPssPickerOptions(motherWithSubs)
+    expect(opts[2].label).toBe('BR-036996/26 · Second Leaf Importer · Brazil')
+  })
+
+  it('makes a leaf findable by its own cert/tracking/contract numbers', () => {
+    const leaf = buildPssPickerOptions(motherWithSubs)[1]
+    expect(leaf.keywords).toContain('BR-036995/26')
+    expect(leaf.keywords).toContain('40995/26')
+    expect(leaf.keywords).toContain('LB-1')
+    expect(leaf.keywords).toContain('999888777')
+    expect(leaf.keywords).toContain('LEAFU7654321')
+  })
+
+  it('returns just the mother row when there are no sub-contracts', () => {
+    expect(buildPssPickerOptions(basePss)).toHaveLength(1)
+  })
+})
+
+describe('resolvePssSelection', () => {
+  const list = [motherWithSubs]
+
+  it('resolves a mother id to the mother with no sub-contract', () => {
+    const sel = resolvePssSelection(list, 'pss-1')
+    expect(sel?.mother.id).toBe('pss-1')
+    expect(sel?.subContract).toBeNull()
+  })
+
+  it('resolves a sub-contract id to its leaf and mother', () => {
+    const sel = resolvePssSelection(list, 'sc-9')
+    expect(sel?.mother.id).toBe('pss-1')
+    expect(sel?.subContract.id).toBe('sc-9')
+  })
+
+  it('returns null for an unknown value', () => {
+    expect(resolvePssSelection(list, 'nope')).toBeNull()
+  })
+})
+
+describe('subContractRef', () => {
+  it('prefers the minted cert number, falling back to tracking', () => {
+    expect(subContractRef({ certificate_number: 'BR-036995/26', tracking_number: 'x' })).toBe('BR-036995/26')
+    expect(subContractRef({ certificate_number: null, tracking_number: 'BR-036996/26' })).toBe('BR-036996/26')
   })
 })

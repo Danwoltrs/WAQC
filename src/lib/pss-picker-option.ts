@@ -62,20 +62,70 @@ export function buildPssPickerOption(pss: any): SearchableSelectOption {
     str(pss.supplier),
     str(pss.origin),
     str(pss.quality_name),
-    // Sub-contract references — a PSS split across buyers carries its Wolthers /
-    // buyer / tracking numbers on sample_contracts, so fold those in too.
-    ...(Array.isArray(pss.sample_contracts) ? pss.sample_contracts : []).flatMap((c: any) => [
-      str(c?.tracking_number),
-      str(c?.wolthers_contract_nr),
-      str(c?.buyer_contract_nr),
-      str(c?.roaster_contract_nr),
-      str(c?.qc_client_contract_nr),
-      str(c?.end_client_contract_nr),
-      str(c?.supplier_contract_nr),
-      str(c?.ico_number),
-      str(c?.container_nr),
-    ]),
   ].filter((v): v is string => Boolean(v))
 
   return { value: pss.id, label, keywords: [...new Set(keywords)] }
+}
+
+// A sub-contract's official reference: its minted certificate number, or its
+// tracking number when a cert has not been minted yet.
+export function subContractRef(sc: any): string | null {
+  return str(sc?.certificate_number) || str(sc?.tracking_number)
+}
+
+// One picker row for a single sub-contract (container/buyer split). Leads with
+// the leaf's own official ref, then its buyer/importer and the mother's origin.
+function buildSubContractOption(sc: any, mother: any): SearchableSelectOption {
+  const ref = subContractRef(sc)
+  const party = str(sc?.importer_name) || str(sc?.roaster_name) || str(sc?.qc_client_name)
+  const label = [ref, party, str(mother?.origin)].filter(Boolean).join(' · ')
+
+  const keywords = [
+    str(sc?.certificate_number),
+    str(sc?.tracking_number),
+    str(sc?.wolthers_contract_nr),
+    str(sc?.buyer_contract_nr),
+    str(sc?.roaster_contract_nr),
+    str(sc?.qc_client_contract_nr),
+    str(sc?.end_client_contract_nr),
+    str(sc?.supplier_contract_nr),
+    str(sc?.ico_number),
+    str(sc?.container_nr),
+    str(sc?.importer_name),
+    str(sc?.roaster_name),
+    str(sc?.qc_client_name),
+    // Mother context so a leaf is also findable by shared identifiers.
+    str(mother?.seller_name),
+    str(mother?.origin),
+    str(mother?.quality_name),
+  ].filter((v): v is string => Boolean(v))
+
+  return { value: sc.id, label, keywords: [...new Set(keywords)] }
+}
+
+// A PSS expands into its mother row plus one row per sub-contract, so an SS can
+// link either the whole PSS or a specific container/buyer split.
+export function buildPssPickerOptions(pss: any): SearchableSelectOption[] {
+  const subs = Array.isArray(pss?.sub_contracts) ? pss.sub_contracts : []
+  return [
+    buildPssPickerOption(pss),
+    ...subs.filter((sc: any) => sc?.id).map((sc: any) => buildSubContractOption(sc, pss)),
+  ]
+}
+
+// Maps a chosen picker value back to its target: a mother sample (subContract
+// null) or a specific sub-contract plus the mother it belongs to.
+export function resolvePssSelection(
+  list: any[],
+  value: string
+): { mother: any; subContract: any | null } | null {
+  if (!value) return null
+  const mother = list.find((s: any) => s.id === value)
+  if (mother) return { mother, subContract: null }
+  for (const m of list) {
+    const subs = Array.isArray(m?.sub_contracts) ? m.sub_contracts : []
+    const sc = subs.find((c: any) => c?.id === value)
+    if (sc) return { mother: m, subContract: sc }
+  }
+  return null
 }
