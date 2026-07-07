@@ -133,6 +133,23 @@ export async function GET(request: NextRequest) {
       for (const r of (data || []) as any[]) linkedPssMap[r.id] = r.tracking_number
     }
 
+    // Resolve minted cert numbers for SS samples linked to a specific sub-contract,
+    // so the linked-PSS chip shows the exact leaf the user picked (e.g. BR-036995/26),
+    // not the mother's number. The number lives on the sub-contract's certificate row.
+    const linkedLeafIds = [...new Set((samples || [])
+      .map((s: any) => s.linked_pss_sample_contract_id)
+      .filter(Boolean))] as string[]
+    const leafCertMap: Record<string, string> = {}
+    if (linkedLeafIds.length > 0) {
+      const { data } = await (supabase as any)
+        .from('certificates')
+        .select('sample_contract_id, certificate_number')
+        .in('sample_contract_id', linkedLeafIds)
+      for (const r of (data || []) as any[]) {
+        if (r.sample_contract_id) leafCertMap[r.sample_contract_id] = r.certificate_number
+      }
+    }
+
     // Transform samples to include flattened entity names
     const transformedSamples = (samples || []).map((sample: any) => {
       // Handle certificate array - Supabase returns array for one-to-many relations.
@@ -189,9 +206,17 @@ export async function GET(request: NextRequest) {
         // End client (final buyer) - when NULL, QC client IS the end client
         end_client_name: sample.end_client?.fantasy_name || sample.end_client?.company || null,
         end_client_country: sample.end_client?.country || null,
-        // Linked PSS (for SS samples) — resolved via linkedPssMap, not a self-embed
-        linked_pss: sample.linked_pss_sample_id && linkedPssMap[sample.linked_pss_sample_id]
-          ? { id: sample.linked_pss_sample_id, tracking_number: linkedPssMap[sample.linked_pss_sample_id] }
+        // Linked PSS (for SS samples) — the leaf's minted cert number when a
+        // specific sub-contract was linked, otherwise the mother's tracking number.
+        linked_pss: sample.linked_pss_sample_id
+          && ((sample.linked_pss_sample_contract_id && leafCertMap[sample.linked_pss_sample_contract_id])
+              || linkedPssMap[sample.linked_pss_sample_id])
+          ? {
+              id: sample.linked_pss_sample_id,
+              tracking_number:
+                (sample.linked_pss_sample_contract_id && leafCertMap[sample.linked_pss_sample_contract_id])
+                || linkedPssMap[sample.linked_pss_sample_id],
+            }
           : null,
         // Certificate info (flattened)
         certificate_id: certificate?.id || null,
@@ -436,6 +461,7 @@ export async function POST(request: NextRequest) {
           : null,
         sample_type: body.sample_type || null,
         linked_pss_sample_id: body.linked_pss_sample_id || null,
+        linked_pss_sample_contract_id: body.linked_pss_sample_contract_id || null,
         shipment_month: body.shipment_month || null,
         bags_quantity_mt: bagsQuantityMt,
         bag_count: bagCount,
