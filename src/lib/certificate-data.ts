@@ -1292,6 +1292,28 @@ function deduplicateDefects(defects: CuppingDefect[]): CuppingDefect[] {
 }
 
 /**
+ * Resolve the cup-profile flavor descriptor for a certificate.
+ *
+ * The override is a master-cupper edit stored in `green_bean_data.cup_profile`:
+ *  - a non-empty string wins over the aggregate;
+ *  - an *explicit* empty string means the descriptor was intentionally cleared,
+ *    so it suppresses the aggregate rather than falling back to it (this is what
+ *    lets the cert editor leave the field blank and have it stay blank);
+ *  - `null`/`undefined` means "no override" — fall back to the most common
+ *    descriptor across cuppers, or `null` when none exist.
+ */
+export function resolveFlavorDescriptor(
+  override: string | null | undefined,
+  aggregatedDescriptors: string[],
+): string | null {
+  if (typeof override === 'string') return override.trim() || null
+  if (aggregatedDescriptors.length === 0) return null
+  const counts = new Map<string, number>()
+  for (const d of aggregatedDescriptors) counts.set(d, (counts.get(d) || 0) + 1)
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+}
+
+/**
  * Process cupping scores from multiple cuppers into final certificate data
  * When a master cupper exists, their scores are used as-is (no averaging)
  * Defect cup counts use MAX consolidation (not sum/average)
@@ -1636,16 +1658,7 @@ function processCuppingScores(
 
   // Flavor descriptor (cup profile): a master-cupper override wins; otherwise
   // use the most common descriptor across cuppers.
-  let flavorDescriptor: string | null = null
-  if (typeof cupProfileOverride === 'string' && cupProfileOverride.trim()) {
-    flavorDescriptor = cupProfileOverride.trim()
-  } else if (flavorDescriptors.length > 0) {
-    const counts = new Map<string, number>()
-    for (const d of flavorDescriptors) {
-      counts.set(d, (counts.get(d) || 0) + 1)
-    }
-    flavorDescriptor = [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
-  }
+  const flavorDescriptor = resolveFlavorDescriptor(cupProfileOverride, flavorDescriptors)
 
   return {
     attributes,

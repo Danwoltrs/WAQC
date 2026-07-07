@@ -281,7 +281,10 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
           (f: any) => ({ name: f.name, intensity: f.intensity ?? null }),
         ),
         cupping,
-        cupProfile: (typeof green?.cup_profile === 'string' && green.cup_profile.trim()) ? green.cup_profile : aggFlavor,
+        // A stored override wins verbatim — including an explicit empty string,
+        // which means the descriptor was intentionally cleared and must NOT fall
+        // back to the aggregated flavour. Only a missing override uses aggFlavor.
+        cupProfile: (typeof green?.cup_profile === 'string') ? green.cup_profile : aggFlavor,
         cleanCup,
         uniformCup,
         cuppingComments,
@@ -443,7 +446,9 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
       if (changed(draft.moisture, initial.moisture)) green.moisture_percentage = draft.moisture
       if (changed(draft.density, initial.density)) green.density = draft.density
       if (changed(draft.greenAspect, initial.greenAspect)) green.green_aspect = draft.greenAspect
-      if (changed(draft.cupProfile, initial.cupProfile)) green.cup_profile = draft.cupProfile ?? null
+      // Persist an explicit empty string (not null) when cleared so the load path
+      // reads it as an intentional blank instead of re-deriving the aggregate.
+      if (changed(draft.cupProfile, initial.cupProfile)) green.cup_profile = draft.cupProfile ?? ''
       if (changed(draft.quakers, initial.quakers)) {
         green.quakers = draft.quakers
         roast.quakers = draft.quakers
