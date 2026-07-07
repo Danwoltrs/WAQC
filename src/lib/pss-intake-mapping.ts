@@ -85,3 +85,37 @@ export function mapPssToFormData(
 
   return { patch, prefilled }
 }
+
+// A sub-contract (container/buyer split of a PSS) overrides only the per-leaf
+// fields; everything else (seller, quality, origin, bag type, crop year) inherits
+// from the mother via mapPssToFormData. Input is a sub_contracts[] element from
+// GET /api/samples (entity names already resolved to display names).
+export function mapSubContractOverride(
+  sc: any
+): { patch: Partial<FormData>; prefilled: (keyof FormData)[] } {
+  const patch: Partial<FormData> = {}
+  const prefilled: (keyof FormData)[] = []
+
+  const setStr = <K extends keyof FormData>(key: K, value: unknown) => {
+    if (value !== null && value !== undefined && value !== '') {
+      patch[key] = String(value) as FormData[K]
+      prefilled.push(key)
+    }
+  }
+
+  setStr('importer', sc.importer_name)
+  setStr('roaster', sc.roaster_name)
+  setStr('end_client', sc.end_client_name)
+  setStr('qc_client', sc.qc_client_name)
+  setStr('importer_contract_nr', sc.buyer_contract_nr)
+  setStr('roaster_contract_nr', sc.roaster_contract_nr)
+  setStr('end_client_contract_nr', sc.end_client_contract_nr)
+  setStr('qc_client_contract_nr', sc.qc_client_contract_nr)
+  setStr('supplier_contract_nr', sc.supplier_contract_nr)
+  setStr('wolthers_contract_nr', sc.wolthers_contract_nr)
+  setStr('ico_number', sc.ico_number)
+  setStr('container_nr', sc.container_nr)
+  setStr('bags_quantity_mt', sc.bags_quantity_mt)
+
+  return { patch, prefilled }
+}

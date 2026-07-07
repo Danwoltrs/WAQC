@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { mapPssToFormData } from './pss-intake-mapping'
+import { mapPssToFormData, mapSubContractOverride } from './pss-intake-mapping'
 
 const basePss = {
   id: 'pss-1',
@@ -126,5 +126,49 @@ describe('mapPssToFormData', () => {
     const { patch } = mapPssToFormData(pssNoLegal)
     expect(patch.seller).toBe('Louis Dreyfus Company')
     expect(patch.shipper).toBe('COOXUPE')
+  })
+})
+
+describe('mapSubContractOverride', () => {
+  const sub = {
+    id: 'sc-1',
+    tracking_number: 'BR-036995/26',
+    certificate_number: 'BR-036995/26',
+    importer_name: 'Leaf Importer',
+    roaster_name: 'Leaf Roaster',
+    end_client_name: 'Leaf End Client',
+    qc_client_name: 'Leaf QC',
+    buyer_contract_nr: 'LB-1',
+    wolthers_contract_nr: '40995/26',
+    roaster_contract_nr: 'LR-1',
+    end_client_contract_nr: 'LEC-1',
+    qc_client_contract_nr: 'LQC-1',
+    supplier_contract_nr: 'LSUP-1',
+    ico_number: '999888777',
+    container_nr: 'LEAFU7654321',
+    bags_quantity_mt: 6.0,
+  }
+
+  it('overrides the per-leaf counterparty and quantity fields', () => {
+    const { patch, prefilled } = mapSubContractOverride(sub)
+    expect(patch.importer).toBe('Leaf Importer')
+    expect(patch.roaster).toBe('Leaf Roaster')
+    expect(patch.end_client).toBe('Leaf End Client')
+    expect(patch.importer_contract_nr).toBe('LB-1') // buyer_contract_nr -> importer_contract_nr
+    expect(patch.roaster_contract_nr).toBe('LR-1')
+    expect(patch.wolthers_contract_nr).toBe('40995/26')
+    expect(patch.ico_number).toBe('999888777')
+    expect(patch.container_nr).toBe('LEAFU7654321')
+    expect(patch.bags_quantity_mt).toBe('6')
+    expect(prefilled).toContain('importer')
+    expect(prefilled).toContain('bags_quantity_mt')
+  })
+
+  it('does not list empty/missing leaf fields as prefilled', () => {
+    const { patch, prefilled } = mapSubContractOverride({ id: 'sc-2', importer_name: 'Only Importer' })
+    expect(patch.importer).toBe('Only Importer')
+    expect(prefilled).toEqual(['importer'])
+    expect(patch.roaster).toBeUndefined()
+    expect(patch.container_nr).toBeUndefined()
   })
 })
