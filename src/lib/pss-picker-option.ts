@@ -94,10 +94,16 @@ function buildSubContractOption(sc: any, mother: any): SearchableSelectOption {
     str(sc?.importer_name),
     str(sc?.roaster_name),
     str(sc?.qc_client_name),
-    // Mother context so a leaf is also findable by shared identifiers.
+    // Mother context so a leaf is also findable by shared identifiers. Sub-contracts
+    // split the buyer side; the seller/exporter side (and its contract numbers) is
+    // shared and carried only on the mother, so fold those in too.
     str(mother?.seller_name),
     str(mother?.origin),
     str(mother?.quality_name),
+    str(mother?.seller_contract_nr),
+    str(mother?.shipper_contract_nr),
+    str(mother?.exporter_contract_nr),
+    str(mother?.exporter_sample_number),
   ].filter((v): v is string => Boolean(v))
 
   return { value: sc.id, label, keywords: [...new Set(keywords)] }

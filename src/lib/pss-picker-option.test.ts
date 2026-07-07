@@ -177,6 +177,16 @@ describe('buildPssPickerOptions', () => {
     expect(leaf.keywords).toContain('LEAFU7654321')
   })
 
+  it('makes a leaf findable by the mother-shared seller/shipper/exporter contract numbers', () => {
+    // Sub-contracts split the buyer side; the seller/exporter side is shared and
+    // lives only on the mother. Fold those in so any contract number reaches the leaf.
+    const leaf = buildPssPickerOptions(motherWithSubs)[1]
+    expect(leaf.keywords).toContain('S-100')   // mother seller_contract_nr
+    expect(leaf.keywords).toContain('SH-100')  // mother shipper_contract_nr
+    expect(leaf.keywords).toContain('EX-100')  // mother exporter_contract_nr
+    expect(leaf.keywords).toContain('COEXP327') // mother exporter_sample_number
+  })
+
   it('returns just the mother row when there are no sub-contracts', () => {
     expect(buildPssPickerOptions(basePss)).toHaveLength(1)
   })
