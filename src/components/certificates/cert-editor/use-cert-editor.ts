@@ -111,6 +111,40 @@ function emptyDraft(): CertDraft {
   }
 }
 
+/**
+ * Derive per-attribute numeric bounds and the overall sensory (radar) scale from
+ * a quality template. Bounds come from each attribute's own `scale`, falling back
+ * to the template's default cupping range. The radar domain is the shared scale
+ * when uniform, else the widest [min(mins), max(maxes)] so every point fits.
+ */
+function applyTemplateScales(
+  tmpl: any,
+  setScales: (s: Record<string, { min: number; max: number; increment?: number }>) => void,
+  setSensory: (s: { min: number; max: number } | null) => void,
+): void {
+  const defMin = typeof tmpl?.cupping_scale_min === 'number' ? tmpl.cupping_scale_min : 0
+  const defMax = typeof tmpl?.cupping_scale_max === 'number' ? tmpl.cupping_scale_max : 10
+  const attrs = tmpl?.parameters?.cupping_attributes
+  const scales: Record<string, { min: number; max: number; increment?: number }> = {}
+  if (Array.isArray(attrs)) {
+    for (const a of attrs) {
+      if (!a || typeof a.attribute !== 'string' || a.scale?.type === 'boolean') continue
+      scales[a.attribute] = {
+        min: typeof a.scale?.min === 'number' ? a.scale.min : defMin,
+        max: typeof a.scale?.max === 'number' ? a.scale.max : defMax,
+        increment: typeof a.scale?.increment === 'number' ? a.scale.increment : undefined,
+      }
+    }
+  }
+  setScales(scales)
+  const ranges = Object.values(scales)
+  if (ranges.length > 0) {
+    setSensory({ min: Math.min(...ranges.map((r) => r.min)), max: Math.max(...ranges.map((r) => r.max)) })
+  } else {
+    setSensory({ min: defMin, max: defMax })
+  }
+}
+
 /** Normalize screen keys ("Screen 18" / "screen_18" -> "18", keep "Pan"). */
 function normalizeScreens(raw: Record<string, any> | undefined | null): Record<string, number> {
   const out: Record<string, number> = {}
@@ -149,6 +183,10 @@ export interface CertEditorState {
   isCVA: boolean
   cvaMinScore: number | null
   cvaScore: number | null
+  /** Per-attribute numeric bounds from the quality spec, for the score inputs. */
+  cuppingScales: Record<string, { min: number; max: number; increment?: number }>
+  /** Radial domain for the sensory spider — the spec's full scale spectrum. */
+  sensoryScale: { min: number; max: number } | null
   qualityOptions: QualityOption[]
   canEditCommercial: boolean
   canEditQuality: boolean
@@ -172,6 +210,8 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
   const [isCVA, setIsCVA] = useState(false)
   const [cvaMinScore, setCvaMinScore] = useState<number | null>(null)
   const [cvaScore, setCvaScore] = useState<number | null>(null)
+  const [cuppingScales, setCuppingScales] = useState<Record<string, { min: number; max: number; increment?: number }>>({})
+  const [sensoryScale, setSensoryScale] = useState<{ min: number; max: number } | null>(null)
   const [qualityOptions, setQualityOptions] = useState<QualityOption[]>([])
   const [permission, setPermission] = useState<EditPermission | null>(null)
   const [saving, setSaving] = useState(false)
@@ -301,6 +341,7 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
             const tmpl = d?.client_quality?.template
             if (tmpl?.methodology === 'cva') setIsCVA(true)
             if (typeof tmpl?.cva_min_score === 'number') setCvaMinScore(tmpl.cva_min_score)
+            applyTemplateScales(tmpl, setCuppingScales, setSensoryScale)
           })
           .catch(() => {})
       }
@@ -333,6 +374,8 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
       setIsCVA(false)
       setCvaMinScore(null)
       setCvaScore(null)
+      setCuppingScales({})
+      setSensoryScale(null)
       setQualityOptions([])
       setPermission(null)
       load(sampleId)
@@ -423,9 +466,8 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
 
     // --- Quality -> POST /api/samples/[id]/quality-assessment ---
     // Server shallow-merges, so we send ONLY the fields that actually changed.
-    // Cupping attribute scores are display-only here (they're aggregated from the
-    // cupping sessions and authoritative on the cert via that path), so we never
-    // write a cupping_scores override from this surface.
+    // Cupping attribute scores default to the session aggregate; when a master
+    // cupper edits them here we write a green_bean_data.cupping_scores override.
     async function saveQuality() {
       if (!qualityDirty || !canEditQuality || !sample) return
       const changed = (a: any, b: any) => JSON.stringify(a) !== JSON.stringify(b)
@@ -446,6 +488,9 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
       if (changed(draft.moisture, initial.moisture)) green.moisture_percentage = draft.moisture
       if (changed(draft.density, initial.density)) green.density = draft.density
       if (changed(draft.greenAspect, initial.greenAspect)) green.green_aspect = draft.greenAspect
+      // Edited attribute scores become a master-cupper override the loader prefers
+      // and the certificate render overlays onto the session-derived numbers.
+      if (changed(draft.cupping, initial.cupping)) green.cupping_scores = draft.cupping
       // Persist an explicit empty string (not null) when cleared so the load path
       // reads it as an intentional blank instead of re-deriving the aggregate.
       if (changed(draft.cupProfile, initial.cupProfile)) green.cup_profile = draft.cupProfile ?? ''
@@ -478,7 +523,7 @@ export function useCertEditor(sampleId: string | null, open: boolean, contractId
   const reload = useCallback(() => setReloadKey((k) => k + 1), [])
 
   return {
-    loading, error, sample, draft, isCVA, cvaMinScore, cvaScore, qualityOptions,
+    loading, error, sample, draft, isCVA, cvaMinScore, cvaScore, cuppingScales, sensoryScale, qualityOptions,
     canEditCommercial, canEditQuality, qualityLockMessage, dirty, saving,
     setDraft, setSampleField, save, reload,
   }

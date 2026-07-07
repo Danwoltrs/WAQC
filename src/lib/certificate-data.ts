@@ -732,6 +732,12 @@ export async function getCertificateData(
       resolvedDefectsForCert,
       (qualityAssessment?.green_bean_data as any)?.cup_profile ?? null
     )
+    // A master-cupper score override (edited in the cert editor) wins over the
+    // session-derived numbers so the typed scores actually print.
+    const scoreOverride = (qualityAssessment?.green_bean_data as any)?.cupping_scores
+    if (scoreOverride && typeof scoreOverride === 'object' && Object.keys(scoreOverride).length > 0) {
+      cuppingData = applyCuppingScoreOverride(cuppingData, scoreOverride)
+    }
   }
 
   // Generate current date for issued_date (used when no certificate record exists yet or as fallback)
@@ -1311,6 +1317,33 @@ export function resolveFlavorDescriptor(
   const counts = new Map<string, number>()
   for (const d of aggregatedDescriptors) counts.set(d, (counts.get(d) || 0) + 1)
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0]
+}
+
+/**
+ * Overlay a master-cupper score override (green_bean_data.cupping_scores) onto
+ * the cupping data computed from the sessions. Each override value replaces the
+ * matching attribute's score verbatim (the number the editor typed is what
+ * prints — no re-averaging); an `Overall` key also sets the headline score.
+ * Attributes without an override entry are left untouched. Returns a new object.
+ */
+export function applyCuppingScoreOverride(
+  data: CuppingData,
+  override: Record<string, unknown> | null | undefined,
+): CuppingData {
+  if (!override || typeof override !== 'object') return data
+  const num = (v: unknown): number | null =>
+    typeof v === 'number' && Number.isFinite(v) ? v : null
+  const attributes = data.attributes.map((a) => {
+    const o = num(override[a.name])
+    return o == null ? a : { ...a, score: o }
+  })
+  const overallOverride =
+    num(override['Overall']) ?? num(override['Overall Score']) ?? num(override['overall'])
+  return {
+    ...data,
+    attributes,
+    overallScore: overallOverride ?? data.overallScore,
+  }
 }
 
 /**

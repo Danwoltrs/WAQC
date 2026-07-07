@@ -28,7 +28,7 @@ export async function GET(
       .select(`
         *,
         client:companies!client_qualities_client_id_fkey(id, name, company:name),
-        template:quality_templates(id, name, version, parameters, methodology, cva_min_score)
+        template:quality_templates(id, name, version, parameters, methodology, cva_min_score, cupping_scale_min, cupping_scale_max)
       `)
       .eq('id', id)
       .single()

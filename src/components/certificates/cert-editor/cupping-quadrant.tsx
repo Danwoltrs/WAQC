@@ -32,8 +32,9 @@ function scoreEntries(cupping: Record<string, number>): Array<[string, number]> 
   )
 }
 
-function AttributeBar({ name, score, scale }: { name: string; score: number; scale: number }) {
-  const pct = Math.max(0, Math.min(100, (score / scale) * 100))
+function AttributeBar({ name, score, min, max }: { name: string; score: number; min: number; max: number }) {
+  const span = max - min || 1
+  const pct = Math.max(0, Math.min(100, ((score - min) / span) * 100))
   return (
     <div>
       <div className="mb-1 flex items-center justify-between text-xs">
@@ -48,9 +49,9 @@ function AttributeBar({ name, score, scale }: { name: string; score: number; sca
 }
 
 /** Spider (radar) view of the sensory attributes. Axis labels carry the score
- *  so no tooltip is needed; the radius is fixed to the grading scale so the
- *  same scores read identically across samples. */
-function SensorySpider({ entries, scale }: { entries: Array<[string, number]>; scale: number }) {
+ *  so no tooltip is needed; the radius spans the spec's full scale (min–max) so
+ *  the same scores read identically across samples. */
+function SensorySpider({ entries, min, max }: { entries: Array<[string, number]>; min: number; max: number }) {
   const data = entries.map(([name, score]) => ({
     label: `${name} · ${score}`,
     score,
@@ -61,7 +62,7 @@ function SensorySpider({ entries, scale }: { entries: Array<[string, number]>; s
         <RadarChart data={data} outerRadius="70%">
           <PolarGrid stroke="currentColor" strokeOpacity={0.18} />
           <PolarAngleAxis dataKey="label" tick={{ fill: 'currentColor', fontSize: 11 }} />
-          <PolarRadiusAxis domain={[0, scale]} tick={false} axisLine={false} />
+          <PolarRadiusAxis domain={[min, max]} tick={false} axisLine={false} />
           <Radar
             dataKey="score"
             stroke={CUPPING_COLOR}
@@ -97,6 +98,7 @@ export function CuppingQuadrant({
   isCVA,
   cvaScore,
   cvaMinScore,
+  sensoryScale,
   locked,
   lockedReason,
   readOnly,
@@ -106,31 +108,41 @@ export function CuppingQuadrant({
   isCVA: boolean
   cvaScore?: number | null
   cvaMinScore?: number | null
+  /** Spider domain from the quality spec; falls back to the conventional scale. */
+  sensoryScale?: { min: number; max: number } | null
   locked?: boolean
   lockedReason?: string | null
   readOnly?: boolean
   onEdit?: () => void
 }) {
   const entries = scoreEntries(draft.cupping)
-  // Fixed conventional scale so identical scores read the same across samples
-  // (CVA section impressions are on a 0–9 scale; SCA attributes 0–10).
-  const scale = isCVA ? 9 : 10
+  // Prefer the spec's full scale; fall back to the conventional range
+  // (CVA section impressions 0–9; SCA attributes 0–10).
+  const domainMin = sensoryScale?.min ?? 0
+  const domainMax = sensoryScale?.max ?? (isCVA ? 9 : 10)
   const overall = isCVA ? (cvaScore ?? null) : null
   const pass = overall != null && cvaMinScore != null ? overall >= cvaMinScore : null
 
   return (
     <QuadrantCard
       title="Cupping / sensory"
+      headerExtra={
+        <>
+          <CupFlag label="Clean cup" value={draft.cleanCup} />
+          <CupFlag label="Uniform cup" value={draft.uniformCup} />
+          {draft.cupProfile ? (
+            <span className="inline-flex items-center rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+              {draft.cupProfile}
+            </span>
+          ) : null}
+        </>
+      }
       meta={<span>{isCVA ? 'CVA score' : 'Sensory profile'}</span>}
       locked={locked}
       lockedReason={lockedReason}
       readOnly={readOnly}
       onEdit={onEdit}
     >
-      <div className="mb-3 flex flex-wrap items-center gap-2">
-        <CupFlag label="Clean cup" value={draft.cleanCup} />
-        <CupFlag label="Uniform cup" value={draft.uniformCup} />
-      </div>
       <div className="flex gap-5">
         {overall != null ? (
           <div className="shrink-0">
@@ -153,11 +165,11 @@ export function CuppingQuadrant({
             // A radar needs 3+ axes to read as a shape — fall back to bars.
             <div className="space-y-2.5">
               {entries.map(([name, score]) => (
-                <AttributeBar key={name} name={name} score={score} scale={scale} />
+                <AttributeBar key={name} name={name} score={score} min={domainMin} max={domainMax} />
               ))}
             </div>
           ) : (
-            <SensorySpider entries={entries} scale={scale} />
+            <SensorySpider entries={entries} min={domainMin} max={domainMax} />
           )}
         </div>
       </div>
@@ -168,16 +180,23 @@ export function CuppingQuadrant({
 export function CuppingEditPanel({
   open,
   draft,
+  scales,
   saving,
   onCancel,
   onApply,
 }: {
   open: boolean
   draft: CuppingDraft
+  /** Per-attribute numeric bounds from the quality spec (min/max/increment). */
+  scales?: Record<string, { min: number; max: number; increment?: number }>
   saving?: boolean
   onCancel: () => void
   onApply: (next: CuppingDraft) => void
 }) {
+  const attrs = scoreEntries(draft.cupping)
+  const [scores, setScores] = useState<Record<string, string>>(() =>
+    Object.fromEntries(attrs.map(([k, v]) => [k, Number.isFinite(v) ? String(v) : ''])),
+  )
   const [cupProfile, setCupProfile] = useState(draft.cupProfile ?? '')
   const [cleanCup, setCleanCup] = useState<boolean | null>(draft.cleanCup)
   const [uniformCup, setUniformCup] = useState<boolean | null>(draft.uniformCup)
@@ -185,10 +204,22 @@ export function CuppingEditPanel({
   const [gradingComments, setGradingComments] = useState(draft.gradingComments ?? '')
 
   const apply = () => {
+    // Start from the current map so non-numeric keys (e.g. Flavor_descriptor)
+    // survive; overwrite each edited attribute, clearing blanks and clamping to
+    // the spec scale so out-of-range typos can't reach the certificate.
+    const nextCupping: Record<string, number> = { ...(draft.cupping as Record<string, number>) }
+    for (const [k] of attrs) {
+      const raw = (scores[k] ?? '').trim()
+      const n = raw === '' ? NaN : Number(raw)
+      if (!Number.isFinite(n)) {
+        delete nextCupping[k]
+        continue
+      }
+      const sc = scales?.[k]
+      nextCupping[k] = sc ? Math.min(sc.max, Math.max(sc.min, n)) : n
+    }
     onApply({
-      // Attribute scores are aggregated from cupping sessions and are not edited here,
-      // so they round-trip unchanged.
-      cupping: draft.cupping,
+      cupping: nextCupping,
       cupProfile: cupProfile.trim() || null,
       cleanCup,
       uniformCup,
@@ -197,22 +228,32 @@ export function CuppingEditPanel({
     })
   }
 
-  const attrs = scoreEntries(draft.cupping)
-
   return (
     <EditPanel open={open} title="Edit cupping / sensory" onCancel={onCancel} onSave={apply} saving={saving} wide>
       {attrs.length > 0 ? (
         <div>
-          <div className="mb-2 text-xs text-muted-foreground">
-            Attribute scores are aggregated from the cupping sessions (read-only here).
+          <div className="mb-2 text-xs text-amber-600 dark:text-amber-400">
+            Editing these overrides the scores aggregated from the cupping sessions. Leave a field blank to remove its score.
           </div>
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-            {attrs.map(([k, v]) => (
-              <div key={k} className="flex items-center justify-between rounded-lg border border-border bg-muted/30 px-3 py-2">
-                <span className="text-xs text-muted-foreground">{k}</span>
-                <span className="text-sm font-medium text-foreground">{Number.isFinite(v) ? v : '—'}</span>
-              </div>
-            ))}
+            {attrs.map(([k]) => {
+              const sc = scales?.[k]
+              return (
+                <div key={k} className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-1.5">
+                  <span className="min-w-0 truncate text-xs text-muted-foreground">{k}</span>
+                  <Input
+                    type="number"
+                    inputMode="decimal"
+                    value={scores[k] ?? ''}
+                    onChange={(e) => setScores((p) => ({ ...p, [k]: e.target.value }))}
+                    min={sc?.min}
+                    max={sc?.max}
+                    step={sc?.increment ?? 'any'}
+                    className="h-8 w-16 shrink-0 px-2 text-right text-sm"
+                  />
+                </div>
+              )
+            })}
           </div>
         </div>
       ) : null}

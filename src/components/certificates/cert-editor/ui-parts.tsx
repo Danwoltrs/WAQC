@@ -11,6 +11,7 @@ import { Loader2, Lock, Pencil, X } from 'lucide-react'
  */
 export function QuadrantCard({
   title,
+  headerExtra,
   meta,
   summary,
   locked,
@@ -20,6 +21,8 @@ export function QuadrantCard({
   children,
 }: {
   title: string
+  /** Inline content shown on the same line as the title (e.g. status chips). */
+  headerExtra?: ReactNode
   meta?: ReactNode
   summary?: ReactNode
   locked?: boolean
@@ -50,8 +53,11 @@ export function QuadrantCard({
       ].join(' ')}
     >
       <div className="mb-3 flex items-start justify-between gap-3">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
-        {meta ? <div className="text-xs text-muted-foreground text-right">{meta}</div> : null}
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+          {headerExtra}
+        </div>
+        {meta ? <div className="shrink-0 text-xs text-muted-foreground text-right">{meta}</div> : null}
       </div>
       {summary ? <div className="mb-3 text-sm text-muted-foreground">{summary}</div> : null}
       <div className="flex-1">{children}</div>

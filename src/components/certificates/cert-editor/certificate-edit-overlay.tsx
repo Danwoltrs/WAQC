@@ -211,6 +211,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
                   isCVA={ed.isCVA}
                   cvaScore={ed.cvaScore}
                   cvaMinScore={ed.cvaMinScore}
+                  sensoryScale={ed.sensoryScale}
                   locked={!ed.canEditQuality}
                   lockedReason={ed.qualityLockMessage}
                   onEdit={() => setPanel('cupping')}
@@ -269,6 +270,7 @@ export function SampleDetailOverlay({ open, sampleId, onOpenChange, onSaved, onS
             <CuppingEditPanel
               open
               draft={draft}
+              scales={ed.cuppingScales}
               onCancel={() => setPanel(null)}
               onApply={(next) => {
                 ed.setDraft((prev) => ({ ...prev, ...next }))
