@@ -87,7 +87,11 @@ const styles = StyleSheet.create({
   // Borderless block — charts float directly on the page (no card box).
   panel: { marginBottom: 14 },
   chartsRow: { flexDirection: 'row', gap: 16 },
-  chartFlex: { flex: 1 },
+  chartFlex: { flex: 1, alignItems: 'center' },
+  chartColTitle: {
+    fontSize: 9, fontWeight: 700, color: '#222', textTransform: 'uppercase',
+    letterSpacing: 0.5, marginBottom: 6, marginTop: 4, textAlign: 'center',
+  },
   donutSlot: { width: 150, alignItems: 'center' },
   subLabel: { fontSize: 8.5, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 },
   noneText: { fontSize: 9, color: '#888', fontStyle: 'italic' },
@@ -233,9 +237,11 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     )
   }
 
-  const StatusDonut = ({ b, title }: { b: PerformanceBucket; title: string }) => (
+  // Overall approved/rejected donut. It shows the whole-bucket status (not a
+  // single side), and its centre already reads the rej. rate, so it needs no
+  // heading — the redundant "Importer PSS · X" caption is dropped.
+  const StatusDonut = ({ b }: { b: PerformanceBucket }) => (
     <View style={styles.donutSlot}>
-      <Text style={styles.sectionLabel}>{title}</Text>
       <DonutChart
         slices={[
           { label: 'Approved', value: b.totals.approved, color: GREEN },
@@ -367,20 +373,18 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
         <KpiBand b={b} kind={kind} />
         <View style={styles.panel} wrap={false}>
           <View style={styles.chartsRow}>
-            {layout.importer === 'donut' && (
-              <StatusDonut b={b} title={`Importer ${kind} · ${b.byImporter[0]?.name ?? ''}`} />
-            )}
+            {layout.importer === 'donut' && <StatusDonut b={b} />}
             {layout.importer === 'bars' && (
               <View style={styles.chartFlex}>
-                <Text style={styles.sectionLabel}>Importer {kind}</Text>
+                <Text style={styles.chartColTitle}>Importer {kind}</Text>
                 <VerticalGroupedBarChart categories={metricCats(b.byImporter, metric)} metric={metric} width={barWidth} />
               </View>
             )}
             {layout.exporter === 'donut' ? (
-              <StatusDonut b={b} title={`Exporter ${kind} · ${b.byExporter[0]?.name ?? ''}`} />
+              <StatusDonut b={b} />
             ) : (
               <View style={styles.chartFlex}>
-                <Text style={styles.sectionLabel}>Exporter {kind}</Text>
+                <Text style={styles.chartColTitle}>Exporter {kind}</Text>
                 <VerticalGroupedBarChart categories={metricCats(b.byExporter, metric)} metric={metric} width={barWidth} />
               </View>
             )}
@@ -392,12 +396,18 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
   }
 
   // Page B: region tables (+ SS Sankey) + all-certs appendix.
-  const CertsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => (
+  const CertsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
+    // Hide the region breakdown entirely when no cert carries a real region
+    // (everything would collapse to a single "Unspecified" row).
+    const hasRegions = [...b.approvedByRegion, ...b.rejectedByRegion].some(r => r.region !== 'Unspecified')
+    return (
     <>
-      <View style={styles.twoCol}>
-        <RegionTable title="Approved certificates" rows={b.approvedByRegion} metric={metric} accent={GREEN} />
-        <RegionTable title="Rejected certificates" rows={b.rejectedByRegion} metric={metric} accent={RED} />
-      </View>
+      {hasRegions && (
+        <View style={styles.twoCol}>
+          <RegionTable title="Approved certificates" rows={b.approvedByRegion} metric={metric} accent={GREEN} />
+          <RegionTable title="Rejected certificates" rows={b.rejectedByRegion} metric={metric} accent={RED} />
+        </View>
+      )}
       {kind === 'SS' && data.showSankey && data.sankey && (
         <View style={styles.panel} wrap={false}>
           <Text style={styles.sectionLabel}>Supply chain flow</Text>
@@ -414,7 +424,8 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
         emptyMessage={`No ${kind} certificates issued in this period.`}
       />
     </>
-  )
+    )
+  }
 
   const BucketPages = ({ b, kind }: { b: PerformanceBucket; kind: BucketKind }) => {
     const metric: 'count' | 'bags' = kind === 'SS' ? 'bags' : 'count'
