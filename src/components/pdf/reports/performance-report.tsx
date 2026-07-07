@@ -13,7 +13,7 @@
 import React from 'react'
 import { Document, Page, View, Image, Text, StyleSheet } from '@react-pdf/renderer'
 import '@/components/pdf/certificate/certificate-styles'
-import type { PerformanceReportData, PerformanceBucket, RegionRow } from '@/lib/reports/performance-data'
+import { sortAppendixRows, type PerformanceReportData, type PerformanceBucket, type RegionRow } from '@/lib/reports/performance-data'
 import { HorizontalBarChart } from '@/components/pdf/charts/horizontal-bar-chart'
 import { SankeyChart } from '@/components/pdf/charts/sankey-chart'
 import { DonutChart } from '@/components/pdf/charts/donut-chart'
@@ -27,26 +27,30 @@ const GRAY_BORDER = '#e3e3e3'
 export type BucketKind = 'PSS' | 'SS'
 
 export interface ChartRowLayout {
+  /** `identity` → both sides single company: a bar/donut names nobody, so we
+   *  render a counterparty identity card instead. `split` → at least one side
+   *  has multiple companies and gets a bar chart. */
+  mode: 'identity' | 'split'
   importer: 'donut' | 'bars' | 'none'
   exporter: 'donut' | 'bars'
-  reasonsInRow: boolean
 }
 
 /**
- * Decide the Page-A chart row shape. A side with exactly one company is a
- * redundant single bar pair → compact donut. When BOTH sides are single the
- * two donuts would be identical, so only one combined donut renders.
+ * Decide the Page-A chart row shape. A side with one (or zero) company is a
+ * redundant single bar → compact donut. When BOTH sides are single, bars and
+ * donuts name nobody, so the row becomes a counterparty identity card.
+ * Rejection reasons always render full-width below the row.
  */
 export function chartRowLayout(importerCount: number, exporterCount: number): ChartRowLayout {
-  const importerDonut = importerCount === 1
-  const exporterDonut = exporterCount === 1
-  if (importerDonut && exporterDonut) {
-    return { importer: 'none', exporter: 'donut', reasonsInRow: true }
+  const importerSingle = importerCount <= 1
+  const exporterSingle = exporterCount <= 1
+  if (importerSingle && exporterSingle) {
+    return { mode: 'identity', importer: 'none', exporter: 'donut' }
   }
   return {
-    importer: importerDonut ? 'donut' : 'bars',
-    exporter: exporterDonut ? 'donut' : 'bars',
-    reasonsInRow: importerDonut || exporterDonut,
+    mode: 'split',
+    importer: importerSingle ? 'donut' : 'bars',
+    exporter: exporterSingle ? 'donut' : 'bars',
   }
 }
 
@@ -80,10 +84,19 @@ const styles = StyleSheet.create({
     position: 'absolute', bottom: 12, left: 24, right: 24,
     flexDirection: 'row', justifyContent: 'space-between', fontSize: 7, color: '#999',
   },
-  panel: { backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: GRAY_BORDER, borderRadius: 10, padding: 12, marginBottom: 12 },
+  // Borderless block — charts float directly on the page (no card box).
+  panel: { marginBottom: 14 },
   chartsRow: { flexDirection: 'row', gap: 16 },
   chartFlex: { flex: 1 },
   donutSlot: { width: 150, alignItems: 'center' },
+  subLabel: { fontSize: 8.5, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 },
+  noneText: { fontSize: 9, color: '#888', fontStyle: 'italic' },
+  reasonsCols: { flexDirection: 'row', gap: 24 },
+  identityCard: { marginBottom: 14 },
+  identityCols: { flexDirection: 'row', gap: 40 },
+  idRow: { flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#ECECEC' },
+  idLabel: { fontSize: 9, color: '#666', width: 78 },
+  idValue: { fontSize: 10, fontWeight: 700, color: '#222', flex: 1 },
   twoCol: { flexDirection: 'row', gap: 12, marginBottom: 12 },
   regionPanel: { flex: 1, borderWidth: 1, borderColor: GRAY_BORDER, borderRadius: 10, padding: 10 },
   regionHead: { flexDirection: 'row', backgroundColor: '#F4F4F2', paddingVertical: 4, paddingHorizontal: 6 },
@@ -100,6 +113,21 @@ function metricCats(groups: PerformanceBucket['byImporter'], metric: 'count' | '
     rejected: metric === 'bags' ? g.rejectedBags : g.rejectedCount,
     rejectionRate: g.rejectionRate,
   }))
+}
+
+/** The distinct value across a bucket's rows, or 'Multiple' / '—'. */
+function distinctName(
+  rows: PerformanceBucket['rows'],
+  pick: (r: PerformanceBucket['rows'][number]) => string | null,
+): string {
+  const set = new Set<string>()
+  for (const r of rows) {
+    const v = pick(r)?.trim()
+    if (v) set.add(v)
+  }
+  if (set.size === 0) return '—'
+  if (set.size === 1) return [...set][0]
+  return 'Multiple'
 }
 
 interface RegionTableProps { title: string; rows: RegionRow[]; metric: 'count' | 'bags'; accent: string }
@@ -220,10 +248,120 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     </View>
   )
 
-  // Page A: KPI band + adaptive chart row. Panels never wrap across pages.
+  // Single company on both sides: a chart names nobody, so show the actual
+  // counterparties (Shipper / Seller / Importer / Roaster) for the period.
+  const IdentityCard = ({ b, kind }: { b: PerformanceBucket; kind: BucketKind }) => {
+    const shipper = b.byExporter[0]?.name ?? distinctName(b.rows, r => r.exporter_name)
+    const importer = b.byImporter[0]?.name ?? distinctName(b.rows, r => r.importer_name)
+    const seller = distinctName(b.rows, r => r.seller_name)
+    const roaster = distinctName(b.rows, r => r.roaster_name)
+    const parties: Array<[string, string]> = [
+      ['Shipper', shipper || '—'],
+      ['Seller', seller],
+      ['Importer', importer || '—'],
+    ]
+    if (roaster !== '—' && roaster.toLowerCase() !== 'unsold') parties.push(['Roaster', roaster])
+
+    const stats: Array<[string, string, string?]> = [
+      ['Certificates', String(b.totals.evaluated)],
+      ['Approved', String(b.totals.approved), GREEN],
+      ['Rejected', String(b.totals.rejected), b.totals.rejected > 0 ? RED : '#222'],
+    ]
+    if (kind === 'SS') {
+      stats.push(['Bags', b.totals.bagsApproved.toLocaleString('en-US')])
+      stats.push(['MT', b.totals.mtApproved.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })])
+    }
+
+    return (
+      <View style={styles.identityCard} wrap={false}>
+        <Text style={styles.sectionLabel}>{kind === 'PSS' ? 'Pre-Shipment Sample' : 'Shipment Sample'}</Text>
+        <View style={styles.identityCols}>
+          <View style={{ flex: 1 }}>
+            {parties.map(([label, val]) => (
+              <View key={label} style={styles.idRow}>
+                <Text style={styles.idLabel}>{label}</Text>
+                <Text style={styles.idValue}>{val}</Text>
+              </View>
+            ))}
+          </View>
+          <View style={{ width: 210 }}>
+            {stats.map(([label, val, color]) => (
+              <View key={label} style={styles.idRow}>
+                <Text style={styles.idLabel}>{label}</Text>
+                <Text style={[styles.idValue, color ? { color } : {}]}>{val}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      </View>
+    )
+  }
+
+  // Full-width rejection breakdown below the chart row. Prefers the named
+  // dig-in (green defects | cupping faults/taints); falls back to aggregate
+  // categories when no rejected sample recorded named defect detail.
+  const ReasonsSection = ({ b }: { b: PerformanceBucket }) => {
+    if (b.totals.rejected <= 0) return null
+    const green = b.greenDefects ?? []
+    const cupping = b.cuppingDefects ?? []
+    const aggregate = reasonRows(b)
+    if (green.length === 0 && cupping.length === 0) {
+      return (
+        <View style={styles.panel} wrap={false}>
+          <Text style={styles.sectionLabel}>Rejection reasons</Text>
+          {aggregate.length > 0 ? (
+            <HorizontalBarChart rows={aggregate} labelWidth={160} trackWidth={420} limit={10} chartColor={RED} />
+          ) : (
+            <Text style={styles.noneText}>No detailed rejection reasons recorded.</Text>
+          )}
+        </View>
+      )
+    }
+    return (
+      <View style={styles.panel} wrap={false}>
+        <Text style={styles.sectionLabel}>Rejection reasons</Text>
+        <View style={styles.reasonsCols}>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.subLabel}>Green defects</Text>
+            {green.length > 0 ? (
+              <HorizontalBarChart
+                rows={green.map(d => ({ label: d.name, value: d.count }))}
+                labelWidth={130} trackWidth={200} limit={8} chartColor={RED}
+              />
+            ) : (
+              <Text style={styles.noneText}>None recorded.</Text>
+            )}
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.subLabel}>Cupping faults / taints</Text>
+            {cupping.length > 0 ? (
+              <HorizontalBarChart
+                rows={cupping.map(d => ({ label: `${d.name} (${d.kind})`, value: d.count }))}
+                labelWidth={150} trackWidth={190} limit={8} chartColor={RED}
+              />
+            ) : (
+              <Text style={styles.noneText}>None recorded.</Text>
+            )}
+          </View>
+        </View>
+      </View>
+    )
+  }
+
+  // Page A: KPI band + adaptive chart row + full-width rejection reasons.
   const ChartsPage = ({ b, metric, kind }: { b: PerformanceBucket; metric: 'count' | 'bags'; kind: BucketKind }) => {
     const layout = chartRowLayout(b.byImporter.length, b.byExporter.length)
-    const barWidth = layout.reasonsInRow ? 330 : 360
+    if (layout.mode === 'identity') {
+      return (
+        <>
+          <KpiBand b={b} kind={kind} />
+          <IdentityCard b={b} kind={kind} />
+          <ReasonsSection b={b} />
+        </>
+      )
+    }
+    const bothBars = layout.importer === 'bars' && layout.exporter === 'bars'
+    const barWidth = bothBars ? 360 : 470
     return (
       <>
         <KpiBand b={b} kind={kind} />
@@ -239,30 +377,16 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
               </View>
             )}
             {layout.exporter === 'donut' ? (
-              <StatusDonut
-                b={b}
-                title={layout.importer === 'none' ? `Total ${kind}` : `Exporter ${kind} · ${b.byExporter[0]?.name ?? ''}`}
-              />
+              <StatusDonut b={b} title={`Exporter ${kind} · ${b.byExporter[0]?.name ?? ''}`} />
             ) : (
               <View style={styles.chartFlex}>
                 <Text style={styles.sectionLabel}>Exporter {kind}</Text>
                 <VerticalGroupedBarChart categories={metricCats(b.byExporter, metric)} metric={metric} width={barWidth} />
               </View>
             )}
-            {layout.reasonsInRow && reasonRows(b).length > 0 && (
-              <View style={styles.chartFlex}>
-                <Text style={styles.sectionLabel}>Rejection reasons</Text>
-                <HorizontalBarChart rows={reasonRows(b)} labelWidth={90} trackWidth={130} limit={6} chartColor={RED} />
-              </View>
-            )}
           </View>
         </View>
-        {!layout.reasonsInRow && reasonRows(b).length > 0 && (
-          <View style={styles.panel} wrap={false}>
-            <Text style={styles.sectionLabel}>Rejection reasons</Text>
-            <HorizontalBarChart rows={reasonRows(b)} labelWidth={140} trackWidth={420} limit={10} chartColor={RED} />
-          </View>
-        )}
+        <ReasonsSection b={b} />
       </>
     )
   }
@@ -281,10 +405,12 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
         </View>
       )}
       <CertAppendixTable
-        rows={b.rows}
+        rows={sortAppendixRows(b.rows)}
         totals={{ certificate_count: b.totals.approved, bag_count: b.totals.bagsApproved, mt: b.totals.mtApproved }}
         hideRoasterCol={data.client.is_roaster}
         hideContainerCol={kind === 'PSS'}
+        hideIcoCol={kind === 'PSS'}
+        hideImporterCol={b.byImporter.length <= 1}
         emptyMessage={`No ${kind} certificates issued in this period.`}
       />
     </>

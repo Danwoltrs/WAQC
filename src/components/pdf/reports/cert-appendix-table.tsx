@@ -35,14 +35,20 @@ const ALL_COLS: ColDef[] = [
   { key: 'status', label: 'Status', weight: 7, align: 'center' },
 ]
 
+export interface HiddenCols {
+  hideRoaster?: boolean
+  hideContainer?: boolean
+  hideIco?: boolean
+  hideImporter?: boolean
+}
+
 /** Visible columns with widths renormalized to sum to 100%. */
-export function visibleCols(
-  hideRoasterCol: boolean,
-  hideContainerCol: boolean,
-): Array<ColDef & { width: string }> {
+export function visibleCols(hidden: HiddenCols = {}): Array<ColDef & { width: string }> {
   const cols = ALL_COLS.filter(c =>
-    (c.key !== 'roaster' || !hideRoasterCol) &&
-    (c.key !== 'container' || !hideContainerCol),
+    (c.key !== 'roaster' || !hidden.hideRoaster) &&
+    (c.key !== 'container' || !hidden.hideContainer) &&
+    (c.key !== 'ico' || !hidden.hideIco) &&
+    (c.key !== 'importer' || !hidden.hideImporter),
   )
   const total = cols.reduce((s, c) => c.weight + s, 0)
   return cols.map(c => ({ ...c, width: `${((c.weight / total) * 100).toFixed(2)}%` }))
@@ -123,6 +129,8 @@ export function CertAppendixTable({
   totals,
   hideRoasterCol,
   hideContainerCol = false,
+  hideIcoCol = false,
+  hideImporterCol = false,
   emptyMessage = 'No certificates issued in this period.',
 }: {
   rows: WeeklySSCertRow[]
@@ -130,9 +138,18 @@ export function CertAppendixTable({
   totals: { certificate_count: number; bag_count: number; mt: number }
   hideRoasterCol: boolean
   hideContainerCol?: boolean
+  /** PSS has no ICO marks (shipment-only) — drop the column. */
+  hideIcoCol?: boolean
+  /** Single-importer periods drop the redundant Importer column. */
+  hideImporterCol?: boolean
   emptyMessage?: string
 }) {
-  const cols = visibleCols(hideRoasterCol, hideContainerCol)
+  const cols = visibleCols({
+    hideRoaster: hideRoasterCol,
+    hideContainer: hideContainerCol,
+    hideIco: hideIcoCol,
+    hideImporter: hideImporterCol,
+  })
   return (
     <View style={styles.table}>
       <View style={styles.tableHeaderRow} fixed>

@@ -7,17 +7,20 @@ import type { PerformanceReportData, PerformanceBucket } from '@/lib/reports/per
 import { computeSankeyLayout } from '@/lib/charts/sankey-layout'
 
 describe('chartRowLayout', () => {
-  it('single importer → donut + reasons join the row', () => {
-    expect(chartRowLayout(1, 5)).toEqual({ importer: 'donut', exporter: 'bars', reasonsInRow: true })
+  it('single importer, multi exporter → importer donut + exporter bars', () => {
+    expect(chartRowLayout(1, 5)).toEqual({ mode: 'split', importer: 'donut', exporter: 'bars' })
   })
-  it('single exporter → exporter donut', () => {
-    expect(chartRowLayout(4, 1)).toEqual({ importer: 'bars', exporter: 'donut', reasonsInRow: true })
+  it('multi importer, single exporter → importer bars + exporter donut', () => {
+    expect(chartRowLayout(4, 1)).toEqual({ mode: 'split', importer: 'bars', exporter: 'donut' })
   })
-  it('both multi → 2-up bars, reasons full-width below', () => {
-    expect(chartRowLayout(3, 4)).toEqual({ importer: 'bars', exporter: 'bars', reasonsInRow: false })
+  it('both multi → 2-up bars', () => {
+    expect(chartRowLayout(3, 4)).toEqual({ mode: 'split', importer: 'bars', exporter: 'bars' })
   })
-  it('both single → one combined donut (no duplicate)', () => {
-    expect(chartRowLayout(1, 1)).toEqual({ importer: 'none', exporter: 'donut', reasonsInRow: true })
+  it('both single → identity card (names nobody via a chart)', () => {
+    expect(chartRowLayout(1, 1)).toEqual({ mode: 'identity', importer: 'none', exporter: 'donut' })
+  })
+  it('empty bucket (0 companies) → identity card', () => {
+    expect(chartRowLayout(0, 0)).toEqual({ mode: 'identity', importer: 'none', exporter: 'donut' })
   })
 })
 
@@ -78,6 +81,20 @@ describe('PerformanceReport', () => {
     })
     const buf = await renderToBuffer(
       React.createElement(PerformanceReport, { data: base({ pss: null, ss: empty, showSankey: false }) }) as any,
+    )
+    expect(buf.length).toBeGreaterThan(1000)
+  })
+
+  it('renders the single-company identity card + named rejection breakdown', async () => {
+    // Both sides single company → identity card; named defect breakdown present.
+    const single = bucket({
+      byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, rejectionRate: 50 }],
+      byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, rejectionRate: 50 }],
+      greenDefects: [{ name: 'Black beans', count: 8 }, { name: 'Sour beans', count: 5 }],
+      cuppingDefects: [{ name: 'Phenol', kind: 'fault', count: 2 }],
+    })
+    const buf = await renderToBuffer(
+      React.createElement(PerformanceReport, { data: base({ pss: null, ss: single, sankey: null, sankeyColumns: [], showSankey: false }) }) as any,
     )
     expect(buf.length).toBeGreaterThan(1000)
   })

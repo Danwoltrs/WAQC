@@ -13,9 +13,12 @@ import {
   mapCertRowToReportRow,
   categorizeViolation,
   buildSankey,
+  aggregateDefectBreakdown,
   type RawCertSampleRow,
   type WeeklySSCertRow,
   type RejectionReasonRow,
+  type NamedDefectCount,
+  type NamedCuppingDefect,
   type SupplierScorecardRow,
   type ClientSankeyType,
 } from '@/lib/report-data'
@@ -64,6 +67,11 @@ export interface BucketAggregate {
  *  chronological — the appendix table renders these directly. */
 export interface PerformanceBucket extends BucketAggregate {
   rows: PerformanceRow[]
+  /** Named green-grading defects driving rejections (summed raw counts).
+   *  Empty when no rejected sample recorded named defects. */
+  greenDefects?: NamedDefectCount[]
+  /** Named cupping faults/taints driving rejections (sample occurrences). */
+  cuppingDefects?: NamedCuppingDefect[]
 }
 
 export interface PerformanceReportData {
@@ -178,6 +186,21 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
   }
 }
 
+/**
+ * Order the appendix rows for display: approved certificates first, rejected
+ * last, each group sub-sorted by shipper (exporter) then approval date. The
+ * totals row stays approved-only regardless of order.
+ */
+export function sortAppendixRows(rows: PerformanceRow[]): PerformanceRow[] {
+  const shipper = (r: PerformanceRow) => (r.exporter_name ?? '￿').toLowerCase()
+  return [...rows].sort((a, b) => {
+    if (a.is_rejected !== b.is_rejected) return a.is_rejected ? 1 : -1
+    const s = shipper(a).localeCompare(shipper(b))
+    if (s !== 0) return s
+    return a.approval_date.localeCompare(b.approval_date)
+  })
+}
+
 /** Map a raw cert row → a PerformanceRow, carrying region + raw violations. */
 function toPerformanceRow(
   c: RawCertSampleRow,
@@ -264,11 +287,50 @@ export async function getPerformanceReportData(
   const pssRows = buckets.includes('pss') ? bucketRows('pss') : null
   const ssRows = buckets.includes('ss') ? bucketRows('ss') : null
 
+  // Named rejection breakdown: pull the latest quality assessment for each
+  // rejected sample and aggregate its green + cupping defects. Only rejected
+  // samples are queried, so approved-heavy periods stay cheap.
+  const rejectedIdsFor = (type: ReportBucketKey): string[] =>
+    forClient
+      .filter((c: any) => c.sample.sample_type === type && c.is_rejected && c.sample.id)
+      .map((c: any) => c.sample.id as string)
+
+  const pssRejectedIds = buckets.includes('pss') ? rejectedIdsFor('pss') : []
+  const ssRejectedIds = buckets.includes('ss') ? rejectedIdsFor('ss') : []
+  const allRejectedIds = [...new Set([...pssRejectedIds, ...ssRejectedIds])]
+
+  const qaBySample = new Map<string, { green: unknown; resolved: unknown }>()
+  if (allRejectedIds.length > 0) {
+    const { data: assessments, error: qaError } = await supabase
+      .from('quality_assessments')
+      .select('sample_id, green_bean_data, resolved_defects, created_at')
+      .in('sample_id', allRejectedIds)
+      .order('created_at', { ascending: false })
+    if (qaError) {
+      console.error('[performance-data] quality_assessments query failed:', qaError)
+    } else {
+      // Ordered latest-first → keep the first (most recent) row per sample.
+      // `green` is the whole green_bean_data column; extractGreenDefects
+      // unwraps its nested `.defects` blob. `resolved_defects` is top-level.
+      for (const a of (assessments || []) as any[]) {
+        if (a.sample_id && !qaBySample.has(a.sample_id)) {
+          qaBySample.set(a.sample_id, { green: a.green_bean_data, resolved: a.resolved_defects })
+        }
+      }
+    }
+  }
+
+  const breakdownFor = (ids: string[]) =>
+    aggregateDefectBreakdown(ids.map(id => qaBySample.get(id) ?? { green: null, resolved: null }))
+
+  const pssBreakdown = breakdownFor(pssRejectedIds)
+  const ssBreakdown = breakdownFor(ssRejectedIds)
+
   const pss: PerformanceBucket | null = pssRows
-    ? { ...aggregateBucket(pssRows, 'count'), rows: pssRows }
+    ? { ...aggregateBucket(pssRows, 'count'), rows: pssRows, ...pssBreakdown }
     : null
   const ss: PerformanceBucket | null = ssRows
-    ? { ...aggregateBucket(ssRows, 'bags'), rows: ssRows }
+    ? { ...aggregateBucket(ssRows, 'bags'), rows: ssRows, ...ssBreakdown }
     : null
 
   // Dominant origin across the REQUESTED buckets (header flag).

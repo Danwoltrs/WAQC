@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { aggregateBucket, type PerformanceRow } from './performance-data'
+import { aggregateBucket, sortAppendixRows, type PerformanceRow } from './performance-data'
 
 const row = (over: Partial<PerformanceRow> = {}): PerformanceRow => ({
   approval_date: '2026-01-05T00:00:00Z',
@@ -79,5 +79,30 @@ describe('aggregateBucket — empty', () => {
     expect(agg.totals.mtApproved).toBe(0)
     expect(agg.byImporter).toEqual([])
     expect(agg.approvedByRegion).toEqual([])
+  })
+})
+
+describe('sortAppendixRows', () => {
+  it('puts approved before rejected, each sub-sorted by shipper then date', () => {
+    const rows = [
+      row({ certificate_number: 'R-Ofi', exporter_name: 'Ofi', is_rejected: true, approval_date: '2026-01-02T00:00:00Z' }),
+      row({ certificate_number: 'A-Ofi', exporter_name: 'Ofi', is_rejected: false, approval_date: '2026-01-05T00:00:00Z' }),
+      row({ certificate_number: 'A-Cooxupe-2', exporter_name: 'Cooxupe', is_rejected: false, approval_date: '2026-01-09T00:00:00Z' }),
+      row({ certificate_number: 'A-Cooxupe-1', exporter_name: 'Cooxupe', is_rejected: false, approval_date: '2026-01-03T00:00:00Z' }),
+      row({ certificate_number: 'R-Cocatrel', exporter_name: 'Cocatrel', is_rejected: true, approval_date: '2026-01-01T00:00:00Z' }),
+    ]
+    const sorted = sortAppendixRows(rows).map(r => r.certificate_number)
+    expect(sorted).toEqual([
+      // approved, by shipper (Cooxupe < Ofi), Cooxupe by date asc
+      'A-Cooxupe-1', 'A-Cooxupe-2', 'A-Ofi',
+      // then rejected, by shipper (Cocatrel < Ofi)
+      'R-Cocatrel', 'R-Ofi',
+    ])
+  })
+  it('does not mutate the input array', () => {
+    const rows = [row({ is_rejected: true }), row({ is_rejected: false })]
+    const copy = [...rows]
+    sortAppendixRows(rows)
+    expect(rows).toEqual(copy)
   })
 })

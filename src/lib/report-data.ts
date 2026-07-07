@@ -38,6 +38,27 @@ export interface RejectionReasonRow {
   count: number
 }
 
+/** A named green-grading defect (e.g. "Black beans") with its total raw count
+ *  summed across the rejected samples in a bucket. */
+export interface NamedDefectCount {
+  name: string
+  count: number
+}
+
+/** A named cupping defect with its kind and how many rejected samples showed it. */
+export interface NamedCuppingDefect {
+  name: string
+  kind: 'fault' | 'taint'
+  count: number
+}
+
+/** The dig-in rejection breakdown for a bucket: which specific green defects and
+ *  cupping faults/taints drove the rejections, each ranked by magnitude. */
+export interface DefectBreakdown {
+  greenDefects: NamedDefectCount[]
+  cuppingDefects: NamedCuppingDefect[]
+}
+
 export interface SupplierScorecardRow {
   exporter_name: string
   total: number
@@ -187,6 +208,120 @@ export function categorizeViolation(v: string): string {
   }
 
   return 'Other'
+}
+
+/**
+ * Extract named green-grading defects with raw counts. Accepts EITHER the
+ * `green_bean_data.defects` blob or the whole `green_bean_data` column (it
+ * unwraps a nested `.defects` object) — every canonical reader nests defects
+ * under `green_bean_data.defects`, so the fetcher can hand over either shape.
+ * Handles the formats produced across the grading / cert / quality editors:
+ *   - counts:       `{ counts: { Black: 2, Sour: 1 }, primary, secondary }`
+ *   - defect_list:  `{ defect_list: [{ name, count }], primary, secondary }`
+ *   - bare array:   `[{ name, count }]`
+ *   - split arrays: `{ primary: [{ name, count }], secondary: [{ name, count }] }`
+ * Bare numeric `primary`/`secondary` aggregates carry no names and are ignored
+ * (they surface only as the aggregate `rejectionReasons` fallback).
+ */
+export function extractGreenDefects(defectsData: unknown): NamedDefectCount[] {
+  if (!defectsData || typeof defectsData !== 'object') return []
+  // Unwrap a `green_bean_data` wrapper down to its `.defects` blob.
+  let src: unknown = defectsData
+  if (
+    !Array.isArray(src) &&
+    (src as Record<string, unknown>).defects &&
+    typeof (src as Record<string, unknown>).defects === 'object'
+  ) {
+    src = (src as Record<string, unknown>).defects
+  }
+
+  const out = new Map<string, number>()
+  const add = (name: unknown, rawCount: unknown) => {
+    if (typeof name !== 'string') return
+    const trimmed = name.trim()
+    if (!trimmed) return
+    const c = typeof rawCount === 'number' ? rawCount : Number(rawCount)
+    if (!Number.isFinite(c) || c <= 0) return
+    out.set(trimmed, (out.get(trimmed) ?? 0) + c)
+  }
+
+  if (Array.isArray(src)) {
+    for (const it of src as Array<{ name?: unknown; count?: unknown }>) {
+      if (it) add(it.name, it.count)
+    }
+  } else {
+    const d = src as Record<string, unknown>
+    if (d.counts && typeof d.counts === 'object') {
+      for (const [name, c] of Object.entries(d.counts as Record<string, unknown>)) add(name, c)
+    }
+    if (Array.isArray(d.defect_list)) {
+      for (const it of d.defect_list as Array<{ name?: unknown; count?: unknown }>) {
+        if (it) add(it.name, it.count)
+      }
+    }
+    for (const key of ['primary', 'secondary'] as const) {
+      if (Array.isArray(d[key])) {
+        for (const it of d[key] as Array<{ name?: unknown; count?: unknown }>) {
+          if (it) add(it.name, it.count)
+        }
+      }
+    }
+  }
+
+  return [...out.entries()]
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+}
+
+/**
+ * Extract named cupping defects from a `quality_assessments.resolved_defects`
+ * blob (`{ taints: [{ name }], faults: [{ name }] }`). One entry per named
+ * occurrence; callers aggregate across samples.
+ */
+export function extractCuppingDefects(resolved: unknown): NamedCuppingDefect[] {
+  if (!resolved || typeof resolved !== 'object') return []
+  const r = resolved as { taints?: unknown; faults?: unknown }
+  const out: NamedCuppingDefect[] = []
+  const collect = (arr: unknown, kind: 'fault' | 'taint') => {
+    if (!Array.isArray(arr)) return
+    for (const it of arr as Array<string | { name?: unknown }>) {
+      const name = typeof it === 'string' ? it : typeof it?.name === 'string' ? it.name : null
+      if (name && name.trim()) out.push({ name: name.trim(), kind, count: 1 })
+    }
+  }
+  collect(r.faults, 'fault')
+  collect(r.taints, 'taint')
+  return out
+}
+
+/**
+ * Aggregate the per-sample green + cupping defect data of a bucket's rejected
+ * samples into ranked "which defects drove rejections" lists.
+ *   - greenDefects: summed raw counts by defect name (bean magnitude)
+ *   - cuppingDefects: how many rejected samples showed each named taint/fault
+ */
+export function aggregateDefectBreakdown(
+  samples: Array<{ green: unknown; resolved: unknown }>,
+): DefectBreakdown {
+  const green = new Map<string, number>()
+  const cup = new Map<string, NamedCuppingDefect>()
+  for (const s of samples) {
+    for (const g of extractGreenDefects(s.green)) {
+      green.set(g.name, (green.get(g.name) ?? 0) + g.count)
+    }
+    for (const c of extractCuppingDefects(s.resolved)) {
+      const key = `${c.kind}::${c.name}`
+      const cur = cup.get(key) ?? { name: c.name, kind: c.kind, count: 0 }
+      cur.count += 1
+      cup.set(key, cur)
+    }
+  }
+  return {
+    greenDefects: [...green.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count),
+    cuppingDefects: [...cup.values()].sort((a, b) => b.count - a.count),
+  }
 }
 
 /**
