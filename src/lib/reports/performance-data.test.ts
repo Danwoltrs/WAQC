@@ -86,8 +86,26 @@ describe('aggregateBucket — rejection reasons (certificates per reason)', () =
     const byCat = Object.fromEntries(
       aggregateBucket(rows, 'count').rejectionReasons.map(r => [r.category, r.count]),
     )
-    expect(byCat['Total defects']).toBe(2)   // two certs, not three occurrences
+    // Total defects collapses into "Secondary defects" (see below).
+    expect(byCat['Secondary defects']).toBe(2)   // two certs, not three occurrences
     expect(byCat['Cupping faults']).toBe(1)
+  })
+
+  it('collapses the green-defect family: total→secondary, primary wins per cert', () => {
+    const rows = [
+      rej(['Total defects: 12 exceeds maximum (8)']),                       // total-only → Secondary
+      rej(['Secondary defects: 20 exceeds maximum (15)',
+           'Total defects: 22 exceeds maximum (8)']),                       // secondary+total → one Secondary
+      rej(['Primary defects: 3 exceeds maximum (2)',                        // primary present → Primary only
+           'Secondary defects: 10 exceeds maximum (15)',
+           'Total defects: 13 exceeds maximum (8)']),
+    ]
+    const byCat = Object.fromEntries(
+      aggregateBucket(rows, 'count').rejectionReasons.map(r => [r.category, r.count]),
+    )
+    expect(byCat['Secondary defects']).toBe(2)   // certs 1 + 2
+    expect(byCat['Primary defects']).toBe(1)     // cert 3 (secondary/total suppressed)
+    expect(byCat['Total defects']).toBeUndefined()
   })
 
   it('ranks reasons by certificate count descending', () => {
@@ -97,7 +115,7 @@ describe('aggregateBucket — rejection reasons (certificates per reason)', () =
       rej(['Moisture: 13 exceeds maximum (12)']),
     ]
     expect(aggregateBucket(rows, 'count').rejectionReasons.map(r => r.category))
-      .toEqual(['Total defects', 'Moisture'])
+      .toEqual(['Secondary defects', 'Moisture'])
   })
 })
 

@@ -149,6 +149,26 @@ function regionBreakdown(rows: PerformanceRow[], metric: 'count' | 'bags'): Regi
     .sort((a, b) => (metric === 'bags' ? b.bags - a.bags : b.count - a.count))
 }
 
+/**
+ * Collapse the green-defect grading family to a single rejection reason per
+ * certificate (mutates the category set in place):
+ *   - failed on PRIMARY defects → keep "Primary defects" only (the headline);
+ *   - else failed on SECONDARY and/or TOTAL defects → "Secondary defects"
+ *     (total is merged into secondary — a total-defect overage is a
+ *     secondary-defect story unless primaries were the cause).
+ * Non-defect reasons (moisture, cupping faults, screen sizes, cup attrs) are
+ * left untouched.
+ */
+function collapseDefectFamily(cats: Set<string>): void {
+  const hasPrimary = cats.has('Primary defects')
+  const hasSecondaryOrTotal = cats.has('Secondary defects') || cats.has('Total defects')
+  cats.delete('Primary defects')
+  cats.delete('Secondary defects')
+  cats.delete('Total defects')
+  if (hasPrimary) cats.add('Primary defects')
+  else if (hasSecondaryOrTotal) cats.add('Secondary defects')
+}
+
 export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'): BucketAggregate {
   const approved = rows.filter(r => !r.is_rejected)
   const rejected = rows.filter(r => r.is_rejected)
@@ -171,6 +191,7 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
     // reads "how many certificates were rejected for X" — not raw violation
     // occurrences (a cert with two "Total defects" lines is still one cert).
     const cats = new Set(violations.map(categorizeViolation))
+    collapseDefectFamily(cats)
     for (const cat of cats) {
       reasonCounts.set(cat, (reasonCounts.get(cat) ?? 0) + 1)
     }
