@@ -71,6 +71,36 @@ describe('aggregateBucket — bags + MT (SS)', () => {
   })
 })
 
+describe('aggregateBucket — rejection reasons (certificates per reason)', () => {
+  // _violations is attached to rows by the fetcher and read via a cast.
+  const rej = (violations: string[]): PerformanceRow =>
+    ({ ...row({ is_rejected: true }), _violations: violations } as PerformanceRow)
+
+  it('counts each rejected certificate once per reason category', () => {
+    const rows = [
+      // one cert, two "Total defects" lines → still ONE cert for that reason
+      rej(['Total defects: 12 exceeds maximum (8)', 'Total defects: 20 exceeds maximum (8)']),
+      rej(['Total defects: 9 exceeds maximum (8)', 'Cupping faults: 2 exceeds maximum (0)']),
+      row({ is_rejected: false }),   // approved — contributes no reasons
+    ]
+    const byCat = Object.fromEntries(
+      aggregateBucket(rows, 'count').rejectionReasons.map(r => [r.category, r.count]),
+    )
+    expect(byCat['Total defects']).toBe(2)   // two certs, not three occurrences
+    expect(byCat['Cupping faults']).toBe(1)
+  })
+
+  it('ranks reasons by certificate count descending', () => {
+    const rows = [
+      rej(['Total defects: 12 exceeds maximum (8)']),
+      rej(['Total defects: 12 exceeds maximum (8)']),
+      rej(['Moisture: 13 exceeds maximum (12)']),
+    ]
+    expect(aggregateBucket(rows, 'count').rejectionReasons.map(r => r.category))
+      .toEqual(['Total defects', 'Moisture'])
+  })
+})
+
 describe('aggregateBucket — empty', () => {
   it('handles no rows without dividing by zero', () => {
     const agg = aggregateBucket([], 'count')

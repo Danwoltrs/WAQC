@@ -94,8 +94,21 @@ const styles = StyleSheet.create({
   },
   donutSlot: { width: 150, alignItems: 'center' },
   subLabel: { fontSize: 8.5, fontWeight: 700, color: '#555', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 5 },
-  noneText: { fontSize: 9, color: '#888', fontStyle: 'italic' },
+  // NOTE: Inter is registered only in weights 400/600/700 (no italic), so
+  // captions/placeholders must not use fontStyle:'italic' — react-pdf throws
+  // "Could not resolve font" and aborts the whole render.
+  noneText: { fontSize: 9, color: '#888' },
+  reasonsHead: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
+  reasonsCount: { fontSize: 8, color: '#888' },
   reasonsCols: { flexDirection: 'row', gap: 24 },
+  // Compact overview: one pill per rejection reason (label + cert count).
+  chipRow: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 6 },
+  chip: {
+    flexDirection: 'row', alignItems: 'center', backgroundColor: '#FBE9E9',
+    borderRadius: 6, paddingVertical: 3, paddingHorizontal: 7, marginRight: 6, marginBottom: 5,
+  },
+  chipLabel: { fontSize: 8.5, color: '#333' },
+  chipCount: { fontSize: 9, fontWeight: 700, color: RED, marginLeft: 6 },
   identityCard: { marginBottom: 14 },
   identityCols: { flexDirection: 'row', gap: 40 },
   idRow: { flexDirection: 'row', paddingVertical: 4, borderBottomWidth: 1, borderBottomColor: '#ECECEC' },
@@ -303,53 +316,72 @@ export function PerformanceReport({ data, wolthersLogoBase64, clientLogoBase64, 
     )
   }
 
-  // Full-width rejection breakdown below the chart row. Prefers the named
-  // dig-in (green defects | cupping faults/taints); falls back to aggregate
-  // categories when no rejected sample recorded named defect detail.
+  // Full-width rejection breakdown below the chart row. The head doubles as the
+  // overview label and the "out of X certs" denominator; a compact pill row
+  // shows how many certificates were rejected for each reason (categorized
+  // compliance violations); the two columns dig into the specific defects
+  // behind those rejections (top-5 green defects | top-5 cupping faults/taints).
+  // Kept tight so the whole block fits on Page A beneath the charts.
   const ReasonsSection = ({ b }: { b: PerformanceBucket }) => {
     if (b.totals.rejected <= 0) return null
-    const green = b.greenDefects ?? []
-    const cupping = b.cuppingDefects ?? []
-    const aggregate = reasonRows(b)
-    if (green.length === 0 && cupping.length === 0) {
-      return (
-        <View style={styles.panel} wrap={false}>
-          <Text style={styles.sectionLabel}>Rejection reasons</Text>
-          {aggregate.length > 0 ? (
-            <HorizontalBarChart rows={aggregate} labelWidth={160} trackWidth={420} limit={10} chartColor={RED} />
-          ) : (
-            <Text style={styles.noneText}>No detailed rejection reasons recorded.</Text>
-          )}
-        </View>
-      )
-    }
+    const overview = reasonRows(b)              // certs rejected per reason
+    const green = (b.greenDefects ?? []).slice(0, 5)
+    const cupping = (b.cuppingDefects ?? []).slice(0, 5)
+    const hasDetail = green.length > 0 || cupping.length > 0
+    const rejN = b.totals.rejected
+    const certWord = rejN === 1 ? 'certificate' : 'certificates'
+
     return (
       <View style={styles.panel} wrap={false}>
-        <Text style={styles.sectionLabel}>Rejection reasons</Text>
-        <View style={styles.reasonsCols}>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.subLabel}>Green defects</Text>
-            {green.length > 0 ? (
-              <HorizontalBarChart
-                rows={green.map(d => ({ label: d.name, value: d.count }))}
-                labelWidth={130} trackWidth={200} limit={8} chartColor={RED}
-              />
-            ) : (
-              <Text style={styles.noneText}>None recorded.</Text>
-            )}
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.subLabel}>Cupping faults / taints</Text>
-            {cupping.length > 0 ? (
-              <HorizontalBarChart
-                rows={cupping.map(d => ({ label: `${d.name} (${d.kind})`, value: d.count }))}
-                labelWidth={150} trackWidth={190} limit={8} chartColor={RED}
-              />
-            ) : (
-              <Text style={styles.noneText}>None recorded.</Text>
-            )}
-          </View>
+        {/* Head = overview label + the "out of X certs" denominator. */}
+        <View style={styles.reasonsHead}>
+          <Text style={styles.sectionLabel}>Rejection reasons</Text>
+          <Text style={styles.reasonsCount}>{rejN} of {b.totals.evaluated} {certWord} rejected</Text>
         </View>
+
+        {/* Overview: how many certificates were rejected for each reason. */}
+        {overview.length > 0 && (
+          <View style={styles.chipRow}>
+            {overview.slice(0, 8).map(r => (
+              <View key={r.label} style={styles.chip}>
+                <Text style={styles.chipLabel}>{r.label}</Text>
+                <Text style={styles.chipCount}>{r.value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Dig-in: the specific defects behind those rejections. */}
+        {hasDetail && (
+          <View style={styles.reasonsCols}>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subLabel}>Green defects · top 5 across {rejN} {certWord}</Text>
+              {green.length > 0 ? (
+                <HorizontalBarChart
+                  rows={green.map(d => ({ label: d.name, value: d.count }))}
+                  labelWidth={130} trackWidth={200} limit={5} chartColor={RED}
+                />
+              ) : (
+                <Text style={styles.noneText}>None recorded.</Text>
+              )}
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.subLabel}>Cupping faults / taints · top 5</Text>
+              {cupping.length > 0 ? (
+                <HorizontalBarChart
+                  rows={cupping.map(d => ({ label: `${d.name} (${d.kind})`, value: d.count }))}
+                  labelWidth={150} trackWidth={190} limit={5} chartColor={RED}
+                />
+              ) : (
+                <Text style={styles.noneText}>None recorded.</Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {overview.length === 0 && !hasDetail && (
+          <Text style={styles.noneText}>No detailed rejection reasons recorded.</Text>
+        )}
       </View>
     )
   }

@@ -85,7 +85,8 @@ export function DonutChart({
   if (total === 0) {
     return (
       <View style={[styles.wrapper, { width: size, height: size, justifyContent: 'center' }]}>
-        <Text style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>No data</Text>
+        {/* No italic: Inter has no italic variant registered → render abort. */}
+        <Text style={{ fontSize: 9, color: '#888' }}>No data</Text>
       </View>
     )
   }

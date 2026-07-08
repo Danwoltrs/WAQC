@@ -167,8 +167,11 @@ export function aggregateBucket(rows: PerformanceRow[], metric: 'count' | 'bags'
     // compliance_violations is not on the row; reasons are attached by the
     // fetcher via the `_violations` carrier. Optional so pure tests can omit.
     const violations = ((r as any)._violations as string[] | undefined) ?? []
-    for (const v of violations) {
-      const cat = categorizeViolation(v)
+    // Count each rejected certificate ONCE per category, so the reason list
+    // reads "how many certificates were rejected for X" — not raw violation
+    // occurrences (a cert with two "Total defects" lines is still one cert).
+    const cats = new Set(violations.map(categorizeViolation))
+    for (const cat of cats) {
       reasonCounts.set(cat, (reasonCounts.get(cat) ?? 0) + 1)
     }
   }

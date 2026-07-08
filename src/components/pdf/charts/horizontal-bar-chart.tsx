@@ -71,8 +71,10 @@ export function HorizontalBarChart({
   limit,
 }: HorizontalBarChartProps) {
   if (rows.length === 0) {
+    // No italic: Inter is registered only in weights 400/600/700, so
+    // fontStyle:'italic' throws "Could not resolve font" and aborts render.
     return (
-      <Text style={{ fontSize: 9, color: '#888', fontStyle: 'italic' }}>
+      <Text style={{ fontSize: 9, color: '#888' }}>
         No data for this period.
       </Text>
     )

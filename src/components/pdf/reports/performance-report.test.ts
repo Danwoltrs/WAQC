@@ -85,6 +85,24 @@ describe('PerformanceReport', () => {
     expect(buf.length).toBeGreaterThan(1000)
   })
 
+  it('renders the reject-by-reason overview + top-5 defect columns without error', async () => {
+    // Multiple reasons and >5 defects each → exercises the overview bars and
+    // the top-5 slice in ReasonsSection.
+    const many = bucket({
+      rejectionReasons: [
+        { category: 'Total defects', count: 6 },
+        { category: 'Cupping faults', count: 2 },
+        { category: 'Moisture', count: 1 },
+      ],
+      greenDefects: Array.from({ length: 7 }, (_, i) => ({ name: `Green ${i}`, count: 20 - i })),
+      cuppingDefects: Array.from({ length: 6 }, (_, i) => ({ name: `Cup ${i}`, kind: 'fault' as const, count: 6 - i })),
+    })
+    const buf = await renderToBuffer(
+      React.createElement(PerformanceReport, { data: base({ ss: null, sankey: null, sankeyColumns: [], showSankey: false, pss: many }) }) as any,
+    )
+    expect(buf.length).toBeGreaterThan(1000)
+  })
+
   it('renders the single-company identity card + named rejection breakdown', async () => {
     // Both sides single company → identity card; named defect breakdown present.
     const single = bucket({
