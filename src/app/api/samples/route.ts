@@ -37,6 +37,10 @@ export async function GET(request: NextRequest) {
 
     // Build query with filters and join with related tables
     // Note: Use explicit relationship names due to multiple FKs to exporters table
+    // sample_contracts is pinned to !sample_contracts_sample_id_fkey (the parent
+    // one-to-many): once SS→PSS linking added samples.linked_pss_sample_contract_id
+    // (a second FK samples->sample_contracts), an unqualified embed became
+    // ambiguous (PGRST201) and 500'd the whole list. Do NOT drop this hint.
     // Filter out soft-deleted samples (deleted_at is set on soft delete)
     // Include certificate info for samples that have certificates
     let query = (supabase as any)
@@ -51,7 +55,7 @@ export async function GET(request: NextRequest) {
         qc_client:companies!samples_client_id_fkey(id, name, fantasy_name, country, client_types:company_types),
         end_client:companies!samples_end_client_id_fkey(id, name, fantasy_name, country),
         certificate:certificates(id, certificate_number, status, created_at, sample_contract_id),
-        sample_contracts(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt),
+        sample_contracts!sample_contracts_sample_id_fkey(id, tracking_number, importer_id, roaster_id, end_client_id, client_id, importer_is_qc_client, buyer_contract_nr, wolthers_contract_nr, roaster_contract_nr, end_client_contract_nr, qc_client_contract_nr, supplier_contract_nr, ico_number, container_nr, bags_quantity_mt),
         sample_recipients(id, status)
       `)
       .is('deleted_at', null)
