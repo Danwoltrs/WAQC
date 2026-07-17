@@ -6,6 +6,7 @@ import { sendMail, type GraphSendAttachment } from '@/lib/graph/send'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderCertificatePdfBuffer } from '@/lib/certificate-render'
 import { composeBodyHtml } from '@/lib/email/compose-html'
+import { isValidEmail } from '@/lib/html'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
 import { applyShipmentSampleApproval } from '@/lib/approval-notification/shipment-sample-writeback'
 import { resolveSampleContract } from '@/lib/approval-notification/contract-resolver'
@@ -92,11 +93,22 @@ function composeQualityBody(
 export async function POST(req: NextRequest) {
   const body = (await req.json()) as Body
   const side = body.side
-  const to = (body.to ?? []).filter(Boolean)
-  const cc = (body.cc ?? []).filter(Boolean)
+  const to = (body.to ?? []).map((e) => e?.trim()).filter(Boolean)
+  const cc = (body.cc ?? []).map((e) => e?.trim()).filter(Boolean)
   const sampleIds = [...new Set((body.sampleIds ?? []).filter(Boolean))]
   if (!body.subject || !body.bodyText || to.length === 0 || sampleIds.length === 0) {
     return NextResponse.json({ error: 'side, to, subject, bodyText and sampleIds are required' }, { status: 400 })
+  }
+  // Recipients come from the shared contacts table, which sys writes without
+  // format validation — a paste artifact like "user@domain.nl)," makes Graph
+  // reject the whole send with an opaque 400 ErrorInvalidRecipients. Name the
+  // bad address so the sender can fix the contact instead of guessing.
+  const invalidRecipients = [...to, ...cc].filter((e) => !isValidEmail(e))
+  if (invalidRecipients.length > 0) {
+    return NextResponse.json(
+      { error: `Invalid recipient email address: ${invalidRecipients.join(', ')} — fix this contact and try again` },
+      { status: 400 },
+    )
   }
 
   const server = await createServerClient()

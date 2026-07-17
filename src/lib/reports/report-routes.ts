@@ -13,6 +13,7 @@ import type { ReportBucketKey } from '@/lib/reports/performance-data'
 import { sendMail, GraphSendError } from '@/lib/graph/send'
 import { saveRecipients } from '@/lib/reports/recipients'
 import { composeBodyHtml } from '@/lib/email/compose-html'
+import { isValidEmail } from '@/lib/html'
 
 export interface ReportRouteConfig {
   buckets: ReportBucketKey[]
@@ -26,8 +27,6 @@ export interface ReportRouteConfig {
 
 const DEFAULT_MAILBOX = process.env.MICROSOFT_GRAPH_MAILBOX ?? 'qualitycontrol@wolthers.com'
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-
 function validateEmails(input: unknown, field: string): { ok: true; emails: string[] } | { ok: false; error: string } {
   if (input === undefined || input === null) return { ok: true, emails: [] }
   if (!Array.isArray(input)) return { ok: false, error: `${field} must be an array of email strings` }
@@ -36,7 +35,7 @@ function validateEmails(input: unknown, field: string): { ok: true; emails: stri
     if (typeof v !== 'string') return { ok: false, error: `${field} entries must be strings` }
     const trimmed = v.trim()
     if (!trimmed) continue
-    if (!EMAIL_RE.test(trimmed)) return { ok: false, error: `Invalid email in ${field}: ${trimmed}` }
+    if (!isValidEmail(trimmed)) return { ok: false, error: `Invalid email in ${field}: ${trimmed}` }
     emails.push(trimmed)
   }
   return { ok: true, emails }

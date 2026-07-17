@@ -25,11 +25,16 @@ export function escapeHtml(input: unknown): string {
  * addresses (whitespace, no '@', missing domain) and enforces the RFC 5321
  * 254-char total length cap.
  *
- * Not a full RFC 5322 parser — for that, prefer Resend's own validation or a
- * dedicated library. This is the minimum bar before passing to a send API.
+ * The domain part is restricted to letters/digits/hyphens joined by dots.
+ * A looser check (anything non-whitespace after '@') let a paste artifact like
+ * "adccpurchasing@adcoffeecompany.nl)," through, and Graph then rejected the
+ * whole batch with 400 ErrorInvalidRecipients.
+ *
+ * Not a full RFC 5322 parser — this is the minimum bar before passing to a
+ * send API.
  */
 export function isValidEmail(email: unknown): email is string {
   if (typeof email !== 'string') return false
   if (email.length === 0 || email.length > 254) return false
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  return /^[^\s@]+@[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+$/.test(email)
 }
