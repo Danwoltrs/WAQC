@@ -3,15 +3,18 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { TinSleeveLabelDocument, TinSleeveLabelData } from '@/components/pdf/tin-sleeve-label'
-import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
+import {
+  buildSleeveLabelFields,
+  toSleeveSampleType,
+  resolveQualityName,
+} from '@/lib/sleeve-label-data'
 import path from 'path'
 import fs from 'fs'
 
 /**
  * GET /api/samples/[id]/print-tin-sleeve
- * Generate a single tin sleeve label PDF (4cm height)
- * Includes: Date, Sample tracking, Exporter, Quality (client name + full description),
- * Contracts, Packaging, Bags with bulk indicator, QR code, Logo
+ * Generate a single tin sleeve label PDF (4cm height, centered)
  */
 export async function GET(
   request: NextRequest,
@@ -34,26 +37,25 @@ export async function GET(
       .from('samples')
       .select(`
         id,
-        tracking_number,
         sample_type,
-        created_at,
-        wolthers_contract_nr,
+        workflow_stage,
+        container_nr,
+        exporter_sample_number,
         buyer_contract_nr,
         exporter_contract_nr,
-        roaster_contract_nr,
         bag_type,
         bag_count,
         bag_weight_kg,
         bags_quantity_mt,
         equivalent_60kg_bags,
-        quality_spec_id,
         quality_name,
         hide_exporter_on_label,
-        client_id,
         exporter:companies!samples_exporter_id_fkey(name),
+        seller:companies!samples_seller_id_fkey(name),
+        client:companies!samples_client_id_fkey(name),
+        roaster:companies!samples_roaster_id_fkey(name),
         quality_spec:client_qualities(
           custom_name,
-          quality_code,
           template:quality_templates(name_en, name_pt, name_es)
         )
       `)
@@ -65,131 +67,120 @@ export async function GET(
       return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
-    // Get exporter name (hide if hide_exporter_on_label is true)
-    const hideExporter = (sample as any).hide_exporter_on_label || false
-    const exporterName = hideExporter ? '-' : ((sample as any).exporter?.name || 'N/A')
-
-    // Get client quality name and full quality description
-    const qualitySpec = (sample as any).quality_spec
-    const directQualityName = (sample as any).quality_name
-    let clientQualityName: string | undefined
-    let qualityDescription = 'N/A'
-
-    if (qualitySpec) {
-      // Client quality name is the custom_name if it exists
-      clientQualityName = qualitySpec.custom_name || undefined
-
-      // Quality description comes from the template
-      if (qualitySpec.template) {
-        qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
-      }
-    } else if (directQualityName) {
-      // For type samples or samples without quality_spec, use quality_name directly
-      clientQualityName = directQualityName
-      qualityDescription = directQualityName
+    // The label prints the OFFICIAL certificate number, which is only minted at
+    // certification. Anything earlier has no number to print.
+    const PRINTABLE_STAGES = ['certified', 'rejected']
+    if (!PRINTABLE_STAGES.includes((sample as any).workflow_stage)) {
+      return NextResponse.json({
+        error: 'This sample is not certified yet. Tin labels carry the certificate number, which is issued at certification.',
+      }, { status: 400 })
     }
-
-    // Format packaging type
-    const bagTypeMap: Record<string, string> = {
-      jute_bag: 'Jute Bags',
-      pp_bag: 'PP Bags',
-      big_bag: 'Big Bags (1 M/T)',
-      bulk: 'Bulk',
-    }
-    const packaging = bagTypeMap[(sample as any).bag_type] || 'N/A'
-
-    // Format bags display with quantity and MT
-    let bagsDisplay = 'N/A'
-    const bagCount = (sample as any).bag_count
-    const bagWeight = (sample as any).bag_weight_kg
-    const bagType = (sample as any).bag_type
-    const quantityMT = (sample as any).bags_quantity_mt
-    const equivalent60kg = (sample as any).equivalent_60kg_bags
-
-    if (bagType === 'bulk' && equivalent60kg) {
-      // For bulk: "equiv. 360 bags in 60 kg | 21.6 MT"
-      const mt = quantityMT || (equivalent60kg * 60 / 1000)
-      bagsDisplay = `equiv. ${Math.round(equivalent60kg)} bags in 60 kg | ${mt.toFixed(1)} MT`
-    } else if (bagCount != null && bagWeight != null) {
-      // For regular bags: "320 bags in 60 kg jute bags | 19.2 MT"
-      const bagTypeName = bagType === 'jute_bag' ? 'jute bags' : bagType === 'pp_bag' ? 'PP bags' : 'bags'
-      const mt = quantityMT || (bagCount * bagWeight / 1000)
-      bagsDisplay = `${bagCount} bags in ${bagWeight} kg ${bagTypeName} | ${mt.toFixed(1)} MT`
-    }
-
-    // Collect contracts
-    const contracts: string[] = []
-    if ((sample as any).wolthers_contract_nr) contracts.push((sample as any).wolthers_contract_nr)
-    if ((sample as any).buyer_contract_nr) contracts.push((sample as any).buyer_contract_nr)
-    if ((sample as any).exporter_contract_nr) contracts.push((sample as any).exporter_contract_nr)
-    if ((sample as any).roaster_contract_nr) contracts.push((sample as any).roaster_contract_nr)
-
-    // Generate QR code with certificate summary text
-    const qrData = await fetchCertificateQRData(supabase, (sample as any).id, (sample as any).tracking_number)
-    const qrContent = buildCertificateQRText(qrData)
-    const qrCode = await generateQRCode(qrContent, {
-      width: 200,
-      margin: 1,
-    })
 
     // Read logo file and convert to base64 (PNG for better PDF compatibility)
-    const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.png')
-    const logoBuffer = fs.readFileSync(logoPath)
-    const logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
-
-    // Format date with short month (e.g., "28/Oct/2025")
-    const dateObj = new Date((sample as any).created_at)
-    const day = dateObj.getDate().toString().padStart(2, '0')
-    const month = dateObj.toLocaleDateString('en-US', { month: 'short' })
-    const year = dateObj.getFullYear()
-    const date = `${day}/${month}/${year}`
-
-    // Map sample_type to display format
-    const sampleTypeMap: Record<string, 'PSS' | 'Stocklot' | 'SS' | 'Type Sample'> = {
-      'pss': 'PSS',
-      'ss': 'SS',
-      'type': 'Type Sample',
-      'stocklot': 'Stocklot'
+    let logoBase64: string
+    try {
+      const logoPath = path.join(process.cwd(), 'public', 'images', 'logos', 'wolthers-logo-black.png')
+      const logoBuffer = fs.readFileSync(logoPath)
+      logoBase64 = `data:image/png;base64,${logoBuffer.toString('base64')}`
+    } catch (logoError) {
+      console.error('Error reading logo file:', logoError)
+      return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
-    const displaySampleType = sampleTypeMap[(sample as any).sample_type] || 'PSS'
 
-    // Prepare label data
-    const labelData: TinSleeveLabelData = {
-      date,
-      tracking_number: (sample as any).tracking_number,
-      sample_type: displaySampleType,
-      exporter: exporterName,
-      client_quality_name: clientQualityName,
-      quality_description: qualityDescription,
-      contracts,
-      packaging,
-      bags_display: bagsDisplay,
-      qr_code: qrCode,
-      logo_url: logoBase64,
+    // Every certificate belonging to this sample (mother first, then each
+    // sub-contract's) is comma-joined into the Cert. field.
+    const { data: certRows, error: certError } = await supabase
+      .from('certificates')
+      .select('sample_contract_id, certificate_number, created_at')
+      .eq('sample_id', (sample as any).id)
+      .not('certificate_number', 'is', null)
+      .order('created_at', { ascending: true })
+
+    if (certError) {
+      console.error('Error fetching certificates for tin sleeve:', certError)
+      return NextResponse.json({
+        error: 'Failed to fetch certificate numbers',
+        details: certError.message || String(certError),
+      }, { status: 500 })
     }
+
+    const rows = (certRows || []) as Array<{
+      sample_contract_id: string | null
+      certificate_number: string
+      created_at: string
+    }>
+    const mother = rows.find(r => r.sample_contract_id === null)
+    const certNumbers = [
+      ...(mother ? [mother.certificate_number] : []),
+      ...rows.filter(r => r.sample_contract_id !== null).map(r => r.certificate_number),
+    ]
+    const certifiedAt = mother?.created_at || rows[0]?.created_at || null
+
+    const s = sample as any
+
+    const fields = buildSleeveLabelFields({
+      sampleType: toSleeveSampleType(s.sample_type),
+      containerNr: s.container_nr,
+      exporterSampleNumber: s.exporter_sample_number,
+      certificateNumbers: certNumbers,
+      certifiedAt,
+      sellerName: s.hide_exporter_on_label ? null : (s.seller?.name || s.exporter?.name || null),
+      sellerRef: s.exporter_contract_nr,
+      clientName: s.client?.name || null,
+      clientRef: s.buyer_contract_nr,
+      roasterName: s.roaster?.name || null,
+      quality: resolveQualityName(s.quality_spec, s.quality_name),
+      bagCount: s.bag_count,
+      bagWeightKg: s.bag_weight_kg,
+      bagType: s.bag_type,
+      quantityMt: s.bags_quantity_mt,
+      equivalent60kgBags: s.equivalent_60kg_bags,
+    })
+
+    // URL only. The old multi-line text payload made phones show text instead
+    // of opening the page, and pushed QR density past what a 27mm print scans
+    // reliably.
+    const qrCode = certNumbers[0]
+      ? await generateQRCode(getCertificatePageUrl(certNumbers[0]), { width: 400, margin: 1 })
+      : undefined
+
+    // This route has no size parameter and never had one; omitting `size`
+    // makes the document fall back to '4cm', matching prior behavior.
+    const labels: TinSleeveLabelData[] = [
+      { ...fields, qr_code: qrCode, logo_url: logoBase64 },
+    ]
 
     // Generate PDF
-    const pdfDocument = <TinSleeveLabelDocument labels={[labelData]} />
-    const stream = await renderToStream(pdfDocument)
+    let pdfDocument, stream, buffer
+    try {
+      pdfDocument = <TinSleeveLabelDocument labels={labels} />
+      stream = await renderToStream(pdfDocument)
 
-    // Convert stream to buffer
-    const chunks: Buffer[] = []
-    for await (const chunk of stream) {
-      chunks.push(Buffer.from(chunk))
+      // Convert stream to buffer
+      const chunks: Buffer[] = []
+      for await (const chunk of stream) {
+        chunks.push(Buffer.from(chunk))
+      }
+      buffer = Buffer.concat(chunks)
+    } catch (pdfError) {
+      console.error('Error generating PDF:', pdfError)
+      return NextResponse.json({ error: 'Failed to generate PDF', details: String(pdfError) }, { status: 500 })
     }
-    const buffer = Buffer.concat(chunks)
 
     // Return PDF as response
     return new NextResponse(buffer, {
       status: 200,
       headers: {
         'Content-Type': 'application/pdf',
-        'Content-Disposition': `attachment; filename="tin-sleeve-${(sample as any).tracking_number}.pdf"`,
+        'Content-Disposition': `attachment; filename="tin-sleeve-${id}.pdf"`,
         'Content-Length': buffer.length.toString(),
       },
     })
   } catch (error) {
     console.error('Error in GET /api/samples/[id]/print-tin-sleeve:', error)
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
+    return NextResponse.json({
+      error: 'Internal server error',
+      details: error instanceof Error ? error.message : String(error)
+    }, { status: 500 })
   }
 }
