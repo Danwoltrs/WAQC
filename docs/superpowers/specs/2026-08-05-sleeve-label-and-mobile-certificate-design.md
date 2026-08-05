@@ -66,7 +66,7 @@ column.
 | headline | SS → `samples.container_nr`; PSS → `samples.exporter_sample_number` | falls back to the certificate number; when it does, the `Cert.:` field omits itself so the number never prints twice |
 | `Seller:` | seller/exporter company name | `(exporter_contract_nr)` in parentheses, muted, only when present |
 | `Client:` | QC client company (`samples.client_id`) | `(buyer_contract_nr)` in parentheses, muted, only when present |
-| `Cert.:` | `certificates.certificate_number` | certified month inserted before the year: `BR-036991/26` → `BR-036991/JUL/26` |
+| `Cert.:` | `certificates.certificate_number` | certified month inserted before the year: `BR-036991/26` → `BR-036991/JUL/26`. With sub-contracts, every certificate number comma-joined — see below |
 | `Roaster:` | roaster company name | **entire field omitted** when absent — never an empty label |
 | foot | quality; `bag_count` × `bag_weight_kg` × `bag_type`; `bags_quantity_mt`; `certificates.created_at` | quality is the client's `custom_name` when set, otherwise the template name — **never both**. Quality bold, quantity muted with bold numerals |
 
@@ -99,10 +99,21 @@ fallback — the 40mm label is the one that matters.
 
 ### Sub-contracts
 
-A mother sample with sub-contracts now has several certificate numbers where the
-label previously comma-joined tracking numbers. The `Cert.:` field lists the
-first two and appends `+N` beyond that. One tin is one physical sample, so this
-stays one label.
+One label, for the mother sample only. Sub-contracts do not get their own tins.
+
+The `Cert.:` field comma-joins every certificate number belonging to the sample —
+the mother's plus each sub-contract's, in `sort_order`. This mirrors what the
+label does today with tracking numbers.
+
+The line is allowed to wrap to a second line before truncating, since a sample
+with several sub-contracts otherwise loses numbers to the ellipsis. Everything
+else on the label stays the mother's: the headline is the mother's container or
+exporter sample number, and the foot quantity is the mother plus sub-contract
+total, as it is today.
+
+The per-sub-contract columns on `sample_contracts` (`container_nr`,
+`exporter_sample_number`, `buyer_contract_nr`, bag counts) are therefore not read
+by the label. Only the certificate numbers and the quantity roll-up are.
 
 ### QR payload
 
