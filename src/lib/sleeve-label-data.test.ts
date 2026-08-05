@@ -44,6 +44,11 @@ describe('withCertifiedMonth', () => {
   it('returns the number untouched when the date is unparseable', () => {
     expect(withCertifiedMonth('BR-036991/26', 'not-a-date')).toBe('BR-036991/26')
   })
+
+  it('uses the laboratory local date, not UTC, across the midnight boundary', () => {
+    // 2026-07-01T01:30Z is 30 June 22:30 in Santos.
+    expect(withCertifiedMonth('BR-036991/26', '2026-07-01T01:30:00.000Z')).toBe('BR-036991/JUN/26')
+  })
 })
 
 describe('formatLabelDate', () => {
@@ -54,6 +59,10 @@ describe('formatLabelDate', () => {
   it('returns null for missing or invalid input', () => {
     expect(formatLabelDate(null)).toBeNull()
     expect(formatLabelDate('nope')).toBeNull()
+  })
+
+  it('formats the laboratory local day across the midnight boundary', () => {
+    expect(formatLabelDate('2026-07-01T01:30:00.000Z')).toBe('30/Jun/2026')
   })
 })
 

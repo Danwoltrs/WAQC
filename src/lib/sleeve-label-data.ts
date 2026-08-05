@@ -43,7 +43,27 @@ export interface SleeveLabelFields {
   date: string | null
 }
 
-const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC']
+/**
+ * Labels render the laboratory's local calendar date, not UTC: a certificate
+ * issued at 22:30 on 30 June in Santos must print 30/Jun, not 1/Jul.
+ *
+ * Hardcoded to the Santos HQ zone. The other labs (Buenaventura, Guatemala
+ * City, Lima) certify in their own local days and would need this resolved
+ * per-laboratory — tracked as a follow-up, not in scope here.
+ */
+const LABEL_TIME_ZONE = 'America/Sao_Paulo'
+
+/** Extract day, month (short), and year in the label timezone. */
+function dateParts(d: Date): { day: string; month: string; year: string } {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: LABEL_TIME_ZONE,
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).formatToParts(d)
+  const get = (type: string) => parts.find(p => p.type === type)?.value || ''
+  return { day: get('day'), month: get('month'), year: get('year') }
+}
 
 /** "BR-036991/26" + July -> "BR-036991/JUL/26". No year segment -> "37112/JUL". */
 export function withCertifiedMonth(certNumber: string, certifiedAt: string | null | undefined): string {
@@ -51,7 +71,7 @@ export function withCertifiedMonth(certNumber: string, certifiedAt: string | nul
   if (!certifiedAt) return certNumber
   const d = new Date(certifiedAt)
   if (Number.isNaN(d.getTime())) return certNumber
-  const month = MONTHS[d.getMonth()]
+  const month = dateParts(d).month.toUpperCase()
   const lastSlash = certNumber.lastIndexOf('/')
   if (lastSlash === -1) return `${certNumber}/${month}`
   return `${certNumber.slice(0, lastSlash)}/${month}${certNumber.slice(lastSlash)}`
@@ -62,9 +82,8 @@ export function formatLabelDate(iso: string | null | undefined): string | null {
   if (!iso) return null
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return null
-  const day = String(d.getDate()).padStart(2, '0')
-  const month = d.toLocaleDateString('en-US', { month: 'short' })
-  return `${day}/${month}/${d.getFullYear()}`
+  const { day, month, year } = dateParts(d)
+  return `${day}/${month}/${year}`
 }
 
 /** "333 bags in 60 kg jute bags | 20.0 MT", or the bulk equivalent form. */
