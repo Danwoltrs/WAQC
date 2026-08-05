@@ -108,12 +108,20 @@ export async function POST(request: NextRequest) {
 
     // One label per mother sample; every certificate belonging to it (mother
     // first, then each sub-contract's) is comma-joined into the Cert. field.
-    const { data: certRows } = await supabase
+    const { data: certRows, error: certError } = await supabase
       .from('certificates')
       .select('sample_id, sample_contract_id, certificate_number, created_at')
       .in('sample_id', printableIds)
       .not('certificate_number', 'is', null)
       .order('created_at', { ascending: true })
+
+    if (certError) {
+      console.error('Error fetching certificates for tin sleeves:', certError)
+      return NextResponse.json({
+        error: 'Failed to fetch certificate numbers',
+        details: certError.message || String(certError),
+      }, { status: 500 })
+    }
 
     const certsBySample: Record<string, { numbers: string[]; certifiedAt: string | null }> = {}
     for (const row of (certRows || []) as Array<{
