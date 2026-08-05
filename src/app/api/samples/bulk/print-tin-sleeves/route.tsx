@@ -3,7 +3,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase-server'
 import { renderToStream } from '@react-pdf/renderer'
 import { TinSleeveLabelDocument, TinSleeveLabelData } from '@/components/pdf/tin-sleeve-label'
-import { generateQRCode, fetchCertificateQRData, buildCertificateQRText } from '@/lib/qr-code'
+import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
+import {
+  buildSleeveLabelFields,
+  toSleeveSampleType,
+  resolveQualityName,
+} from '@/lib/sleeve-label-data'
 import path from 'path'
 import fs from 'fs'
 
@@ -39,24 +44,24 @@ export async function POST(request: NextRequest) {
       .from('samples')
       .select(`
         id,
-        tracking_number,
         sample_type,
-        created_at,
-        wolthers_contract_nr,
+        workflow_stage,
+        container_nr,
+        exporter_sample_number,
         buyer_contract_nr,
         exporter_contract_nr,
-        roaster_contract_nr,
         bag_type,
         bag_count,
         bag_weight_kg,
         bags_quantity_mt,
         equivalent_60kg_bags,
-        quality_spec_id,
-        client_id,
+        quality_name,
         exporter:companies!samples_exporter_id_fkey(name),
+        seller:companies!samples_seller_id_fkey(name),
+        client:companies!samples_client_id_fkey(name),
+        roaster:companies!samples_roaster_id_fkey(name),
         quality_spec:client_qualities(
           custom_name,
-          quality_code,
           template:quality_templates(name_en, name_pt, name_es)
         )
       `)
@@ -76,6 +81,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No samples found' }, { status: 404 })
     }
 
+    // The label prints the OFFICIAL certificate number, which is only minted at
+    // certification. Anything earlier has no number to print.
+    const PRINTABLE_STAGES = ['certified', 'rejected']
+    const printable = (samples as any[]).filter(s => PRINTABLE_STAGES.includes(s.workflow_stage))
+    const skipped = samples.length - printable.length
+
+    if (printable.length === 0) {
+      return NextResponse.json({
+        error: 'No certified samples selected. Tin labels carry the certificate number, which is issued at certification.',
+      }, { status: 400 })
+    }
+
     // Read logo file and convert to base64 (PNG for better PDF compatibility)
     let logoBase64: string
     try {
@@ -87,133 +104,67 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
 
-    // Fetch sub-contracts for all samples
-    const { data: subContracts } = await supabase
-      .from('sample_contracts')
-      .select('id, sample_id, tracking_number, bags_quantity_mt')
-      .in('sample_id', sample_ids)
-      .order('sort_order', { ascending: true }) as { data: Array<{ id: string; sample_id: string; tracking_number: string; bags_quantity_mt: number | null }> | null }
+    const printableIds = printable.map(s => s.id)
 
-    // Group sub-contracts by sample_id
-    const subContractsBySample: Record<string, Array<{ tracking_number: string; bags_quantity_mt: number | null }>> = {}
-    if (subContracts) {
-      for (const sc of subContracts) {
-        if (!subContractsBySample[sc.sample_id]) {
-          subContractsBySample[sc.sample_id] = []
-        }
-        subContractsBySample[sc.sample_id].push(sc)
+    // One label per mother sample; every certificate belonging to it (mother
+    // first, then each sub-contract's) is comma-joined into the Cert. field.
+    const { data: certRows } = await supabase
+      .from('certificates')
+      .select('sample_id, sample_contract_id, certificate_number, created_at')
+      .in('sample_id', printableIds)
+      .not('certificate_number', 'is', null)
+      .order('created_at', { ascending: true })
+
+    const certsBySample: Record<string, { numbers: string[]; certifiedAt: string | null }> = {}
+    for (const row of (certRows || []) as Array<{
+      sample_id: string
+      sample_contract_id: string | null
+      certificate_number: string
+      created_at: string
+    }>) {
+      const entry = certsBySample[row.sample_id] || { numbers: [], certifiedAt: null }
+      // Mother certificate leads and sets the certified date.
+      if (row.sample_contract_id === null) {
+        entry.numbers.unshift(row.certificate_number)
+        entry.certifiedAt = row.created_at
+      } else {
+        entry.numbers.push(row.certificate_number)
+        if (!entry.certifiedAt) entry.certifiedAt = row.created_at
       }
+      certsBySample[row.sample_id] = entry
     }
 
-    // Bag type mapping
-    const bagTypeMap: Record<string, string> = {
-      jute_bag: 'Jute Bags',
-      pp_bag: 'PP Bags',
-      big_bag: 'Big Bags (1 M/T)',
-      bulk: 'Bulk',
-    }
-
-    // Generate QR codes and prepare label data for all samples
     const labelsWithQR: TinSleeveLabelData[] = await Promise.all(
-      samples.map(async (sample: any) => {
-        // Get exporter name
-        const exporterName = sample.exporter?.name || 'N/A'
+      printable.map(async (sample: any) => {
+        const certs = certsBySample[sample.id] || { numbers: [], certifiedAt: null }
 
-        // Get client quality name and full quality description
-        const qualitySpec = sample.quality_spec
-        let clientQualityName: string | undefined
-        let qualityDescription = 'N/A'
-
-        if (qualitySpec) {
-          // Client quality name is the custom_name if it exists
-          clientQualityName = qualitySpec.custom_name || undefined
-
-          // Quality description comes from the template
-          if (qualitySpec.template) {
-            qualityDescription = qualitySpec.template.name_en || qualitySpec.template.name_pt || qualitySpec.template.name_es || 'N/A'
-          }
-        }
-
-        // Build combined tracking number (mother + sub-contracts)
-        const sampleSubContracts = subContractsBySample[sample.id] || []
-        let combinedTrackingNumber = sample.tracking_number
-        if (sampleSubContracts.length > 0) {
-          const allNumbers = [sample.tracking_number, ...sampleSubContracts.map(sc => sc.tracking_number)]
-          combinedTrackingNumber = allNumbers.join(', ')
-        }
-
-        // Format packaging
-        const packaging = bagTypeMap[sample.bag_type] || 'N/A'
-
-        // Calculate total quantity including sub-contracts
-        const motherMT = sample.bags_quantity_mt || 0
-        const subContractMT = sampleSubContracts.reduce((sum: number, sc: any) => sum + (sc.bags_quantity_mt || 0), 0)
-        const totalMT = motherMT + subContractMT
-
-        // Format bags display with quantity and MT
-        let bagsDisplay = 'N/A'
-        const bagCount = sample.bag_count
-        const bagWeight = sample.bag_weight_kg
-        const bagType = sample.bag_type
-        const quantityMT = totalMT || sample.bags_quantity_mt
-        const equivalent60kg = sample.equivalent_60kg_bags
-
-        if (bagType === 'bulk' && equivalent60kg) {
-          // For bulk: "equiv. 360 bags in 60 kg | 21.6 MT"
-          const mt = quantityMT || (equivalent60kg * 60 / 1000)
-          bagsDisplay = `equiv. ${Math.round(equivalent60kg)} bags in 60 kg | ${mt.toFixed(1)} MT`
-        } else if (bagCount != null && bagWeight != null) {
-          // For regular bags: "320 bags in 60 kg jute bags | 19.2 MT"
-          const bagTypeName = bagType === 'jute_bag' ? 'jute bags' : bagType === 'pp_bag' ? 'PP bags' : 'bags'
-          const mt = quantityMT || (bagCount * bagWeight / 1000)
-          bagsDisplay = `${bagCount} bags in ${bagWeight} kg ${bagTypeName} | ${mt.toFixed(1)} MT`
-        }
-
-        // Collect contracts
-        const contracts: string[] = []
-        if (sample.wolthers_contract_nr) contracts.push(sample.wolthers_contract_nr)
-        if (sample.buyer_contract_nr) contracts.push(sample.buyer_contract_nr)
-        if (sample.exporter_contract_nr) contracts.push(sample.exporter_contract_nr)
-        if (sample.roaster_contract_nr) contracts.push(sample.roaster_contract_nr)
-
-        // Generate QR code with certificate summary text
-        const qrData = await fetchCertificateQRData(supabase, sample.id, sample.tracking_number)
-        const qrContent = buildCertificateQRText(qrData)
-        const qrCode = await generateQRCode(qrContent, {
-          width: 200,
-          margin: 1,
+        const fields = buildSleeveLabelFields({
+          sampleType: toSleeveSampleType(sample.sample_type),
+          containerNr: sample.container_nr,
+          exporterSampleNumber: sample.exporter_sample_number,
+          certificateNumbers: certs.numbers,
+          certifiedAt: certs.certifiedAt,
+          sellerName: sample.seller?.name || sample.exporter?.name || null,
+          sellerRef: sample.exporter_contract_nr,
+          clientName: sample.client?.name || null,
+          clientRef: sample.buyer_contract_nr,
+          roasterName: sample.roaster?.name || null,
+          quality: resolveQualityName(sample.quality_spec, sample.quality_name),
+          bagCount: sample.bag_count,
+          bagWeightKg: sample.bag_weight_kg,
+          bagType: sample.bag_type,
+          quantityMt: sample.bags_quantity_mt,
+          equivalent60kgBags: sample.equivalent_60kg_bags,
         })
 
-        // Format date with short month (e.g., "28/Oct/2025")
-        const dateObj = new Date(sample.created_at)
-        const day = dateObj.getDate().toString().padStart(2, '0')
-        const month = dateObj.toLocaleDateString('en-US', { month: 'short' })
-        const year = dateObj.getFullYear()
-        const date = `${day}/${month}/${year}`
+        // URL only. The old multi-line text payload made phones show text
+        // instead of opening the page, and pushed QR density past what a 27mm
+        // print scans reliably.
+        const qrCode = certs.numbers[0]
+          ? await generateQRCode(getCertificatePageUrl(certs.numbers[0]), { width: 400, margin: 1 })
+          : undefined
 
-        // Map sample_type to display format
-        const sampleTypeMap: Record<string, 'PSS' | 'Stocklot' | 'SS' | 'Type Sample'> = {
-          'pss': 'PSS',
-          'ss': 'SS',
-          'type': 'Type Sample',
-          'stocklot': 'Stocklot'
-        }
-        const displaySampleType = sampleTypeMap[sample.sample_type?.toLowerCase() || 'pss'] || 'PSS'
-
-        return {
-          date,
-          tracking_number: combinedTrackingNumber,
-          sample_type: displaySampleType,
-          exporter: exporterName,
-          client_quality_name: clientQualityName,
-          quality_description: qualityDescription,
-          contracts,
-          packaging,
-          bags_display: bagsDisplay,
-          qr_code: qrCode,
-          logo_url: logoBase64,
-          size: size as '4cm' | '2.5cm',
-        }
+        return { ...fields, qr_code: qrCode, logo_url: logoBase64, size: size as '4cm' | '2.5cm' }
       })
     )
 
@@ -241,6 +192,7 @@ export async function POST(request: NextRequest) {
         'Content-Type': 'application/pdf',
         'Content-Disposition': `attachment; filename="tin-sleeves-${size}-${new Date().toISOString().split('T')[0]}.pdf"`,
         'Content-Length': buffer.length.toString(),
+        'X-Skipped-Samples': String(skipped),
       },
     })
   } catch (error) {
