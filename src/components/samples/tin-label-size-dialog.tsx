@@ -60,6 +60,12 @@ export function TinLabelSizeDialog({
 
       // Get the PDF blob
       const blob = await response.blob()
+      const skipped = Number(response.headers.get('X-Skipped-Samples') || '0')
+      if (skipped > 0) {
+        toast.warning(
+          `${skipped} sample${skipped === 1 ? '' : 's'} skipped — not certified yet, so there is no certificate number to print.`
+        )
+      }
       const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url

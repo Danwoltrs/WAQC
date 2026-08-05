@@ -1161,7 +1161,11 @@ export default function SamplesPage() {
                     <Download className="h-4 w-4 mr-2" />
                     Export to Excel
                   </DropdownMenuItem>
-                  <DropdownMenuItem onClick={handleBulkPrintTinSleeves}>
+                  <DropdownMenuItem
+                    onClick={handleBulkPrintTinSleeves}
+                    disabled={!hasCertifiedSelected}
+                    title={hasCertifiedSelected ? undefined : 'Tin labels carry the certificate number, issued at certification'}
+                  >
                     <Printer className="h-4 w-4 mr-2" />
                     Tin Label
                   </DropdownMenuItem>
@@ -1732,7 +1736,11 @@ export default function SamplesPage() {
                             <Download className="h-4 w-4 mr-2" />
                             Export to Excel
                           </ContextMenuItem>
-                          <ContextMenuItem onClick={handleBulkPrintTinSleeves}>
+                          <ContextMenuItem
+                            onClick={handleBulkPrintTinSleeves}
+                            disabled={!hasCertifiedSelected}
+                            title={hasCertifiedSelected ? undefined : 'Tin labels carry the certificate number, issued at certification'}
+                          >
                             <Printer className="h-4 w-4 mr-2" />
                             Tin Label
                           </ContextMenuItem>
@@ -2034,7 +2042,11 @@ export default function SamplesPage() {
                 <Download className="h-4 w-4 mr-2" />
                 Export to Excel
               </ContextMenuItem>
-              <ContextMenuItem onClick={handleBulkPrintTinSleeves}>
+              <ContextMenuItem
+                onClick={handleBulkPrintTinSleeves}
+                disabled={!hasCertifiedSelected}
+                title={hasCertifiedSelected ? undefined : 'Tin labels carry the certificate number, issued at certification'}
+              >
                 <Printer className="h-4 w-4 mr-2" />
                 Tin Label
               </ContextMenuItem>
