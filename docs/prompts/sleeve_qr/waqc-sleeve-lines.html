@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wolthers — sample sleeve label</title>
+<style>
+  :root{
+    --label-w: 165mm;
+    --label-h: 40mm;
+    --qr:      27mm;
+
+    --ink:   #000;
+    --mid:   #3a3a3a;
+    --soft:  #7a7a7a;
+    --hair:  #bdbdbd;
+    --olive: #6d7f37;
+  }
+
+  @page{ size:A4 landscape; margin:6mm; }
+  *{box-sizing:border-box}
+  body{
+    margin:0;padding:20px;background:#e9e7e2;color:var(--ink);
+    font-family:Arial,Helvetica,sans-serif;
+    display:flex;flex-direction:column;align-items:center;gap:11px;
+  }
+  .hint{font-size:12px;color:#6b6b66;max-width:var(--label-w);line-height:1.5}
+  .hint b{color:#3a3a36}
+
+  .label{
+    width:var(--label-w);height:var(--label-h);
+    background:#fff;border:1px solid var(--hair);
+    display:grid;grid-template-columns:30mm var(--qr) 1fr;
+    align-items:center;gap:4mm;padding:3mm 4mm 3mm 3mm;
+    page-break-inside:avoid;
+  }
+
+  .wordmark{font-size:16px;font-weight:700;letter-spacing:-.03em;line-height:1;text-align:center}
+  .wordmark span{color:var(--olive)}
+  .wordmark small{
+    display:block;font-size:5.5px;letter-spacing:.3em;
+    font-weight:600;color:var(--mid);margin-top:1.5px;
+  }
+  .qr{
+    width:var(--qr);height:var(--qr);
+    background:repeating-conic-gradient(#000 0 25%, #fff 0 50%) 0 0/3.2mm 3.2mm;
+    outline:.3mm solid #000;
+  }
+
+  .body{min-width:0;display:flex;flex-direction:column;justify-content:center}
+
+  .head{display:flex;align-items:baseline;min-width:0}
+  .ref{
+    font-size:15px;font-weight:700;letter-spacing:-.01em;line-height:1.1;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+
+  .line{
+    font-size:8.5px;line-height:1.45;margin-top:.8mm;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .line b{font-weight:700}
+  .pr{color:var(--mid)}
+  .sep{color:var(--hair);margin:0 1.6mm}
+
+  .foot{
+    margin-top:1.4mm;padding-top:1.2mm;border-top:.3mm solid var(--hair);
+    font-size:8.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .qual{font-weight:700}
+  .qty{color:var(--mid)}
+  .qty b{color:var(--ink)}
+
+  .sheet{
+    width:297mm;background:#fff;border:1px solid var(--hair);padding:6mm;
+    display:flex;flex-direction:column;align-items:center;gap:3mm;
+  }
+  .sheet .label{border:.3mm dashed #bbb}
+
+  @media print{
+    body{background:#fff;padding:0;gap:0;display:block}
+    .hint,.sheet{display:none}
+    .label{border:.3mm dashed #bbb;margin:0 auto 3mm}
+  }
+</style>
+</head>
+<body>
+
+<div class="hint">
+  <b>Shipment sample.</b> No cells — each line just runs until it ends, so a long
+  roaster or exporter name pushes the rest along instead of breaking a grid.
+</div>
+
+<div class="label">
+  <div class="wordmark">w<span>o</span>lthers<small>ASSOCIATES</small></div>
+  <div class="qr"></div>
+  <div class="body">
+      <div class="head"><span class="ref">HASU 155.201-6</span></div>
+      <div class="line"><b>Seller:</b> OFI<span class="sep">|</span><b>Client:</b> OFI <span class="pr">(P-8037)</span></div>
+      <div class="line"><b>Cert.:</b> 37112/JUL<span class="sep">|</span><b>Roaster:</b> Mother Parker's</div>
+      <div class="foot">
+        <span class="qual">DDQ</span><span class="sep">|</span><span class="qty"><b>333</b> bags in 60 kg jute bags<span class="sep">|</span><b>20.0 MT</b><span class="sep">|</span>29/Jul/2026</span>
+      </div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint">
+  <b>Pre-shipment sample, no roaster.</b> The roaster field disappears entirely
+  rather than printing an empty label.
+</div>
+
+<div class="label">
+  <div class="wordmark">w<span>o</span>lthers<small>ASSOCIATES</small></div>
+  <div class="qr"></div>
+  <div class="body">
+      <div class="head"><span class="ref">CCT-2214/26</span></div>
+      <div class="line"><b>Seller:</b> Cocatrel <span class="pr">(34680)</span><span class="sep">|</span><b>Client:</b> OFI</div>
+      <div class="line"><b>Cert.:</b> 37080/JUL</div>
+      <div class="foot">
+        <span class="qual">DDQ</span><span class="sep">|</span><span class="qty"><b>334</b> bags in 60 kg jute bags<span class="sep">|</span><b>20.0 MT</b><span class="sep">|</span>29/Jul/2026</span>
+      </div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint">
+  <b>Long names.</b> Full exporter name and a descriptive quality, no truncation.
+</div>
+
+<div class="label">
+  <div class="wordmark">w<span>o</span>lthers<small>ASSOCIATES</small></div>
+  <div class="qr"></div>
+  <div class="body">
+      <div class="head"><span class="ref">GCXU 233.299-0</span></div>
+      <div class="line"><b>Seller:</b> CDN Industry and Export<span class="sep">|</span><b>Client:</b> OFI <span class="pr">(P-8037)</span></div>
+      <div class="line"><b>Cert.:</b> 37115/JUL<span class="sep">|</span><b>Roaster:</b> Mother Parker's</div>
+      <div class="foot">
+        <span class="qual">17/18 SS FC · NY 2/3</span><span class="sep">|</span><span class="qty"><b>440</b> bags in 60 kg jute bags<span class="sep">|</span><b>26.4 MT</b><span class="sep">|</span>29/Jul/2026</span>
+      </div>
+    </div>
+    </div>
+  </div>
+</div>
+
+<div class="hint"><b>A4 landscape</b> — one across, 6 down.</div>
+
+<div class="sheet">
+  <div class="label">
+    <div class="wordmark">w<span>o</span>lthers<small>ASSOCIATES</small></div>
+    <div class="qr"></div>
+    <div class="body">
+      <div class="head"><span class="ref">HASU 155.201-6</span></div>
+      <div class="line"><b>Seller:</b> OFI<span class="sep">|</span><b>Client:</b> OFI <span class="pr">(P-8037)</span></div>
+      <div class="line"><b>Cert.:</b> 37112/JUL<span class="sep">|</span><b>Roaster:</b> Mother Parker's</div>
+      <div class="foot">
+        <span class="qual">DDQ</span><span class="sep">|</span><span class="qty"><b>333</b> bags in 60 kg jute bags<span class="sep">|</span><b>20.0 MT</b><span class="sep">|</span>29/Jul/2026</span>
+      </div>
+    </div>
+    </div>
+    </div>
+  </div>
+  <div class="label">
+    <div class="wordmark">w<span>o</span>lthers<small>ASSOCIATES</small></div>
+    <div class="qr"></div>
+    <div class="body">
+      <div class="head"><span class="ref">CAIU 631.237-4</span></div>
+      <div class="line"><b>Seller:</b> Cocatrel<span class="sep">|</span><b>Client:</b> OFI <span class="pr">(P-8037)</span></div>
+      <div class="line"><b>Cert.:</b> 37115/JUL</div>
+      <div class="foot">
+        <span class="qual">DDQ</span><span class="sep">|</span><span class="qty"><b>333</b> bags in 60 kg jute bags<span class="sep">|</span><b>20.0 MT</b><span class="sep">|</span>29/Jul/2026</span>
+      </div>
+    </div>
+    </div>
+    </div>
+  </div>
+  <div class="label">
+    <div class="wordmark">w<span>o</span>lthers<small>ASSOCIATES</small></div>
+    <div class="qr"></div>
+    <div class="body">
+      <div class="head"><span class="ref">GCXU 233.299-0</span></div>
+      <div class="line"><b>Seller:</b> Cocatrel <span class="pr">(34680)</span><span class="sep">|</span><b>Client:</b> OFI</div>
+      <div class="line"><b>Cert.:</b> 37080/JUL<span class="sep">|</span><b>Roaster:</b> MZB</div>
+      <div class="foot">
+        <span class="qual">DDQ</span><span class="sep">|</span><span class="qty"><b>333</b> bags in 60 kg jute bags<span class="sep">|</span><b>20.0 MT</b><span class="sep">|</span>29/Jul/2026</span>
+      </div>
+    </div>
+    </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

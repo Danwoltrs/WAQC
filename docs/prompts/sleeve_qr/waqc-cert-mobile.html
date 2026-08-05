@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WAQC — Certificate CCT-2214/26 (mobile mockup)</title>
+<style>
+  :root{
+    --bg:        #262625;
+    --card:      #333331;
+    --card-2:    #3b3b39;
+    --line:      #4a4a47;
+    --line-soft: #3f3f3c;
+    --ink:       #f2efe6;
+    --ink-2:     #a8a69d;
+    --ink-3:     #7c7a73;
+    --olive:     #6d7f37;
+    --olive-dim: #4e5a2b;
+    --amber:     #c98a2e;
+    --red:       #d9534f;
+    --red-bg:    #43221f;
+    --green:     #5fae63;
+    --r:         14px;
+  }
+
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0}
+  body{
+    background:#1a1a19;
+    color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif;
+    font-size:15px;
+    line-height:1.45;
+    display:flex;
+    justify-content:center;
+  }
+
+  .phone{
+    width:100%;
+    max-width:420px;
+    min-height:100vh;
+    background:var(--bg);
+    padding-bottom:104px;
+    position:relative;
+  }
+
+  /* ---------- slim header ---------- */
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 16px;
+    border-bottom:1px solid var(--line-soft);
+    background:var(--bg);
+    position:sticky;top:0;z-index:20;
+  }
+  .mark{font-weight:700;letter-spacing:-.02em;font-size:15px;color:var(--ink)}
+  .mark span{color:var(--olive)}
+  .mark small{
+    display:block;font-size:8px;letter-spacing:.28em;
+    color:var(--ink-3);font-weight:600;margin-top:1px;
+  }
+  .verified{
+    font-size:11px;color:var(--ink-3);
+    display:flex;align-items:center;gap:5px;
+  }
+  .dot{width:6px;height:6px;border-radius:50%;background:var(--green);display:inline-block}
+
+  /* ---------- verdict ---------- */
+  .verdict{padding:18px 16px 14px}
+  .verdict.rejected{background:linear-gradient(180deg,rgba(217,83,79,.10),transparent)}
+  .verdict-row{display:flex;align-items:center;justify-content:space-between;gap:12px}
+  .eyebrow{
+    font-size:10px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:600;margin-bottom:3px;
+  }
+  .sample-id{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0}
+  .badge{
+    display:inline-flex;align-items:center;gap:6px;
+    padding:6px 12px;border-radius:999px;
+    font-size:12px;font-weight:700;letter-spacing:.06em;
+    background:var(--red-bg);color:var(--red);border:1px solid rgba(217,83,79,.35);
+    white-space:nowrap;
+  }
+  .badge.approved{background:#26361f;color:var(--green);border-color:rgba(95,174,99,.35)}
+  .reason{
+    margin-top:12px;
+    border-left:3px solid var(--red);padding-left:11px;
+  }
+  .fail{
+    display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  }
+  .fail+.fail{margin-top:5px}
+  .fail-metric{font-size:14px;color:var(--ink)}
+  .fail-math{
+    font-size:14px;font-variant-numeric:tabular-nums;
+    color:var(--ink-2);white-space:nowrap;
+  }
+  .fail-math b{color:var(--red);font-weight:700;font-size:15px}
+  .fail-math .lim{color:var(--ink-3)}
+  .reason-sub{color:var(--ink-3);font-size:12.5px;margin-top:6px}
+
+  /* ---------- lot identity ---------- */
+  .lot{
+    margin:0;padding:14px 16px;
+    background:var(--card);
+    border-top:1px solid var(--line-soft);
+    border-bottom:1px solid var(--line-soft);
+    display:grid;grid-template-columns:1fr 1fr;gap:12px 10px;
+  }
+  .lot .full{grid-column:1/-1}
+  .k{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);margin-bottom:2px}
+  .v{font-size:15px;font-weight:600;color:var(--ink)}
+  .v.small{font-size:13.5px;font-weight:500;color:var(--ink-2)}
+
+  /* ---------- spec checklist ---------- */
+  .section-title{
+    font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--ink-3);margin:22px 16px 8px;font-weight:600;
+  }
+  .checks{
+    margin:0;background:var(--card);
+    border-top:1px solid var(--line-soft);
+    border-bottom:1px solid var(--line-soft);
+  }
+  .check{
+    display:flex;align-items:center;gap:11px;
+    padding:13px 16px;border-bottom:1px solid var(--line-soft);
+  }
+  .check:last-child{border-bottom:0}
+  .icon{
+    flex:none;width:20px;height:20px;border-radius:50%;
+    display:grid;place-items:center;font-size:12px;font-weight:700;
+  }
+  .icon.ok{background:rgba(95,174,99,.15);color:var(--green)}
+  .icon.no{background:rgba(217,83,79,.15);color:var(--red)}
+  .check-body{flex:1;min-width:0}
+  .check-label{font-size:14px;font-weight:500}
+  .check-sub{font-size:12px;color:var(--ink-3);margin-top:1px}
+  .check-val{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .check-val.no{color:var(--red)}
+  .check-val.ok{color:var(--ink-2)}
+
+  /* ---------- collapsible detail ---------- */
+  details{
+    margin:0;background:var(--card);
+    border-bottom:1px solid var(--line-soft);
+  }
+  details:first-of-type{border-top:1px solid var(--line-soft)}
+  summary{
+    list-style:none;cursor:pointer;
+    padding:14px 16px;display:flex;align-items:center;justify-content:space-between;
+    font-size:13.5px;font-weight:600;color:var(--ink);
+  }
+  summary::-webkit-details-marker{display:none}
+  .chev{color:var(--ink-3);font-size:12px;transition:transform .18s ease}
+  details[open] .chev{transform:rotate(180deg)}
+  .detail-body{padding:4px 16px 18px;border-top:1px solid var(--line-soft)}
+
+  /* screens */
+  .screen-row{display:flex;align-items:center;gap:10px;margin-top:11px}
+  .screen-lbl{width:52px;font-size:12.5px;color:var(--ink-2);flex:none}
+  .track{flex:1;height:8px;border-radius:4px;background:var(--card-2);overflow:hidden}
+  .fill{height:100%;border-radius:4px;background:var(--olive)}
+  .fill.dim{background:var(--olive-dim)}
+  .screen-pct{width:46px;text-align:right;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--ink)}
+  .spec-note{
+    margin-top:13px;padding-top:11px;border-top:1px solid var(--line-soft);
+    font-size:12px;color:var(--ink-3);
+  }
+  .spec-note b{color:var(--ink-2);font-weight:600}
+
+  /* cupping range bars */
+  .attr{margin-top:15px}
+  .attr:first-child{margin-top:6px}
+  .attr-head{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px}
+  .attr-name{font-size:13.5px;color:var(--ink)}
+  .attr-target{font-size:11px;color:var(--ink-3);margin-left:6px}
+  .attr-score{font-size:13.5px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink-2)}
+  .attr-score.edge{color:var(--amber)}
+  .attr-score.out{color:var(--red)}
+  .rail{
+    position:relative;height:22px;
+  }
+  .rail-line{
+    position:absolute;left:0;right:0;top:9px;height:4px;
+    border-radius:2px;background:var(--card-2);
+  }
+  .band{
+    position:absolute;top:9px;height:4px;border-radius:2px;
+    background:var(--olive-dim);
+  }
+  .tick{
+    position:absolute;top:3px;width:3px;height:16px;border-radius:2px;
+    background:var(--ink);transform:translateX(-1.5px);
+  }
+  .tick.edge{background:var(--amber)}
+  .tick.out{background:var(--red)}
+  .rail-scale{display:flex;justify-content:space-between;font-size:10px;color:var(--ink-3);margin-top:1px}
+
+  /* ---------- footer ---------- */
+  .footer{
+    position:fixed;bottom:0;left:50%;transform:translateX(-50%);
+    width:100%;max-width:420px;
+    background:var(--card);
+    border-top:1px solid var(--line);
+    box-shadow:0 -14px 22px -8px rgba(0,0,0,.55);
+    padding-bottom:env(safe-area-inset-bottom);
+    z-index:30;
+  }
+  .integrity{
+    display:flex;align-items:stretch;
+    padding:7px 8px 7px 0;
+  }
+  .ichip{
+    flex:1;text-align:center;position:relative;
+    display:flex;flex-direction:column;justify-content:center;
+    min-width:0;padding:2px 2px;
+  }
+  .ichip+.ichip::before{
+    content:"";position:absolute;left:0;top:4px;bottom:4px;
+    width:1px;background:var(--line-soft);
+  }
+  .ik{
+    font-size:9px;letter-spacing:.07em;text-transform:uppercase;
+    color:var(--ink-3);margin-bottom:1px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  }
+  .iv{font-size:14px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--ink);line-height:1.2}
+  .iv.yes{color:var(--green)}
+  .iv.no{color:var(--red)}
+
+  .dl{
+    flex:none;margin-left:8px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    gap:1px;width:58px;min-height:44px;
+    background:var(--olive);color:#fff;border:0;border-radius:10px;
+    font-family:inherit;cursor:pointer;
+  }
+  .dl:active{background:#5d6c2f}
+  .dl-arrow{font-size:16px;line-height:1}
+  .dl-lbl{font-size:9px;letter-spacing:.08em;font-weight:700}
+
+  /* ---------- certificate modal ---------- */
+  .overlay{
+    position:fixed;inset:0;z-index:50;
+    background:rgba(10,10,10,.78);
+    display:flex;align-items:center;justify-content:center;
+    padding:16px;
+    animation:fade .16s ease;
+  }
+  .overlay[hidden]{display:none}
+  @keyframes fade{from{opacity:0}to{opacity:1}}
+  .modal{
+    width:100%;max-width:388px;max-height:88vh;
+    background:var(--card);border:1px solid var(--line);
+    border-radius:16px;overflow:hidden;
+    display:flex;flex-direction:column;
+    animation:rise .18s ease;
+  }
+  @keyframes rise{from{transform:translateY(10px);opacity:0}to{transform:none;opacity:1}}
+  .modal-head{
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+    padding:12px 14px;border-bottom:1px solid var(--line-soft);
+  }
+  .modal-eyebrow{
+    font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:600;
+  }
+  .modal-title{font-size:17px;font-weight:700;letter-spacing:-.01em}
+  .modal-close{
+    flex:none;width:32px;height:32px;border-radius:50%;
+    background:var(--card-2);color:var(--ink-2);border:0;
+    font-size:13px;cursor:pointer;font-family:inherit;
+  }
+  .modal-close:active{background:var(--line)}
+  .modal-body{flex:1;overflow:auto;background:#1c1c1b;padding:14px}
+  .pdf-stage{display:flex;justify-content:center}
+  .pdf-page{
+    width:100%;aspect-ratio:1/1.414;background:#f6f4ee;border-radius:4px;
+    display:grid;place-items:center;
+  }
+  .pdf-note{font-size:12px;color:#8a887f;letter-spacing:.04em}
+  .modal-foot{
+    display:flex;gap:10px;padding:12px 14px;
+    border-top:1px solid var(--line-soft);
+  }
+  .btn{
+    flex:1;display:flex;align-items:center;justify-content:center;gap:8px;
+    padding:14px;border-radius:12px;border:0;
+    font-size:15px;font-weight:600;font-family:inherit;cursor:pointer;
+  }
+  .btn-primary{background:var(--olive);color:#fff}
+  .btn-primary:active{background:#5d6c2f}
+  .btn-ghost{
+    flex:none;width:52px;background:var(--card);color:var(--ink);
+    border:1px solid var(--line);
+  }
+  .btn:focus-visible{outline:2px solid var(--ink);outline-offset:2px}
+  summary:focus-visible{outline:2px solid var(--ink);outline-offset:-2px}
+
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<div class="phone">
+
+  <!-- header -->
+  <div class="topbar">
+    <div class="mark">w<span>o</span>lthers<small>ASSOCIATES</small></div>
+    <div class="verified"><span class="dot"></span>Verified certificate</div>
+  </div>
+
+  <!-- verdict -->
+  <div class="verdict rejected">
+    <div class="verdict-row">
+      <div>
+        <div class="eyebrow">PSS · Exporter sample</div>
+        <h1 class="sample-id">CCT-2214/26</h1>
+      </div>
+      <span class="badge">✕ REJECTED</span>
+    </div>
+    <div class="reason">
+      <div class="fail">
+        <span class="fail-metric">Total defects</span>
+        <span class="fail-math"><b>16.9</b> &gt; <span class="lim">12.0 max</span></span>
+      </div>
+      <div class="reason-sub">Everything else within Dunkin spec.</div>
+    </div>
+  </div>
+
+  <!-- lot identity -->
+  <div class="lot">
+    <div>
+      <div class="k">Exporter</div>
+      <div class="v">Cocatrel</div>
+    </div>
+    <div>
+      <div class="k">Quality</div>
+      <div class="v">Dunkin</div>
+    </div>
+    <div>
+      <div class="k">Quantity</div>
+      <div class="v">334 bags · 20.0 MT</div>
+    </div>
+    <div>
+      <div class="k">Origin</div>
+      <div class="v">Brazil</div>
+    </div>
+    <div class="full">
+      <div class="k">Certified</div>
+      <div class="v small">29 Jul 2026 · 60 kg jute bags</div>
+    </div>
+  </div>
+
+  <!-- spec checklist -->
+  <div class="section-title">Against Dunkin spec</div>
+  <div class="checks">
+    <div class="check">
+      <div class="icon no">✕</div>
+      <div class="check-body">
+        <div class="check-label">Total defects</div>
+        <div class="check-sub">3 primary + 13.9 secondary · max 12.0</div>
+      </div>
+      <div class="check-val no">16.9</div>
+    </div>
+    <div class="check">
+      <div class="icon ok">✓</div>
+      <div class="check-body">
+        <div class="check-label">Screen 15 and above</div>
+        <div class="check-sub">min 90%</div>
+      </div>
+      <div class="check-val ok">96.0%</div>
+    </div>
+    <div class="check">
+      <div class="icon ok">✓</div>
+      <div class="check-body">
+        <div class="check-label">Cupping attributes</div>
+        <div class="check-sub">7 of 7 inside target range</div>
+      </div>
+      <div class="check-val ok">Pass</div>
+    </div>
+    <div class="check">
+      <div class="icon ok">✓</div>
+      <div class="check-body">
+        <div class="check-label">Cup integrity</div>
+        <div class="check-sub">Clean and uniform · 0 taints, 0 faults</div>
+      </div>
+      <div class="check-val ok">Pass</div>
+    </div>
+  </div>
+
+  <!-- detail -->
+  <div class="section-title">Detail</div>
+
+  <details>
+    <summary>Screen distribution <span class="chev">⌄</span></summary>
+    <div class="detail-body">
+      <div class="screen-row">
+        <div class="screen-lbl">Scr. 16</div>
+        <div class="track"><div class="fill" style="width:71%"></div></div>
+        <div class="screen-pct">71.0%</div>
+      </div>
+      <div class="screen-row">
+        <div class="screen-lbl">Scr. 15</div>
+        <div class="track"><div class="fill" style="width:25%"></div></div>
+        <div class="screen-pct">25.0%</div>
+      </div>
+      <div class="screen-row">
+        <div class="screen-lbl">Scr. 14</div>
+        <div class="track"><div class="fill dim" style="width:3%"></div></div>
+        <div class="screen-pct">3.0%</div>
+      </div>
+      <div class="screen-row">
+        <div class="screen-lbl">Pan</div>
+        <div class="track"><div class="fill dim" style="width:1%"></div></div>
+        <div class="screen-pct">1.0%</div>
+      </div>
+      <div class="spec-note">Spec requires <b>min 90% on screen 15 and above</b>. This lot: <b>96.0%</b>.</div>
+    </div>
+  </details>
+
+  <details open>
+    <summary>Cupping profile <span class="chev">⌄</span></summary>
+    <div class="detail-body">
+
+      <!-- rail scale: 0 → 5, band = target ±1 -->
+      <div class="attr">
+        <div class="attr-head">
+          <div><span class="attr-name">Fragrance</span><span class="attr-target">target 4 ±1</span></div>
+          <div class="attr-score">3.25</div>
+        </div>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="band" style="left:60%;width:40%"></div>
+          <div class="tick" style="left:65%"></div>
+        </div>
+      </div>
+
+      <div class="attr">
+        <div class="attr-head">
+          <div><span class="attr-name">Aroma</span><span class="attr-target">target 4 ±1</span></div>
+          <div class="attr-score">3.25</div>
+        </div>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="band" style="left:60%;width:40%"></div>
+          <div class="tick" style="left:65%"></div>
+        </div>
+      </div>
+
+      <div class="attr">
+        <div class="attr-head">
+          <div><span class="attr-name">Acidity</span><span class="attr-target">target 3 ±1</span></div>
+          <div class="attr-score">3.00</div>
+        </div>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="band" style="left:40%;width:40%"></div>
+          <div class="tick" style="left:60%"></div>
+        </div>
+      </div>
+
+      <div class="attr">
+        <div class="attr-head">
+          <div><span class="attr-name">Body</span><span class="attr-target">target 3.5 ±1</span></div>
+          <div class="attr-score">3.00</div>
+        </div>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="band" style="left:50%;width:40%"></div>
+          <div class="tick" style="left:60%"></div>
+        </div>
+      </div>
+
+      <div class="attr">
+        <div class="attr-head">
+          <div><span class="attr-name">Balance</span><span class="attr-target">target 4 ±1</span></div>
+          <div class="attr-score">3.25</div>
+        </div>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="band" style="left:60%;width:40%"></div>
+          <div class="tick" style="left:65%"></div>
+        </div>
+      </div>
+
+      <div class="attr">
+        <div class="attr-head">
+          <div><span class="attr-name">Sweetness</span><span class="attr-target">target 2.5 ±1</span></div>
+          <div class="attr-score edge">2.00</div>
+        </div>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="band" style="left:30%;width:40%"></div>
+          <div class="tick edge" style="left:40%"></div>
+        </div>
+      </div>
+
+      <div class="attr">
+        <div class="attr-head">
+          <div><span class="attr-name">Finish</span><span class="attr-target">target 4 ±1</span></div>
+          <div class="attr-score">3.25</div>
+        </div>
+        <div class="rail">
+          <div class="rail-line"></div>
+          <div class="band" style="left:60%;width:40%"></div>
+          <div class="tick" style="left:65%"></div>
+        </div>
+        <div class="rail-scale"><span>0</span><span>2.5</span><span>5</span></div>
+      </div>
+    </div>
+  </details>
+
+  <!-- footer -->
+  <div class="footer">
+    <div class="integrity">
+      <div class="ichip"><div class="ik">Taints</div><div class="iv">0</div></div>
+      <div class="ichip"><div class="ik">Faults</div><div class="iv">0</div></div>
+      <div class="ichip"><div class="ik">Clean</div><div class="iv yes">Yes</div></div>
+      <div class="ichip"><div class="ik">Uniform</div><div class="iv yes">Yes</div></div>
+      <button class="dl" id="openCert" aria-label="Open certificate">
+        <span class="dl-arrow">⤓</span>
+        <span class="dl-lbl">PDF</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- certificate modal -->
+  <div class="overlay" id="overlay" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <div class="modal-head">
+        <div>
+          <div class="modal-eyebrow">PSS · Exporter sample</div>
+          <div class="modal-title" id="modalTitle">CCT-2214/26</div>
+        </div>
+        <button class="modal-close" id="modalClose" aria-label="Close certificate">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="pdf-stage">
+          <div class="pdf-page">
+            <div class="pdf-note">Certificate PDF renders here</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn btn-primary">⤓ Save PDF</button>
+        <button class="btn btn-ghost" aria-label="Share certificate">↗</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var overlay = document.getElementById('overlay');
+  var openBtn = document.getElementById('openCert');
+  var closeBtn = document.getElementById('modalClose');
+  var last = null;
+
+  function open(){
+    last = document.activeElement;
+    overlay.hidden = false;
+    document.body.style.overflow = 'hidden';
+    closeBtn.focus();
+  }
+  function close(){
+    overlay.hidden = true;
+    document.body.style.overflow = '';
+    if (last) last.focus();
+  }
+
+  openBtn.addEventListener('click', open);
+  closeBtn.addEventListener('click', close);
+  overlay.addEventListener('click', function(e){ if (e.target === overlay) close(); });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && !overlay.hidden) close();
+  });
+})();
+</script>
+</body>
+</html>
