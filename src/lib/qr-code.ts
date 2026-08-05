@@ -94,13 +94,18 @@ export function getCertificateDownloadUrl(sampleId: string): string {
 }
 
 /**
- * Generate a public certificate page URL for QR codes on labels/sleeves
- * @param trackingNumber - The sample tracking number (e.g. BD-890227/26)
- * @returns URL string for the public certificate page
+ * Public certificate page URL for QR codes on labels/sleeves.
+ *
+ * Tin sleeves pass the OFFICIAL certificate number (e.g. "BR-036991/26"); the
+ * internal SAN- lab number must never reach a printed label or a QR payload.
+ * Legacy callers may still pass a tracking number — the public route resolves
+ * both.
+ *
+ * @param reference - certificate number, or a legacy tracking number
  */
-export function getCertificatePageUrl(trackingNumber: string): string {
+export function getCertificatePageUrl(reference: string): string {
   const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
-  return `${baseUrl}/certificate/${trackingNumberToSlug(trackingNumber)}`
+  return `${baseUrl}/certificate/${trackingNumberToSlug(reference)}`
 }
 
 /**
