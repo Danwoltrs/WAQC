@@ -61,7 +61,17 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       marginBottom: 0.8 * MM,
       maxLines: 1,
     },
-    line: {
+    // Seller / Client: one line only. The label height is fixed, so a long
+    // exporter name must truncate rather than push the foot rule off the tin.
+    lineOne: {
+      fontSize: bodySize,
+      color: '#000000',
+      marginBottom: 0.8 * MM,
+      maxLines: 1,
+    },
+    // Cert. / Roaster: allowed a second line, because a sample with
+    // sub-contracts comma-joins several certificate numbers here.
+    lineTwo: {
       fontSize: bodySize,
       color: '#000000',
       marginBottom: 0.8 * MM,
@@ -149,7 +159,7 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 </Text>
 
                 {partyParts.length > 0 && (
-                  <Text style={styles.line}>
+                  <Text style={styles.lineOne}>
                     {partyParts.map((p, i) => (
                       <Text key={p.key}>
                         {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
@@ -161,7 +171,7 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 )}
 
                 {certParts.length > 0 && (
-                  <Text style={styles.line}>
+                  <Text style={styles.lineTwo}>
                     {certParts.map((p, i) => (
                       <Text key={p.key}>
                         {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
