@@ -163,13 +163,17 @@ async function getCertificateInfo(slug: string) {
       | Array<{
           attribute: string
           validation_rule?: { min_value?: number; max_value?: number }
-          scale?: { min?: number; max?: number }
+          scale?: { type?: string; min?: number; max?: number }
         }>
       | Record<string, { min?: number; max?: number }>
   } | undefined
 
   const attrLimitsMap: Record<string, { min?: number; max?: number }> = {}
   const attrScaleMap: Record<string, { scaleMin?: number; scaleMax?: number }> = {}
+  // Attributes the template itself declares as yes/no. A boolean scale has no
+  // axis to sit on however it is named — the hard-coded name list below only
+  // catches the SCA-standard spellings, and misses e.g. CONILON's "Clean Cups".
+  const booleanScaled = new Set<string>()
   const cuppingAttrs = templateParams?.cupping_attributes
   if (Array.isArray(cuppingAttrs)) {
     for (const ca of cuppingAttrs) {
@@ -179,6 +183,7 @@ async function getCertificateInfo(slug: string) {
           max: ca.validation_rule.max_value,
         }
       }
+      if (ca.scale?.type === 'boolean') booleanScaled.add(ca.attribute.toLowerCase())
       if (ca.scale) {
         attrScaleMap[ca.attribute.toLowerCase()] = {
           scaleMin: ca.scale.min,
@@ -207,7 +212,8 @@ async function getCertificateInfo(slug: string) {
     .filter(Boolean)
   const cupProfile = resolveFlavorDescriptor(greenBean?.cup_profile, flavorDescriptors)
 
-  // Boolean cup judgements are not scored attributes and must not get a rail.
+  // Fallback for templates that carry no scale on their attributes. The
+  // declared scale type above is the authority where one exists.
   const BOOLEAN_CUP_NAMES = [
     'clean cup', 'cleancup', 'clean_cup',
     'uniform cup', 'uniformcup', 'uniform_cup', 'uniformity',
@@ -220,6 +226,7 @@ async function getCertificateInfo(slug: string) {
   ]
 
   const attributes: AttributeRail[] = Object.entries(finalScores)
+    .filter(([attr]) => !booleanScaled.has(attr.toLowerCase()))
     .filter(([attr]) => !BOOLEAN_CUP_NAMES.includes(attr.toLowerCase()))
     // Defence in depth: resolveFinalScores already drops non-numeric values, so
     // a text descriptor cannot reach here — but a template that stores the
