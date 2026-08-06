@@ -52,8 +52,15 @@ import {
   Pencil,
   Filter,
   MoreVertical,
+  Printer,
 } from 'lucide-react'
 import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
+import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
+import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
+import {
+  certificatesToTinSampleIds,
+  certificatesToBagSleeveEntries,
+} from '@/lib/print-selection'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
@@ -197,6 +204,17 @@ const parseTrackingNumber = (trackingNumber: string): string => {
   }
 }
 
+/**
+ * One tin covers a whole lot, so a selection of a mother plus its splits prints
+ * one label. Say so before generating: otherwise the operator counts seven
+ * sheets against twelve ticked rows and concludes the print failed.
+ */
+function tinLabelCountNote(certs: Certificate[]): string | undefined {
+  const ids = certificatesToTinSampleIds(certs)
+  if (ids.length === certs.length) return undefined
+  return `${certs.length} certificates -> ${ids.length} tin label${ids.length === 1 ? '' : 's'} (splits share their lot's label).`
+}
+
 export default function CertificatesPage() {
   const { toast } = useToast()
   const [certificates, setCertificates] = useState<Certificate[]>([])
@@ -228,6 +246,8 @@ export default function CertificatesPage() {
   const [sortField, setSortField] = useState<SortField>('created_at')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
   const [selectedCertificates, setSelectedCertificates] = useState<Set<string>>(new Set())
+  const [tinLabelCerts, setTinLabelCerts] = useState<Certificate[] | null>(null)
+  const [bagSleeveCerts, setBagSleeveCerts] = useState<Certificate[] | null>(null)
 
   // Bulk action states
   const [downloading, setDownloading] = useState(false)
@@ -785,6 +805,7 @@ export default function CertificatesPage() {
                 const sellers = new Set(selCerts.map(c => c.seller_id).filter(Boolean))
                 const canBuyer = buyers.size === 1 && sampleIds.length > 0
                 const canSeller = sellers.size === 1 && sampleIds.length > 0
+                const tinSampleIds = certificatesToTinSampleIds(selCerts)
                 return (
                   <DropdownMenu>
                     <DropdownMenuTrigger asChild>
@@ -828,6 +849,26 @@ export default function CertificatesPage() {
                           Select certificates that share a single seller
                         </div>
                       )}
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem
+                        disabled={tinSampleIds.length === 0}
+                        onClick={() => setTinLabelCerts(selCerts)}
+                      >
+                        <Printer className="h-4 w-4 mr-2" />
+                        Tin Label
+                      </DropdownMenuItem>
+                      {tinSampleIds.length === 0 && (
+                        <div className="px-2 pb-1 text-xs text-muted-foreground">
+                          Selected certificates have no linked sample
+                        </div>
+                      )}
+                      <DropdownMenuItem
+                        disabled={tinSampleIds.length === 0}
+                        onClick={() => setBagSleeveCerts(selCerts)}
+                      >
+                        <Printer className="h-4 w-4 mr-2" />
+                        Print Bag Sleeves (6 per A4)
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 )
@@ -1265,6 +1306,31 @@ export default function CertificatesPage() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        {/* Sleeve printing from a certificate selection. Tin labels dedupe to
+            the lot — one tin covers a mother and all its splits — while bag
+            sleeves print one per certificate, each carrying its own refs. */}
+        <TinLabelSizeDialog
+          open={!!tinLabelCerts}
+          onOpenChange={(next) => { if (!next) setTinLabelCerts(null) }}
+          sampleIds={tinLabelCerts ? certificatesToTinSampleIds(tinLabelCerts) : []}
+          countNote={tinLabelCerts ? tinLabelCountNote(tinLabelCerts) : undefined}
+          onSuccess={() => {
+            setTinLabelCerts(null)
+            setSelectedCertificates(new Set())
+          }}
+        />
+
+        <PrintBagSleevesDialog
+          open={!!bagSleeveCerts}
+          onOpenChange={(next) => { if (!next) setBagSleeveCerts(null) }}
+          entries={bagSleeveCerts ? certificatesToBagSleeveEntries(bagSleeveCerts, true) : []}
+          qrMode="toggle"
+          onSuccess={() => {
+            setBagSleeveCerts(null)
+            setSelectedCertificates(new Set())
+          }}
+        />
 
         {/* Override Status Dialog */}
         {overrideCertificate && (
