@@ -1,7 +1,7 @@
 import { ImageResponse } from 'next/og'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
-import { screenGramsToPercent } from '@/lib/quality-resolvers'
+import { screenGramsToPercent, resolveDefectCounts } from '@/lib/quality-resolvers'
 
 export const runtime = 'nodejs'
 export const alt = 'Wolthers Coffee QC Certificate'
@@ -80,11 +80,13 @@ export default async function OGImage({ params }: { params: Promise<{ slug: stri
   // Stored in grams, rendered as percentages.
   const screenSizes = screenGramsToPercent(greenBean?.screen_sizes as Record<string, number> | null)
   const defects = greenBean?.defects
-  const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
-  const secondaryDefects = defects?.total_secondary ?? defects?.secondary ?? null
-  const totalDefects = defects?.total ?? (primaryDefects !== null && secondaryDefects !== null
-    ? primaryDefects + secondaryDefects
-    : null)
+  // One reading, shared with the approval gate. The total is always the
+  // computed sum — a stored defects.total is never honoured, because the gate
+  // has never honoured it.
+  const defectCounts = resolveDefectCounts(defects)
+  const primaryDefects = defectCounts?.primary ?? null
+  const secondaryDefects = defectCounts?.secondary ?? null
+  const totalDefects = defectCounts?.total ?? null
 
   const isRejected = certificate?.is_rejected === true
   const status = isRejected ? 'REJECTED' : 'APPROVED'

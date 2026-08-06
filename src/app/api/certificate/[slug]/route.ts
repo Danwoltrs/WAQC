@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
-import { screenGramsToPercent } from '@/lib/quality-resolvers'
+import { screenGramsToPercent, resolveDefectCounts } from '@/lib/quality-resolvers'
 
 // Use service role to bypass RLS for public access
 const supabase = createClient(
@@ -104,12 +104,13 @@ async function buildResponse(sample: any) {
   // so the numbers it returns change here — from raw grams to real percentages.
   const screenSizes = screenGramsToPercent(greenBean?.screen_sizes)
   const defects = greenBean?.defects
-  // Grading saves as { primary, secondary, total }; certificate-data.ts uses { total_primary, total_secondary }
-  const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
-  const secondaryDefects = defects?.total_secondary ?? defects?.secondary ?? null
-  const totalDefects = defects?.total ?? (primaryDefects !== null && secondaryDefects !== null
-    ? primaryDefects + secondaryDefects
-    : null)
+  // One reading, shared with the approval gate. The total is always the
+  // computed sum — a stored defects.total is never honoured, because the gate
+  // has never honoured it.
+  const defectCounts = resolveDefectCounts(defects)
+  const primaryDefects = defectCounts?.primary ?? null
+  const secondaryDefects = defectCounts?.secondary ?? null
+  const totalDefects = defectCounts?.total ?? null
 
   // Get cupping scores for taints and faults
   const { data: cuppingScores } = await supabase

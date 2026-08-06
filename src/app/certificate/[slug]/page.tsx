@@ -1,8 +1,22 @@
 import { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
-import { screenGramsToPercent } from '@/lib/quality-resolvers'
-import { CertificatePageClient } from './certificate-page-client'
+import { evaluateSampleCompliance } from '@/lib/compliance'
+import {
+  screenGramsToPercent,
+  resolveDefectCounts,
+  resolveTaintFaultCounts,
+  resolveFinalScores,
+  type CuppingScoreRow,
+} from '@/lib/quality-resolvers'
+import { resolveCompanyName } from '@/lib/sleeve-label-data'
+import { buildChecklistRows } from '@/lib/certificate-checklist'
+import type { CertificateView, AttributeRail, ScreenBar } from './_components/types'
+import { Verdict } from './_components/verdict'
+import { LotIdentity } from './_components/lot-identity'
+import { SpecChecklist } from './_components/spec-checklist'
+import { CertificateDetail } from './_components/certificate-detail'
+import { CertificateFooter } from './_components/certificate-footer'
 
 // Use service role for server-side data fetching
 const supabase = createClient(
@@ -32,6 +46,13 @@ async function getCertificateInfo(slug: string) {
     exporter_sample_number,
     buyer_contract_nr,
     wolthers_contract_nr,
+    quality_spec_id,
+    bag_count,
+    bag_weight_kg,
+    bag_type,
+    bags_quantity_mt,
+    exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
+    seller:companies!samples_seller_id_fkey(name, fantasy_name),
     quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en, parameters))
   `
   const { data: sampleRow } = await supabase
@@ -54,7 +75,7 @@ async function getCertificateInfo(slug: string) {
   })
 
   const isCertified = sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected'
-  if (!isCertified) return { sample, publicReference, certified: false }
+  if (!isCertified) return { sample, publicReference, certified: false as const }
 
   // Get certificate
   const { data: certificate } = await supabase
@@ -66,26 +87,22 @@ async function getCertificateInfo(slug: string) {
     .limit(1)
     .maybeSingle()
 
-  // Get quality assessment (green bean + cup status + resolved defects).
-  // Cast to any until the generated DB types pick up resolved_defects.
-  const { data: assessment } = await (supabase as any)
+  // Get quality assessment (green bean + cup status).
+  const { data: assessment } = await supabase
     .from('quality_assessments')
-    .select('green_bean_data, clean_cup, uniform_cup, resolved_defects')
+    .select('green_bean_data, clean_cup, uniform_cup')
     .eq('sample_id', sample.id)
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle()
 
   const greenBean = assessment?.green_bean_data as any
-  // screen_sizes is stored in GRAMS; every display surface needs percentages.
-  const screenSizes = screenGramsToPercent(greenBean?.screen_sizes)
   const defects = greenBean?.defects
-  // Grading saves as { primary, secondary, total }; certificate-data.ts uses { total_primary, total_secondary }
-  const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
-  const secondaryDefects = defects?.total_secondary ?? defects?.secondary ?? null
-  const totalDefects = defects?.total ?? (primaryDefects !== null && secondaryDefects !== null
-    ? primaryDefects + secondaryDefects
-    : null)
+  // One reading, shared with the approval gate. The total is always the
+  // computed sum — a stored defects.total is never honoured, because the gate
+  // has never honoured it.
+  const defectCounts = resolveDefectCounts(defects)
+  const totalDefects = defectCounts?.total ?? null
 
   const cleanCup = assessment?.clean_cup ?? null
   const uniformCup = assessment?.uniform_cup ?? null
@@ -96,112 +113,27 @@ async function getCertificateInfo(slug: string) {
     .select('scores, defects, cupper_id')
     .eq('sample_id', sample.id)
 
-  // === DEFECT RESOLUTION (mirrors src/lib/certificate-data.ts) ===
-  // The HTML cert page used to SUM all cuppers' defects — wrong, because that
-  // includes taints/faults the master cupper explicitly removed during validation.
-  // Source of truth, in order:
-  //   1. quality_assessments.resolved_defects (written by /api/cupping/finalize)
-  //   2. master cupper's cupping_scores.defects
-  //   3. fallback: max defect count across all cuppers
-  let totalTaints = 0
-  let totalFaults = 0
+  // Taints and faults come from the same reading the approval gate uses. The
+  // page used to prefer quality_assessments.resolved_defects, which could show
+  // "0 taints" beside a checklist row failing on taints.
+  const scoreRows = (cuppingScores || []) as unknown as CuppingScoreRow[]
 
-  const resolvedDefects = (assessment as any)?.resolved_defects as
-    | { taints?: unknown[]; faults?: unknown[] }
-    | null
-    | undefined
-
-  if (resolvedDefects && (Array.isArray(resolvedDefects.taints) || Array.isArray(resolvedDefects.faults))) {
-    // Path 1: validator's authoritative resolution
-    const uniq = (arr: unknown[] | undefined): number => {
-      if (!Array.isArray(arr)) return 0
-      const names = new Set<string>()
-      for (const it of arr) {
-        if (it && typeof it === 'object') {
-          const name = (it as any).name
-          if (typeof name === 'string' && name.length > 0) names.add(name)
-        }
-      }
-      return names.size
-    }
-    totalTaints = uniq(resolvedDefects.taints)
-    totalFaults = uniq(resolvedDefects.faults)
-  } else if (cuppingScores && cuppingScores.length > 0) {
-    // Path 2/3: find the master cupper for this sample's session
-    let masterCupperId: string | null = null
-    const { data: sess } = await (supabase as any)
+  let masterCupperId: string | null = null
+  if (scoreRows.length > 0) {
+    const { data: session } = await (supabase as any)
       .from('cupping_sessions')
-      .select('cupper_ids, master_cupper_id')
+      .select('master_cupper_id')
       .contains('sample_ids', [sample.id])
       .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle()
-    if (sess?.master_cupper_id) {
-      masterCupperId = sess.master_cupper_id
-    } else if (sess?.cupper_ids && Array.isArray(sess.cupper_ids) && sess.cupper_ids.length > 0) {
-      const { data: profs } = await supabase
-        .from('profiles')
-        .select('id, is_master_cupper')
-        .in('id', sess.cupper_ids as string[])
-        .eq('is_master_cupper', true)
-        .limit(1)
-      if (profs && profs.length > 0) masterCupperId = profs[0].id
-    }
-
-    const masterScore = masterCupperId
-      ? (cuppingScores as Array<{ cupper_id: string | null; defects: unknown }>).find(
-          s => s.cupper_id === masterCupperId
-        )
-      : null
-
-    if (masterScore?.defects && typeof masterScore.defects === 'object') {
-      // Path 2: master cupper's defects are authoritative
-      const d = masterScore.defects as { taints?: unknown[]; faults?: unknown[] }
-      totalTaints = Array.isArray(d.taints) ? d.taints.length : 0
-      totalFaults = Array.isArray(d.faults) ? d.faults.length : 0
-    } else {
-      // Path 3: no master cupper — max across cuppers (not sum, which would
-      // double-count the same defect when multiple cuppers flag it).
-      for (const score of cuppingScores) {
-        if (score.defects && typeof score.defects === 'object') {
-          const d = score.defects as { taints?: unknown[]; faults?: unknown[] }
-          if (Array.isArray(d.taints)) totalTaints = Math.max(totalTaints, d.taints.length)
-          if (Array.isArray(d.faults)) totalFaults = Math.max(totalFaults, d.faults.length)
-        }
-      }
-    }
+    masterCupperId = session?.master_cupper_id || null
   }
 
-  // Attribute scores + flavor descriptor collection (unaffected by defect logic)
-  const attributeScoresMap: Record<string, number[]> = {}
-  const flavorDescriptors: string[] = []
-
-  if (cuppingScores) {
-    for (const score of cuppingScores) {
-      if (score.scores && typeof score.scores === 'object') {
-        const scores = score.scores as Record<string, unknown>
-        if (typeof scores.Flavor_descriptor === 'string' && scores.Flavor_descriptor) {
-          flavorDescriptors.push(scores.Flavor_descriptor)
-        }
-        for (const [attr, value] of Object.entries(scores)) {
-          if (typeof value !== 'number') continue
-          const lower = attr.toLowerCase()
-          if (['taints', 'taint', 'faults', 'fault', 'clean cup', 'cleancup', 'clean_cup',
-               'uniformity', 'uniform cup', 'uniformcup', 'uniform_cup'].includes(lower)) continue
-          if (!attributeScoresMap[attr]) attributeScoresMap[attr] = []
-          attributeScoresMap[attr].push(value)
-        }
-      }
-    }
-  }
-
-  // Pick most common flavor descriptor
-  const flavorDescriptor = flavorDescriptors.length > 0
-    ? flavorDescriptors.sort((a, b) =>
-        flavorDescriptors.filter(v => v === b).length - flavorDescriptors.filter(v => v === a).length
-      )[0]
-    : null
+  const { taints: totalTaints, faults: totalFaults } =
+    resolveTaintFaultCounts(scoreRows, masterCupperId)
+  const finalScores = resolveFinalScores(scoreRows, masterCupperId)
 
   // Build cupping attribute validation lookup from quality template
   const qualitySpec = sample.quality_spec as any
@@ -233,57 +165,99 @@ async function getCertificateInfo(slug: string) {
     }
   }
 
-  // Average cupping attributes and attach limits
+  // Boolean cup judgements are not scored attributes and must not get a rail.
+  const BOOLEAN_CUP_NAMES = [
+    'clean cup', 'cleancup', 'clean_cup',
+    'uniform cup', 'uniformcup', 'uniform_cup', 'uniformity',
+    'taints', 'taint', 'faults', 'fault',
+  ]
+
   const standardOrder = [
     'Fragrance/Aroma', 'Fragrance', 'Aroma', 'Flavor', 'Aftertaste',
     'Acidity', 'Body', 'Balance', 'Sweetness', 'Overall',
   ]
-  const cuppingAttributes: Array<{
-    attribute: string
-    value: number
-    min?: number
-    max?: number
-    scaleMin?: number
-    scaleMax?: number
-  }> = Object.entries(attributeScoresMap)
+
+  const attributes: AttributeRail[] = Object.entries(finalScores)
+    .filter(([attr]) => !BOOLEAN_CUP_NAMES.includes(attr.toLowerCase()))
     .sort(([a], [b]) => {
-      const aIdx = standardOrder.findIndex(s => a.toLowerCase().includes(s.toLowerCase()))
-      const bIdx = standardOrder.findIndex(s => b.toLowerCase().includes(s.toLowerCase()))
-      if (aIdx === -1 && bIdx === -1) return a.localeCompare(b)
-      if (aIdx === -1) return 1
-      if (bIdx === -1) return -1
-      return aIdx - bIdx
+      const ai = standardOrder.findIndex(s => a.toLowerCase().includes(s.toLowerCase()))
+      const bi = standardOrder.findIndex(s => b.toLowerCase().includes(s.toLowerCase()))
+      if (ai === -1 && bi === -1) return a.localeCompare(b)
+      if (ai === -1) return 1
+      if (bi === -1) return -1
+      return ai - bi
     })
-    .map(([attr, scores]) => {
-      const avg = Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 100) / 100
+    .map(([attr, score]) => {
       const limits = attrLimitsMap[attr.toLowerCase()]
       const scale = attrScaleMap[attr.toLowerCase()]
       return {
         attribute: attr,
-        value: avg,
-        min: limits?.min,
-        max: limits?.max,
-        scaleMin: scale?.scaleMin,
-        scaleMax: scale?.scaleMax,
+        score: Math.round(score * 100) / 100,
+        min: limits?.min ?? null,
+        max: limits?.max ?? null,
+        scaleMin: scale?.scaleMin ?? 0,
+        scaleMax: scale?.scaleMax ?? 5,
       }
     })
+
+  const criteria = await evaluateSampleCompliance(supabase, sample.id, sample.quality_spec_id ?? null)
+  const rows = buildChecklistRows(criteria, { cleanCup, uniformCup })
+
+  // F1: evaluateSampleCompliance returns [] for three different states — no
+  // quality spec, a template that failed to load, and a genuine evaluation
+  // that produced no criteria. A sample WITH a spec that yields nothing means
+  // the template did not load; saying nothing is honest, but it must be
+  // visible in the logs rather than looking like a clean bill of health.
+  if (sample.quality_spec_id && criteria.length === 0) {
+    console.warn(
+      `[certificate] sample ${sample.id} has quality_spec_id ${sample.quality_spec_id} but produced no compliance criteria — template may have failed to load`,
+    )
+  }
+
+  // Screens: grams in storage, percentages everywhere else. A screen is "below
+  // the floor" when a failing minimum criterion names it.
+  const screenPercentages = screenGramsToPercent(greenBean?.screen_sizes)
+  const failingScreens = new Set(
+    criteria.filter(c => c.key.startsWith('screen_') && !c.passed).map(c => c.label),
+  )
+  const screens: ScreenBar[] = screenPercentages
+    ? Object.entries(screenPercentages)
+        .sort(([a], [b]) => {
+          const pan = (s: string) => ['pan', 'fundo', 'bottom'].includes(s.toLowerCase())
+          if (pan(a) !== pan(b)) return pan(a) ? 1 : -1
+          return parseInt(b.replace(/\D/g, '') || '0') - parseInt(a.replace(/\D/g, '') || '0')
+        })
+        .map(([size, percent]) => {
+          const isPan = ['pan', 'fundo', 'bottom'].includes(size.toLowerCase())
+          return {
+            label: isPan ? 'Pan' : `Scr. ${size.replace(/\D/g, '') || size}`,
+            percent,
+            belowFloor: isPan || failingScreens.has(`Screen ${size}`),
+          }
+        })
+    : []
+
+  const screenCriterion = criteria.find(c => c.key.startsWith('screen_'))
+  const screenSpecNote = screenCriterion
+    ? `Spec requires ${screenCriterion.sublabel} on ${screenCriterion.label.toLowerCase()}. This lot: ${typeof screenCriterion.actual === 'number' ? screenCriterion.actual.toFixed(1) : screenCriterion.actual}%.`
+    : null
 
   return {
     sample,
     publicReference,
-    certified: true,
+    certified: true as const,
     certificate,
     qualityName,
-    screenSizes,
-    primaryDefects,
-    secondaryDefects,
+    screenSizes: screenPercentages,
     totalDefects,
     totalTaints,
     totalFaults,
     cleanCup,
     uniformCup,
-    cuppingAttributes,
-    flavorDescriptor,
+    rows,
+    screens,
+    screenSpecNote,
+    attributes,
   }
 }
 
@@ -382,19 +356,60 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 }
 
+/** Slim and sticky — the old header ate ~15% of the viewport before any content. */
+function CertificateHeader() {
+  return (
+    <div className="sticky top-0 z-20 flex items-center justify-between px-4 py-2.5 bg-[#262625] border-b border-[#3f3f3c]">
+      <div className="text-[15px] font-bold tracking-[-0.02em] text-[#f2efe6]">
+        w<span className="text-[#6d7f37]">o</span>lthers
+        <small className="block text-[8px] tracking-[0.28em] text-[#7c7a73] font-semibold mt-px">
+          ASSOCIATES
+        </small>
+      </div>
+      <div className="text-[11px] text-[#7c7a73] flex items-center gap-[5px]">
+        <span className="w-1.5 h-1.5 rounded-full bg-[#5fae63]" aria-hidden="true" />
+        Verified certificate
+      </div>
+    </div>
+  )
+}
+
+/** "334 bags · 20.0 MT", or whichever half is known. */
+function formatQuantity(sample: {
+  bag_count?: number | null
+  bags_quantity_mt?: number | null
+}): string | null {
+  const parts: string[] = []
+  if (sample.bag_count) parts.push(`${sample.bag_count} bags`)
+  if (sample.bags_quantity_mt) parts.push(`${sample.bags_quantity_mt.toFixed(1)} MT`)
+  return parts.length > 0 ? parts.join(' · ') : null
+}
+
+/** "60 kg jute bags" */
+function formatBagType(sample: {
+  bag_weight_kg?: number | null
+  bag_type?: string | null
+}): string | null {
+  const parts: string[] = []
+  if (sample.bag_weight_kg) parts.push(`${sample.bag_weight_kg} kg`)
+  if (sample.bag_type) parts.push(sample.bag_type.replace(/_/g, ' '))
+  return parts.length > 0 ? parts.join(' ') : null
+}
+
 export default async function CertificatePage({ params }: PageProps) {
   const { slug } = await params
   const info = await getCertificateInfo(slug)
 
-  // If sample not found, show 404
   if (!info) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#F9F9FA] dark:bg-[#2A2A2A]">
+      <main className="min-h-dvh bg-[#262625] text-[#f2efe6] flex items-center justify-center px-6">
         <div className="text-center">
-          <h1 className="text-2xl font-semibold mb-2">Certificate Not Found</h1>
-          <p className="text-muted-foreground">The requested certificate could not be found.</p>
+          <h1 className="text-lg font-semibold mb-2">Certificate not found</h1>
+          <p className="text-sm text-[#a8a69d]">
+            The requested certificate could not be found.
+          </p>
         </div>
-      </div>
+      </main>
     )
   }
 
@@ -404,51 +419,62 @@ export default async function CertificatePage({ params }: PageProps) {
     console.warn(`[certificate] no public reference for sample ${info.sample.id} (slug ${slug})`)
   }
 
-  // If not certified, show in-progress page
   if (!info.certified) {
     return (
-      <CertificatePageClient
-        trackingNumber={info.publicReference.reference}
-        status="IN_PROGRESS"
-        approvalDate={null}
-        origin={info.sample.origin || 'N/A'}
-        qualityName={null}
-        screenSizes={null}
-        primaryDefects={null}
-        secondaryDefects={null}
-        totalDefects={null}
-        totalTaints={0}
-        totalFaults={0}
-        cleanCup={null}
-        uniformCup={null}
-        cuppingAttributes={[]}
-        flavorDescriptor={null}
-        pdfUrl=""
-      />
+      <main className="min-h-dvh bg-[#262625] text-[#f2efe6]">
+        <CertificateHeader />
+        <div className="mx-auto w-full max-w-[420px] px-4 py-10 text-center">
+          <div className="text-[10px] tracking-[0.12em] uppercase text-[#7c7a73] font-semibold mb-1">
+            {info.publicReference.eyebrow}
+          </div>
+          <h1 className="text-[26px] font-bold tracking-[-0.02em] mb-4">
+            {info.publicReference.reference}
+          </h1>
+          <p className="text-sm text-[#a8a69d]">
+            This sample is still being evaluated. The certificate appears here once
+            the quality assessment is complete.
+          </p>
+        </div>
+      </main>
     )
   }
 
-  const status = info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED'
-  const pdfUrl = `/api/certificate/${slug}/pdf`
+  const sample = info.sample
+  const view: CertificateView = {
+    reference: info.publicReference.reference,
+    eyebrow: info.publicReference.eyebrow,
+    status: info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED',
+    qualityName: info.qualityName ?? null,
+    exporter: resolveCompanyName(sample.seller) || resolveCompanyName(sample.exporter),
+    origin: sample.origin || null,
+    quantity: formatQuantity(sample),
+    certifiedDate: info.certificate?.created_at
+      ? new Date(info.certificate.created_at).toLocaleDateString('en-GB', {
+          day: '2-digit', month: 'short', year: 'numeric',
+        })
+      : null,
+    bagType: formatBagType(sample),
+    rows: info.rows,
+    screens: info.screens,
+    screenSpecNote: info.screenSpecNote,
+    attributes: info.attributes,
+    taints: info.totalTaints,
+    faults: info.totalFaults,
+    cleanCup: info.cleanCup,
+    uniformCup: info.uniformCup,
+    pdfUrl: `/api/certificate/${slug}/pdf`,
+  }
 
   return (
-    <CertificatePageClient
-      trackingNumber={info.publicReference.reference}
-      status={status}
-      approvalDate={info.certificate?.created_at || null}
-      origin={info.sample.origin || 'N/A'}
-      qualityName={info.qualityName ?? null}
-      screenSizes={info.screenSizes ?? null}
-      primaryDefects={info.primaryDefects ?? null}
-      secondaryDefects={info.secondaryDefects ?? null}
-      totalDefects={info.totalDefects ?? null}
-      totalTaints={info.totalTaints ?? 0}
-      totalFaults={info.totalFaults ?? 0}
-      cleanCup={info.cleanCup ?? null}
-      uniformCup={info.uniformCup ?? null}
-      cuppingAttributes={info.cuppingAttributes ?? []}
-      flavorDescriptor={info.flavorDescriptor ?? null}
-      pdfUrl={pdfUrl}
-    />
+    <main className="min-h-dvh bg-[#262625] text-[#f2efe6]">
+      <div className="mx-auto w-full max-w-[420px] pb-[104px]">
+        <CertificateHeader />
+        <Verdict view={view} />
+        <LotIdentity view={view} />
+        <SpecChecklist view={view} />
+        <CertificateDetail view={view} />
+        <CertificateFooter view={view} />
+      </div>
+    </main>
   )
 }
