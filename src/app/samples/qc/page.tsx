@@ -182,6 +182,16 @@ const formatSampleType = (type: string | undefined): string => {
   return typeMap[type] || type.toUpperCase()
 }
 
+// The header row pins below the page header, which is itself sticky at the top
+// of the scroll container (pt-6 + a 40px control row + pb-4 = 80px = top-20).
+// The background must be opaque or rows scroll through it, and the separator is
+// an inset shadow because a collapsed-border bottom is dropped once a cell is
+// sticky.
+const TABLE_HEAD_STICKY =
+  'sticky top-20 z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
+const TABLE_HEAD_CELL =
+  `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
+
 export default function SamplesPage() {
   const { profile } = useAuth()
   const [samples, setSamples] = useState<Sample[]>([])
@@ -202,6 +212,9 @@ export default function SamplesPage() {
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
   const [pendingTodayIds, setPendingTodayIds] = useState<string[]>([])
+  // Why the batch is empty, when it is. Without this a failing lookup and a
+  // genuinely quiet day look identical, and the button silently does nothing.
+  const [pendingTodayError, setPendingTodayError] = useState<string | null>(null)
   // An explicit batch when the "print today's unprinted" button drives the
   // dialog; null means the dialog uses the current row selection, as before.
   const [tinLabelBatchIds, setTinLabelBatchIds] = useState<string[] | null>(null)
@@ -328,12 +341,22 @@ export default function SamplesPage() {
   const refreshPendingToday = useCallback(async () => {
     try {
       const response = await fetch('/api/samples/tin-labels/pending-today')
-      if (!response.ok) return
-      const data = await response.json()
-      setPendingTodayIds(Array.isArray(data.sample_ids) ? data.sample_ids : [])
-    } catch {
-      // A missing badge is not worth interrupting the page for.
+      const data = await response.json().catch(() => null)
+      if (!response.ok) {
+        const detail = data?.details || data?.error || `HTTP ${response.status}`
+        console.error('Failed to load today\'s unprinted tin labels:', detail)
+        setPendingTodayIds([])
+        setPendingTodayError(String(detail))
+        return
+      }
+      setPendingTodayIds(Array.isArray(data?.sample_ids) ? data.sample_ids : [])
+      setPendingTodayError(null)
+    } catch (error) {
+      // A broken badge is not worth interrupting the page for, but it must not
+      // be indistinguishable from "nothing to print".
+      console.error('Failed to load today\'s unprinted tin labels:', error)
       setPendingTodayIds([])
+      setPendingTodayError(error instanceof Error ? error.message : String(error))
     }
   }, [])
 
@@ -1207,6 +1230,28 @@ export default function SamplesPage() {
                 </DropdownMenuContent>
               </DropdownMenu>
             )}
+            {/* Today's batch. Always rendered, so an empty day and a broken
+                lookup are both visible rather than an absent button. */}
+            <Button
+              variant="outline"
+              disabled={pendingTodayIds.length === 0}
+              title={
+                pendingTodayError
+                  ? `Could not load today's batch: ${pendingTodayError}`
+                  : pendingTodayIds.length === 0
+                    ? 'Nothing certified today is waiting for a tin label'
+                    : undefined
+              }
+              onClick={() => {
+                setTinLabelBatchIds(pendingTodayIds)
+                setShowTinLabelDialog(true)
+              }}
+            >
+              <Printer className="h-4 w-4 mr-2" />
+              {pendingTodayError
+                ? "Today's labels unavailable"
+                : `Print today's unprinted${pendingTodayIds.length > 0 ? ` · ${pendingTodayIds.length}` : ''}`}
+            </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button>
@@ -1242,18 +1287,6 @@ export default function SamplesPage() {
                     className="pl-9"
                   />
                 </div>
-                {pendingTodayIds.length > 0 && (
-                  <Button
-                    variant="outline"
-                    onClick={() => {
-                      setTinLabelBatchIds(pendingTodayIds)
-                      setShowTinLabelDialog(true)
-                    }}
-                  >
-                    <Printer className="h-4 w-4 mr-2" />
-                    Print today&apos;s unprinted · {pendingTodayIds.length}
-                  </Button>
-                )}
               </div>
 
               {/* Advanced Filters */}
@@ -1408,11 +1441,14 @@ export default function SamplesPage() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
+              {/* No overflow wrapper: it would become the sticky header's
+                  scroll container and stop it pinning to the page. The table is
+                  fixed-layout at 100% width, so it never overflows anyway. */}
+              <div>
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <thead>
-                    <tr className="border-b border-border bg-muted/30">
-                      <th className="text-left py-2.5 px-3" style={{ width: 40 }}>
+                    <tr>
+                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3`} style={{ width: 40 }}>
                         <Checkbox
                           className="h-3.5 w-3.5 rounded-[3px]"
                           checked={selectedSamples.size === samples.length && samples.length > 0}
@@ -1420,27 +1456,27 @@ export default function SamplesPage() {
                         />
                       </th>
                       {selectedSamples.size > 0 && (
-                        <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 40 }}>
+                        <th className={TABLE_HEAD_CELL} style={{ width: 40 }}>
                           <div className="flex items-center gap-1">
                             <QrCode className="h-3 w-3" />
                             QR
                           </div>
                         </th>
                       )}
-                      {columnVisibility.reference && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 180 }}>Reference</th>}
-                      {columnVisibility.type && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 56 }}>Type</th>}
-                      {columnVisibility.wolthers && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 104 }}>W&amp;A REF</th>}
-                      {columnVisibility.quality && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Quality</th>}
-                      {columnVisibility.seller && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Seller</th>}
-                      {columnVisibility.shipper && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Shipper</th>}
-                      {columnVisibility.importer && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Importer</th>}
-                      {columnVisibility.roaster && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">Roaster</th>}
-                      {columnVisibility.endClient && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground">End client</th>}
-                      {columnVisibility.status && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 112 }}>Status</th>}
-                      {columnVisibility.origin && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Origin</th>}
-                      {columnVisibility.storage && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Storage</th>}
-                      {columnVisibility.created && <th className="text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}>Created</th>}
-                      <th className="text-right py-2.5 pl-6 pr-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground" style={{ width: 96 }}></th>
+                      {columnVisibility.reference && <th className={TABLE_HEAD_CELL} style={{ width: 180 }}>Reference</th>}
+                      {columnVisibility.type && <th className={TABLE_HEAD_CELL} style={{ width: 56 }}>Type</th>}
+                      {columnVisibility.wolthers && <th className={TABLE_HEAD_CELL} style={{ width: 104 }}>W&amp;A REF</th>}
+                      {columnVisibility.quality && <th className={TABLE_HEAD_CELL}>Quality</th>}
+                      {columnVisibility.seller && <th className={TABLE_HEAD_CELL}>Seller</th>}
+                      {columnVisibility.shipper && <th className={TABLE_HEAD_CELL}>Shipper</th>}
+                      {columnVisibility.importer && <th className={TABLE_HEAD_CELL}>Importer</th>}
+                      {columnVisibility.roaster && <th className={TABLE_HEAD_CELL}>Roaster</th>}
+                      {columnVisibility.endClient && <th className={TABLE_HEAD_CELL}>End client</th>}
+                      {columnVisibility.status && <th className={TABLE_HEAD_CELL} style={{ width: 112 }}>Status</th>}
+                      {columnVisibility.origin && <th className={TABLE_HEAD_CELL} style={{ width: 96 }}>Origin</th>}
+                      {columnVisibility.storage && <th className={TABLE_HEAD_CELL} style={{ width: 96 }}>Storage</th>}
+                      {columnVisibility.created && <th className={TABLE_HEAD_CELL} style={{ width: 96 }}>Created</th>}
+                      <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-6 pr-3`} style={{ width: 96 }}></th>
                     </tr>
                   </thead>
                   <tbody>
