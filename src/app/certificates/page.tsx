@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -23,6 +23,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
   Search,
   Download,
   Mail,
@@ -37,7 +50,10 @@ import {
   XCircle,
   RefreshCw,
   Pencil,
+  Filter,
+  MoreVertical,
 } from 'lucide-react'
+import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
 import Link from 'next/link'
 import { trackingNumberToSlug } from '@/lib/utils'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
@@ -148,6 +164,26 @@ const presetRange = (kind: 'today' | 'week' | 'month'): { from: string; to: stri
   return { from: ymd(new Date(now.getFullYear(), now.getMonth(), 1)), to }
 }
 
+// The table's header row pins directly below the filter bar. Its offset is
+// measured rather than hard-coded, because the bar wraps to a second line on a
+// narrow window. The background must be opaque or rows scroll through it, and
+// the separator is an inset shadow because a collapsed-border bottom is dropped
+// once a cell is sticky. Mirrors the samples list.
+const TABLE_HEAD_STICKY =
+  'sticky z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
+const TABLE_HEAD_CELL =
+  `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
+
+// Used until the bar has been measured: pt-3 + a 36px control row + pb-3.
+const DEFAULT_HEADER_HEIGHT = 60
+
+const STATUS_CHIPS = [
+  { value: 'all', label: 'All' },
+  { value: 'issued', label: 'Issued' },
+  { value: 'draft', label: 'Draft' },
+  { value: 'revoked', label: 'Revoked' },
+] as const
+
 // Helper to parse tracking number from potential JSON
 const parseTrackingNumber = (trackingNumber: string): string => {
   try {
@@ -174,6 +210,14 @@ export default function CertificatesPage() {
   const [dateFrom, setDateFrom] = useState<string>('')
   const [dateTo, setDateTo] = useState<string>('')
   const [showBatchSend, setShowBatchSend] = useState(false)
+  // The header is a compact filter bar: search, status chips, the advanced
+  // filters and the actions, all in one pinned row.
+  //
+  // Held in state, not a ref: MainLayout renders a spinner instead of its
+  // children while auth resolves, so on the first commit this node does not
+  // exist yet and a mount-once effect would wire itself to nothing.
+  const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null)
+  const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
   const [batchSelection, setBatchSelection] = useState<{ sampleIds: string[]; side: 'buyer' | 'seller' } | null>(null)
   const [editSampleId, setEditSampleId] = useState<string | null>(null)
   const { profile } = useAuth()
@@ -199,6 +243,17 @@ export default function CertificatesPage() {
     failed: number
     results: Array<{ email: string; name: string; type: string; success: boolean; error?: string }>
   } | null>(null)
+
+  useEffect(() => {
+    if (!headerEl) return
+    // Floor, so a fractional header height leaves the pinned row a hair behind
+    // the bar rather than a hairline gap for rows to show through.
+    const measure = () => setHeaderHeight(Math.floor(headerEl.getBoundingClientRect().height))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(headerEl)
+    return () => observer.disconnect()
+  }, [headerEl])
 
   // Consume command-palette deep links: ?open=<sampleId> opens the certificate
   // editor (keyed by sample id), ?q=<text> prefills the search box. Runs once on mount.
@@ -320,6 +375,27 @@ export default function CertificatesPage() {
     // searchQuery is intentionally omitted: text search is applied server-side (see
     // loadCertificates), so this memo depends only on the returned rows + local filters.
   }, [certificates, statusFilter, clientFilter, qualityFilter, dateFrom, dateTo, sortField, sortOrder])
+
+  // What the Filters badge counts: the filters that live behind the popover, so
+  // the badge tells you how much is hidden. The status chips and the search box
+  // are visible in the bar and are excluded.
+  const advancedFilterCount = [
+    clientFilter !== 'all' ? clientFilter : '',
+    qualityFilter !== 'all' ? qualityFilter : '',
+    dateFrom,
+    dateTo,
+  ].filter(Boolean).length
+  const anyFilterActive =
+    advancedFilterCount > 0 || Boolean(searchQuery) || statusFilter !== 'all'
+
+  const clearFilters = () => {
+    setSearchQuery('')
+    setStatusFilter('all')
+    setClientFilter('all')
+    setQualityFilter('all')
+    setDateFrom('')
+    setDateTo('')
+  }
 
   // Handle column sort
   const handleSort = (field: SortField) => {
@@ -576,182 +652,200 @@ export default function CertificatesPage() {
 
   return (
     <MainLayout>
-      <div className="p-6 space-y-4">
-        {/* Batch send toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-1">
-            <span className="text-xs text-muted-foreground mr-1">Range:</span>
-            <Button variant="outline" size="sm" onClick={() => { const r = presetRange('today'); setDateFrom(r.from); setDateTo(r.to) }}>Today</Button>
-            <Button variant="outline" size="sm" onClick={() => { const r = presetRange('week'); setDateFrom(r.from); setDateTo(r.to) }}>This week</Button>
-            <Button variant="outline" size="sm" onClick={() => { const r = presetRange('month'); setDateFrom(r.from); setDateTo(r.to) }}>This month</Button>
-          </div>
-          <Button size="sm" onClick={() => setShowBatchSend(true)}>
-            <Mail className="h-4 w-4 mr-2" />
-            Send unsent certificates
-          </Button>
-        </div>
-
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="flex flex-wrap gap-4">
-              {/* Search */}
-              <div className="flex-1 min-w-[200px]">
-                <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <div className="p-6 space-y-6">
+        {/* Header - Sticky on desktop */}
+        <div
+          ref={setHeaderEl}
+          className="sticky top-0 z-10 bg-background -mx-6 px-6 pt-3 pb-3 border-b"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="relative w-[240px] shrink-0">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
                   <Input
-                    placeholder="Search by certificate, contract, client, seller, sample..."
+                    placeholder="Search certificates..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-10"
+                    className="h-7 pl-8 text-[12px]"
                   />
                 </div>
-              </div>
+                {STATUS_CHIPS.map(chip => {
+                  const active = statusFilter === chip.value
+                  return (
+                    <button
+                      key={chip.value}
+                      type="button"
+                      onClick={() => setStatusFilter(chip.value)}
+                      className={`h-6 px-2 text-[11px] rounded-full border whitespace-nowrap transition-colors ${
+                        active
+                          ? 'bg-foreground text-background border-foreground'
+                          : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
+                      }`}
+                    >
+                      {chip.label}
+                    </button>
+                  )
+                })}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
+                      <Filter className="h-3.5 w-3.5 mr-1" />
+                      Filters
+                      {advancedFilterCount > 0 && (
+                        <span className="ml-1 rounded-full bg-foreground text-background px-1.5 text-[10px] leading-4">
+                          {advancedFilterCount}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-[420px] space-y-3">
+                    <div className="grid grid-cols-2 gap-2">
+                      <Select value={clientFilter} onValueChange={(value) => {
+                        setClientFilter(value)
+                        setQualityFilter('all')
+                      }}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Client" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Clients</SelectItem>
+                          {clients.map(client => (
+                            <SelectItem key={client.id} value={client.id}>
+                              {client.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
 
-              {/* Status Filter */}
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-[140px]">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="issued">Issued</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="revoked">Revoked</SelectItem>
-                </SelectContent>
-              </Select>
+                      {/* Quality Filter (cascading from client) */}
+                      {clientFilter !== 'all' && (() => {
+                        const clientQualities = qualities.filter(q => q.client_id === clientFilter)
+                        if (clientQualities.length === 0) return null
+                        return (
+                          <Select value={qualityFilter} onValueChange={setQualityFilter}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Quality" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="all">All Qualities</SelectItem>
+                              {clientQualities.map(q => (
+                                <SelectItem key={q.id} value={q.id}>
+                                  {q.name}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        )
+                      })()}
 
-              {/* Client Filter */}
-              <Select value={clientFilter} onValueChange={(value) => {
-                setClientFilter(value)
-                setQualityFilter('all')
-              }}>
-                <SelectTrigger className="w-[180px]">
-                  <SelectValue placeholder="Client" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Clients</SelectItem>
-                  {clients.map(client => (
-                    <SelectItem key={client.id} value={client.id}>
-                      {client.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-
-              {/* Quality Filter (cascading from client) */}
-              {clientFilter !== 'all' && (() => {
-                const clientQualities = qualities.filter(q => q.client_id === clientFilter)
-                if (clientQualities.length === 0) return null
-                return (
-                  <Select value={qualityFilter} onValueChange={setQualityFilter}>
-                    <SelectTrigger className="w-[180px]">
-                      <SelectValue placeholder="Quality" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Qualities</SelectItem>
-                      {clientQualities.map(q => (
-                        <SelectItem key={q.id} value={q.id}>
-                          {q.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )
-              })()}
-
-              {/* Date Range */}
-              <div className="flex items-center gap-2">
-                <Calendar className="h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="date"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                  className="w-[140px]"
-                  placeholder="From"
-                />
-                <span className="text-muted-foreground">to</span>
-                <Input
-                  type="date"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                  className="w-[140px]"
-                  placeholder="To"
-                />
+                      <Input
+                        type="date"
+                        value={dateFrom}
+                        onChange={(e) => setDateFrom(e.target.value)}
+                        placeholder="From"
+                      />
+                      <Input
+                        type="date"
+                        value={dateTo}
+                        onChange={(e) => setDateTo(e.target.value)}
+                        placeholder="To"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5 text-muted-foreground mr-1" />
+                      <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { const r = presetRange('today'); setDateFrom(r.from); setDateTo(r.to) }}>Today</Button>
+                      <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { const r = presetRange('week'); setDateFrom(r.from); setDateTo(r.to) }}>This week</Button>
+                      <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" onClick={() => { const r = presetRange('month'); setDateFrom(r.from); setDateTo(r.to) }}>This month</Button>
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {anyFilterActive && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="h-7 px-2 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors whitespace-nowrap"
+                  >
+                    Clear all
+                  </button>
+                )}
               </div>
             </div>
-          </CardContent>
-        </Card>
-
-        {/* Bulk Actions — pinned to the top of the scroll area so Send to
-            buyer / seller stay reachable however far down the list you are. */}
-        {selectedCertificates.size > 0 && (
-          <Card className="sticky top-0 z-30 shadow-sm">
-            <CardContent className="py-3">
-              <div className="flex items-center justify-between">
-                <span className="text-sm text-muted-foreground">
-                  {selectedCertificates.size} certificate{selectedCertificates.size !== 1 ? 's' : ''} selected
-                </span>
-                <div className="flex gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleBulkDownload}
-                    disabled={downloading}
-                  >
-                    {downloading ? (
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    ) : (
-                      <Download className="h-4 w-4 mr-2" />
-                    )}
-                    Download ZIP
-                  </Button>
-                  {(() => {
-                    const selCerts = filteredCertificates.filter(c => selectedCertificates.has(c.id))
-                    const sampleIds = Array.from(new Set(selCerts.map(c => c.sample?.id).filter((x): x is string => !!x)))
-                    const buyers = new Set(selCerts.map(c => c.buyer_id).filter(Boolean))
-                    const sellers = new Set(selCerts.map(c => c.seller_id).filter(Boolean))
-                    const canBuyer = buyers.size === 1 && sampleIds.length > 0
-                    const canSeller = sellers.size === 1 && sampleIds.length > 0
-                    return (
-                      <>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!canBuyer}
-                          title={canBuyer ? undefined : 'Select certificates that share a single buyer'}
-                          onClick={() => setBatchSelection({ sampleIds, side: 'buyer' })}
-                        >
-                          <Mail className="h-4 w-4 mr-2" />
-                          Send to buyer
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!canSeller}
-                          title={canSeller ? undefined : 'Select certificates that share a single seller'}
-                          onClick={() => setBatchSelection({ sampleIds, side: 'seller' })}
-                        >
-                          <Mail className="h-4 w-4 mr-2" />
-                          Send to seller
-                        </Button>
-                      </>
-                    )
-                  })()}
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+            {/* The count sits with the actions, not in the filter row: there it
+                is a wrappable flex item and drops onto a second line under the
+                search box as soon as a selection adds the Actions button. */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap mr-1">
+                {filteredCertificates.length} certificates
+              </span>
+              {selectedCertificates.size > 0 && (() => {
+                const selCerts = filteredCertificates.filter(c => selectedCertificates.has(c.id))
+                const sampleIds = Array.from(new Set(selCerts.map(c => c.sample?.id).filter((x): x is string => !!x)))
+                const buyers = new Set(selCerts.map(c => c.buyer_id).filter(Boolean))
+                const sellers = new Set(selCerts.map(c => c.seller_id).filter(Boolean))
+                const canBuyer = buyers.size === 1 && sampleIds.length > 0
+                const canSeller = sellers.size === 1 && sampleIds.length > 0
+                return (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="outline" size="sm">
+                        <MoreVertical className="h-4 w-4 mr-2" />
+                        Actions ({selectedCertificates.size})
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuLabel>Bulk Actions</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem onClick={handleBulkDownload} disabled={downloading}>
+                        {downloading ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Download className="h-4 w-4 mr-2" />
+                        )}
+                        Download ZIP
+                      </DropdownMenuItem>
+                      <DropdownMenuItem
+                        disabled={!canBuyer}
+                        onClick={() => setBatchSelection({ sampleIds, side: 'buyer' })}
+                      >
+                        <Mail className="h-4 w-4 mr-2" />
+                        Send to buyer
+                      </DropdownMenuItem>
+                      {!canBuyer && (
+                        <div className="px-2 pb-1 text-xs text-muted-foreground">
+                          Select certificates that share a single buyer
+                        </div>
+                      )}
+                      <DropdownMenuItem
+                        disabled={!canSeller}
+                        onClick={() => setBatchSelection({ sampleIds, side: 'seller' })}
+                      >
+                        <Mail className="h-4 w-4 mr-2" />
+                        Send to seller
+                      </DropdownMenuItem>
+                      {!canSeller && (
+                        <div className="px-2 pb-1 text-xs text-muted-foreground">
+                          Select certificates that share a single seller
+                        </div>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                )
+              })()}
+              <PrintTodayTinLabelsButton />
+              <Button size="sm" onClick={() => setShowBatchSend(true)}>
+                <Mail className="h-4 w-4 mr-2" />
+                Send unsent
+              </Button>
+            </div>
+          </div>
+        </div>
 
         {/* Certificates Table */}
         <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" />
-              Certificates ({filteredCertificates.length})
-            </CardTitle>
-          </CardHeader>
+          {/* No card header: CardContent's pt-0 then puts the pinned row at the
+              card's own top edge, so nothing is left to show in the seam
+              between it and the filter bar. The count moved into the bar. */}
           <CardContent>
             {loading ? (
               <div className="flex justify-center py-8">
@@ -762,88 +856,87 @@ export default function CertificatesPage() {
                 No certificates found
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full">
+              // No overflow wrapper: it would become the sticky header's
+              // scroll container and stop it pinning to the page. Fixed layout
+              // at 100% width instead, so a narrow window wraps the cells
+              // rather than overflowing sideways.
+              <div>
+                <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <thead>
-                    <tr className="border-b bg-muted/50">
-                      <th className="py-3 px-4 text-left">
+                    <tr>
+                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3`} style={{ width: 40, top: headerHeight }}>
                         <Checkbox
+                          className="h-3.5 w-3.5 rounded-[3px]"
                           checked={selectedCertificates.size === filteredCertificates.length && filteredCertificates.length > 0}
                           onCheckedChange={toggleSelectAll}
                         />
                       </th>
-                      <th className="py-3 px-4 text-left">
+                      <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>
                         <button
-                          className="flex items-center font-medium text-sm hover:text-primary"
+                          className="flex items-center hover:text-foreground"
                           onClick={() => handleSort('certificate_number')}
                         >
                           Certificate #
                           <SortIcon field="certificate_number" />
                         </button>
                       </th>
-                      <th className="py-3 px-4 text-left">
-                        <span className="font-medium text-sm">Sample</span>
-                      </th>
-                      <th className="py-3 px-4 text-left">
+                      <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Sample</th>
+                      <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>
                         <button
-                          className="flex items-center font-medium text-sm hover:text-primary"
+                          className="flex items-center hover:text-foreground"
                           onClick={() => handleSort('issued_to')}
                         >
                           Client
                           <SortIcon field="issued_to" />
                         </button>
                       </th>
-                      <th className="py-3 px-4 text-left">
-                        <span className="font-medium text-sm">Seller</span>
-                      </th>
-                      <th className="py-3 px-4 text-left">
+                      <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Seller</th>
+                      <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>
                         <button
-                          className="flex items-center font-medium text-sm hover:text-primary"
+                          className="flex items-center hover:text-foreground"
                           onClick={() => handleSort('origin')}
                         >
                           Origin
                           <SortIcon field="origin" />
                         </button>
                       </th>
-                      <th className="py-3 px-4 text-left">
+                      <th className={TABLE_HEAD_CELL} style={{ width: 104, top: headerHeight }}>
                         <button
-                          className="flex items-center font-medium text-sm hover:text-primary"
+                          className="flex items-center hover:text-foreground"
                           onClick={() => handleSort('created_at')}
                         >
                           Issued
                           <SortIcon field="created_at" />
                         </button>
                       </th>
-                      <th className="py-3 px-4 text-left">
+                      <th className={TABLE_HEAD_CELL} style={{ width: 112, top: headerHeight }}>
                         <button
-                          className="flex items-center font-medium text-sm hover:text-primary"
+                          className="flex items-center hover:text-foreground"
                           onClick={() => handleSort('status')}
                         >
                           Status
                           <SortIcon field="status" />
                         </button>
                       </th>
-                      <th className="py-3 px-4 text-left">
-                        <span className="font-medium text-sm">Sent</span>
-                      </th>
-                      <th className="py-3 px-4 text-right">
-                        <span className="font-medium text-sm">Actions</span>
-                      </th>
+                      <th className={TABLE_HEAD_CELL} style={{ width: 120, top: headerHeight }}>Sent</th>
+                      {/* Wide enough for the four icon buttons below. */}
+                      <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-4 pr-3`} style={{ width: 152, top: headerHeight }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredCertificates.map(cert => (
-                      <tr key={cert.id} className="border-b hover:bg-muted/50">
-                        <td className="py-3 px-4">
+                      <tr key={cert.id} className="border-b hover:bg-muted/50 text-[12px]">
+                        <td className="py-2 px-3">
                           <Checkbox
+                            className="h-3.5 w-3.5 rounded-[3px]"
                             checked={selectedCertificates.has(cert.id)}
                             onCheckedChange={() => toggleSelect(cert.id)}
                           />
                         </td>
-                        <td className="py-3 px-4 font-mono text-sm">
+                        <td className="py-2 px-3 font-mono">
                           {cert.certificate_number}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-3">
                           {cert.sample ? (
                             <Link
                               href={`/samples/${trackingNumberToSlug(cert.sample.tracking_number)}`}
@@ -864,22 +957,22 @@ export default function CertificatesPage() {
                             <span className="text-muted-foreground">-</span>
                           )}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-3">
                           {getClientName(cert)}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-3">
                           {cert.sample?.seller?.fantasy_name || cert.sample?.seller?.name || '-'}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-3">
                           {cert.sample?.origin || '-'}
                         </td>
-                        <td className="py-3 px-4 text-sm text-muted-foreground">
+                        <td className="py-2 px-3 text-sm text-muted-foreground">
                           {new Date(cert.created_at).toLocaleDateString()}
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-2 px-3">
                           {getStatusBadge(cert)}
                         </td>
-                        <td className="py-3 px-4 text-sm">
+                        <td className="py-2 px-3 text-sm">
                           {(() => {
                             const ss = cert.send_status
                             if (!ss || (!ss.buyerSent && !ss.sellerSent)) {
@@ -900,42 +993,46 @@ export default function CertificatesPage() {
                             )
                           })()}
                         </td>
-                        <td className="py-3 px-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
+                        <td className="py-2 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
                             {cert.sample_id && (
                               <>
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="h-7 w-7 p-0"
                                   onClick={() => handleViewCertificate(cert)}
                                   title="View Certificate"
                                 >
-                                  <Eye className="h-4 w-4" />
+                                  <Eye className="h-3.5 w-3.5" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="h-7 w-7 p-0"
                                   onClick={() => handleDownload(cert.sample_id!, cert.certificate_number, cert.sample_contract_id)}
                                   title="Download Certificate"
                                 >
-                                  <Download className="h-4 w-4" />
+                                  <Download className="h-3.5 w-3.5" />
                                 </Button>
                                 <Button
                                   variant="ghost"
                                   size="sm"
+                                  className="h-7 w-7 p-0"
                                   onClick={() => setOverrideCertificate(cert)}
                                   title="Override Status"
                                 >
-                                  <RefreshCw className="h-4 w-4" />
+                                  <RefreshCw className="h-3.5 w-3.5" />
                                 </Button>
                                 {isMasterEditor && (
                                   <Button
                                     variant="ghost"
                                     size="sm"
+                                    className="h-7 w-7 p-0"
                                     onClick={() => setEditSampleId(cert.sample_id)}
                                     title="Edit Certificate"
                                   >
-                                    <Pencil className="h-4 w-4" />
+                                    <Pencil className="h-3.5 w-3.5" />
                                   </Button>
                                 )}
                               </>

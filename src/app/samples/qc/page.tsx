@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -17,6 +17,7 @@ import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
+import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
 import { canReprintCuppingCards } from '@/lib/cupping/reprint'
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
@@ -223,13 +224,9 @@ export default function SamplesPage() {
   // exist yet and a mount-once effect would wire itself to nothing.
   const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null)
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
-  const [pendingTodayIds, setPendingTodayIds] = useState<string[]>([])
-  // Why the batch is empty, when it is. Without this a failing lookup and a
-  // genuinely quiet day look identical, and the button silently does nothing.
-  const [pendingTodayError, setPendingTodayError] = useState<string | null>(null)
-  // An explicit batch when the "print today's unprinted" button drives the
-  // dialog; null means the dialog uses the current row selection, as before.
-  const [tinLabelBatchIds, setTinLabelBatchIds] = useState<string[] | null>(null)
+  // Bumped after this page prints its own row selection, so the Today button
+  // re-counts: a selection print consumes part of today's batch.
+  const [todayBatchToken, setTodayBatchToken] = useState(0)
   const [showCuppingCardsDialog, setShowCuppingCardsDialog] = useState(false)
   const [showAssignCuppersDialog, setShowAssignCuppersDialog] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -360,32 +357,6 @@ export default function SamplesPage() {
     observer.observe(headerEl)
     return () => observer.disconnect()
   }, [headerEl])
-
-  const refreshPendingToday = useCallback(async () => {
-    try {
-      const response = await fetch('/api/samples/tin-labels/pending-today')
-      const data = await response.json().catch(() => null)
-      if (!response.ok) {
-        const detail = data?.details || data?.error || `HTTP ${response.status}`
-        console.error('Failed to load today\'s unprinted tin labels:', detail)
-        setPendingTodayIds([])
-        setPendingTodayError(String(detail))
-        return
-      }
-      setPendingTodayIds(Array.isArray(data?.sample_ids) ? data.sample_ids : [])
-      setPendingTodayError(null)
-    } catch (error) {
-      // A broken badge is not worth interrupting the page for, but it must not
-      // be indistinguishable from "nothing to print".
-      console.error('Failed to load today\'s unprinted tin labels:', error)
-      setPendingTodayIds([])
-      setPendingTodayError(error instanceof Error ? error.message : String(error))
-    }
-  }, [])
-
-  useEffect(() => {
-    refreshPendingToday()
-  }, [refreshPendingToday])
 
   const loadSamples = async () => {
     try {
@@ -1395,27 +1366,7 @@ export default function SamplesPage() {
             )}
             {/* Today's batch. Always rendered, so an empty day and a broken
                 lookup are both visible rather than an absent button. */}
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={pendingTodayIds.length === 0}
-              title={
-                pendingTodayError
-                  ? `Could not load today's batch: ${pendingTodayError}`
-                  : pendingTodayIds.length === 0
-                    ? 'Nothing certified today is waiting for a tin label'
-                    : undefined
-              }
-              onClick={() => {
-                setTinLabelBatchIds(pendingTodayIds)
-                setShowTinLabelDialog(true)
-              }}
-            >
-              <Printer className="h-4 w-4 mr-2" />
-              {pendingTodayError
-                ? 'Today unavailable'
-                : `Today${pendingTodayIds.length > 0 ? ` · ${pendingTodayIds.length}` : ''}`}
-            </Button>
+            <PrintTodayTinLabelsButton refreshToken={todayBatchToken} />
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
                 <Button size="sm">
@@ -2172,17 +2123,15 @@ export default function SamplesPage() {
         }}
       />
 
-      {/* Tin Label Size Selection Dialog */}
+      {/* Tin labels for the current row selection. Today's batch has its own
+          dialog inside PrintTodayTinLabelsButton. */}
       <TinLabelSizeDialog
         open={showTinLabelDialog}
-        onOpenChange={(open) => {
-          setShowTinLabelDialog(open)
-          if (!open) setTinLabelBatchIds(null)
-        }}
-        sampleIds={tinLabelBatchIds ?? Array.from(selectedSamples)}
+        onOpenChange={setShowTinLabelDialog}
+        sampleIds={Array.from(selectedSamples)}
         onSuccess={() => {
           setSelectedSamples(new Set())
-          refreshPendingToday()
+          setTodayBatchToken(t => t + 1)
         }}
       />
 
