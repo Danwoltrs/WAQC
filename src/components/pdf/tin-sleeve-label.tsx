@@ -116,6 +116,15 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       maxLines: 1,
       textOverflow: 'ellipsis',
     },
+    // The certified date sits on its own line under the quality. At 2.5cm there
+    // is no room for a fifth line, so there it stays inline on the foot.
+    dateLine: {
+      marginTop: 0.8 * MM,
+      fontSize: bodySize,
+      color: '#3A3A3A',
+      maxLines: 1,
+      textOverflow: 'ellipsis',
+    },
     qual: {
       fontWeight: 'bold',
       color: '#000000',
@@ -156,7 +165,12 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                 label.client ? { key: 'Client: ', value: label.client } : null,
               ].filter(Boolean) as Array<{ key: string; value: string }>)
 
+          // The line under the headline carries the lot's own reference, then
+          // any sub-contract certificate numbers the headline did not take.
           const certParts = ([
+            label.reference
+              ? { key: label.referenceLabel || 'Ref.: ', value: label.reference }
+              : null,
             label.cert ? { key: 'Cert.: ', value: label.cert } : null,
             label.roaster ? { key: 'Roaster: ', value: label.roaster } : null,
             ...(compact
@@ -167,7 +181,12 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
               : []),
           ].filter(Boolean) as Array<{ key: string; value: string }>)
 
-          const footParts = [label.quality, label.quantity, label.date].filter(Boolean) as string[]
+          const footParts = [
+            label.quality,
+            label.quantity,
+            ...(compact ? [label.date] : []),
+          ].filter(Boolean) as string[]
+          const dateLine = compact ? null : label.date
 
           return (
             <View
@@ -218,6 +237,10 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
                         </Text>
                       ))}
                     </Text>
+                  )}
+
+                  {dateLine && (
+                    <Text style={styles.dateLine}>{dateLine}</Text>
                   )}
                 </View>
               </View>

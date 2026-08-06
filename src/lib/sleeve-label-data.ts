@@ -33,7 +33,12 @@ export interface SleeveLabelSource {
 }
 
 export interface SleeveLabelFields {
+  /** The certificate number, which leads the label. */
   headline: string
+  /** The lot's own reference — container or exporter sample number. */
+  reference: string | null
+  /** What to call that reference: 'Container: ' or 'Sample: '. */
+  referenceLabel: string | null
   seller: string | null
   client: string | null
   cert: string | null
@@ -245,30 +250,50 @@ export function buildSleeveLabelFields(src: SleeveLabelSource): SleeveLabelField
   const container = (src.containerNr || '').trim()
   const exporterSample = (src.exporterSampleNumber || '').trim()
 
-  let headline: string
-  let certUsedAsHeadline = false
-
+  // The lot's own reference, and what to call it: a shipment sample is known by
+  // its container, a pre-shipment sample by the exporter's sample number. The
+  // sample type decides, falling back to whichever value exists.
+  let referenceLabel: string | null = null
+  let reference: string | null = null
   if (src.sampleType === 'SS' && container) {
-    headline = container
+    referenceLabel = 'Container: '
+    reference = container
   } else if (src.sampleType === 'PSS' && exporterSample) {
-    headline = exporterSample
+    referenceLabel = 'Sample: '
+    reference = exporterSample
   } else if (container) {
-    headline = container
+    referenceLabel = 'Container: '
+    reference = container
   } else if (exporterSample) {
-    headline = exporterSample
-  } else if (certs.length > 0) {
+    referenceLabel = 'Sample: '
+    reference = exporterSample
+  }
+
+  // The certificate number leads: it is the number a warehouse reads back to
+  // us, the one the QR resolves to, and the only one that is unique per lot.
+  // The container falls to the line below. When there is no certificate yet the
+  // reference is promoted so the label still says which lot it belongs to.
+  let headline: string
+  let referenceUsedAsHeadline = false
+
+  if (certs.length > 0) {
     headline = certs[0]
-    certUsedAsHeadline = true
+  } else if (reference) {
+    headline = reference
+    referenceUsedAsHeadline = true
   } else {
     headline = 'Reference pending'
   }
 
-  // When the certificate number became the headline, the Cert. field shows only
-  // what is left, so no number is printed twice and none is lost.
-  const remaining = certUsedAsHeadline ? certs.slice(1) : certs
+  // The Cert. field shows only what the headline did not take — for a sample
+  // with sub-contracts, its sub-contract certificates. So no number is printed
+  // twice and none is lost.
+  const remaining = certs.slice(1)
 
   return {
     headline,
+    reference: referenceUsedAsHeadline ? null : reference,
+    referenceLabel: referenceUsedAsHeadline ? null : referenceLabel,
     seller: party(src.sellerName, src.sellerRef),
     client: party(src.clientName, src.clientRef),
     cert: remaining.length > 0 ? remaining.join(', ') : null,

@@ -216,20 +216,25 @@ describe('resolveQualityName', () => {
 })
 
 describe('buildSleeveLabelFields', () => {
-  it('leads with the container number for a shipment sample', () => {
+  it('leads with the certificate number and drops the container to the line below', () => {
     const f = buildSleeveLabelFields(base)
-    expect(f.headline).toBe('HASU 155.201-6')
-    expect(f.cert).toBe('BR-036991/JUL/26')
+    expect(f.headline).toBe('BR-036991/JUL/26')
+    expect(f.reference).toBe('HASU 155.201-6')
+    expect(f.referenceLabel).toBe('Container: ')
+    // The headline took the only certificate, so nothing is left to repeat.
+    expect(f.cert).toBeNull()
   })
 
-  it('leads with the exporter sample number for a pre-shipment sample', () => {
+  it('labels a pre-shipment sample reference as a sample number', () => {
     const f = buildSleeveLabelFields({
       ...base,
       sampleType: 'PSS',
       containerNr: null,
       exporterSampleNumber: 'CCT-2214/26',
     })
-    expect(f.headline).toBe('CCT-2214/26')
+    expect(f.headline).toBe('BR-036991/JUL/26')
+    expect(f.reference).toBe('CCT-2214/26')
+    expect(f.referenceLabel).toBe('Sample: ')
   })
 
   it('appends the reference in parentheses only when present', () => {
@@ -244,29 +249,22 @@ describe('buildSleeveLabelFields', () => {
     expect(f.client).toBeNull()
   })
 
-  it('comma-joins every certificate number, each with its month', () => {
+  it('keeps the sub-contract certificate numbers, each with its month', () => {
     const f = buildSleeveLabelFields({
       ...base,
       certificateNumbers: ['BR-036991/26', 'BR-036992/26', 'BR-036993/26'],
     })
-    expect(f.cert).toBe('BR-036991/JUL/26, BR-036992/JUL/26, BR-036993/JUL/26')
+    expect(f.headline).toBe('BR-036991/JUL/26')
+    expect(f.cert).toBe('BR-036992/JUL/26, BR-036993/JUL/26')
   })
 
-  it('falls back to the certificate number as the headline and drops it from the cert field', () => {
-    const f = buildSleeveLabelFields({ ...base, containerNr: null, exporterSampleNumber: null })
-    expect(f.headline).toBe('BR-036991/JUL/26')
+  it('promotes the reference to the headline when there is no certificate yet', () => {
+    const f = buildSleeveLabelFields({ ...base, certificateNumbers: [] })
+    expect(f.headline).toBe('HASU 155.201-6')
+    // Promoted, so it is not also printed on the line below.
+    expect(f.reference).toBeNull()
+    expect(f.referenceLabel).toBeNull()
     expect(f.cert).toBeNull()
-  })
-
-  it('keeps the remaining certificate numbers when the first became the headline', () => {
-    const f = buildSleeveLabelFields({
-      ...base,
-      containerNr: null,
-      exporterSampleNumber: null,
-      certificateNumbers: ['BR-036991/26', 'BR-036992/26'],
-    })
-    expect(f.headline).toBe('BR-036991/JUL/26')
-    expect(f.cert).toBe('BR-036992/JUL/26')
   })
 
   it('renders Reference pending when nothing at all resolves', () => {
@@ -277,6 +275,7 @@ describe('buildSleeveLabelFields', () => {
       certificateNumbers: [],
     })
     expect(f.headline).toBe('Reference pending')
+    expect(f.reference).toBeNull()
     expect(f.cert).toBeNull()
   })
 
