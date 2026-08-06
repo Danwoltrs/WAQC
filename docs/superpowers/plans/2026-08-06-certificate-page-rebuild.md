@@ -13,6 +13,19 @@
 
 **Prerequisite:** `docs/superpowers/plans/2026-08-06-certificate-compliance-core.md` must be committed and green. This plan imports `evaluateSampleCompliance` and `ComplianceCriterion` from it.
 
+## Carried in from Phase 1's final review
+
+Four findings were deliberately left for this plan. Each has a task that owns it — do not lose them:
+
+| # | Finding | Owned by |
+|---|---|---|
+| F1 | `evaluateSampleCompliance` returns `[]` for three different states: no quality spec, template missing or fetch failed, and genuinely-judged-with-no-criteria. Rendering `[]` as a clean checklist would be exactly the false reassurance this rebuild exists to prevent. | Task 6, Step 3a |
+| F2 | All three public surfaces still read `defects?.total ?? …` and `total_primary ?? primary`. Grading persists an independent `total`, so the page can publish a defect total the gate never judged. Pre-existing — Phase 1 scoped only screens. | Task 6, Step 2a |
+| F3 | Screen criterion keys are inconsistent and can collide: legacy min emits `screen_<size>`, constraint min emits `screen_<size>_min`, and **both** formats emit `screen_<size>_max`. | Task 1, Step 3 |
+| F4 | Duplicate `intensity_taint_<name>` keys when two cuppers flag the same taint. | Task 1, Step 3 (dissolved by the Cup integrity grouping — assert it) |
+
+F3 and F4 matter because this plan uses `ChecklistRow.key` as a React key and as a `find()` target.
+
 ## Global Constraints
 
 - Mobile-first, centred column capped at **420px**. No separate wide layout.
@@ -156,6 +169,33 @@ describe('buildChecklistRows', () => {
 
   it('returns nothing for no criteria', () => {
     expect(buildChecklistRows([], { cleanCup: null, uniformCup: null })).toEqual([])
+  })
+
+  // F3 — the engine's screen keys collide when a template carries both the
+  // legacy and constraint formats: both emit `screen_<size>_max`.
+  it('never emits two rows with the same key', () => {
+    const rows = buildChecklistRows([
+      criterion({ key: 'screen_16', label: 'Screen 16', sublabel: 'min 90%', actual: 96, limit: 90 }),
+      criterion({ key: 'screen_16_max', label: 'Screen 16', sublabel: 'max 99%', actual: 96, limit: 99 }),
+      criterion({ key: 'screen_16_max', label: 'Screen 16', sublabel: 'max 98%', actual: 96, limit: 98 }),
+    ], cup)
+    const keys = rows.map(r => r.key)
+    expect(new Set(keys).size).toBe(keys.length)
+    expect(rows).toHaveLength(3)
+  })
+
+  // F4 — two cuppers flagging the same taint emit the same intensity key.
+  // The Cup integrity grouping must absorb them into one row.
+  it('collapses duplicate intensity criteria into the single integrity row', () => {
+    const rows = buildChecklistRows([
+      criterion({ key: 'intensity_taint_phenol', label: 'Taint: Phenol', actual: 4, limit: 2, operator: '>', passed: false }),
+      criterion({ key: 'intensity_taint_phenol', label: 'Taint: Phenol', actual: 4, limit: 2, operator: '>', passed: false }),
+      criterion({ key: 'cupping_taints', label: 'Cupping taints', actual: 1, limit: 2 }),
+    ], cup)
+    expect(rows.filter(r => r.key === 'cup_integrity')).toHaveLength(1)
+    expect(rows.find(r => r.key === 'cup_integrity')?.passed).toBe(false)
+    const keys = rows.map(r => r.key)
+    expect(new Set(keys).size).toBe(keys.length)
   })
 })
 
@@ -309,8 +349,17 @@ export function buildChecklistRows(
     if (found) rows.push(passthrough(found))
   }
 
-  // 2. Screens, in engine order.
-  for (const c of criteria.filter(isScreen)) rows.push(passthrough(c))
+  // 2. Screens, in engine order. The engine's screen keys are not unique — a
+  // template carrying both the legacy and constraint formats emits
+  // `screen_<size>_max` from each — and these keys become React keys below.
+  const seenScreenKeys = new Map<string, number>()
+  for (const c of criteria.filter(isScreen)) {
+    const row = passthrough(c)
+    const seen = seenScreenKeys.get(row.key) ?? 0
+    seenScreenKeys.set(row.key, seen + 1)
+    if (seen > 0) row.key = `${row.key}__${seen}`
+    rows.push(row)
+  }
 
   // 3. Every cupping attribute, as one row.
   const attributes = criteria.filter(isCuppingAttribute)
@@ -391,7 +440,7 @@ export function verdictFailures(rows: ChecklistRow[]): ChecklistRow[] {
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/lib/certificate-checklist.test.ts`
-Expected: PASS, 15 tests.
+Expected: PASS, 17 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -1235,6 +1284,35 @@ Then replace the `cuppingAttributes` mapping so it reads from `finalScores` rath
 
 Leave `attrLimitsMap` and `attrScaleMap` exactly as they are — they already read the template correctly.
 
+- [ ] **Step 2a: Put all three public surfaces on the shared defect resolver (F2)**
+
+Three surfaces still compute defects their own way, and grading persists an independent `defects.total` that the approval gate has never honoured — so today the public can be shown a defect total no gate ever judged.
+
+In `src/app/certificate/[slug]/page.tsx`, find:
+
+```ts
+  // Grading saves as { primary, secondary, total }; certificate-data.ts uses { total_primary, total_secondary }
+  const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
+  const secondaryDefects = defects?.total_secondary ?? defects?.secondary ?? null
+  const totalDefects = defects?.total ?? (primaryDefects !== null && secondaryDefects !== null
+    ? primaryDefects + secondaryDefects
+    : null)
+```
+
+Replace with:
+
+```ts
+  // One reading, shared with the approval gate. The total is always the
+  // computed sum — a stored defects.total is never honoured, because the gate
+  // has never honoured it.
+  const defectCounts = resolveDefectCounts(defects)
+  const totalDefects = defectCounts?.total ?? null
+```
+
+Add `resolveDefectCounts` to the existing import from `@/lib/quality-resolvers`. `primaryDefects` and `secondaryDefects` are no longer referenced by this file — delete them.
+
+Apply the identical replacement in `src/app/certificate/[slug]/opengraph-image.tsx` and `src/app/api/certificate/[slug]/route.ts`. Both have the same three-line block and the same comment. In the JSON route, keep publishing the same field names it publishes today; only the values change. Note in your report that the JSON endpoint's `total_defects` value can change for any row whose stored `total` disagreed with `primary + secondary` — that is the fix, not a break.
+
 - [ ] **Step 3: Evaluate compliance and return the view model**
 
 Still inside `getCertificateInfo`, after the attributes block, add:
@@ -1242,6 +1320,17 @@ Still inside `getCertificateInfo`, after the attributes block, add:
 ```ts
   const criteria = await evaluateSampleCompliance(supabase, sample.id, sample.quality_spec_id ?? null)
   const rows = buildChecklistRows(criteria, { cleanCup, uniformCup })
+
+  // F1: evaluateSampleCompliance returns [] for three different states — no
+  // quality spec, a template that failed to load, and a genuine evaluation
+  // that produced no criteria. A sample WITH a spec that yields nothing means
+  // the template did not load; saying nothing is honest, but it must be
+  // visible in the logs rather than looking like a clean bill of health.
+  if (sample.quality_spec_id && criteria.length === 0) {
+    console.warn(
+      `[certificate] sample ${sample.id} has quality_spec_id ${sample.quality_spec_id} but produced no compliance criteria — template may have failed to load`,
+    )
+  }
 
   // Screens: grams in storage, percentages everywhere else. A screen is "below
   // the floor" when a failing minimum criterion names it.
@@ -1478,6 +1567,7 @@ With the dev server running, open a rejected certificate on a narrow viewport (3
 8. The PDF button opens the modal; Escape and the backdrop both close it; focus returns to the PDF button.
 9. Nothing anywhere shows a `SAN-` reference — check the page, the tab title, and the share text.
 10. At 320px there is no horizontal scroll.
+11. **F1 check:** a certified sample whose quality template fails to load renders **no** checklist section at all — never an empty one that reads as "everything passed" — and logs the warning from Step 3.
 
 - [ ] **Step 10: Commit**
 
