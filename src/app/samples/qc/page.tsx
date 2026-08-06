@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -31,6 +31,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
@@ -182,15 +183,33 @@ const formatSampleType = (type: string | undefined): string => {
   return typeMap[type] || type.toUpperCase()
 }
 
-// The header row pins below the page header, which is itself sticky at the top
-// of the scroll container (pt-6 + a 40px control row + pb-4 = 80px = top-20).
-// The background must be opaque or rows scroll through it, and the separator is
-// an inset shadow because a collapsed-border bottom is dropped once a cell is
-// sticky.
+// The table's header row pins directly below the page header. Its offset is
+// measured rather than hard-coded, because the page header changes height when
+// it condenses and can wrap on a narrow window. The background must be opaque
+// or rows scroll through it, and the separator is an inset shadow because a
+// collapsed-border bottom is dropped once a cell is sticky.
 const TABLE_HEAD_STICKY =
-  'sticky top-20 z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
+  'sticky z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
 const TABLE_HEAD_CELL =
   `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
+
+// The page header sits 24px (the container's p-6) below the top of the scroll
+// container, so it is pinned from that point on.
+const HEADER_PIN_OFFSET = 24
+// Used until the header has been measured, so the first paint is not obviously
+// wrong: pt-6 + a 40px control row + pb-4.
+const DEFAULT_HEADER_HEIGHT = 80
+
+/** The nearest ancestor that actually scrolls, or null if the window does. */
+function findScrollParent(node: HTMLElement | null): HTMLElement | null {
+  let el = node?.parentElement ?? null
+  while (el) {
+    const overflowY = window.getComputedStyle(el).overflowY
+    if (overflowY === 'auto' || overflowY === 'scroll') return el
+    el = el.parentElement
+  }
+  return null
+}
 
 export default function SamplesPage() {
   const { profile } = useAuth()
@@ -211,6 +230,11 @@ export default function SamplesPage() {
   const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
+  // The header swaps its title for a compact filter bar once the list is
+  // scrolled, so the controls stay reachable without scrolling back up.
+  const headerRef = useRef<HTMLDivElement>(null)
+  const [condensed, setCondensed] = useState(false)
+  const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
   const [pendingTodayIds, setPendingTodayIds] = useState<string[]>([])
   // Why the batch is empty, when it is. Without this a failing lookup and a
   // genuinely quiet day look identical, and the button silently does nothing.
@@ -337,6 +361,33 @@ export default function SamplesPage() {
     loadSamples()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, sampleTypeFilter, workflowStageFilter])
+
+  useEffect(() => {
+    const scroller = findScrollParent(headerRef.current)
+    // The app shell scrolls an inner div, but fall back to the window so this
+    // still works if that ever changes.
+    const target: HTMLElement | Window = scroller ?? window
+    const onScroll = () => {
+      const scrollTop = scroller ? scroller.scrollTop : window.scrollY
+      setCondensed(prev => {
+        const next = scrollTop > HEADER_PIN_OFFSET
+        return next === prev ? prev : next
+      })
+    }
+    onScroll()
+    target.addEventListener('scroll', onScroll, { passive: true })
+    return () => target.removeEventListener('scroll', onScroll)
+  }, [])
+
+  useEffect(() => {
+    const el = headerRef.current
+    if (!el) return
+    const measure = () => setHeaderHeight(Math.round(el.getBoundingClientRect().height))
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   const refreshPendingToday = useCallback(async () => {
     try {
@@ -1145,6 +1196,100 @@ export default function SamplesPage() {
   // (and never disabled) once cards exist, including certified/rejected samples.
   const selectedCanReprint = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && canReprintCuppingCards(s))
 
+  // Everything except the search box and the stage chips, which both bars lay
+  // out themselves. Rendered into the filter card's grid when expanded and into
+  // a popover when condensed, so the two can never drift apart.
+  const advancedFilterControls = (
+    <>
+      <Select value={statusFilter || 'all'} onValueChange={(val) => setStatusFilter(val === 'all' ? null : val)}>
+        <SelectTrigger>
+          <SelectValue placeholder="Status" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Status</SelectItem>
+          <SelectItem value="received">Received</SelectItem>
+          <SelectItem value="in_progress">In Progress</SelectItem>
+          <SelectItem value="under_review">Under Review</SelectItem>
+          <SelectItem value="approved">Approved</SelectItem>
+          <SelectItem value="rejected">Rejected</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Select value={sampleTypeFilter || 'all'} onValueChange={(val) => setSampleTypeFilter(val === 'all' ? null : val)}>
+        <SelectTrigger>
+          <SelectValue placeholder="Sample Type" />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="all">All Types</SelectItem>
+          <SelectItem value="pss">PSS</SelectItem>
+          <SelectItem value="ss">SS</SelectItem>
+          <SelectItem value="type">Type</SelectItem>
+        </SelectContent>
+      </Select>
+
+      <Input placeholder="Origin..." value={originFilter} onChange={(e) => setOriginFilter(e.target.value)} />
+      <Input placeholder="Quality..." value={qualityFilter} onChange={(e) => setQualityFilter(e.target.value)} />
+      <Input type="date" placeholder="Date From" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+      <Input type="date" placeholder="Date To" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+    </>
+  )
+
+  const advancedFilterCount = [statusFilter, sampleTypeFilter, originFilter, qualityFilter, dateFrom, dateTo]
+    .filter(Boolean).length
+  const anyFilterActive = advancedFilterCount > 0 || Boolean(searchQuery) || workflowStageFilter !== null
+
+  const stageChips = ([
+    { value: null, label: 'All stages' },
+    { value: 'received', label: 'Received' },
+    { value: 'analysis', label: 'Analysis' },
+    { value: 'roasting', label: 'Roasting' },
+    { value: 'review', label: 'Review' },
+    { value: 'certified', label: 'Certified' },
+    { value: 'rejected', label: 'Rejected' },
+  ] as const)
+
+  const renderStageChips = (compact: boolean) => stageChips.map(chip => {
+    const active = workflowStageFilter === chip.value
+    return (
+      <button
+        key={chip.label}
+        type="button"
+        onClick={() => setWorkflowStageFilter(chip.value)}
+        className={`${compact ? 'h-6 px-2 text-[11px]' : 'h-7 px-3 text-[12px]'} rounded-full border whitespace-nowrap transition-colors ${
+          active
+            ? 'bg-foreground text-background border-foreground'
+            : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
+        }`}
+      >
+        {compact && chip.value === null ? 'All' : chip.label}
+      </button>
+    )
+  })
+
+  const columnsMenu = (compact: boolean) => (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className={compact ? 'h-7 text-[11px] px-2' : 'h-7 text-[12px]'}>
+          <Settings2 className={compact ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5 mr-1.5'} />
+          {!compact && 'Columns'}
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
+        <DropdownMenuSeparator />
+        {Object.entries(columnLabels).map(([key, label]) => (
+          <DropdownMenuCheckboxItem
+            key={key}
+            checked={columnVisibility[key]}
+            onCheckedChange={() => toggleColumn(key)}
+          >
+            {label}
+          </DropdownMenuCheckboxItem>
+        ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+
   return (
     <>
     <MainLayout>
@@ -1152,18 +1297,66 @@ export default function SamplesPage() {
         <ContextMenuTrigger asChild>
       <div className="p-6 space-y-6">
         {/* Header - Sticky on desktop */}
-        <div className="sticky top-0 z-10 bg-background pb-4 -mx-6 px-6 pt-6 border-b md:border-0">
-          <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Sample Tracking</h1>
+        <div
+          ref={headerRef}
+          className={`sticky top-0 z-10 bg-background -mx-6 px-6 border-b md:border-0 ${
+            condensed ? 'pt-3 pb-3 border-b' : 'pt-6 pb-4'
+          }`}
+        >
+          <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0 flex-1">
+            {condensed ? (
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="relative w-[200px] shrink-0">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search samples..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-7 pl-8 text-[12px]"
+                  />
+                </div>
+                {renderStageChips(true)}
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
+                      <Filter className="h-3.5 w-3.5 mr-1" />
+                      Filters
+                      {advancedFilterCount > 0 && (
+                        <span className="ml-1 rounded-full bg-foreground text-background px-1.5 text-[10px] leading-4">
+                          {advancedFilterCount}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="start" className="w-[420px]">
+                    <div className="grid grid-cols-2 gap-2">
+                      {advancedFilterControls}
+                    </div>
+                  </PopoverContent>
+                </Popover>
+                {anyFilterActive && (
+                  <button
+                    type="button"
+                    onClick={clearFilters}
+                    className="h-7 px-2 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors whitespace-nowrap"
+                  >
+                    Clear all
+                  </button>
+                )}
+                {columnsMenu(true)}
+              </div>
+            ) : (
+              <h1 className="text-3xl font-bold tracking-tight">Sample Tracking</h1>
+            )}
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             {selectedSamples.size > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline">
+                  <Button variant="outline" size={condensed ? 'sm' : 'default'}>
                     <MoreVertical className="h-4 w-4 mr-2" />
-                    Bulk Actions ({selectedSamples.size})
+                    {condensed ? `Actions (${selectedSamples.size})` : `Bulk Actions (${selectedSamples.size})`}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1234,6 +1427,7 @@ export default function SamplesPage() {
                 lookup are both visible rather than an absent button. */}
             <Button
               variant="outline"
+              size={condensed ? 'sm' : 'default'}
               disabled={pendingTodayIds.length === 0}
               title={
                 pendingTodayError
@@ -1249,14 +1443,16 @@ export default function SamplesPage() {
             >
               <Printer className="h-4 w-4 mr-2" />
               {pendingTodayError
-                ? "Today's labels unavailable"
-                : `Print today's unprinted${pendingTodayIds.length > 0 ? ` · ${pendingTodayIds.length}` : ''}`}
+                ? condensed ? 'Today unavailable' : "Today's labels unavailable"
+                : condensed
+                  ? `Today${pendingTodayIds.length > 0 ? ` · ${pendingTodayIds.length}` : ''}`
+                  : `Print today's unprinted${pendingTodayIds.length > 0 ? ` · ${pendingTodayIds.length}` : ''}`}
             </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button>
+                <Button size={condensed ? 'sm' : 'default'}>
                   <Plus className="h-4 w-4 mr-2" />
-                  New Sample
+                  {condensed ? 'New' : 'New Sample'}
                 </Button>
               </DialogTrigger>
               <DialogContent className={INTAKE_DIALOG_CONTENT_CLASS}>
@@ -1291,92 +1487,12 @@ export default function SamplesPage() {
 
               {/* Advanced Filters */}
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                {/* Status Filter */}
-                <Select value={statusFilter || 'all'} onValueChange={(val) => setStatusFilter(val === 'all' ? null : val)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Status" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Status</SelectItem>
-                    <SelectItem value="received">Received</SelectItem>
-                    <SelectItem value="in_progress">In Progress</SelectItem>
-                    <SelectItem value="under_review">Under Review</SelectItem>
-                    <SelectItem value="approved">Approved</SelectItem>
-                    <SelectItem value="rejected">Rejected</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Sample Type Filter */}
-                <Select value={sampleTypeFilter || 'all'} onValueChange={(val) => setSampleTypeFilter(val === 'all' ? null : val)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sample Type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Types</SelectItem>
-                    <SelectItem value="pss">PSS</SelectItem>
-                    <SelectItem value="ss">SS</SelectItem>
-                    <SelectItem value="type">Type</SelectItem>
-                  </SelectContent>
-                </Select>
-
-                {/* Origin Filter */}
-                <Input
-                  placeholder="Origin..."
-                  value={originFilter}
-                  onChange={(e) => setOriginFilter(e.target.value)}
-                />
-
-                {/* Quality Filter */}
-                <Input
-                  placeholder="Quality..."
-                  value={qualityFilter}
-                  onChange={(e) => setQualityFilter(e.target.value)}
-                />
-
-                {/* Date From */}
-                <Input
-                  type="date"
-                  placeholder="Date From"
-                  value={dateFrom}
-                  onChange={(e) => setDateFrom(e.target.value)}
-                />
-
-                {/* Date To */}
-                <Input
-                  type="date"
-                  placeholder="Date To"
-                  value={dateTo}
-                  onChange={(e) => setDateTo(e.target.value)}
-                />
+                {advancedFilterControls}
               </div>
 
               {/* Workflow stage chips — pill-styled, active chip in ink. */}
               <div className="flex gap-1.5 items-center flex-wrap">
-                {([
-                  { value: null, label: 'All stages' },
-                  { value: 'received', label: 'Received' },
-                  { value: 'analysis', label: 'Analysis' },
-                  { value: 'roasting', label: 'Roasting' },
-                  { value: 'review', label: 'Review' },
-                  { value: 'certified', label: 'Certified' },
-                  { value: 'rejected', label: 'Rejected' },
-                ] as const).map(chip => {
-                  const active = workflowStageFilter === chip.value
-                  return (
-                    <button
-                      key={chip.label}
-                      type="button"
-                      onClick={() => setWorkflowStageFilter(chip.value)}
-                      className={`h-7 px-3 rounded-full border text-[12px] transition-colors ${
-                        active
-                          ? 'bg-foreground text-background border-foreground'
-                          : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
-                      }`}
-                    >
-                      {chip.label}
-                    </button>
-                  )
-                })}
+                {renderStageChips(false)}
                 <button
                   type="button"
                   onClick={clearFilters}
@@ -1385,27 +1501,7 @@ export default function SamplesPage() {
                   Clear all
                 </button>
                 <div className="ml-auto">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="outline" size="sm" className="h-7 text-[12px]">
-                        <Settings2 className="h-3.5 w-3.5 mr-1.5" />
-                        Columns
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
-                      <DropdownMenuLabel>Toggle columns</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {Object.entries(columnLabels).map(([key, label]) => (
-                        <DropdownMenuCheckboxItem
-                          key={key}
-                          checked={columnVisibility[key]}
-                          onCheckedChange={() => toggleColumn(key)}
-                        >
-                          {label}
-                        </DropdownMenuCheckboxItem>
-                      ))}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+                  {columnsMenu(false)}
                 </div>
               </div>
             </div>
@@ -1448,7 +1544,7 @@ export default function SamplesPage() {
                 <table className="w-full" style={{ tableLayout: 'fixed' }}>
                   <thead>
                     <tr>
-                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3`} style={{ width: 40 }}>
+                      <th className={`${TABLE_HEAD_STICKY} text-left py-2.5 px-3`} style={{ width: 40, top: headerHeight }}>
                         <Checkbox
                           className="h-3.5 w-3.5 rounded-[3px]"
                           checked={selectedSamples.size === samples.length && samples.length > 0}
@@ -1456,27 +1552,27 @@ export default function SamplesPage() {
                         />
                       </th>
                       {selectedSamples.size > 0 && (
-                        <th className={TABLE_HEAD_CELL} style={{ width: 40 }}>
+                        <th className={TABLE_HEAD_CELL} style={{ width: 40, top: headerHeight }}>
                           <div className="flex items-center gap-1">
                             <QrCode className="h-3 w-3" />
                             QR
                           </div>
                         </th>
                       )}
-                      {columnVisibility.reference && <th className={TABLE_HEAD_CELL} style={{ width: 180 }}>Reference</th>}
-                      {columnVisibility.type && <th className={TABLE_HEAD_CELL} style={{ width: 56 }}>Type</th>}
-                      {columnVisibility.wolthers && <th className={TABLE_HEAD_CELL} style={{ width: 104 }}>W&amp;A REF</th>}
-                      {columnVisibility.quality && <th className={TABLE_HEAD_CELL}>Quality</th>}
-                      {columnVisibility.seller && <th className={TABLE_HEAD_CELL}>Seller</th>}
-                      {columnVisibility.shipper && <th className={TABLE_HEAD_CELL}>Shipper</th>}
-                      {columnVisibility.importer && <th className={TABLE_HEAD_CELL}>Importer</th>}
-                      {columnVisibility.roaster && <th className={TABLE_HEAD_CELL}>Roaster</th>}
-                      {columnVisibility.endClient && <th className={TABLE_HEAD_CELL}>End client</th>}
-                      {columnVisibility.status && <th className={TABLE_HEAD_CELL} style={{ width: 112 }}>Status</th>}
-                      {columnVisibility.origin && <th className={TABLE_HEAD_CELL} style={{ width: 96 }}>Origin</th>}
-                      {columnVisibility.storage && <th className={TABLE_HEAD_CELL} style={{ width: 96 }}>Storage</th>}
-                      {columnVisibility.created && <th className={TABLE_HEAD_CELL} style={{ width: 96 }}>Created</th>}
-                      <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-6 pr-3`} style={{ width: 96 }}></th>
+                      {columnVisibility.reference && <th className={TABLE_HEAD_CELL} style={{ width: 180, top: headerHeight }}>Reference</th>}
+                      {columnVisibility.type && <th className={TABLE_HEAD_CELL} style={{ width: 56, top: headerHeight }}>Type</th>}
+                      {columnVisibility.wolthers && <th className={TABLE_HEAD_CELL} style={{ width: 104, top: headerHeight }}>W&amp;A REF</th>}
+                      {columnVisibility.quality && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Quality</th>}
+                      {columnVisibility.seller && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Seller</th>}
+                      {columnVisibility.shipper && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Shipper</th>}
+                      {columnVisibility.importer && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Importer</th>}
+                      {columnVisibility.roaster && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>Roaster</th>}
+                      {columnVisibility.endClient && <th className={TABLE_HEAD_CELL} style={{ top: headerHeight }}>End client</th>}
+                      {columnVisibility.status && <th className={TABLE_HEAD_CELL} style={{ width: 112, top: headerHeight }}>Status</th>}
+                      {columnVisibility.origin && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Origin</th>}
+                      {columnVisibility.storage && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Storage</th>}
+                      {columnVisibility.created && <th className={TABLE_HEAD_CELL} style={{ width: 96, top: headerHeight }}>Created</th>}
+                      <th className={`${TABLE_HEAD_STICKY} text-right py-2.5 pl-6 pr-3`} style={{ width: 96, top: headerHeight }}></th>
                     </tr>
                   </thead>
                   <tbody>
