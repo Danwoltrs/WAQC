@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og'
 import { createClient } from '@supabase/supabase-js'
-import { slugToTrackingNumber } from '@/lib/utils'
+import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
 
 export const runtime = 'nodejs'
 export const alt = 'Wolthers Coffee QC Certificate'
@@ -15,18 +15,25 @@ const supabase = createClient(
 
 export default async function OGImage({ params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
-  const trackingNumber = slugToTrackingNumber(slug)
 
-  // Fetch sample
-  const { data: sample } = await supabase
-    .from('samples')
-    .select(`
-      id, tracking_number, origin,
-      quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en))
-    `)
-    .eq('tracking_number', trackingNumber)
-    .is('deleted_at', null)
-    .maybeSingle()
+  // The slug is the OFFICIAL certificate number on tins printed since the label
+  // rebuild, and the internal tracking number on everything printed before it.
+  const sampleId = await resolveSampleIdForSlug(supabase, slug)
+
+  let sample: any = null
+  if (sampleId) {
+    const { data } = await supabase
+      .from('samples')
+      .select(`
+        id, tracking_number, origin, sample_type, container_nr,
+        exporter_sample_number, buyer_contract_nr, wolthers_contract_nr,
+        quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en))
+      `)
+      .eq('id', sampleId)
+      .is('deleted_at', null)
+      .maybeSingle()
+    sample = data
+  }
 
   if (!sample) {
     return new ImageResponse(
@@ -38,6 +45,16 @@ export default async function OGImage({ params }: { params: Promise<{ slug: stri
       { ...size }
     )
   }
+
+  // The card shows the counterparty's own identifier, never the internal
+  // SAN- lab number.
+  const { reference } = resolvePublicReference({
+    sampleType: sample.sample_type,
+    containerNr: sample.container_nr,
+    exporterSampleNumber: sample.exporter_sample_number,
+    buyerContractNr: sample.buyer_contract_nr,
+    wolthersContractNr: sample.wolthers_contract_nr,
+  })
 
   // Certificate
   const { data: certificate } = await supabase
@@ -141,7 +158,7 @@ export default async function OGImage({ params }: { params: Promise<{ slug: stri
               WOLTHERS COFFEE QC
             </div>
             <div style={{ display: 'flex', fontSize: 42, fontWeight: 700, marginBottom: 12 }}>
-              {trackingNumber}
+              {reference}
             </div>
             <div
               style={{

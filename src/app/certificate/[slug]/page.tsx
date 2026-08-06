@@ -1,6 +1,6 @@
 import { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
-import { slugToTrackingNumber } from '@/lib/utils'
+import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
 import { CertificatePageClient } from './certificate-page-client'
 
 // Use service role for server-side data fetching
@@ -15,42 +15,45 @@ interface PageProps {
 }
 
 async function getCertificateInfo(slug: string) {
-  const trackingNumber = slugToTrackingNumber(slug)
+  // The slug is the OFFICIAL certificate number on tins printed since the label
+  // rebuild, and the internal tracking number on everything printed before it.
+  const sampleId = await resolveSampleIdForSlug(supabase, slug)
+  if (!sampleId) return null
 
-  // Find sample
-  let sample: any = null
   const sampleSelect = `
     id,
     tracking_number,
     origin,
     workflow_stage,
     status,
+    sample_type,
+    container_nr,
+    exporter_sample_number,
+    buyer_contract_nr,
+    wolthers_contract_nr,
     quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en, parameters))
   `
-  const { data: directMatch } = await supabase
+  const { data: sampleRow } = await supabase
     .from('samples')
     .select(sampleSelect)
-    .eq('tracking_number', trackingNumber)
+    .eq('id', sampleId)
     .is('deleted_at', null)
     .maybeSingle()
 
-  if (directMatch) {
-    sample = directMatch
-  } else {
-    const { data: fallback } = await supabase
-      .from('samples')
-      .select(sampleSelect)
-      .ilike('tracking_number', trackingNumber)
-      .is('deleted_at', null)
-      .limit(1)
-      .maybeSingle()
-    sample = fallback
-  }
-
+  const sample: any = sampleRow
   if (!sample) return null
 
+  // The page shows the counterparty's own identifier, never samples.tracking_number.
+  const publicReference = resolvePublicReference({
+    sampleType: sample.sample_type,
+    containerNr: sample.container_nr,
+    exporterSampleNumber: sample.exporter_sample_number,
+    buyerContractNr: sample.buyer_contract_nr,
+    wolthersContractNr: sample.wolthers_contract_nr,
+  })
+
   const isCertified = sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected'
-  if (!isCertified) return { sample, certified: false }
+  if (!isCertified) return { sample, publicReference, certified: false }
 
   // Get certificate
   const { data: certificate } = await supabase
@@ -265,6 +268,7 @@ async function getCertificateInfo(slug: string) {
 
   return {
     sample,
+    publicReference,
     certified: true,
     certificate,
     qualityName,
@@ -346,7 +350,8 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 
   const status = info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED'
-  const trackingNumber = info.sample.tracking_number
+  // Public reference — never the internal SAN- lab number.
+  const trackingNumber = info.publicReference.reference
   const screenSummary = buildScreenSummary(info.screenSizes)
 
   // Build rich description for iPhone camera preview
@@ -391,11 +396,17 @@ export default async function CertificatePage({ params }: PageProps) {
     )
   }
 
+  // Per the spec: surface the samples that reached the page with nothing a
+  // counterparty would recognise, so intake can fill the missing field in.
+  if (info.publicReference.reference === 'Reference pending') {
+    console.warn(`[certificate] no public reference for sample ${info.sample.id} (slug ${slug})`)
+  }
+
   // If not certified, show in-progress page
   if (!info.certified) {
     return (
       <CertificatePageClient
-        trackingNumber={info.sample.tracking_number}
+        trackingNumber={info.publicReference.reference}
         status="IN_PROGRESS"
         approvalDate={null}
         origin={info.sample.origin || 'N/A'}
@@ -420,7 +431,7 @@ export default async function CertificatePage({ params }: PageProps) {
 
   return (
     <CertificatePageClient
-      trackingNumber={info.sample.tracking_number}
+      trackingNumber={info.publicReference.reference}
       status={status}
       approvalDate={info.certificate?.created_at || null}
       origin={info.sample.origin || 'N/A'}
