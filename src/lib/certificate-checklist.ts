@@ -1,4 +1,5 @@
 import type { ComplianceCriterion } from '@/lib/compliance-criteria'
+import type { CupDefect } from '@/lib/quality-resolvers'
 
 /**
  * One line of the public spec checklist.
@@ -17,6 +18,47 @@ export interface ChecklistRow {
   /** false → render the value with no pass/fail icon rather than guess a limit */
   hasThreshold: boolean
   passed: boolean
+  /** Extra lines under the row — the named taints and faults behind a count. */
+  details?: string[]
+}
+
+/** Everything the Taints | Faults row needs that the criteria cannot supply. */
+export interface CupIntegrityInput {
+  cleanCup: boolean | null
+  uniformCup: boolean | null
+  /** The counts the footer shows, from `resolveTaintFaultCounts`. */
+  taints: number
+  faults: number
+  /** The same defects those counts came from, named. */
+  defects?: CupDefect[]
+}
+
+/**
+ * "1 cup Hard (Riado) at intensity 2 of 5".
+ *
+ * `maxIntensity` is the spec's allowed maximum for this defect, not a fixed
+ * scale — the system has no universal 1–5 — so the "of N" appears only when the
+ * template configures a limit for that defect by name. Everything else is
+ * dropped rather than guessed: an unrecorded cup count or intensity leaves the
+ * name standing alone.
+ */
+export function formatCupDefect(defect: CupDefect, maxIntensity: number | null): string {
+  const cups = defect.cups !== null && defect.cups > 0
+    ? `${defect.cups} cup${defect.cups === 1 ? '' : 's'} `
+    : ''
+  let intensity = ''
+  if (defect.intensity !== null) {
+    intensity = ` at intensity ${defect.intensity}`
+    if (maxIntensity !== null) intensity += ` of ${maxIntensity}`
+  }
+  return `${defect.kind} · ${cups}${defect.name}${intensity}`
+}
+
+/** The spec's configured intensity ceiling for one defect, if it has one. */
+function maxIntensityFor(criteria: ComplianceCriterion[], defect: CupDefect): number | null {
+  const key = `intensity_${defect.kind.toLowerCase()}_${defect.name.toLowerCase()}`
+  const found = criteria.find(c => c.key === key)
+  return typeof found?.limit === 'number' ? found.limit : null
 }
 
 const DEFECT_ORDER = ['primary_defects', 'secondary_defects', 'total_defects']
@@ -96,7 +138,7 @@ function formatActual(c: ComplianceCriterion): string {
  */
 export function buildChecklistRows(
   criteria: ComplianceCriterion[],
-  cup: { cleanCup: boolean | null; uniformCup: boolean | null },
+  cup: CupIntegrityInput,
 ): ChecklistRow[] {
   if (criteria.length === 0) return []
 
@@ -150,25 +192,29 @@ export function buildChecklistRows(
   // 4. Taints, faults and intensities, as one row.
   const integrity = criteria.filter(isCupIntegrity)
   if (integrity.length > 0) {
-    const taintCriterion = integrity.find(c => c.key === 'cupping_taints')
-    const faultCriterion = integrity.find(c => c.key === 'cupping_faults')
-    const taints = typeof taintCriterion?.actual === 'number' ? taintCriterion.actual : 0
-    const faults = typeof faultCriterion?.actual === 'number' ? faultCriterion.actual : 0
+    // Counted from the flagged defects themselves, NOT from a cupping_taints /
+    // cupping_faults criterion. A template that configures no taint or fault
+    // limit emits no such criterion, and reading the count off the absent
+    // criterion printed "0 faults" on a lot that carried one — beside a footer
+    // correctly showing 1.
+    const taints = cup.taints
+    const faults = cup.faults
 
-    const cupState =
-      cup.cleanCup === false && cup.uniformCup === false
-        ? 'Not clean, not uniform'
-        : cup.cleanCup === false
-          ? 'Not clean'
-          : cup.uniformCup === false
-            ? 'Not uniform'
-            : 'Clean and uniform'
+    const counts = `${taints} taint${taints === 1 ? '' : 's'}, ${faults} fault${faults === 1 ? '' : 's'}`
+    // Clean and uniform live in the pinned footer. They earn a mention here
+    // only when one of them is false, where it is part of the story the
+    // taints and faults are telling.
+    const cupNote = [
+      cup.cleanCup === false ? 'not clean' : null,
+      cup.uniformCup === false ? 'not uniform' : null,
+    ].filter(Boolean).join(', ')
 
     const allPassed = integrity.every(c => c.passed)
     rows.push({
       key: 'cup_integrity',
-      label: 'Cup integrity',
-      sublabel: `${cupState} · ${taints} taints, ${faults} faults`,
+      label: 'Taints | Faults',
+      sublabel: cupNote ? `${counts} · ${cupNote}` : counts,
+      details: (cup.defects ?? []).map(d => formatCupDefect(d, maxIntensityFor(criteria, d))),
       actual: allPassed ? 'Pass' : 'Fail',
       operator: allPassed ? null : '>',
       limit: null,

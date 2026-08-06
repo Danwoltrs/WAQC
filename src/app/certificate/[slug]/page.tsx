@@ -13,6 +13,7 @@ import {
   resolveTaintFaultCounts,
   resolveFinalScores,
   isFlavorDescriptor,
+  resolveCupDefects,
   type CuppingScoreRow,
 } from '@/lib/quality-resolvers'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
@@ -247,7 +248,15 @@ async function getCertificateInfo(slug: string) {
     })
 
   const criteria = await evaluateSampleCompliance(supabase, sample.id, sample.quality_spec_id ?? null)
-  const rows = buildChecklistRows(criteria, { cleanCup, uniformCup })
+  const rows = buildChecklistRows(criteria, {
+    cleanCup,
+    uniformCup,
+    // The counts the footer shows, and the very defects they came from, so the
+    // Taints | Faults row can never contradict the strip pinned below it.
+    taints: totalTaints,
+    faults: totalFaults,
+    defects: resolveCupDefects(scoreRows, masterCupperId),
+  })
 
   // F1: evaluateSampleCompliance returns [] for three different states — no
   // quality spec, a template that failed to load, and a genuine evaluation
@@ -435,9 +444,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 function CertificateHeader({
   certificateNumber = null,
   contract = null,
+  rejected = false,
 }: {
   certificateNumber?: string | null
   contract?: { label: string; value: string } | null
+  rejected?: boolean
 }) {
   return (
     <div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 py-2.5 bg-[#262625] border-b border-[#3f3f3c]">
@@ -445,18 +456,25 @@ function CertificateHeader({
           mark in a server component; next/image buys nothing and adds a
           client-side loader to an otherwise fully static page. */}
       <img
-        src="/images/logos/wolthers-logo-green.svg"
+        src="/images/logos/wolthers-logo-off-white.svg"
         alt="Wolthers Associates"
         className="h-[26px] w-auto shrink-0"
       />
       {certificateNumber ? (
         <div className="min-w-0 text-right">
           <div className="flex items-center justify-end gap-[5px] text-[12px] font-semibold text-[#f2efe6]">
+            {/* The dot carries the verdict, not just "this page loaded" — a
+                green dot over a REJECTED badge reads as an approval at a
+                glance, which is the one mistake this page must not invite. */}
             <span
-              className="w-1.5 h-1.5 rounded-full bg-[#5fae63] shrink-0"
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                rejected ? 'bg-[#d9534f]' : 'bg-[#5fae63]'
+              }`}
               aria-hidden="true"
             />
-            <span className="sr-only">Verified certificate</span>
+            <span className="sr-only">
+              {rejected ? 'Rejected certificate' : 'Approved certificate'}
+            </span>
             <span className="truncate">{certificateNumber}</span>
           </div>
           {contract && (
@@ -578,6 +596,7 @@ export default async function CertificatePage({ params }: PageProps) {
         <CertificateHeader
           certificateNumber={view.certificateNumber}
           contract={view.contract}
+          rejected={view.status === 'REJECTED'}
         />
         <Verdict view={view} />
         <LotIdentity view={view} />

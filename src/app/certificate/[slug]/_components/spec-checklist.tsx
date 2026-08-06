@@ -95,6 +95,21 @@ export function SpecChecklist({ view }: { view: CertificateView }) {
               {row.sublabel && (
                 <div className="text-xs text-[#7c7a73] mt-px">{row.sublabel}</div>
               )}
+              {/* Each named taint and fault behind the count — "1 cup Hard
+                  (Riado) at intensity 2 of 5". A count alone tells a buyer
+                  something is wrong but not what. */}
+              {row.details && row.details.length > 0 && (
+                <ul className="mt-1.5 space-y-0.5">
+                  {row.details.map(detail => (
+                    <li
+                      key={detail}
+                      className="text-xs text-[#a8a69d] pl-2 border-l border-[#4a4a47]"
+                    >
+                      {detail}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div

@@ -4,6 +4,8 @@ import {
   resolveDefectCounts,
   resolveTaintFaultCounts,
   resolveFinalScores,
+  resolveCupDefects,
+  isFlavorDescriptor,
   type CuppingScoreRow,
 } from './quality-resolvers'
 
@@ -119,5 +121,73 @@ describe('resolveFinalScores', () => {
 
   it('returns nothing for no scores', () => {
     expect(resolveFinalScores([], null)).toEqual({})
+  })
+})
+
+describe('resolveCupDefects', () => {
+  const row = (
+    cupper_id: string | null,
+    defects: Record<string, unknown> | null,
+  ): CuppingScoreRow => ({ cupper_id, scores: null, defects: defects as never })
+
+  it('reads the master cupper\'s record when one is designated', () => {
+    const defects = resolveCupDefects([
+      row('a', { faults: [{ name: 'Rioy', intensity: 4, cups_affected: 3 }] }),
+      row('master', { faults: [{ name: 'Hard (Riado)', intensity: 2, cups_affected: 1 }] }),
+    ], 'master')
+    expect(defects).toEqual([
+      { kind: 'Fault', name: 'Hard (Riado)', cups: 1, intensity: 2 },
+    ])
+  })
+
+  // Must match resolveTaintFaultCounts exactly: it takes the longest list, so
+  // merging across cuppers here would list two entries under a count of one.
+  it('takes the single longest list when there is no master cupper', () => {
+    const defects = resolveCupDefects([
+      row('a', { taints: [{ name: 'Fermented', intensity: 1 }] }),
+      row('b', { taints: [{ name: 'Phenol', intensity: 3 }, { name: 'Moldy', intensity: 2 }] }),
+    ], null)
+    expect(defects.map(d => d.name)).toEqual(['Phenol', 'Moldy'])
+    expect(resolveTaintFaultCounts([
+      row('a', { taints: [{ name: 'Fermented', intensity: 1 }] }),
+      row('b', { taints: [{ name: 'Phenol', intensity: 3 }, { name: 'Moldy', intensity: 2 }] }),
+    ], null).taints).toBe(defects.length)
+  })
+
+  it('reads legacy bare-string entries', () => {
+    expect(resolveCupDefects([row('a', { taints: ['Fermented', '  '] })], null))
+      .toEqual([{ kind: 'Taint', name: 'Fermented', cups: null, intensity: null }])
+  })
+
+  it('returns taints before faults, and nothing at all for an empty record', () => {
+    const defects = resolveCupDefects([
+      row('a', { taints: [{ name: 'Phenol' }], faults: [{ name: 'Rioy' }] }),
+    ], null)
+    expect(defects.map(d => d.kind)).toEqual(['Taint', 'Fault'])
+    expect(resolveCupDefects([row('a', null)], null)).toEqual([])
+    expect(resolveCupDefects([], null)).toEqual([])
+  })
+
+  it('drops an unnamed entry rather than printing a blank line', () => {
+    expect(resolveCupDefects([row('a', { faults: [{ intensity: 3 }, { name: '' }] })], null))
+      .toEqual([])
+  })
+
+  it('returns nothing when the designated master cupper filed no record', () => {
+    expect(resolveCupDefects([row('a', { taints: [{ name: 'Phenol' }] })], 'master')).toEqual([])
+  })
+})
+
+describe('isFlavorDescriptor', () => {
+  it('matches the key cuppers actually write, and the spellings around it', () => {
+    for (const name of ['Flavor_descriptor', 'flavour descriptor', 'Flavor-Descriptor']) {
+      expect(isFlavorDescriptor(name)).toBe(true)
+    }
+  })
+
+  it('does not match a real sensory attribute', () => {
+    for (const name of ['Flavor', 'Aftertaste', 'Body']) {
+      expect(isFlavorDescriptor(name)).toBe(false)
+    }
   })
 })

@@ -3,13 +3,14 @@ import {
   buildChecklistRows,
   verdictFailures,
   partitionDefectRows,
+  formatCupDefect,
   resolveVerdictReasons,
   parseComplianceViolations,
   type ChecklistRow,
 } from './certificate-checklist'
 import type { ComplianceCriterion } from './compliance-criteria'
 
-const cup = { cleanCup: true, uniformCup: true }
+const cup = { cleanCup: true, uniformCup: true, taints: 0, faults: 0 }
 
 function criterion(over: Partial<ComplianceCriterion>): ComplianceCriterion {
   return {
@@ -56,36 +57,68 @@ describe('buildChecklistRows', () => {
     })
   })
 
-  it('folds taints, faults and intensities into cup integrity', () => {
+  it('folds taints, faults and intensities into one Taints | Faults row', () => {
     const rows = buildChecklistRows([
       criterion({ key: 'cupping_taints', label: 'Cupping taints', actual: 2, limit: 1, operator: '>', passed: false }),
       criterion({ key: 'cupping_faults', label: 'Cupping faults', actual: 0, limit: 0 }),
       criterion({ key: 'intensity_taint_fermented', label: 'Taint: Fermented', actual: 4, limit: 2 }),
-    ], cup)
+    ], { ...cup, taints: 2, faults: 0 })
 
     const row = rows.find(r => r.key === 'cup_integrity')
     expect(row).toMatchObject({
-      label: 'Cup integrity',
-      sublabel: 'Clean and uniform · 2 taints, 0 faults',
+      label: 'Taints | Faults',
+      sublabel: '2 taints, 0 faults',
       actual: 'Fail',
       passed: false,
     })
     expect(rows.some(r => r.key === 'cupping_taints')).toBe(false)
   })
 
-  it('names an unclean or non-uniform cup in the integrity sub-line', () => {
+  // The counts came off a `cupping_faults` criterion, which a template that
+  // configures no fault limit never emits — so a lot carrying one fault
+  // printed "0 faults" beside a footer correctly showing 1.
+  it('counts taints and faults from the flagged defects, not from the criteria', () => {
+    const rows = buildChecklistRows(
+      [criterion({ key: 'intensity_fault_hard', label: 'Fault: Hard', actual: 2, limit: 1, operator: '>', passed: false })],
+      { ...cup, taints: 0, faults: 1 },
+    )
+    expect(rows.find(r => r.key === 'cup_integrity')?.sublabel).toBe('0 taints, 1 fault')
+  })
+
+  it('lists each flagged defect with its cups and intensity', () => {
+    const rows = buildChecklistRows(
+      [criterion({ key: 'intensity_fault_hard (riado)', label: 'Fault: Hard (Riado)', actual: 2, limit: 5 })],
+      {
+        ...cup,
+        faults: 1,
+        defects: [{ kind: 'Fault', name: 'Hard (Riado)', cups: 1, intensity: 2 }],
+      },
+    )
+    expect(rows.find(r => r.key === 'cup_integrity')?.details)
+      .toEqual(['Fault · 1 cup Hard (Riado) at intensity 2 of 5'])
+  })
+
+  it('names an unclean or non-uniform cup after the counts', () => {
     const rows = buildChecklistRows(
       [criterion({ key: 'cupping_taints', label: 'Cupping taints', actual: 1, limit: 2 })],
-      { cleanCup: false, uniformCup: true },
+      { cleanCup: false, uniformCup: true, taints: 1, faults: 0 },
     )
     expect(rows.find(r => r.key === 'cup_integrity')?.sublabel)
-      .toBe('Not clean · 1 taints, 0 faults')
+      .toBe('1 taint, 0 faults · not clean')
+  })
+
+  it('says nothing about the cup when it is clean and uniform', () => {
+    const rows = buildChecklistRows(
+      [criterion({ key: 'cupping_taints', label: 'Cupping taints', actual: 0, limit: 2 })],
+      cup,
+    )
+    expect(rows.find(r => r.key === 'cup_integrity')?.sublabel).toBe('0 taints, 0 faults')
   })
 
   it('omits cup integrity entirely when nothing about the cup was judged', () => {
     const rows = buildChecklistRows(
       [criterion({ key: 'total_defects', label: 'Total defects', actual: 5, limit: 10 })],
-      { cleanCup: null, uniformCup: null },
+      { cleanCup: null, uniformCup: null, taints: 0, faults: 0 },
     )
     expect(rows.some(r => r.key === 'cup_integrity')).toBe(false)
   })
@@ -153,7 +186,7 @@ describe('buildChecklistRows', () => {
   })
 
   it('returns nothing for no criteria', () => {
-    expect(buildChecklistRows([], { cleanCup: null, uniformCup: null })).toEqual([])
+    expect(buildChecklistRows([], { cleanCup: null, uniformCup: null, taints: 0, faults: 0 })).toEqual([])
   })
 
   // F3 — the engine's screen keys collide when a template carries both the
@@ -316,6 +349,33 @@ describe('partitionDefectRows', () => {
       ['secondary_defects', false, '27'],
       ['total_defects', false, '27'],
     ])
+  })
+})
+
+describe('formatCupDefect', () => {
+  const fault = { kind: 'Fault' as const, name: 'Hard (Riado)', cups: 1, intensity: 2 }
+
+  it('reads as a sentence with everything known', () => {
+    expect(formatCupDefect(fault, 5)).toBe('Fault · 1 cup Hard (Riado) at intensity 2 of 5')
+  })
+
+  it('pluralises the cups', () => {
+    expect(formatCupDefect({ ...fault, cups: 12 }, 5))
+      .toBe('Fault · 12 cups Hard (Riado) at intensity 2 of 5')
+  })
+
+  // There is no universal 1-5 intensity scale in the system — the denominator
+  // is the spec's configured ceiling for that defect by name, so with no limit
+  // configured there is no honest "of N" to print.
+  it('drops the denominator when the spec configures no ceiling', () => {
+    expect(formatCupDefect(fault, null)).toBe('Fault · 1 cup Hard (Riado) at intensity 2')
+  })
+
+  it('drops an unrecorded cup count and intensity rather than guessing', () => {
+    expect(formatCupDefect({ kind: 'Taint', name: 'Fermented', cups: null, intensity: null }, 3))
+      .toBe('Taint · Fermented')
+    expect(formatCupDefect({ kind: 'Taint', name: 'Fermented', cups: 0, intensity: 1 }, null))
+      .toBe('Taint · Fermented at intensity 1')
   })
 })
 

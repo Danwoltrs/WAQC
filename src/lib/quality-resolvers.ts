@@ -13,6 +13,15 @@ export interface CuppingDefects {
   faults?: Array<{ name?: string; intensity?: number }>
 }
 
+/** One flagged taint or fault, with what a taster needs to judge it. */
+export interface CupDefect {
+  kind: 'Taint' | 'Fault'
+  name: string
+  /** How many cups in the set carried it, when recorded. */
+  cups: number | null
+  intensity: number | null
+}
+
 export interface CuppingScoreRow {
   cupper_id: string | null
   scores: Record<string, unknown> | null
@@ -99,6 +108,63 @@ export function resolveTaintFaultCounts(
     faults = Math.max(faults, count(score.defects.faults))
   }
   return { taints, faults }
+}
+
+/**
+ * Which taints and faults were flagged, named, with their intensities.
+ *
+ * Reads exactly the record `resolveTaintFaultCounts` counts — the master
+ * cupper's when one is designated, otherwise the single longest list — so the
+ * detail lines and the count beside them can never disagree. Merging across
+ * cuppers instead would list two entries under a count of one.
+ */
+export function resolveCupDefects(
+  scores: CuppingScoreRow[],
+  masterCupperId: string | null,
+): CupDefect[] {
+  const listOf = (row: CuppingScoreRow | undefined, key: 'taints' | 'faults'): unknown[] => {
+    const value = row?.defects?.[key]
+    return Array.isArray(value) ? value : []
+  }
+
+  const pick = (key: 'taints' | 'faults'): unknown[] => {
+    if (masterCupperId) {
+      return listOf(scores.find(s => s.cupper_id === masterCupperId), key)
+    }
+    let longest: unknown[] = []
+    for (const score of scores) {
+      const list = listOf(score, key)
+      if (list.length > longest.length) longest = list
+    }
+    return longest
+  }
+
+  const normalise = (entry: unknown, kind: 'Taint' | 'Fault'): CupDefect | null => {
+    // Older records store a bare name; newer ones an object. Both are read.
+    if (typeof entry === 'string') {
+      const name = entry.trim()
+      return name ? { kind, name, cups: null, intensity: null } : null
+    }
+    if (!entry || typeof entry !== 'object') return null
+    const e = entry as { name?: unknown; intensity?: unknown; cups_affected?: unknown }
+    const name = typeof e.name === 'string' ? e.name.trim() : ''
+    if (!name) return null
+    return {
+      kind,
+      name,
+      cups: typeof e.cups_affected === 'number' && Number.isFinite(e.cups_affected)
+        ? e.cups_affected
+        : null,
+      intensity: typeof e.intensity === 'number' && Number.isFinite(e.intensity)
+        ? e.intensity
+        : null,
+    }
+  }
+
+  return [
+    ...pick('taints').map(e => normalise(e, 'Taint')),
+    ...pick('faults').map(e => normalise(e, 'Fault')),
+  ].filter((d): d is CupDefect => d !== null)
 }
 
 /**
