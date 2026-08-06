@@ -1312,12 +1312,15 @@ export default function SamplesPage() {
                 </button>
               )}
               {columnsMenu()}
-              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap ml-0.5">
-                {samples.length} samples
-              </span>
             </div>
           </div>
-          <div className="flex gap-2 shrink-0">
+          {/* The count sits with the actions, not in the filter row: there it
+              is a wrappable flex item and drops onto a second line under the
+              search box as soon as a selection adds the Actions button. */}
+          <div className="flex items-center gap-2 shrink-0">
+            <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap mr-1">
+              {samples.length} samples
+            </span>
             {selectedSamples.size > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
