@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { slugToTrackingNumber } from '@/lib/utils'
+import { resolveSampleIdForSlug } from '@/lib/certificate-slug'
 import { getCachedCertificatePdf, uploadCertificatePdf } from '@/lib/certificate-storage'
 import { renderToBuffer } from '@react-pdf/renderer'
 import { getCertificateData } from '@/lib/certificate-data'
@@ -23,28 +23,19 @@ export async function buildCertificatePdfResponse(
   opts?: { skipCache?: boolean },
 ): Promise<NextResponse> {
   try {
-    const trackingNumber = slugToTrackingNumber(slug)
+    // The slug is the OFFICIAL certificate number on tins printed since the
+    // label rebuild, and the internal tracking number on everything before it.
+    const sampleId = await resolveSampleIdForSlug(supabaseService, slug)
 
-    // Find sample
     let sample: any = null
-    const { data: directMatch } = await supabaseService
-      .from('samples')
-      .select('id, tracking_number, workflow_stage, buyer_contract_nr')
-      .eq('tracking_number', trackingNumber)
-      .is('deleted_at', null)
-      .maybeSingle()
-
-    if (directMatch) {
-      sample = directMatch
-    } else {
-      const { data: fallback } = await supabaseService
+    if (sampleId) {
+      const { data } = await supabaseService
         .from('samples')
         .select('id, tracking_number, workflow_stage, buyer_contract_nr')
-        .ilike('tracking_number', trackingNumber)
+        .eq('id', sampleId)
         .is('deleted_at', null)
-        .limit(1)
         .maybeSingle()
-      sample = fallback
+      sample = data
     }
 
     if (!sample) {

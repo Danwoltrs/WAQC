@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { slugToTrackingNumber } from '@/lib/utils'
+import { resolveSampleIdForSlug } from '@/lib/certificate-slug'
 
 // Use service role to bypass RLS for public access
 const supabase = createClient(
@@ -20,10 +20,15 @@ export async function GET(
 ) {
   try {
     const { slug } = await params
-    const trackingNumber = slugToTrackingNumber(slug)
 
-    // Find sample by tracking number
-    const { data: sample, error: sampleError } = await supabase
+    // The slug is the OFFICIAL certificate number on tins printed since the
+    // label rebuild, and the internal tracking number on everything before it.
+    const sampleId = await resolveSampleIdForSlug(supabase, slug)
+    if (!sampleId) {
+      return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
+    }
+
+    const { data: sample } = await supabase
       .from('samples')
       .select(`
         id,
@@ -34,32 +39,12 @@ export async function GET(
         quality_spec_id,
         quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en))
       `)
-      .eq('tracking_number', trackingNumber)
+      .eq('id', sampleId)
       .is('deleted_at', null)
       .maybeSingle()
 
-    if (sampleError || !sample) {
-      // Try case-insensitive fallback
-      const { data: fallbackSample } = await supabase
-        .from('samples')
-        .select(`
-          id,
-          tracking_number,
-          origin,
-          workflow_stage,
-          status,
-          quality_spec_id,
-          quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en))
-        `)
-        .ilike('tracking_number', trackingNumber)
-        .is('deleted_at', null)
-        .limit(1)
-        .maybeSingle()
-
-      if (!fallbackSample) {
-        return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
-      }
-      return buildResponse(fallbackSample)
+    if (!sample) {
+      return NextResponse.json({ error: 'Sample not found' }, { status: 404 })
     }
 
     return buildResponse(sample)
