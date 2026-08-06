@@ -91,6 +91,81 @@ export async function fetchSysContractRefs(
   return chooseUniqueContractRefs(data as SysContractRefs[] | null)
 }
 
+/** One thing to resolve refs for, tagged with the caller's own key. */
+export interface SysRefLink {
+  key: string
+  contractId?: string | null
+  contractNumber?: string | null
+}
+
+/**
+ * Pure: match each link to its sys refs. `contract_id` wins; a contract NUMBER
+ * only resolves when exactly one contract carries it (numbers are not unique —
+ * never guess).
+ */
+export function matchSysRefsByLink(
+  links: SysRefLink[],
+  byId: Map<string, SysContractRefs>,
+  byNumber: Map<string, SysContractRefs[]>,
+): Map<string, SysContractRefs> {
+  const out = new Map<string, SysContractRefs>()
+  for (const link of links) {
+    if (link.contractId) {
+      const hit = byId.get(link.contractId)
+      if (hit) {
+        out.set(link.key, hit)
+        continue
+      }
+    }
+    const num = norm(link.contractNumber)
+    if (!num) continue
+    const unique = chooseUniqueContractRefs(byNumber.get(num))
+    if (unique) out.set(link.key, unique)
+  }
+  return out
+}
+
+/**
+ * Batch form of `fetchSysContractRefs`: resolve many links with two IN-queries
+ * instead of one round-trip each. Same never-guess rule for ambiguous numbers.
+ */
+export async function fetchSysContractRefsBatch(
+  client: SupabaseClient,
+  links: SysRefLink[],
+): Promise<Map<string, SysContractRefs>> {
+  const ids = new Set<string>()
+  const numbers = new Set<string>()
+  for (const link of links) {
+    if (link.contractId) ids.add(link.contractId)
+    const num = norm(link.contractNumber)
+    if (num) numbers.add(num)
+  }
+  const byId = new Map<string, SysContractRefs>()
+  const byNumber = new Map<string, SysContractRefs[]>()
+  if (ids.size > 0) {
+    const { data } = await client
+      .from('contracts')
+      .select('id, seller_reference, buyer_reference')
+      .in('id', [...ids])
+    for (const r of (data ?? []) as Array<SysContractRefs & { id: string }>) {
+      byId.set(r.id, { seller_reference: r.seller_reference ?? null, buyer_reference: r.buyer_reference ?? null })
+    }
+  }
+  if (numbers.size > 0) {
+    const { data } = await client
+      .from('contracts')
+      .select('contract_number, seller_reference, buyer_reference')
+      .in('contract_number', [...numbers])
+    for (const r of (data ?? []) as Array<SysContractRefs & { contract_number: string | null }>) {
+      if (!r.contract_number) continue
+      const list = byNumber.get(r.contract_number) ?? []
+      list.push({ seller_reference: r.seller_reference ?? null, buyer_reference: r.buyer_reference ?? null })
+      byNumber.set(r.contract_number, list)
+    }
+  }
+  return matchSysRefsByLink(links, byId, byNumber)
+}
+
 /**
  * Persist the MOTHER sample's seller/buyer references from its linked sys contract,
  * so list/search views (which read the stored copy) stay in step with sys after an

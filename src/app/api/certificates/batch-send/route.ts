@@ -17,6 +17,7 @@ import {
   groupQualitySamples,
   buildQualitySummaryText,
   buildQualitySummaryHtml,
+  certUnitKey,
   type QualitySampleSummary,
 } from '@/lib/approval-notification/quality-summary'
 import type { ApprovalDecision, ApprovalSide } from '@/lib/approval-notification/types'
@@ -30,6 +31,13 @@ const admin = () =>
     { auth: { autoRefreshToken: false, persistSession: false } },
   )
 
+/** One certificate to send: the sample's mother certificate when
+ *  `sampleContractId` is null, otherwise that commercial split's own. */
+interface CertRef {
+  sampleId: string
+  sampleContractId?: string | null
+}
+
 interface Body {
   side: ApprovalSide
   companyId: string
@@ -37,12 +45,19 @@ interface Body {
   cc?: string[]
   subject: string
   bodyText: string
-  sampleIds: string[]
+  /** Preferred: one entry per certificate (mother + each sub-contract). */
+  certificates?: CertRef[]
+  /** Legacy: sample ids only — treated as their mother certificates. */
+  sampleIds?: string[]
   includeSignature?: boolean
 }
 
 interface Valid {
   sampleId: string
+  /** Null for the mother certificate; the split's id for a sub-contract cert. */
+  sampleContractId: string | null
+  /** waqc_ref that keys this certificate's sys rows: the split's own tracking
+   *  number for a sub-contract, else the sample's. */
   tracking: string
   decision: ApprovalDecision
   /** WAQC sample_type ('pss' | 'ss' | …). MUST reach the sys write-back:
@@ -95,9 +110,20 @@ export async function POST(req: NextRequest) {
   const side = body.side
   const to = (body.to ?? []).map((e) => e?.trim()).filter(Boolean)
   const cc = (body.cc ?? []).map((e) => e?.trim()).filter(Boolean)
-  const sampleIds = [...new Set((body.sampleIds ?? []).filter(Boolean))]
-  if (!body.subject || !body.bodyText || to.length === 0 || sampleIds.length === 0) {
-    return NextResponse.json({ error: 'side, to, subject, bodyText and sampleIds are required' }, { status: 400 })
+  // One entry per certificate. `sampleIds` (legacy) means mother certificates.
+  const certRefs: CertRef[] = []
+  const seenRefs = new Set<string>()
+  const requested: CertRef[] =
+    body.certificates ?? (body.sampleIds ?? []).map((sampleId) => ({ sampleId, sampleContractId: null }))
+  for (const r of requested) {
+    if (!r?.sampleId) continue
+    const key = certUnitKey(r.sampleId, r.sampleContractId ?? null)
+    if (seenRefs.has(key)) continue
+    seenRefs.add(key)
+    certRefs.push({ sampleId: r.sampleId, sampleContractId: r.sampleContractId ?? null })
+  }
+  if (!body.subject || !body.bodyText || to.length === 0 || certRefs.length === 0) {
+    return NextResponse.json({ error: 'side, to, subject, bodyText and certificates are required' }, { status: 400 })
   }
   // Recipients come from the shared contacts table, which sys writes without
   // format validation — a paste artifact like "user@domain.nl)," makes Graph
@@ -131,19 +157,42 @@ export async function POST(req: NextRequest) {
   const results: { sampleId: string; ok: boolean; error?: string }[] = []
   const valid: Valid[] = []
 
+  // Split rows for the sub-contract certificates in this unit. Each split is its
+  // OWN commercial contract (own Wolthers number, buyer ref and tracking number),
+  // so it resolves against that contract, not the mother's.
+  const subIds = [...new Set(certRefs.map((r) => r.sampleContractId).filter((x): x is string => !!x))]
+  const subById = new Map<string, any>()
+  if (subIds.length > 0) {
+    const { data: subRows } = await supabase
+      .from('sample_contracts')
+      .select('id, sample_id, tracking_number, buyer_contract_nr, wolthers_contract_nr, contract_id')
+      .in('id', subIds)
+    for (const r of (subRows ?? []) as any[]) subById.set(r.id, r)
+  }
+
   // Validate access + resolve contract; buyers additionally need the cert PDF.
-  for (const sampleId of sampleIds) {
-    const access = await canUserManageSample(server as any, user.id, sampleId)
-    if (!access.allowed) {
+  const accessBySample = new Map<string, boolean>()
+  const sampleCache = new Map<string, any>()
+  for (const ref of certRefs) {
+    const sampleId = ref.sampleId
+    const subId = ref.sampleContractId ?? null
+    if (!accessBySample.has(sampleId)) {
+      const access = await canUserManageSample(server as any, user.id, sampleId)
+      accessBySample.set(sampleId, access.allowed)
+    }
+    if (!accessBySample.get(sampleId)) {
       results.push({ sampleId, ok: false, error: 'forbidden' })
       continue
     }
-    const { data: sample } = await supabase
-      .from('samples')
-      .select('id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr')
-      .eq('id', sampleId)
-      .single()
-    const s = sample as any
+    if (!sampleCache.has(sampleId)) {
+      const { data: sample } = await supabase
+        .from('samples')
+        .select('id, tracking_number, status, sample_type, contract_id, wolthers_contract_nr, buyer_contract_nr')
+        .eq('id', sampleId)
+        .single()
+      sampleCache.set(sampleId, sample ?? null)
+    }
+    const s = sampleCache.get(sampleId)
     if (!s) {
       results.push({ sampleId, ok: false, error: 'sample not found' })
       continue
@@ -152,7 +201,23 @@ export async function POST(req: NextRequest) {
       results.push({ sampleId, ok: false, error: 'not approved/rejected' })
       continue
     }
-    const ctx = await resolveSampleContract(supabase, s)
+
+    const sub = subId ? subById.get(subId) : null
+    // Access was checked against `sampleId`, so the split MUST belong to it —
+    // otherwise a crafted body could attach another sample's certificate.
+    if (subId && (!sub || sub.sample_id !== sampleId)) {
+      results.push({ sampleId, ok: false, error: 'sub-contract not found' })
+      continue
+    }
+    // All-or-nothing key choice: a split declaring neither key belongs to the
+    // mother's contract (mixing them would resolve the wrong contract, since the
+    // FK wins in `contractLookup`).
+    const ctx = await resolveSampleContract(
+      supabase,
+      sub && (sub.contract_id || sub.wolthers_contract_nr)
+        ? { contract_id: sub.contract_id, wolthers_contract_nr: sub.wolthers_contract_nr }
+        : s,
+    )
     if (!ctx) {
       results.push({ sampleId, ok: false, error: 'no contract' })
       continue
@@ -160,13 +225,12 @@ export async function POST(req: NextRequest) {
 
     let attachment: GraphSendAttachment | undefined
     if (!isSeller) {
-      const { data: cert } = await supabase
+      let certQuery = supabase
         .from('certificates')
         .select('id, pdf_url, certificate_number')
         .eq('sample_id', sampleId)
-        .is('sample_contract_id', null)
-        .limit(1)
-        .maybeSingle()
+      certQuery = subId ? certQuery.eq('sample_contract_id', subId) : certQuery.is('sample_contract_id', null)
+      const { data: cert } = await certQuery.limit(1).maybeSingle()
       if (!cert) {
         results.push({ sampleId, ok: false, error: 'no certificate' })
         continue
@@ -174,15 +238,22 @@ export async function POST(req: NextRequest) {
       let pdf: Buffer | null = null
       if ((cert as any).pdf_url) pdf = await getCachedCertificatePdf(supabase, (cert as any).pdf_url)
       if (!pdf) {
-        pdf = await renderCertificatePdfBuffer(supabase, sampleId)
-        if (pdf) uploadCertificatePdf(supabase, sampleId, (cert as any).id, pdf).catch(() => {})
+        // The split id makes the renderer produce THAT split's certificate
+        // (its own number and parties) instead of the mother's.
+        pdf = await renderCertificatePdfBuffer(supabase, sampleId, subId)
+        if (pdf) uploadCertificatePdf(supabase, sampleId, (cert as any).id, pdf, subId ?? undefined).catch(() => {})
       }
       if (!pdf) {
         results.push({ sampleId, ok: false, error: 'certificate could not be generated' })
         continue
       }
       attachment = {
-        name: buildCertificateFilename((cert as any).certificate_number ?? s.tracking_number, s.buyer_contract_nr),
+        name: buildCertificateFilename(
+          (cert as any).certificate_number ?? sub?.tracking_number ?? s.tracking_number,
+          // A split's filename carries ITS buyer reference; borrowing the
+          // mother's would name the wrong contract.
+          sub ? sub.buyer_contract_nr : s.buyer_contract_nr,
+        ),
         contentType: 'application/pdf',
         bytes: new Uint8Array(pdf),
       }
@@ -190,7 +261,14 @@ export async function POST(req: NextRequest) {
 
     valid.push({
       sampleId,
-      tracking: s.tracking_number as string,
+      sampleContractId: subId,
+      // The split's own tracking number keys its sys rows, with the rejection
+      // "R-" prefix stripped so the claim ref is stable across approve/reject.
+      // The mother keeps its raw tracking number — both mirror the instant
+      // decision write-back, so a resend claims the same rows it did.
+      tracking: sub?.tracking_number
+        ? String(sub.tracking_number).replace(/^R-/, '')
+        : (s.tracking_number as string),
       decision: s.status as ApprovalDecision,
       sampleType: (s.sample_type as string) ?? 'pss',
       contractId: ctx.contractId,
@@ -204,10 +282,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: false, results, error: 'No deliverable samples in this unit' }, { status: 400 })
   }
 
-  // Build the quality summary table (authoritative, from the database).
+  // Build the quality summary table (authoritative, from the database) — one row
+  // per certificate actually going out, splits included.
   const summaries = await fetchQualitySampleSummaries(supabase, valid.map((v) => v.sampleId))
   const summaryList = valid
-    .map((v) => summaries.get(v.sampleId))
+    .map((v) => summaries.get(certUnitKey(v.sampleId, v.sampleContractId)))
     .filter((s): s is QualitySampleSummary => !!s)
   const groups = groupQualitySamples(summaryList, isSeller ? 'qcClient' : 'seller')
   const { text: bodyText, html: bodyHtml } = composeQualityBody(body.bodyText, groups, {
@@ -264,6 +343,9 @@ export async function POST(req: NextRequest) {
         metadata: {
           source: 'batch_approval',
           sample_id: v.sampleId,
+          // Which certificate this row covers (null = mother). The queue reads
+          // it back so a sent mother never suppresses an unsent split.
+          sample_contract_id: v.sampleContractId,
           decision: v.decision,
           side,
           company_id: body.companyId,

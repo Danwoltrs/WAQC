@@ -97,30 +97,99 @@ export async function POST(
   const contractId = ctx.contractId
   const contract = { buyer_id: ctx.buyerId, seller_id: ctx.sellerId }
 
-  // Certificate bytes (shared across panels)
-  let attachment: GraphSendAttachment | null = null
+  // Certificate bytes (shared across panels). A sample with commercial splits has
+  // SEVERAL certificates — the mother plus one per `sample_contracts` row — and
+  // every one of them must ride along; attaching only the mother left the
+  // counterparty without the split certificates entirely.
+  interface CertUnit {
+    attachment: GraphSendAttachment
+    /** The sys contract this certificate belongs to (the split's own, if any). */
+    contractId: string
+    /** waqc_ref keying this certificate's sys rows. */
+    tracking: string
+  }
+  const certUnits: CertUnit[] = []
   if (body.includeCertificate !== false) {
-    const { data: cert } = await supabase
+    const { data: certRows } = await supabase
       .from('certificates')
-      .select('id, pdf_url, certificate_number')
+      .select('id, pdf_url, certificate_number, sample_contract_id')
       .eq('sample_id', id)
-      .is('sample_contract_id', null)
-      .limit(1)
-      .maybeSingle()
-    if (!cert) return NextResponse.json({ error: 'No certificate for this sample' }, { status: 400 })
-    let pdf: Buffer | null = null
-    if ((cert as any).pdf_url) pdf = await getCachedCertificatePdf(supabase, (cert as any).pdf_url)
-    if (!pdf) {
-      pdf = await renderCertificatePdfBuffer(supabase, id)
-      if (!pdf) return NextResponse.json({ error: 'Certificate could not be generated' }, { status: 500 })
-      uploadCertificatePdf(supabase, id, (cert as any).id, pdf).catch(() => {})
+      .eq('status', 'issued')
+    const certs = (certRows ?? []) as any[]
+    if (certs.length === 0) {
+      return NextResponse.json({ error: 'No certificate for this sample' }, { status: 400 })
     }
-    attachment = {
-      // Use the official certificate number (the buyer-facing number), not the
-      // sample's internal lab tracking number, for the attachment filename.
-      name: buildCertificateFilename((cert as any).certificate_number ?? tracking, s.buyer_contract_nr),
-      contentType: 'application/pdf',
-      bytes: new Uint8Array(pdf),
+
+    const subIds = [...new Set(certs.map((c) => c.sample_contract_id).filter(Boolean))] as string[]
+    const subById = new Map<string, any>()
+    if (subIds.length > 0) {
+      const { data: subRows } = await supabase
+        .from('sample_contracts')
+        .select('id, tracking_number, buyer_contract_nr, wolthers_contract_nr, contract_id')
+        .in('id', subIds)
+      for (const r of (subRows ?? []) as any[]) subById.set(r.id, r)
+    }
+    // Mother first, then the splits in a stable order.
+    certs.sort(
+      (a, b) =>
+        (a.sample_contract_id ? 1 : 0) - (b.sample_contract_id ? 1 : 0) ||
+        String(a.certificate_number ?? '').localeCompare(String(b.certificate_number ?? '')),
+    )
+
+    for (const cert of certs) {
+      const subId = (cert.sample_contract_id as string) ?? null
+      const sub = subId ? subById.get(subId) : null
+      if (subId && !sub) continue
+      // All-or-nothing key choice: a split declaring neither key belongs to the
+      // mother's contract (the FK wins in `contractLookup`, so mixing the two
+      // would resolve the wrong contract).
+      const unitCtx =
+        sub && (sub.contract_id || sub.wolthers_contract_nr)
+          ? await resolveSampleContract(supabase, {
+              contract_id: sub.contract_id,
+              wolthers_contract_nr: sub.wolthers_contract_nr,
+            })
+          : ctx
+      if (!unitCtx) continue
+
+      let pdf: Buffer | null = null
+      if (cert.pdf_url) pdf = await getCachedCertificatePdf(supabase, cert.pdf_url)
+      if (!pdf) {
+        // The split id makes the renderer produce THAT split's certificate
+        // (its own number and parties) instead of the mother's.
+        pdf = await renderCertificatePdfBuffer(supabase, id, subId)
+        if (!pdf) {
+          // The mother failing is fatal; a single split failing is not — the
+          // rest of the certificates should still go out.
+          if (!subId) {
+            return NextResponse.json({ error: 'Certificate could not be generated' }, { status: 500 })
+          }
+          console.error('[notify-approval] split certificate render failed:', subId)
+          continue
+        }
+        uploadCertificatePdf(supabase, id, cert.id, pdf, subId ?? undefined).catch(() => {})
+      }
+      certUnits.push({
+        attachment: {
+          // Use the official certificate number (the buyer-facing number), not the
+          // sample's internal lab tracking number, for the attachment filename.
+          name: buildCertificateFilename(
+            cert.certificate_number ?? sub?.tracking_number ?? tracking,
+            // A split's filename carries ITS buyer reference; borrowing the
+            // mother's would name the wrong contract.
+            sub ? sub.buyer_contract_nr : s.buyer_contract_nr,
+          ),
+          contentType: 'application/pdf',
+          bytes: new Uint8Array(pdf),
+        },
+        contractId: unitCtx.contractId,
+        // The split's own tracking number keys its sys rows, "R-" stripped so the
+        // claim ref is stable across approve/reject; the mother keeps its raw one.
+        tracking: sub?.tracking_number ? String(sub.tracking_number).replace(/^R-/, '') : tracking,
+      })
+    }
+    if (certUnits.length === 0) {
+      return NextResponse.json({ error: 'Certificate could not be generated' }, { status: 500 })
     }
   }
 
@@ -141,7 +210,7 @@ export async function POST(
         subject,
         bodyText: panel.bodyText,
         bodyHtml,
-        attachments: attachment ? [attachment] : undefined,
+        attachments: certUnits.length > 0 ? certUnits.map((u) => u.attachment) : undefined,
         saveToSentItems: true,
         senderEmail,
         senderName,
@@ -181,11 +250,11 @@ export async function POST(
 
   const anySent = results.some((r) => r.ok)
 
-  // Annex the certificate to the sys contract Docs once. NOT gated on send
+  // Annex EACH certificate to its own sys contract's Docs. NOT gated on send
   // success — the certificate exists regardless of whether an email went out,
   // and the Docs tab should always carry it.
-  let certificatePath: string | null = null
-  if (attachment) {
+  const pathByUnit = new Map<CertUnit, string>()
+  for (const unit of certUnits) {
     try {
       const { data: dt } = await supabase
         .from('document_types')
@@ -193,10 +262,10 @@ export async function POST(
         .eq('name', 'Quality Certificate')
         .eq('scope', 'contract')
         .maybeSingle()
-      const storagePath = `${contractId}/quality-certificate-${tracking.replace(/\//g, '_')}.pdf`
+      const storagePath = `${unit.contractId}/quality-certificate-${unit.tracking.replace(/\//g, '_')}.pdf`
       await supabase.storage
         .from('logistics-documents')
-        .upload(storagePath, Buffer.from(attachment.bytes), { contentType: 'application/pdf', upsert: true })
+        .upload(storagePath, Buffer.from(unit.attachment.bytes), { contentType: 'application/pdf', upsert: true })
       // Resend guard: the storage path is deterministic per contract+tracking,
       // so an existing documents row means this cert is already annexed (the
       // upsert above refreshed the file bytes).
@@ -212,14 +281,14 @@ export async function POST(
         // 'confirmed' is NOT an allowed documents.status and the insert would
         // silently violate the CHECK constraint.
         const { error: docErr } = await supabase.from('documents').insert({
-          contract_id: contractId,
+          contract_id: unit.contractId,
           document_type_id: (dt as any)?.id ?? null,
           // Certificate-number based (buildCertificateFilename) — lab tracking
           // numbers must never surface on sys.
-          file_name: attachment.name,
+          file_name: unit.attachment.name,
           storage_path: storagePath,
           mime_type: 'application/pdf',
-          file_size: attachment.bytes.byteLength,
+          file_size: unit.attachment.bytes.byteLength,
           source: 'outbound',
           status: 'forwarded',
           created_by: user.id,
@@ -228,30 +297,38 @@ export async function POST(
           console.error('[notify-approval] documents insert failed (non-fatal):', docErr)
         }
       }
-      certificatePath = storagePath
+      pathByUnit.set(unit, storagePath)
     } catch (e) {
       console.error('[notify-approval] annex failed (non-fatal):', e)
     }
   }
 
-  // Mark the sys shipment_samples row approved (insert if missing). When no
+  // Mark the sys shipment_samples rows approved (insert if missing) — once per
+  // certificate, since each split keys its own rows on its own contract. When no
   // email actually went out we still persist the certificate_url (syncOnly
   // keeps the decision-time approver/date stamped by the instant write-back).
-  if (anySent || certificatePath) {
-    await applyShipmentSampleApproval(supabase, {
-      contractId,
-      waqcRef: tracking,
-      decision,
-      userId: user.id,
-      today: new Date().toISOString().slice(0, 10),
-      certificateUrl: certificatePath,
-      comments: body.comments ?? null,
-      initials: senderName ? getInitials(senderName) : null,
-      // Without the type, the write-back defaults to 'pss' and an SS send
-      // claims/clobbers the contract's PSS row on sys.
-      sampleType: (s.sample_type as string) ?? 'pss',
-      syncOnly: !anySent,
-    })
+  const writebackUnits: Array<{ contractId: string; tracking: string; certificateUrl: string | null }> =
+    certUnits.length > 0
+      ? certUnits.map((u) => ({ contractId: u.contractId, tracking: u.tracking, certificateUrl: pathByUnit.get(u) ?? null }))
+      : [{ contractId, tracking, certificateUrl: null }]
+  const anyPath = writebackUnits.some((u) => u.certificateUrl)
+  if (anySent || anyPath) {
+    for (const unit of writebackUnits) {
+      await applyShipmentSampleApproval(supabase, {
+        contractId: unit.contractId,
+        waqcRef: unit.tracking,
+        decision,
+        userId: user.id,
+        today: new Date().toISOString().slice(0, 10),
+        certificateUrl: unit.certificateUrl,
+        comments: body.comments ?? null,
+        initials: senderName ? getInitials(senderName) : null,
+        // Without the type, the write-back defaults to 'pss' and an SS send
+        // claims/clobbers the contract's PSS row on sys.
+        sampleType: (s.sample_type as string) ?? 'pss',
+        syncOnly: !anySent,
+      })
+    }
   }
 
   return NextResponse.json({ ok: anySent, results })

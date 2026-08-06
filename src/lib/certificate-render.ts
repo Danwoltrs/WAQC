@@ -16,12 +16,16 @@ import path from 'path'
  * sample-photo QR) + @react-pdf render that was previously duplicated across
  * the public PDF route and the certificate email route. Returns null when the
  * sample has no certificate data.
+ *
+ * Pass `sampleContractId` to render a commercial split's OWN certificate (its
+ * number and parties); omit it for the sample's mother certificate.
  */
 export async function renderCertificatePdfBuffer(
   supabase: SupabaseClient,
   sampleId: string,
+  sampleContractId?: string | null,
 ): Promise<Buffer | null> {
-  const certificateData = await getCertificateData(sampleId, undefined, supabase)
+  const certificateData = await getCertificateData(sampleId, sampleContractId ?? undefined, supabase)
   if (!certificateData) return null
 
   let wolthersLogoBase64: string | undefined

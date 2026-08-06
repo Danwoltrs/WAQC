@@ -21,6 +21,10 @@ export const QC_CERTIFICATES_PURPOSE = 'qc_certificates'
 // time so it cannot be removed in the composer; surfaced here for transparency.
 export const HOUSE_CC = 'wolthers@wolthers.com'
 
+// Greeting used when no recipient has a usable personal name or nickname —
+// "Dear all," rather than the company name ("Dear Ecom Agroindustrial team,").
+export const NO_NAME_GREETING = 'all'
+
 const isInternal = (email: string): boolean => /@wolthers\.com$/i.test(email)
 
 /** First name only (first whitespace token), for a friendlier greeting; null when
@@ -51,14 +55,14 @@ function hasPurpose(r: ContactRow, p: string): boolean {
  * TO = tagged individuals (external). If a company tagged only group inboxes,
  *      those are promoted to TO so the email still has a recipient.
  * CC = QC mailbox + house office + tagged group inboxes.
- * Greeting = first TO individual's nickname/name, else "{team} team".
+ * Greeting = first TO individual's nickname/name, else "all" ("Dear all,").
  * When a company has no tagged contact, TO is empty (the sender adds one or sets
  * the flag in sys) — we do not invent a recipient.
  */
 export function resolvePanel(
   allRows: ContactRow[],
   companyId: string | null,
-  teamName: string | null,
+  _teamName: string | null,
   qcMailbox: string,
 ): PanelPrefill {
   const qcChip: RecipientChip = {
@@ -73,7 +77,9 @@ export function resolvePanel(
     nickname: null,
     isGroupMailbox: true,
   }
-  const fallbackTeam = teamName ? `${teamName} team` : 'team'
+  // `_teamName` is kept in the signature (callers resolve it) but no longer used
+  // for the greeting: an unnamed recipient is greeted "Dear all,".
+  const fallbackTeam = NO_NAME_GREETING
   const baseCc = (): RecipientChip[] => {
     const cc: RecipientChip[] = [qcChip]
     if (!isInternal(qcMailbox) || qcMailbox.toLowerCase() !== HOUSE_CC.toLowerCase()) cc.push(houseChip)

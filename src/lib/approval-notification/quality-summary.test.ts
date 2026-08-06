@@ -9,11 +9,14 @@ import {
   buildQualitySummarySubject,
   buildRejectionReason,
   compactDefectViolations,
+  certUnitKey,
+  buildSubContractSummary,
   type QualitySampleSummary,
 } from './quality-summary'
 
 const sample = (over: Partial<QualitySampleSummary>): QualitySampleSummary => ({
   sampleId: 's1',
+  sampleContractId: null,
   qcClientName: 'Dunkin',
   sellerName: 'EISA',
   exporterSampleNumber: 'AS 175926',
@@ -401,5 +404,102 @@ describe('buildQualitySummarySubject', () => {
     const groups = groupQualitySamples([sample({}), sample({ sampleId: 's2', decision: 'rejected' })], 'qcClient')
     expect(buildQualitySummarySubject(groups, true)).toBe('Wolthers QC — 2 certificates (1 approved, 1 rejected)')
     expect(buildQualitySummarySubject(groups, false)).toBe('Wolthers QC — 2 quality results (1 approved, 1 rejected)')
+  })
+})
+
+describe('certUnitKey', () => {
+  it('a mother certificate keys on the sample id alone (legacy-compatible)', () => {
+    expect(certUnitKey('s1')).toBe('s1')
+    expect(certUnitKey('s1', null)).toBe('s1')
+  })
+  it('a sub-contract certificate gets its own key', () => {
+    expect(certUnitKey('s1', 'sub1')).toBe('s1:sub1')
+    expect(certUnitKey('s1', 'sub1')).not.toBe(certUnitKey('s1', 'sub2'))
+  })
+})
+
+describe('buildSubContractSummary', () => {
+  const mother = sample({
+    certificateNumber: 'SAG-011791/26',
+    wolthersContractNr: '41912/26',
+    buyerContractNr: 'IR0007545-1',
+    containerNr: 'MSKU 1',
+    icoNumber: '013/0456/0789',
+    screen: [{ label: 'Scr. 17', pct: 12 }],
+    defects: 222,
+  })
+
+  it('takes its OWN references from the sub-contract row', () => {
+    const sub = buildSubContractSummary(mother, {
+      id: 'sub1',
+      wolthers_contract_nr: '41913/26',
+      buyer_contract_nr: 'IR0007546-1',
+      container_nr: 'MSKU 2',
+      ico_number: '013/0456/0790',
+      supplier_contract_nr: null,
+      seller_contract_nr: '9911',
+      shipper_contract_nr: null,
+      exporter_sample_number: 'AS 229426',
+    }, 'SAG-011792/26', 'Ahold')
+    expect(sub.sampleContractId).toBe('sub1')
+    expect(sub.certificateNumber).toBe('SAG-011792/26')
+    expect(sub.wolthersContractNr).toBe('41913/26')
+    expect(sub.buyerContractNr).toBe('IR0007546-1')
+    expect(sub.containerNr).toBe('MSKU 2')
+    expect(sub.icoNumber).toBe('013/0456/0790')
+    expect(sub.sellerContractNr).toBe('9911')
+    expect(sub.exporterSampleNumber).toBe('AS 229426')
+    expect(sub.qcClientName).toBe('Ahold')
+  })
+
+  it('inherits the mother sample quality assessment (splits share one lab result)', () => {
+    const sub = buildSubContractSummary(mother, { id: 'sub1' }, 'SAG-011792/26', null)
+    expect(sub.screen).toEqual(mother.screen)
+    expect(sub.defects).toBe(222)
+    expect(sub.typeOk).toBe(mother.typeOk)
+    expect(sub.cupOk).toBe(mother.cupOk)
+    expect(sub.decision).toBe(mother.decision)
+    expect(sub.sampleId).toBe(mother.sampleId)
+  })
+
+  it('falls back to the mother for container / ICO / Wolthers number only', () => {
+    const sub = buildSubContractSummary(mother, { id: 'sub1' }, 'SAG-011792/26', null)
+    expect(sub.containerNr).toBe('MSKU 1')
+    expect(sub.icoNumber).toBe('013/0456/0789')
+    expect(sub.wolthersContractNr).toBe('41912/26')
+    expect(sub.qcClientName).toBe(mother.qcClientName)
+  })
+
+  // Printing the mother's buyer reference on a split would name the wrong
+  // contract, so the certificate PDF has no such fallback — nor does this.
+  it('never borrows the mother buyer reference for a split', () => {
+    const sub = buildSubContractSummary(mother, { id: 'sub1', buyer_contract_nr: '  ' }, 'SAG-011792/26', null)
+    expect(sub.buyerContractNr).toBeNull()
+  })
+
+  // sys.wolthers is the source of truth and the certificate PDF reads it
+  // through at render time; the email table must not print a stale copy.
+  it('prefers the split sys-contract references over the stored ones', () => {
+    const sub = buildSubContractSummary(
+      mother,
+      { id: 'sub1', buyer_contract_nr: 'STALE-BUYER', supplier_contract_nr: 'STALE-SELLER' },
+      'SAG-011792/26',
+      null,
+      { seller_reference: '4155261412', buyer_reference: 'IR0007546-1' },
+    )
+    expect(sub.sellerContractNr).toBe('4155261412')
+    expect(sub.buyerContractNr).toBe('IR0007546-1')
+  })
+
+  it('keeps the stored split reference when sys has none', () => {
+    const sub = buildSubContractSummary(
+      mother,
+      { id: 'sub1', buyer_contract_nr: 'IR0007546-1', supplier_contract_nr: '4155261412' },
+      'SAG-011792/26',
+      null,
+      { seller_reference: null, buyer_reference: null },
+    )
+    expect(sub.sellerContractNr).toBe('4155261412')
+    expect(sub.buyerContractNr).toBe('IR0007546-1')
   })
 })

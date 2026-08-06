@@ -18,6 +18,7 @@ import {
   buildQualitySummaryHtml,
   buildQualityCoverNote,
   buildQualitySummarySubject,
+  certUnitKey,
 } from '@/lib/approval-notification/quality-summary'
 import type { ApprovalDecision, ApprovalSide, PanelPrefill } from '@/lib/approval-notification/types'
 
@@ -37,6 +38,8 @@ interface CertRow {
   is_rejected: boolean | null
   created_at: string | null
   sample_id: string | null
+  /** Set when this certificate belongs to a commercial split; null = mother. */
+  sample_contract_id: string | null
   sample: {
     id: string
     tracking_number: string | null
@@ -46,6 +49,14 @@ interface CertRow {
     contract_id: string | null
     status: string | null
   } | null
+}
+
+/** The split columns the queue needs: its own sys contract + display refs. */
+interface SubContractRow {
+  id: string
+  container_nr: string | null
+  wolthers_contract_nr: string | null
+  contract_id: string | null
 }
 
 export async function GET(req: NextRequest) {
@@ -78,15 +89,17 @@ export async function GET(req: NextRequest) {
 
   const supabase = admin()
 
-  // Mother certificates (one per sample) issued in the range (or the explicit set).
+  // EVERY issued certificate in the range (or for the explicit set): the mother
+  // certificate of each sample PLUS one per commercial split (`sample_contracts`).
+  // Filtering to `sample_contract_id IS NULL` here is what silently dropped the
+  // sub-contract certificates from both the attachment list and the summary.
   let q = supabase
     .from('certificates')
     .select(
-      `id, certificate_number, is_rejected, created_at, sample_id,
+      `id, certificate_number, is_rejected, created_at, sample_id, sample_contract_id,
        sample:samples(id, tracking_number, container_nr, sample_type, wolthers_contract_nr, contract_id, status)`,
     )
     .eq('status', 'issued')
-    .is('sample_contract_id', null)
   if (explicitMode) {
     q = q.in('sample_id', explicitIds)
   } else {
@@ -105,13 +118,35 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ units: [], skipped: { noContract: 0, noRecipients: 0 } })
   }
 
+  // Split rows for the sub-contract certificates: each split is its OWN
+  // commercial contract (own Wolthers number, own buyer/seller), so it must be
+  // resolved against that contract — not the mother's.
+  const subIds = [...new Set(certs.map((c) => c.sample_contract_id).filter((x): x is string => !!x))]
+  const subById = new Map<string, SubContractRow>()
+  if (subIds.length > 0) {
+    const { data: subRows } = await supabase
+      .from('sample_contracts')
+      .select('id, container_nr, wolthers_contract_nr, contract_id')
+      .in('id', subIds)
+    for (const r of (subRows ?? []) as unknown as SubContractRow[]) subById.set(r.id, r)
+  }
+
+  // One entry per certificate, keyed by `certUnitKey` (mother key = sample id).
+  const unitKeyOf = (c: CertRow) => certUnitKey(c.sample!.id, c.sample_contract_id)
+  const contractKeys = certs.map((c) => {
+    const sub = c.sample_contract_id ? subById.get(c.sample_contract_id) : null
+    // All-or-nothing: a split that declares neither key belongs to the mother's
+    // contract. Mixing (sub number + mother FK) would resolve the wrong contract,
+    // because the FK wins in `contractLookup`.
+    const ownKeys = sub && (sub.contract_id || sub.wolthers_contract_nr)
+    return {
+      id: unitKeyOf(c),
+      contract_id: ownKeys ? sub!.contract_id : c.sample!.contract_id,
+      wolthers_contract_nr: ownKeys ? sub!.wolthers_contract_nr : c.sample!.wolthers_contract_nr,
+    }
+  })
   // Resolve contracts in two IN-queries.
-  const sampleKeys = certs.map((c) => ({
-    id: c.sample!.id,
-    contract_id: c.sample!.contract_id,
-    wolthers_contract_nr: c.sample!.wolthers_contract_nr,
-  }))
-  const contexts = await resolveSampleContractsBatch(supabase, sampleKeys)
+  const contexts = await resolveSampleContractsBatch(supabase, contractKeys)
 
   // Companies and contacts for recipient resolution.
   const companyIds = new Set<string>()
@@ -154,7 +189,7 @@ export async function GET(req: NextRequest) {
   }
 
   // Most-recent rejection reasons per sample (only surfaced for rejected lines).
-  const sampleIds = certs.map((c) => c.sample!.id)
+  const sampleIds = [...new Set(certs.map((c) => c.sample!.id))]
   const reasonBySample = new Map<string, string | null>()
   const { data: qaRows } = await supabase
     .from('quality_assessments')
@@ -167,10 +202,12 @@ export async function GET(req: NextRequest) {
     reasonBySample.set(r.sample_id, reason)
   }
 
-  // Prior sends (single-sample or batch) → drop already-sent (sample, side) pairs.
+  // Prior sends (single-sample or batch) → drop already-sent (certificate, side)
+  // pairs. Legacy rows carry no `sample_contract_id`, which is accurate: before
+  // splits were included, only mother certificates were ever sent.
   const contractIds = [...new Set([...contexts.values()].map((c) => c.contractId))]
   const required = new Map<string, { buyer: boolean; seller: boolean }>()
-  for (const [sid, ctx] of contexts) required.set(sid, { buyer: !!ctx.buyerId, seller: !!ctx.sellerId })
+  for (const [key, ctx] of contexts) required.set(key, { buyer: !!ctx.buyerId, seller: !!ctx.sellerId })
   const statusRows: SendStatusRow[] = []
   if (contractIds.length > 0) {
     const { data: msgs } = await supabase
@@ -196,6 +233,7 @@ export async function GET(req: NextRequest) {
     for (const m of relevant) {
       statusRows.push({
         sampleId: m.metadata.sample_id,
+        sampleContractId: m.metadata.sample_contract_id ?? null,
         side: m.metadata.side,
         sentBy: m.sent_by ? nameById.get(m.sent_by) ?? null : null,
         sentAt: m.sent_at ?? null,
@@ -209,24 +247,29 @@ export async function GET(req: NextRequest) {
   const inputs: BatchSampleInput[] = []
   for (const c of certs) {
     const sample = c.sample!
-    const ctx = contexts.get(sample.id)
+    const ctx = contexts.get(unitKeyOf(c))
     if (!ctx) {
       noContract++
       continue
     }
     const decision: ApprovalDecision = c.is_rejected ? 'rejected' : 'approved'
     if (!wantDecisions.has(decision)) continue
+    // A split shows its own container / Wolthers number; the mother's values are
+    // the fallback when the split leaves them blank.
+    const sub = c.sample_contract_id ? subById.get(c.sample_contract_id) : null
     inputs.push({
       sampleId: sample.id,
+      sampleContractId: c.sample_contract_id,
       buyerId: ctx.buyerId,
       sellerId: ctx.sellerId,
       buyerReference: ctx.buyerReference,
       sellerReference: ctx.sellerReference,
       date: c.created_at ?? null,
       line: {
-        containerNr: sample.container_nr ?? null,
+        containerNr: sub?.container_nr ?? sample.container_nr ?? null,
         certNumber: c.certificate_number ?? sample.tracking_number ?? null,
-        contractNumber: ctx.contractNumber ?? sample.wolthers_contract_nr ?? null,
+        contractNumber:
+          ctx.contractNumber ?? sub?.wolthers_contract_nr ?? sample.wolthers_contract_nr ?? null,
         decision,
         reason: reasonBySample.get(sample.id) ?? null,
       },
@@ -247,7 +290,7 @@ export async function GET(req: NextRequest) {
     const summaries = await fetchQualitySampleSummaries(supabase, allSampleIds)
     for (const u of units) {
       const list = u.samples
-        .map((s) => summaries.get(s.sampleId))
+        .map((s) => summaries.get(certUnitKey(s.sampleId, s.sampleContractId)))
         .filter((s): s is NonNullable<typeof s> => !!s)
       if (list.length === 0) continue
       const attached = u.side === 'buyer'
@@ -264,13 +307,15 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // Samples in scope that produced no unit and aren't already fully sent → no recipients.
+  // Certificates in scope that produced no unit and aren't already fully sent →
+  // no recipients.
   const covered = new Set<string>()
-  for (const u of units) for (const s of u.samples) covered.add(s.sampleId)
+  for (const u of units) for (const s of u.samples) covered.add(certUnitKey(s.sampleId, s.sampleContractId))
   let noRecipients = 0
   for (const inp of inputs) {
-    if (covered.has(inp.sampleId)) continue
-    if (sendStatus.get(inp.sampleId)?.full) continue
+    const key = certUnitKey(inp.sampleId, inp.sampleContractId ?? null)
+    if (covered.has(key)) continue
+    if (sendStatus.get(key)?.full) continue
     noRecipients++
   }
 

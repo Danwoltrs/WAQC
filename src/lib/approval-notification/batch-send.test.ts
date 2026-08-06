@@ -3,6 +3,7 @@ import {
   getInitials,
   computeSendStatus,
   buildBatchUnits,
+  certUnitKey,
   type SendStatusRow,
   type BatchSampleInput,
 } from './batch-send'
@@ -67,6 +68,32 @@ describe('computeSendStatus', () => {
     const req = new Map([['s2', { buyer: true, seller: false }]])
     const rows: SendStatusRow[] = [{ sampleId: 's2', side: 'buyer', sentBy: 'A', sentAt: '2026-06-18T10:00:00Z' }]
     expect(computeSendStatus(rows, req).get('s2')?.full).toBe(true)
+  })
+
+  // A mother sample and each of its sub-contracts are SEPARATE certificates and
+  // are tracked separately, so sending the mother must not mark the sub sent.
+  it('tracks a sub-contract certificate independently of its mother', () => {
+    const req = new Map([
+      ['s1', { buyer: true, seller: false }],
+      [certUnitKey('s1', 'sub1'), { buyer: true, seller: false }],
+    ])
+    const rows: SendStatusRow[] = [{ sampleId: 's1', side: 'buyer', sentBy: 'A', sentAt: '2026-06-18T10:00:00Z' }]
+    const m = computeSendStatus(rows, req)
+    expect(m.get('s1')?.buyerSent).not.toBeNull()
+    expect(m.get(certUnitKey('s1', 'sub1'))?.buyerSent).toBeNull()
+  })
+
+  it('a send logged for a sub-contract marks only that sub-contract', () => {
+    const req = new Map([
+      ['s1', { buyer: true, seller: false }],
+      [certUnitKey('s1', 'sub1'), { buyer: true, seller: false }],
+    ])
+    const rows: SendStatusRow[] = [
+      { sampleId: 's1', sampleContractId: 'sub1', side: 'buyer', sentBy: 'A', sentAt: '2026-06-18T10:00:00Z' },
+    ]
+    const m = computeSendStatus(rows, req)
+    expect(m.get(certUnitKey('s1', 'sub1'))?.buyerSent).not.toBeNull()
+    expect(m.get('s1')?.buyerSent).toBeNull()
   })
 })
 
@@ -135,5 +162,38 @@ describe('buildBatchUnits', () => {
     const orphan: BatchSampleInput[] = [{ sampleId: 's9', buyerId: 'buyerZ', sellerId: null, buyerReference: null, sellerReference: null, date: null, line: line() }]
     const units = buildBatchUnits(orphan, new Map(), panels, names)
     expect(units.every((u) => u.side === 'buyer')).toBe(true)
+  })
+
+  // Mother + sub-contract certificates of the SAME sample must both ride in the
+  // unit — the whole point of the sub-contract fix.
+  const withSub: BatchSampleInput[] = [
+    { sampleId: 's1', sampleContractId: null, buyerId: 'buyerZ', sellerId: 'sellerS', ...base, line: line({ certNumber: 'SAG-011791/26' }) },
+    { sampleId: 's1', sampleContractId: 'sub1', buyerId: 'buyerZ', sellerId: 'sellerS', ...base, line: line({ certNumber: 'SAG-011792/26' }) },
+  ]
+
+  it('keeps a mother and its sub-contract certificate as separate lines in one unit', () => {
+    const units = buildBatchUnits(withSub, new Map(), panels, names)
+    const buyer = units.find((u) => u.side === 'buyer')!
+    expect(buyer.samples.map((s) => s.certNumber)).toEqual(['SAG-011791/26', 'SAG-011792/26'])
+    expect(buyer.samples.map((s) => s.sampleContractId ?? null)).toEqual([null, 'sub1'])
+  })
+
+  it('dropping a sent mother certificate keeps its unsent sub-contract', () => {
+    const status = new Map([['s1', { buyerSent: { by: 'A', at: 't' }, sellerSent: null, full: false }]])
+    const units = buildBatchUnits(withSub, status, panels, names)
+    const buyer = units.find((u) => u.side === 'buyer')!
+    expect(buyer.samples.map((s) => s.certNumber)).toEqual(['SAG-011792/26'])
+  })
+
+  it('greets "all" when the company has no named contact', () => {
+    const noTo = new Map(panels)
+    noTo.set('buyerA', { greeting: 'all', to: [], cc: [] })
+    const units = buildBatchUnits(samples, new Map(), noTo, names)
+    expect(units.find((u) => u.companyId === 'buyerA')!.greeting).toBe('all')
+  })
+
+  it('falls back to "all" (never "<company> team") when a company has no panel', () => {
+    const units = buildBatchUnits(samples, new Map(), new Map(), names)
+    expect(units.every((u) => u.greeting === 'all')).toBe(true)
   })
 })

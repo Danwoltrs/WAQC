@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { chooseUniqueContractRefs, refDiffers } from './contract-ref-sync'
+import { chooseUniqueContractRefs, refDiffers, matchSysRefsByLink } from './contract-ref-sync'
 
 describe('chooseUniqueContractRefs', () => {
   it('returns the refs when exactly one contract matches', () => {
@@ -42,5 +42,56 @@ describe('refDiffers', () => {
   it('fills in an empty stored ref from sys', () => {
     expect(refDiffers(null, '4155261663')).toBe(true)
     expect(refDiffers('', '4155261663')).toBe(true)
+  })
+})
+
+describe('matchSysRefsByLink', () => {
+  const refs = (s: string | null, b: string | null) => ({ seller_reference: s, buyer_reference: b })
+
+  it('prefers the contract FK over the number', () => {
+    const m = matchSysRefsByLink(
+      [{ key: 'k1', contractId: 'c1', contractNumber: '41912/26' }],
+      new Map([['c1', refs('BY-ID', 'B1')]]),
+      new Map([['41912/26', [refs('BY-NUMBER', 'B2')]]]),
+    )
+    expect(m.get('k1')?.seller_reference).toBe('BY-ID')
+  })
+
+  it('resolves by number when the FK is missing or unmatched', () => {
+    const m = matchSysRefsByLink(
+      [{ key: 'k1', contractId: null, contractNumber: '41913/26' }],
+      new Map(),
+      new Map([['41913/26', [refs('4155261412', 'IR0007546-1')]]]),
+    )
+    expect(m.get('k1')).toEqual(refs('4155261412', 'IR0007546-1'))
+  })
+
+  it('refuses to guess when a number is ambiguous or absent', () => {
+    const m = matchSysRefsByLink(
+      [
+        { key: 'dup', contractNumber: '41912/26' },
+        { key: 'none', contractNumber: null },
+      ],
+      new Map(),
+      new Map([['41912/26', [refs('A', null), refs('B', null)]]]),
+    )
+    expect(m.has('dup')).toBe(false)
+    expect(m.has('none')).toBe(false)
+  })
+
+  it('keys a mother and its split separately', () => {
+    const m = matchSysRefsByLink(
+      [
+        { key: 's1', contractNumber: '41912/26' },
+        { key: 's1:sub1', contractNumber: '41913/26' },
+      ],
+      new Map(),
+      new Map([
+        ['41912/26', [refs('4155261411', 'IR0007545-1')]],
+        ['41913/26', [refs('4155261412', 'IR0007546-1')]],
+      ]),
+    )
+    expect(m.get('s1')?.seller_reference).toBe('4155261411')
+    expect(m.get('s1:sub1')?.seller_reference).toBe('4155261412')
   })
 })

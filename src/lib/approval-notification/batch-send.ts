@@ -10,7 +10,11 @@ import {
   buildBatchApprovalBody,
   type BatchUnitLine,
 } from './batch-approval-template'
+import { certUnitKey } from './quality-summary'
+import { NO_NAME_GREETING } from './resolve-panels'
 import type { ApprovalSide, PanelPrefill } from './types'
+
+export { certUnitKey }
 
 /** "Anderson Nunes" -> "AN"; empty -> em-dash. Mirrors quality/templates page. */
 export function getInitials(name?: string | null): string {
@@ -34,15 +38,20 @@ export interface SampleSendStatus {
 
 export interface SendStatusRow {
   sampleId: string
+  /** The split this send covered; null/absent = the mother certificate. Prior
+   *  `email_messages` never carried one, which is accurate: only mother
+   *  certificates were ever sent before splits were included. */
+  sampleContractId?: string | null
   side: ApprovalSide
   sentBy: string | null
   sentAt: string | null
 }
 
 /**
- * Pure: fold prior outbound emails into per-sample, per-side send status.
- * `required` says which sides actually have a counterparty company; a sample is
- * `full` only when every required side has at least one send.
+ * Pure: fold prior outbound emails into per-CERTIFICATE, per-side send status,
+ * keyed by `certUnitKey` (a mother's key is its bare sample id). `required` says
+ * which sides actually have a counterparty company; a certificate is `full` only
+ * when every required side has at least one send.
  */
 export function computeSendStatus(
   rows: SendStatusRow[],
@@ -58,7 +67,7 @@ export function computeSendStatus(
     return v
   }
   for (const r of rows) {
-    const slot = ensure(r.sampleId)
+    const slot = ensure(certUnitKey(r.sampleId, r.sampleContractId ?? null))
     const current = r.side === 'buyer' ? slot.buyer : slot.seller
     // Keep the most recent send for that side.
     if (!current || String(r.sentAt ?? '').localeCompare(String(current.at ?? '')) > 0) {
@@ -85,6 +94,8 @@ export function computeSendStatus(
 
 export interface BatchSampleInput {
   sampleId: string
+  /** The `sample_contracts` split this certificate belongs to; null = mother. */
+  sampleContractId?: string | null
   buyerId: string | null
   sellerId: string | null
   // Per-side references; the unit picks the one matching its side.
@@ -97,6 +108,9 @@ export interface BatchSampleInput {
 
 export interface BatchUnitSample extends BatchUnitLine {
   sampleId: string
+  /** Null for the mother certificate; set for each sub-contract certificate.
+   *  Both travel in the same unit and must both be attached. */
+  sampleContractId: string | null
 }
 
 export interface BatchUnit {
@@ -123,10 +137,12 @@ export interface BatchUnit {
 
 /**
  * Pure: build the ordered send queue. One unit per (company, side); a
- * (sample, side) pair already sent (per `sendStatus`) is dropped. Companies with
- * no resolvable TO recipient are still emitted, flagged `needsRecipients`, so the
- * composer can capture one. Order: all buyer units (by company name), then all
- * seller units (by company name).
+ * (certificate, side) pair already sent (per `sendStatus`) is dropped — a mother
+ * and each of its sub-contract certificates are tracked separately, so a sent
+ * mother never suppresses an unsent split. Companies with no resolvable TO
+ * recipient are still emitted, flagged `needsRecipients`, so the composer can
+ * capture one. Order: all buyer units (by company name), then all seller units
+ * (by company name).
  */
 export function buildBatchUnits(
   samples: BatchSampleInput[],
@@ -143,12 +159,13 @@ export function buildBatchUnits(
     for (const s of samples) {
       const companyId = side === 'buyer' ? s.buyerId : s.sellerId
       if (!companyId) continue
-      const status = sendStatus.get(s.sampleId)
+      const sampleContractId = s.sampleContractId ?? null
+      const status = sendStatus.get(certUnitKey(s.sampleId, sampleContractId))
       const alreadySent = side === 'buyer' ? status?.buyerSent : status?.sellerSent
       if (alreadySent && !opts?.includeAlreadySent) continue
       const reference = side === 'buyer' ? s.buyerReference : s.sellerReference
       const list = bucket.get(companyId) ?? []
-      list.push({ sampleId: s.sampleId, ...s.line, reference, date: s.date })
+      list.push({ sampleId: s.sampleId, sampleContractId, ...s.line, reference, date: s.date })
       bucket.set(companyId, list)
     }
 
@@ -158,7 +175,8 @@ export function buildBatchUnits(
       const companyName = companyNameById.get(companyId) ?? companyId
       const to = panel ? panel.to.map((c) => c.email) : []
       const cc = panel ? panel.cc.map((c) => c.email) : []
-      const greeting = panel?.greeting ?? `${companyName} team`
+      // No named contact → "Dear all," (never "Dear <company> team,").
+      const greeting = panel?.greeting ?? NO_NAME_GREETING
       const tmpl = { greeting, side, lines: sampleLines }
       sideUnits.push({
         side,

@@ -43,7 +43,7 @@ describe('resolvePanel', () => {
     ]
     const p = resolvePanel(rows, 'C1', 'Blaser', QC)
     expect(p.to).toEqual([])
-    expect(p.greeting).toBe('Blaser team')
+    expect(p.greeting).toBe('all')
     // House office + QC mailbox are still copied.
     expect(p.cc.map((c) => c.email)).toEqual([QC, HOUSE_CC])
   })
@@ -64,7 +64,7 @@ describe('resolvePanel', () => {
     const rows = [row({ email: 'staff@wolthers.com', name: 'Staff', routing_purposes: ['qc_certificates'] })]
     const p = resolvePanel(rows, 'C1', 'Blaser', QC)
     expect(p.to).toEqual([])
-    expect(p.greeting).toBe('Blaser team')
+    expect(p.greeting).toBe('all')
   })
 
   it('promotes a tagged group inbox to TO when no individual is tagged', () => {
@@ -73,7 +73,7 @@ describe('resolvePanel', () => {
     ]
     const p = resolvePanel(rows, 'C1', 'Blaser', QC)
     expect(p.to.map((c) => c.email)).toEqual(['backoffice@buyer.com'])
-    expect(p.greeting).toBe('Blaser team') // group inbox skipped for greeting
+    expect(p.greeting).toBe('all') // group inbox skipped for greeting
   })
 
   it('routes a tagged group inbox to CC when an individual is also tagged', () => {
@@ -91,6 +91,6 @@ describe('resolvePanel', () => {
     const p = resolvePanel([], null, null, QC)
     expect(p.to).toEqual([])
     expect(p.cc.map((c) => c.email)).toEqual([QC, HOUSE_CC])
-    expect(p.greeting).toBe('team')
+    expect(p.greeting).toBe('all')
   })
 })
