@@ -8,6 +8,7 @@ import { QualityCertificate } from '@/components/pdf/certificate/quality-certifi
 import { getCountryCodeFromOrigin, getFlagPath } from '@/lib/country-flags'
 import { generateQRCode } from '@/lib/qr-code'
 import { buildCertificateFilename } from '@/lib/certificate-filename'
+import { trackingNumberToSlug } from '@/lib/utils'
 import React from 'react'
 import fs from 'fs'
 import path from 'path'
@@ -138,8 +139,11 @@ export async function buildCertificatePdfResponse(
         .maybeSingle()
 
       if (assessment?.defect_photos && Array.isArray(assessment.defect_photos) && assessment.defect_photos.length > 0) {
+        // /sample-photo/[slug] only resolves against samples.tracking_number,
+        // so this must use the resolved sample's own tracking number — not the
+        // incoming slug, which may be a certificate number that 404s there.
         const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://qc.wolthers.com'
-        samplePhotoUrl = `${baseUrl}/sample-photo/${slug}`
+        samplePhotoUrl = `${baseUrl}/sample-photo/${trackingNumberToSlug(sample.tracking_number)}`
         samplePhotoQrBase64 = await generateQRCode(samplePhotoUrl, { width: 150, margin: 1 })
       }
     } catch (err) {

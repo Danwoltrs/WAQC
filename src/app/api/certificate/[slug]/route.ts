@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { resolveSampleIdForSlug } from '@/lib/certificate-slug'
+import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
 
 // Use service role to bypass RLS for public access
 const supabase = createClient(
@@ -37,6 +37,11 @@ export async function GET(
         workflow_stage,
         status,
         quality_spec_id,
+        sample_type,
+        container_nr,
+        exporter_sample_number,
+        buyer_contract_nr,
+        wolthers_contract_nr,
         quality_spec:client_qualities(custom_name, quality_code, template:quality_templates(name_en))
       `)
       .eq('id', sampleId)
@@ -55,12 +60,21 @@ export async function GET(
 }
 
 async function buildResponse(sample: any) {
+  // Never the internal SAN- lab number — same rule as the certificate page.
+  const publicReference = resolvePublicReference({
+    sampleType: sample.sample_type,
+    containerNr: sample.container_nr,
+    exporterSampleNumber: sample.exporter_sample_number,
+    buyerContractNr: sample.buyer_contract_nr,
+    wolthersContractNr: sample.wolthers_contract_nr,
+  })
+
   const isCertified = sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected'
 
   if (!isCertified) {
     return NextResponse.json({
       certified: false,
-      tracking_number: sample.tracking_number,
+      public_reference: publicReference.reference,
       message: 'Sample has not been certified yet',
     })
   }
@@ -119,7 +133,7 @@ async function buildResponse(sample: any) {
 
   return NextResponse.json({
     certified: true,
-    tracking_number: sample.tracking_number,
+    public_reference: publicReference.reference,
     certificate_number: certificate?.certificate_number || null,
     status: certificate?.is_rejected ? 'REJECTED' : 'APPROVED',
     approval_date: certificate?.created_at || null,
