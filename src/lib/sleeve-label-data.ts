@@ -51,7 +51,7 @@ export interface SleeveLabelFields {
  * City, Lima) certify in their own local days and would need this resolved
  * per-laboratory — tracked as a follow-up, not in scope here.
  */
-const LABEL_TIME_ZONE = 'America/Sao_Paulo'
+export const LABEL_TIME_ZONE = 'America/Sao_Paulo'
 
 /** Extract day, month (short), and year in the label timezone. */
 function dateParts(d: Date): { day: string; month: string; year: string } {
