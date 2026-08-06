@@ -293,17 +293,20 @@ export async function GET(req: NextRequest) {
         .map((s) => summaries.get(certUnitKey(s.sampleId, s.sampleContractId)))
         .filter((s): s is NonNullable<typeof s> => !!s)
       if (list.length === 0) continue
+      // Default attachment policy — buyers get the PDFs, sellers don't. The
+      // composer turns this into a checkbox the sender can flip either way.
       const attached = u.side === 'buyer'
       const groups = groupQualitySamples(list, u.side === 'seller' ? 'qcClient' : 'seller')
-      // Seller note is shown to sellers only (never buyers). Audience selects the
-      // reference columns (buyer: Sample + Buyer ref; seller: Sample + Wolthers + Seller ref).
-      const audience: 'buyer' | 'seller' = attached ? 'buyer' : 'seller'
-      const sumOpts = { sellerComment: !attached, audience }
+      // Audience follows the SIDE, never the attachment choice: it selects the
+      // reference columns (buyer: Sample + Buyer ref; seller: Sample + Wolthers +
+      // Seller ref) and whether the seller note is shown (sellers only).
+      const audience: 'buyer' | 'seller' = u.side
+      const sumOpts = { sellerComment: audience === 'seller', audience }
       u.body = buildQualityCoverNote(u.greeting, attached)
       u.subject = buildQualitySummarySubject(groups, attached)
       u.summaryText = buildQualitySummaryText(groups, sumOpts)
       u.summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
-      u.noAttachments = !attached
+      u.attachCertificates = attached
     }
   }
 

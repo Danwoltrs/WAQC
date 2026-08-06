@@ -127,8 +127,10 @@ export interface BatchUnit {
   // editable cover note; this table is rendered read-only and rebuilt at send.
   summaryText?: string
   summaryHtml?: string
-  // True for seller units: certificates are NOT attached (sellers don't pay).
-  noAttachments?: boolean
+  // Whether the certificate PDFs ride along. Defaults to true for buyers and
+  // false for sellers — the seller didn't hire the QC service — but the composer
+  // exposes it as a per-send checkbox, so either side can be overridden.
+  attachCertificates?: boolean
   // True when this (company, side) has no resolvable TO recipient. The unit is
   // still emitted so the composer surfaces it as a capture step; Send stays
   // blocked until the sender adds at least one recipient.

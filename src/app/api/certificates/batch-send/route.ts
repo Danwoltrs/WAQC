@@ -50,6 +50,10 @@ interface Body {
   /** Legacy: sample ids only — treated as their mother certificates. */
   sampleIds?: string[]
   includeSignature?: boolean
+  /** Attach the certificate PDFs. Defaults to the side's policy: buyers yes,
+   *  sellers no (they didn't hire the QC service). The composer sends it
+   *  explicitly so either side can be overridden per send. */
+  includeCertificates?: boolean
 }
 
 interface Valid {
@@ -67,7 +71,7 @@ interface Valid {
   contractId: string
   buyerId: string | null
   sellerId: string | null
-  attachment?: GraphSendAttachment // buyer units only
+  attachment?: GraphSendAttachment // present only when certificates are attached
 }
 
 const dedupeEmails = (list: string[]): string[] => {
@@ -87,13 +91,13 @@ const dedupeEmails = (list: string[]): string[] => {
 function composeQualityBody(
   coverNote: string,
   groups: ReturnType<typeof groupQualitySamples>,
-  opts: { attached: boolean; signatureHtml: string | null; includeSig: boolean },
+  opts: { side: ApprovalSide; signatureHtml: string | null; includeSig: boolean },
 ): { text: string; html: string } {
-  // Seller note shown to sellers only (the seller email has no attachments).
-  // Audience selects the reference columns: buyers see Sample + Buyer ref;
-  // sellers see Sample + Wolthers + Seller ref.
-  const audience: 'buyer' | 'seller' = opts.attached ? 'buyer' : 'seller'
-  const sumOpts = { sellerComment: !opts.attached, audience }
+  // Audience follows the SIDE, never whether certificates happen to be attached:
+  // it selects the reference columns (buyers see Sample + Buyer ref; sellers see
+  // Sample + Wolthers + Seller ref) and the seller note (sellers only).
+  const audience: 'buyer' | 'seller' = opts.side
+  const sumOpts = { sellerComment: audience === 'seller', audience }
   const summaryText = buildQualitySummaryText(groups, sumOpts)
   const summaryHtml = buildQualitySummaryHtml(groups, sumOpts)
   const sig = opts.includeSig ? opts.signatureHtml : null
@@ -153,6 +157,8 @@ export async function POST(req: NextRequest) {
   const senderName = profile?.full_name || senderEmail || undefined
   const signatureHtml: string | null = profile?.email_signature_html ?? null
   const isSeller = side === 'seller'
+  // Whether the PDFs ride along, independent of which side is being written to.
+  const attachCerts = body.includeCertificates ?? !isSeller
 
   const results: { sampleId: string; ok: boolean; error?: string }[] = []
   const valid: Valid[] = []
@@ -224,7 +230,7 @@ export async function POST(req: NextRequest) {
     }
 
     let attachment: GraphSendAttachment | undefined
-    if (!isSeller) {
+    if (attachCerts) {
       let certQuery = supabase
         .from('certificates')
         .select('id, pdf_url, certificate_number')
@@ -290,7 +296,7 @@ export async function POST(req: NextRequest) {
     .filter((s): s is QualitySampleSummary => !!s)
   const groups = groupQualitySamples(summaryList, isSeller ? 'qcClient' : 'seller')
   const { text: bodyText, html: bodyHtml } = composeQualityBody(body.bodyText, groups, {
-    attached: !isSeller,
+    side,
     signatureHtml,
     includeSig: body.includeSignature !== false,
   })
@@ -309,7 +315,7 @@ export async function POST(req: NextRequest) {
       subject,
       bodyText,
       bodyHtml,
-      attachments: isSeller ? [] : valid.map((v) => v.attachment!).filter(Boolean),
+      attachments: attachCerts ? valid.map((v) => v.attachment!).filter(Boolean) : [],
       saveToSentItems: true,
       senderEmail,
       senderName,
@@ -356,9 +362,10 @@ export async function POST(req: NextRequest) {
       })
       .then(undefined, (e: unknown) => console.error('[batch-send] log failed (non-fatal):', e))
 
-    // Buyers: annex the cert to the contract documents and write the decision
-    // back to shipment_samples. Sellers receive no certificate and the decision
-    // was already written at approval time, so the seller send only logs.
+    // Annexing to the contract's Docs and the sys write-back stay tied to the
+    // BUYER side, not to whether a PDF happened to be attached: a courtesy copy
+    // to the seller must not re-file the document or re-stamp shipment_samples
+    // (the decision was already written at approval time).
     if (!isSeller && v.attachment) {
       let certificatePath: string | null = null
       try {

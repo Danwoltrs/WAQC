@@ -87,3 +87,51 @@ describe('BatchApprovalSendView sub-contract certificates', () => {
     ])
   })
 })
+
+describe('BatchApprovalSendView attach-certificates toggle', () => {
+  const buyerUnit: BatchUnit = { ...splitUnit, attachCertificates: true }
+  const sellerUnit: BatchUnit = {
+    ...splitUnit, side: 'seller', companyName: 'Ecom Agroindustrial', attachCertificates: false,
+  }
+  const box = () => screen.getByRole('checkbox', { name: /attach certificates/i }) as HTMLInputElement
+  const openWith = async (unit: BatchUnit) => {
+    const f = stubFetch(unit)
+    render(<BatchApprovalSendView open range={{ from: '2026-06-01', to: '2026-06-30' }} onClose={() => {}} />)
+    await waitFor(() => expect(box()).toBeInTheDocument())
+    return f
+  }
+  const sentBody = (f: ReturnType<typeof stubFetch>) => {
+    const call = f.mock.calls.find(([u]) => String(u).endsWith('/api/certificates/batch-send'))!
+    return JSON.parse(call[1]!.body as string)
+  }
+
+  it('defaults to checked for a buyer', async () => {
+    await openWith(buyerUnit)
+    expect(box().checked).toBe(true)
+    expect(screen.getByText(/2 certificates attached/i)).toBeInTheDocument()
+  })
+
+  // Sellers didn't hire the QC service, so they don't get certificates by default.
+  it('defaults to unchecked for a seller', async () => {
+    await openWith(sellerUnit)
+    expect(box().checked).toBe(false)
+    expect(screen.queryByText(/certificates attached/i)).not.toBeInTheDocument()
+  })
+
+  it('lets a seller send be opted IN, and posts the flag', async () => {
+    const f = await openWith(sellerUnit)
+    fireEvent.click(box())
+    await waitFor(() => expect(box().checked).toBe(true))
+    expect(screen.getByText(/2 certificates attached/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
+    await waitFor(() => expect(sentBody(f).includeCertificates).toBe(true))
+  })
+
+  it('lets a buyer send be opted OUT, and posts the flag', async () => {
+    const f = await openWith(buyerUnit)
+    fireEvent.click(box())
+    await waitFor(() => expect(box().checked).toBe(false))
+    fireEvent.click(screen.getByRole('button', { name: /^send$/i }))
+    await waitFor(() => expect(sentBody(f).includeCertificates).toBe(false))
+  })
+})

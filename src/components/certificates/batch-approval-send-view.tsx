@@ -77,8 +77,12 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
   const current = units[index]
   const done = index >= units.length
 
-  const patchCurrent = (next: { to?: string[]; cc?: string[]; body?: string }) =>
+  const patchCurrent = (next: Partial<BatchUnit>) =>
     setUnits((prev) => prev.map((u, i) => (i === index ? { ...u, ...next } : u)))
+
+  /** Buyers get the PDFs by default; sellers don't (they didn't hire the QC
+   *  service). Either can be flipped per send via the composer checkbox. */
+  const attachesCerts = (u: BatchUnit) => u.attachCertificates ?? u.side === 'buyer'
 
   async function postUnit(unit: BatchUnit): Promise<{ ok: boolean; failed: number; error?: string }> {
     const res = await fetch('/api/certificates/batch-send', {
@@ -96,6 +100,7 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
           sampleId: s.sampleId,
           sampleContractId: s.sampleContractId ?? null,
         })),
+        includeCertificates: attachesCerts(unit),
         includeSignature,
       }),
     })
@@ -236,7 +241,7 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
                     />
                   )}
 
-                  {!current.noAttachments && (
+                  {attachesCerts(current) && (
                     <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
                         {current.samples.length} certificate{current.samples.length === 1 ? '' : 's'} attached
@@ -261,6 +266,18 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
                   )}
 
                   <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={attachesCerts(current)}
+                      onChange={(e) => patchCurrent({ attachCertificates: e.target.checked })}
+                    />
+                    Attach certificates
+                    {current.side === 'seller' && (
+                      <span className="text-xs opacity-50">(sellers normally don&apos;t receive them)</span>
+                    )}
+                  </label>
+
+                  <label className="flex items-center gap-2 text-sm">
                     <input type="checkbox" checked={includeSignature} onChange={(e) => setIncludeSignature(e.target.checked)} />
                     Include HTML signature
                   </label>
@@ -271,7 +288,7 @@ export function BatchApprovalSendView({ open, range, selection, onClose, onSent 
                   {current.summaryHtml && (
                     <div className="rounded-[16px] border border-black/10 p-4 dark:border-white/15">
                       <div className="mb-2 text-xs font-semibold uppercase tracking-wide opacity-60">
-                        Quality summary{current.noAttachments ? ' — no certificates attached' : ''}
+                        Quality summary{attachesCerts(current) ? '' : ' — no certificates attached'}
                       </div>
                       <div
                         className="overflow-auto rounded-lg bg-white p-3 text-sm text-black"
