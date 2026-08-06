@@ -1,3 +1,4 @@
+import { CuppingSpider } from './cupping-spider'
 import type { CertificateView, AttributeRail } from './types'
 
 /** Where a score sits relative to its band: inside, near an edge, or outside. */
@@ -31,14 +32,20 @@ function Summary({ children }: { children: React.ReactNode }) {
 /**
  * Screen distribution and the cupping profile.
  *
- * The radar chart this replaces clipped off-screen on a phone and coloured
- * every attribute the same olive whether it passed or failed. Seven rails read
- * in one downward glance, and a score outside its band is visibly outside it.
+ * The profile is a spider graph: the shape of a cup is what a taster reads, and
+ * the lot's polygon sitting inside the shaded spec band carries the judgement
+ * at a glance. Failing attributes are marked red so the earlier radar's flaw —
+ * everything the same olive whether it passed or failed — does not return.
+ *
+ * Below three attributes there is no polygon to draw, so those fall back to the
+ * rails, which also stay as the accessible reading of the same numbers.
  */
 export function CertificateDetail({ view }: { view: CertificateView }) {
   const hasScreens = view.screens.length > 0
   const hasAttributes = view.attributes.length > 0
-  if (!hasScreens && !hasAttributes) return null
+  const hasProfile = hasAttributes || Boolean(view.cupProfile)
+  const useSpider = view.attributes.length >= 3
+  if (!hasScreens && !hasProfile) return null
 
   return (
     <>
@@ -75,11 +82,25 @@ export function CertificateDetail({ view }: { view: CertificateView }) {
         </details>
       )}
 
-      {hasAttributes && (
+      {hasProfile && (
         <details open className="bg-[#333331] border-b border-[#3f3f3c]">
           <Summary>Cupping profile</Summary>
           <div className="px-4 pt-1 pb-[18px] border-t border-[#3f3f3c]">
-            {view.attributes.map((rail, index) => {
+            {/* The cup profile is a category — "Strictly Soft", "Hard" — not a
+                score. It gets a line of its own rather than an axis it cannot
+                sit on. */}
+            {view.cupProfile && (
+              <div className="flex items-baseline justify-between gap-3 pt-3 pb-1">
+                <span className="text-[13.5px] text-[#a8a69d]">Cup profile</span>
+                <span className="text-[13.5px] font-semibold text-[#f2efe6] text-right">
+                  {view.cupProfile}
+                </span>
+              </div>
+            )}
+
+            {useSpider && <CuppingSpider attributes={view.attributes} />}
+
+            {hasAttributes && !useSpider && view.attributes.map((rail, index) => {
               const state = railState(rail)
               const bandStart = rail.min !== null ? railPercent(rail.min, rail) : 0
               const bandEnd = rail.max !== null ? railPercent(rail.max, rail) : 100

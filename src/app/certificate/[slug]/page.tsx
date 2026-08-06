@@ -12,9 +12,11 @@ import {
   resolveDefectCounts,
   resolveTaintFaultCounts,
   resolveFinalScores,
+  isFlavorDescriptor,
   type CuppingScoreRow,
 } from '@/lib/quality-resolvers'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
+import { resolveFlavorDescriptor } from '@/lib/certificate-data'
 import { buildChecklistRows, screenDirection } from '@/lib/certificate-checklist'
 import type { CertificateView, AttributeRail, ScreenBar } from './_components/types'
 import { Verdict } from './_components/verdict'
@@ -193,6 +195,17 @@ async function getCertificateInfo(slug: string) {
     }
   }
 
+  // The cup profile category ("Strictly Soft", "Hard"). A master-cupper edit in
+  // green_bean_data.cup_profile wins; otherwise the most common descriptor
+  // across cuppers. Same resolver the PDF certificate uses, so the printed and
+  // scanned certificates can never disagree.
+  const flavorDescriptors = scoreRows
+    .flatMap(row => Object.entries((row.scores || {}) as Record<string, unknown>))
+    .filter(([attr, value]) => isFlavorDescriptor(attr) && typeof value === 'string')
+    .map(([, value]) => (value as string).trim())
+    .filter(Boolean)
+  const cupProfile = resolveFlavorDescriptor(greenBean?.cup_profile, flavorDescriptors)
+
   // Boolean cup judgements are not scored attributes and must not get a rail.
   const BOOLEAN_CUP_NAMES = [
     'clean cup', 'cleancup', 'clean_cup',
@@ -207,6 +220,11 @@ async function getCertificateInfo(slug: string) {
 
   const attributes: AttributeRail[] = Object.entries(finalScores)
     .filter(([attr]) => !BOOLEAN_CUP_NAMES.includes(attr.toLowerCase()))
+    // Defence in depth: resolveFinalScores already drops non-numeric values, so
+    // a text descriptor cannot reach here — but a template that stores the
+    // profile as a coded number would, and would get an axis with a meaningless
+    // score on it.
+    .filter(([attr]) => !isFlavorDescriptor(attr))
     .sort(([a], [b]) => {
       const ai = standardOrder.findIndex(s => a.toLowerCase().includes(s.toLowerCase()))
       const bi = standardOrder.findIndex(s => b.toLowerCase().includes(s.toLowerCase()))
@@ -304,6 +322,7 @@ async function getCertificateInfo(slug: string) {
     screens,
     screenSpecNote,
     attributes,
+    cupProfile,
   }
 }
 
@@ -543,6 +562,7 @@ export default async function CertificatePage({ params }: PageProps) {
     screens: info.screens,
     screenSpecNote: info.screenSpecNote,
     attributes: info.attributes,
+    cupProfile: info.cupProfile,
     taints: info.totalTaints,
     faults: info.totalFaults,
     cleanCup: info.cleanCup,

@@ -58,6 +58,12 @@ export interface CertificateView {
   screens: ScreenBar[]
   screenSpecNote: string | null
   attributes: AttributeRail[]
+  /**
+   * The cup profile category — "Strictly Soft", "Hard", "Rioy". A classification,
+   * not a score: it never appears among `attributes`, which are all numeric and
+   * all judged against a band.
+   */
+  cupProfile: string | null
   /** null when the lot was never cupped — render a dash, not a false "0". */
   taints: number | null
   faults: number | null

@@ -102,6 +102,19 @@ export function resolveTaintFaultCounts(
 }
 
 /**
+ * The cup profile ("Strictly Soft", "Hard", "Rioy") is a category, not a score.
+ *
+ * It travels in the same `cupping_scores.scores` map as the sensory attributes,
+ * so anything that plots or grades that map has to exclude it by name — a
+ * category has no scale to sit on and no band to be inside or outside of.
+ * Matches the key cuppers actually write (`Flavor_descriptor`) and the spellings
+ * around it.
+ */
+export function isFlavorDescriptor(name: string): boolean {
+  return /flavou?r[\s_-]*descriptor/i.test(name)
+}
+
+/**
  * The score each attribute is judged on: the master cupper's where they scored
  * it, the mean across cuppers everywhere else.
  */

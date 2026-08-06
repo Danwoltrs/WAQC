@@ -211,6 +211,34 @@ export function verdictFailures(rows: ChecklistRow[]): ChecklistRow[] {
   return failures.filter(r => r.key !== 'total_defects')
 }
 
+/**
+ * Split the defect rows out so the page can render them side by side.
+ *
+ * Primary, secondary and total are one reading of one measurement, and stacked
+ * as three full-width rows they read as three unrelated checks. Side by side
+ * the relationship is visible: the two components and the sum they make.
+ *
+ * Only worth doing when at least two of the three are configured — a lone
+ * "Total defects" in a three-column grid is a worse row than the plain one it
+ * replaced. Order follows DEFECT_ORDER, so a template that configures only
+ * secondary and total still reads left to right in the same direction.
+ *
+ * `rest` preserves the incoming order of everything else.
+ */
+export function partitionDefectRows(rows: ChecklistRow[]): {
+  defects: ChecklistRow[]
+  rest: ChecklistRow[]
+} {
+  const defects = DEFECT_ORDER
+    .map(key => rows.find(r => r.key === key))
+    .filter((r): r is ChecklistRow => Boolean(r))
+
+  if (defects.length < 2) return { defects: [], rest: rows }
+
+  const grouped = new Set(defects.map(r => r.key))
+  return { defects, rest: rows.filter(r => !grouped.has(r.key)) }
+}
+
 /** One line of the verdict's reason block: either a checklist row rendered
  * with its value and limit, or a plain prose sentence. */
 export type VerdictReason =

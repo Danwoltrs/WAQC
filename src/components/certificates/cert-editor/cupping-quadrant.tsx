@@ -15,17 +15,17 @@ import { Textarea } from '@/components/ui/textarea'
 import { Checkbox } from '@/components/ui/checkbox'
 import { QuadrantCard, EditPanel } from './ui-parts'
 import { CertDraft, CUPPING_COLOR } from './shared'
+import { isFlavorDescriptor } from '@/lib/quality-resolvers'
 
 type CuppingDraft = Pick<
   CertDraft,
   'cupping' | 'cupProfile' | 'cleanCup' | 'uniformCup' | 'cuppingComments' | 'gradingComments'
 >
 
-// Flavor descriptor is a TEXT attribute that leaks into the aggregated cupping
-// map — it has no numeric score and must not appear in the sensory graph.
-const isFlavorDescriptor = (name: string) => /flavou?r[\s_-]*descriptor/i.test(name)
-
-/** Numeric sensory attributes only — what the spider graph (and bars) can plot. */
+/** Numeric sensory attributes only — what the spider graph (and bars) can plot.
+ *  Flavor descriptor is a TEXT attribute that leaks into the aggregated cupping
+ *  map; `isFlavorDescriptor` is shared with the public certificate page so both
+ *  exclude exactly the same thing. */
 function scoreEntries(cupping: Record<string, number>): Array<[string, number]> {
   return Object.entries(cupping).filter(
     ([name, score]) => !isFlavorDescriptor(name) && Number.isFinite(score),

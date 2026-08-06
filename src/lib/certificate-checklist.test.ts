@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   buildChecklistRows,
   verdictFailures,
+  partitionDefectRows,
   resolveVerdictReasons,
   parseComplianceViolations,
   type ChecklistRow,
@@ -255,6 +256,66 @@ describe('verdictFailures', () => {
 
   it('returns nothing when everything passed', () => {
     expect(verdictFailures([row({ key: 'total_defects' })])).toEqual([])
+  })
+})
+
+describe('partitionDefectRows', () => {
+  function row(over: Partial<ChecklistRow>): ChecklistRow {
+    return {
+      key: 'k', label: 'L', sublabel: null, actual: '0',
+      operator: null, limit: null, hasThreshold: true, passed: true, ...over,
+    }
+  }
+
+  it('pulls all three defect rows out in primary, secondary, total order', () => {
+    const { defects, rest } = partitionDefectRows([
+      row({ key: 'moisture' }),
+      row({ key: 'total_defects' }),
+      row({ key: 'primary_defects' }),
+      row({ key: 'secondary_defects' }),
+      row({ key: 'screen_16' }),
+    ])
+    expect(defects.map(d => d.key)).toEqual([
+      'primary_defects', 'secondary_defects', 'total_defects',
+    ])
+    expect(rest.map(r => r.key)).toEqual(['moisture', 'screen_16'])
+  })
+
+  it('groups two of three, keeping left-to-right order', () => {
+    const { defects, rest } = partitionDefectRows([
+      row({ key: 'total_defects' }),
+      row({ key: 'secondary_defects' }),
+      row({ key: 'moisture' }),
+    ])
+    expect(defects.map(d => d.key)).toEqual(['secondary_defects', 'total_defects'])
+    expect(rest.map(r => r.key)).toEqual(['moisture'])
+  })
+
+  it('leaves a lone defect row in place rather than making a one-column grid', () => {
+    const rows = [row({ key: 'total_defects' }), row({ key: 'moisture' })]
+    const { defects, rest } = partitionDefectRows(rows)
+    expect(defects).toEqual([])
+    expect(rest).toEqual(rows)
+  })
+
+  it('is a no-op when no defect rows are configured', () => {
+    const rows = [row({ key: 'moisture' }), row({ key: 'screen_16' })]
+    const { defects, rest } = partitionDefectRows(rows)
+    expect(defects).toEqual([])
+    expect(rest).toEqual(rows)
+  })
+
+  it('carries each row\'s own pass/fail through untouched', () => {
+    const { defects } = partitionDefectRows([
+      row({ key: 'primary_defects', passed: true, actual: '0' }),
+      row({ key: 'secondary_defects', passed: false, actual: '27' }),
+      row({ key: 'total_defects', passed: false, actual: '27' }),
+    ])
+    expect(defects.map(d => [d.key, d.passed, d.actual])).toEqual([
+      ['primary_defects', true, '0'],
+      ['secondary_defects', false, '27'],
+      ['total_defects', false, '27'],
+    ])
   })
 })
 
