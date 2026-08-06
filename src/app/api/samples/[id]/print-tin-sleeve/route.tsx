@@ -8,6 +8,7 @@ import {
   buildSleeveLabelFields,
   toSleeveSampleType,
   resolveQualityName,
+  resolveCompanyName,
   sumSleeveQuantityMt,
   orderSleeveCertificates,
 } from '@/lib/sleeve-label-data'
@@ -52,10 +53,10 @@ export async function GET(
         equivalent_60kg_bags,
         quality_name,
         hide_exporter_on_label,
-        exporter:companies!samples_exporter_id_fkey(name),
-        seller:companies!samples_seller_id_fkey(name),
-        client:companies!samples_client_id_fkey(name),
-        roaster:companies!samples_roaster_id_fkey(name),
+        exporter:companies!samples_exporter_id_fkey(name, fantasy_name),
+        seller:companies!samples_seller_id_fkey(name, fantasy_name),
+        client:companies!samples_client_id_fkey(name, fantasy_name),
+        roaster:companies!samples_roaster_id_fkey(name, fantasy_name),
         quality_spec:client_qualities(
           custom_name,
           template:quality_templates(name_en, name_pt, name_es)
@@ -148,11 +149,13 @@ export async function GET(
       exporterSampleNumber: s.exporter_sample_number,
       certificateNumbers: certNumbers,
       certifiedAt,
-      sellerName: s.hide_exporter_on_label ? null : (s.seller?.name || s.exporter?.name || null),
+      sellerName: s.hide_exporter_on_label
+        ? null
+        : (resolveCompanyName(s.seller) || resolveCompanyName(s.exporter)),
       sellerRef: s.exporter_contract_nr,
-      clientName: s.client?.name || null,
+      clientName: resolveCompanyName(s.client),
       clientRef: s.buyer_contract_nr,
-      roasterName: s.roaster?.name || null,
+      roasterName: resolveCompanyName(s.roaster),
       quality: resolveQualityName(s.quality_spec, s.quality_name),
       bagCount: s.bag_count,
       bagWeightKg: s.bag_weight_kg,

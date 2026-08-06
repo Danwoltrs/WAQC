@@ -7,6 +7,7 @@ import {
   orderSleeveCertificates,
   toSleeveSampleType,
   resolveQualityName,
+  resolveCompanyName,
   buildSleeveLabelFields,
   type SleeveLabelSource,
 } from './sleeve-label-data'
@@ -282,5 +283,28 @@ describe('buildSleeveLabelFields', () => {
   it('never leaks the internal reference', () => {
     const f = buildSleeveLabelFields(base)
     expect(JSON.stringify(f)).not.toContain('SAN-')
+  })
+})
+
+describe('resolveCompanyName', () => {
+  it('prefers the trade name', () => {
+    expect(resolveCompanyName({ name: 'Syngenta AVC SA', fantasy_name: 'Syngenta' })).toBe('Syngenta')
+  })
+
+  it('falls back to the legal name when there is no trade name', () => {
+    expect(resolveCompanyName({ name: 'Blaser Trading AG', fantasy_name: null })).toBe('Blaser Trading AG')
+  })
+
+  it('treats a blank trade name as absent', () => {
+    expect(resolveCompanyName({ name: 'Cocatrel', fantasy_name: '   ' })).toBe('Cocatrel')
+  })
+
+  it('returns null when the company is missing entirely', () => {
+    expect(resolveCompanyName(null)).toBeNull()
+    expect(resolveCompanyName(undefined)).toBeNull()
+  })
+
+  it('returns null when neither name is set', () => {
+    expect(resolveCompanyName({ name: null, fantasy_name: null })).toBeNull()
   })
 })

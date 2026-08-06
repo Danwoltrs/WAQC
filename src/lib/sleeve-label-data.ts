@@ -210,6 +210,25 @@ export function resolveQualityName(
   return null
 }
 
+export interface CompanyNameLike {
+  name?: string | null
+  fantasy_name?: string | null
+}
+
+/**
+ * The name to print for a counterparty.
+ *
+ * Labels carry the trade name (nome fantasia) — nobody in the trade says
+ * "Syngenta AVC SA". The legal name is the fallback, and stays authoritative
+ * everywhere else: certificates, contracts, correspondence.
+ */
+export function resolveCompanyName(company: CompanyNameLike | null | undefined): string | null {
+  if (!company) return null
+  const trade = (company.fantasy_name || '').trim()
+  if (trade) return trade
+  return (company.name || '').trim() || null
+}
+
 /** "Cocatrel (34680)", "OFI", or null when there is no name to print. */
 function party(name?: string | null, ref?: string | null): string | null {
   const n = (name || '').trim()
