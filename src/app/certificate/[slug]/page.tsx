@@ -10,7 +10,7 @@ import {
   type CuppingScoreRow,
 } from '@/lib/quality-resolvers'
 import { resolveCompanyName } from '@/lib/sleeve-label-data'
-import { buildChecklistRows } from '@/lib/certificate-checklist'
+import { buildChecklistRows, screenDirection } from '@/lib/certificate-checklist'
 import type { CertificateView, AttributeRail, ScreenBar } from './_components/types'
 import { Verdict } from './_components/verdict'
 import { LotIdentity } from './_components/lot-identity'
@@ -80,7 +80,9 @@ async function getCertificateInfo(slug: string) {
   // Get certificate
   const { data: certificate } = await supabase
     .from('certificates')
-    .select('id, certificate_number, status, is_rejected, created_at, pdf_url')
+    .select(
+      'id, certificate_number, status, is_rejected, created_at, pdf_url, compliance_violations, override_comment',
+    )
     .eq('sample_id', sample.id)
     .is('sample_contract_id', null)
     .order('created_at', { ascending: false })
@@ -131,6 +133,11 @@ async function getCertificateInfo(slug: string) {
     masterCupperId = session?.master_cupper_id || null
   }
 
+  // resolveTaintFaultCounts always returns numbers (0 when nothing was
+  // flagged), so a never-cupped lot must be told apart here — the footer
+  // shows a dash for no data, matching how Clean/Uniform already behave,
+  // rather than a confident "0" that implies it was checked.
+  const hasCuppingData = scoreRows.length > 0
   const { taints: totalTaints, faults: totalFaults } =
     resolveTaintFaultCounts(scoreRows, masterCupperId)
   const finalScores = resolveFinalScores(scoreRows, masterCupperId)
@@ -139,17 +146,20 @@ async function getCertificateInfo(slug: string) {
   const qualitySpec = sample.quality_spec as any
   const qualityName = qualitySpec?.custom_name || qualitySpec?.template?.name_en || null
   const templateParams = qualitySpec?.template?.parameters as {
-    cupping_attributes?: Array<{
-      attribute: string
-      validation_rule?: { min_value?: number; max_value?: number }
-      scale?: { min?: number; max?: number }
-    }>
+    cupping_attributes?:
+      | Array<{
+          attribute: string
+          validation_rule?: { min_value?: number; max_value?: number }
+          scale?: { min?: number; max?: number }
+        }>
+      | Record<string, { min?: number; max?: number }>
   } | undefined
 
   const attrLimitsMap: Record<string, { min?: number; max?: number }> = {}
   const attrScaleMap: Record<string, { scaleMin?: number; scaleMax?: number }> = {}
-  if (templateParams?.cupping_attributes) {
-    for (const ca of templateParams.cupping_attributes) {
+  const cuppingAttrs = templateParams?.cupping_attributes
+  if (Array.isArray(cuppingAttrs)) {
+    for (const ca of cuppingAttrs) {
       if (ca.validation_rule) {
         attrLimitsMap[ca.attribute.toLowerCase()] = {
           min: ca.validation_rule.min_value,
@@ -161,6 +171,14 @@ async function getCertificateInfo(slug: string) {
           scaleMin: ca.scale.min,
           scaleMax: ca.scale.max,
         }
+      }
+    }
+  } else if (cuppingAttrs && typeof cuppingAttrs === 'object') {
+    // Record<string, {min, max}> shape (see compliance-criteria.ts) — carries
+    // limits directly and no scale, so scales fall back to the 0–5 default.
+    for (const [attr, limits] of Object.entries(cuppingAttrs)) {
+      if (limits && typeof limits === 'object') {
+        attrLimitsMap[attr.toLowerCase()] = { min: limits.min, max: limits.max }
       }
     }
   }
@@ -214,11 +232,17 @@ async function getCertificateInfo(slug: string) {
     )
   }
 
-  // Screens: grams in storage, percentages everywhere else. A screen is "below
-  // the floor" when a failing minimum criterion names it.
+  // Screens: grams in storage, percentages everywhere else. A screen dims
+  // when it fails a MINIMUM constraint — never merely for exceeding a
+  // maximum, which would visually read as "too low" for the opposite
+  // problem. `screenDirection` reads the criterion's key suffix, the same
+  // structural signal certificate-checklist.ts uses for its own limit
+  // formatting.
   const screenPercentages = screenGramsToPercent(greenBean?.screen_sizes)
-  const failingScreens = new Set(
-    criteria.filter(c => c.key.startsWith('screen_') && !c.passed).map(c => c.label),
+  const failingMinScreens = new Set(
+    criteria
+      .filter(c => c.key.startsWith('screen_') && !c.passed && screenDirection(c.key) === 'min')
+      .map(c => c.label),
   )
   const screens: ScreenBar[] = screenPercentages
     ? Object.entries(screenPercentages)
@@ -232,14 +256,24 @@ async function getCertificateInfo(slug: string) {
           return {
             label: isPan ? 'Pan' : `Scr. ${size.replace(/\D/g, '') || size}`,
             percent,
-            belowFloor: isPan || failingScreens.has(`Screen ${size}`),
+            // Pan dims unconditionally — a deliberate visual choice, not a
+            // spec judgement.
+            dim: isPan || failingMinScreens.has(`Screen ${size}`),
           }
         })
     : []
 
-  const screenCriterion = criteria.find(c => c.key.startsWith('screen_'))
-  const screenSpecNote = screenCriterion
-    ? `Spec requires ${screenCriterion.sublabel} on ${screenCriterion.label.toLowerCase()}. This lot: ${typeof screenCriterion.actual === 'number' ? screenCriterion.actual.toFixed(1) : screenCriterion.actual}%.`
+  // A template can configure several screen constraints (e.g. a minimum on
+  // one screen and a maximum on another, or both on the same one) — state
+  // all of them rather than only the first the engine happened to emit.
+  const screenCriteria = criteria.filter(c => c.key.startsWith('screen_'))
+  const screenSpecNote = screenCriteria.length > 0
+    ? `Spec requires ${screenCriteria
+        .map(c => {
+          const actual = typeof c.actual === 'number' ? c.actual.toFixed(1) : c.actual
+          return `${c.sublabel} on ${c.label.toLowerCase()} (this lot: ${actual}%)`
+        })
+        .join('; ')}.`
     : null
 
   return {
@@ -250,8 +284,8 @@ async function getCertificateInfo(slug: string) {
     qualityName,
     screenSizes: screenPercentages,
     totalDefects,
-    totalTaints,
-    totalFaults,
+    totalTaints: hasCuppingData ? totalTaints : null,
+    totalFaults: hasCuppingData ? totalFaults : null,
     cleanCup,
     uniformCup,
     rows,
@@ -463,6 +497,8 @@ export default async function CertificatePage({ params }: PageProps) {
     cleanCup: info.cleanCup,
     uniformCup: info.uniformCup,
     pdfUrl: `/api/certificate/${slug}/pdf`,
+    complianceViolations: info.certificate?.compliance_violations ?? null,
+    overrideComment: info.certificate?.override_comment ?? null,
   }
 
   return (

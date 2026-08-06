@@ -42,8 +42,11 @@ const isScreen = (c: ComplianceCriterion) => c.key.startsWith('screen_')
  * Called on the criterion's own key, before `buildChecklistRows` may rename
  * the row's key with a `__N` uniqueness suffix for a duplicate screen — so
  * that later rename never reaches this function.
+ *
+ * Exported so `page.tsx` can tell a below-minimum screen failure apart from
+ * an above-maximum one when deciding which bars to dim.
  */
-function screenDirection(key: string): 'min' | 'max' | 'exact' {
+export function screenDirection(key: string): 'min' | 'max' | 'exact' {
   if (key.endsWith('_exact')) return 'exact'
   if (key.endsWith('_max')) return 'max'
   if (key.endsWith('_min')) return 'min'
@@ -169,7 +172,13 @@ export function buildChecklistRows(
       actual: allPassed ? 'Pass' : 'Fail',
       operator: allPassed ? null : '>',
       limit: null,
-      hasThreshold: integrity.some(c => c.limit !== null && c.limit !== undefined),
+      // A configured limit earns the marker, but so does an actual failure —
+      // the engine's default-reject taint rule emits `limit: null` on
+      // purpose (no tolerance was configured, so no number to show), and a
+      // lot rejected solely by that rule must still show as failed here, not
+      // as a threshold-less grey row sitting under a REJECTED verdict.
+      hasThreshold: integrity.some(c => c.limit !== null && c.limit !== undefined) ||
+        integrity.some(c => !c.passed),
       passed: allPassed,
     })
   }
@@ -200,4 +209,58 @@ export function verdictFailures(rows: ChecklistRow[]): ChecklistRow[] {
   )
   if (!componentFailed) return failures
   return failures.filter(r => r.key !== 'total_defects')
+}
+
+/** One line of the verdict's reason block: either a checklist row rendered
+ * with its value and limit, or a plain prose sentence. */
+export type VerdictReason =
+  | { kind: 'row'; row: ChecklistRow }
+  | { kind: 'text'; text: string }
+
+/**
+ * `certificates.compliance_violations` defensively, unpacked.
+ *
+ * It is a Postgres `Json` column and can hold anything — the override route
+ * clears it to `null` on approval, the certify route writes a string array,
+ * and nothing stops a future writer from putting something else there. A
+ * non-array, or an array with no usable strings, is treated as absent rather
+ * than thrown on.
+ */
+export function parseComplianceViolations(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  return value.filter((v): v is string => typeof v === 'string' && v.trim().length > 0)
+}
+
+/**
+ * The verdict block's reason lines for a REJECTED certificate, in priority
+ * order — never leaves a bare badge with nothing under it:
+ *
+ * 1. Live failing rows (`verdictFailures`) — the current template re-judged
+ *    against the current data. Covers the ordinary case.
+ * 2. `compliance_violations` — the sentences recorded at certification time.
+ *    Covers a template edited since certification (the live re-evaluation no
+ *    longer disagrees with the cert) and a staff override to rejected that
+ *    deliberately keeps them.
+ * 3. `override_comment` — a staff override with no preserved violations
+ *    (e.g. overriding an approved cert to rejected, which never had any).
+ * 4. A plain acknowledgement, so there is always something to show.
+ *
+ * Callers gate this on `status === 'REJECTED'` themselves — an approved
+ * certificate never reaches here.
+ */
+export function resolveVerdictReasons(
+  rows: ChecklistRow[],
+  complianceViolations: unknown,
+  overrideComment: string | null,
+): VerdictReason[] {
+  const failures = verdictFailures(rows)
+  if (failures.length > 0) return failures.map(row => ({ kind: 'row' as const, row }))
+
+  const violations = parseComplianceViolations(complianceViolations)
+  if (violations.length > 0) return violations.map(text => ({ kind: 'text' as const, text }))
+
+  const comment = overrideComment?.trim()
+  if (comment) return [{ kind: 'text' as const, text: `Laboratory decision: ${comment}` }]
+
+  return [{ kind: 'text' as const, text: 'Rejected by laboratory decision.' }]
 }

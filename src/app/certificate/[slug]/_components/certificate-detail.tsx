@@ -57,7 +57,7 @@ export function CertificateDetail({ view }: { view: CertificateView }) {
                 </div>
                 <div className="flex-1 h-2 rounded bg-[#3b3b39] overflow-hidden">
                   <div
-                    className={`h-full rounded ${screen.belowFloor ? 'bg-[#4e5a2b]' : 'bg-[#6d7f37]'}`}
+                    className={`h-full rounded ${screen.dim ? 'bg-[#4e5a2b]' : 'bg-[#6d7f37]'}`}
                     style={{ width: `${Math.min(100, Math.max(0, screen.percent))}%` }}
                   />
                 </div>

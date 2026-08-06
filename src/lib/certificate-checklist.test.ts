@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest'
-import { buildChecklistRows, verdictFailures, type ChecklistRow } from './certificate-checklist'
+import {
+  buildChecklistRows,
+  verdictFailures,
+  resolveVerdictReasons,
+  parseComplianceViolations,
+  type ChecklistRow,
+} from './certificate-checklist'
 import type { ComplianceCriterion } from './compliance-criteria'
 
 const cup = { cleanCup: true, uniformCup: true }
@@ -124,6 +130,27 @@ describe('buildChecklistRows', () => {
     expect(rows.find(r => r.key === 'cup_integrity')?.hasThreshold).toBe(false)
   })
 
+  // Finding 3 — the engine's default-reject taint rule emits `limit: null` on
+  // purpose (no tolerance was configured), but the row must still show a fail
+  // marker when it actually failed — a threshold-less grey row contradicts a
+  // verdict block that names it as the reason.
+  it('shows the fail marker for a failing criterion even with no configured limit', () => {
+    const rows = buildChecklistRows([
+      criterion({
+        key: 'cupping_taints',
+        label: 'Cupping taints',
+        sublabel: 'no tolerance configured',
+        actual: 2,
+        operator: '>',
+        limit: null,
+        passed: false,
+      }),
+    ], cup)
+    const row = rows.find(r => r.key === 'cup_integrity')
+    expect(row?.hasThreshold).toBe(true)
+    expect(row?.passed).toBe(false)
+  })
+
   it('returns nothing for no criteria', () => {
     expect(buildChecklistRows([], { cleanCup: null, uniformCup: null })).toEqual([])
   })
@@ -228,5 +255,77 @@ describe('verdictFailures', () => {
 
   it('returns nothing when everything passed', () => {
     expect(verdictFailures([row({ key: 'total_defects' })])).toEqual([])
+  })
+})
+
+describe('parseComplianceViolations', () => {
+  it('passes through an array of strings', () => {
+    expect(parseComplianceViolations(['Total defects: 22 exceeds limit (21)'])).toEqual([
+      'Total defects: 22 exceeds limit (21)',
+    ])
+  })
+
+  it('drops blank and non-string entries', () => {
+    expect(parseComplianceViolations(['ok', '', '   ', 42, null, { x: 1 }])).toEqual(['ok'])
+  })
+
+  it('treats a non-array value as absent', () => {
+    expect(parseComplianceViolations('not an array')).toEqual([])
+    expect(parseComplianceViolations({ some: 'object' })).toEqual([])
+    expect(parseComplianceViolations(null)).toEqual([])
+    expect(parseComplianceViolations(undefined)).toEqual([])
+  })
+})
+
+// Finding 1 — a manually overridden or template-edited-since-certification
+// rejection must never leave the verdict block empty. These four branches are
+// the precedence in order.
+describe('resolveVerdictReasons', () => {
+  function row(over: Partial<ChecklistRow>): ChecklistRow {
+    return {
+      key: 'k', label: 'L', sublabel: null, actual: '0',
+      operator: null, limit: null, hasThreshold: true, passed: true, ...over,
+    }
+  }
+
+  it('1. prefers live failing rows when present', () => {
+    const reasons = resolveVerdictReasons(
+      [row({ key: 'total_defects', passed: false })],
+      ['Total defects: 22 exceeds limit (21)'],
+      'Some override comment',
+    )
+    expect(reasons).toEqual([{ kind: 'row', row: expect.objectContaining({ key: 'total_defects' }) }])
+  })
+
+  it('2. falls back to stored compliance_violations when no live row fails', () => {
+    const reasons = resolveVerdictReasons(
+      [row({ key: 'total_defects', passed: true })],
+      ['Total defects: 22 exceeds limit (21)', 'Moisture: 13.2% exceeds maximum (13%)'],
+      null,
+    )
+    expect(reasons).toEqual([
+      { kind: 'text', text: 'Total defects: 22 exceeds limit (21)' },
+      { kind: 'text', text: 'Moisture: 13.2% exceeds maximum (13%)' },
+    ])
+  })
+
+  it('3. falls back to the override comment when there are no stored violations', () => {
+    const reasons = resolveVerdictReasons([row({ passed: true })], null, 'Buyer requested rejection')
+    expect(reasons).toEqual([{ kind: 'text', text: 'Laboratory decision: Buyer requested rejection' }])
+  })
+
+  it('4. falls back to a bare acknowledgement when nothing else is available', () => {
+    const reasons = resolveVerdictReasons([row({ passed: true })], null, null)
+    expect(reasons).toEqual([{ kind: 'text', text: 'Rejected by laboratory decision.' }])
+  })
+
+  it('treats a malformed compliance_violations value as absent and keeps falling back', () => {
+    const reasons = resolveVerdictReasons([row({ passed: true })], { not: 'an array' }, 'Staff note')
+    expect(reasons).toEqual([{ kind: 'text', text: 'Laboratory decision: Staff note' }])
+  })
+
+  it('treats an override comment of only whitespace as absent', () => {
+    const reasons = resolveVerdictReasons([row({ passed: true })], null, '   ')
+    expect(reasons).toEqual([{ kind: 'text', text: 'Rejected by laboratory decision.' }])
   })
 })

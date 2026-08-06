@@ -1,19 +1,23 @@
-import { verdictFailures } from '@/lib/certificate-checklist'
+import { resolveVerdictReasons } from '@/lib/certificate-checklist'
 import type { CertificateView } from './types'
 
 /**
  * The answer to the only question a scanner has: is this lot approved, and if
  * not, why not.
  *
- * Failure lines come from the same rows the checklist renders, so the page
- * cannot name a reason the checklist omits. Total defects is suppressed when
- * primary or secondary already failed — see verdictFailures. On approval there
- * are no lines at all: no green mirror of the failure block, no "0 issues
- * found". The badge says everything.
+ * Reason lines come from `resolveVerdictReasons`, in priority order: live
+ * failing checklist rows first (so the page never names a reason the
+ * checklist omits), then the violations recorded at certification, then a
+ * staff override's comment, then a bare acknowledgement. A rejected
+ * certificate always shows SOMETHING here — never a bare badge. On approval
+ * there are no lines at all: no green mirror of the failure block, no "0
+ * issues found". The badge says everything.
  */
 export function Verdict({ view }: { view: CertificateView }) {
   const rejected = view.status === 'REJECTED'
-  const failures = verdictFailures(view.rows)
+  const reasons = rejected
+    ? resolveVerdictReasons(view.rows, view.complianceViolations, view.overrideComment)
+    : []
 
   return (
     <div
@@ -42,23 +46,41 @@ export function Verdict({ view }: { view: CertificateView }) {
         </span>
       </div>
 
-      {rejected && failures.length > 0 && (
+      {rejected && reasons.length > 0 && (
         <div className="mt-3 border-l-[3px] border-[#d9534f] pl-[11px]">
-          {failures.map(row => (
-            <div key={row.key} className="flex items-baseline justify-between gap-3 mt-[5px] first:mt-0">
-              <span className="text-sm text-[#f2efe6]">{row.label}</span>
-              <span className="text-sm tabular-nums text-[#a8a69d] whitespace-nowrap">
-                <b className="text-[15px] font-bold text-[#d9534f]">{row.actual}</b>
-                {row.limit && (
-                  <>
-                    {' '}
-                    {row.operator === '<' ? '<' : row.operator === '>' ? '>' : '≠'}{' '}
-                    <span className="text-[#7c7a73]">{row.limit}</span>
-                  </>
-                )}
-              </span>
-            </div>
-          ))}
+          {reasons.map((reason, i) =>
+            reason.kind === 'row' ? (
+              <div
+                key={reason.row.key}
+                className="flex items-baseline justify-between gap-3 mt-[5px] first:mt-0"
+              >
+                <span className="text-sm text-[#f2efe6]">{reason.row.label}</span>
+                <span className="text-sm tabular-nums text-[#a8a69d] whitespace-nowrap">
+                  <b className="text-[15px] font-bold text-[#d9534f]">{reason.row.actual}</b>
+                  {reason.row.limit ? (
+                    <>
+                      {' '}
+                      {reason.row.operator === '<' ? '<' : reason.row.operator === '>' ? '>' : '≠'}{' '}
+                      <span className="text-[#7c7a73]">{reason.row.limit}</span>
+                    </>
+                  ) : reason.row.sublabel ? (
+                    // No limit to state (e.g. a grouped row, or a default-reject
+                    // rule with no configured tolerance) — fall back to the
+                    // sublabel so the line still says something, e.g. "3 of 7
+                    // inside target range" rather than just "Fail".
+                    <span className="text-[#7c7a73]"> {reason.row.sublabel}</span>
+                  ) : null}
+                </span>
+              </div>
+            ) : (
+              <div
+                key={`reason-text-${i}`}
+                className="text-sm text-[#f2efe6] mt-[5px] first:mt-0"
+              >
+                {reason.text}
+              </div>
+            ),
+          )}
           {view.qualityName && (
             <div className="text-[#7c7a73] text-[12.5px] mt-1.5">
               Everything else within {view.qualityName} spec.

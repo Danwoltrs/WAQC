@@ -14,8 +14,13 @@ export interface AttributeRail {
 export interface ScreenBar {
   label: string
   percent: number
-  /** below the spec floor → dim olive */
-  belowFloor: boolean
+  /**
+   * Render this bar dim olive rather than full olive. True for Pan (a
+   * deliberate visual choice, independent of any spec) and for a screen
+   * failing a MINIMUM constraint — never for one merely exceeding a maximum,
+   * which would visually read as "too low" for the opposite problem.
+   */
+  dim: boolean
 }
 
 /**
@@ -39,9 +44,20 @@ export interface CertificateView {
   screens: ScreenBar[]
   screenSpecNote: string | null
   attributes: AttributeRail[]
-  taints: number
-  faults: number
+  /** null when the lot was never cupped — render a dash, not a false "0". */
+  taints: number | null
+  faults: number | null
   cleanCup: boolean | null
   uniformCup: boolean | null
   pdfUrl: string
+  /**
+   * The sentences recorded on `certificates.compliance_violations` at
+   * certification (or preserved through a staff override). Raw and
+   * unvalidated — it is a Postgres `Json` column — parsed defensively by
+   * `resolveVerdictReasons`.
+   */
+  complianceViolations: unknown
+  /** A staff override's required comment, when this certificate's status was
+   * hand-flipped via `/api/certificates/[id]/override`. */
+  overrideComment: string | null
 }

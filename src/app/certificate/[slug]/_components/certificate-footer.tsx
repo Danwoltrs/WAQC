@@ -90,8 +90,8 @@ export function CertificateFooter({ view }: { view: CertificateView }) {
   }
 
   const chips: Array<{ k: string; v: string; state: number | boolean | null }> = [
-    { k: 'Taints', v: String(view.taints), state: view.taints },
-    { k: 'Faults', v: String(view.faults), state: view.faults },
+    { k: 'Taints', v: view.taints === null ? '–' : String(view.taints), state: view.taints },
+    { k: 'Faults', v: view.faults === null ? '–' : String(view.faults), state: view.faults },
     {
       k: 'Clean',
       v: view.cleanCup === null ? '–' : view.cleanCup ? 'Yes' : 'No',
