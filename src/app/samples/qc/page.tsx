@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
@@ -183,33 +183,18 @@ const formatSampleType = (type: string | undefined): string => {
   return typeMap[type] || type.toUpperCase()
 }
 
-// The table's header row pins directly below the page header. Its offset is
-// measured rather than hard-coded, because the page header changes height when
-// it condenses and can wrap on a narrow window. The background must be opaque
-// or rows scroll through it, and the separator is an inset shadow because a
-// collapsed-border bottom is dropped once a cell is sticky.
+// The table's header row pins directly below the filter bar. Its offset is
+// measured rather than hard-coded, because the bar wraps to a second line on a
+// narrow window. The background must be opaque or rows scroll through it, and
+// the separator is an inset shadow because a collapsed-border bottom is dropped
+// once a cell is sticky.
 const TABLE_HEAD_STICKY =
   'sticky z-[5] bg-muted shadow-[inset_0_-1px_0_hsl(var(--border))]'
 const TABLE_HEAD_CELL =
   `${TABLE_HEAD_STICKY} text-left py-2.5 px-3 text-[10.5px] font-semibold uppercase tracking-wider text-muted-foreground`
 
-// The page header sits 24px (the container's p-6) below the top of the scroll
-// container, so it is pinned from that point on.
-const HEADER_PIN_OFFSET = 24
-// Used until the header has been measured, so the first paint is not obviously
-// wrong: pt-6 + a 40px control row + pb-4.
-const DEFAULT_HEADER_HEIGHT = 80
-
-/** The nearest ancestor that actually scrolls, or null if the window does. */
-function findScrollParent(node: HTMLElement | null): HTMLElement | null {
-  let el = node?.parentElement ?? null
-  while (el) {
-    const overflowY = window.getComputedStyle(el).overflowY
-    if (overflowY === 'auto' || overflowY === 'scroll') return el
-    el = el.parentElement
-  }
-  return null
-}
+// Used until the bar has been measured: pt-3 + a 36px control row + pb-3.
+const DEFAULT_HEADER_HEIGHT = 60
 
 export default function SamplesPage() {
   const { profile } = useAuth()
@@ -230,14 +215,13 @@ export default function SamplesPage() {
   const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
-  // The header swaps its title for a compact filter bar once the list is
-  // scrolled, so the controls stay reachable without scrolling back up.
+  // The header is a compact filter bar: search, stage chips, the advanced
+  // filters and the actions, all in one pinned row.
   //
   // Held in state, not a ref: MainLayout renders a spinner instead of its
   // children while auth resolves, so on the first commit this node does not
   // exist yet and a mount-once effect would wire itself to nothing.
   const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null)
-  const [condensed, setCondensed] = useState(false)
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
   const [pendingTodayIds, setPendingTodayIds] = useState<string[]>([])
   // Why the batch is empty, when it is. Without this a failing lookup and a
@@ -368,25 +352,9 @@ export default function SamplesPage() {
 
   useEffect(() => {
     if (!headerEl) return
-    const scroller = findScrollParent(headerEl)
-    // The app shell scrolls an inner div, but fall back to the window so this
-    // still works if that ever changes.
-    const target: HTMLElement | Window = scroller ?? window
-    const onScroll = () => {
-      const scrollTop = scroller ? scroller.scrollTop : window.scrollY
-      setCondensed(prev => {
-        const next = scrollTop > HEADER_PIN_OFFSET
-        return next === prev ? prev : next
-      })
-    }
-    onScroll()
-    target.addEventListener('scroll', onScroll, { passive: true })
-    return () => target.removeEventListener('scroll', onScroll)
-  }, [headerEl])
-
-  useEffect(() => {
-    if (!headerEl) return
-    const measure = () => setHeaderHeight(Math.round(headerEl.getBoundingClientRect().height))
+    // Floor, so a fractional header height leaves the pinned row a hair behind
+    // the bar rather than a hairline gap for rows to show through.
+    const measure = () => setHeaderHeight(Math.floor(headerEl.getBoundingClientRect().height))
     measure()
     const observer = new ResizeObserver(measure)
     observer.observe(headerEl)
@@ -1200,9 +1168,8 @@ export default function SamplesPage() {
   // (and never disabled) once cards exist, including certified/rejected samples.
   const selectedCanReprint = selectedSamples.size > 0 && samples.some(s => selectedSamples.has(s.id) && canReprintCuppingCards(s))
 
-  // Everything except the search box and the stage chips, which both bars lay
-  // out themselves. Rendered into the filter card's grid when expanded and into
-  // a popover when condensed, so the two can never drift apart.
+  // Everything except the search box and the stage chips, which the bar lays
+  // out itself. Lives behind the Filters popover.
   const advancedFilterControls = (
     <>
       <Select value={statusFilter || 'all'} onValueChange={(val) => setStatusFilter(val === 'all' ? null : val)}>
@@ -1252,30 +1219,29 @@ export default function SamplesPage() {
     { value: 'rejected', label: 'Rejected' },
   ] as const)
 
-  const renderStageChips = (compact: boolean) => stageChips.map(chip => {
+  const renderStageChips = () => stageChips.map(chip => {
     const active = workflowStageFilter === chip.value
     return (
       <button
         key={chip.label}
         type="button"
         onClick={() => setWorkflowStageFilter(chip.value)}
-        className={`${compact ? 'h-6 px-2 text-[11px]' : 'h-7 px-3 text-[12px]'} rounded-full border whitespace-nowrap transition-colors ${
+        className={`h-6 px-2 text-[11px] rounded-full border whitespace-nowrap transition-colors ${
           active
             ? 'bg-foreground text-background border-foreground'
             : 'bg-background text-muted-foreground border-border hover:border-foreground/30 hover:text-foreground'
         }`}
       >
-        {compact && chip.value === null ? 'All' : chip.label}
+        {chip.value === null ? 'All' : chip.label}
       </button>
     )
   })
 
-  const columnsMenu = (compact: boolean) => (
+  const columnsMenu = () => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className={compact ? 'h-7 text-[11px] px-2' : 'h-7 text-[12px]'}>
-          <Settings2 className={compact ? 'h-3.5 w-3.5' : 'h-3.5 w-3.5 mr-1.5'} />
-          {!compact && 'Columns'}
+        <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]" title="Toggle columns">
+          <Settings2 className="h-3.5 w-3.5" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-48">
@@ -1303,64 +1269,61 @@ export default function SamplesPage() {
         {/* Header - Sticky on desktop */}
         <div
           ref={setHeaderEl}
-          className={`sticky top-0 z-10 bg-background -mx-6 px-6 border-b md:border-0 ${
-            condensed ? 'pt-3 pb-3 border-b' : 'pt-6 pb-4'
-          }`}
+          className="sticky top-0 z-10 bg-background -mx-6 px-6 pt-3 pb-3 border-b"
         >
           <div className="flex items-center justify-between gap-3">
           <div className="min-w-0 flex-1">
-            {condensed ? (
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <div className="relative w-[200px] shrink-0">
-                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-                  <Input
-                    placeholder="Search samples..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="h-7 pl-8 text-[12px]"
-                  />
-                </div>
-                {renderStageChips(true)}
-                <Popover>
-                  <PopoverTrigger asChild>
-                    <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
-                      <Filter className="h-3.5 w-3.5 mr-1" />
-                      Filters
-                      {advancedFilterCount > 0 && (
-                        <span className="ml-1 rounded-full bg-foreground text-background px-1.5 text-[10px] leading-4">
-                          {advancedFilterCount}
-                        </span>
-                      )}
-                    </Button>
-                  </PopoverTrigger>
-                  <PopoverContent align="start" className="w-[420px]">
-                    <div className="grid grid-cols-2 gap-2">
-                      {advancedFilterControls}
-                    </div>
-                  </PopoverContent>
-                </Popover>
-                {anyFilterActive && (
-                  <button
-                    type="button"
-                    onClick={clearFilters}
-                    className="h-7 px-2 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors whitespace-nowrap"
-                  >
-                    Clear all
-                  </button>
-                )}
-                {columnsMenu(true)}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <div className="relative w-[200px] shrink-0">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search samples..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-7 pl-8 text-[12px]"
+                />
               </div>
-            ) : (
-              <h1 className="text-3xl font-bold tracking-tight">Sample Tracking</h1>
-            )}
+              {renderStageChips()}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-7 px-2 text-[11px]">
+                    <Filter className="h-3.5 w-3.5 mr-1" />
+                    Filters
+                    {advancedFilterCount > 0 && (
+                      <span className="ml-1 rounded-full bg-foreground text-background px-1.5 text-[10px] leading-4">
+                        {advancedFilterCount}
+                      </span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent align="start" className="w-[420px]">
+                  <div className="grid grid-cols-2 gap-2">
+                    {advancedFilterControls}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {anyFilterActive && (
+                <button
+                  type="button"
+                  onClick={clearFilters}
+                  className="h-7 px-2 text-[11px] text-muted-foreground/70 hover:text-foreground transition-colors whitespace-nowrap"
+                >
+                  Clear all
+                </button>
+              )}
+              {columnsMenu()}
+              <span className="text-[11px] text-muted-foreground/70 whitespace-nowrap ml-0.5">
+                {samples.length} samples
+              </span>
+            </div>
           </div>
           <div className="flex gap-2 shrink-0">
             {selectedSamples.size > 0 && (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size={condensed ? 'sm' : 'default'}>
+                  <Button variant="outline" size="sm">
                     <MoreVertical className="h-4 w-4 mr-2" />
-                    {condensed ? `Actions (${selectedSamples.size})` : `Bulk Actions (${selectedSamples.size})`}
+                    Actions ({selectedSamples.size})
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end">
@@ -1431,7 +1394,7 @@ export default function SamplesPage() {
                 lookup are both visible rather than an absent button. */}
             <Button
               variant="outline"
-              size={condensed ? 'sm' : 'default'}
+              size="sm"
               disabled={pendingTodayIds.length === 0}
               title={
                 pendingTodayError
@@ -1447,16 +1410,14 @@ export default function SamplesPage() {
             >
               <Printer className="h-4 w-4 mr-2" />
               {pendingTodayError
-                ? condensed ? 'Today unavailable' : "Today's labels unavailable"
-                : condensed
-                  ? `Today${pendingTodayIds.length > 0 ? ` · ${pendingTodayIds.length}` : ''}`
-                  : `Print today's unprinted${pendingTodayIds.length > 0 ? ` · ${pendingTodayIds.length}` : ''}`}
+                ? 'Today unavailable'
+                : `Today${pendingTodayIds.length > 0 ? ` · ${pendingTodayIds.length}` : ''}`}
             </Button>
             <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
               <DialogTrigger asChild>
-                <Button size={condensed ? 'sm' : 'default'}>
+                <Button size="sm">
                   <Plus className="h-4 w-4 mr-2" />
-                  {condensed ? 'New' : 'New Sample'}
+                  New
                 </Button>
               </DialogTrigger>
               <DialogContent className={INTAKE_DIALOG_CONTENT_CLASS}>
@@ -1471,46 +1432,6 @@ export default function SamplesPage() {
           </div>
           </div>
         </div>
-
-        {/* Filters */}
-        <Card>
-          <CardContent className="pt-6">
-            <div className="space-y-4">
-              {/* Search and Quick Filters */}
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    placeholder="Search by tracking, supplier, contract, ICO, container, sample nr, quality..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    className="pl-9"
-                  />
-                </div>
-              </div>
-
-              {/* Advanced Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-                {advancedFilterControls}
-              </div>
-
-              {/* Workflow stage chips — pill-styled, active chip in ink. */}
-              <div className="flex gap-1.5 items-center flex-wrap">
-                {renderStageChips(false)}
-                <button
-                  type="button"
-                  onClick={clearFilters}
-                  className="h-7 px-2 text-[12px] text-muted-foreground/70 hover:text-foreground transition-colors"
-                >
-                  Clear all
-                </button>
-                <div className="ml-auto">
-                  {columnsMenu(false)}
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
 
         {/* Samples Table */}
         {loading ? (
@@ -1535,11 +1456,9 @@ export default function SamplesPage() {
           </Card>
         ) : (
           <Card>
-            <CardHeader>
-              <CardTitle className="text-sm font-semibold">
-                Samples ({samples.length})
-              </CardTitle>
-            </CardHeader>
+            {/* No card header: CardContent's pt-0 then puts the pinned row at
+                the card's own top edge, so nothing is left to show in the seam
+                between it and the filter bar. The count moved into the bar. */}
             <CardContent>
               {/* No overflow wrapper: it would become the sticky header's
                   scroll container and stop it pinning to the page. The table is
