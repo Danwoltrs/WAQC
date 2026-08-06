@@ -8,6 +8,8 @@ import {
   buildSleeveLabelFields,
   toSleeveSampleType,
   resolveQualityName,
+  sumSleeveQuantityMt,
+  orderSleeveCertificates,
 } from '@/lib/sleeve-label-data'
 import path from 'path'
 import fs from 'fs'
@@ -56,6 +58,7 @@ export async function POST(request: NextRequest) {
         bags_quantity_mt,
         equivalent_60kg_bags,
         quality_name,
+        hide_exporter_on_label,
         exporter:companies!samples_exporter_id_fkey(name),
         seller:companies!samples_seller_id_fkey(name),
         client:companies!samples_client_id_fkey(name),
@@ -106,6 +109,34 @@ export async function POST(request: NextRequest) {
 
     const printableIds = printable.map(s => s.id)
 
+    // Sub-contracts: their tonnage rolls up into the mother's foot quantity
+    // (one tin covers the whole lot), and their sort_order fixes the order of
+    // the sub-contract certificate numbers in the Cert. field.
+    const { data: contractRows, error: contractError } = await supabase
+      .from('sample_contracts')
+      .select('id, sample_id, bags_quantity_mt, sort_order')
+      .in('sample_id', printableIds)
+
+    if (contractError) {
+      console.error('Error fetching sub-contracts for tin sleeves:', contractError)
+      return NextResponse.json({
+        error: 'Failed to fetch sub-contracts',
+        details: contractError.message || String(contractError),
+      }, { status: 500 })
+    }
+
+    const subMtBySample: Record<string, Array<number | null>> = {}
+    const sortOrderByContractId: Record<string, number | null> = {}
+    for (const row of (contractRows || []) as Array<{
+      id: string
+      sample_id: string
+      bags_quantity_mt: number | null
+      sort_order: number | null
+    }>) {
+      ;(subMtBySample[row.sample_id] ||= []).push(row.bags_quantity_mt)
+      sortOrderByContractId[row.id] = row.sort_order
+    }
+
     // One label per mother sample; every certificate belonging to it (mother
     // first, then each sub-contract's) is comma-joined into the Cert. field.
     const { data: certRows, error: certError } = await supabase
@@ -123,28 +154,26 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    const certsBySample: Record<string, { numbers: string[]; certifiedAt: string | null }> = {}
+    const certRowsBySample: Record<string, Array<{
+      sample_contract_id: string | null
+      certificate_number: string
+      created_at: string
+    }>> = {}
     for (const row of (certRows || []) as Array<{
       sample_id: string
       sample_contract_id: string | null
       certificate_number: string
       created_at: string
     }>) {
-      const entry = certsBySample[row.sample_id] || { numbers: [], certifiedAt: null }
-      // Mother certificate leads and sets the certified date.
-      if (row.sample_contract_id === null) {
-        entry.numbers.unshift(row.certificate_number)
-        entry.certifiedAt = row.created_at
-      } else {
-        entry.numbers.push(row.certificate_number)
-        if (!entry.certifiedAt) entry.certifiedAt = row.created_at
-      }
-      certsBySample[row.sample_id] = entry
+      ;(certRowsBySample[row.sample_id] ||= []).push(row)
     }
 
     const labelsWithQR: TinSleeveLabelData[] = await Promise.all(
       printable.map(async (sample: any) => {
-        const certs = certsBySample[sample.id] || { numbers: [], certifiedAt: null }
+        const certs = orderSleeveCertificates(
+          certRowsBySample[sample.id] || [],
+          sortOrderByContractId,
+        )
 
         const fields = buildSleeveLabelFields({
           sampleType: toSleeveSampleType(sample.sample_type),
@@ -152,7 +181,9 @@ export async function POST(request: NextRequest) {
           exporterSampleNumber: sample.exporter_sample_number,
           certificateNumbers: certs.numbers,
           certifiedAt: certs.certifiedAt,
-          sellerName: sample.seller?.name || sample.exporter?.name || null,
+          sellerName: sample.hide_exporter_on_label
+            ? null
+            : (sample.seller?.name || sample.exporter?.name || null),
           sellerRef: sample.exporter_contract_nr,
           clientName: sample.client?.name || null,
           clientRef: sample.buyer_contract_nr,
@@ -161,7 +192,7 @@ export async function POST(request: NextRequest) {
           bagCount: sample.bag_count,
           bagWeightKg: sample.bag_weight_kg,
           bagType: sample.bag_type,
-          quantityMt: sample.bags_quantity_mt,
+          quantityMt: sumSleeveQuantityMt(sample.bags_quantity_mt, subMtBySample[sample.id] || []),
           equivalent60kgBags: sample.equivalent_60kg_bags,
         })
 

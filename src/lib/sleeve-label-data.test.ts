@@ -3,6 +3,8 @@ import {
   withCertifiedMonth,
   formatLabelDate,
   formatSleeveQuantity,
+  sumSleeveQuantityMt,
+  orderSleeveCertificates,
   toSleeveSampleType,
   resolveQualityName,
   buildSleeveLabelFields,
@@ -84,6 +86,94 @@ describe('formatSleeveQuantity', () => {
   it('returns null when there is nothing to say', () => {
     expect(formatSleeveQuantity({ ...base, bagCount: null, bagWeightKg: null, equivalent60kgBags: null }))
       .toBeNull()
+  })
+
+  it('falls through to the bag-derived figure when the stored MT is zero', () => {
+    // A stored 0 means "not filled in". Printing "0.0 MT" on a tin holding
+    // 333 bags is worse than deriving it.
+    expect(formatSleeveQuantity({ ...base, quantityMt: 0 }))
+      .toBe('333 bags in 60 kg jute bags | 20.0 MT')
+    expect(formatSleeveQuantity({ ...base, bagType: 'bulk', quantityMt: 0, equivalent60kgBags: 360 }))
+      .toBe('equiv. 360 bags in 60 kg | 21.6 MT')
+  })
+
+  it('prints the mother plus sub-contract total, not just the mother', () => {
+    // One tin covers the whole lot: 8 MT mother + 6 + 6 sub-contracts.
+    const quantityMt = sumSleeveQuantityMt(8, [6, 6])
+    expect(formatSleeveQuantity({ ...base, quantityMt }))
+      .toBe('333 bags in 60 kg jute bags | 20.0 MT')
+  })
+})
+
+describe('sumSleeveQuantityMt', () => {
+  it('sums the mother and every sub-contract', () => {
+    expect(sumSleeveQuantityMt(8, [6, 6])).toBe(20)
+  })
+
+  it('returns the mother figure when there are no sub-contracts', () => {
+    expect(sumSleeveQuantityMt(19.2, [])).toBe(19.2)
+  })
+
+  it('ignores sub-contracts with no stored tonnage', () => {
+    expect(sumSleeveQuantityMt(8, [null, 6, undefined])).toBe(14)
+  })
+
+  it('sums the sub-contracts when only the mother is missing', () => {
+    expect(sumSleeveQuantityMt(null, [6, 6])).toBe(12)
+  })
+
+  it('returns null when nothing at all is stored, so the caller derives it', () => {
+    expect(sumSleeveQuantityMt(null, [])).toBeNull()
+    expect(sumSleeveQuantityMt(undefined, [null, undefined])).toBeNull()
+  })
+})
+
+describe('orderSleeveCertificates', () => {
+  const mother = { sample_contract_id: null, certificate_number: 'BR-036991/26', created_at: '2026-07-29T12:00:00.000Z' }
+  const subA = { sample_contract_id: 'c-a', certificate_number: 'BR-036992/26', created_at: '2026-07-29T12:00:01.000Z' }
+  const subB = { sample_contract_id: 'c-b', certificate_number: 'BR-036993/26', created_at: '2026-07-29T12:00:01.000Z' }
+  const subC = { sample_contract_id: 'c-c', certificate_number: 'BR-036994/26', created_at: '2026-07-29T12:00:01.000Z' }
+
+  it('leads with the mother certificate', () => {
+    const { numbers } = orderSleeveCertificates([subA, mother], { 'c-a': 0 })
+    expect(numbers[0]).toBe('BR-036991/26')
+  })
+
+  it('orders sub-contract certificates by their sub-contract sort_order', () => {
+    // Same created_at for all three — the timestamp cannot break the tie.
+    const { numbers } = orderSleeveCertificates([mother, subC, subA, subB], {
+      'c-a': 0,
+      'c-b': 1,
+      'c-c': 2,
+    })
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26', 'BR-036993/26', 'BR-036994/26'])
+  })
+
+  it('is stable regardless of the order the rows arrive in', () => {
+    const orderMap = { 'c-a': 0, 'c-b': 1, 'c-c': 2 }
+    const one = orderSleeveCertificates([mother, subA, subB, subC], orderMap)
+    const two = orderSleeveCertificates([subC, subB, mother, subA], orderMap)
+    expect(one.numbers).toEqual(two.numbers)
+  })
+
+  it('keeps sub-contracts with an unknown sort_order last, in their incoming order', () => {
+    const { numbers } = orderSleeveCertificates([mother, subB, subC, subA], { 'c-a': 0 })
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26', 'BR-036993/26', 'BR-036994/26'])
+  })
+
+  it('takes the certified date from the mother certificate', () => {
+    const { certifiedAt } = orderSleeveCertificates([subA, mother], { 'c-a': 0 })
+    expect(certifiedAt).toBe('2026-07-29T12:00:00.000Z')
+  })
+
+  it('falls back to the first row when there is no mother certificate', () => {
+    const { numbers, certifiedAt } = orderSleeveCertificates([subA, subB], { 'c-a': 0, 'c-b': 1 })
+    expect(numbers).toEqual(['BR-036992/26', 'BR-036993/26'])
+    expect(certifiedAt).toBe('2026-07-29T12:00:01.000Z')
+  })
+
+  it('returns nothing for a sample with no certificates', () => {
+    expect(orderSleeveCertificates([], {})).toEqual({ numbers: [], certifiedAt: null })
   })
 })
 

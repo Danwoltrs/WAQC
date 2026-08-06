@@ -8,6 +8,8 @@ import {
   buildSleeveLabelFields,
   toSleeveSampleType,
   resolveQualityName,
+  sumSleeveQuantityMt,
+  orderSleeveCertificates,
 } from '@/lib/sleeve-label-data'
 import path from 'path'
 import fs from 'fs'
@@ -87,6 +89,31 @@ export async function GET(
       return NextResponse.json({ error: 'Failed to read logo file', details: String(logoError) }, { status: 500 })
     }
 
+    // Sub-contracts: their tonnage rolls up into the foot quantity (one tin
+    // covers the whole lot), and their sort_order fixes the order of the
+    // sub-contract certificate numbers in the Cert. field.
+    const { data: contractRows, error: contractError } = await supabase
+      .from('sample_contracts')
+      .select('id, bags_quantity_mt, sort_order')
+      .eq('sample_id', (sample as any).id)
+
+    if (contractError) {
+      console.error('Error fetching sub-contracts for tin sleeve:', contractError)
+      return NextResponse.json({
+        error: 'Failed to fetch sub-contracts',
+        details: contractError.message || String(contractError),
+      }, { status: 500 })
+    }
+
+    const contracts = (contractRows || []) as Array<{
+      id: string
+      bags_quantity_mt: number | null
+      sort_order: number | null
+    }>
+    const subMt = contracts.map(c => c.bags_quantity_mt)
+    const sortOrderByContractId: Record<string, number | null> = {}
+    for (const c of contracts) sortOrderByContractId[c.id] = c.sort_order
+
     // Every certificate belonging to this sample (mother first, then each
     // sub-contract's) is comma-joined into the Cert. field.
     const { data: certRows, error: certError } = await supabase
@@ -104,17 +131,14 @@ export async function GET(
       }, { status: 500 })
     }
 
-    const rows = (certRows || []) as Array<{
-      sample_contract_id: string | null
-      certificate_number: string
-      created_at: string
-    }>
-    const mother = rows.find(r => r.sample_contract_id === null)
-    const certNumbers = [
-      ...(mother ? [mother.certificate_number] : []),
-      ...rows.filter(r => r.sample_contract_id !== null).map(r => r.certificate_number),
-    ]
-    const certifiedAt = mother?.created_at || rows[0]?.created_at || null
+    const { numbers: certNumbers, certifiedAt } = orderSleeveCertificates(
+      (certRows || []) as Array<{
+        sample_contract_id: string | null
+        certificate_number: string
+        created_at: string
+      }>,
+      sortOrderByContractId,
+    )
 
     const s = sample as any
 
@@ -133,7 +157,7 @@ export async function GET(
       bagCount: s.bag_count,
       bagWeightKg: s.bag_weight_kg,
       bagType: s.bag_type,
-      quantityMt: s.bags_quantity_mt,
+      quantityMt: sumSleeveQuantityMt(s.bags_quantity_mt, subMt),
       equivalent60kgBags: s.equivalent_60kg_bags,
     })
 

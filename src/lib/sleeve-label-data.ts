@@ -86,23 +86,83 @@ export function formatLabelDate(iso: string | null | undefined): string | null {
   return `${day}/${month}/${year}`
 }
 
+/**
+ * The tin's tonnage is the mother sample plus every sub-contract, because one
+ * tin covers the whole lot. Returns null when no tonnage is stored anywhere, so
+ * formatSleeveQuantity derives it from the bag count instead.
+ */
+export function sumSleeveQuantityMt(
+  motherMt: number | null | undefined,
+  subContractMt: Array<number | null | undefined>,
+): number | null {
+  const values = [motherMt, ...subContractMt].filter(
+    (v): v is number => typeof v === 'number' && Number.isFinite(v),
+  )
+  if (values.length === 0) return null
+  return values.reduce((a, b) => a + b, 0)
+}
+
 /** "333 bags in 60 kg jute bags | 20.0 MT", or the bulk equivalent form. */
 export function formatSleeveQuantity(src: SleeveLabelSource): string | null {
   const { bagCount, bagWeightKg, bagType, quantityMt, equivalent60kgBags } = src
 
+  // `||`, not `??`: a stored 0 is "not filled in", not "zero tonnes", and must
+  // fall through to the bag-derived figure rather than print "0.0 MT".
   if (bagType === 'bulk' && equivalent60kgBags) {
-    const mt = quantityMt ?? (equivalent60kgBags * 60) / 1000
+    const mt = quantityMt || (equivalent60kgBags * 60) / 1000
     return `equiv. ${Math.round(equivalent60kgBags)} bags in 60 kg | ${mt.toFixed(1)} MT`
   }
 
   if (bagCount != null && bagWeightKg != null) {
     const bagTypeName =
       bagType === 'jute_bag' ? 'jute bags' : bagType === 'pp_bag' ? 'PP bags' : 'bags'
-    const mt = quantityMt ?? (bagCount * bagWeightKg) / 1000
+    const mt = quantityMt || (bagCount * bagWeightKg) / 1000
     return `${bagCount} bags in ${bagWeightKg} kg ${bagTypeName} | ${mt.toFixed(1)} MT`
   }
 
   return null
+}
+
+export interface SleeveCertificateRow {
+  sample_contract_id: string | null
+  certificate_number: string
+  created_at: string
+}
+
+/**
+ * Mother certificate first, then the sub-contract certificates in the order the
+ * sub-contracts themselves are displayed (sample_contracts.sort_order).
+ *
+ * Sub-contract certificates minted in one batch share a created_at, so ordering
+ * the comma-joined Cert. field on the timestamp made it shuffle between prints
+ * of the same tin. Rows with no known sort_order keep their incoming order and
+ * sort last.
+ *
+ * `rows` is expected in created_at order, which sets the certified date when
+ * there is no mother certificate.
+ */
+export function orderSleeveCertificates(
+  rows: SleeveCertificateRow[],
+  sortOrderByContractId: Record<string, number | null | undefined>,
+): { numbers: string[]; certifiedAt: string | null } {
+  const mother = rows.find(r => r.sample_contract_id === null)
+  const subs = rows
+    .filter(r => r.sample_contract_id !== null)
+    .map((row, index) => ({ row, index }))
+    .sort((a, b) => {
+      const ao = sortOrderByContractId[a.row.sample_contract_id!] ?? Number.MAX_SAFE_INTEGER
+      const bo = sortOrderByContractId[b.row.sample_contract_id!] ?? Number.MAX_SAFE_INTEGER
+      return ao === bo ? a.index - b.index : ao - bo
+    })
+    .map(e => e.row)
+
+  return {
+    numbers: [
+      ...(mother ? [mother.certificate_number] : []),
+      ...subs.map(r => r.certificate_number),
+    ],
+    certifiedAt: mother?.created_at || rows[0]?.created_at || null,
+  }
 }
 
 const SAMPLE_TYPES: Record<string, SleeveSampleType> = {
