@@ -52,7 +52,9 @@ describe('resolveDefectCounts', () => {
   })
 
   it('always computes the total, ignoring a stored one', () => {
-    expect(resolveDefectCounts({ primary: 1, secondary: 21, total: 5 }).total).toBe(22)
+    expect(resolveDefectCounts({ primary: 1, secondary: 21, total: 5 })).toEqual({
+      primary: 1, secondary: 21, total: 22,
+    })
   })
 
   it('treats a missing count as zero', () => {

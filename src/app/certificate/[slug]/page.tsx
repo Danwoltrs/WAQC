@@ -1,6 +1,7 @@
 import { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
+import { screenGramsToPercent } from '@/lib/quality-resolvers'
 import { CertificatePageClient } from './certificate-page-client'
 
 // Use service role for server-side data fetching
@@ -76,7 +77,8 @@ async function getCertificateInfo(slug: string) {
     .maybeSingle()
 
   const greenBean = assessment?.green_bean_data as any
-  const screenSizes = greenBean?.screen_sizes || null
+  // screen_sizes is stored in GRAMS; every display surface needs percentages.
+  const screenSizes = screenGramsToPercent(greenBean?.screen_sizes)
   const defects = greenBean?.defects
   // Grading saves as { primary, secondary, total }; certificate-data.ts uses { total_primary, total_secondary }
   const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
@@ -352,7 +354,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const status = info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED'
   // Public reference — never the internal SAN- lab number.
   const trackingNumber = info.publicReference.reference
-  const screenSummary = buildScreenSummary(info.screenSizes)
+  const screenSummary = buildScreenSummary((info.screenSizes ?? null) as Record<string, number> | null)
 
   // Build rich description for iPhone camera preview
   const parts: string[] = [status]

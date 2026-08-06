@@ -1,6 +1,7 @@
 import { ImageResponse } from 'next/og'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
+import { screenGramsToPercent } from '@/lib/quality-resolvers'
 
 export const runtime = 'nodejs'
 export const alt = 'Wolthers Coffee QC Certificate'
@@ -76,7 +77,8 @@ export default async function OGImage({ params }: { params: Promise<{ slug: stri
     .maybeSingle()
 
   const greenBean = assessment?.green_bean_data as any
-  const screenSizes = greenBean?.screen_sizes as Record<string, number> | null
+  // Stored in grams, rendered as percentages.
+  const screenSizes = screenGramsToPercent(greenBean?.screen_sizes as Record<string, number> | null)
   const defects = greenBean?.defects
   const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
   const secondaryDefects = defects?.total_secondary ?? defects?.secondary ?? null

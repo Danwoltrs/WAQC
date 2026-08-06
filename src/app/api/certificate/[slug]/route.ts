@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
+import { screenGramsToPercent } from '@/lib/quality-resolvers'
 
 // Use service role to bypass RLS for public access
 const supabase = createClient(
@@ -99,7 +100,9 @@ async function buildResponse(sample: any) {
     .maybeSingle()
 
   const greenBean = assessment?.green_bean_data as any
-  const screenSizes = greenBean?.screen_sizes || null
+  // Stored in grams. This endpoint has always published them as percentages,
+  // so the numbers it returns change here — from raw grams to real percentages.
+  const screenSizes = screenGramsToPercent(greenBean?.screen_sizes)
   const defects = greenBean?.defects
   // Grading saves as { primary, secondary, total }; certificate-data.ts uses { total_primary, total_secondary }
   const primaryDefects = defects?.total_primary ?? defects?.primary ?? null
