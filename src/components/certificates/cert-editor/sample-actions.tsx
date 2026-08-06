@@ -18,6 +18,7 @@ import {
 import { useAuth } from '@/components/providers/auth-provider'
 import { ApprovalSendView } from '@/components/samples/approval-send-view'
 import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
+import { trackingNumberToSlug } from '@/lib/utils'
 import type { CertSample } from './use-cert-editor'
 import { useSampleActions } from './use-sample-actions'
 
@@ -106,7 +107,8 @@ export function SampleActionsMenu({
         ].filter(Boolean).join('   ') || undefined}
         pdfUrl={a.previewPdfUrl}
         loading={a.previewLoading}
-        saveFileName={`${a.parseTrackingNumber(sample.tracking_number)}.pdf`}
+        error={a.previewError}
+        saveFileName={`${trackingNumberToSlug(sample.tracking_number)}.pdf`}
         onSave={a.handleDownloadCertificate}
         footerExtra={
           <Button variant="outline" onClick={() => a.setShowEmailDialog(true)}>
@@ -115,14 +117,16 @@ export function SampleActionsMenu({
         }
       />
 
-      {/* Sample label preview */}
+      {/* Sample label preview. Gated on the certificate preview being closed:
+          both are fullscreen, and a slow label fetch that resolved after
+          "View Certificate" was picked would otherwise stack two of them. */}
       <PrintPreviewDialog
-        open={!!a.labelPdfUrl}
+        open={!!a.labelPdfUrl && !a.showCertificateModal}
         onOpenChange={(o) => { if (!o) a.closeLabelPreview() }}
         title={`Sample label ${a.parseTrackingNumber(sample.tracking_number)}`}
         subtitle="One label, 4cm on A4 with cut guides."
         pdfUrl={a.labelPdfUrl}
-        saveFileName={`${a.parseTrackingNumber(sample.tracking_number)}-label.pdf`}
+        saveFileName={`${trackingNumberToSlug(sample.tracking_number)}-label.pdf`}
       />
 
       {/* Email dialog */}

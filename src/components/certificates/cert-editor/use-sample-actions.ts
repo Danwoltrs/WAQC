@@ -37,6 +37,9 @@ export function useSampleActions({
   const [showCertificateModal, setShowCertificateModal] = useState(false)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewPdfUrl, setPreviewPdfUrl] = useState<string | null>(null)
+  // Without this the shell has nothing to render on failure and sits on
+  // "Preparing preview..." with a spinner forever.
+  const [previewError, setPreviewError] = useState<string | null>(null)
   // Email
   const [showEmailDialog, setShowEmailDialog] = useState(false)
   const [sendingEmail, setSendingEmail] = useState(false)
@@ -240,16 +243,22 @@ export function useSampleActions({
     setShowCertificateModal(true)
     setPreviewLoading(true)
     setPreviewPdfUrl(null)
+    setPreviewError(null)
+    // A label preview may still be in flight; the shell renders one dialog at a
+    // time, and this one wins.
+    closeLabelPreview()
     try {
       const response = await fetch(`/api/samples/${sample.id}/certificate${contractId ? `?contract_id=${contractId}` : ''}`)
       if (response.ok) {
         const blob = await response.blob()
         setPreviewPdfUrl(window.URL.createObjectURL(blob))
       } else {
+        setPreviewError('Unable to load certificate preview')
         toast({ title: 'Preview failed', description: 'Could not load the certificate preview.', variant: 'destructive' })
       }
     } catch (error) {
       console.error('Error loading certificate preview:', error)
+      setPreviewError('Unable to load certificate preview')
       toast({ title: 'Preview failed', description: 'Could not load the certificate preview.', variant: 'destructive' })
     } finally {
       setPreviewLoading(false)
@@ -261,6 +270,7 @@ export function useSampleActions({
     setShowCertificateModal(false)
     setPreviewPdfUrl(null)
     setPreviewLoading(false)
+    setPreviewError(null)
   }
 
   const handleSendEmail = async () => {
@@ -316,7 +326,7 @@ export function useSampleActions({
 
   return {
     // preview
-    showCertificateModal, previewLoading, previewPdfUrl, handleViewCertificate, handleClosePreview,
+    showCertificateModal, previewLoading, previewPdfUrl, previewError, handleViewCertificate, handleClosePreview,
     // email
     showEmailDialog, setShowEmailDialog, sendingEmail, emailRecipients, setEmailRecipients, handleSendEmail,
     // qr

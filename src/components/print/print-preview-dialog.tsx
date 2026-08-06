@@ -10,14 +10,20 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { Download, Loader2, Printer } from 'lucide-react'
+import { toast } from 'sonner'
 
 /**
  * Fullscreen, following the pattern of INTAKE_DIALOG_CONTENT_CLASS. Radix
  * supplies Esc, the focus trap and the X at right-4 top-4, so nothing here is
  * hand-rolled — which is also why the header carries pr-14.
+ *
+ * Both p-0 AND sm:p-0 are needed: the base DialogContent sets `p-4 sm:p-6`, and
+ * tailwind-merge treats the two as different keys, so p-0 alone leaves 24px of
+ * padding on every viewport from 640px up — enough to inset the frame, pull the
+ * header/footer rules off the edges and drop the close X out of its pr-14 slot.
  */
 export const PRINT_PREVIEW_CONTENT_CLASS =
-  '!flex flex-col gap-0 p-0 w-screen h-[100dvh] max-w-none rounded-none border-0 overflow-hidden'
+  '!flex flex-col gap-0 p-0 sm:p-0 w-screen h-[100dvh] max-w-none rounded-none border-0 overflow-hidden'
 
 export interface PrintPreviewDialogProps {
   open: boolean
@@ -74,7 +80,18 @@ export function PrintPreviewDialog({
     } catch (err) {
       console.error('Unable to trigger print on the preview:', err)
       // Fall back to a tab the user can print by hand.
-      if (pdfUrl) window.open(pdfUrl, '_blank')
+      const fallback = pdfUrl ? window.open(pdfUrl, '_blank') : null
+      if (!fallback) {
+        // Nothing was printed and nothing was even shown — the common iPad
+        // Safari case, where printing a PDF in an iframe throws and the popup
+        // is blocked. onPrinted carries irreversible side effects (stamping a
+        // tin batch as printed, advancing a cupping batch's stage), so it must
+        // not fire: the operator has to be able to try again.
+        toast.error(
+          'Could not open the print dialog. Allow pop-ups for this site, or use Save PDF and print the file.'
+        )
+        return
+      }
     }
     onPrinted?.()
   }

@@ -248,6 +248,10 @@ export default function CertificatesPage() {
   const [selectedCertificates, setSelectedCertificates] = useState<Set<string>>(new Set())
   const [tinLabelCerts, setTinLabelCerts] = useState<Certificate[] | null>(null)
   const [bagSleeveCerts, setBagSleeveCerts] = useState<Certificate[] | null>(null)
+  // Bumped whenever this page prints tin labels of its own, so the "Today · N"
+  // button refetches instead of offering lots that have just been stamped.
+  // Bag sleeves do not touch that batch.
+  const [todayBatchToken, setTodayBatchToken] = useState(0)
 
   // Bulk action states
   const [downloading, setDownloading] = useState(false)
@@ -873,7 +877,7 @@ export default function CertificatesPage() {
                   </DropdownMenu>
                 )
               })()}
-              <PrintTodayTinLabelsButton />
+              <PrintTodayTinLabelsButton refreshToken={todayBatchToken} />
               <Button size="sm" onClick={() => setShowBatchSend(true)}>
                 <Mail className="h-4 w-4 mr-2" />
                 Send unsent
@@ -1292,6 +1296,7 @@ export default function CertificatesPage() {
           onSuccess={() => {
             setTinLabelCerts(null)
             setSelectedCertificates(new Set())
+            setTodayBatchToken(t => t + 1)
           }}
         />
 

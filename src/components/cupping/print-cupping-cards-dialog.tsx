@@ -526,6 +526,13 @@ export function PrintCuppingCardsDialog({
   const showPreview = isReadyForDownload && documents.length > 0
   const activeDoc = documents[activeDocIndex] ?? documents[0]
 
+  // Each document names itself (see the `documents` memo above): standard cards
+  // carry their output format, CVA descriptive forms are a different document
+  // altogether. One static name would misname a saved CVA form and make two
+  // standard formats saved on the same day collide on a single filename.
+  const activeDocFileName =
+    activeDoc?.fileName || `cupping-cards-${new Date().toISOString().split('T')[0]}.pdf`
+
   // Render the active document to a blob URL for the iframe preview (and for the
   // optional "Save PDF" link). Nothing is downloaded automatically.
   useEffect(() => {
@@ -878,7 +885,7 @@ export function PrintCuppingCardsDialog({
         pdfUrl={previewUrl}
         loading={previewLoading}
         error={previewError}
-        saveFileName={`cupping-cards-${new Date().toISOString().split('T')[0]}.pdf`}
+        saveFileName={activeDocFileName}
         headerExtra={
           documents.length > 1 ? (
             <div className="flex items-center gap-2">

@@ -49,6 +49,7 @@ export function TinLabelSizeDialog({
   const [isGenerating, setIsGenerating] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
   const [printedIds, setPrintedIds] = useState<string[]>([])
+  const [hasPrinted, setHasPrinted] = useState(false)
 
   // Reset to the size step whenever the dialog reopens, and release the blob
   // URL so a long session does not accumulate them.
@@ -60,6 +61,7 @@ export function TinLabelSizeDialog({
         return null
       })
       setPrintedIds([])
+      setHasPrinted(false)
     }
   }, [open])
 
@@ -78,8 +80,10 @@ export function TinLabelSizeDialog({
       })
 
       if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || 'Failed to generate tin labels')
+        // Never assume JSON — a 502 from the edge returns an HTML body, and
+        // parsing it blindly buries the real failure under "Unexpected token".
+        const error = await response.json().catch(() => ({}))
+        throw new Error(error.details || error.error || 'Failed to generate tin labels')
       }
 
       const skipped = Number(response.headers.get('X-Skipped-Samples') || '0')
@@ -101,11 +105,12 @@ export function TinLabelSizeDialog({
     }
   }
 
-  // Runs only after the browser print dialog has opened. The browser gives us
-  // no reliable signal that paper came out, so the stamp goes on once the
-  // dialog has been opened. A jammed print is recovered by selecting those rows
-  // and using Tin Label again.
+  // Runs only after the browser print dialog has actually opened. The browser
+  // gives us no reliable signal that paper came out, so the stamp goes on here
+  // rather than on close — the paper is already out by then, and it must not
+  // wait for the operator to dismiss a dialog.
   const handlePrinted = async () => {
+    setHasPrinted(true)
     try {
       const response = await fetch('/api/samples/tin-labels/mark-printed', {
         method: 'POST',
@@ -118,14 +123,22 @@ export function TinLabelSizeDialog({
     } catch {
       toast.warning('Printed, but these samples were not marked as printed. They will appear in the next batch.')
     }
+  }
 
-    onSuccess?.()
-    onOpenChange(false)
+  // The preview stays open after a print so a jammed or mis-fed sheet can be
+  // re-run without re-selecting rows and regenerating. onSuccess — which clears
+  // the caller's selection and refreshes today's batch — therefore fires on
+  // CLOSE, and only if something was actually printed.
+  const handleOpenChange = (next: boolean) => {
+    if (!next && hasPrinted) {
+      onSuccess?.()
+    }
+    onOpenChange(next)
   }
 
   return (
     <>
-      <Dialog open={open && step === 'size'} onOpenChange={onOpenChange}>
+      <Dialog open={open && step === 'size'} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Select tin label size</DialogTitle>
@@ -164,7 +177,7 @@ export function TinLabelSizeDialog({
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isGenerating}>
+            <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isGenerating}>
               Cancel
             </Button>
             <Button onClick={handleGenerate} disabled={isGenerating}>
@@ -183,7 +196,7 @@ export function TinLabelSizeDialog({
 
       <PrintPreviewDialog
         open={open && step === 'preview'}
-        onOpenChange={(next) => { if (!next) onOpenChange(false) }}
+        onOpenChange={(next) => { if (!next) handleOpenChange(false) }}
         title="Print tin labels"
         subtitle={`${printedIds.length} lot${printedIds.length !== 1 ? 's' : ''} at ${selectedSize}. Check the sheet, then print.`}
         pdfUrl={pdfUrl}

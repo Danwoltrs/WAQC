@@ -26,7 +26,9 @@ export interface BagSleeveEntry {
  * each sub-contract by sort_order — into the Cert. field. So a mother plus its
  * ten splits is ONE label, not eleven.
  *
- * Order is first-seen, so the sheet follows the order of the list on screen.
+ * The returned ids are first-seen order, but that does NOT carry through to the
+ * sheet: the route selects with `.in('id', ...)` and no `.order()`, so the
+ * order the labels come out in is unspecified.
  */
 export function certificatesToTinSampleIds(
   certs: PrintSelectionCertificate[],

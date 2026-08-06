@@ -1,11 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, fireEvent } from '@testing-library/react'
+import { toast } from 'sonner'
 import { PrintPreviewDialog } from './print-preview-dialog'
+
+vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 
 // jsdom has no real printing or navigation. Stub both so the component's
 // fallback path is exercised without console noise or unhandled errors.
 beforeEach(() => {
   vi.spyOn(window, 'open').mockReturnValue(null)
+  vi.mocked(toast.error).mockClear()
 })
 afterEach(() => {
   vi.restoreAllMocks()
@@ -34,6 +38,28 @@ describe('PrintPreviewDialog', () => {
     const { onPrinted } = renderShell()
     fireEvent.click(screen.getByRole('button', { name: /print/i }))
     expect(onPrinted).toHaveBeenCalledTimes(1)
+  })
+
+  it('does NOT fire onPrinted when nothing could be printed', () => {
+    // iPad Safari: printing a PDF inside an iframe throws, and the pop-up
+    // fallback is blocked too. Nothing came out of the printer, so the tin
+    // batch must not be stamped and the cupping stage must not advance.
+    vi.spyOn(HTMLIFrameElement.prototype, 'contentWindow', 'get').mockReturnValue({
+      focus: () => {},
+      print: () => {
+        throw new Error('blocked')
+      },
+    } as unknown as Window)
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    const { onPrinted } = renderShell()
+    fireEvent.click(screen.getByRole('button', { name: /print/i }))
+
+    expect(window.open).toHaveBeenCalledTimes(1)
+    expect(onPrinted).not.toHaveBeenCalled()
+    expect(vi.mocked(toast.error)).toHaveBeenCalledTimes(1)
+    expect(vi.mocked(toast.error).mock.calls[0][0]).toMatch(/pop-ups/i)
+    consoleError.mockRestore()
   })
 
   it('does NOT fire onPrinted when Save PDF is pressed', () => {

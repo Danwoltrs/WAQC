@@ -43,6 +43,7 @@ export function PrintBagSleevesDialog({
   const [includeQr, setIncludeQr] = useState(true)
   const [isGenerating, setIsGenerating] = useState(false)
   const [pdfUrl, setPdfUrl] = useState<string | null>(null)
+  const [hasPrinted, setHasPrinted] = useState(false)
 
   useEffect(() => {
     if (!open) {
@@ -52,6 +53,7 @@ export function PrintBagSleevesDialog({
         if (current) URL.revokeObjectURL(current)
         return null
       })
+      setHasPrinted(false)
     }
   }, [open])
 
@@ -92,14 +94,24 @@ export function PrintBagSleevesDialog({
     }
   }
 
+  // The preview stays open after a print so a jammed or mis-fed sheet can be
+  // re-run without re-ticking every row and regenerating. onSuccess — which
+  // clears the caller's selection — therefore fires on CLOSE, and only if
+  // something was actually printed.
   const handlePrinted = () => {
-    onSuccess?.()
-    onOpenChange(false)
+    setHasPrinted(true)
+  }
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next && hasPrinted) {
+      onSuccess?.()
+    }
+    onOpenChange(next)
   }
 
   return (
     <>
-      <Dialog open={open && step === 'config'} onOpenChange={onOpenChange}>
+      <Dialog open={open && step === 'config'} onOpenChange={handleOpenChange}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
             <DialogTitle>Print bag sleeves</DialogTitle>
@@ -134,7 +146,7 @@ export function PrintBagSleevesDialog({
           </div>
 
           <DialogFooter className="gap-2 sm:gap-0">
-            <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isGenerating}>
+            <Button variant="outline" onClick={() => handleOpenChange(false)} disabled={isGenerating}>
               Cancel
             </Button>
             <Button onClick={handleGenerate} disabled={isGenerating || entries.length === 0}>
@@ -153,7 +165,7 @@ export function PrintBagSleevesDialog({
 
       <PrintPreviewDialog
         open={open && step === 'preview'}
-        onOpenChange={(next) => { if (!next) onOpenChange(false) }}
+        onOpenChange={(next) => { if (!next) handleOpenChange(false) }}
         title="Print bag sleeves"
         subtitle={`${entries.length} sleeve${entries.length !== 1 ? 's' : ''}, 6 per A4 sheet. Check the sheet, then print.`}
         pdfUrl={pdfUrl}

@@ -25,6 +25,10 @@ import { canReprintCuppingCards } from '@/lib/cupping/reprint'
 import { AssignCuppersDialog } from '@/components/samples/assign-cuppers-dialog'
 import { DuplicateCountPopover, type DuplicateBagOverride } from '@/components/samples/duplicate-count-popover'
 import { useToast } from '@/hooks/use-toast'
+// Aliased: the component destructures a `toast` of its own from useToast, and
+// the print dialogs opened from this page report the very same empty-selection
+// case through sonner, so these guards match them rather than the shadcn toast.
+import { toast as sonnerToast } from 'sonner'
 import { certificateFilenameFromResponse } from '@/lib/certificate-filename'
 import {
   Select,
@@ -561,7 +565,7 @@ export default function SamplesPage() {
 
   const handleBulkPrintLabels = () => {
     if (selectedSamples.size === 0) {
-      alert('Please select at least one sample')
+      sonnerToast.error('Please select at least one sample')
       return
     }
     setShowPrintDialog(true)
@@ -590,7 +594,7 @@ export default function SamplesPage() {
 
   const handleBulkPrintBagSleeves = () => {
     if (selectedSamples.size === 0) {
-      alert('Please select at least one sample')
+      sonnerToast.error('Please select at least one sample')
       return
     }
 
@@ -633,7 +637,7 @@ export default function SamplesPage() {
 
   const handleBulkPrintTinSleeves = () => {
     if (selectedSamples.size === 0) {
-      alert('Please select at least one sample')
+      sonnerToast.error('Please select at least one sample')
       return
     }
     setShowTinLabelDialog(true)
