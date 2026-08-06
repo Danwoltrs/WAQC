@@ -503,3 +503,50 @@ describe('buildSubContractSummary', () => {
     expect(sub.buyerContractNr).toBe('IR0007546-1')
   })
 })
+
+describe('screen line collapsing', () => {
+  // The reported Grinders distribution: 7 sieves is too tall for the table.
+  it('condenses a 7-sieve Grinders spread to "14 up / 13 / 12"', () => {
+    const rows = screenRowsFromGrams({ '18': 6, '17': 12, '16': 12, '15': 13, '14': 14, '13': 28, '12': 15 })
+    expect(rows).toEqual([
+      { label: 'Scr. 14 up', pct: 57 },
+      { label: 'Scr. 13', pct: 28 },
+      { label: 'Scr. 12', pct: 15 },
+    ])
+  })
+
+  it('always keeps the two finest sieves explicit', () => {
+    const rows = screenRowsFromGrams({ '20': 25, '19': 25, '18': 25, '17': 25 })
+    expect(rows).toEqual([
+      { label: 'Scr. 19 up', pct: 50 },
+      { label: 'Scr. 18', pct: 25 },
+      { label: 'Scr. 17', pct: 25 },
+    ])
+  })
+
+  it('leaves three or fewer sieves untouched', () => {
+    expect(screenRowsFromGrams({ '17': 50, '16': 30, '15': 20 })).toEqual([
+      { label: 'Scr. 17', pct: 50 },
+      { label: 'Scr. 16', pct: 30 },
+      { label: 'Scr. 15', pct: 20 },
+    ])
+  })
+
+  it('rounds the aggregate once instead of summing rounded parts', () => {
+    // Raw shares 16.6% each: summing three rounded 17s would print 51, not 50.
+    const rows = screenRowsFromGrams({ '18': 1, '17': 1, '16': 1, '15': 1.5, '14': 1.5 })
+    expect(rows[0]).toEqual({ label: 'Scr. 16 up', pct: 50 })
+    expect(rows.reduce((s, r) => s + r.pct, 0)).toBe(100)
+  })
+
+  it('keeps the pan out of the lines but inside the percentage base', () => {
+    const rows = screenRowsFromGrams({ '18': 10, '17': 10, '16': 10, '15': 10, '14': 10, pan: 50 })
+    expect(rows.map((r) => r.label)).toEqual(['Scr. 16 up', 'Scr. 15', 'Scr. 14'])
+    expect(rows[0].pct).toBe(30)
+  })
+
+  it('does not collapse legacy free-text sieve keys', () => {
+    const rows = screenRowsFromGrams({ '18': 20, '17': 20, '16': 20, Peaberry: 40 })
+    expect(rows.length).toBe(4)
+  })
+})

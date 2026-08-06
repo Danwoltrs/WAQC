@@ -683,9 +683,10 @@ export default function CertificatesPage() {
           </CardContent>
         </Card>
 
-        {/* Bulk Actions */}
+        {/* Bulk Actions — pinned to the top of the scroll area so Send to
+            buyer / seller stay reachable however far down the list you are. */}
         {selectedCertificates.size > 0 && (
-          <Card>
+          <Card className="sticky top-0 z-30 shadow-sm">
             <CardContent className="py-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm text-muted-foreground">

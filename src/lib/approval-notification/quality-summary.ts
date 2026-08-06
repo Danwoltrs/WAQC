@@ -92,6 +92,38 @@ export interface QualitySummaryGroup {
  * so each sieve keeps its true proportion. The below-smallest-screen / pan
  * bucket is intentionally OMITTED from the email.
  */
+/** Max screen lines per sample in the email table (see `collapseScreenRows`). */
+export const MAX_SCREEN_LINES = 3
+
+/**
+ * Condense a long sieve list to at most three lines. A seven-sieve Grinders
+ * distribution printed one line per sieve made the table tower over the rest of
+ * the row; the two smallest sieves are what the contract is actually judged on,
+ * so those stay explicit and everything coarser is summed into a single
+ * "Scr. N up" line:
+ *
+ *   18 6% · 17 12% · 16 12% · 15 13% · 14 14% · 13 28% · 12 13%
+ *   →  Scr. 14 up 57% · Scr. 13 28% · Scr. 12 13%
+ *
+ * Input must be sorted coarse→fine with raw (unrounded) percentages. Left alone
+ * when there are already ≤3 lines, or when any label carries no sieve number
+ * (legacy free-text keys) — there'd be no sound number to label the "up" line.
+ */
+export function collapseScreenRows<T extends QualityScreenRow & { sortKey: number }>(rows: T[]): QualityScreenRow[] {
+  if (rows.length <= MAX_SCREEN_LINES) return rows
+  if (rows.some((r) => !Number.isFinite(r.sortKey))) return rows
+  const keep = rows.slice(-(MAX_SCREEN_LINES - 1)) // the two finest sieves
+  const collapsed = rows.slice(0, rows.length - (MAX_SCREEN_LINES - 1))
+  const smallest = collapsed[collapsed.length - 1]
+  return [
+    {
+      label: `${smallest.label} up`,
+      pct: collapsed.reduce((sum, r) => sum + r.pct, 0),
+    },
+    ...keep,
+  ]
+}
+
 export function screenRowsFromGrams(screenSizes: Record<string, number> | null | undefined): QualityScreenRow[] {
   if (!screenSizes || typeof screenSizes !== 'object') return []
   const entries = Object.entries(screenSizes).filter(([, v]) => typeof v === 'number' && v >= 0)
@@ -111,12 +143,14 @@ export function screenRowsFromGrams(screenSizes: Record<string, number> | null |
     const numMatch = trimmed.match(/\d+(\.\d+)?/)
     rows.push({
       label: numMatch ? `Scr. ${numMatch[0]}` : trimmed,
-      pct: Math.round(((grams || 0) / total) * 100),
+      // Keep the raw share here; rounding happens after any collapsing so the
+      // aggregated line is rounded once, not summed from rounded parts.
+      pct: ((grams || 0) / total) * 100,
       sortKey: numMatch ? Number(numMatch[0]) : -Infinity,
     })
   }
   rows.sort((a, b) => b.sortKey - a.sortKey)
-  return rows.map(({ label, pct }) => ({ label, pct }))
+  return collapseScreenRows(rows).map(({ label, pct }) => ({ label, pct: Math.round(pct) }))
 }
 
 /**
