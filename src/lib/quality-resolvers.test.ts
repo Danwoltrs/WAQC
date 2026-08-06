@@ -35,9 +35,11 @@ describe('resolveDefectCounts', () => {
     })
   })
 
-  it('falls back to the total_* shape when the plain keys are absent', () => {
-    expect(resolveDefectCounts({ total_primary: 3, total_secondary: 4 })).toEqual({
-      primary: 3, secondary: 4, total: 7,
+  it('reads only the plain keys, matching the approval gate exactly', () => {
+    // The gate has always read defects.primary. Honouring total_primary here
+    // would re-judge historical lots that were approved as zero-defect.
+    expect(resolveDefectCounts({ total_primary: 9, total_secondary: 9 })).toEqual({
+      primary: 0, secondary: 0, total: 0,
     })
   })
 

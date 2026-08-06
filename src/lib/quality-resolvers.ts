@@ -56,15 +56,17 @@ export function screenGramsToPercent(
  * 21 total rejects a lot with 1 primary and 21 secondary: each individual limit
  * is met, but the total is 22. A stored defects.total is never trusted.
  *
- * Grading writes { primary, secondary }; certificate-data.ts writes
- * { total_primary, total_secondary }. The plain keys win where both exist,
- * because that is what the approval gate has always read.
+ * Only the plain { primary, secondary } keys are read — that is what the
+ * approval gate has always read. certificate-data.ts writes a differently
+ * shaped { total_primary, total_secondary } record for its own purposes, but
+ * honouring that shape here would silently re-judge lots the gate approved
+ * as zero-defect against a count it never saw.
  */
 export function resolveDefectCounts(defects: unknown): DefectCounts | null {
   if (!defects || typeof defects !== 'object') return null
   const d = defects as Record<string, unknown>
-  const primary = num(d.primary ?? d.total_primary)
-  const secondary = num(d.secondary ?? d.total_secondary)
+  const primary = num(d.primary)
+  const secondary = num(d.secondary)
   return { primary, secondary, total: primary + secondary }
 }
 

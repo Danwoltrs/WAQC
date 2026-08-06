@@ -124,4 +124,32 @@ describe('criteriaToViolations', () => {
     })
     expect(criteriaToViolations(criteria)).toEqual([])
   })
+
+  it('emits both sentences for a misconfigured cupping attribute band (min > max)', () => {
+    const criteria = evaluateCompliance({
+      ...base,
+      parameters: {
+        cupping_attributes: [
+          { attribute: 'Body', validation_rule: { min_value: 8, max_value: 2 } },
+        ],
+      },
+      cuppingScores: [{ cupper_id: 'c1', scores: { Body: 5 }, defects: null }],
+    })
+    expect(criteriaToViolations(criteria)).toEqual([
+      'Body: 5.00 is below minimum (8)',
+      'Body: 5.00 is above maximum (2)',
+    ])
+  })
+
+  it('emits both sentences for a misconfigured moisture band (min > max)', () => {
+    const criteria = evaluateCompliance({
+      ...base,
+      parameters: { moisture_min: 12, moisture_max: 10 },
+      greenBean: { moisture_percentage: 11 },
+    })
+    expect(criteriaToViolations(criteria)).toEqual([
+      'Moisture: 11% is below minimum (12%)',
+      'Moisture: 11% exceeds maximum (10%)',
+    ])
+  })
 })

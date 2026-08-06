@@ -14,6 +14,13 @@ import {
  * so the strings stay byte-identical through the extraction — re-deriving them
  * from the structured fields would put a stray space or a toFixed between the
  * gate and its own history.
+ *
+ * A criterion is usually one sentence, but the gate has always evaluated
+ * below-minimum and above-maximum as two independent `if`s (cupping
+ * attributes, moisture) — a misconfigured template with min > max fails both
+ * at once and has always emitted both sentences. `violations` carries the
+ * full ordered list for those sites; `violation` stays the first sentence for
+ * every other (single-sentence) criterion.
  */
 export interface ComplianceCriterion {
   key: string
@@ -24,6 +31,7 @@ export interface ComplianceCriterion {
   limit: number | string | null
   passed: boolean
   violation?: string
+  violations?: string[]
 }
 
 export interface QualityTemplateParameters {
@@ -136,6 +144,12 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
             ? `min ${limits.min}`
             : `max ${limits.max}`
 
+      // The gate checks below-minimum and above-maximum as two independent
+      // ifs, so a template with min > max fails — and reports — both.
+      const attrViolations: string[] = []
+      if (belowMin) attrViolations.push(`${attr}: ${score.toFixed(2)} is below minimum (${limits.min})`)
+      if (aboveMax) attrViolations.push(`${attr}: ${score.toFixed(2)} is above maximum (${limits.max})`)
+
       criteria.push({
         key: `cupping_${attr}`,
         label: attr,
@@ -144,11 +158,8 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
         operator: belowMin || aboveMax ? 'outside' : null,
         limit: range,
         passed: !belowMin && !aboveMax,
-        violation: belowMin
-          ? `${attr}: ${score.toFixed(2)} is below minimum (${limits.min})`
-          : aboveMax
-            ? `${attr}: ${score.toFixed(2)} is above maximum (${limits.max})`
-            : undefined,
+        violation: attrViolations[0],
+        violations: attrViolations.length > 0 ? attrViolations : undefined,
       })
     }
   }
@@ -366,6 +377,13 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
             : min !== undefined
               ? `min ${min}%`
               : `max ${max}%`
+
+        // Same independent-ifs shape as cupping attributes: min > max fails,
+        // and reports, both bounds.
+        const moistureViolations: string[] = []
+        if (belowMin) moistureViolations.push(`Moisture: ${moisture}% is below minimum (${min}%)`)
+        if (aboveMax) moistureViolations.push(`Moisture: ${moisture}% exceeds maximum (${max}%)`)
+
         criteria.push({
           key: 'moisture',
           label: 'Moisture',
@@ -374,11 +392,8 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
           operator: belowMin || aboveMax ? 'outside' : null,
           limit: band,
           passed: !belowMin && !aboveMax,
-          violation: belowMin
-            ? `Moisture: ${moisture}% is below minimum (${min}%)`
-            : aboveMax
-              ? `Moisture: ${moisture}% exceeds maximum (${max}%)`
-              : undefined,
+          violation: moistureViolations[0],
+          violations: moistureViolations.length > 0 ? moistureViolations : undefined,
         })
       }
     }
@@ -524,7 +539,22 @@ export function evaluateCompliance(inputs: ComplianceInputs): ComplianceCriterio
   return criteria
 }
 
-/** The approval gate's failure sentences, in their historical order. */
+/**
+ * The approval gate's failure sentences, in their historical order.
+ *
+ * Most criteria carry exactly one sentence, but a criterion with both bounds
+ * misconfigured (min > max) carries two in `violations` — both are emitted,
+ * below-minimum before above-maximum, matching the gate's independent ifs.
+ */
 export function criteriaToViolations(criteria: ComplianceCriterion[]): string[] {
-  return criteria.filter(c => !c.passed && c.violation).map(c => c.violation as string)
+  const result: string[] = []
+  for (const c of criteria) {
+    if (c.passed) continue
+    if (c.violations && c.violations.length > 0) {
+      result.push(...c.violations)
+    } else if (c.violation) {
+      result.push(c.violation)
+    }
+  }
+  return result
 }
