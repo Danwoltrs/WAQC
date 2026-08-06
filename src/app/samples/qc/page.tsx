@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -232,7 +232,11 @@ export default function SamplesPage() {
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
   // The header swaps its title for a compact filter bar once the list is
   // scrolled, so the controls stay reachable without scrolling back up.
-  const headerRef = useRef<HTMLDivElement>(null)
+  //
+  // Held in state, not a ref: MainLayout renders a spinner instead of its
+  // children while auth resolves, so on the first commit this node does not
+  // exist yet and a mount-once effect would wire itself to nothing.
+  const [headerEl, setHeaderEl] = useState<HTMLDivElement | null>(null)
   const [condensed, setCondensed] = useState(false)
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT)
   const [pendingTodayIds, setPendingTodayIds] = useState<string[]>([])
@@ -363,7 +367,8 @@ export default function SamplesPage() {
   }, [statusFilter, sampleTypeFilter, workflowStageFilter])
 
   useEffect(() => {
-    const scroller = findScrollParent(headerRef.current)
+    if (!headerEl) return
+    const scroller = findScrollParent(headerEl)
     // The app shell scrolls an inner div, but fall back to the window so this
     // still works if that ever changes.
     const target: HTMLElement | Window = scroller ?? window
@@ -377,17 +382,16 @@ export default function SamplesPage() {
     onScroll()
     target.addEventListener('scroll', onScroll, { passive: true })
     return () => target.removeEventListener('scroll', onScroll)
-  }, [])
+  }, [headerEl])
 
   useEffect(() => {
-    const el = headerRef.current
-    if (!el) return
-    const measure = () => setHeaderHeight(Math.round(el.getBoundingClientRect().height))
+    if (!headerEl) return
+    const measure = () => setHeaderHeight(Math.round(headerEl.getBoundingClientRect().height))
     measure()
     const observer = new ResizeObserver(measure)
-    observer.observe(el)
+    observer.observe(headerEl)
     return () => observer.disconnect()
-  }, [])
+  }, [headerEl])
 
   const refreshPendingToday = useCallback(async () => {
     try {
@@ -1298,7 +1302,7 @@ export default function SamplesPage() {
       <div className="p-6 space-y-6">
         {/* Header - Sticky on desktop */}
         <div
-          ref={headerRef}
+          ref={setHeaderEl}
           className={`sticky top-0 z-10 bg-background -mx-6 px-6 border-b md:border-0 ${
             condensed ? 'pt-3 pb-3 border-b' : 'pt-6 pb-4'
           }`}
