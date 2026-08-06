@@ -165,6 +165,32 @@ printed, and the next batch skips it. Recovery is selecting those rows and using
 the Tin Label action directly, but someone has to notice. The alternative —
 stamping only on confirmed physical output — is not observable from a browser.
 
+## Part E — Trade names, not legal names
+
+The label prints `companies.name`, the legal name — `Syngenta AVC SA`,
+`Blaser Trading AG`. Nobody in the trade calls them that. Print the *nome
+fantasia* instead, falling back to the legal name when it is absent:
+
+```ts
+company?.fantasy_name || company?.name || null
+```
+
+This is already the house convention — `src/app/clients/page.tsx:664` and
+`src/app/embed/quadrant/[id]/page.tsx:215-223`, the latter applying it to
+seller, importer and roaster together.
+
+Applies to **all three party fields on the label**: `Seller:`, `Client:` and
+`Roaster:`. The request named sellers and buyers; roaster is included because
+leaving one company on its legal name beside two trade names reads as a bug, not
+a distinction.
+
+Both tin routes need `fantasy_name` added to their company joins. The resolution
+belongs in `src/lib/sleeve-label-data.ts` as a small exported helper with tests,
+not repeated at four call sites.
+
+Legal names are unaffected everywhere else — the certificate PDF, contracts and
+correspondence keep using `name`, which is what those documents require.
+
 ## Not in scope
 
 - The mobile certificate page rebuild (Part 2 of the previous spec). The QR
