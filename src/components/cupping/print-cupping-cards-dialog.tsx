@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { pdf } from '@react-pdf/renderer'
-import { Printer, Download } from 'lucide-react'
 import QRCode from 'qrcode'
 import { cn } from '@/lib/utils'
 import {
@@ -14,6 +13,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
 import { Label } from '@/components/ui/label'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -123,7 +123,6 @@ export function PrintCuppingCardsDialog({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewLoading, setPreviewLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
-  const iframeRef = useRef<HTMLIFrameElement>(null)
   // Reprint support: the preview stays open after printing so a jammed / missed
   // sheet can be re-run without re-selecting. The batch advances to 'analysis'
   // (and stamps cards_printed_at) only on the FIRST confirmed print — never on
@@ -416,7 +415,7 @@ export function PrintCuppingCardsDialog({
       // NOTE: sample stage is deliberately NOT advanced here. Generating the
       // preview must be side-effect free so a jam/cancel before printing leaves
       // the batch untouched. The stage move + cards_printed_at stamp happen on
-      // the first confirmed print (see handlePrintPreview).
+      // the first confirmed print (see handlePrinted).
       setIsReadyForDownload(true)
       console.log('✅ Cards generated successfully:', cards.length)
       console.log('📊 Card data ready for PDF:', cards)
@@ -559,22 +558,9 @@ export function PrintCuppingCardsDialog({
     }
   }, [showPreview, activeDoc])
 
-  // Trigger the browser print dialog for the previewed PDF without saving it.
-  const handlePrintPreview = () => {
-    const frame = iframeRef.current
-    if (!frame) return
-
-    // Fire the physical print FIRST — it must never be gated on the network, so a
-    // slow / hung status update on a laggy lab connection can't delay or swallow
-    // the actual print.
-    try {
-      frame.contentWindow?.focus()
-      frame.contentWindow?.print()
-    } catch (err) {
-      console.error('Unable to trigger print on preview:', err)
-      // Fallback: open the PDF in a new tab where the user can print manually.
-      if (previewUrl) window.open(previewUrl, '_blank')
-    }
+  // Runs after the shell has opened the browser print dialog. Never runs on
+  // Save, so saving a card to check it cannot advance the batch's stage.
+  const handlePrinted = () => {
     setHasPrinted(true)
 
     // Advance the batch to 'analysis' + stamp cards_printed_at on the FIRST
@@ -610,58 +596,17 @@ export function PrintCuppingCardsDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className={showPreview ? 'sm:max-w-[920px]' : 'sm:max-w-[600px]'}>
+    <>
+    <Dialog open={open && !showPreview} onOpenChange={handleOpenChange}>
+      <DialogContent className="sm:max-w-[600px]">
         <DialogHeader>
           <DialogTitle>Print Cupping Cards</DialogTitle>
           <DialogDescription>
-            {showPreview
-              ? `Review and print ${samples.length} cupping card${samples.length !== 1 ? 's' : ''} — saving is optional.`
-              : `Configure and print cupping cards for ${samples.length} sample${samples.length !== 1 ? 's' : ''}`}
+            {`Configure and print cupping cards for ${samples.length} sample${samples.length !== 1 ? 's' : ''}`}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6 py-4">
-          {showPreview ? (
-            <div className="flex flex-col gap-3">
-              {documents.length > 1 && (
-                <div className="flex items-center gap-2">
-                  {documents.map((doc, i) => (
-                    <button
-                      key={doc.key}
-                      type="button"
-                      onClick={() => setActiveDocIndex(i)}
-                      className={cn(
-                        'rounded-full px-3 py-1 text-xs font-medium transition-colors',
-                        i === activeDocIndex
-                          ? 'bg-primary text-primary-foreground'
-                          : 'bg-muted text-muted-foreground hover:bg-accent'
-                      )}
-                    >
-                      {doc.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="relative h-[68vh] w-full overflow-hidden rounded-md border bg-muted/20">
-                {previewUrl && !previewLoading ? (
-                  <iframe
-                    ref={iframeRef}
-                    src={previewUrl}
-                    title="Cupping cards preview"
-                    className="h-full w-full"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center px-4 text-center text-sm text-muted-foreground">
-                    {previewError
-                      ? `Could not build preview: ${previewError}`
-                      : 'Preparing preview…'}
-                  </div>
-                )}
-              </div>
-            </div>
-          ) : (
-          <>
           {/* Selected Samples Preview */}
           <div className="space-y-2">
             <Label className="text-sm font-semibold">
@@ -906,68 +851,57 @@ export function PrintCuppingCardsDialog({
             </div>
           </div>
           )}
-          </>
-          )}
         </div>
 
         <DialogFooter>
-          {showPreview ? (
-            <div className="flex w-full items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <Button
-                  variant={hasPrinted ? 'default' : 'ghost'}
-                  onClick={() => handleOpenChange(false)}
-                >
-                  Done
-                </Button>
-                {hasPrinted && (
-                  <span className="text-xs text-muted-foreground">
-                    Reprint as many times as you need, then click Done.
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-2">
-                {previewUrl ? (
-                  <Button variant="outline" asChild>
-                    <a href={previewUrl} download={activeDoc?.fileName}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Save PDF
-                    </a>
-                  </Button>
-                ) : (
-                  <Button variant="outline" disabled>
-                    <Download className="mr-2 h-4 w-4" />
-                    Save PDF
-                  </Button>
-                )}
-                <Button
-                  variant={hasPrinted ? 'outline' : 'default'}
-                  onClick={handlePrintPreview}
-                  disabled={!previewUrl}
-                >
-                  <Printer className="mr-2 h-4 w-4" />
-                  {hasPrinted ? 'Print again' : 'Print'}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <>
-              <Button variant="outline" onClick={() => handleOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handlePrint} disabled={isGenerating || loading || cuppersLoading}>
-                {loading
-                  ? 'Loading...'
-                  : cuppersLoading
-                  ? 'Loading cuppers…'
-                  : isGenerating
-                  ? 'Generating...'
-                  : `Print ${samples.length} Card${samples.length !== 1 ? 's' : ''}`}
-              </Button>
-            </>
-          )}
+          <Button variant="outline" onClick={() => handleOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handlePrint} disabled={isGenerating || loading || cuppersLoading}>
+            {loading
+              ? 'Loading...'
+              : cuppersLoading
+              ? 'Loading cuppers…'
+              : isGenerating
+              ? 'Generating...'
+              : `Print ${samples.length} Card${samples.length !== 1 ? 's' : ''}`}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+      <PrintPreviewDialog
+        open={open && showPreview}
+        onOpenChange={(next) => { if (!next) handleOpenChange(false) }}
+        title="Print cupping cards"
+        subtitle={`${samples.length} card${samples.length !== 1 ? 's' : ''} — review, then print. Saving is optional.`}
+        pdfUrl={previewUrl}
+        loading={previewLoading}
+        error={previewError}
+        saveFileName={`cupping-cards-${new Date().toISOString().split('T')[0]}.pdf`}
+        headerExtra={
+          documents.length > 1 ? (
+            <div className="flex items-center gap-2">
+              {documents.map((doc, i) => (
+                <button
+                  key={doc.key}
+                  type="button"
+                  onClick={() => setActiveDocIndex(i)}
+                  className={cn(
+                    'rounded-full px-3 py-1 text-xs font-medium transition-colors',
+                    i === activeDocIndex
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-muted text-muted-foreground hover:bg-accent'
+                  )}
+                >
+                  {doc.label}
+                </button>
+              ))}
+            </div>
+          ) : undefined
+        }
+        onPrinted={handlePrinted}
+      />
+    </>
   )
 }
