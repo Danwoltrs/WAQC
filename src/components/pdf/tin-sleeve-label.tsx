@@ -54,12 +54,16 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       flexDirection: 'column',
       justifyContent: 'center',
     },
+    // Every clamped line pairs maxLines with textOverflow: @react-pdf/layout
+    // only sets textkit's truncateMode from textOverflow, so maxLines on its
+    // own hard-cuts the text with no marker that anything was dropped.
     headline: {
       fontSize: headSize,
       fontWeight: 'bold',
       color: '#000000',
       marginBottom: 0.8 * MM,
       maxLines: 1,
+      textOverflow: 'ellipsis',
     },
     // Seller / Client: one line only. The label height is fixed, so a long
     // exporter name must truncate rather than push the foot rule off the tin.
@@ -68,6 +72,7 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       color: '#000000',
       marginBottom: 0.8 * MM,
       maxLines: 1,
+      textOverflow: 'ellipsis',
     },
     // Cert. / Roaster: allowed a second line, because a sample with
     // sub-contracts comma-joins several certificate numbers here.
@@ -76,6 +81,7 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       color: '#000000',
       marginBottom: 0.8 * MM,
       maxLines: 2,
+      textOverflow: 'ellipsis',
     },
     key: {
       fontWeight: 'bold',
@@ -94,6 +100,7 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
       fontSize: bodySize,
       color: '#3A3A3A',
       maxLines: 1,
+      textOverflow: 'ellipsis',
     },
     qual: {
       fontWeight: 'bold',

@@ -152,7 +152,7 @@ export default async function OGImage({ params }: { params: Promise<{ slug: stri
       >
         {/* Left side - main info */}
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, justifyContent: 'space-between' }}>
-          {/* Top: branding + tracking */}
+          {/* Top: branding + public reference */}
           <div style={{ display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', fontSize: 18, color: 'rgba(255,255,255,0.5)', marginBottom: 8, letterSpacing: 2 }}>
               WOLTHERS COFFEE QC

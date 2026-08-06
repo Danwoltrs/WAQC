@@ -75,7 +75,10 @@ export function TinLabelSizeDialog({
       document.body.removeChild(link)
       window.URL.revokeObjectURL(url)
 
-      toast.success(`Generated ${selectedSize} tin labels for ${sampleIds.length} sample(s)`)
+      // The printed count is the selection minus whatever the route skipped —
+      // reporting the full selection contradicts the warning above.
+      const printed = sampleIds.length - skipped
+      toast.success(`Generated ${selectedSize} tin labels for ${printed} sample(s)`)
       onSuccess?.()
       onOpenChange(false)
     } catch (error) {
