@@ -603,8 +603,17 @@ export function LeftSidebar({ isExpanded, sidebarMode, onModeChange, onHoverEnte
       <div className="flex flex-col h-full">
         {/* Logo header */}
         <Link href="/" className="flex items-center justify-center border-b border-border h-16 px-2 hover:opacity-80 transition-opacity">
-          <img src="/images/logos/wolthers-logo-black.svg" alt="Wolthers" className={cn('w-auto dark:hidden', isExpanded ? 'h-10' : 'h-7')} />
-          <img src="/images/logos/wolthers-logo-off-white.svg" alt="Wolthers" className={cn('w-auto hidden dark:block', isExpanded ? 'h-10' : 'h-7')} />
+          {isExpanded ? (
+            <>
+              <img src="/logos/wolthers-logo-green.png" alt="Wolthers" className="h-10 w-auto dark:hidden" />
+              <img src="/logos/wolthers-logo-off-white.svg" alt="Wolthers" className="h-10 w-auto hidden dark:block" />
+            </>
+          ) : (
+            <>
+              <img src="/logos/O-wolthers-logo-green.svg" alt="Wolthers" className="h-7 w-auto dark:hidden" />
+              <img src="/logos/O-wolthers-logo-off-white.svg" alt="Wolthers" className="h-7 w-auto hidden dark:block" />
+            </>
+          )}
         </Link>
 
         {/* Navigation */}
