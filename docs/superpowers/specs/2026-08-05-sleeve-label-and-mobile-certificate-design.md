@@ -270,10 +270,32 @@ in `page.tsx`; only the modal and Share button need `'use client'`.
 
 ## Sequencing
 
-Part 1 and Part 2 ship independently and in that order. Part 1 is self-contained
-once the QR encodes a URL; until Part 2 lands, a scan opens the *existing*
-certificate page, which is worse-looking but correct. Shipping Part 2 first would
-build a page nobody can reach.
+Part 1 and Part 2 ship independently and in that order.
+
+**Correction, made during Part 1's implementation.** This section originally
+claimed Part 1 was self-contained because "a scan opens the *existing*
+certificate page, which is worse-looking but correct." That was wrong. The
+existing page resolved its slug against `samples.tracking_number` only, so once
+the QR encoded a certificate number, every scan of every printable label hit the
+not-found card. Since migration `20260605000001` every sample has
+`split_numbering = true`, so the two numbers never coincide.
+
+The resolver — and the displayed-reference rule that has to accompany it, or the
+`SAN-` leak merely moves from the label to the page — were therefore pulled
+forward into Part 1. What shipped:
+
+- `src/lib/certificate-slug.ts` — `resolveSampleIdForSlug` (certificate number
+  first, tracking number second, for tins printed before the switch) and
+  `resolvePublicReference` (container nr / exporter sample nr / contract
+  fallback / `Reference pending`).
+- All four slug consumers rewired: the page, `api/certificate/[slug]`,
+  `lib/certificate-pdf.ts`, `opengraph-image.tsx`.
+- The public JSON response now returns `public_reference` instead of
+  `tracking_number`.
+
+**Part 2 therefore no longer owns routing or the displayed reference.** It is now
+purely the visual rebuild: verdict block, spec checklist, cupping rails replacing
+the radar, and the footer modal.
 
 ## Out of scope
 
@@ -291,5 +313,32 @@ The certificate PDF layout, the internal cupping flow, the bag sleeve label,
   Check coverage before rolling out; those samples will fall back to the
   contract number.
 - **Public certificate enumerability.** Keying the route on the certificate
-  number removes the `SAN-` leak but the URL is still guessable. Pre-existing
-  issue, unchanged by this work, tracked separately.
+  number removes the `SAN-` leak but the URL is still guessable. Pre-existing,
+  unchanged by this work. Sharpened during Part 1: `resolveSampleIdForSlug`
+  passes the slug into `.ilike` without escaping `%`, so `/certificate/BR-%25`
+  matches an arbitrary certificate. The pre-existing code had the identical
+  unescaped `ilike` on `tracking_number`, so this is not a regression — but when
+  the enumerability item is picked up, fix it with an `.eq()`-then-`.ilike()`
+  pair or a `%` escape.
+
+- **Portal PDF: split authorization and resolution.**
+  `api/portal/certificate/[slug]/pdf/route.ts` gates ownership by resolving the
+  slug against `tracking_number`, then `buildCertificatePdfResponse`
+  independently re-resolves the same slug certificate-number-first. Today they
+  always agree — post-split tracking numbers carry a lab prefix (`SAN-`) and
+  certificate numbers a client/quality prefix, so a collision is practically
+  impossible — but nothing enforces it. Pass the gate's resolved `sampleId` into
+  the helper to remove the class.
+
+- **Deferred minors from the label work.** The `buildSleeveLabelFields`
+  call-site mapping is near-duplicated across the two tin routes; a shared
+  `sampleRowToSleeveLabelSource` would remove it. The single-sample route
+  `[id]/print-tin-sleeve` has no callers anywhere in `src/` — deleting it would
+  remove that duplication and the drift risk together. Its download filename is
+  `tin-sleeve-<uuid>.pdf` where the certificate number would be friendlier.
+
+- **A weak test assertion.** The sub-contract roll-up test in
+  `sleeve-label-data.test.ts` uses a total (`8 + 6 + 6 = 20.0 MT`) that
+  coincides with the bag-derived figure (333 × 60 kg = 19.98 → 20.0), so it
+  catches a mother-only regression but would also pass if `quantityMt` were
+  ignored entirely. Pick a total that differs from the derived value.

@@ -44,6 +44,9 @@ Everything the label prints, derived from plain data. No Supabase, no react-pdf,
   - `withCertifiedMonth(certNumber: string, certifiedAt: string | null | undefined): string`
   - `formatLabelDate(iso: string | null | undefined): string | null`
   - `formatSleeveQuantity(src: SleeveLabelSource): string | null`
+  - `toSleeveSampleType(raw: string | null | undefined): SleeveSampleType`
+  - `resolveQualityName(qualitySpec: QualitySpecLike | null | undefined, fallback?: string | null): string | null`
+  - `interface QualitySpecLike { custom_name?: string | null; template?: { name_en?: string | null; name_pt?: string | null; name_es?: string | null } | null }`
   - `buildSleeveLabelFields(src: SleeveLabelSource): SleeveLabelFields`
 
 Tasks 3, 4 and 5 all depend on `SleeveLabelFields` field names exactly as written here.
@@ -58,6 +61,8 @@ import {
   withCertifiedMonth,
   formatLabelDate,
   formatSleeveQuantity,
+  toSleeveSampleType,
+  resolveQualityName,
   buildSleeveLabelFields,
   type SleeveLabelSource,
 } from './sleeve-label-data'
@@ -128,6 +133,43 @@ describe('formatSleeveQuantity', () => {
   it('returns null when there is nothing to say', () => {
     expect(formatSleeveQuantity({ ...base, bagCount: null, bagWeightKg: null, equivalent60kgBags: null }))
       .toBeNull()
+  })
+})
+
+describe('toSleeveSampleType', () => {
+  it('maps the stored codes case-insensitively', () => {
+    expect(toSleeveSampleType('pss')).toBe('PSS')
+    expect(toSleeveSampleType('SS')).toBe('SS')
+    expect(toSleeveSampleType('type')).toBe('Type Sample')
+    expect(toSleeveSampleType('stocklot')).toBe('Stocklot')
+  })
+
+  it('defaults to PSS for unknown or missing values', () => {
+    expect(toSleeveSampleType(null)).toBe('PSS')
+    expect(toSleeveSampleType('mystery')).toBe('PSS')
+  })
+})
+
+describe('resolveQualityName', () => {
+  it('prefers the client custom name', () => {
+    expect(resolveQualityName({ custom_name: 'DDQ', template: { name_en: 'Dunkin' } })).toBe('DDQ')
+  })
+
+  it('never concatenates the custom name and the template name', () => {
+    // This is the "Dunkin - Dunkin" bug the old label printed.
+    expect(resolveQualityName({ custom_name: 'Dunkin', template: { name_en: 'Dunkin' } })).toBe('Dunkin')
+  })
+
+  it('falls through the template locales', () => {
+    expect(resolveQualityName({ custom_name: null, template: { name_en: null, name_pt: 'Duro' } })).toBe('Duro')
+  })
+
+  it('uses the fallback when there is no spec at all', () => {
+    expect(resolveQualityName(null, 'Type A')).toBe('Type A')
+  })
+
+  it('returns null when nothing resolves', () => {
+    expect(resolveQualityName(null, null)).toBeNull()
   })
 })
 
@@ -301,6 +343,51 @@ export function formatSleeveQuantity(src: SleeveLabelSource): string | null {
   return null
 }
 
+const SAMPLE_TYPES: Record<string, SleeveSampleType> = {
+  pss: 'PSS',
+  ss: 'SS',
+  type: 'Type Sample',
+  stocklot: 'Stocklot',
+}
+
+/** samples.sample_type ("pss", "ss", …) -> the label's display type. */
+export function toSleeveSampleType(raw: string | null | undefined): SleeveSampleType {
+  return SAMPLE_TYPES[String(raw || '').toLowerCase()] || 'PSS'
+}
+
+export interface QualitySpecLike {
+  custom_name?: string | null
+  template?: {
+    name_en?: string | null
+    name_pt?: string | null
+    name_es?: string | null
+  } | null
+}
+
+/**
+ * The client's custom name OR the template name — never both.
+ *
+ * The old label printed "{custom_name} - {template_name}", which rendered as
+ * "Dunkin - Dunkin" whenever the two matched.
+ */
+export function resolveQualityName(
+  qualitySpec: QualitySpecLike | null | undefined,
+  fallback?: string | null,
+): string | null {
+  const candidates = [
+    qualitySpec?.custom_name,
+    qualitySpec?.template?.name_en,
+    qualitySpec?.template?.name_pt,
+    qualitySpec?.template?.name_es,
+    fallback,
+  ]
+  for (const c of candidates) {
+    const v = (c || '').trim()
+    if (v) return v
+  }
+  return null
+}
+
 /** "Cocatrel (34680)", "OFI", or null when there is no name to print. */
 function party(name?: string | null, ref?: string | null): string | null {
   const n = (name || '').trim()
@@ -355,7 +442,7 @@ export function buildSleeveLabelFields(src: SleeveLabelSource): SleeveLabelField
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run src/lib/sleeve-label-data.test.ts`
-Expected: PASS, 18 tests.
+Expected: PASS, 25 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -683,7 +770,7 @@ bare label. 2.5cm merges Seller/Client onto the Cert. line."
 - Modify: `src/app/api/samples/bulk/print-tin-sleeves/route.tsx` (rewrite the body of `POST`, keep the auth and PDF-streaming top and tail)
 
 **Interfaces:**
-- Consumes: `buildSleeveLabelFields`, `SleeveSampleType` (Task 1); `getCertificatePageUrl` (Task 2); `TinSleeveLabelData`, `TinSleeveLabelDocument` (Task 3).
+- Consumes: `buildSleeveLabelFields`, `toSleeveSampleType`, `resolveQualityName` (Task 1); `getCertificatePageUrl` (Task 2); `TinSleeveLabelData`, `TinSleeveLabelDocument` (Task 3).
 - Produces: response header `X-Skipped-Samples` carrying the count of selected-but-uncertified samples. Task 6 reads it.
 
 - [ ] **Step 1: Replace the imports**
@@ -692,7 +779,11 @@ At the top of the file, replace the `@/lib/qr-code` import line with:
 
 ```tsx
 import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
-import { buildSleeveLabelFields, type SleeveSampleType } from '@/lib/sleeve-label-data'
+import {
+  buildSleeveLabelFields,
+  toSleeveSampleType,
+  resolveQualityName,
+} from '@/lib/sleeve-label-data'
 ```
 
 `fetchCertificateQRData` and `buildCertificateQRText` are no longer used here.
@@ -790,30 +881,12 @@ Also delete the `bagTypeMap` declaration above it (currently lines 109-114) and 
 `formatSleeveQuantity` builds, so nothing reads either one.
 
 ```tsx
-    const sampleTypeMap: Record<string, SleeveSampleType> = {
-      pss: 'PSS',
-      ss: 'SS',
-      type: 'Type Sample',
-      stocklot: 'Stocklot',
-    }
-
     const labelsWithQR: TinSleeveLabelData[] = await Promise.all(
       printable.map(async (sample: any) => {
         const certs = certsBySample[sample.id] || { numbers: [], certifiedAt: null }
 
-        const qualitySpec = sample.quality_spec
-        // custom_name OR the template name — never both, which is what produced
-        // the old "Dunkin - Dunkin" line.
-        const quality =
-          qualitySpec?.custom_name ||
-          qualitySpec?.template?.name_en ||
-          qualitySpec?.template?.name_pt ||
-          qualitySpec?.template?.name_es ||
-          sample.quality_name ||
-          null
-
         const fields = buildSleeveLabelFields({
-          sampleType: sampleTypeMap[String(sample.sample_type || '').toLowerCase()] || 'PSS',
+          sampleType: toSleeveSampleType(sample.sample_type),
           containerNr: sample.container_nr,
           exporterSampleNumber: sample.exporter_sample_number,
           certificateNumbers: certs.numbers,
@@ -823,7 +896,7 @@ Also delete the `bagTypeMap` declaration above it (currently lines 109-114) and 
           clientName: sample.client?.name || null,
           clientRef: sample.buyer_contract_nr,
           roasterName: sample.roaster?.name || null,
-          quality,
+          quality: resolveQualityName(sample.quality_spec, sample.quality_name),
           bagCount: sample.bag_count,
           bagWeightKg: sample.bag_weight_kg,
           bagType: sample.bag_type,
@@ -890,7 +963,11 @@ Same transformation, one sample, no skip counting.
 
 ```tsx
 import { generateQRCode, getCertificatePageUrl } from '@/lib/qr-code'
-import { buildSleeveLabelFields, type SleeveSampleType } from '@/lib/sleeve-label-data'
+import {
+  buildSleeveLabelFields,
+  toSleeveSampleType,
+  resolveQualityName,
+} from '@/lib/sleeve-label-data'
 ```
 
 - [ ] **Step 2: Replace the sample query select block**
@@ -937,24 +1014,9 @@ Delete the existing quality/packaging/bagsDisplay/contracts blocks and the `fetc
 
 ```tsx
     const s = sample as any
-    const sampleTypeMap: Record<string, SleeveSampleType> = {
-      pss: 'PSS',
-      ss: 'SS',
-      type: 'Type Sample',
-      stocklot: 'Stocklot',
-    }
-
-    const qualitySpec = s.quality_spec
-    const quality =
-      qualitySpec?.custom_name ||
-      qualitySpec?.template?.name_en ||
-      qualitySpec?.template?.name_pt ||
-      qualitySpec?.template?.name_es ||
-      s.quality_name ||
-      null
 
     const fields = buildSleeveLabelFields({
-      sampleType: sampleTypeMap[String(s.sample_type || '').toLowerCase()] || 'PSS',
+      sampleType: toSleeveSampleType(s.sample_type),
       containerNr: s.container_nr,
       exporterSampleNumber: s.exporter_sample_number,
       certificateNumbers: certNumbers,
@@ -964,7 +1026,7 @@ Delete the existing quality/packaging/bagsDisplay/contracts blocks and the `fetc
       clientName: s.client?.name || null,
       clientRef: s.buyer_contract_nr,
       roasterName: s.roaster?.name || null,
-      quality,
+      quality: resolveQualityName(s.quality_spec, s.quality_name),
       bagCount: s.bag_count,
       bagWeightKg: s.bag_weight_kg,
       bagType: s.bag_type,
