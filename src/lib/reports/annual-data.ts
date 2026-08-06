@@ -21,6 +21,9 @@ import {
 import {
   buildSankey,
   mapCertRowToReportRow,
+  reportRowClientId,
+  fetchSubContractOverrides,
+  attachSubContracts,
   type ClientSankeyType,
   type RawCertSampleRow,
 } from '@/lib/report-data'
@@ -193,7 +196,9 @@ export async function getAnnualPerformanceReportData(
   const { data: labs } = await (supabase as any).from('laboratories').select('id, name')
   const labNameById = new Map<string, string>((labs ?? []).map((l: any) => [l.id, l.name]))
 
-  // Same query shape as the Bi-Weekly, plus sample.laboratory_id. NO lab/origin filter.
+  // Same query shape as the Bi-Weekly, plus sample.laboratory_id. NO lab/origin
+  // filter, and no `sample_contract_id IS NULL` filter either: every commercial
+  // split's certificate counts, same as on the certificates page.
   const { data: certs, error: certsError } = await supabase
     .from('certificates')
     .select(`
@@ -201,6 +206,7 @@ export async function getAnnualPerformanceReportData(
       created_at,
       is_rejected,
       compliance_violations,
+      sample_contract_id,
       sample:samples!certificates_sample_id_fkey(
         id, sample_type, client_id, origin, micro_origin, laboratory_id, container_nr, ico_number,
         bag_count, bag_weight_kg, equivalent_60kg_bags, bags_quantity_mt, buyer_contract_nr,
@@ -210,7 +216,6 @@ export async function getAnnualPerformanceReportData(
         roaster:companies!samples_roaster_id_fkey(name,fantasy_name)
       )
     `)
-    .is('sample_contract_id', null)
     .gte('created_at', startDate)
     .lt('created_at', endDate)
     .order('created_at', { ascending: true })
@@ -220,7 +225,13 @@ export async function getAnnualPerformanceReportData(
     return null
   }
 
-  const forClient = (certs || []).filter((c: any) => c.sample && c.sample.client_id === clientId)
+  // Attach each split's own contract row, then filter by QC client — a split
+  // can belong to a different client than its mother sample.
+  const withSubs = attachSubContracts(
+    ((certs || []) as any[]).filter(c => c.sample) as RawCertSampleRow[],
+    await fetchSubContractOverrides(supabase as any, (certs || []) as any[]),
+  )
+  const forClient = withSubs.filter(c => reportRowClientId(c) === clientId) as any[]
   const shape = (c: any) =>
     toAnnualRow(c as RawCertSampleRow, { sankeyType, clientDisplay }, labNameById.get(c.sample.laboratory_id) ?? null)
   const pssRows = forClient.filter((c: any) => c.sample.sample_type === 'pss').map(shape)

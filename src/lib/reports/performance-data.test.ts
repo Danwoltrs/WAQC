@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { aggregateBucket, sortAppendixRows, type PerformanceRow } from './performance-data'
+import {
+  aggregateBucket,
+  sortAppendixRows,
+  getPerformanceReportData,
+  type PerformanceRow,
+} from './performance-data'
 
 const row = (over: Partial<PerformanceRow> = {}): PerformanceRow => ({
   approval_date: '2026-01-05T00:00:00Z',
@@ -152,5 +157,117 @@ describe('sortAppendixRows', () => {
     const copy = [...rows]
     sortAppendixRows(rows)
     expect(rows).toEqual(copy)
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Fetcher: the report's unit is the CERTIFICATE, so every commercial split
+// counts. Reporting only mother certificates showed a 3-container shipment as
+// one certificate.
+// ---------------------------------------------------------------------------
+
+const CLIENT = {
+  id: 'client-1', name: 'Ahold Delhaize Coffee Company', fantasy_name: null,
+  logo_url: null, company_types: ['roaster'], trading_roles: [],
+}
+
+const motherSample = {
+  id: 's1', sample_type: 'ss', client_id: 'client-1', origin: 'Brazil',
+  micro_origin: 'Cerrado', container_nr: 'MOTHER1', ico_number: '001/1',
+  bag_count: 300, bag_weight_kg: 60, equivalent_60kg_bags: null,
+  bags_quantity_mt: null, buyer_contract_nr: 'IR-1',
+  exporter: { name: 'Veloso Green Coffee', fantasy_name: null },
+  seller: { name: 'Veloso Green Coffee', fantasy_name: null },
+  importer: { name: 'Coffee America', fantasy_name: null },
+  roaster: null,
+}
+
+/** Mother certificate + two split certificates on the same sample. */
+const CERTS = [
+  { certificate_number: 'BR-000001/26', created_at: '2026-07-02T00:00:00Z', is_rejected: false, compliance_violations: null, sample_contract_id: null, sample: motherSample },
+  { certificate_number: 'BR-000002/26', created_at: '2026-07-03T00:00:00Z', is_rejected: false, compliance_violations: null, sample_contract_id: 'sc1', sample: motherSample },
+  { certificate_number: 'BR-000003/26', created_at: '2026-07-04T00:00:00Z', is_rejected: false, compliance_violations: null, sample_contract_id: 'sc2', sample: motherSample },
+]
+
+const SUBS = [
+  { id: 'sc1', client_id: null, container_nr: 'SPLIT1', ico_number: '001/2', buyer_contract_nr: 'IR-1a', bag_count: 275, bag_weight_kg: 60, equivalent_60kg_bags: null, bags_quantity_mt: null, importer_is_qc_client: null, importer: { name: 'Ahold Delhaize', fantasy_name: null }, roaster: null },
+  { id: 'sc2', client_id: null, container_nr: 'SPLIT2', ico_number: '001/3', buyer_contract_nr: 'IR-1b', bag_count: 100, bag_weight_kg: 60, equivalent_60kg_bags: null, bags_quantity_mt: null, importer_is_qc_client: null, importer: { name: 'Ahold Delhaize', fantasy_name: null }, roaster: null },
+]
+
+/**
+ * Minimal awaitable Supabase stub for the four tables the fetcher reads.
+ * `.is()` and `.in()` really filter, so a query that excludes sub-contract
+ * certificates here excludes them in production too.
+ */
+function fakeSupabase(over: { certs?: unknown[]; subs?: unknown[] } = {}) {
+  return {
+    from(table: string) {
+      const rows: any =
+        table === 'companies' ? CLIENT
+        : table === 'certificates' ? (over.certs ?? CERTS)
+        : table === 'sample_contracts' ? (over.subs ?? SUBS)
+        : []
+      let data = rows
+      const chain: Record<string, unknown> = {}
+      const self = () => chain
+      const payload = () => ({ data, error: null })
+      Object.assign(chain, {
+        select: self, eq: self, gte: self, lt: self, order: self, limit: self,
+        is: (col: string, val: unknown) => {
+          if (Array.isArray(data)) data = data.filter((r: any) => (r[col] ?? null) === val)
+          return chain
+        },
+        in: (col: string, vals: unknown[]) => {
+          if (Array.isArray(data)) data = data.filter((r: any) => vals.includes(r[col]))
+          return chain
+        },
+        single: async () => payload(),
+        maybeSingle: async () => payload(),
+        then: (resolve: (v: unknown) => unknown) => resolve(payload()),
+      })
+      return chain
+    },
+  } as any
+}
+
+const runSS = (supabase: any) =>
+  getPerformanceReportData(supabase, {
+    clientId: 'client-1', startDate: '2026-07-01', endDate: '2026-07-31', buckets: ['ss'],
+  })
+
+describe('getPerformanceReportData — sub-contract certificates', () => {
+  it('counts every certificate, mother plus each split', async () => {
+    const data = await runSS(fakeSupabase())
+    expect(data!.ss!.totals.evaluated).toBe(3)
+    expect(data!.ss!.totals.approved).toBe(3)
+    expect(data!.ss!.rows.map(r => r.certificate_number)).toEqual([
+      'BR-000001/26', 'BR-000002/26', 'BR-000003/26',
+    ])
+  })
+
+  it('adds each split under the mother’s shipper, so the shipper bar counts all of them', async () => {
+    const data = await runSS(fakeSupabase())
+    const veloso = data!.ss!.byExporter.find(e => e.name === 'Veloso Green Coffee')!
+    expect(veloso.approvedCount).toBe(3)
+  })
+
+  it('sums each contract’s own bags — the split’s, not a repeat of the mother’s', async () => {
+    const data = await runSS(fakeSupabase())
+    // 300 (mother contract) + 275 (split 1) + 100 (split 2)
+    expect(data!.ss!.totals.bagsApproved).toBe(675)
+    expect(data!.ss!.rows.map(r => r.container_nr)).toEqual(['MOTHER1', 'SPLIT1', 'SPLIT2'])
+    expect(data!.ss!.rows.map(r => r.importer_contract_nr)).toEqual(['IR-1', 'IR-1a', 'IR-1b'])
+  })
+
+  it('routes a split sold to another QC client out of this client’s report', async () => {
+    const subs = [SUBS[0], { ...SUBS[1], client_id: 'client-2' }]
+    const data = await runSS(fakeSupabase({ subs }))
+    expect(data!.ss!.totals.evaluated).toBe(2)
+  })
+
+  it('drops a split certificate whose contract row is missing rather than repeating the mother', async () => {
+    const data = await runSS(fakeSupabase({ subs: [SUBS[0]] }))
+    expect(data!.ss!.totals.evaluated).toBe(2)
+    expect(data!.ss!.totals.bagsApproved).toBe(575)
   })
 })

@@ -1,12 +1,14 @@
 import { describe, it, expect } from 'vitest'
 import {
   mapCertRowToReportRow,
+  reportRowClientId,
   categorizeViolation,
   computeBagsAndMt,
   extractGreenDefects,
   extractCuppingDefects,
   aggregateDefectBreakdown,
   type RawCertSampleRow,
+  type SubContractOverrideRow,
 } from './report-data'
 
 const raw = (over: Partial<RawCertSampleRow> = {}): RawCertSampleRow => ({
@@ -55,6 +57,87 @@ describe('mapCertRowToReportRow', () => {
       { sankeyType: 'roaster', clientDisplay: 'Ahold' },
     )
     expect(row.importer_name).toBe('Ahold')
+  })
+})
+
+describe('mapCertRowToReportRow — sub-contract certificates', () => {
+  const sub = (over: Partial<SubContractOverrideRow> = {}): SubContractOverrideRow => ({
+    id: 'sc1',
+    client_id: null,
+    container_nr: 'SUDU7654321',
+    ico_number: '002/3000',
+    buyer_contract_nr: 'IR0005918-2',
+    bag_count: 275,
+    bag_weight_kg: 60,
+    equivalent_60kg_bags: null,
+    bags_quantity_mt: null,
+    importer_is_qc_client: null,
+    importer: { name: 'Ahold Delhaize Coffee Company', fantasy_name: null },
+    roaster: { name: 'Marvelous Coffee Roasters', fantasy_name: 'Marvelous' },
+    ...over,
+  })
+
+  const subRow = (over: Partial<SubContractOverrideRow> = {}) =>
+    mapCertRowToReportRow(
+      raw({ certificate_number: 'BR-000002/26', sample_contract_id: 'sc1', sub: sub(over) }),
+      { sankeyType: 'final_buyer', clientDisplay: 'Dunkin' },
+    )
+
+  it('takes the split’s own buyer side, refs and quantity — not the mother’s', () => {
+    const row = subRow()
+    expect(row.certificate_number).toBe('BR-000002/26')
+    expect(row.importer_name).toBe('Ahold Delhaize Coffee Company')
+    expect(row.roaster_name).toBe('Marvelous')          // fantasy name wins
+    expect(row.importer_contract_nr).toBe('IR0005918-2')
+    expect(row.container_nr).toBe('SUDU7654321')
+    expect(row.ico_marks).toBe('002/3000')
+    expect(row.bags).toBe(275)                          // its own split, not the mother's 333
+  })
+
+  it('keeps the mother’s supply side (splits have no exporter/seller of their own)', () => {
+    const row = subRow()
+    expect(row.exporter_name).toBe('Cooxupé')
+    expect(row.seller_name).toBe('Cooxupe')
+  })
+
+  it('falls back container/ICO to the mother when the split leaves them blank', () => {
+    const row = subRow({ container_nr: null, ico_number: null })
+    expect(row.container_nr).toBe('ABCD1234567')
+    expect(row.ico_marks).toBe('001/2075')
+  })
+
+  it('never inherits the mother’s quantity — that would double-count the lot', () => {
+    const row = subRow({ bag_count: null, bag_weight_kg: null, equivalent_60kg_bags: null, bags_quantity_mt: null })
+    expect(row.bags).toBeNull()
+    expect(row.mt).toBeNull()
+  })
+
+  it('names the QC client as importer when the split marks the importer as the QC client', () => {
+    const row = subRow({ importer: null, importer_is_qc_client: true })
+    expect(row.importer_name).toBe('Dunkin')
+  })
+
+  it('reports Unsold when the split has no roaster', () => {
+    expect(subRow({ roaster: null }).roaster_name).toBe('Unsold')
+  })
+})
+
+describe('reportRowClientId', () => {
+  it('uses the mother sample’s QC client for a mother certificate', () => {
+    expect(reportRowClientId(raw())).toBe('client-1')
+  })
+
+  it('uses the split’s own QC client when it declares one', () => {
+    const c = raw({
+      sample_contract_id: 'sc1',
+      sub: {
+        id: 'sc1', client_id: 'client-2', container_nr: null, ico_number: null,
+        buyer_contract_nr: null, bag_count: null, bag_weight_kg: null,
+        equivalent_60kg_bags: null, bags_quantity_mt: null, importer_is_qc_client: null,
+        importer: null, roaster: null,
+      },
+    })
+    expect(reportRowClientId(c)).toBe('client-2')
   })
 })
 

@@ -11,6 +11,9 @@
 import { SupabaseClient } from '@supabase/supabase-js'
 import {
   mapCertRowToReportRow,
+  reportRowClientId,
+  fetchSubContractOverrides,
+  attachSubContracts,
   categorizeViolation,
   buildSankey,
   aggregateDefectBreakdown,
@@ -273,6 +276,12 @@ export async function getPerformanceReportData(
   const clientDisplay = client.fantasy_name || client.name
   const sankeyType: ClientSankeyType = clientIsImporter ? 'importer' : clientIsRoaster ? 'roaster' : 'final_buyer'
 
+  // EVERY certificate issued in the window — the mother certificate of each
+  // sample PLUS one per commercial split (`sample_contracts`). Filtering to
+  // `sample_contract_id IS NULL` is what used to report a 12-container shipment
+  // as a single certificate. The unit of a performance report is the
+  // CERTIFICATE, matching the certificates page and the batch send.
+  //
   // NOTE: select must include sample.micro_origin (region) + bag_weight_kg
   // (bags/MT rule).
   const { data: certs, error: certsError } = await supabase
@@ -282,6 +291,7 @@ export async function getPerformanceReportData(
       created_at,
       is_rejected,
       compliance_violations,
+      sample_contract_id,
       sample:samples!certificates_sample_id_fkey(
         id, sample_type, client_id, origin, micro_origin, container_nr, ico_number,
         bag_count, bag_weight_kg, equivalent_60kg_bags, bags_quantity_mt, buyer_contract_nr,
@@ -291,7 +301,6 @@ export async function getPerformanceReportData(
         roaster:companies!samples_roaster_id_fkey(name,fantasy_name)
       )
     `)
-    .is('sample_contract_id', null)
     .gte('created_at', startDate)
     .lt('created_at', endDate)
     .order('created_at', { ascending: true })
@@ -301,7 +310,13 @@ export async function getPerformanceReportData(
     return null
   }
 
-  const forClient = (certs || []).filter((c: any) => c.sample && c.sample.client_id === clientId)
+  // Attach each split's own contract row, then filter by QC client — a split
+  // can belong to a different client than its mother sample.
+  const withSubs = attachSubContracts(
+    ((certs || []) as any[]).filter(c => c.sample) as RawCertSampleRow[],
+    await fetchSubContractOverrides(supabase as any, (certs || []) as any[]),
+  )
+  const forClient = withSubs.filter(c => reportRowClientId(c) === clientId) as any[]
 
   const bucketRows = (type: ReportBucketKey): PerformanceRow[] =>
     forClient
@@ -314,10 +329,16 @@ export async function getPerformanceReportData(
   // Named rejection breakdown: pull the latest quality assessment for each
   // rejected sample and aggregate its green + cupping defects. Only rejected
   // samples are queried, so approved-heavy periods stay cheap.
-  const rejectedIdsFor = (type: ReportBucketKey): string[] =>
-    forClient
-      .filter((c: any) => c.sample.sample_type === type && c.is_rejected && c.sample.id)
-      .map((c: any) => c.sample.id as string)
+  // Deduped by SAMPLE: quality is graded once on the mother, so a rejected
+  // sample's defects must be counted once no matter how many of its split
+  // certificates carry the rejection.
+  const rejectedIdsFor = (type: ReportBucketKey): string[] => [
+    ...new Set<string>(
+      forClient
+        .filter((c: any) => c.sample.sample_type === type && c.is_rejected && c.sample.id)
+        .map((c: any) => c.sample.id as string),
+    ),
+  ]
 
   const pssRejectedIds = buckets.includes('pss') ? rejectedIdsFor('pss') : []
   const ssRejectedIds = buckets.includes('ss') ? rejectedIdsFor('ss') : []

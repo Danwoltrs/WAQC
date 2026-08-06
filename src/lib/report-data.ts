@@ -68,12 +68,38 @@ export interface SupplierScorecardRow {
   bags: number
 }
 
+/**
+ * The `sample_contracts` columns a report needs when a certificate belongs to a
+ * commercial split. Each split is its own contract — own buyer side, own
+ * container/ICO and its OWN quantity — so its certificate must report those,
+ * exactly like `certificate-data.ts` renders it.
+ */
+export interface SubContractOverrideRow {
+  id: string
+  /** A split may be sold to a different QC client than the mother sample. */
+  client_id: string | null
+  container_nr: string | null
+  ico_number: string | null
+  buyer_contract_nr: string | null
+  bag_count: number | null
+  bag_weight_kg: number | null
+  equivalent_60kg_bags: number | null
+  bags_quantity_mt: number | null
+  importer_is_qc_client: boolean | null
+  importer: { name: string | null; fantasy_name: string | null } | null
+  roaster: { name: string | null; fantasy_name: string | null } | null
+}
+
 /** Shape of a `certificates ⋈ samples` row from the report query. */
 export interface RawCertSampleRow {
   certificate_number: string
   created_at: string
   is_rejected: boolean | null
   compliance_violations: string[] | null
+  /** Set when this certificate belongs to a commercial split; null = mother. */
+  sample_contract_id?: string | null
+  /** The split row, attached by the fetcher via `fetchSubContractOverrides`. */
+  sub?: SubContractOverrideRow | null
   sample: {
     id: string
     sample_type: string | null
@@ -125,38 +151,123 @@ export function computeBagsAndMt(s: {
 }
 
 /**
+ * The QC client a certificate belongs to. A split may be sold to a different QC
+ * client than its mother sample, so its own `client_id` wins when present.
+ */
+export function reportRowClientId(c: RawCertSampleRow): string | null {
+  return c.sub?.client_id ?? c.sample?.client_id ?? null
+}
+
+/**
  * Map one joined `certificates ⋈ samples` row to a `WeeklySSCertRow`.
  * Shared by the performance + annual fetchers so their field mapping can't drift.
+ *
+ * When the row is a sub-contract certificate (`c.sub` set), the split's own
+ * buyer side / refs / quantity replace the mother's — the mother sample is
+ * contract #1 of the shipment and each split is its own contract, so their
+ * quantities are additive, never a subdivision of one another. The supply side
+ * (exporter, seller) and the sample's origin stay the mother's: a split has no
+ * shipper of its own.
  */
 export function mapCertRowToReportRow(
   c: RawCertSampleRow,
   ctx: { sankeyType: ClientSankeyType; clientDisplay: string },
 ): WeeklySSCertRow {
   const s = c.sample!
-  const { bags, mt } = computeBagsAndMt({
-    bag_count: s.bag_count ?? null,
-    bag_weight_kg: s.bag_weight_kg ?? null,
-    equivalent_60kg_bags: s.equivalent_60kg_bags ?? null,
-    bags_quantity_mt: s.bags_quantity_mt ?? null,
-  })
+  const sub = c.sub ?? null
+  // A split reports ITS OWN quantity and never falls back to the mother's —
+  // inheriting it would count the same coffee once per split.
+  const qty = sub
+    ? {
+        bag_count: sub.bag_count ?? null,
+        bag_weight_kg: sub.bag_weight_kg ?? null,
+        equivalent_60kg_bags: sub.equivalent_60kg_bags ?? null,
+        bags_quantity_mt: sub.bags_quantity_mt ?? null,
+      }
+    : {
+        bag_count: s.bag_count ?? null,
+        bag_weight_kg: s.bag_weight_kg ?? null,
+        equivalent_60kg_bags: s.equivalent_60kg_bags ?? null,
+        bags_quantity_mt: s.bags_quantity_mt ?? null,
+      }
+  const { bags, mt } = computeBagsAndMt(qty)
   // For roaster clients with no importer FK, substitute the client name —
-  // the roaster IS the de-facto importer in that case (Ahold style).
-  const importerName = companyDisplayName(s.importer)
-    ?? (ctx.sankeyType === 'roaster' ? ctx.clientDisplay : null)
+  // the roaster IS the de-facto importer in that case (Ahold style). A split
+  // that flags `importer_is_qc_client` names the client the same way.
+  const importerName = sub
+    ? companyDisplayName(sub.importer)
+        ?? (sub.importer_is_qc_client ? ctx.clientDisplay : null)
+        ?? (ctx.sankeyType === 'roaster' ? ctx.clientDisplay : null)
+    : companyDisplayName(s.importer) ?? (ctx.sankeyType === 'roaster' ? ctx.clientDisplay : null)
   return {
     approval_date: c.created_at,
     certificate_number: c.certificate_number,
     exporter_name: companyDisplayName(s.exporter),
     seller_name: companyDisplayName(s.seller),
     importer_name: importerName,
-    importer_contract_nr: s.buyer_contract_nr ?? null,
-    roaster_name: companyDisplayName(s.roaster) ?? 'Unsold',
-    container_nr: s.container_nr ?? null,
-    ico_marks: s.ico_number ?? null,
+    importer_contract_nr: (sub ? sub.buyer_contract_nr : s.buyer_contract_nr) ?? null,
+    roaster_name: (sub ? companyDisplayName(sub.roaster) : companyDisplayName(s.roaster)) ?? 'Unsold',
+    container_nr: (sub?.container_nr ?? s.container_nr) ?? null,
+    ico_marks: (sub?.ico_number ?? s.ico_number) ?? null,
     bags,
     mt,
     is_rejected: !!c.is_rejected,
   }
+}
+
+/**
+ * Load the `sample_contracts` rows behind a batch of certificates, keyed by id.
+ * Callers attach the result onto each raw row's `sub` before mapping.
+ */
+export async function fetchSubContractOverrides(
+  supabase: { from: (t: string) => any },
+  certs: Array<{ sample_contract_id?: string | null }>,
+): Promise<Map<string, SubContractOverrideRow>> {
+  const out = new Map<string, SubContractOverrideRow>()
+  const ids = [...new Set(certs.map(c => c.sample_contract_id).filter((x): x is string => !!x))]
+  if (ids.length === 0) return out
+
+  const { data, error } = await supabase
+    .from('sample_contracts')
+    .select(`
+      id, client_id, container_nr, ico_number, buyer_contract_nr,
+      bag_count, bag_weight_kg, equivalent_60kg_bags, bags_quantity_mt,
+      importer_is_qc_client,
+      importer:companies!sample_contracts_importer_id_fkey(name,fantasy_name),
+      roaster:companies!sample_contracts_roaster_id_fkey(name,fantasy_name)
+    `)
+    .in('id', ids)
+
+  if (error) {
+    // Non-fatal: without the split rows those certificates would report the
+    // mother's figures, so drop them from the report instead of lying.
+    console.error('[report-data] sample_contracts query failed:', error)
+    return out
+  }
+  for (const r of (data ?? []) as SubContractOverrideRow[]) out.set(r.id, r)
+  return out
+}
+
+/**
+ * Attach each certificate's split row. Sub-contract certificates whose split
+ * row didn't load are dropped — reporting them would repeat the mother's
+ * importer and quantity under a different certificate number.
+ */
+export function attachSubContracts<T extends RawCertSampleRow>(
+  certs: T[],
+  subById: Map<string, SubContractOverrideRow>,
+): T[] {
+  const out: T[] = []
+  for (const c of certs) {
+    if (!c.sample_contract_id) {
+      out.push(c)
+      continue
+    }
+    const sub = subById.get(c.sample_contract_id)
+    if (!sub) continue
+    out.push({ ...c, sub })
+  }
+  return out
 }
 
 const SANKEY_WIDTH = 720
