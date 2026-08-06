@@ -13,10 +13,11 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from '@/components/ui/alert-dialog'
 import {
-  MoreHorizontal, QrCode, Printer, Download, Eye, Award, Mail, Trash2, Loader2, FileText,
+  MoreHorizontal, QrCode, Printer, Download, Eye, Award, Mail, Trash2, Loader2,
 } from 'lucide-react'
 import { useAuth } from '@/components/providers/auth-provider'
 import { ApprovalSendView } from '@/components/samples/approval-send-view'
+import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
 import type { CertSample } from './use-cert-editor'
 import { useSampleActions } from './use-sample-actions'
 
@@ -95,39 +96,34 @@ export function SampleActionsMenu({
       </DropdownMenu>
 
       {/* Certificate preview */}
-      <Dialog open={a.showCertificateModal} onOpenChange={(o) => !o && a.handleClosePreview()}>
-        <DialogContent className="sm:max-w-[1100px] max-h-[95vh]">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <FileText className="h-5 w-5" /> Certificate {a.parseTrackingNumber(sample.tracking_number)}
-            </DialogTitle>
-            <DialogDescription>
-              {sample.origin ? <span>Origin: {sample.origin}</span> : null}
-              {sample.quality_name ? <span className="ml-4">Quality: {sample.quality_name}</span> : null}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 min-h-[75vh] overflow-hidden rounded-lg bg-muted">
-            {a.previewLoading ? (
-              <div className="flex h-[75vh] items-center justify-center">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : a.previewPdfUrl ? (
-              <iframe src={a.previewPdfUrl} className="h-[75vh] w-full border-0" title="Certificate Preview" />
-            ) : (
-              <div className="flex h-[75vh] items-center justify-center text-muted-foreground">Unable to load certificate preview</div>
-            )}
-          </div>
-          <DialogFooter className="flex-row gap-2 sm:gap-2">
-            <Button variant="outline" onClick={a.handleDownloadCertificate} disabled={a.downloadingCertificate}>
-              {a.downloadingCertificate ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Download className="mr-2 h-4 w-4" />} Download
-            </Button>
-            <Button variant="outline" onClick={() => a.setShowEmailDialog(true)}>
-              <Mail className="mr-2 h-4 w-4" /> Send Email
-            </Button>
-            <Button variant="default" onClick={a.handleClosePreview}>Close</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <PrintPreviewDialog
+        open={a.showCertificateModal}
+        onOpenChange={(o) => { if (!o) a.handleClosePreview() }}
+        title={`Certificate ${a.parseTrackingNumber(sample.tracking_number)}`}
+        subtitle={[
+          sample.origin ? `Origin: ${sample.origin}` : null,
+          sample.quality_name ? `Quality: ${sample.quality_name}` : null,
+        ].filter(Boolean).join('   ') || undefined}
+        pdfUrl={a.previewPdfUrl}
+        loading={a.previewLoading}
+        saveFileName={`${a.parseTrackingNumber(sample.tracking_number)}.pdf`}
+        onSave={a.handleDownloadCertificate}
+        footerExtra={
+          <Button variant="outline" onClick={() => a.setShowEmailDialog(true)}>
+            <Mail className="mr-2 h-4 w-4" /> Send Email
+          </Button>
+        }
+      />
+
+      {/* Sample label preview */}
+      <PrintPreviewDialog
+        open={!!a.labelPdfUrl}
+        onOpenChange={(o) => { if (!o) a.closeLabelPreview() }}
+        title={`Sample label ${a.parseTrackingNumber(sample.tracking_number)}`}
+        subtitle="One label, 4cm on A4 with cut guides."
+        pdfUrl={a.labelPdfUrl}
+        saveFileName={`${a.parseTrackingNumber(sample.tracking_number)}-label.pdf`}
+      />
 
       {/* Email dialog */}
       <Dialog open={a.showEmailDialog} onOpenChange={a.setShowEmailDialog}>

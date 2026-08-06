@@ -39,7 +39,6 @@ import {
   Search,
   Download,
   Mail,
-  FileText,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
@@ -70,6 +69,7 @@ import { useToast } from '@/hooks/use-toast'
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { useAuth } from '@/components/providers/auth-provider'
 import { isSampleEditor } from '@/lib/sample-edit-permissions'
+import { PrintPreviewDialog } from '@/components/print/print-preview-dialog'
 
 interface Certificate {
   id: string
@@ -1245,67 +1245,41 @@ export default function CertificatesPage() {
           </DialogContent>
         </Dialog>
 
-        {/* Certificate Preview Modal */}
-        <Dialog open={!!previewCertificate} onOpenChange={(open) => !open && handleClosePreview()}>
-          <DialogContent className="sm:max-w-[1400px] w-[96vw] max-h-[96vh]">
-            <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5" />
-                Certificate {previewCertificate?.certificate_number}
-              </DialogTitle>
-              <DialogDescription>
-                {previewCertificate?.sample?.origin && (
-                  <span>Origin: {previewCertificate.sample.origin}</span>
-                )}
-                {previewCertificate?.sample?.client && (
-                  <span className="ml-4">
-                    Client: {previewCertificate.sample.client.fantasy_name ||
-                            previewCertificate.sample.client.company ||
-                            previewCertificate.sample.client.name}
-                  </span>
-                )}
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="flex-1 min-h-[78vh] bg-muted rounded-lg overflow-hidden">
-              {previewPdfUrl ? (
-                <iframe
-                  src={previewPdfUrl}
-                  className="w-full h-[80vh] border-0"
-                  title="Certificate Preview"
-                />
-              ) : (
-                <div className="flex items-center justify-center h-full text-muted-foreground">
-                  Unable to load certificate preview
-                </div>
-              )}
-            </div>
-
-            <DialogFooter className="flex-row gap-2 sm:gap-2">
-              {previewCertificate?.sample_id && (
-                <>
-                  <Button
-                    variant="outline"
-                    onClick={() => handleDownload(previewCertificate.sample_id!, previewCertificate.certificate_number, previewCertificate.sample_contract_id)}
-                  >
-                    <Download className="h-4 w-4 mr-2" />
-                    Download
-                  </Button>
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowSingleEmailDialog(true)}
-                  >
-                    <Mail className="h-4 w-4 mr-2" />
-                    Send Email
-                  </Button>
-                </>
-              )}
-              <Button variant="default" onClick={handleClosePreview}>
-                Close
+        {/* Certificate Preview */}
+        <PrintPreviewDialog
+          open={!!previewCertificate}
+          onOpenChange={(next) => { if (!next) handleClosePreview() }}
+          title={`Certificate ${previewCertificate?.certificate_number ?? ''}`}
+          subtitle={[
+            previewCertificate?.sample?.origin ? `Origin: ${previewCertificate.sample.origin}` : null,
+            previewCertificate?.sample?.client
+              ? `Client: ${previewCertificate.sample.client.fantasy_name ||
+                  previewCertificate.sample.client.company ||
+                  previewCertificate.sample.client.name}`
+              : null,
+          ].filter(Boolean).join('   ') || undefined}
+          pdfUrl={previewPdfUrl}
+          saveFileName={`${previewCertificate?.certificate_number ?? 'certificate'}.pdf`}
+          // The existing download names the file from the certificate number
+          // via the download endpoint — better than anything built here.
+          onSave={
+            previewCertificate?.sample_id
+              ? () => handleDownload(
+                  previewCertificate.sample_id!,
+                  previewCertificate.certificate_number,
+                  previewCertificate.sample_contract_id,
+                )
+              : undefined
+          }
+          footerExtra={
+            previewCertificate?.sample_id ? (
+              <Button variant="outline" onClick={() => setShowSingleEmailDialog(true)}>
+                <Mail className="h-4 w-4 mr-2" />
+                Send Email
               </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+            ) : undefined
+          }
+        />
 
         {/* Sleeve printing from a certificate selection. Tin labels dedupe to
             the lot — one tin covers a mother and all its splits — while bag

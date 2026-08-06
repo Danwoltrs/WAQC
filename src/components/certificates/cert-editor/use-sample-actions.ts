@@ -47,6 +47,7 @@ export function useSampleActions({
   const [generatingQr, setGeneratingQr] = useState(false)
   // Misc action flags
   const [printingLabel, setPrintingLabel] = useState(false)
+  const [labelPdfUrl, setLabelPdfUrl] = useState<string | null>(null)
   const [downloadingCertificate, setDownloadingCertificate] = useState(false)
   const [generatingCertificate, setGeneratingCertificate] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -139,16 +140,23 @@ export function useSampleActions({
       })
       if (!response.ok) throw new Error((await response.json()).error || 'Failed to generate label')
       const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const printWindow = window.open(url)
-      if (printWindow) printWindow.onload = () => printWindow.print()
-      setTimeout(() => window.URL.revokeObjectURL(url), 60000)
+      setLabelPdfUrl(prev => {
+        if (prev) window.URL.revokeObjectURL(prev)
+        return window.URL.createObjectURL(blob)
+      })
     } catch (error) {
       console.error('Error printing label:', error)
       toast({ title: 'Print failed', description: error instanceof Error ? error.message : 'Failed to print label', variant: 'destructive' })
     } finally {
       setPrintingLabel(false)
     }
+  }
+
+  const closeLabelPreview = () => {
+    setLabelPdfUrl(prev => {
+      if (prev) window.URL.revokeObjectURL(prev)
+      return null
+    })
   }
 
   const handleExport = () => {
@@ -316,7 +324,7 @@ export function useSampleActions({
     // certificate
     downloadingCertificate, handleDownloadCertificate, generatingCertificate, handleGenerateCertificate,
     // print / export
-    printingLabel, handlePrintLabel, handleExport,
+    printingLabel, handlePrintLabel, labelPdfUrl, closeLabelPreview, handleExport,
     // delete
     deleteOpen, setDeleteOpen, deleting, confirmDelete,
     // approval send
