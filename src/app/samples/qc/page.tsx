@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { MainLayout } from '@/components/layout/main-layout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -201,6 +201,10 @@ export default function SamplesPage() {
   const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
+  const [pendingTodayIds, setPendingTodayIds] = useState<string[]>([])
+  // An explicit batch when the "print today's unprinted" button drives the
+  // dialog; null means the dialog uses the current row selection, as before.
+  const [tinLabelBatchIds, setTinLabelBatchIds] = useState<string[] | null>(null)
   const [showCuppingCardsDialog, setShowCuppingCardsDialog] = useState(false)
   const [showAssignCuppersDialog, setShowAssignCuppersDialog] = useState(false)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -320,6 +324,22 @@ export default function SamplesPage() {
     loadSamples()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter, sampleTypeFilter, workflowStageFilter])
+
+  const refreshPendingToday = useCallback(async () => {
+    try {
+      const response = await fetch('/api/samples/tin-labels/pending-today')
+      if (!response.ok) return
+      const data = await response.json()
+      setPendingTodayIds(Array.isArray(data.sample_ids) ? data.sample_ids : [])
+    } catch {
+      // A missing badge is not worth interrupting the page for.
+      setPendingTodayIds([])
+    }
+  }, [])
+
+  useEffect(() => {
+    refreshPendingToday()
+  }, [refreshPendingToday])
 
   const loadSamples = async () => {
     try {
@@ -1222,6 +1242,18 @@ export default function SamplesPage() {
                     className="pl-9"
                   />
                 </div>
+                {pendingTodayIds.length > 0 && (
+                  <Button
+                    variant="outline"
+                    onClick={() => {
+                      setTinLabelBatchIds(pendingTodayIds)
+                      setShowTinLabelDialog(true)
+                    }}
+                  >
+                    <Printer className="h-4 w-4 mr-2" />
+                    Print today&apos;s unprinted · {pendingTodayIds.length}
+                  </Button>
+                )}
               </div>
 
               {/* Advanced Filters */}
@@ -2085,10 +2117,14 @@ export default function SamplesPage() {
       {/* Tin Label Size Selection Dialog */}
       <TinLabelSizeDialog
         open={showTinLabelDialog}
-        onOpenChange={setShowTinLabelDialog}
-        sampleIds={Array.from(selectedSamples)}
+        onOpenChange={(open) => {
+          setShowTinLabelDialog(open)
+          if (!open) setTinLabelBatchIds(null)
+        }}
+        sampleIds={tinLabelBatchIds ?? Array.from(selectedSamples)}
         onSuccess={() => {
           setSelectedSamples(new Set())
+          refreshPendingToday()
         }}
       />
 
