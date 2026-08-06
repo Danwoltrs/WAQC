@@ -1,7 +1,12 @@
 import { ImageResponse } from 'next/og'
 import { createClient } from '@supabase/supabase-js'
 import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
-import { screenGramsToPercent, resolveDefectCounts } from '@/lib/quality-resolvers'
+import {
+  screenGramsToPercent,
+  resolveDefectCounts,
+  resolveTaintFaultCounts,
+  type CuppingScoreRow,
+} from '@/lib/quality-resolvers'
 
 export const runtime = 'nodejs'
 export const alt = 'Wolthers Coffee QC Certificate'
@@ -120,23 +125,31 @@ export default async function OGImage({ params }: { params: Promise<{ slug: stri
     })
   }
 
-  // Cupping scores for taints/faults
+  // Cupping scores for taints/faults — same reading as the approval gate: a
+  // designated master cupper's record is authoritative, otherwise the max
+  // across cuppers (two cuppers flagging the same taint is one taint, not two).
   const { data: cuppingScores } = await supabase
     .from('cupping_scores')
-    .select('defects')
+    .select('scores, defects, cupper_id')
     .eq('sample_id', sample.id)
 
-  let totalTaints = 0
-  let totalFaults = 0
-  if (cuppingScores) {
-    for (const score of cuppingScores) {
-      if (score.defects && typeof score.defects === 'object') {
-        const d = score.defects as { taints?: unknown[]; faults?: unknown[] }
-        if (Array.isArray(d.taints)) totalTaints += d.taints.length
-        if (Array.isArray(d.faults)) totalFaults += d.faults.length
-      }
-    }
+  const scoreRows = (cuppingScores || []) as unknown as CuppingScoreRow[]
+
+  let masterCupperId: string | null = null
+  if (scoreRows.length > 0) {
+    const { data: session } = await (supabase as any)
+      .from('cupping_sessions')
+      .select('master_cupper_id')
+      .contains('sample_ids', [sample.id])
+      .in('status', ['setup', 'active', 'review', 'completed', 'finalized'])
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+    masterCupperId = session?.master_cupper_id || null
   }
+
+  const { taints: totalTaints, faults: totalFaults } =
+    resolveTaintFaultCounts(scoreRows, masterCupperId)
 
   const cleanCup = assessment?.clean_cup
   const uniformCup = assessment?.uniform_cup
