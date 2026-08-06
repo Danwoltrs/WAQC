@@ -74,7 +74,6 @@ export async function evaluateSampleCompliance(
     return []
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const template = qualitySpec.template as any
   const parameters = (template.parameters as QualityTemplateParameters) || {}
 

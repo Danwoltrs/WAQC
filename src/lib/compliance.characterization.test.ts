@@ -28,7 +28,6 @@ function fakeSupabase(tables: Record<string, TableResult>) {
     chain.then = (resolve: (v: TableResult) => unknown) => resolve(result)
     return chain
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return { from: (table: string) => build(table) } as any
 }
 
