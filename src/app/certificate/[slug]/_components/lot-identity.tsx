@@ -10,6 +10,13 @@ import type { CertificateView } from './types'
  */
 export function LotIdentity({ view }: { view: CertificateView }) {
   const cells: Array<{ k: string; v: string }> = []
+  // The container leads: the certificate number and contract sit in the verdict
+  // block above, and this is the next thing a scanner matches against the tin
+  // in their hand. Omitted when it is already the headline (no certificate
+  // number), so the same value is never printed twice.
+  if (view.lotReference && view.certificateNumber) {
+    cells.push({ k: view.lotReference.label, v: view.lotReference.value })
+  }
   if (view.exporter) cells.push({ k: 'Exporter', v: view.exporter })
   if (view.qualityName) cells.push({ k: 'Quality', v: view.qualityName })
   if (view.quantity) cells.push({ k: 'Quantity', v: view.quantity })

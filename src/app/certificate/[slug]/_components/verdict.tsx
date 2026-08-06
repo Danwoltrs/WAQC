@@ -26,13 +26,22 @@ export function Verdict({ view }: { view: CertificateView }) {
       }`}
     >
       <div className="flex items-center justify-between gap-3">
+        {/* The certificate number leads: it is what the QR encodes, what is
+            printed on the tin, and the only identifier unique to this lot. The
+            container moves down into the lot identity block. */}
         <div className="min-w-0">
           <div className="text-[10px] tracking-[0.12em] uppercase text-[#7c7a73] font-semibold mb-[3px]">
-            {view.eyebrow}
+            {view.certificateNumber ? 'Certificate' : view.eyebrow}
           </div>
           <h1 className="text-[26px] font-bold tracking-[-0.02em] text-[#f2efe6] m-0 break-words">
-            {view.reference}
+            {view.certificateNumber ?? view.reference}
           </h1>
+          {view.contract && (
+            <div className="text-[13px] text-[#a8a69d] mt-[3px] break-words">
+              <span className="text-[#7c7a73]">{view.contract.label}</span>{' '}
+              <span className="font-medium text-[#f2efe6]">{view.contract.value}</span>
+            </div>
+          )}
         </div>
         <span
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold tracking-[0.06em] whitespace-nowrap border ${

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest'
-import { resolveSampleIdForSlug, resolvePublicReference } from './certificate-slug'
+import {
+  resolveSampleIdForSlug,
+  resolvePublicReference,
+  resolveLotReference,
+  resolveContractReference,
+} from './certificate-slug'
 
 interface QueryLog {
   table: string
@@ -147,5 +152,49 @@ describe('resolvePublicReference', () => {
       wolthersContractNr: '41922/26',
     })
     expect(reference).not.toContain('SAN-')
+  })
+})
+
+describe('resolveLotReference', () => {
+  it('labels a shipment sample by its container', () => {
+    expect(resolveLotReference({ sampleType: 'ss', containerNr: 'HASU 155.201-6' }))
+      .toEqual({ label: 'Container', value: 'HASU 155.201-6' })
+  })
+
+  it('labels a pre-shipment sample by the exporter sample number', () => {
+    expect(resolveLotReference({ sampleType: 'pss', exporterSampleNumber: 'CCT-2214/26' }))
+      .toEqual({ label: 'Exporter sample', value: 'CCT-2214/26' })
+  })
+
+  it('falls back across the type when only the other field is set', () => {
+    expect(resolveLotReference({ sampleType: 'pss', containerNr: 'HASU 155.201-6' }))
+      .toEqual({ label: 'Container', value: 'HASU 155.201-6' })
+    expect(resolveLotReference({ sampleType: 'ss', exporterSampleNumber: 'CCT-2214/26' }))
+      .toEqual({ label: 'Exporter sample', value: 'CCT-2214/26' })
+  })
+
+  it('never falls through to a contract number — that is not the lot', () => {
+    expect(resolveLotReference({
+      sampleType: 'ss',
+      containerNr: '  ',
+      buyerContractNr: 'P-8037',
+      wolthersContractNr: '41922/26',
+    })).toBeNull()
+  })
+})
+
+describe('resolveContractReference', () => {
+  it('prefers the buyer\'s own contract number', () => {
+    expect(resolveContractReference({ buyerContractNr: 'P-8037', wolthersContractNr: '41922/26' }))
+      .toEqual({ label: 'Contract', value: 'P-8037' })
+  })
+
+  it('labels our own contract as ours rather than passing it off as the buyer\'s', () => {
+    expect(resolveContractReference({ wolthersContractNr: '41922/26' }))
+      .toEqual({ label: 'W&A contract', value: '41922/26' })
+  })
+
+  it('returns null when neither is set', () => {
+    expect(resolveContractReference({ buyerContractNr: '  ', wolthersContractNr: null })).toBeNull()
   })
 })

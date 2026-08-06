@@ -71,3 +71,46 @@ export function resolvePublicReference(src: PublicReferenceSource): PublicRefere
 
   return { reference: 'Reference pending', eyebrow: '' }
 }
+
+/** A labelled value, or null when there is nothing to show. */
+export interface LabelledReference {
+  label: string
+  value: string
+}
+
+/**
+ * The physical lot's own identifier: the container for a shipment sample, the
+ * exporter's sample number for a pre-shipment one.
+ *
+ * Separate from `resolvePublicReference` because the page leads with the
+ * certificate number now and shows this below it, so it needs the plain label
+ * ('Container') rather than the headline eyebrow ('SS · Container'). The
+ * fallbacks match `resolvePublicReference` exactly, so the two never disagree
+ * about which field identifies a lot.
+ */
+export function resolveLotReference(src: PublicReferenceSource): LabelledReference | null {
+  const type = String(src.sampleType || '').toLowerCase()
+  const container = (src.containerNr || '').trim()
+  const exporterSample = (src.exporterSampleNumber || '').trim()
+
+  if (type === 'ss' && container) return { label: 'Container', value: container }
+  if (type === 'pss' && exporterSample) return { label: 'Exporter sample', value: exporterSample }
+  if (container) return { label: 'Container', value: container }
+  if (exporterSample) return { label: 'Exporter sample', value: exporterSample }
+  return null
+}
+
+/**
+ * The contract number a counterparty recognises.
+ *
+ * The buyer's own number wins. Ours is labelled as ours rather than passed off
+ * as theirs — a buyer who reads "Contract 41922/26" and cannot find it in their
+ * own system has been misled.
+ */
+export function resolveContractReference(src: PublicReferenceSource): LabelledReference | null {
+  const buyer = (src.buyerContractNr || '').trim()
+  if (buyer) return { label: 'Contract', value: buyer }
+  const ours = (src.wolthersContractNr || '').trim()
+  if (ours) return { label: 'W&A contract', value: ours }
+  return null
+}

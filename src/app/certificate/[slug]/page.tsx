@@ -1,6 +1,11 @@
 import { Metadata } from 'next'
 import { createClient } from '@supabase/supabase-js'
-import { resolveSampleIdForSlug, resolvePublicReference } from '@/lib/certificate-slug'
+import {
+  resolveSampleIdForSlug,
+  resolvePublicReference,
+  resolveLotReference,
+  resolveContractReference,
+} from '@/lib/certificate-slug'
 import { evaluateSampleCompliance } from '@/lib/compliance'
 import {
   screenGramsToPercent,
@@ -66,16 +71,21 @@ async function getCertificateInfo(slug: string) {
   if (!sample) return null
 
   // The page shows the counterparty's own identifier, never samples.tracking_number.
-  const publicReference = resolvePublicReference({
+  const referenceSource = {
     sampleType: sample.sample_type,
     containerNr: sample.container_nr,
     exporterSampleNumber: sample.exporter_sample_number,
     buyerContractNr: sample.buyer_contract_nr,
     wolthersContractNr: sample.wolthers_contract_nr,
-  })
+  }
+  const publicReference = resolvePublicReference(referenceSource)
+  const lotReference = resolveLotReference(referenceSource)
+  const contract = resolveContractReference(referenceSource)
 
   const isCertified = sample.workflow_stage === 'certified' || sample.workflow_stage === 'rejected'
-  if (!isCertified) return { sample, publicReference, certified: false as const }
+  if (!isCertified) {
+    return { sample, publicReference, lotReference, contract, certified: false as const }
+  }
 
   // Get certificate
   const { data: certificate } = await supabase
@@ -279,6 +289,8 @@ async function getCertificateInfo(slug: string) {
   return {
     sample,
     publicReference,
+    lotReference,
+    contract,
     certified: true as const,
     certificate,
     qualityName,
@@ -390,20 +402,56 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   }
 }
 
-/** Slim and sticky — the old header ate ~15% of the viewport before any content. */
-function CertificateHeader() {
+/**
+ * Slim and sticky — the old header ate ~15% of the viewport before any content.
+ *
+ * Carries the certificate and contract numbers so they stay on screen the whole
+ * way down: someone reading the checklist half a page below still needs to know
+ * which lot they are looking at, and scrolling back up to check is exactly the
+ * friction this page exists to remove.
+ *
+ * Before a certificate exists there are no numbers to carry, so it falls back
+ * to the "Verified certificate" line it has always shown.
+ */
+function CertificateHeader({
+  certificateNumber = null,
+  contract = null,
+}: {
+  certificateNumber?: string | null
+  contract?: { label: string; value: string } | null
+}) {
   return (
-    <div className="sticky top-0 z-20 flex items-center justify-between px-4 py-2.5 bg-[#262625] border-b border-[#3f3f3c]">
-      <div className="text-[15px] font-bold tracking-[-0.02em] text-[#f2efe6]">
-        w<span className="text-[#6d7f37]">o</span>lthers
-        <small className="block text-[8px] tracking-[0.28em] text-[#7c7a73] font-semibold mt-px">
-          ASSOCIATES
-        </small>
-      </div>
-      <div className="text-[11px] text-[#7c7a73] flex items-center gap-[5px]">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#5fae63]" aria-hidden="true" />
-        Verified certificate
-      </div>
+    <div className="sticky top-0 z-20 flex items-center justify-between gap-3 px-4 py-2.5 bg-[#262625] border-b border-[#3f3f3c]">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a static brand
+          mark in a server component; next/image buys nothing and adds a
+          client-side loader to an otherwise fully static page. */}
+      <img
+        src="/images/logos/wolthers-logo-green.svg"
+        alt="Wolthers Associates"
+        className="h-[26px] w-auto shrink-0"
+      />
+      {certificateNumber ? (
+        <div className="min-w-0 text-right">
+          <div className="flex items-center justify-end gap-[5px] text-[12px] font-semibold text-[#f2efe6]">
+            <span
+              className="w-1.5 h-1.5 rounded-full bg-[#5fae63] shrink-0"
+              aria-hidden="true"
+            />
+            <span className="sr-only">Verified certificate</span>
+            <span className="truncate">{certificateNumber}</span>
+          </div>
+          {contract && (
+            <div className="text-[10.5px] text-[#7c7a73] truncate">
+              {contract.label} {contract.value}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="text-[11px] text-[#7c7a73] flex items-center gap-[5px] shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-[#5fae63]" aria-hidden="true" />
+          Verified certificate
+        </div>
+      )}
     </div>
   )
 }
@@ -475,6 +523,9 @@ export default async function CertificatePage({ params }: PageProps) {
 
   const sample = info.sample
   const view: CertificateView = {
+    certificateNumber: info.certificate?.certificate_number ?? null,
+    contract: info.contract,
+    lotReference: info.lotReference,
     reference: info.publicReference.reference,
     eyebrow: info.publicReference.eyebrow,
     status: info.certificate?.is_rejected ? 'REJECTED' : 'APPROVED',
@@ -504,7 +555,10 @@ export default async function CertificatePage({ params }: PageProps) {
   return (
     <main className="min-h-dvh bg-[#262625] text-[#f2efe6]">
       <div className="mx-auto w-full max-w-[420px] pb-[104px]">
-        <CertificateHeader />
+        <CertificateHeader
+          certificateNumber={view.certificateNumber}
+          contract={view.contract}
+        />
         <Verdict view={view} />
         <LotIdentity view={view} />
         <SpecChecklist view={view} />

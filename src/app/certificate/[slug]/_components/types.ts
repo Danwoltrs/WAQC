@@ -26,11 +26,25 @@ export interface ScreenBar {
 /**
  * Everything the page renders, resolved server-side.
  *
- * `reference` is always the counterparty's own identifier — container number,
- * exporter sample number or contract number. The internal SAN- lab number never
- * reaches this object.
+ * Every identifier here is one the counterparty holds themselves — the
+ * certificate number printed on the tin, their contract number, the container.
+ * The internal SAN- lab number never reaches this object.
  */
 export interface CertificateView {
+  /**
+   * The official certificate number: what the QR encodes, what is printed on
+   * the tin, and what a warehouse reads back to us. Null only on the legacy
+   * path where a certificate row carries no number.
+   */
+  certificateNumber: string | null
+  /** The buyer's own contract number, or ours labelled as ours. */
+  contract: { label: string; value: string } | null
+  /** The physical lot: 'Container HASU 155.201-6' or an exporter sample number. */
+  lotReference: { label: string; value: string } | null
+  /**
+   * Headline fallback for a certificate with no number — the counterparty's own
+   * identifier, resolved by `resolvePublicReference`.
+   */
   reference: string
   eyebrow: string
   status: 'APPROVED' | 'REJECTED'
