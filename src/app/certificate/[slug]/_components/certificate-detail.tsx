@@ -111,6 +111,7 @@ export function CertificateDetail({ view }: { view: CertificateView }) {
                     >
                       {rail.score.toFixed(2)}
                       {state === 'out' && <span className="sr-only"> — outside target range</span>}
+                      {state === 'edge' && <span className="sr-only"> — near the edge of target range</span>}
                     </div>
                   </div>
 
