@@ -31,23 +31,51 @@ const isCupIntegrity = (c: ComplianceCriterion) =>
 const isScreen = (c: ComplianceCriterion) => c.key.startsWith('screen_')
 
 /**
- * "21 max", "min 90%", or null when there is no threshold to state.
+ * Which side of a screen constraint a criterion enforces, read off its key
+ * suffix rather than its (display) sublabel or its (passing-ambiguous)
+ * operator. The engine's screen keys are:
+ *   `screen_<size>`        legacy minimum
+ *   `screen_<size>_min`    constraint minimum
+ *   `screen_<size>_max`    legacy or constraint maximum
+ *   `screen_<size>_exact`  constraint exact
+ *
+ * Called on the criterion's own key, before `buildChecklistRows` may rename
+ * the row's key with a `__N` uniqueness suffix for a duplicate screen — so
+ * that later rename never reaches this function.
+ */
+function screenDirection(key: string): 'min' | 'max' | 'exact' {
+  if (key.endsWith('_exact')) return 'exact'
+  if (key.endsWith('_max')) return 'max'
+  if (key.endsWith('_min')) return 'min'
+  return 'min' // bare `screen_<size>`, the legacy minimum format
+}
+
+/**
+ * "21 max", "min 90%", "exactly 50%", or null when there is no threshold to
+ * state.
  *
  * A passing criterion always carries `operator: null` (the engine only sets
- * '<'/'>' on the failing side of a check), so operator alone cannot tell a
- * passing min-type screen from a passing max-type one — both would otherwise
- * collapse into "N max". The sublabel the engine attaches ("min 90%" / "max
- * 90%") is the only surviving signal for that case, so it is consulted as a
- * fallback. Screens are also the only percentage-valued criteria, so they are
- * the only ones that need the '%' suffix `formatActual` already adds to the
- * actual value.
+ * '<'/'>'/'outside' on the failing side of a check), so operator alone cannot
+ * tell a passing min-type screen from a passing max-type or exact one. An
+ * earlier version of this function fell back to sniffing the `sublabel`
+ * text for that case, which is display copy — reword it and the fallback
+ * breaks silently. The key suffix is structural and this file already
+ * dispatches on it elsewhere, so screens use `screenDirection` instead;
+ * every other criterion (defects, moisture, quakers, intensities) is
+ * max-type whenever its limit is numeric, so `operator` alone is enough
+ * for them.
  */
 function formatLimit(c: ComplianceCriterion): string | null {
   if (c.limit === null || c.limit === undefined) return null
   if (typeof c.limit === 'string') return c.limit
-  const suffix = isScreen(c) ? '%' : ''
-  const isMin = c.operator === '<' || (c.operator === null && c.sublabel?.startsWith('min'))
-  return isMin ? `min ${c.limit}${suffix}` : `${c.limit}${suffix} max`
+  if (!isScreen(c)) {
+    return c.operator === '<' ? `min ${c.limit}` : `${c.limit} max`
+  }
+  switch (screenDirection(c.key)) {
+    case 'exact': return `exactly ${c.limit}%`
+    case 'min': return `min ${c.limit}%`
+    case 'max': return `${c.limit}% max`
+  }
 }
 
 function formatActual(c: ComplianceCriterion): string {

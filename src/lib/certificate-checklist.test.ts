@@ -90,6 +90,33 @@ describe('buildChecklistRows', () => {
     expect(rows[0]).toMatchObject({ actual: '96.0%', limit: 'min 90%', passed: true })
   })
 
+  // Finding 1 — exact-constraint screens (`screen_<size>_exact`) were falling
+  // through to the max-type branch and rendering as "N% max". The direction
+  // must be read from the key suffix, in both the passing and failing case.
+  it('labels an exact screen constraint as an equality, passing and failing', () => {
+    const passing = buildChecklistRows([
+      criterion({ key: 'screen_18_exact', label: 'Screen 18', sublabel: 'exactly 50%', actual: 50, operator: null, limit: 50 }),
+    ], cup)
+    expect(passing[0]).toMatchObject({ actual: '50.0%', limit: 'exactly 50%', passed: true })
+
+    const failing = buildChecklistRows([
+      criterion({ key: 'screen_18_exact', label: 'Screen 18', sublabel: 'exactly 50%', actual: 48, operator: 'outside', limit: 50, passed: false }),
+    ], cup)
+    expect(failing[0]).toMatchObject({ actual: '48.0%', limit: 'exactly 50%', passed: false })
+  })
+
+  // A duplicate screen key gets a `__N` uniqueness suffix appended to the ROW
+  // key after the limit/label are computed from the original criterion key —
+  // the suffix must never leak into direction detection.
+  it('labels a duplicate screen row correctly even after its key gets a uniqueness suffix', () => {
+    const rows = buildChecklistRows([
+      criterion({ key: 'screen_16_max', label: 'Screen 16', sublabel: 'max 99%', actual: 96, limit: 99 }),
+      criterion({ key: 'screen_16_max', label: 'Screen 16', sublabel: 'max 98%', actual: 96, limit: 98 }),
+    ], cup)
+    expect(rows[0]).toMatchObject({ key: 'screen_16_max', limit: '99% max' })
+    expect(rows[1]).toMatchObject({ key: 'screen_16_max__1', limit: '98% max' })
+  })
+
   it('marks a criterion with no threshold so the icon can be omitted', () => {
     const rows = buildChecklistRows([
       criterion({ key: 'cupping_taints', label: 'Cupping taints', actual: 0, limit: null }),
@@ -115,13 +142,18 @@ describe('buildChecklistRows', () => {
   })
 
   // F4 — two cuppers flagging the same taint emit the same intensity key.
-  // The Cup integrity grouping must absorb them into one row.
-  it('collapses duplicate intensity criteria into the single integrity row', () => {
+  // `cup_integrity` is a single aggregated row by construction, so a bare
+  // "only one cup_integrity row" assertion can never fail. What actually
+  // needs pinning: the duplicate intensity criteria never surface as their
+  // own row (which is what would produce the key collision), and the
+  // failing intensity still fails the aggregate.
+  it('absorbs duplicate intensity criteria into cup integrity rather than surfacing them as rows', () => {
     const rows = buildChecklistRows([
       criterion({ key: 'intensity_taint_phenol', label: 'Taint: Phenol', actual: 4, limit: 2, operator: '>', passed: false }),
       criterion({ key: 'intensity_taint_phenol', label: 'Taint: Phenol', actual: 4, limit: 2, operator: '>', passed: false }),
       criterion({ key: 'cupping_taints', label: 'Cupping taints', actual: 1, limit: 2 }),
     ], cup)
+    expect(rows.some(r => r.key === 'intensity_taint_phenol')).toBe(false)
     expect(rows.filter(r => r.key === 'cup_integrity')).toHaveLength(1)
     expect(rows.find(r => r.key === 'cup_integrity')?.passed).toBe(false)
     const keys = rows.map(r => r.key)
@@ -172,6 +204,16 @@ describe('verdictFailures', () => {
       row({ key: 'total_defects', passed: false }),
     ])
     expect(failures.map(f => f.key)).toEqual(['primary_defects', 'secondary_defects'])
+  })
+
+  it('keeps total defects when the other failure is not a defect count', () => {
+    const failures = verdictFailures([
+      row({ key: 'primary_defects' }),
+      row({ key: 'secondary_defects' }),
+      row({ key: 'total_defects', passed: false }),
+      row({ key: 'cup_integrity', passed: false }),
+    ])
+    expect(failures.map(f => f.key)).toEqual(['total_defects', 'cup_integrity'])
   })
 
   it('never suppresses a non-defect failure', () => {
