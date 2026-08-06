@@ -181,14 +181,37 @@ export function isFlavorDescriptor(name: string): boolean {
 }
 
 /**
+ * True when `scores` is an SCA CVA assessment envelope rather than a map of
+ * attribute names to scores.
+ *
+ * Specialty samples store the whole `CvaAssessment` object in this column, so
+ * its own structural fields sit where attribute names normally are. Four of
+ * them are numbers — `version`, `score`, `u`, `d` — and reading them as
+ * attributes draws a spider graph with axes labelled "version 1.00" and
+ * "score 86.50" clamped to the outer ring. The sensory scores are nested in
+ * `sections`, on a different (1–9) scale entirely.
+ */
+function isCvaEnvelope(scores: Record<string, unknown>): boolean {
+  return scores.protocol === 'cva'
+}
+
+/**
  * The score each attribute is judged on: the master cupper's where they scored
  * it, the mean across cuppers everywhere else.
+ *
+ * A CVA envelope contributes nothing. Its section scores are on the 1–9
+ * impression scale and named for SCA sections, so surfacing them here would
+ * feed the approval gate values it has never judged — a 1–9 impression tested
+ * against a 0–5 attribute band would start rejecting lots that pass today.
+ * Rendering the CVA profile is its own piece of work; publishing four of its
+ * struct fields as if they were cupping attributes is not the way in.
  */
 export function resolveFinalScores(
   scores: CuppingScoreRow[],
   masterCupperId: string | null,
 ): Record<string, number> {
   const final: Record<string, number> = {}
+  scores = scores.filter(s => !s.scores || !isCvaEnvelope(s.scores))
 
   if (masterCupperId) {
     const master = scores.find(s => s.cupper_id === masterCupperId)

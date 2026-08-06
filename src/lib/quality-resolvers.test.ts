@@ -191,3 +191,44 @@ describe('isFlavorDescriptor', () => {
     }
   })
 })
+
+describe('resolveFinalScores with a CVA assessment', () => {
+  // Specialty samples store the whole CvaAssessment object in `scores`, so its
+  // struct fields sit where attribute names normally are. Four are numbers.
+  const cva = {
+    protocol: 'cva',
+    version: 1,
+    score: 86.5,
+    u: 5,
+    d: 0,
+    roast: {},
+    sections: { acidity: { impression_final: 7 } },
+    describe: {},
+    cups: {},
+    highlights: null,
+  }
+
+  it('never publishes version, score, u or d as cupping attributes', () => {
+    const final = resolveFinalScores(
+      [{ cupper_id: 'a', scores: cva as never, defects: null }],
+      null,
+    )
+    expect(final).toEqual({})
+  })
+
+  it('ignores a CVA envelope filed by the designated master cupper too', () => {
+    const final = resolveFinalScores(
+      [{ cupper_id: 'master', scores: cva as never, defects: null }],
+      'master',
+    )
+    expect(final).toEqual({})
+  })
+
+  it('still reads the ordinary cuppers on a session that mixes both', () => {
+    const final = resolveFinalScores([
+      { cupper_id: 'a', scores: cva as never, defects: null },
+      { cupper_id: 'b', scores: { Body: 4, Acidity: 3 }, defects: null },
+    ], null)
+    expect(final).toEqual({ Body: 4, Acidity: 3 })
+  })
+})
