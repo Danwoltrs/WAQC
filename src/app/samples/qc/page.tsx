@@ -16,6 +16,8 @@ import { INTAKE_DIALOG_CONTENT_CLASS } from '@/components/samples/sample-intake-
 import { SampleDetailOverlay } from '@/components/certificates/cert-editor'
 import { AddSubContractDialog } from '@/components/samples/add-sub-contract-dialog'
 import { PrintLabelsDialog } from '@/components/samples/print-labels-dialog'
+import { PrintBagSleevesDialog } from '@/components/samples/print-bag-sleeves-dialog'
+import type { BagSleeveEntry } from '@/lib/print-selection'
 import { TinLabelSizeDialog } from '@/components/samples/tin-label-size-dialog'
 import { PrintTodayTinLabelsButton } from '@/components/samples/print-today-tin-labels-button'
 import { PrintCuppingCardsDialog } from '@/components/cupping/print-cupping-cards-dialog'
@@ -215,6 +217,7 @@ export default function SamplesPage() {
   const [selectedSamples, setSelectedSamples] = useState<Set<string>>(new Set())
   const [selectedQrCodes, setSelectedQrCodes] = useState<Set<string>>(new Set())
   const [showPrintDialog, setShowPrintDialog] = useState(false)
+  const [bagSleeveEntries, setBagSleeveEntries] = useState<BagSleeveEntry[] | null>(null)
   const [showTinLabelDialog, setShowTinLabelDialog] = useState(false)
   // The header is a compact filter bar: search, stage chips, the advanced
   // filters and the actions, all in one pinned row.
@@ -585,54 +588,29 @@ export default function SamplesPage() {
     }
   }
 
-  const handleBulkPrintBagSleeves = async () => {
+  const handleBulkPrintBagSleeves = () => {
     if (selectedSamples.size === 0) {
       alert('Please select at least one sample')
       return
     }
 
-    try {
-      // Create sample-specific QR code flags (mother samples + sub-contracts)
-      const sampleQrConfig: Array<{ id: string; includeQrCode: boolean; contractId?: string }> = Array.from(selectedSamples).map(id => ({
-        id,
-        includeQrCode: selectedQrCodes.has(id)
-      }))
+    // Mother samples first, then any sub-contract whose QR column is ticked.
+    // The per-row QR selection is authoritative here; the dialog only reports it.
+    const entries: BagSleeveEntry[] = Array.from(selectedSamples).map(id => ({
+      id,
+      includeQrCode: selectedQrCodes.has(id),
+    }))
 
-      // Add sub-contract entries for any with QR selected
-      for (const sample of samples) {
-        if (!selectedSamples.has(sample.id) || !sample.sub_contracts?.length) continue
-        for (const sc of sample.sub_contracts) {
-          if (selectedSubContractQrCodes.has(sc.id)) {
-            sampleQrConfig.push({ id: sample.id, contractId: sc.id, includeQrCode: true })
-          }
+    for (const sample of samples) {
+      if (!selectedSamples.has(sample.id) || !sample.sub_contracts?.length) continue
+      for (const sc of sample.sub_contracts) {
+        if (selectedSubContractQrCodes.has(sc.id)) {
+          entries.push({ id: sample.id, contractId: sc.id, includeQrCode: true })
         }
       }
-
-      const response = await fetch('/api/samples/bulk/print-bag-sleeves', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ samples: sampleQrConfig })
-      })
-
-      if (response.ok) {
-        const blob = await response.blob()
-        const url = window.URL.createObjectURL(blob)
-        const a = document.createElement('a')
-        a.href = url
-        a.download = `bag-sleeves-${new Date().toISOString().split('T')[0]}.pdf`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        window.URL.revokeObjectURL(url)
-      } else {
-        const error = await response.json()
-        console.error('Failed to generate bag sleeve labels:', error)
-        alert(`Failed to generate bag sleeve labels.\n\n${error.error}${error.details ? '\n\nDetails: ' + error.details : ''}`)
-      }
-    } catch (error) {
-      console.error('Error printing bag sleeve labels:', error)
-      alert(`Error generating bag sleeve labels.\n\n${error instanceof Error ? error.message : String(error)}`)
     }
+
+    setBagSleeveEntries(entries)
   }
 
   const handleBulkPrintCuppingCards = () => {
@@ -2132,6 +2110,18 @@ export default function SamplesPage() {
         onSuccess={() => {
           setSelectedSamples(new Set())
           setTodayBatchToken(t => t + 1)
+        }}
+      />
+
+      {/* Bag sleeves for the current row selection. QR comes from the row
+          checkboxes, so the dialog only reports the count. */}
+      <PrintBagSleevesDialog
+        open={!!bagSleeveEntries}
+        onOpenChange={(next) => { if (!next) setBagSleeveEntries(null) }}
+        entries={bagSleeveEntries || []}
+        onSuccess={() => {
+          setBagSleeveEntries(null)
+          setSelectedSamples(new Set())
         }}
       />
 
