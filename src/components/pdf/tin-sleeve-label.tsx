@@ -20,18 +20,32 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
   const bodySize = compact ? 5.5 : 6.5
 
   return StyleSheet.create({
+    // No alignItems here: the row is full width and centres its own child. A
+    // width: '100%' child inside a cross-axis-centering parent can shrink-wrap
+    // in react-pdf's flex implementation, pulling the dashed rule back in from
+    // the page edges.
     page: {
       flexDirection: 'column',
-      alignItems: 'center',
       backgroundColor: '#FFFFFF',
       padding: 0,
+    },
+    // The dashed rule lives on a full-page-width row so a guillotine has an
+    // edge-to-edge line to register against. The 165mm label sits centred
+    // inside it.
+    labelRow: {
+      width: '100%',
+      flexDirection: 'row',
+      justifyContent: 'center',
+      borderBottom: '0.3pt dashed #BBBBBB',
+    },
+    labelRowFirst: {
+      borderTop: '0.3pt dashed #BBBBBB',
     },
     labelContainer: {
       width: 165 * MM,
       height: labelHeight,
       flexDirection: 'row',
       alignItems: 'center',
-      borderBottom: '0.3pt dashed #BBBBBB',
       paddingTop: 3 * MM,
       paddingBottom: 3 * MM,
       paddingLeft: 3 * MM,
@@ -156,51 +170,56 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
           const footParts = [label.quality, label.quantity, label.date].filter(Boolean) as string[]
 
           return (
-            <View key={index} style={styles.labelContainer}>
-              <Image src={label.logo_url} style={styles.logo} />
-              {label.qr_code && <Image src={label.qr_code} style={styles.qrCode} />}
+            <View
+              key={index}
+              style={index === 0 ? [styles.labelRow, styles.labelRowFirst] : styles.labelRow}
+            >
+              <View style={styles.labelContainer}>
+                <Image src={label.logo_url} style={styles.logo} />
+                {label.qr_code && <Image src={label.qr_code} style={styles.qrCode} />}
 
-              <View style={styles.body}>
-                <Text style={styles.headline}>
-                  {label.headline}
-                </Text>
-
-                {partyParts.length > 0 && (
-                  <Text style={styles.lineOne}>
-                    {partyParts.map((p, i) => (
-                      <Text key={p.key}>
-                        {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
-                        <Text style={styles.key}>{p.key}</Text>
-                        <Text>{p.value}</Text>
-                      </Text>
-                    ))}
+                <View style={styles.body}>
+                  <Text style={styles.headline}>
+                    {label.headline}
                   </Text>
-                )}
 
-                {certParts.length > 0 && (
-                  <Text style={styles.lineTwo}>
-                    {certParts.map((p, i) => (
-                      <Text key={p.key}>
-                        {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
-                        <Text style={styles.key}>{p.key}</Text>
-                        <Text>{p.value}</Text>
-                      </Text>
-                    ))}
-                  </Text>
-                )}
-
-                {footParts.length > 0 && (
-                  <Text style={styles.foot}>
-                    {footParts.map((part, i) => (
-                      <Text key={part}>
-                        {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
-                        <Text style={i === 0 && label.quality ? styles.qual : styles.muted}>
-                          {part}
+                  {partyParts.length > 0 && (
+                    <Text style={styles.lineOne}>
+                      {partyParts.map((p, i) => (
+                        <Text key={p.key}>
+                          {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
+                          <Text style={styles.key}>{p.key}</Text>
+                          <Text>{p.value}</Text>
                         </Text>
-                      </Text>
-                    ))}
-                  </Text>
-                )}
+                      ))}
+                    </Text>
+                  )}
+
+                  {certParts.length > 0 && (
+                    <Text style={styles.lineTwo}>
+                      {certParts.map((p, i) => (
+                        <Text key={p.key}>
+                          {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
+                          <Text style={styles.key}>{p.key}</Text>
+                          <Text>{p.value}</Text>
+                        </Text>
+                      ))}
+                    </Text>
+                  )}
+
+                  {footParts.length > 0 && (
+                    <Text style={styles.foot}>
+                      {footParts.map((part, i) => (
+                        <Text key={part}>
+                          {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
+                          <Text style={i === 0 && label.quality ? styles.qual : styles.muted}>
+                            {part}
+                          </Text>
+                        </Text>
+                      ))}
+                    </Text>
+                  )}
+                </View>
               </View>
             </View>
           )
