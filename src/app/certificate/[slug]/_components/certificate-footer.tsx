@@ -22,13 +22,35 @@ export function CertificateFooter({ view }: { view: CertificateView }) {
   const [open, setOpen] = useState(false)
   const closeRef = useRef<HTMLButtonElement>(null)
   const openerRef = useRef<HTMLButtonElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  // Tracks whether the modal has ever been opened, so the focus-return
+  // effect below can tell "just closed" apart from "just mounted" — both
+  // are `open === false`, but only one should move focus.
+  const hasOpened = useRef(false)
 
   useEffect(() => {
     if (!open) return
     closeRef.current?.focus()
     document.body.style.overflow = 'hidden'
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
+      if (e.key === 'Escape') {
+        setOpen(false)
+        return
+      }
+      if (e.key !== 'Tab') return
+      const focusable = dialogRef.current?.querySelectorAll<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+      if (!focusable || focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault()
+        last.focus()
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault()
+        first.focus()
+      }
     }
     document.addEventListener('keydown', onKey)
     return () => {
@@ -38,7 +60,11 @@ export function CertificateFooter({ view }: { view: CertificateView }) {
   }, [open])
 
   useEffect(() => {
-    if (!open) openerRef.current?.focus()
+    if (open) {
+      hasOpened.current = true
+      return
+    }
+    if (hasOpened.current) openerRef.current?.focus()
   }, [open])
 
   const handleShare = async () => {
@@ -48,9 +74,12 @@ export function CertificateFooter({ view }: { view: CertificateView }) {
       try {
         await navigator.share({ title, url })
         return
-      } catch {
-        // The user dismissed the sheet, or the browser refused. Fall through
-        // to the clipboard rather than leaving the button feeling dead.
+      } catch (err) {
+        // AbortError means the user dismissed the share sheet on purpose —
+        // respect that and stop, rather than copying a link they chose not
+        // to share. Any other rejection (unsupported, permission denied,
+        // etc.) still falls through to the clipboard.
+        if (err instanceof Error && err.name === 'AbortError') return
       }
     }
     try {
@@ -114,6 +143,7 @@ export function CertificateFooter({ view }: { view: CertificateView }) {
           }}
         >
           <div
+            ref={dialogRef}
             role="dialog"
             aria-modal="true"
             aria-labelledby="cert-modal-title"
