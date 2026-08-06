@@ -42,10 +42,13 @@
 - Produces:
   - `interface ChecklistRow { key: string; label: string; sublabel: string | null; actual: string; operator: '>' | '<' | 'outside' | null; limit: string | null; passed: boolean; hasThreshold: boolean }`
   - `buildChecklistRows(criteria: ComplianceCriterion[], cup: { cleanCup: boolean | null; uniformCup: boolean | null }): ChecklistRow[]`
+  - `verdictFailures(rows: ChecklistRow[]): ChecklistRow[]`
 
 The core emits one criterion per individual check — seven separate cupping attributes, a taint count, a fault count, an intensity per named defect. Rendering all of those verbatim would bury the four things a scanner cares about. This groups them: every cupping attribute folds into one row, and every taint/fault/intensity check folds into Cup integrity. Defect counts, screens, moisture and quakers pass through as their own rows.
 
-The verdict block is built by filtering this same list to `!passed`, which is what stops the two from disagreeing.
+The verdict block is built from this same list via `verdictFailures`, which is what stops the two from disagreeing.
+
+`verdictFailures` applies one suppression rule, set by the project owner: **total defects is a rejection reason only when it is the sole defect failure.** If primary or secondary also failed, they are the reason and total is redundant noise — a scanner reading "Primary defects 5 > 1 max" does not also need "Total defects 26 > 21 max" saying the same thing twice. Total earns its line only in the case where primary and secondary each pass and the sum still breaks the limit. The checklist keeps showing all three rows regardless; this rule governs the verdict block alone.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -155,7 +158,69 @@ describe('buildChecklistRows', () => {
     expect(buildChecklistRows([], { cleanCup: null, uniformCup: null })).toEqual([])
   })
 })
+
+describe('verdictFailures', () => {
+  function row(over: Partial<ChecklistRow>): ChecklistRow {
+    return {
+      key: 'k', label: 'L', sublabel: null, actual: '0',
+      operator: null, limit: null, hasThreshold: true, passed: true, ...over,
+    }
+  }
+
+  it('shows total defects when it is the only defect failure', () => {
+    // 1 primary (max 2) and 25 secondary (max 25) each pass; the sum of 26
+    // breaks a total limit of 25. Total is the only thing to report.
+    const failures = verdictFailures([
+      row({ key: 'primary_defects' }),
+      row({ key: 'secondary_defects' }),
+      row({ key: 'total_defects', passed: false }),
+    ])
+    expect(failures.map(f => f.key)).toEqual(['total_defects'])
+  })
+
+  it('suppresses total defects when secondary already failed', () => {
+    const failures = verdictFailures([
+      row({ key: 'primary_defects' }),
+      row({ key: 'secondary_defects', passed: false }),
+      row({ key: 'total_defects', passed: false }),
+    ])
+    expect(failures.map(f => f.key)).toEqual(['secondary_defects'])
+  })
+
+  it('suppresses total defects when primary already failed', () => {
+    const failures = verdictFailures([
+      row({ key: 'primary_defects', passed: false }),
+      row({ key: 'total_defects', passed: false }),
+    ])
+    expect(failures.map(f => f.key)).toEqual(['primary_defects'])
+  })
+
+  it('keeps both primary and secondary when both failed', () => {
+    const failures = verdictFailures([
+      row({ key: 'primary_defects', passed: false }),
+      row({ key: 'secondary_defects', passed: false }),
+      row({ key: 'total_defects', passed: false }),
+    ])
+    expect(failures.map(f => f.key)).toEqual(['primary_defects', 'secondary_defects'])
+  })
+
+  it('never suppresses a non-defect failure', () => {
+    const failures = verdictFailures([
+      row({ key: 'primary_defects', passed: false }),
+      row({ key: 'total_defects', passed: false }),
+      row({ key: 'cup_integrity', passed: false }),
+      row({ key: 'screen_16', passed: false }),
+    ])
+    expect(failures.map(f => f.key)).toEqual(['primary_defects', 'cup_integrity', 'screen_16'])
+  })
+
+  it('returns nothing when everything passed', () => {
+    expect(verdictFailures([row({ key: 'total_defects' })])).toEqual([])
+  })
+})
 ```
+
+Add `verdictFailures` and `type ChecklistRow` to this file's imports from `./certificate-checklist`.
 
 - [ ] **Step 2: Run to verify it fails**
 
@@ -302,12 +367,31 @@ export function buildChecklistRows(
 
   return rows
 }
+
+/**
+ * The rows the verdict block names as rejection reasons.
+ *
+ * Total defects earns a line only when it is the SOLE defect failure. If
+ * primary or secondary already failed, they are the reason — "Primary defects
+ * 5 > 1 max" followed by "Total defects 26 > 21 max" says the same thing twice
+ * and buries which limit actually broke.
+ *
+ * The checklist still shows all three rows. This governs the verdict alone.
+ */
+export function verdictFailures(rows: ChecklistRow[]): ChecklistRow[] {
+  const failures = rows.filter(r => !r.passed)
+  const componentFailed = failures.some(
+    r => r.key === 'primary_defects' || r.key === 'secondary_defects',
+  )
+  if (!componentFailed) return failures
+  return failures.filter(r => r.key !== 'total_defects')
+}
 ```
 
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `npx vitest run src/lib/certificate-checklist.test.ts`
-Expected: PASS, 9 tests.
+Expected: PASS, 15 tests.
 
 - [ ] **Step 5: Commit**
 
@@ -397,6 +481,7 @@ export interface CertificateView {
 Create `src/app/certificate/[slug]/_components/verdict.tsx`:
 
 ```tsx
+import { verdictFailures } from '@/lib/certificate-checklist'
 import type { CertificateView } from './types'
 
 /**
@@ -404,13 +489,14 @@ import type { CertificateView } from './types'
  * not, why not.
  *
  * Failure lines come from the same rows the checklist renders, so the page
- * cannot name a reason the checklist omits. On approval there are no lines at
- * all — no green mirror of the failure block, no "0 issues found". The badge
- * says everything.
+ * cannot name a reason the checklist omits. Total defects is suppressed when
+ * primary or secondary already failed — see verdictFailures. On approval there
+ * are no lines at all: no green mirror of the failure block, no "0 issues
+ * found". The badge says everything.
  */
 export function Verdict({ view }: { view: CertificateView }) {
   const rejected = view.status === 'REJECTED'
-  const failures = view.rows.filter(r => !r.passed)
+  const failures = verdictFailures(view.rows)
 
   return (
     <div
