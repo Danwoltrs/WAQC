@@ -95,7 +95,7 @@ describe('buildChecklistRows', () => {
       },
     )
     expect(rows.find(r => r.key === 'cup_integrity')?.details)
-      .toEqual(['Fault · 1 cup Hard (Riado) at intensity 2 of 5'])
+      .toEqual(['Fault: 1 Hard (Riado) cup at intensity 2 of 5'])
   })
 
   it('names an unclean or non-uniform cup after the counts', () => {
@@ -352,30 +352,83 @@ describe('partitionDefectRows', () => {
   })
 })
 
+describe('resolveVerdictReasons naming a cup defect', () => {
+  function row(over: Partial<ChecklistRow>): ChecklistRow {
+    return {
+      key: 'k', label: 'L', sublabel: null, actual: '0',
+      operator: null, limit: null, hasThreshold: true, passed: true, ...over,
+    }
+  }
+
+  // "Taints | Faults ... Fail" restates the heading and wraps onto two lines
+  // in the narrow reason column. The defect itself is the reason.
+  it('names the defect instead of pairing the row label with a bare Fail', () => {
+    const reasons = resolveVerdictReasons([
+      row({
+        key: 'cup_integrity',
+        label: 'Taints | Faults',
+        sublabel: '0 taints, 1 fault',
+        actual: 'Fail',
+        passed: false,
+        details: ['Fault: 1 Rioy cup at intensity 1 of 5'],
+      }),
+    ], null, null)
+    expect(reasons).toEqual([
+      { kind: 'text', text: 'Fault: 1 Rioy cup at intensity 1 of 5' },
+    ])
+  })
+
+  it('names every defect when more than one was flagged', () => {
+    const reasons = resolveVerdictReasons([
+      row({
+        key: 'cup_integrity', actual: 'Fail', passed: false,
+        details: ['Taint: 2 Fermented cups at intensity 3', 'Fault: Rioy'],
+      }),
+    ], null, null)
+    expect(reasons.map(r => r.kind === 'text' && r.text))
+      .toEqual(['Taint: 2 Fermented cups at intensity 3', 'Fault: Rioy'])
+  })
+
+  it('falls back to the row when there is no defect to name', () => {
+    const reasons = resolveVerdictReasons([
+      row({ key: 'cup_integrity', actual: 'Fail', passed: false }),
+    ], null, null)
+    expect(reasons[0].kind).toBe('row')
+  })
+
+  it('leaves every other failing row rendering as a row', () => {
+    const reasons = resolveVerdictReasons([
+      row({ key: 'secondary_defects', actual: '15.92', limit: '12 max', passed: false }),
+      row({ key: 'cup_integrity', actual: 'Fail', passed: false, details: ['Fault: Rioy'] }),
+    ], null, null)
+    expect(reasons.map(r => r.kind)).toEqual(['row', 'text'])
+  })
+})
+
 describe('formatCupDefect', () => {
   const fault = { kind: 'Fault' as const, name: 'Hard (Riado)', cups: 1, intensity: 2 }
 
   it('reads as a sentence with everything known', () => {
-    expect(formatCupDefect(fault, 5)).toBe('Fault · 1 cup Hard (Riado) at intensity 2 of 5')
+    expect(formatCupDefect(fault, 5)).toBe('Fault: 1 Hard (Riado) cup at intensity 2 of 5')
   })
 
   it('pluralises the cups', () => {
     expect(formatCupDefect({ ...fault, cups: 12 }, 5))
-      .toBe('Fault · 12 cups Hard (Riado) at intensity 2 of 5')
+      .toBe('Fault: 12 Hard (Riado) cups at intensity 2 of 5')
   })
 
   // There is no universal 1-5 intensity scale in the system — the denominator
   // is the spec's configured ceiling for that defect by name, so with no limit
   // configured there is no honest "of N" to print.
   it('drops the denominator when the spec configures no ceiling', () => {
-    expect(formatCupDefect(fault, null)).toBe('Fault · 1 cup Hard (Riado) at intensity 2')
+    expect(formatCupDefect(fault, null)).toBe('Fault: 1 Hard (Riado) cup at intensity 2')
   })
 
   it('drops an unrecorded cup count and intensity rather than guessing', () => {
     expect(formatCupDefect({ kind: 'Taint', name: 'Fermented', cups: null, intensity: null }, 3))
-      .toBe('Taint · Fermented')
+      .toBe('Taint: Fermented')
     expect(formatCupDefect({ kind: 'Taint', name: 'Fermented', cups: 0, intensity: 1 }, null))
-      .toBe('Taint · Fermented at intensity 1')
+      .toBe('Taint: Fermented at intensity 1')
   })
 })
 

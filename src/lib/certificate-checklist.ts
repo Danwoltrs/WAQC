@@ -34,7 +34,7 @@ export interface CupIntegrityInput {
 }
 
 /**
- * "1 cup Hard (Riado) at intensity 2 of 5".
+ * "Fault: 1 Rioy cup at intensity 1 of 5".
  *
  * `maxIntensity` is the spec's allowed maximum for this defect, not a fixed
  * scale — the system has no universal 1–5 — so the "of N" appears only when the
@@ -43,15 +43,15 @@ export interface CupIntegrityInput {
  * name standing alone.
  */
 export function formatCupDefect(defect: CupDefect, maxIntensity: number | null): string {
-  const cups = defect.cups !== null && defect.cups > 0
-    ? `${defect.cups} cup${defect.cups === 1 ? '' : 's'} `
-    : ''
+  const named = defect.cups !== null && defect.cups > 0
+    ? `${defect.cups} ${defect.name} cup${defect.cups === 1 ? '' : 's'}`
+    : defect.name
   let intensity = ''
   if (defect.intensity !== null) {
     intensity = ` at intensity ${defect.intensity}`
     if (maxIntensity !== null) intensity += ` of ${maxIntensity}`
   }
-  return `${defect.kind} · ${cups}${defect.name}${intensity}`
+  return `${defect.kind}: ${named}${intensity}`
 }
 
 /** The spec's configured intensity ceiling for one defect, if it has one. */
@@ -328,7 +328,17 @@ export function resolveVerdictReasons(
   overrideComment: string | null,
 ): VerdictReason[] {
   const failures = verdictFailures(rows)
-  if (failures.length > 0) return failures.map(row => ({ kind: 'row' as const, row }))
+  if (failures.length > 0) {
+    // A row that can name what failed says that instead of pairing its own
+    // label with a bare "Fail" — "Fault: 1 Rioy cup at intensity 1 of 5" is
+    // the reason; "Taints | Faults … Fail" is a restatement of the heading,
+    // and long enough to wrap onto two lines in the narrow reason column.
+    return failures.flatMap((row): VerdictReason[] =>
+      row.details && row.details.length > 0
+        ? row.details.map(text => ({ kind: 'text' as const, text }))
+        : [{ kind: 'row' as const, row }],
+    )
+  }
 
   const violations = parseComplianceViolations(complianceViolations)
   if (violations.length > 0) return violations.map(text => ({ kind: 'text' as const, text }))

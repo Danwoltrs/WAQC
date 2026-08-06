@@ -19,11 +19,16 @@ export function LotIdentity({ view }: { view: CertificateView }) {
   }
   if (view.exporter) cells.push({ k: 'Exporter', v: view.exporter })
   if (view.qualityName) cells.push({ k: 'Quality', v: view.qualityName })
-  if (view.quantity) cells.push({ k: 'Quantity', v: view.quantity })
+  // The bag type is quantity information — "440 bags · 26.4 MT · 60 kg jute
+  // bag" — and pairing it with the date only ever made the date harder to read.
+  const quantity = [view.quantity, view.bagType].filter(Boolean).join(' · ')
+  if (quantity) cells.push({ k: 'Quantity', v: quantity })
   if (view.origin) cells.push({ k: 'Origin', v: view.origin })
+  // Six cells, two columns, three rows: the date sits beside Origin rather than
+  // spanning its own full-width row underneath them.
+  if (view.certifiedDate) cells.push({ k: 'Certified', v: view.certifiedDate })
 
-  const footParts = [view.certifiedDate, view.bagType].filter(Boolean) as string[]
-  if (cells.length === 0 && footParts.length === 0) return null
+  if (cells.length === 0) return null
 
   return (
     <div className="grid grid-cols-2 gap-x-[10px] gap-y-3 px-4 py-[14px] bg-[#333331] border-y border-[#3f3f3c]">
@@ -35,16 +40,6 @@ export function LotIdentity({ view }: { view: CertificateView }) {
           <div className="text-[15px] font-semibold text-[#f2efe6] break-words">{cell.v}</div>
         </div>
       ))}
-      {footParts.length > 0 && (
-        <div className="col-span-2">
-          <div className="text-[10.5px] tracking-[0.09em] uppercase text-[#7c7a73] mb-0.5">
-            Certified
-          </div>
-          <div className="text-[13.5px] font-medium text-[#a8a69d]">
-            {footParts.join(' · ')}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
