@@ -457,7 +457,13 @@ async function createSubContractCertificates(
           }
         }
 
-        await supabase
+        // The error MUST be inspected: supabase-js resolves rather than throws,
+        // so the surrounding try/catch never sees it. The number is minted by
+        // the assign_certificate_number trigger, which RAISES when the sample
+        // has no laboratory_id (unlike the mother's, which just reuses
+        // tracking_number) — that failure was swallowed here, leaving the split
+        // with no certificate and no number to print on the tin sleeve.
+        const { error: subCertError } = await supabase
           .from('certificates')
           .insert({
             sample_id: sampleId,
@@ -470,6 +476,15 @@ async function createSubContractCertificates(
             valid_until: motherCert.valid_until,
             is_rejected: isRejected,
           })
+
+        if (subCertError) {
+          console.error(
+            `Failed to create certificate for sub-contract ${sc.id} of sample ${sampleId}:`,
+            subCertError.message || subCertError,
+            subCertError.details || '',
+            subCertError.hint || '',
+          )
+        }
       }
     }
   } catch (err) {
