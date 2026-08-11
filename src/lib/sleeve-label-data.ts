@@ -91,6 +91,79 @@ export function withCertifiedMonth(certNumber: string, certifiedAt: string | nul
   return `${certNumber.slice(0, lastSlash)}/${month}${certNumber.slice(lastSlash)}`
 }
 
+/**
+ * Split "BR-036992/JUL/26" into its prefix, sequence digits and suffix.
+ *
+ * The sequence is the LAST digit run before the first '/', because prefixes
+ * themselves contain digits ("BD1-001133") and a rejected number carries a
+ * second segment ("R-SAK-011799"). Returns null for anything that does not
+ * parse, which then never joins a range.
+ */
+function splitCertNumber(
+  certNumber: string,
+): { prefix: string; digits: string; suffix: string } | null {
+  const slash = certNumber.indexOf('/')
+  const head = slash === -1 ? certNumber : certNumber.slice(0, slash)
+  const suffix = slash === -1 ? '' : certNumber.slice(slash)
+  const m = /^(.*?)(\d+)$/.exec(head)
+  if (!m) return null
+  return { prefix: m[1], digits: m[2], suffix }
+}
+
+/** Runs shorter than this stay written out in full — a range would not earn it. */
+const MIN_RUN_TO_COLLAPSE = 3
+
+/**
+ * Collapse consecutive certificate numbers into ranges:
+ * BR-036992/JUL/26 … BR-036998/JUL/26 -> "BR-036992-036998/JUL/26".
+ *
+ * The Cert. line is two lines of 6.5pt inside a 93mm column — about six numbers
+ * before textkit ellipsises the rest away. A lot split across nine contracts
+ * therefore LOST numbers, which is exactly what the field exists to show. Splits
+ * are numbered from one sequence in one batch, so they are consecutive in
+ * practice and a range says the same thing in a third of the width.
+ *
+ * Anything that does not form a run of MIN_RUN_TO_COLLAPSE — a gap, a different
+ * prefix, a different zero-padding — is printed in full.
+ */
+export function compressCertificateNumbers(numbers: string[]): string[] {
+  const out: string[] = []
+  let i = 0
+
+  while (i < numbers.length) {
+    const start = splitCertNumber(numbers[i])
+    let end = i
+
+    if (start) {
+      while (end + 1 < numbers.length) {
+        const next = splitCertNumber(numbers[end + 1])
+        const prev = splitCertNumber(numbers[end])!
+        if (
+          !next ||
+          next.prefix !== prev.prefix ||
+          next.suffix !== prev.suffix ||
+          next.digits.length !== prev.digits.length ||
+          Number(next.digits) !== Number(prev.digits) + 1
+        ) {
+          break
+        }
+        end += 1
+      }
+    }
+
+    const runLength = end - i + 1
+    if (runLength >= MIN_RUN_TO_COLLAPSE && start) {
+      const last = splitCertNumber(numbers[end])!
+      out.push(`${start.prefix}${start.digits}-${last.digits}${start.suffix}`)
+    } else {
+      for (let k = i; k <= end; k++) out.push(numbers[k])
+    }
+    i = end + 1
+  }
+
+  return out
+}
+
 /** "2026-07-29T12:00:00Z" -> "29/Jul/2026". */
 export function formatLabelDate(iso: string | null | undefined): string | null {
   if (!iso) return null
@@ -337,8 +410,9 @@ export function buildSleeveLabelFields(src: SleeveLabelSource): SleeveLabelField
 
   // The Cert. field shows only what the headline did not take — for a sample
   // with sub-contracts, its sub-contract certificates. So no number is printed
-  // twice and none is lost.
-  const remaining = certs.slice(1)
+  // twice and none is lost, consecutive runs collapsing to ranges so a lot with
+  // many splits still fits the two lines the label has.
+  const remaining = compressCertificateNumbers(certs.slice(1))
 
   return {
     headline,

@@ -5,6 +5,7 @@ import {
   formatSleeveQuantity,
   sumSleeveQuantityMt,
   orderSleeveCertificates,
+  compressCertificateNumbers,
   toSleeveSampleType,
   resolveQualityName,
   resolveCompanyName,
@@ -229,6 +230,64 @@ describe('orderSleeveCertificates', () => {
   })
 })
 
+describe('compressCertificateNumbers', () => {
+  it('collapses a consecutive run', () => {
+    expect(compressCertificateNumbers([
+      'BR-036992/JUL/26', 'BR-036993/JUL/26', 'BR-036994/JUL/26',
+    ])).toEqual(['BR-036992-036994/JUL/26'])
+  })
+
+  it('leaves a pair written out in full', () => {
+    // Two numbers always fit; a range would only make them harder to read back.
+    expect(compressCertificateNumbers(['BR-036992/JUL/26', 'BR-036993/JUL/26']))
+      .toEqual(['BR-036992/JUL/26', 'BR-036993/JUL/26'])
+  })
+
+  it('breaks a run at a gap', () => {
+    expect(compressCertificateNumbers([
+      'BR-036992/JUL/26', 'BR-036993/JUL/26', 'BR-036994/JUL/26',
+      'BR-036999/JUL/26', 'BR-037000/JUL/26', 'BR-037001/JUL/26',
+    ])).toEqual(['BR-036992-036994/JUL/26', 'BR-036999-037001/JUL/26'])
+  })
+
+  it('never merges across different prefixes or months', () => {
+    expect(compressCertificateNumbers([
+      'BR-036992/JUL/26', 'SAG-036993/JUL/26', 'SAG-036994/JUL/26',
+    ])).toEqual(['BR-036992/JUL/26', 'SAG-036993/JUL/26', 'SAG-036994/JUL/26'])
+
+    expect(compressCertificateNumbers([
+      'BR-036992/JUL/26', 'BR-036993/AUG/26', 'BR-036994/AUG/26',
+    ])).toEqual(['BR-036992/JUL/26', 'BR-036993/AUG/26', 'BR-036994/AUG/26'])
+  })
+
+  it('reads the sequence past a digit-bearing prefix', () => {
+    expect(compressCertificateNumbers([
+      'BD1-001133/AUG/26', 'BD1-001134/AUG/26', 'BD1-001135/AUG/26',
+    ])).toEqual(['BD1-001133-001135/AUG/26'])
+  })
+
+  it('handles the rejected R- prefix', () => {
+    expect(compressCertificateNumbers([
+      'R-SAK-011717/JUL/26', 'R-SAK-011718/JUL/26', 'R-SAK-011719/JUL/26',
+    ])).toEqual(['R-SAK-011717-011719/JUL/26'])
+  })
+
+  it('never merges across a padding change', () => {
+    // 099 -> 100 widens the field; a range would misstate the numbers.
+    expect(compressCertificateNumbers(['BR-098/26', 'BR-099/26', 'BR-0100/26']))
+      .toEqual(['BR-098/26', 'BR-099/26', 'BR-0100/26'])
+  })
+
+  it('passes through numbers it cannot parse', () => {
+    expect(compressCertificateNumbers(['PENDING', 'BR-036992/JUL/26']))
+      .toEqual(['PENDING', 'BR-036992/JUL/26'])
+  })
+
+  it('is a no-op on an empty list', () => {
+    expect(compressCertificateNumbers([])).toEqual([])
+  })
+})
+
 describe('toSleeveSampleType', () => {
   it('maps the stored codes case-insensitively', () => {
     expect(toSleeveSampleType('pss')).toBe('PSS')
@@ -332,6 +391,21 @@ describe('buildSleeveLabelFields', () => {
     })
     expect(f.headline).toBe('BR-036991/JUL/26')
     expect(f.cert).toBe('BR-036992/JUL/26, BR-036993/JUL/26')
+  })
+
+  it('collapses a long run of sub-contract numbers into a range', () => {
+    // Nine splits written out in full overflow the two lines the label has, so
+    // the tail was ellipsised away — the numbers the field exists to show.
+    const f = buildSleeveLabelFields({
+      ...base,
+      certificateNumbers: [
+        'SAG-011692/26', 'SAG-011693/26', 'SAG-011694/26', 'SAG-011695/26',
+        'SAG-011696/26', 'SAG-011697/26', 'SAG-011698/26', 'SAG-011699/26',
+        'SAG-011700/26', 'SAG-011701/26',
+      ],
+    })
+    expect(f.headline).toBe('SAG-011692/JUL/26')
+    expect(f.cert).toBe('SAG-011693-011701/JUL/26')
   })
 
   it('promotes the reference to the headline when there is no certificate yet', () => {
