@@ -14,6 +14,7 @@ export type SleeveSampleType = 'PSS' | 'SS' | 'Type Sample' | 'Stocklot'
 export interface SleeveLabelSource {
   sampleType: SleeveSampleType
   containerNr?: string | null
+  icoNumber?: string | null
   exporterSampleNumber?: string | null
   /** Mother certificate first, then each sub-contract's. Raw, without the month. */
   certificateNumbers: string[]
@@ -32,13 +33,21 @@ export interface SleeveLabelSource {
   equivalent60kgBags?: number | null
 }
 
+/** One of the lot's own identifiers, ready to print: "Container: " + "HASU 155.201-6". */
+export interface SleeveReference {
+  /** What to call it — 'Container: ', 'ICO: ', 'Sample: '. */
+  label: string
+  value: string
+}
+
 export interface SleeveLabelFields {
   /** The certificate number, which leads the label. */
   headline: string
-  /** The lot's own reference — container or exporter sample number. */
-  reference: string | null
-  /** What to call that reference: 'Container: ' or 'Sample: '. */
-  referenceLabel: string | null
+  /**
+   * The lot's own identifiers, in print order, minus whatever the headline
+   * already took. A shipment sample carries both its container and its ICO.
+   */
+  references: SleeveReference[]
   seller: string | null
   client: string | null
   cert: string | null
@@ -130,42 +139,84 @@ export function formatSleeveQuantity(src: SleeveLabelSource): string | null {
 
 export interface SleeveCertificateRow {
   sample_contract_id: string | null
-  certificate_number: string
+  certificate_number: string | null
   created_at: string
 }
 
+export interface SleeveSubContract {
+  id: string
+  /**
+   * sample_contracts.tracking_number — the mirror of this split's certificate
+   * number, written by the assign_certificate_number trigger.
+   */
+  tracking_number?: string | null
+  sort_order?: number | null
+}
+
 /**
- * Mother certificate first, then the sub-contract certificates in the order the
+ * Mother certificate first, then one number per sub-contract, in the order the
  * sub-contracts themselves are displayed (sample_contracts.sort_order).
+ *
+ * The sub-contract LIST drives this, not the certificates table: a split whose
+ * certificate row is missing or was inserted with a null number still has its
+ * number mirrored on sample_contracts.tracking_number, and dropping it left the
+ * tin showing the mother's number alone for a lot covering several contracts.
+ * Certificate rows still win when both exist, and a certificate whose
+ * sub-contract did not come back is appended rather than lost.
  *
  * Sub-contract certificates minted in one batch share a created_at, so ordering
  * the comma-joined Cert. field on the timestamp made it shuffle between prints
- * of the same tin. Rows with no known sort_order keep their incoming order and
- * sort last.
+ * of the same tin. Sub-contracts with no sort_order keep their incoming order
+ * and sort last.
  *
  * `rows` is expected in created_at order, which sets the certified date when
  * there is no mother certificate.
  */
 export function orderSleeveCertificates(
   rows: SleeveCertificateRow[],
-  sortOrderByContractId: Record<string, number | null | undefined>,
+  subContracts: SleeveSubContract[],
 ): { numbers: string[]; certifiedAt: string | null } {
   const mother = rows.find(r => r.sample_contract_id === null)
-  const subs = rows
-    .filter(r => r.sample_contract_id !== null)
-    .map((row, index) => ({ row, index }))
+
+  const certByContractId = new Map<string, SleeveCertificateRow>()
+  for (const row of rows) {
+    if (row.sample_contract_id && !certByContractId.has(row.sample_contract_id)) {
+      certByContractId.set(row.sample_contract_id, row)
+    }
+  }
+
+  const ordered = subContracts
+    .map((sub, index) => ({ sub, index }))
     .sort((a, b) => {
-      const ao = sortOrderByContractId[a.row.sample_contract_id!] ?? Number.MAX_SAFE_INTEGER
-      const bo = sortOrderByContractId[b.row.sample_contract_id!] ?? Number.MAX_SAFE_INTEGER
+      const ao = a.sub.sort_order ?? Number.MAX_SAFE_INTEGER
+      const bo = b.sub.sort_order ?? Number.MAX_SAFE_INTEGER
       return ao === bo ? a.index - b.index : ao - bo
     })
-    .map(e => e.row)
+    .map(e => e.sub)
+
+  const numbers: string[] = []
+  const seen = new Set<string>()
+  const push = (n: string | null | undefined) => {
+    const v = (n || '').trim()
+    if (!v || seen.has(v)) return
+    seen.add(v)
+    numbers.push(v)
+  }
+
+  push(mother?.certificate_number)
+  for (const sub of ordered) {
+    push(certByContractId.get(sub.id)?.certificate_number || sub.tracking_number)
+  }
+
+  const knownSubIds = new Set(ordered.map(sub => sub.id))
+  for (const row of rows) {
+    if (row.sample_contract_id && !knownSubIds.has(row.sample_contract_id)) {
+      push(row.certificate_number)
+    }
+  }
 
   return {
-    numbers: [
-      ...(mother ? [mother.certificate_number] : []),
-      ...subs.map(r => r.certificate_number),
-    ],
+    numbers,
     certifiedAt: mother?.created_at || rows[0]?.created_at || null,
   }
 }
@@ -242,45 +293,44 @@ function party(name?: string | null, ref?: string | null): string | null {
   return r ? `${n} (${r})` : n
 }
 
+/**
+ * Every identifier the lot is known by, in the order it should print.
+ *
+ * A shipment sample is known by BOTH its container and its ICO — the warehouse
+ * reads back one, the shipping documents the other — so the label carries both
+ * rather than picking one. A pre-shipment sample leads with the exporter's
+ * sample number. Whatever is missing is simply absent.
+ */
+function sleeveReferences(src: SleeveLabelSource): SleeveReference[] {
+  const container = { label: 'Container: ', value: (src.containerNr || '').trim() }
+  const ico = { label: 'ICO: ', value: (src.icoNumber || '').trim() }
+  const exporterSample = { label: 'Sample: ', value: (src.exporterSampleNumber || '').trim() }
+
+  const ordered =
+    src.sampleType === 'PSS'
+      ? [exporterSample, container, ico]
+      : [container, ico, exporterSample]
+
+  return ordered.filter(r => r.value)
+}
+
 export function buildSleeveLabelFields(src: SleeveLabelSource): SleeveLabelFields {
   const certs = (src.certificateNumbers || [])
     .filter(Boolean)
     .map(c => withCertifiedMonth(c, src.certifiedAt))
 
-  const container = (src.containerNr || '').trim()
-  const exporterSample = (src.exporterSampleNumber || '').trim()
-
-  // The lot's own reference, and what to call it: a shipment sample is known by
-  // its container, a pre-shipment sample by the exporter's sample number. The
-  // sample type decides, falling back to whichever value exists.
-  let referenceLabel: string | null = null
-  let reference: string | null = null
-  if (src.sampleType === 'SS' && container) {
-    referenceLabel = 'Container: '
-    reference = container
-  } else if (src.sampleType === 'PSS' && exporterSample) {
-    referenceLabel = 'Sample: '
-    reference = exporterSample
-  } else if (container) {
-    referenceLabel = 'Container: '
-    reference = container
-  } else if (exporterSample) {
-    referenceLabel = 'Sample: '
-    reference = exporterSample
-  }
-
   // The certificate number leads: it is the number a warehouse reads back to
   // us, the one the QR resolves to, and the only one that is unique per lot.
   // The container falls to the line below. When there is no certificate yet the
-  // reference is promoted so the label still says which lot it belongs to.
+  // first reference is promoted so the label still says which lot it belongs to.
+  let references = sleeveReferences(src)
   let headline: string
-  let referenceUsedAsHeadline = false
 
   if (certs.length > 0) {
     headline = certs[0]
-  } else if (reference) {
-    headline = reference
-    referenceUsedAsHeadline = true
+  } else if (references.length > 0) {
+    headline = references[0].value
+    references = references.slice(1)
   } else {
     headline = 'Reference pending'
   }
@@ -292,8 +342,7 @@ export function buildSleeveLabelFields(src: SleeveLabelSource): SleeveLabelField
 
   return {
     headline,
-    reference: referenceUsedAsHeadline ? null : reference,
-    referenceLabel: referenceUsedAsHeadline ? null : referenceLabel,
+    references,
     seller: party(src.sellerName, src.sellerRef),
     client: party(src.clientName, src.clientRef),
     cert: remaining.length > 0 ? remaining.join(', ') : null,

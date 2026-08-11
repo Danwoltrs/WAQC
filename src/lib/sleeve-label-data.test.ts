@@ -15,6 +15,7 @@ import {
 const base: SleeveLabelSource = {
   sampleType: 'SS',
   containerNr: 'HASU 155.201-6',
+  icoNumber: null,
   exporterSampleNumber: null,
   certificateNumbers: ['BR-036991/26'],
   certifiedAt: '2026-07-29T12:00:00.000Z',
@@ -135,46 +136,96 @@ describe('orderSleeveCertificates', () => {
   const subB = { sample_contract_id: 'c-b', certificate_number: 'BR-036993/26', created_at: '2026-07-29T12:00:01.000Z' }
   const subC = { sample_contract_id: 'c-c', certificate_number: 'BR-036994/26', created_at: '2026-07-29T12:00:01.000Z' }
 
+  const contracts = (...entries: Array<[string, number | null, string?]>) =>
+    entries.map(([id, sort_order, tracking_number]) => ({ id, sort_order, tracking_number }))
+
   it('leads with the mother certificate', () => {
-    const { numbers } = orderSleeveCertificates([subA, mother], { 'c-a': 0 })
+    const { numbers } = orderSleeveCertificates([subA, mother], contracts(['c-a', 0]))
     expect(numbers[0]).toBe('BR-036991/26')
   })
 
   it('orders sub-contract certificates by their sub-contract sort_order', () => {
     // Same created_at for all three — the timestamp cannot break the tie.
-    const { numbers } = orderSleeveCertificates([mother, subC, subA, subB], {
-      'c-a': 0,
-      'c-b': 1,
-      'c-c': 2,
-    })
+    const { numbers } = orderSleeveCertificates(
+      [mother, subC, subA, subB],
+      contracts(['c-a', 0], ['c-b', 1], ['c-c', 2]),
+    )
     expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26', 'BR-036993/26', 'BR-036994/26'])
   })
 
   it('is stable regardless of the order the rows arrive in', () => {
-    const orderMap = { 'c-a': 0, 'c-b': 1, 'c-c': 2 }
-    const one = orderSleeveCertificates([mother, subA, subB, subC], orderMap)
-    const two = orderSleeveCertificates([subC, subB, mother, subA], orderMap)
+    const subs = contracts(['c-a', 0], ['c-b', 1], ['c-c', 2])
+    const one = orderSleeveCertificates([mother, subA, subB, subC], subs)
+    const two = orderSleeveCertificates([subC, subB, mother, subA], subs)
     expect(one.numbers).toEqual(two.numbers)
   })
 
   it('keeps sub-contracts with an unknown sort_order last, in their incoming order', () => {
-    const { numbers } = orderSleeveCertificates([mother, subB, subC, subA], { 'c-a': 0 })
+    const { numbers } = orderSleeveCertificates(
+      [mother, subB, subC, subA],
+      contracts(['c-a', 0], ['c-b', null], ['c-c', null]),
+    )
     expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26', 'BR-036993/26', 'BR-036994/26'])
   })
 
   it('takes the certified date from the mother certificate', () => {
-    const { certifiedAt } = orderSleeveCertificates([subA, mother], { 'c-a': 0 })
+    const { certifiedAt } = orderSleeveCertificates([subA, mother], contracts(['c-a', 0]))
     expect(certifiedAt).toBe('2026-07-29T12:00:00.000Z')
   })
 
   it('falls back to the first row when there is no mother certificate', () => {
-    const { numbers, certifiedAt } = orderSleeveCertificates([subA, subB], { 'c-a': 0, 'c-b': 1 })
+    const { numbers, certifiedAt } = orderSleeveCertificates(
+      [subA, subB],
+      contracts(['c-a', 0], ['c-b', 1]),
+    )
     expect(numbers).toEqual(['BR-036992/26', 'BR-036993/26'])
     expect(certifiedAt).toBe('2026-07-29T12:00:01.000Z')
   })
 
   it('returns nothing for a sample with no certificates', () => {
-    expect(orderSleeveCertificates([], {})).toEqual({ numbers: [], certifiedAt: null })
+    expect(orderSleeveCertificates([], [])).toEqual({ numbers: [], certifiedAt: null })
+  })
+
+  it('falls back to the sub-contract number when the split has no certificate row', () => {
+    // The tin showed the mother's number alone for a lot covering several
+    // contracts, because the splits' certificate rows were never created.
+    const { numbers } = orderSleeveCertificates(
+      [mother],
+      contracts(['c-a', 0, 'BR-036992/26'], ['c-b', 1, 'BR-036993/26']),
+    )
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26', 'BR-036993/26'])
+  })
+
+  it('falls back to the sub-contract number when the certificate row has no number', () => {
+    const unnumbered = { sample_contract_id: 'c-a', certificate_number: null, created_at: '2026-07-29T12:00:01.000Z' }
+    const { numbers } = orderSleeveCertificates(
+      [mother, unnumbered],
+      contracts(['c-a', 0, 'BR-036992/26']),
+    )
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
+  })
+
+  it('prefers the certificate row over the mirrored sub-contract number', () => {
+    const { numbers } = orderSleeveCertificates([mother, subA], contracts(['c-a', 0, 'STALE-1/26']))
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
+  })
+
+  it('keeps a certificate whose sub-contract did not come back', () => {
+    const { numbers } = orderSleeveCertificates([mother, subA], [])
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
+  })
+
+  it('never prints the same number twice', () => {
+    const { numbers } = orderSleeveCertificates(
+      [mother, subA],
+      contracts(['c-a', 0, 'BR-036992/26'], ['c-b', 1, 'BR-036992/26']),
+    )
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036992/26'])
+  })
+
+  it('skips a split that has no number anywhere yet', () => {
+    const { numbers } = orderSleeveCertificates([mother], contracts(['c-a', 0], ['c-b', 1, 'BR-036993/26']))
+    expect(numbers).toEqual(['BR-036991/26', 'BR-036993/26'])
   })
 })
 
@@ -219,10 +270,22 @@ describe('buildSleeveLabelFields', () => {
   it('leads with the certificate number and drops the container to the line below', () => {
     const f = buildSleeveLabelFields(base)
     expect(f.headline).toBe('BR-036991/JUL/26')
-    expect(f.reference).toBe('HASU 155.201-6')
-    expect(f.referenceLabel).toBe('Container: ')
+    expect(f.references).toEqual([{ label: 'Container: ', value: 'HASU 155.201-6' }])
     // The headline took the only certificate, so nothing is left to repeat.
     expect(f.cert).toBeNull()
+  })
+
+  it('prints the container AND the ICO for a shipment sample', () => {
+    const f = buildSleeveLabelFields({ ...base, icoNumber: '021/1234/0001' })
+    expect(f.references).toEqual([
+      { label: 'Container: ', value: 'HASU 155.201-6' },
+      { label: 'ICO: ', value: '021/1234/0001' },
+    ])
+  })
+
+  it('omits the ICO when the shipment sample has none', () => {
+    const f = buildSleeveLabelFields({ ...base, icoNumber: '   ' })
+    expect(f.references).toEqual([{ label: 'Container: ', value: 'HASU 155.201-6' }])
   })
 
   it('labels a pre-shipment sample reference as a sample number', () => {
@@ -233,8 +296,21 @@ describe('buildSleeveLabelFields', () => {
       exporterSampleNumber: 'CCT-2214/26',
     })
     expect(f.headline).toBe('BR-036991/JUL/26')
-    expect(f.reference).toBe('CCT-2214/26')
-    expect(f.referenceLabel).toBe('Sample: ')
+    expect(f.references).toEqual([{ label: 'Sample: ', value: 'CCT-2214/26' }])
+  })
+
+  it('leads a pre-shipment sample with its own number, container and ICO after', () => {
+    const f = buildSleeveLabelFields({
+      ...base,
+      sampleType: 'PSS',
+      exporterSampleNumber: 'CCT-2214/26',
+      icoNumber: '021/1234/0001',
+    })
+    expect(f.references).toEqual([
+      { label: 'Sample: ', value: 'CCT-2214/26' },
+      { label: 'Container: ', value: 'HASU 155.201-6' },
+      { label: 'ICO: ', value: '021/1234/0001' },
+    ])
   })
 
   it('appends the reference in parentheses only when present', () => {
@@ -259,11 +335,11 @@ describe('buildSleeveLabelFields', () => {
   })
 
   it('promotes the reference to the headline when there is no certificate yet', () => {
-    const f = buildSleeveLabelFields({ ...base, certificateNumbers: [] })
+    const f = buildSleeveLabelFields({ ...base, certificateNumbers: [], icoNumber: '021/1234/0001' })
     expect(f.headline).toBe('HASU 155.201-6')
-    // Promoted, so it is not also printed on the line below.
-    expect(f.reference).toBeNull()
-    expect(f.referenceLabel).toBeNull()
+    // Promoted, so the container is not also printed on the line below — but
+    // the ICO still is.
+    expect(f.references).toEqual([{ label: 'ICO: ', value: '021/1234/0001' }])
     expect(f.cert).toBeNull()
   })
 
@@ -271,11 +347,12 @@ describe('buildSleeveLabelFields', () => {
     const f = buildSleeveLabelFields({
       ...base,
       containerNr: null,
+      icoNumber: null,
       exporterSampleNumber: null,
       certificateNumbers: [],
     })
     expect(f.headline).toBe('Reference pending')
-    expect(f.reference).toBeNull()
+    expect(f.references).toEqual([])
     expect(f.cert).toBeNull()
   })
 

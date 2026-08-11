@@ -11,6 +11,8 @@ import {
   resolveCompanyName,
   sumSleeveQuantityMt,
   orderSleeveCertificates,
+  type SleeveCertificateRow,
+  type SleeveSubContract,
 } from '@/lib/sleeve-label-data'
 import path from 'path'
 import fs from 'fs'
@@ -43,6 +45,7 @@ export async function GET(
         sample_type,
         workflow_stage,
         container_nr,
+        ico_number,
         exporter_sample_number,
         buyer_contract_nr,
         exporter_contract_nr,
@@ -91,11 +94,12 @@ export async function GET(
     }
 
     // Sub-contracts: their tonnage rolls up into the foot quantity (one tin
-    // covers the whole lot), and their sort_order fixes the order of the
-    // sub-contract certificate numbers in the Cert. field.
+    // covers the whole lot), their sort_order fixes the order of the
+    // sub-contract certificate numbers in the Cert. field, and tracking_number
+    // carries each split's own certificate number.
     const { data: contractRows, error: contractError } = await supabase
       .from('sample_contracts')
-      .select('id, bags_quantity_mt, sort_order')
+      .select('id, tracking_number, bags_quantity_mt, sort_order')
       .eq('sample_id', (sample as any).id)
 
     if (contractError) {
@@ -108,20 +112,26 @@ export async function GET(
 
     const contracts = (contractRows || []) as Array<{
       id: string
+      tracking_number: string | null
       bags_quantity_mt: number | null
       sort_order: number | null
     }>
     const subMt = contracts.map(c => c.bags_quantity_mt)
-    const sortOrderByContractId: Record<string, number | null> = {}
-    for (const c of contracts) sortOrderByContractId[c.id] = c.sort_order
+    const subContracts: SleeveSubContract[] = contracts.map(c => ({
+      id: c.id,
+      tracking_number: c.tracking_number,
+      sort_order: c.sort_order,
+    }))
 
     // Every certificate belonging to this sample (mother first, then each
-    // sub-contract's) is comma-joined into the Cert. field.
+    // sub-contract's) is comma-joined into the Cert. field. Rows with a null
+    // certificate_number are kept rather than filtered out in SQL —
+    // orderSleeveCertificates falls back to the sub-contract's mirrored number
+    // instead of silently dropping that split from the tin.
     const { data: certRows, error: certError } = await supabase
       .from('certificates')
       .select('sample_contract_id, certificate_number, created_at')
       .eq('sample_id', (sample as any).id)
-      .not('certificate_number', 'is', null)
       .order('created_at', { ascending: true })
 
     if (certError) {
@@ -133,12 +143,8 @@ export async function GET(
     }
 
     const { numbers: certNumbers, certifiedAt } = orderSleeveCertificates(
-      (certRows || []) as Array<{
-        sample_contract_id: string | null
-        certificate_number: string
-        created_at: string
-      }>,
-      sortOrderByContractId,
+      (certRows || []) as SleeveCertificateRow[],
+      subContracts,
     )
 
     const s = sample as any
@@ -146,6 +152,7 @@ export async function GET(
     const fields = buildSleeveLabelFields({
       sampleType: toSleeveSampleType(s.sample_type),
       containerNr: s.container_nr,
+      icoNumber: s.ico_number,
       exporterSampleNumber: s.exporter_sample_number,
       certificateNumbers: certNumbers,
       certifiedAt,

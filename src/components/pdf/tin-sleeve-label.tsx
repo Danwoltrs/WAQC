@@ -134,6 +134,27 @@ const createStyles = (size: '4cm' | '2.5cm' = '4cm') => {
 
 const SEP = '  |  '
 
+/**
+ * How many labels fit on one A4 landscape sheet (210mm of usable height, the
+ * page has no padding): 5 x 40mm, or 8 x 25mm.
+ *
+ * Pages are cut explicitly rather than left to react-pdf's overflow handling,
+ * which split the sixth label across the page break — its top slice printed at
+ * the foot of one sheet and the rest was dropped, so a batch of six came out as
+ * five usable ribbons. Explicit pages also give every sheet's first label a top
+ * dashed rule to register a guillotine against.
+ */
+const LABELS_PER_PAGE: Record<'4cm' | '2.5cm', number> = {
+  '4cm': 5,
+  '2.5cm': 8,
+}
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const pages: T[][] = []
+  for (let i = 0; i < items.length; i += size) pages.push(items.slice(i, i + size))
+  return pages
+}
+
 interface TinSleeveLabelDocumentProps {
   labels: TinSleeveLabelData[]
 }
@@ -153,101 +174,108 @@ export const TinSleeveLabelDocument: React.FC<TinSleeveLabelDocumentProps> = ({ 
   const styles = createStyles(size)
   const compact = size === '2.5cm'
 
+  // react-pdf needs at least one Page, even for an empty batch.
+  const pages = labels.length > 0 ? chunk(labels, LABELS_PER_PAGE[size]) : [[]]
+
   return (
     <Document>
-      <Page size="A4" orientation="landscape" style={styles.page}>
-        {labels.map((label, index) => {
-          // At 2.5cm everything after the headline shares one line.
-          const partyParts = compact
-            ? []
-            : ([
-                label.seller ? { key: 'Seller: ', value: label.seller } : null,
-                label.client ? { key: 'Client: ', value: label.client } : null,
-              ].filter(Boolean) as Array<{ key: string; value: string }>)
-
-          // The line under the headline carries the lot's own reference, then
-          // any sub-contract certificate numbers the headline did not take.
-          const certParts = ([
-            label.reference
-              ? { key: label.referenceLabel || 'Ref.: ', value: label.reference }
-              : null,
-            label.cert ? { key: 'Cert.: ', value: label.cert } : null,
-            label.roaster ? { key: 'Roaster: ', value: label.roaster } : null,
-            ...(compact
-              ? [
+      {pages.map((pageLabels, pageIndex) => (
+        <Page key={pageIndex} size="A4" orientation="landscape" style={styles.page}>
+          {pageLabels.map((label, index) => {
+            // At 2.5cm everything after the headline shares one line.
+            const partyParts = compact
+              ? []
+              : ([
                   label.seller ? { key: 'Seller: ', value: label.seller } : null,
                   label.client ? { key: 'Client: ', value: label.client } : null,
-                ]
-              : []),
-          ].filter(Boolean) as Array<{ key: string; value: string }>)
+                ].filter(Boolean) as Array<{ key: string; value: string }>)
 
-          const footParts = [
-            label.quality,
-            label.quantity,
-            ...(compact ? [label.date] : []),
-          ].filter(Boolean) as string[]
-          const dateLine = compact ? null : label.date
+            // The line under the headline carries the lot's own references —
+            // container and ICO for a shipment sample — then any sub-contract
+            // certificate numbers the headline did not take.
+            const certParts = ([
+              ...label.references.map(r => ({ key: r.label, value: r.value })),
+              label.cert ? { key: 'Cert.: ', value: label.cert } : null,
+              label.roaster ? { key: 'Roaster: ', value: label.roaster } : null,
+              ...(compact
+                ? [
+                    label.seller ? { key: 'Seller: ', value: label.seller } : null,
+                    label.client ? { key: 'Client: ', value: label.client } : null,
+                  ]
+                : []),
+            ].filter(Boolean) as Array<{ key: string; value: string }>)
 
-          return (
-            <View
-              key={index}
-              style={index === 0 ? [styles.labelRow, styles.labelRowFirst] : styles.labelRow}
-            >
-              <View style={styles.labelContainer}>
-                <Image src={label.logo_url} style={styles.logo} />
-                {label.qr_code && <Image src={label.qr_code} style={styles.qrCode} />}
+            const footParts = [
+              label.quality,
+              label.quantity,
+              ...(compact ? [label.date] : []),
+            ].filter(Boolean) as string[]
+            const dateLine = compact ? null : label.date
 
-                <View style={styles.body}>
-                  <Text style={styles.headline}>
-                    {label.headline}
-                  </Text>
+            return (
+              <View
+                key={index}
+                // Belt and braces with the explicit page cut above: a label must
+                // never be sliced in half by a page break.
+                wrap={false}
+                style={index === 0 ? [styles.labelRow, styles.labelRowFirst] : styles.labelRow}
+              >
+                <View style={styles.labelContainer}>
+                  <Image src={label.logo_url} style={styles.logo} />
+                  {label.qr_code && <Image src={label.qr_code} style={styles.qrCode} />}
 
-                  {partyParts.length > 0 && (
-                    <Text style={styles.lineOne}>
-                      {partyParts.map((p, i) => (
-                        <Text key={p.key}>
-                          {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
-                          <Text style={styles.key}>{p.key}</Text>
-                          <Text>{p.value}</Text>
-                        </Text>
-                      ))}
+                  <View style={styles.body}>
+                    <Text style={styles.headline}>
+                      {label.headline}
                     </Text>
-                  )}
 
-                  {certParts.length > 0 && (
-                    <Text style={styles.lineTwo}>
-                      {certParts.map((p, i) => (
-                        <Text key={p.key}>
-                          {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
-                          <Text style={styles.key}>{p.key}</Text>
-                          <Text>{p.value}</Text>
-                        </Text>
-                      ))}
-                    </Text>
-                  )}
-
-                  {footParts.length > 0 && (
-                    <Text style={styles.foot}>
-                      {footParts.map((part, i) => (
-                        <Text key={part}>
-                          {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
-                          <Text style={i === 0 && label.quality ? styles.qual : styles.muted}>
-                            {part}
+                    {partyParts.length > 0 && (
+                      <Text style={styles.lineOne}>
+                        {partyParts.map((p, i) => (
+                          <Text key={p.key}>
+                            {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
+                            <Text style={styles.key}>{p.key}</Text>
+                            <Text>{p.value}</Text>
                           </Text>
-                        </Text>
-                      ))}
-                    </Text>
-                  )}
+                        ))}
+                      </Text>
+                    )}
 
-                  {dateLine && (
-                    <Text style={styles.dateLine}>{dateLine}</Text>
-                  )}
+                    {certParts.length > 0 && (
+                      <Text style={styles.lineTwo}>
+                        {certParts.map((p, i) => (
+                          <Text key={p.key}>
+                            {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
+                            <Text style={styles.key}>{p.key}</Text>
+                            <Text>{p.value}</Text>
+                          </Text>
+                        ))}
+                      </Text>
+                    )}
+
+                    {footParts.length > 0 && (
+                      <Text style={styles.foot}>
+                        {footParts.map((part, i) => (
+                          <Text key={part}>
+                            {i > 0 ? <Text style={styles.sep}>{SEP}</Text> : null}
+                            <Text style={i === 0 && label.quality ? styles.qual : styles.muted}>
+                              {part}
+                            </Text>
+                          </Text>
+                        ))}
+                      </Text>
+                    )}
+
+                    {dateLine && (
+                      <Text style={styles.dateLine}>{dateLine}</Text>
+                    )}
+                  </View>
                 </View>
               </View>
-            </View>
-          )
-        })}
-      </Page>
+            )
+          })}
+        </Page>
+      ))}
     </Document>
   )
 }
