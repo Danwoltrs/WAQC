@@ -167,14 +167,21 @@ describe('PerformanceReport', () => {
   })
 
   it('renders the single-company identity card + named rejection breakdown', async () => {
-    // Both sides single company → identity card; named defect breakdown present.
+    // Both sides single company (seller AND exporter — chartRowLayout keys off
+    // bySeller since the seller-axis rename) → identity card; named defect
+    // breakdown present.
     const single = bucket({
       byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
+      bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
       byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 1, approvedBags: 333, rejectedBags: 333, approvedMt: 20.0, rejectedMt: 20.0, rejectionRate: 50 }],
       greenDefects: [{ name: 'Black beans', count: 8 }, { name: 'Sour beans', count: 5 }],
       cuppingDefects: [{ name: 'Phenol', kind: 'fault', count: 2 }],
       showSankey: false,
     })
+    // Sanity: this fixture must actually reach the identity branch, or the
+    // render below would silently exercise the split-mode bar charts instead
+    // of the identity card this test is named for.
+    expect(chartRowLayout(single.bySeller.length, single.byExporter.length).mode).toBe('identity')
     const buf = await renderToBuffer(
       React.createElement(PerformanceReport, { data: base({ pss: null, ss: single }) }) as any,
     )
@@ -228,6 +235,65 @@ describe('PerformanceReport content', () => {
     expect(texts).toContain('1.5')
     expect(texts).toContain('222')
     expect(texts).toContain('2.5')
+  })
+
+  it('IdentityCard stats: Contracts (not Certificates), FCL spliced right after Contracts for SS only, Bags/MT for both', () => {
+    // A single seller AND a single exporter on both buckets — the branch this
+    // task's seller-axis rename could silently detach a test from (it did,
+    // once, in the initial version of this task: a fixture that only
+    // single-cardinalised byImporter/byExporter no longer reaches 'identity'
+    // once chartRowLayout keys off bySeller).
+    const pssBucket = bucket({
+      byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 0, approvedBags: 100, rejectedBags: 0, approvedMt: 6.0, rejectedMt: 0, rejectionRate: 0 }],
+      bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 100, rejectedBags: 0, approvedMt: 6.0, rejectedMt: 0, rejectionRate: 0 }],
+      byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 100, rejectedBags: 0, approvedMt: 6.0, rejectedMt: 0, rejectionRate: 0 }],
+      totals: {
+        evaluated: 1, approved: 1, rejected: 0, rejectionRate: 0,
+        bagsApproved: 100, mtApproved: 6.0, bagsRejected: 0, mtRejected: 0,
+        contracts: 4, fcl: 0,
+      },
+      showSankey: false,
+    })
+    const ssBucket = bucket({
+      byImporter: [{ name: 'Ahold', approvedCount: 1, rejectedCount: 0, approvedBags: 200, rejectedBags: 0, approvedMt: 12.0, rejectedMt: 0, rejectionRate: 0 }],
+      bySeller: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 200, rejectedBags: 0, approvedMt: 12.0, rejectedMt: 0, rejectionRate: 0 }],
+      byExporter: [{ name: 'Cooxupe', approvedCount: 1, rejectedCount: 0, approvedBags: 200, rejectedBags: 0, approvedMt: 12.0, rejectedMt: 0, rejectionRate: 0 }],
+      totals: {
+        evaluated: 1, approved: 1, rejected: 0, rejectionRate: 0,
+        bagsApproved: 200, mtApproved: 12.0, bagsRejected: 0, mtRejected: 0,
+        contracts: 7, fcl: 2,
+      },
+      showSankey: false,
+    })
+    // Sanity: both fixtures must actually land on the identity branch —
+    // otherwise the assertions below would silently verify nothing.
+    expect(chartRowLayout(pssBucket.bySeller.length, pssBucket.byExporter.length).mode).toBe('identity')
+    expect(chartRowLayout(ssBucket.bySeller.length, ssBucket.byExporter.length).mode).toBe('identity')
+
+    const el = PerformanceReport({ data: base({ pss: pssBucket, ss: ssBucket }) })
+    const texts = collectTexts(el)
+
+    expect(texts).not.toContain('Certificates') // old label must be gone everywhere
+
+    // Identity mode renders BOTH the KpiBand and the IdentityCard, so
+    // 'Contracts' appears twice per bucket: once as a KpiBand item (value
+    // then label) and once as an IdentityCard stat row (label then value).
+    // Document order: PSS's KpiBand, PSS's IdentityCard, SS's KpiBand, SS's
+    // IdentityCard.
+    const contractsIdxs = texts.reduce<number[]>((acc, t, i) => (t === 'Contracts' ? [...acc, i] : acc), [])
+    expect(contractsIdxs).toHaveLength(4)
+
+    const pssCardIdx = contractsIdxs[1]
+    // PSS (no FCL): Contracts, 4, Approved, 1, Rejected, 0, Bags, 100, MT, 6.0
+    expect(texts.slice(pssCardIdx, pssCardIdx + 10)).toEqual([
+      'Contracts', '4', 'Approved', '1', 'Rejected', '0', 'Bags', '100', 'MT', '6.0',
+    ])
+
+    const ssCardIdx = contractsIdxs[3]
+    // SS: FCL spliced in immediately after Contracts (splice(1, 0, ['FCL', …])).
+    expect(texts.slice(ssCardIdx, ssCardIdx + 12)).toEqual([
+      'Contracts', '7', 'FCL', '2', 'Approved', '1', 'Rejected', '0', 'Bags', '200', 'MT', '12.0',
+    ])
   })
 
   it('titles the first chart column Seller, keyed off bySeller rather than byImporter', () => {
