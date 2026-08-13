@@ -156,4 +156,47 @@ describe('AnnualPerformanceReport content', () => {
     expect(texts).toContain('150.5') // TOTAL GERAL MT APP = 100.0 + 50.5
     expect(texts).toContain('15.5') // TOTAL GERAL MT REJ = 10.0 + 5.5
   })
+
+  it('BreakdownBlock renders each row\'s approved MT to one decimal with an " MT" suffix', () => {
+    // agg.byOrigin feeds exactly one BreakdownBlock ("Where the Coffee Came
+    // From" page) — the only consumer in the whole document — so there is no
+    // other component this figure could be coming from. Uses a value with
+    // more than one decimal (42.567) so a missing .toFixed(1) would leave the
+    // raw JS number-to-string ("42.567") instead of "42.6", and a value
+    // distinct from every PerfTable fixture so this assertion can't be
+    // satisfied by the wrong component's cell.
+    const originAgg = [g({ name: 'Ethiopia', approvedMt: 42.567 })]
+    const originData: AnnualPerformanceReportData = { ...data, agg: { ...data.agg, byOrigin: originAgg } }
+    const el = AnnualPerformanceReport({ data: originData })
+    const texts = collectTexts(el)
+    expect(texts).toContain('42.6 MT')
+  })
+
+  it('wires the PSS seller page to bySellerPss and the SS seller page to bySellerSs, not swapped', () => {
+    // A plain global count of 'Rothfos GmbH' or 'Comexim' would not catch a
+    // PSS<->SS swap between the two new seller pages, since both buckets
+    // share 'Volcafe CH' and a swap keeps the total occurrence counts
+    // unchanged. Instead, locate each page by its own section title and
+    // check only the text between that title and the next section title —
+    // 'Rothfos GmbH' (present only in bySellerSs) must be absent from the
+    // PSS slice and present in the SS slice.
+    const el = AnnualPerformanceReport({ data })
+    const texts = collectTexts(el)
+
+    const pssSellerIdx = texts.indexOf('Pre-Shipment (PSS) Seller Performance · by sample')
+    const ssSellerIdx = texts.indexOf('Shipment (SS) Seller Performance · by bags')
+    const nextSectionIdx = texts.indexOf('Top Rejection Reasons')
+    expect(pssSellerIdx).toBeGreaterThan(-1)
+    expect(ssSellerIdx).toBeGreaterThan(pssSellerIdx)
+    expect(nextSectionIdx).toBeGreaterThan(ssSellerIdx)
+
+    const pssSellerSlice = texts.slice(pssSellerIdx, ssSellerIdx)
+    const ssSellerSlice = texts.slice(ssSellerIdx, nextSectionIdx)
+
+    expect(pssSellerSlice).toContain('Volcafe CH')
+    expect(pssSellerSlice).not.toContain('Rothfos GmbH')
+
+    expect(ssSellerSlice).toContain('Volcafe CH')
+    expect(ssSellerSlice).toContain('Rothfos GmbH')
+  })
 })
